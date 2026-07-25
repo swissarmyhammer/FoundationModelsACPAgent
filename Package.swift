@@ -20,8 +20,8 @@ let package = Package(
     dependencies: [
         // Per plan.md §Layering, this package will depend on:
         //   FoundationModelsACP (the wire), FoundationModelsRouter (the
-        //   runtime — the 2026-07-23 harness collapse folded the agent loop
-        //   into it), FoundationModelsExtras, and the roster's tool packages
+        //   runtime: self-folding, event-streaming, recorded sessions),
+        //   FoundationModelsExtras, and the roster's tool packages
         //   (FoundationModelsFileTool, FoundationModelsShelltool,
         //   FoundationModelsMCP).
         // Declared as the corresponding board tasks land — Router's session
