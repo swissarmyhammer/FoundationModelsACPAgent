@@ -1,5 +1,5 @@
 ---
-position_column: todo
+position_column: done
 position_ordinal: '80'
 title: 'Plan update: compose Router directly (harness collapse) + rename the conformance'
 ---

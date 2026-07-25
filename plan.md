@@ -1,14 +1,21 @@
-# Plan: FoundationModelsACPAgent — the composed agent over the harness
+# Plan: FoundationModelsACPAgent — the composed agent over the Router runtime
 
 > **Created 2026-07-21**, split out of FoundationModelsACP the same day it was
 > reborn there: the wire and the composition are separate packages. Sibling
 > [`../FoundationModelsACP`](../FoundationModelsACP/plan.md) is the pure,
 > zero-dependency ACP wire (generated types, role protocols, connections,
 > ndJSON); **this package is the agent** — it layers over
-> FoundationModelsAgentHarness and FoundationModelsRouter and adds
-> slash-command support and configuration. Everything the harness
-> deliberately refuses to own — file I/O, dotfolders, command registries,
-> the roster, the `Agent` conformance — lives here.
+> **FoundationModelsRouter, the family runtime**, and adds slash-command
+> support and configuration. Everything the runtime deliberately refuses to
+> own — file I/O, dotfolders, command registries, the roster, the `Agent`
+> conformance — lives here.
+>
+> **Updated 2026-07-23 for the harness collapse**: FoundationModelsAgentHarness
+> folded into Router (Router board task `m2mvmdn`). Router sessions are now
+> the loop — self-folding (`makeSession(budget:compactionPrompt:)`),
+> token-metered, event-streaming with correlation ids, recorded. This plan
+> composes them directly; there is no intermediate `Harness` type. The
+> conformance is named **`RoutedACPAgent`**.
 
 ## Layering
 
@@ -22,21 +29,21 @@ editors (Zed, …) ──ndJSON/stdio──┐          CLI / Mac app (thin fron
                     │  slash commands + registry + dispatch (§6.2)
                     │  tool roster: config sections → real tools (§7)
                     │  transcript location policy (§5)
-                    │  HarnessACPAgent: the Agent conformance (§9.1)
+                    │  RoutedACPAgent: the Agent conformance (§9.1)
                     ▼
    FoundationModelsACP (the wire: types, role protocols, connections — zero deps)
-   FoundationModelsAgentHarness (the loop: tokens, compaction, events)
                     ▼
-   FoundationModelsRouter (models, sessions, recording, restore, compact)
+   FoundationModelsRouter — the runtime: models, sessions (self-folding,
+                    │      token-metered, event-streaming, recorded), restore
                     ▼
    FoundationModelsExtras (stack, templating, SlashCommand, AgentsMd, LayeredYAMLDocument)
 ```
 
-Dependencies: the ACP wire, the harness, Router, Extras, and the tool
-packages the roster names (`FoundationModelsFileTool`,
-`FoundationModelsShelltool`, `FoundationModelsMCP`, …). Naming tool packages
-is *this* package's job precisely because the harness may not: nothing
-cycles, since no tool package (and not the agents tool) ever depends on it.
+Dependencies: the ACP wire, Router, Extras, and the tool packages the roster
+names (`FoundationModelsFileTool`, `FoundationModelsShelltool`,
+`FoundationModelsMCP`, …). Naming tool packages is *this* package's job
+precisely because the runtime may not: nothing cycles, since no tool package
+(and not the agents tool) ever depends on it.
 
 The composition, end to end:
 
@@ -45,9 +52,9 @@ config  (dotfolder stack, §4)
   → ProfileDefinition → Router.resolve → resident profile
   → tools         (roster §7: config sections → constructed, confined tools)
   → instructions  (builtin prompt + AGENTS.md §6.1 + config replace/append)
-  → compaction    (coding-tuned CompactionPrompt + TokenBudget)
-  → Harness(router:tools:instructions:compaction:)      ← the reusable loop
-  → HarnessACPAgent(harness:commands:)                  ← §9.1, + registry §6.2
+  → per session:  router.makeSession(workingDirectory:tools:instructions:
+                    budget:compactionPrompt:)   ← the self-folding runtime session
+  → RoutedACPAgent(router:configuration:commands:)   ← §9.1, + registry §6.2
 ```
 
 ## Decisions
@@ -58,9 +65,9 @@ config  (dotfolder stack, §4)
   composition inside the wire package (split out: the wire's consumers
   shouldn't drag in MLX, Yams, Stencil, and tool packages to decode a
   `SessionUpdate`). The noun test lands three ways: session storage/restore
-  nouns are Router's, turn/loop nouns are the harness's, and commands +
-  configuration + the conformance are this package's. Because the
-  conformance composes `Harness`/`HarnessSession`, every loop behavior
+  nouns and turn/loop nouns are Router's (the runtime, post-collapse), and
+  commands + configuration + the conformance are this package's. Because the
+  conformance composes Router's self-folding sessions, every loop behavior
   (auto-compaction, budgets, retry, correlated events) works over ACP with
   zero wire-specific code.
 - **Slash-command dispatch lives at the prompt owner.** The prompt owners
@@ -80,8 +87,8 @@ config  (dotfolder stack, §4)
   `AgentConfiguration` schema (`profile` with standard/flash/embedding
   slots, `tools` built-in + `mcp`, `instructions`, `recording`,
   `transcripts`, `compaction`), defaults directory, template-first
-  rendering, and the mapping onto Router types. The harness never sees any
-  of it — it receives values.
+  rendering, and the mapping onto Router types. Router never sees any of
+  it — sessions receive values.
 - **Loading is Extras'.** `LayeredYAMLDocument` (Extras plan §11) loads →
   renders (trusted defaults, untrusted user/project) → merges with the
   family's one rule → returns a value tree with per-key source tracking;
@@ -106,8 +113,12 @@ config  (dotfolder stack, §4)
 > The sections below carry their numbering (§4–§10.1) from the pre-pivot
 > harness plan's product-layer extraction, via the FoundationModelsACP
 > rebirth — renumber in a later editing pass. Where prose says "the harness"
-> doing composition-flavored work, read "this package". `§9.2` references
-> point at the wire spec, now `../FoundationModelsACP/plan.md`.
+> doing composition-flavored work, read "this package"; where it names
+> harness loop machinery, read Router's runtime sessions (the collapse).
+> `§9.2` references point at the wire spec, now
+> `../FoundationModelsACP/plan.md`; `§8` references point at Router's board.
+> `TranscriptStore` below is this package's browse/location type (task
+> ax6sdnt), not a harness type.
 
 ## 4. Configuration
 
@@ -200,7 +211,7 @@ unknown keys *inside* known sections are errors (typo protection).
 not a hidden string — and not a compiled-in one either: they ship as
 `Instructions.md` in the defaults directory (layer 1 above; editable like any
 file), reproduced verbatim in DocC/README, and surfaced at runtime
-(`Harness.instructions` exposes the fully assembled prompt; the CLI prints it with a
+(this package exposes the fully assembled prompt per session; the CLI prints it with a
 flag) — so users always know exactly what `replace:` is replacing. Assembly is:
 base = `instructions.replace` if set, else the builtin prompt; then the
 session's memory files (user then project — §6.1); then `instructions.append`
@@ -241,7 +252,7 @@ config escape hatch.** Consulting Router settled it:
 - Transcripts must survive the repo. Deleting a checkout shouldn't delete the record
   of what the agent did to it.
 
-Layout — the harness owns the two segments above Router's root, Router owns everything
+Layout — this package owns the two segments above Router's root, Router owns everything
 below, unchanged:
 
 ```
@@ -258,7 +269,7 @@ The **project slug** is the agent's working-directory absolute path with `/` →
 reversible enough for a browser UI to show real paths.
 
 `transcripts.location` overrides: `project` puts the same layout under
-`<project>/.<name>/transcripts/` (no slug segment; the harness then writes a
+`<project>/.<name>/transcripts/` (no slug segment; this package then writes a
 `.gitignore` of `*` + `!.gitignore` into the dotfolder, the Shelltool/CodeContext
 convention) for users who want self-contained repos; an absolute path wins outright.
 
@@ -274,7 +285,7 @@ never restores.** It owns exactly three things — the root location policy, the
 project slug scheme, and lightweight browse summaries (read via Router's own
 readers). Everything that gives a `transcript.jsonl` its meaning — writing
 events, reconstructing entries, applying compaction checkpoints, rebuilding a
-live session — is Router's, and the harness calls Router to do it.
+live session — is Router's, and this package calls Router to do it.
 
 
 ### 6.1 Agent-instructions files — AGENTS.md via Extras' `AgentsMd`
@@ -316,33 +327,33 @@ configuration. Each document renders through Extras' template engine
 exactly as they do in command templates.
 
 The assembled text is read once at session creation, folded into the
-`instructions` value handed to the harness constructor, and pinned for the
+`instructions` value handed to `makeSession`, and pinned for the
 session's lifetime — a new session picks up edits. Instructions are never
 folded by compaction (Router compaction plan §1.3 invariants), so this
-context survives every fold by construction. The harness never knows any of
-this happened; it just receives longer instructions.
+context survives every fold by construction. Router never knows any of
+this happened; the session just receives longer instructions.
 
 ### 6.2 Slash commands — one registry, three sources
 
 Slash commands are a session-level noun: `/compact` acts on *this* session,
 and a skill discovered in *this* repo becomes a command in *this* session
-only. So the registry lives on `HarnessSession`, assembled at session
-creation like tools and memory, and re-published when a source changes.
+only. So this package keeps one registry per session, assembled at session
+creation like tools and instructions, and re-published when a source changes.
 
 **The cross-package currency is Extras' `SlashCommand`**: `name` /
 `description` / `argumentHint` plus a two-kind `Body` — `.prompt(template:)`
 expands into an ordinary model turn; `.action` runs code and streams text,
 never touching the model. Contributors implement `SlashCommandProviding`
 (`commands(workingDirectory:)` + optional `commandUpdates` stream) against
-the leaf, never the harness — the dependency diamond keeps arrows pointing
+the leaf, never this package — the dependency diamond keeps arrows pointing
 only downward.
 
 Three sources, merged in precedence order (later wins on name collision,
 logged; builtin names are reserved and never overridden):
 
-1. **Builtins** — harness `.action` closures capturing the session:
+1. **Builtins** — this package's `.action` closures capturing the session:
    `/compact` (force compaction now), `/context` (fill, tokens, resolved
-   context), `/memory` (print `Harness.instructions` with source headers —
+   context), `/memory` (print the assembled instructions with source headers —
    §4's published artifact, interactive), `/status` (session id, cwd,
    model/profile, transcript path), `/help`. Frontend verbs (`/quit`,
    clear-as-new) stay out — composer affordances, same rule as queueing.
@@ -376,7 +387,7 @@ leading slash. Registry mechanics (merge, precedence, near-miss matching,
 `commandUpdates` re-publication) are this package's; the vocabulary is
 Extras'.
 
-On every registry change: `HarnessState.availableCommands` updates (CLI
+On every registry change: the published per-session command set updates (CLI
 autocomplete, app palette) and the ACP conformance fires
 `available_commands_update` (§9.1) — the protocol noun this registry peers
 with.
@@ -392,29 +403,30 @@ place tools are registered — the well-known names for our well-known tools
 adding a tool is a dependency plus one catalog line:
 
 ```swift
-/// The harness tool catalog.
+/// The tool catalog.
 ///
 /// ══════════════════════════════════════════════════════════════════
 ///   ADD NEW TOOLS HERE — and only here.
 ///   1. Put the implementation in Tools/<Name>/.
 ///   2. Append its constructor to `builtin(context:)` below.
 ///   3. Add a row to the table in README.md § Tools.
-///   Nothing else in the harness needs to change.
+///   Nothing else in this package needs to change.
 /// ══════════════════════════════════════════════════════════════════
 public enum ToolCatalog {
     public static func builtin(context: ToolContext) -> [any FoundationModels.Tool]
 }
 ```
 
-`ToolContext` carries what every tool needs (working directory, the event-emitter for
-`ObservedTool`, the flash handle) so tool constructors stay uniform. Frontends may
-append their own tools: `Harness(..., extraTools: [any Tool])`.
+`ToolContext` carries what every tool needs (the session working directory,
+the decoded config section) so constructors stay uniform. Frontends may
+append their own tools when constructing the agent — the merged array is
+what `makeSession(tools:)` receives.
 
 Catalog entries are also where slash-command providers register (§6.2): an
 entry may pair its tool with a `SlashCommandProviding` conformer (from
 `FoundationModelsExtras`) and the catalog feeds it into the session's command
 registry. The direction rule is absolute — tool packages conform to the
-*leaf's* protocol; nothing outside this package ever names a harness type.
+*leaf's* protocol; nothing outside this package ever names its types.
 
 
 ### 7.3 The tool roster (composed as each package ships)
@@ -434,7 +446,7 @@ section names keep the schema forward-compatible (§4):
 
 ## 9. Frontends: the shared-consumption contract
 
-Three consumers share the harness: the Mac app, the CLI, and **any ACP client**
+Three consumers share this composition: the Mac app, the CLI, and **any ACP client**
 (Zed, editors — §9.1). The app and CLI are out of scope to *build* here, but every
 contract is in scope to *prove*:
 
@@ -442,10 +454,10 @@ contract is in scope to *prove*:
   name** — that single string is what makes config and transcripts shared.
   The name is chosen by the frontend, not baked into any layer below.
 - The CLI is a thin ArgumentParser wrapper: parse args → construct agent → render the
-  `HarnessEvent` stream to the terminal. `Examples/HarnessDemo` *is* this CLI in
+  session event stream to the terminal. The `acp-agent` executable *is* this CLI in
   miniature and doubles as the living contract test; the production CLI likely grows
   in its own repo from a copy of it.
-- The Mac app binds `HarnessState` and `ResolutionProgress` to SwiftUI and uses
+- The Mac app binds Router's observable session state and `ResolutionProgress` to SwiftUI and uses
   `TranscriptStore.allProjects()`/`sessions(inProject:)` for its history browser.
 - **Sandboxing decision:** sharing `~/.config/<name>` and `$CWD/<anywhere>` is incompatible
   with the App Sandbox. Recommendation: the Mac app ships **non-sandboxed** (a
@@ -454,53 +466,55 @@ contract is in scope to *prove*:
   the fallback is security-scoped bookmarks per project plus moving the home layer to
   `~/Library/Application Support/<name>/` with the CLI honoring the same path — the
   `DotfolderStack` seam localizes that change. Decide before the app ships; nothing in
-  the harness blocks on it.
+  this package blocks on it.
 
-### 9.1 ACP: this package's agent composes the harness
+### 9.1 ACP: this package's agent composes the runtime
 
-`HarnessACPAgent` — this package's `Agent` conformance — composes `Harness`/
-`HarnessSession` with the config, roster, and command registry from §§4–7.
+`RoutedACPAgent` — this package's `Agent` conformance — composes Router's
+self-folding sessions with the config, roster, and command registry from
+§§4–7.
 ACP is an **application protocol** — its nouns (cwd sessions, prompt turns,
 visible tool calls, stop reasons, session management, available commands)
 are owned across the stack this package assembles, and a wire protocol
 attaches at the layer that owns its nouns (a language *server* speaks LSP; a
-parser doesn't). The lower layers never pretend to be agents: the harness
-stays a wire-free loop, `RoutedSession` stays Router's session surface,
+parser doesn't). The lower layers never pretend to be agents:
+`RoutedSession` stays Router's wire-free session surface,
 `LanguageModelSession` stays Apple's conversation primitive.
 
-**The wire layer is this package's first target** (`FoundationModelsACP`):
-generated schema types (vendored v1.19.x), the `Agent`/`Client` role
-protocols, the `*SideConnection` full-duplex runtime, ndJSON framing — zero
-dependencies, spec'd in §9.2.
+**The wire is the sibling package** (`../FoundationModelsACP`): generated
+schema types (vendored v1.19.x), the `Agent`/`Client` role protocols, the
+`*SideConnection` full-duplex runtime, ndJSON framing — zero dependencies,
+spec'd there.
 
-**Explicit peering — harness nouns ↔ ACP nouns.** The conformance
-(`HarnessACPAgent`, in this package's agent target) is a
-*translation, not a construction*: every ACP concept names its harness peer,
+**Explicit peering — composition/runtime nouns ↔ ACP nouns.** The conformance
+(`RoutedACPAgent`) is a
+*translation, not a construction*: every ACP concept names its peer,
 and anything with no peer is a capability switched off honestly, never faked.
 
-| ACP noun | Harness peer |
+| ACP noun | Peer |
 |---|---|
-| the agent behind the connection | `Harness` — `initialize` reports its capabilities: text prompts, session management on; the harness never issues `terminal/*` or `fs/*` in v1 (tools run in-process, below; terminals are a *client* capability the harness simply never exercises) |
-| session (`sessionId`, cwd, `mcpServers`) | `HarnessSession` — `session/new(cwd)` ⇒ `harness.newSession(cwd:)`; project config layer, §6.1 memory, tool confinement, and transcript slug are already keyed off that cwd; `mcpServers` is accepted-and-ignored in v1 (logged, documented) |
-| `session/prompt` (long-lived request) | `HarnessSession.run(prompt)` — one turn; the pending request resolves at turn end with a `StopReason` |
-| `session/update` notification stream | the `HarnessEvent` stream, mapped 1:1: `textDelta` → `agent_message_chunk`, `reasoningDelta` → `agent_thought_chunk`, `toolCall(id:)` → `tool_call`, `toolStatus(id:)` → `tool_call_update` — `ToolCallID` *is* the wire `toolCallId` (§6) |
+| the agent behind the connection | `RoutedACPAgent` over its `Router` — `initialize` reports its capabilities: text prompts, session management on; the agent never issues `terminal/*` or `fs/*` in v1 (tools run in-process, below; terminals are a *client* capability it simply never exercises) |
+| session (`sessionId`, cwd, `mcpServers`) | a `RoutedSession` composed per cwd — `session/new(cwd)` ⇒ per-cwd config layer + roster + instructions → `router.makeSession(...)`; §6.1 instructions, tool confinement, and transcript slug are all keyed off that cwd; `mcpServers` is accepted-and-ignored in v1 (logged, documented) |
+| `session/prompt` (long-lived request) | the session turn (`run` in this package's conformance) — one turn; the pending request resolves at turn end with a `StopReason` |
+| `session/update` notification stream | Router's session event stream, mapped 1:1: `textDelta` → `agent_message_chunk`, `reasoningDelta` → `agent_thought_chunk`, `toolCall(id:)` → `tool_call`, `toolStatus(id:)` → `tool_call_update` — `ToolCallID` *is* the wire `toolCallId` (§6) |
 | `StopReason` | the turn's disposition: completed → `end_turn`, guardrail refusal → `refusal`, `cancel()` → `cancelled` |
-| `available_commands_update` | the session's slash-command registry (§6.2) — published at session start and re-published whenever a source changes (skill discovered, template edited); invoked commands arrive as `session/prompt` text and dispatch inside `run()` like every frontend's |
-| `session/cancel` (notification) | `HarnessSession.cancel()` — the still-open prompt request resolves with `cancelled`, possibly after final updates |
-| `session/list` / `load` / `resume` / `delete` | `TranscriptStore.sessions(inProject:)` + Router restore. **Replay comes from Router's full recorded history** (the conversation the user actually had); **the live session is constructed from the newest compaction checkpoint** (the model's working transcript) — two different transcripts, deliberately. Restore reassembles the harness side (config layer, memory, confinement) from the cwd recorded at handle minting (§8) |
-| `session/close` | `Harness` drops the `HarnessSession` from its bookkeeping — recording handle closed, transcript retained on disk (the v2 RFDs make this baseline alongside list/resume, below) |
+| `available_commands_update` | the session's slash-command registry (§6.2) — published at session start and re-published whenever a source changes (skill discovered, template edited); invoked commands arrive as `session/prompt` text and dispatch at the prompt owner (§6.2) like every frontend's |
+| `session/cancel` (notification) | the session's cancel — the still-open prompt request resolves with `cancelled`, possibly after final updates |
+| `session/list` / `load` / `resume` / `delete` | `TranscriptStore.sessions(inProject:)` + Router restore. **Replay comes from Router's full recorded history** (the conversation the user actually had); **the live session is constructed from the newest compaction checkpoint** (the model's working transcript) — two different transcripts, deliberately. Restore reassembles this package's side (config layer, instructions, confinement) from the cwd Router records at session creation (Router board 6j4bven) |
+| `session/close` | the agent drops the session from its bookkeeping — recording closed, transcript retained on disk (the v2 RFDs make this baseline alongside list/resume, below) |
 | `authenticate` / `logout` | no peer — a local on-device agent has no auth; capability off, method-not-found, and the `authRequired` error (-32000) is never raised |
 | session config options | no peer in v1 — capability off (may earn a peer later; typed config values are v2-baseline material) |
 | session modes (`session/set_mode`) | never — deprecated wire-side in favor of `set_config_option`; the conformance answers method-not-found and no mode support is planned |
 | `fs/*`, `terminal/*`, `session/request_permission` | no peer in v1 — tools run in-process (below) |
 
-Because ACP turns go through `run()`, everything §6 owns works over ACP with
-zero ACP-specific code: compaction (proactive and reactive), recording sync,
-memory, confinement, the context meter. `HarnessState` has no peer — a
-frontend affordance ACP clients replace with their own UI — and queueing stays
-composer-owned (§6). (Name note: the inlined target declares the protocol-role
-`Agent`; Harness-first naming means nothing else is named `Agent`, so
-`HarnessACPAgent: Agent` reads unambiguously.)
+Because ACP turns drive Router's sessions through the prompt owner,
+everything the runtime owns works over ACP with zero ACP-specific code:
+auto-compaction (proactive and reactive), chokepoint recording,
+confinement, the context meter. Router's observable session state has no
+peer — a frontend affordance ACP clients replace with their own UI — and
+queueing stays composer-owned. (Name note: the wire package declares the
+protocol-role `Agent`; nothing else here is named `Agent`, so
+`RoutedACPAgent: Agent` reads unambiguously.)
 
 Practical decisions:
 
@@ -508,10 +522,10 @@ Practical decisions:
   ndJSON over stdio (stdout sacred, logs to stderr — §9.2's framing rules). One more
   reason the CLI stays thin: all three frontends are renderers over the same engine.
 - **v1 supports multiple concurrent ACP sessions.** One-resident-profile
-  constrains *loaded models*, not session count: `HarnessSession`s keyed by
-  `sessionId`, each with its own cwd-derived config layer, memory,
+  constrains *loaded models*, not session count: Router sessions keyed by
+  `sessionId`, each with its own cwd-derived config layer, instructions,
   confinement, and slug; turns serialize at the model's `serialGate`;
-  recording stays per-session via per-session handles (§8).
+  recording stays per-session at Router's chokepoint.
   **Profile-collision policy:** a project layer naming a different model than
   the resident profile logs a warning and keeps the resident model; the rest
   of the layer is honored. Gate waits are `Task`-cancellation-aware, so a
@@ -547,10 +561,10 @@ direction, not v1-only plumbing.
 
 ### 10.1 Evaluations — `PythonCLIEvaluation` (end-to-end coding agent)
 
-*(Moved here 2026-07-21 from the harness plan: this eval drives real `files`
-+ `shell` tools, and no tool package may be referenced in the harness
-package — the harness keeps a compaction-focused eval over sample tools
-instead. This one belongs to the layer that composes the roster.)*
+*(Moved here 2026-07-21 from the pre-collapse harness plan: this eval drives
+real `files` + `shell` tools, which the runtime may never name — Router
+keeps the compaction-focused eval over sample tools (Router board 4ce0a1k).
+This one belongs to the layer that composes the roster.)*
 
 **`PythonCLIEvaluation` (files + shell, end to end).** Drives both core
 tools through a real multi-turn build task, on Apple's Evaluations framework
