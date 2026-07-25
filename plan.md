@@ -1,21 +1,15 @@
 # Plan: FoundationModelsACPAgent — the composed agent over the Router runtime
 
-> **Created 2026-07-21**, split out of FoundationModelsACP the same day it was
-> reborn there: the wire and the composition are separate packages. Sibling
+> The wire and the composition are separate packages: sibling
 > [`../FoundationModelsACP`](../FoundationModelsACP/plan.md) is the pure,
 > zero-dependency ACP wire (generated types, role protocols, connections,
 > ndJSON); **this package is the agent** — it layers over
 > **FoundationModelsRouter, the family runtime**, and adds slash-command
-> support and configuration. Everything the runtime deliberately refuses to
-> own — file I/O, dotfolders, command registries, the roster, the `Agent`
-> conformance — lives here.
->
-> **Updated 2026-07-23 for the harness collapse**: FoundationModelsAgentHarness
-> folded into Router (Router board task `m2mvmdn`). Router sessions are now
-> the loop — self-folding (`makeSession(budget:compactionPrompt:)`),
-> token-metered, event-streaming with correlation ids, recorded. This plan
-> composes them directly; there is no intermediate `Harness` type. The
-> conformance is named **`RoutedACPAgent`**.
+> support and configuration. Router sessions are the loop — self-folding
+> (`makeSession(budget:compactionPrompt:)`), token-metered, event-streaming
+> with correlation ids, recorded — and everything the runtime deliberately
+> refuses to own lives here: file I/O, dotfolders, command registries, the
+> roster, and the `Agent` conformance, named **`RoutedACPAgent`**.
 
 ## Layering
 
@@ -110,15 +104,11 @@ config  (dotfolder stack, §4)
 
 ---
 
-> The sections below carry their numbering (§4–§10.1) from the pre-pivot
-> harness plan's product-layer extraction, via the FoundationModelsACP
-> rebirth — renumber in a later editing pass. Where prose says "the harness"
-> doing composition-flavored work, read "this package"; where it names
-> harness loop machinery, read Router's runtime sessions (the collapse).
-> `§9.2` references point at the wire spec, now
-> `../FoundationModelsACP/plan.md`; `§8` references point at Router's board.
-> `TranscriptStore` below is this package's browse/location type (task
-> ax6sdnt), not a harness type.
+> The sections below carry legacy numbering (§4–§10.1) — renumber in a later
+> editing pass. `§9.2` references point at the wire spec
+> (`../FoundationModelsACP/plan.md`); `§8` references point at Router's
+> board; `TranscriptStore` is this package's browse/location type (task
+> ax6sdnt).
 
 ## 4. Configuration
 
@@ -374,10 +364,9 @@ logged; builtin names are reserved and never overridden):
    `mcpServers`.)
 
 **Dispatch lives at the prompt owner** — this package's `prompt()` handler
-for the wire, and the frontends' composers for direct consumption (the old
-"dispatch lives in `run()`" died with the harness re-scope: the loop no
-longer knows commands exist, and a `/compact` typed in an editor must never
-reach the model as a prompt). A leading `/name` routes through the registry
+for the wire, and the frontends' composers for direct consumption — Router's
+sessions know nothing of commands, and a `/compact` typed in an editor must
+never reach the model as a prompt. A leading `/name` routes through the registry
 *before* anything touches the session: `.prompt` expands (template +
 arguments) into a normal recorded turn; `.action` streams output with **no
 model turn and no transcript entries** beyond what the action itself records
@@ -547,7 +536,7 @@ inner bare session through a provider (factory + store hooks + `onTurnEnded`
 sync). It failed on four counts, all symptoms of attaching an application
 protocol at the model layer: a **stale session** after every compaction swap
 (the session was handed over by value, once); **compaction never triggering**
-on ACP turns (fill check and retry live in `run()`); a bolt-on turn-end
+on ACP turns (fill check and retry live in the runtime session); a bolt-on turn-end
 recording hook; and `session/load` **replaying the compacted transcript**
 instead of the user's real history. All four dissolve with the agent-level
 conformance; none of the provider machinery gets built.
@@ -561,10 +550,10 @@ direction, not v1-only plumbing.
 
 ### 10.1 Evaluations — `PythonCLIEvaluation` (end-to-end coding agent)
 
-*(Moved here 2026-07-21 from the pre-collapse harness plan: this eval drives
-real `files` + `shell` tools, which the runtime may never name — Router
-keeps the compaction-focused eval over sample tools (Router board 4ce0a1k).
-This one belongs to the layer that composes the roster.)*
+*(This eval drives real `files` + `shell` tools, which the runtime may never
+name — Router keeps the compaction-focused eval over sample tools (Router
+board 4ce0a1k); the end-to-end coding eval belongs to the layer that
+composes the roster.)*
 
 **`PythonCLIEvaluation` (files + shell, end to end).** Drives both core
 tools through a real multi-turn build task, on Apple's Evaluations framework
