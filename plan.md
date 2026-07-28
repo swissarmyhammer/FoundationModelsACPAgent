@@ -409,21 +409,27 @@ it is what a user means by "that conversation." A routerId may well correspond 1
 with a run of the agent, but that is provenance, not structure — **record it as
 metadata inside the session directory, not as a path segment.**
 
-*Upstream consequence — and checking Router turned up a **larger** blocker than the
-routerId segment.* `Router.recordingsDir` is a stored property set once at `init`
-(`Router.swift:67`), and `recordingDirectory(forSessionId:)` derives every session's
-path from it as `<recordingsRoot>/<routerId>/<sessionId>/` (`RoutedLLM.swift:260-266`).
-So **one Router writes every session under one root** — but one agent process serves
-concurrent sessions in *different repos*, and one resident profile means one Router
-holding one loaded model, so a Router-per-project is not available. Project-local
-storage is therefore impossible until Router accepts a **per-session recording root**.
+*Upstream: **resolved 2026-07-28.** Checking Router turned up a larger blocker than
+the routerId segment — `Router.recordingsDir` was set once at `init`, so one Router
+wrote every session under one root, which is fatal for project-local storage when one
+agent process serves sessions in different repos. Filed as `ke41yth`; **it has landed**,
+and in exactly the shape §5 needs:
 
-Filed on Router's board as **`ke41yth`** (per-session recording root, plus the
-omittable routerId segment). It is a **hard blocker for this section**: `makeSession`
-already takes `workingDirectory:`, so Router could derive the path itself, but that
-would put the *location policy* in Router — this package owns that policy (dotfolder
-name, project vs home vs absolute, recording level) and Router owns the writing.
-Handing Router a root preserves the boundary; handing it a policy does not.
+```swift
+func recordingDirectory(forSessionId: ULID, recordingRoot: URL? = nil) -> URL {
+    if let recordingRoot {                       // flat: <root>/<sessionId>/
+        return recordingRoot.appendingPathComponent(sessionId.description, …)
+    }
+    …                                            // legacy: <base>/<routerId>/<sessionId>/
+}
+```
+
+So `makeSession(recordingRoot:)` yields `<cwd>/.<name>/transcripts/<sessionId>/`
+directly — **no routerId segment**, which was the second half of the ask — while
+omitting the parameter preserves the old layout byte-for-byte for existing callers.
+Router's `PerSessionRecordingRootTests` covers both the flat layout and a fork
+nesting under it. The ownership boundary held: Router took a *root*, not a policy, so
+the dotfolder name and the project-vs-home-vs-absolute choice stayed here.*
 
 **ACP's common case gets simpler, not harder.** `session/list` takes an optional
 `cwd` filter, and an editor overwhelmingly wants "sessions for the project I have
@@ -2176,9 +2182,14 @@ Practical decisions:
   `slotMembership(profile:) -> [ModelRef: Set<ModelSlot>]` is the same dedupe one
   level down, and is the precedent to generalize.
 
-  Filed upstream as Router **`kh01tv2`**. Until it lands, keep the warn-and-reuse
-  behavior — but treat it as a known limitation to report honestly ("this project
-  asks for X; the agent is running Y"), never as the intended semantics. Gate waits are `Task`-cancellation-aware, so a
+  Filed upstream as Router **`kh01tv2`** — and **it has landed** (2026-07-28), so the
+  stopgap is retired: per-project profiles are now implementable. Router's
+  `PooledResidencyTests` covers the cases that matter here — two profiles sharing a
+  `ModelRef` load one instance, disjoint profiles are both resident when the union
+  fits, a union that would exceed the budget **fails cleanly rather than exhausting
+  memory**, a shared model unloads only once both profiles release it, concurrent
+  generation over one resident model never overlaps, and the same repo at two
+  revisions deliberately does *not* share. Single-profile callers are unaffected. Gate waits are `Task`-cancellation-aware, so a
   queued session's `session/cancel` never outwaits another session's turn.
 - **`additionalDirectories` is supported: we advertise the capability and confine
   multi-root.** *(Decided 2026-07-26, reversing an earlier "ship single-root, capability

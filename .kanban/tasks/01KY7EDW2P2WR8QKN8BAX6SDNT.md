@@ -111,6 +111,36 @@ comments:
     - Keep: session disappears from subsequent lists; second delete succeeds silently.
     - Add: resume of a deleted session errors; delete of an active session closes it first.
   timestamp: 2026-07-28T16:52:44.857655+00:00
+- actor: claude-code
+  id: 01kynjpja5hdccwb7yfv9pd0v3
+  text: |-
+    **UNBLOCKED 2026-07-28 — Router `ke41yth` has landed. Supersedes the "BLOCKED on Router" comment above.**
+
+    Verified in Router's source, not just the board:
+
+    ```swift
+    func recordingDirectory(forSessionId sessionId: ULID, recordingRoot: URL? = nil) -> URL {
+        if let recordingRoot {
+            return recordingRoot.appendingPathComponent(sessionId.description, isDirectory: true)
+        }
+        return recordingsBase
+            .appendingPathComponent(routerId.description, isDirectory: true)
+            .appendingPathComponent(sessionId.description, isDirectory: true)
+    }
+    ```
+
+    Both halves of the ask are in one clean change:
+    - **Per-session root** — `makeSession(recordingRoot:)` gives `<cwd>/.<name>/transcripts/<sessionId>/` directly, so one Router can write sessions in different repos.
+    - **No routerId segment** on that path, which was the second half. Omitting the parameter reproduces the old `<base>/<routerId>/<sessionId>/` layout exactly, so existing callers are untouched.
+
+    Router ships `PerSessionRecordingRootTests` covering the flat layout and a fork nesting under it with no routerId segment.
+
+    The ownership boundary held as argued: Router took a **root**, not a policy. The dotfolder name, the project-vs-home-vs-absolute choice, and the `.gitattributes` placement all stayed here, and `TranscriptStore` still never records.
+
+    **So the write path is unblocked and this task can be implemented end to end.** Nothing in it now waits on another repo. Read side (`sessions(inProject:)`, `projects.jsonl` registry, title derivation, `updatedAt`, cursor pagination, tombstone delete) was already unblocked; the write path was the only piece pending.
+
+    Reminder of the corrections layered above, since they contradict parts of the original description: transcripts are **committed** (no `.gitignore`; write `.gitattributes` with `linguist-generated=true` and `sessions.jsonl merge=union`), **no redaction**, delete is a **tombstone** not a hard delete, and `title`/`updatedAt` are optional in `SessionInfo` rather than owed.
+  timestamp: 2026-07-28T23:59:28.581156+00:00
 title: Untitled
 ---
 |---|---|

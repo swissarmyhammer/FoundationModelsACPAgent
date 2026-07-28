@@ -139,6 +139,28 @@ comments:
 
     **Elicitation (see also `h30sjw3`).** Sharper than "unstable-only": `elicitation/create` and `elicitation/complete` appear in the unstable meta as **method names with no `$defs` at all** — neither schema file defines a single elicitation type. Meanwhile the docs show `capabilities.elicitation: {form: {}, url: {}}` as first-class while the vendored stable `ClientCapabilities` has **only `_meta`**. The docs are ahead of the schema we generate from. Three normative rules worth carrying regardless: agents **MUST NOT** fall back to form mode when URL mode is unavailable (the tempting shortcut, explicitly forbidden — decline instead); clients **MUST** return `-32602` for an unsupported mode (so receiving it is our bug); and `elicitationId` need only be unique among **outstanding URL elicitations on that connection**, with `elicitation/complete` going **only** to the client that received the original request.
   timestamp: 2026-07-28T18:51:34.126669+00:00
+- actor: claude-code
+  id: 01kynjpy8vm4nmqs9k9v3h6xyx
+  text: |-
+    **Router `kh01tv2` has landed 2026-07-28 — the profile-collision stopgap is retired.**
+
+    Supersedes the earlier comment that said "keep warn-and-reuse until it lands." **Per-project profiles are now implementable**: a repo whose `.<name>/config.yaml` names its own `profile:` gets it, rather than a warning and whatever model was already resident.
+
+    Verified in Router's `PooledResidencyTests`, which covers the cases this task depends on:
+    - two profiles naming the same models **share one loaded instance** and both generate;
+    - disjoint profiles are **both resident** when the union fits the budget;
+    - a union that would exceed the budget **fails cleanly rather than exhausting memory** — the correctness property this ask was really about;
+    - a shared model **unloads only once both profiles release it**;
+    - concurrent generation over one resident model **never overlaps** (the model-level `generationGate` doing its job);
+    - the same repo pinned to **two different revisions does not share**;
+    - single-profile callers behave exactly as before pooling.
+
+    Consequence for the config-options work in this task: the `model` selector is no longer limited to the resident profile's standard/flash slots. **Switching profiles — models that are not currently loaded — is now available**, so the selector can offer the configured candidates rather than just the two resident ones. Worth reconsidering the option's `description`, which I had specified to warn users that "model" meant slots only.
+
+    Also landed: Router `ke41yth` (per-session recording root, no routerId segment), which unblocks `ax6sdnt`'s write path — see that task.
+
+    **Both Router asks from the v2 audit are now closed, and Router's board is 101/101 done with 624 tests green.** Of the four day-one built-in packages, `files` and `shell` are complete; `mcp` and `skills` are the remaining critical path.
+  timestamp: 2026-07-28T23:59:40.827324+00:00
 depends_on:
 - 01KY7EDAAEV7M16J19CESQ54ZR
 - 01KY7EDW19VD4WHHX8K612FMY1
