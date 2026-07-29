@@ -1,4 +1,39 @@
 ---
+comments:
+- actor: claude-code
+  id: 01kypyd9gpwpxkb2bctfhmh5s2
+  text: |-
+    **2026-07-29 — `Instructions.md` uses Extras for both stacking and templating. Do not hand-roll the layer walk.** Plan §6.0 now spells out the composition, and the Extras API matches this task's rules exactly rather than approximately:
+
+    ```swift
+    // Stacking: content(_:) returns the NEAREST layer's file, whole — precisely
+    // "nearest wins, wholesale replace". Nil means no layer overrode the floor.
+    let source = stack.content("Instructions.md")
+
+    // Trust is derived from provenance, not configured.
+    let text  = source ?? Self.builtinInstructions
+    let trust: TemplateEngine.Trust = (source == nil) ? .trusted : .untrusted
+
+    // Templating: the engine takes the same stack, so {% include %} resolves
+    // _partials/ through the same layering.
+    let rendered = try engine.render(text, context: context, trust: trust)
+    ```
+
+    Three points that change how this is built:
+
+    - **No layer-walking of our own.** `DotfolderStack.content(_:)` *is* the resolution rule — this task names precedence rather than implementing it. (`nearest(_:)` / `locate(_:)` exist if a diagnostic needs to report *which* file won.)
+    - **Trust is derived, not a flag.** `content(_:)` returning `nil` means nothing on disk overrode the compiled-in floor, so the text is ours and renders **trusted**; anything it returns came from a user or project file and renders **untrusted**. There is no third case and nothing to keep in sync — layers 2 and 3 are both untrusted, so they never need distinguishing.
+    - **Partials stack too, and that is the real win.** `TemplateEngine(partials:)` takes the same stack, so an `{% include "role" %}` in a user-level `Instructions.md` resolves `_partials/` with nearest-layer-wins. **A project can override one partial without replacing the whole prompt** — recovering the granularity that wholesale replacement otherwise costs, without inventing a merge rule for prose. Worth a test.
+
+    The untrusted render is §4's existing one: validated, side-effect-free, no filesystem or exec reach, metered on include-depth, loop-iteration, and output-size budgets. A hostile `Instructions.md` in a cloned repo is bounded by the same limits as any other untrusted document.
+
+    Tests to add:
+    - [ ] No file on disk → compiled-in text, rendered **trusted**.
+    - [ ] User-layer file → that text, rendered **untrusted**.
+    - [ ] Project-layer file → wins over user layer, still untrusted.
+    - [ ] `{% include %}` of a partial present in both layers resolves to the project's copy while the base prompt still comes from the user layer.
+    - [ ] An untrusted `Instructions.md` attempting filesystem or exec reach is refused, and a runaway include depth is capped.
+  timestamp: 2026-07-29T12:43:22.006127+00:00
 depends_on:
 - 01KY7ECSJGTV23JVX3D4AXZGQM
 position_column: todo

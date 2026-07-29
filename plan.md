@@ -223,7 +223,7 @@ The same two locations carry every layered artifact, not just `config.yaml`:
 | File | User layer | Project layer | Merge rule |
 |---|---|---|---|
 | `config.yaml` | ✅ | ✅ | key-level override (below) |
-| `Instructions.md` (§6.0) | ✅ | ✅ | **wholesale replace**, nearest wins |
+| `Instructions.md` (§6.0) | ✅ | ✅ | **wholesale replace**, nearest wins — `DotfolderStack.content(_:)` *is* the rule |
 | `AGENTS.md` (§6.1) | ✅ | ✅ | **additive**, user first then project |
 | *(skills are **not** in this stack — `~/.skills` + `<project>/.skills`, §6.2)* | — | — | — |
 | `_partials/` (§4 templating) | ✅ | ✅ | nearest layer wins per partial name |
@@ -667,8 +667,45 @@ demand, or it cannot be forked. Consider a `/instructions export home|project`
 builtin alongside `/config export` so the two are symmetric from inside a
 session.
 
-Templating follows §4's one rule, unchanged: the compiled-in copy renders
-**trusted**; layer-2 and layer-3 overrides render **untrusted**.
+#### It is Extras' stack and Extras' engine — not a bespoke lookup
+
+Both halves come from `FoundationModelsExtras`, and the API happens to match this
+section's rules exactly rather than approximately:
+
+```swift
+// Stacking: `content(_:)` returns the NEAREST layer's file, whole — which is
+// precisely "nearest wins, wholesale replace". Nil means no layer overrode it.
+let source = stack.content("Instructions.md")
+
+// Trust falls out of where it came from: a file layer is untrusted, the floor is not.
+let text  = source ?? Self.builtinInstructions
+let trust: TemplateEngine.Trust = (source == nil) ? .trusted : .untrusted
+
+// Templating: the engine takes the stack, so `{% include %}` resolves `_partials/`
+// through the same layering.
+let rendered = try engine.render(text, context: context, trust: trust)
+```
+
+Three things worth drawing out:
+
+- **No layer-walking of our own.** `DotfolderStack.content(_:)` *is* the resolution
+  rule; §6.0 does not implement precedence, it names it. (`nearest(_:)` and
+  `locate(_:)` are there if a diagnostic ever needs to say *which* file won.)
+- **Trust is derived, not configured.** `content(_:)` returning `nil` means nothing on
+  disk overrode the floor, so the text is ours and renders trusted; anything it returns
+  came from a user or project file and renders untrusted. There is no third case, and
+  no flag to get out of sync — layers 2 and 3 are both untrusted, so we never need to
+  distinguish them.
+- **Partials stack too, and that is the useful part.** `TemplateEngine(partials:)`
+  takes the same stack, so an `{% include "role" %}` in a user-level `Instructions.md`
+  resolves against `_partials/` with nearest-layer-wins. **A project can override one
+  partial without replacing the whole prompt** — which recovers the granularity that
+  wholesale replacement otherwise costs, without inventing a merge rule for prose.
+
+The untrusted render is the one already specified in §4 — validated, side-effect-free,
+no filesystem or exec reach, and metered on include-depth, loop-iteration, and
+output-size budgets. A hostile `Instructions.md` in a cloned repo is bounded by the
+same limits as any other untrusted document here.
 
 ### 6.1 Agent-instructions files — AGENTS.md via Extras' `AgentsMd`
 
