@@ -177,8 +177,9 @@ files compose". Each other row answers "which layer wins".
 ### 2.4 Schema and loading
 
 **The `AgentConfiguration` schema** contains `profile` (standard/flash/
-embedding slots), `tools` (built-in sections + `mcp`, §11.2), `recording`,
-`transcripts`, and `compaction`. There is **no `instructions` section**. The
+embedding slots), `tools` (built-in sections + `mcp`, §11.2), `permissions`
+(the ask-before-running mode, §11.7), `recording`, `transcripts`, and
+`compaction`. There is **no `instructions` section**. The
 system prompt is a markdown file (§3.1). The context size comes from the
 model. It is not configurable, and this is intentional.
 
@@ -992,7 +993,8 @@ dependency chain. (The two integration gaps: §14.2.)
 - **`shell`**: the composed `ShellPolicy` (§2.5) gates it. The policy has three
   results (`.allow` / `.ask(reason)` / `.deny(message)`). A
   `ShellDecisionStore` sits behind `remember(...)`. The `allow_always` /
-  `reject_always` options of `session/request_permission` bind to it (§11.7).
+  `reject_always` options of `session/request_permission` bind to it, when the
+  permission mode asks (§11.7).
   **The shell is not root-confined. `additionalDirectories` does not change
   that.** `ShellContext` has no workspace root. `check(workingDirectory:)`
   validates only `..` traversal and existence. Confinement for `shell` is
@@ -1057,7 +1059,8 @@ is why `status` stays `in_progress` across turns. The mapping decisions:
   hints. A UI hint feeds a UI hint. It is never a gate.
 - **`destructiveHint` / `openWorldHint` → `session/request_permission`**: here
   "hosts may gate on annotations" becomes real. The bridge never gates. This
-  package may.
+  package gates only in the `policy` and `ask` modes; the default `"*"` mode
+  never asks (§11.7).
 
 ### 11.6 Reporting: `tool_call_update`
 
@@ -1086,6 +1089,32 @@ update with a new `toolCallId` is the creation.
   notification.
 
 ### 11.7 `session/request_permission`
+
+**The permission mode: allow by default.** Approval prompts cost the user
+time on every tool call. The default is trust: a stock agent never sends
+`session/request_permission`. Asking is an opt-in for the careful, not a toll
+on everyone. The `permissions:` config section (§2.4) controls it:
+
+| Config | Meaning |
+|---|---|
+| absent, or `permissions: "*"` | **the default** — never ask; every tool call that confinement and the deny floor permit runs |
+| `permissions: policy` | defer to each tool's own signals: shell's `.ask` rules, MCP's `destructiveHint` / `openWorldHint` |
+| `permissions: ask` | ask before every tool call |
+| mapping form — `permissions: {shell: policy, mcp: ask}` | one mode per tool; an unmentioned tool uses `"*"` |
+
+Two rules bound the mode:
+
+- **`"*"` does not touch the deny floor.** Denials (§2.5) refuse, with a
+  message, and without a prompt. Allow-everything means "do not ask". It does
+  not mean "permit what is denied".
+- **A layer can only make the mode stricter.** The order is `"*"` → `policy`
+  → `ask`. A project layer can move a tool up this order, never down. If it
+  could, a cloned repo would silently switch off the prompts that a careful
+  user opted into — the same shape as §2.5's denial union.
+
+Under `"*"`, shell's `.ask(reason)` outcomes resolve as allow, and MCP's
+hints never gate. Under `policy`, each signal does what it says. Under `ask`,
+every call asks. The wire shape below applies whenever the mode does ask.
 
 The shape: `{sessionId, title, options[≥1], description?, subject?}`. The
 prompt copy (`title`/`description`) is separate from the structured `subject`.
