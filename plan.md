@@ -386,6 +386,62 @@ Layout:
             transcript.jsonl
 ```
 
+### One ACP session is one root Router session — and nothing else is
+
+*(Decided 2026-07-29. Getting this correspondence exact now is what keeps sub-agent
+sessions well organized later, rather than needing a layout change once
+`FoundationModelsAgents` lands.)*
+
+**The ACP `sessionId` *is* the root Router session's ULID.** Not a mapping, not a
+translation table — the same identifier, serialized. ACP's `SessionId` is an opaque
+string and a ULID is one, so there is no reason to mint a second id and every reason
+not to: a mapping table is a thing that can drift, and the first symptom would be a
+`session/resume` that restores the wrong conversation.
+
+**Router already distinguishes two kinds of descendant, and they are not the same
+thing.** This is worth stating precisely because the words are easy to blur:
+
+| | What it is | How it links | Directory |
+|---|---|---|---|
+| **fork** — `fork(workingDirectory:)` | a *branch of the same conversation* | `parentId` set to the parent session | nests: `<rootId>/<forkId>/` |
+| **agent spawn** — `agentSpawn: AgentSpawn(parentSessionId:parentToolCallId:)` | a *sub-agent launched by a tool call*, possibly in another tree entirely | `parentToolCallId` — the tool call that spawned it | its own directory; linkage is the id, not nesting |
+
+**Neither is an ACP session.** Forks and sub-agents never receive an ACP `sessionId`,
+never appear in `session/list`, and never accept `session/prompt`. From the client's
+side a sub-agent is something the agent *did* — a tool call with a `kind` and
+content — not a second conversation it can talk to. That is the honest projection:
+ACP's session noun means "a conversation a client drives," and a sub-agent is not one.
+
+**`AgentSpawn.parentToolCallId` closes the identity chain.** It is documented as "the
+correlation id a transcript browser matches against that turn's recorded tool-call
+entry" — which is the *same* id as ACP's `toolCallId`, Router's
+`SessionEvent.toolCall(id:)`, the MCP call handle, and `OperationEvent.correlationID`
+(§9.2). So a sub-agent's transcript is reachable from exactly the tool call the client
+watched execute, with no extra bookkeeping. One key, end to end, now spanning five
+layers.
+
+**Two rules fall out, and both are cheap only if written down now:**
+
+- **`session/list` filters to roots.** A directory walk over project-local transcripts
+  (§5) would otherwise surface nested fork directories and sibling sub-agent
+  directories as if they were conversations. The test is exact: **listable iff
+  `parentId == nil` and `agentSpawn == nil`.** Both facts are already on the sidecar,
+  so this costs a predicate, not a schema.
+- **`session/close` closes the tree.** v2 requires cancelling the session's ongoing
+  work and freeing its resources "as if `session/cancel` had been called" — and a
+  running fork or an in-flight sub-agent is that session's ongoing work. Closing the
+  root must terminate its descendants, or a closed session keeps burning a model gate
+  on work nobody is watching.
+
+**Where a sub-agent's transcript lands, given project-local storage.** Router's model
+says an agent spawn may sit "under an entirely different router or recording tree,"
+which is right: a sub-agent given its own working directory belongs to *that*
+project's transcripts, not the parent's. So sub-agents are **siblings** under whatever
+project root their cwd implies, linked by `parentToolCallId` rather than by nesting —
+while forks, which share the parent's conversation, keep nesting under it as Router
+already does. The `session/list` predicate above is what keeps siblings from cluttering
+the picker.
+
 ### Transcripts are committed — the transcript is the source
 
 **Decision: transcripts are checked in, not ignored.** The framing is that a
@@ -1425,10 +1481,12 @@ container must be **rehydratable** via `session/resume` with
 have joined late or missed messages from. The transcript is
 what backs that replay.
 
-The identity chain established elsewhere pays off here a third time: Apple's
+The identity chain established elsewhere pays off here again: Apple's
 `Transcript.ToolCall.id` = Router's `SessionEvent.toolCall(id:)` = ACP's
-`toolCallId` = the MCP call handle = `OperationEvent.correlationID`. One stable key,
-which is also what SwiftUI `ForEach` needs.
+`toolCallId` = the MCP call handle = `OperationEvent.correlationID` =
+**`AgentSpawn.parentToolCallId`** (§5). One stable key across five layers — which is
+also what SwiftUI `ForEach` needs, and what makes a sub-agent's transcript reachable
+from exactly the tool call the client watched execute.
 
 **Mapping, and where it runs out:**
 
@@ -2052,7 +2110,7 @@ and anything with no peer is a capability switched off honestly, never faked.
 |---|---|
 | the agent behind the connection | `RoutedACPAgent` over its `Router`. `initialize` negotiates `protocolVersion: 2` and reports `capabilities.session` (baseline `{}` at minimum) with the nested capabilities we actually implement: `prompt` (which content types — below), `mcp: {stdio: {}, http: {}}` (§8.7), `delete` (per §5's retention decision: advertised), `additionalDirectories: {}` (advertised — confinement is multi-root; see below and §7.1). **`capabilities` / `info`, not `agentCapabilities` / `agentInfo`** — v2 renamed both sides symmetrically. `authMethods` is absent/empty, which is what excuses us from `auth/login` + `auth/logout` |
 | prompt content types (`capabilities.session.prompt`) | what the model can actually consume. Text always. `image` / `audio` / `embeddedContext` are advertised **only** if the roster can act on them — an honest `{}`-absent capability beats accepting an image and dropping it. `resource_link` is **not** capability-gated, so it arrives regardless: resolve `file://` inside the session root set via the `files` tool (§7.1), refuse every other scheme and every out-of-bounds path with a reason — declining to fetch an arbitrary `http://` URI is the safe answer, not merely the honest one |
-| session (`sessionId`, `cwd`, `mcpServers`, `additionalDirectories`) | a `RoutedSession` composed per cwd — `session/new(cwd)` ⇒ per-cwd config layer + roster + instructions → `router.makeSession(...)`. `cwd` MUST be absolute, and the config layer, the §6.1 AGENTS.md walk, and the transcript location stay keyed off **`cwd` alone** — and `cwd` is now literally where transcripts are written (§5), which is why the spec's "MUST be an absolute path" and "MUST be part of the session's effective root set" are load-bearing rather than cosmetic. **`additionalDirectories` expands confinement only** — `PathGuard` gets the root set, `ShellPolicy` accepts those roots as valid working directories; every path absolute, invalid entries skipped-and-logged, order preserved. **`mcpServers` is no longer accepted-and-ignored** — it is connected before tools reach `makeSession` (§8.7) |
+| session (`sessionId`, `cwd`, `mcpServers`, `additionalDirectories`) | **one ACP session is one *root* Router session, and the ACP `sessionId` is that session's ULID** — the same identifier, not a mapping (§5). Forks and sub-agents are never ACP sessions. A `RoutedSession` composed per cwd — `session/new(cwd)` ⇒ per-cwd config layer + roster + instructions → `router.makeSession(...)`. `cwd` MUST be absolute, and the config layer, the §6.1 AGENTS.md walk, and the transcript location stay keyed off **`cwd` alone** — and `cwd` is now literally where transcripts are written (§5), which is why the spec's "MUST be an absolute path" and "MUST be part of the session's effective root set" are load-bearing rather than cosmetic. **`additionalDirectories` expands confinement only** — `PathGuard` gets the root set, `ShellPolicy` accepts those roots as valid working directories; every path absolute, invalid entries skipped-and-logged, order preserved. **`mcpServers` is no longer accepted-and-ignored** — it is connected before tools reach `makeSession` (§8.7) |
 | `session/prompt` | **acknowledgement, not the turn.** v2's response is `{}`, returned immediately on acceptance. **Order matters and an earlier revision of this row had it backwards:** respond `{}` *first*, then emit `user_message`, then `state_update: running`, then the turn's output, then `idle` + `stopReason`. Emitting the notification before the response means a client can see an update for a prompt it has not yet had acknowledged. **The wire package supplies the primitive**: `AgentSideConnection.afterRespondingToCurrentRequest(_:)` defers work until the `{}` has gone out, so use it rather than a detached task that races the response. The handler dispatches slash commands (§6.2) before any of this. Echoing the prompt is a **MUST** — "the Agent MUST report where the user message was inserted in session history" — and that update is the source of truth for the agent-owned `messageId`; a `user_message_chunk` stream satisfies it equally. **One prompt per session at a time**: `idle` means "ready to process a new prompt," so a `session/prompt` arriving while not idle is a client error, not a queue — queueing stays composer-owned (§6.2), which is why Router's own prompt queue is deliberately not exposed over ACP |
 | `state_update` (`running` / `idle` / `requires_action`) | **the turn state machine, and it needs a named owner in the conformance.** `running` on turn start; `requires_action` **whenever we block on the human** — around `session/request_permission` and around every elicitation round-trip (§8), paired with Router's `awaitingUser { }` so the per-model gate is released at the same moment the protocol says "blocked on user"; back to `running` on the answer; `idle` with a `stopReason` at turn end. Background work may continue while `idle` and its notifications do not change the state |
 | `StopReason` | the turn's disposition: completed → `end_turn` ("no more work after the language model finishes responding without requesting more tools"), guardrail refusal → `refusal`, `cancel()` → `cancelled`, budget exhaustion → `max_tokens`, tool-loop cap → `max_turn_requests`. Extensible via `_`-prefixed values. **Catch the cancellation exception and map it** — the spec requires agents to "catch exceptions from aborted API calls and report the semantically meaningful `cancelled` stop reason"; a Swift `CancellationError` escaping as a JSON-RPC error or as `refusal` is the failure this names |
@@ -2060,10 +2118,10 @@ and anything with no peer is a capability switched off honestly, never faked.
 | `session/cancel` (notification) | the session's cancel. v2 gives it a defined confirmation: respond to every pending permission request with the **cancelled outcome**, stop work, then emit `state_update` `idle` with `stopReason: "cancelled"`. There is no pending request to resolve any more. **Router's in-flight turn cancellation is still the gap** — a turn already handed to the model runs to completion, so today the honest report is "we stopped listening" |
 | `usage_update` | `turnEnded(TokenUsage)` → `{used, size, cost?}` — the context meter, native (§9.2) |
 | `available_commands_update` | the session's slash-command registry (§6.2) — published at session start and re-published whenever a source changes (skill discovered, template edited). v2 confirms our dispatch decision: clients invoke commands as **ordinary user-message text** in `session/prompt`, so dispatch must happen at the prompt owner. Extras' `argumentHint` maps to `AvailableCommandInput`, which requires a `type` discriminator — `{type: "text", hint: …}`; custom input types MUST begin with `_` |
-| `session/list` | `TranscriptStore.sessions(inProject:)`. **`SessionInfo` needs more than the store currently promises** (§5): `sessionId`, `cwd` (required, absolute), `title` — optional in the schema (only `sessionId` + `cwd` are required), but we generate and persist one anyway; "may be auto-generated from the first prompt" — `updatedAt` (RFC 3339), and `additionalDirectories` as the **complete ordered** list (so order is persisted per session, not recomputed). Request params are `cwd` (filter) and `cursor`; the response carries `nextCursor`. **Cursor pagination is ours to implement**: opaque tokens, a bounded page size, an error on an invalid cursor. Baseline — not capability-gated |
+| `session/list` | `TranscriptStore.sessions(inProject:)`. **`SessionInfo` needs more than the store currently promises** (§5): `sessionId`, `cwd` (required, absolute), `title` — optional in the schema (only `sessionId` + `cwd` are required), but we generate and persist one anyway; "may be auto-generated from the first prompt" — `updatedAt` (RFC 3339), and `additionalDirectories` as the **complete ordered** list (so order is persisted per session, not recomputed). Request params are `cwd` (filter) and `cursor`; the response carries `nextCursor`. **Cursor pagination is ours to implement**: opaque tokens, a bounded page size, an error on an invalid cursor. **Listable iff it is a root**: `parentId == nil` and `agentSpawn == nil` (§5), or a directory walk would surface forks and sub-agents as if they were conversations. Baseline — not capability-gated |
 | `session_info_update` | title/metadata changing mid-session (e.g. the moment the first prompt yields a title) |
 | `session/resume` (`replayFrom`) | Router restore. v2 folded `session/load` in. **The client sends `cwd` and it MUST match the original** — so validate the client's `cwd` against the one Router recorded at session creation and error on mismatch rather than silently re-rooting confinement; `additionalDirectories` is **authoritative and replaceable on every resume**: a non-empty list is the complete resulting root set, it may legitimately differ from the previous one, and omitted/empty means *no* additional roots — never inherit the session's former roots. `replayFrom: {"type":"start"}` replays before the response returns; omitted/`null` skips replay. **Replay emits whole-message upserts** (`user_message` / `agent_message` / `agent_thought`) reusing the original `messageId`s — **not** the `*_chunk` variants a live turn produces. `ReplayFrom` is an *inclusive cursor* whose `start` is one variant, so write the replay path parameterized by cursor rather than hardcoded to replay-everything. **Replay comes from Router's full recorded history** (the conversation the user actually had); **the live session is constructed from the newest compaction checkpoint** (the model's working transcript) — two different transcripts, deliberately. Restore reassembles this package's side (config layer, instructions, confinement) from the recorded cwd (Router board 6j4bven) |
-| `session/close` | the agent drops the session from its bookkeeping. v2 makes this a **MUST**: cancel ongoing work **"as if `session/cancel` had been called"** — which carries cancellation's full semantics, so pending permission requests get the cancelled outcome and a `state_update` `idle` with `stopReason: "cancelled"` is emitted **before** the close response — then free resources: in-flight MCP calls, detached work, spawned stdio server processes. Recording closed, transcript **retained** on disk |
+| `session/close` | the agent drops the session from its bookkeeping. v2 makes this a **MUST**: cancel ongoing work **"as if `session/cancel` had been called"** — which carries cancellation's full semantics, so pending permission requests get the cancelled outcome and a `state_update` `idle` with `stopReason: "cancelled"` is emitted **before** the close response — then free resources: in-flight MCP calls, detached work, spawned stdio server processes, **and the session's descendants** — a running fork or in-flight sub-agent is this session's ongoing work, and leaving it burning a model gate after close is the failure this MUST exists to prevent (§5). Recording closed, transcript **retained** on disk |
 | `session/delete` | **capability-gated (`capabilities.session.delete`); advertised, implemented as delisting** (§5, revised). The schema scope is narrow — "deleting an existing session **from `session/list`**" — and soft-vs-hard is explicitly not mandated, so we write a tombstone in `sessions.jsonl` and **leave `transcript.jsonl` on disk**: under §5 the transcript is committed source, and a picker affordance must not delete tracked files. Already-deleted / never-existent SHOULD succeed silently (a tombstone is naturally idempotent). Two implementation-defined behaviors, both decided: an active session is closed first (`session/close` semantics), and **resuming a deleted session errors** — a delete a later resume silently undoes is not a delete |
 | session config options (`session/set_config_option`, `config_option_update`) | **now has a real peer, and it is Router's whole job.** v2 replaced modes with typed config options in categories `mode` / `model` / `model_config` / `thought_level`. `model` → the resident profile's slots (standard/flash) — profile and model switching finally gets a protocol-native surface. Fields are `configId`, `name`, `type` (`select` \| `boolean`), `currentValue`, `category`, and for selects an `options` array (`groupId` for grouping). A `set` returns the **complete** option list so dependent options can update; the agent may also push `config_option_update`. Every option MUST have a default so a client that ignores the feature still works. **The `session/new` and `session/resume` responses are where the list is first advertised** (both carry an optional `configOptions`), not just the `set` reply — so the selector must be constructible at session-creation time. **Day one ships one real option**, not an empty array: a `select` in category `model` over the resident profile's standard/flash slots — both already loaded, so it needs no upstream work and specifically not `kh01tv2`, which is only required to switch *profiles*. Array order is significant; `set` and the push both return the **complete** set, never a delta |
 | `plan_update` | **no peer — off, stated honestly.** Router has no planning noun, and v2 only says agents *SHOULD* report plans. `PlanUpdateContent` is a tagged union whose every variant MUST carry a `planId`; entries are `{content, priority, status}`. If a planner ever lands (FoundationModelsAgents), this is its surface. We emit nothing, and we say so rather than leaving it unmentioned |

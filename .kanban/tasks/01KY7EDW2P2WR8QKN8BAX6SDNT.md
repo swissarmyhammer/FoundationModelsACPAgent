@@ -141,6 +141,34 @@ comments:
 
     Reminder of the corrections layered above, since they contradict parts of the original description: transcripts are **committed** (no `.gitignore`; write `.gitattributes` with `linguist-generated=true` and `sessions.jsonl merge=union`), **no redaction**, delete is a **tombstone** not a hard delete, and `title`/`updatedAt` are optional in `SessionInfo` rather than owed.
   timestamp: 2026-07-28T23:59:28.581156+00:00
+- actor: claude-code
+  id: 01kypy4vwj70r5gx810bhwx4h2
+  text: |-
+    **2026-07-29 — the ACP-session ↔ Router-session correspondence, and the two filters it implies.** New plan §5 subsection.
+
+    **The ACP `sessionId` IS the root Router session's ULID** — the same identifier, serialized, not a mapping. ACP's `SessionId` is an opaque string and a ULID is one. A mapping table would be a thing that can drift, and the first symptom is a `session/resume` restoring the wrong conversation.
+
+    **Router already distinguishes two kinds of descendant, and they are not the same thing:**
+
+    | | What | Links via | Directory |
+    |---|---|---|---|
+    | **fork** (`fork(workingDirectory:)`) | a branch of the *same conversation* | `parentId` | nests: `<rootId>/<forkId>/` |
+    | **agent spawn** (`AgentSpawn(parentSessionId:parentToolCallId:)`) | a *sub-agent launched by a tool call*, possibly in another tree | `parentToolCallId` | own directory; linkage is the id, not nesting |
+
+    **Neither is an ACP session.** Forks and sub-agents never get an ACP `sessionId`, never appear in `session/list`, never accept `session/prompt`. From the client's side a sub-agent is something the agent *did* — a tool call — not a second conversation it can drive.
+
+    ## Two rules this task must implement
+
+    **1. `session/list` filters to roots.** A directory walk over project-local transcripts would otherwise surface nested fork directories and sibling sub-agent directories as if they were conversations. The predicate is exact: **listable iff `parentId == nil` and `agentSpawn == nil`.** Both facts are already on Router's sidecar, so this costs a predicate, not a schema change. This supersedes the earlier "has a persisted transcript is the listability test" — that rule stands for zero-turn sessions but is not sufficient on its own.
+
+    **2. Sub-agent transcripts are siblings, not children.** Router's model says an agent spawn may sit "under an entirely different router or recording tree," which is right: a sub-agent given its own working directory belongs to *that* project's transcripts. So sub-agents land as siblings under whatever project root their cwd implies, linked by `parentToolCallId`; forks keep nesting under the parent as Router already does. Rule 1 is what keeps siblings out of the picker.
+
+    ## Why it matters now, before Agents exists
+
+    `FoundationModelsAgents` is plan-only, so none of this is exercised yet — but the transcript layout is being built by this task, and getting the correspondence right now is what avoids a layout migration later. The listability predicate in particular is cheap to add today and expensive to retrofit once directories exist in the wild.
+
+    Also note `AgentSpawn.parentToolCallId` is documented as "the correlation id a transcript browser matches against that turn's recorded tool-call entry" — the **same** id as ACP's `toolCallId`, Router's `SessionEvent.toolCall(id:)`, the MCP call handle, and `OperationEvent.correlationID`. One key across five layers, which is what makes a sub-agent's transcript reachable from exactly the tool call the client watched.
+  timestamp: 2026-07-29T12:38:45.906368+00:00
 title: Untitled
 ---
 |---|---|
