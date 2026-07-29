@@ -287,6 +287,32 @@ That default matters now that the project dotfolder is **committed** (§5): a us
 clicking "always allow" must not silently produce a tracked file change in a shared
 repo. Preserve it.
 
+**Compliance audit, 2026-07-29 — three of four already comply.** The rule is easy to
+state and easy to check, because it has a mechanical test: **a tool package that
+depends on Extras' `DotfolderStack` is doing configuration it should not be doing.**
+Building the config stack is this package's job, and Extras is the substrate *we*
+use — a leaf reaching for it is the smell.
+
+| Package | Reads config files? | Extras dep | Verdict |
+|---|---|---|---|
+| `FoundationModelsFileTool` | none — takes `root`, `additionalRoots`, `readOnly`, `allowSymlinks` | no | ✅ complies |
+| `FoundationModelsMCP` | none — takes server descriptions | no | ✅ complies |
+| `FoundationModelsShelltool` | **YAML in three files** (`ShellPolicy`, `ShellDecisionStore`, `ShellDotfolder`) | **yes** | ❌ the sole violator |
+| `FoundationModelsSkills` | takes **layer roots** (§6.2.1) | n/a — plan only | ✅ by design, see below |
+
+Checked against the sources, not assumed: FileTool's and MCP's only `contentsOf:` uses
+are array appends and reading files the tools *operate on*, never configuration.
+Shelltool's Extras dependency exists specifically to resolve `~/.config/shell/` — so
+**that dependency disappearing is the signal `f9q2338` is done**.
+
+**Skills is different in kind, and its difference is the right one.** It takes a
+folder stack rather than a config object, because for skills **the folders are the
+data**: a skill *is* a directory containing `SKILL.md`, per agentskills.io. That is
+content discovery, not self-configuration — the package still reads no config file and
+still names no dotfolder convention. Same principle, different noun: **the host
+supplies locations, the package supplies behavior** (§6.2.1). A skills registry handed
+roots is exactly as compliant as a policy handed rules.
+
 **Upstream ask on `FoundationModelsShelltool`.** None of this is possible today:
 `ShellSecurityConfig` and `PatternRule` are internal, and the only public `ShellPolicy`
 initializer takes config file URLs. Filed as Shelltool **`f9q2338`** — the requirement is that a host can build a
