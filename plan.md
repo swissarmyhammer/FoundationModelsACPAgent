@@ -225,7 +225,7 @@ The same two locations carry every layered artifact, not just `config.yaml`:
 | `config.yaml` | ✅ | ✅ | key-level override (below) |
 | `Instructions.md` (§6.0) | ✅ | ✅ | **wholesale replace**, nearest wins — `DotfolderStack.content(_:)` *is* the rule |
 | `AGENTS.md` (§6.1) | ✅ | ✅ | **additive**, user first then project |
-| *(skills are **not** in this stack — `~/.skills` + `<project>/.skills`, §6.2)* | — | — | — |
+| *(skills are their own stack — `DotfolderStack(name: "skills")`, §6.2.1)* | — | — | — |
 | `_partials/` (§4 templating) | ✅ | ✅ | nearest layer wins per partial name |
 | `transcripts/` (§5) | opt-in | ✅ **default** | not layered — a location, not content |
 | *(no per-tool config files — tools take **objects**, §4.1)* | — | — | `decisions.yaml` lands here once Shelltool `f9q2338` allows host-owned persistence |
@@ -786,7 +786,7 @@ logged; builtin names are reserved and never overridden):
    command per discovered skill, pushed via `commandUpdates` as files
    change). Day one ships the seam, not a conformer.
 3. **Skills** — the *data* lane, and as of 2026-07-28 the **only** one.
-   **`~/.skills/<id>/SKILL.md` and `<project>/.skills/<id>/SKILL.md`**,
+   **`~/.config/skills/<id>/SKILL.md` and `<project>/.skills/<id>/SKILL.md`**,
    discovered and rendered by **`FoundationModelsSkills`**, surfaced through
    `SlashCommandProviding`. One skill = one `/id` command.
 
@@ -835,54 +835,49 @@ autocomplete, app palette) and the ACP conformance fires
 with.
 
 
-### 6.2.1 Where skills live — `~/.skills` and `<project>/.skills`
+### 6.2.1 Where skills live — a `skills` dotfolder stack of their own
 
-**Decision (2026-07-28): skills sit outside the `<name>`-qualified stack**, at
-`~/.skills/<id>/SKILL.md` and `<project>/.skills/<id>/SKILL.md`. Two layers, user
-then project, nearest wins by directory name — the same precedence as everything
-else, but rooted differently.
+**Decision (2026-07-29): skills resolve through `DotfolderStack(name: "skills")`** —
+`$XDG_CONFIG_HOME/skills/` (default `~/.config/skills/`) and `<cwd>/.skills/`. Two
+layers, user then project, nearest wins by directory name. **`skills` is simply the
+`<name>` for a dotfolder stack**, so this needs no new mechanism and no divergence from
+§4's XDG rule: the same type that gives our agent `~/.config/<name>/` + `<cwd>/.<name>/`
+gives skills `~/.config/skills/` + `<cwd>/.skills/`.
 
-**Why unqualified.** `<name>` exists to isolate *products* (§4): two frontends
-passing different names share nothing. That is right for configuration, instructions,
-and transcripts, all of which describe how *this agent* behaves. A skill is not that.
-[agentskills.io](https://agentskills.io) is an ecosystem format, and a "deploy to
-staging" skill is a property of the **user** and the **repo**, not of whichever agent
-happens to read it. Namespacing skills under `<name>` would mean writing a skill once
-per product and keeping the copies in sync, which is exactly the outcome a shared
-format exists to prevent.
+*(An earlier revision proposed `~/.skills` on shared-convention grounds — `~/.ssh`,
+`~/.gnupg` — and argued `DotfolderStack` could not express it. Both the premise and the
+workaround were unnecessary: there is no reason to leave XDG, and the stack already
+produces exactly the right pair.)*
+
+**The name is a constant, not our `<name>`, and that is the whole point.** `<name>`
+isolates *products* (§4): two frontends passing different names share nothing. Skills
+must not be isolated that way. [agentskills.io](https://agentskills.io) is an ecosystem
+format, and a "deploy to staging" skill is a property of the **user** and the **repo**,
+not of whichever agent reads it — namespacing skills under `<name>` would mean writing
+each skill once per product and keeping the copies in sync. Fixing the stack name to
+`skills` gives exactly the sharing we want while staying inside the ordinary layering.
 
 There is already precedent in this plan: §6.1's project-level `AGENTS.md` is
-*unqualified* for the same reason — it is an ecosystem artifact — while the
-user-level one is namespaced because a home-directory `AGENTS.md` is our extension
-with no spec behind it. Skills follow the ecosystem rule on both layers.
+unqualified for the same reason — it is an ecosystem artifact — while the user-level
+one is namespaced because a home-directory `AGENTS.md` is our extension with no spec
+behind it.
 
-**The consequence, stated plainly: `<name>` isolation does not extend to skills.**
-Two agents built on this stack with different dotfolder names share one skill
-library. That is the intent, not an oversight — but §4 makes a point of name-based
-isolation, so the exception belongs on the record.
+**The consequence, stated plainly: `<name>` isolation does not extend to skills.** Two
+agents built on this stack with different dotfolder names share one skill library.
+That is the intent, not an oversight, and it belongs on the record because §4 makes a
+point of name-based isolation.
 
-**`~/.skills` is a deliberate divergence from the XDG rule** §4 follows for config.
-The reasoning that put configuration at `~/.config/<name>/` (no dot, because
-`~/.config` is already hidden) does not transfer: this is not our config, it is a
-library many tools may read, so it takes the older shared-convention shape —
-`~/.ssh`, `~/.gnupg` — and matches its project-side sibling `<project>/.skills`
-exactly. *(If XDG consistency is preferred later, `~/.config/skills/` is the
-alternative and would come free from `DotfolderStack(name: "skills")`, whose project
-layer already resolves to `<cwd>/.skills`. Noted, not recommended.)*
+**Ownership: we construct the stack, Skills takes what it is given.** Per §4.1, tool
+packages receive locations rather than deriving them, so
+`FoundationModelsSkills` accepts its layer roots as a construction parameter — an
+ordered list, lowest precedence first — and names no dotfolder convention of its own.
+This package passes the roots from `DotfolderStack(name: "skills", workingDirectory:
+cwd)`. That keeps Skills reusable (a host wanting the client guide's cross-client
+`.agents/skills` layout passes those roots instead) without either side hardcoding a
+path the other cares about.
 
-**Ownership: the `.skills` literal belongs here, not in Skills.** This is the same
-rule the rest of the plan follows — the frontend passes `<name>` and this package
-derives locations (§4); Router receives values, never policy (§5's recording root).
-So **`FoundationModelsSkills` takes its roots as a construction parameter** — an
-ordered list, lowest precedence first — and holds no opinion about `.skills`, `~`, or
-dotfolders. This package computes `[~/.skills, <cwd>/.skills]` and passes them in.
-
-Two things follow. Skills stays reusable: another host can put its library anywhere
-without a fork or a flag. And there is **no upstream dependency on `DotfolderStack`**
-for this, which matters because `DotfolderStack` cannot express `~/.skills` — it
-always yields `~/.config/<name>/` on the user side. Skills' plan currently describes
-discovery "over `DotfolderStack.layers`"; that needs to become "over the roots it is
-given." A plan-level change there, with no code to migrate.
+**Trust:** both layers are untrusted (§4) — neither is a builtin default — so skill
+markdown renders under the untrusted template rules and can only ever produce a prompt.
 
 **The `skills:` config section stays in the `<name>` stack**, which is not a
 contradiction: the *content* is shared, the *behavior* is per-agent. `skills: false`
@@ -900,7 +895,7 @@ two things must change before it works** — one in Extras, one here.)*
 
 **What lines up.** Skills already models discovery as an ordered two-layer walk with
 full-replace by directory name — the same precedence shape this package uses
-everywhere else — so pointing it at `~/.skills` and `<project>/.skills` (§6.2.1) is a
+everywhere else — so pointing it at the `skills` stack's roots (§6.2.1) is a
 change of *roots*, not of mechanism. `SkillListing.id` is
 documented as "directory name = the `/command`", and its §7.1 already describes the
 user-driven path exactly as §6.2 needs it: the listing informs the UI, and invoking
