@@ -2115,7 +2115,7 @@ and anything with no peer is a capability switched off honestly, never faked.
 | the agent behind the connection | `RoutedACPAgent` over its `Router`. `initialize` negotiates `protocolVersion: 2` and reports `capabilities.session` (baseline `{}` at minimum) with the nested capabilities we actually implement: `prompt` (which content types — below), `mcp: {stdio: {}, http: {}}` (§8.7), `delete` (per §5's retention decision: advertised), `additionalDirectories: {}` (advertised — confinement is multi-root; see below and §7.1). **`capabilities` / `info`, not `agentCapabilities` / `agentInfo`** — v2 renamed both sides symmetrically. `authMethods` is absent/empty, which is what excuses us from `auth/login` + `auth/logout` |
 | prompt content types (`capabilities.session.prompt`) | what the model can actually consume. Text always. `image` / `audio` / `embeddedContext` are advertised **only** if the roster can act on them — an honest `{}`-absent capability beats accepting an image and dropping it. `resource_link` is **not** capability-gated, so it arrives regardless: resolve `file://` inside the session root set via the `files` tool (§7.1), refuse every other scheme and every out-of-bounds path with a reason — declining to fetch an arbitrary `http://` URI is the safe answer, not merely the honest one |
 | session (`sessionId`, `cwd`, `mcpServers`, `additionalDirectories`) | a `RoutedSession` composed per cwd — `session/new(cwd)` ⇒ per-cwd config layer + roster + instructions → `router.makeSession(...)`. `cwd` MUST be absolute, and the config layer, the §6.1 AGENTS.md walk, and the transcript location stay keyed off **`cwd` alone** — and `cwd` is now literally where transcripts are written (§5), which is why the spec's "MUST be an absolute path" and "MUST be part of the session's effective root set" are load-bearing rather than cosmetic. **`additionalDirectories` expands confinement only** — `PathGuard` gets the root set, `ShellPolicy` accepts those roots as valid working directories; every path absolute, invalid entries skipped-and-logged, order preserved. **`mcpServers` is no longer accepted-and-ignored** — it is connected before tools reach `makeSession` (§8.7) |
-| `session/prompt` | **acknowledgement, not the turn.** v2's response is `{}`, returned immediately on acceptance. **Order matters and an earlier revision of this row had it backwards:** respond `{}` *first*, then emit `user_message`, then `state_update: running`, then the turn's output, then `idle` + `stopReason`. Emitting the notification before the response means a client can see an update for a prompt it has not yet had acknowledged. The handler dispatches slash commands (§6.2) before any of this. Echoing the prompt is a **MUST** — "the Agent MUST report where the user message was inserted in session history" — and that update is the source of truth for the agent-owned `messageId`; a `user_message_chunk` stream satisfies it equally. **One prompt per session at a time**: `idle` means "ready to process a new prompt," so a `session/prompt` arriving while not idle is a client error, not a queue — queueing stays composer-owned (§6.2), which is why Router's own prompt queue is deliberately not exposed over ACP |
+| `session/prompt` | **acknowledgement, not the turn.** v2's response is `{}`, returned immediately on acceptance. **Order matters and an earlier revision of this row had it backwards:** respond `{}` *first*, then emit `user_message`, then `state_update: running`, then the turn's output, then `idle` + `stopReason`. Emitting the notification before the response means a client can see an update for a prompt it has not yet had acknowledged. **The wire package supplies the primitive**: `AgentSideConnection.afterRespondingToCurrentRequest(_:)` defers work until the `{}` has gone out, so use it rather than a detached task that races the response. The handler dispatches slash commands (§6.2) before any of this. Echoing the prompt is a **MUST** — "the Agent MUST report where the user message was inserted in session history" — and that update is the source of truth for the agent-owned `messageId`; a `user_message_chunk` stream satisfies it equally. **One prompt per session at a time**: `idle` means "ready to process a new prompt," so a `session/prompt` arriving while not idle is a client error, not a queue — queueing stays composer-owned (§6.2), which is why Router's own prompt queue is deliberately not exposed over ACP |
 | `state_update` (`running` / `idle` / `requires_action`) | **the turn state machine, and it needs a named owner in the conformance.** `running` on turn start; `requires_action` **whenever we block on the human** — around `session/request_permission` and around every elicitation round-trip (§8), paired with Router's `awaitingUser { }` so the per-model gate is released at the same moment the protocol says "blocked on user"; back to `running` on the answer; `idle` with a `stopReason` at turn end. Background work may continue while `idle` and its notifications do not change the state |
 | `StopReason` | the turn's disposition: completed → `end_turn` ("no more work after the language model finishes responding without requesting more tools"), guardrail refusal → `refusal`, `cancel()` → `cancelled`, budget exhaustion → `max_tokens`, tool-loop cap → `max_turn_requests`. Extensible via `_`-prefixed values. **Catch the cancellation exception and map it** — the spec requires agents to "catch exceptions from aborted API calls and report the semantically meaningful `cancelled` stop reason"; a Swift `CancellationError` escaping as a JSON-RPC error or as `refusal` is the failure this names |
 | `session/update` notification stream | Router's session event stream — full mapping table in §9.2. `ToolCallID` *is* the wire `toolCallId` (§6) |
@@ -2264,7 +2264,151 @@ checkpoint-aware restore) is the one v2 requires, so none of it is optional and
 none of it is speculative. The corollary cuts the other way too: **"capability
 off" is not available for list/resume/close.** They must work.
 
-### 10.1 Evaluations — `PythonCLIEvaluation` (end-to-end coding agent)
+### 10.1 The test ladder — five tiers, and only two of them need a model
+
+*(Designed 2026-07-29. The organizing question: **"do the tools work" and "does the
+model use the tools" are different questions**, and conflating them is what makes
+integration suites slow, flaky, and gated into irrelevance. Only the second needs a
+model.)*
+
+| Tier | Model | Client | Tools | Gated | Answers |
+|---|---|---|---|---|---|
+| 0 — unit | — | — | — | no | do the tools work in isolation *(**done**: FileTool 461, Shelltool 298, Router 624)* |
+| 1 — golden conformance (`78sq1kx`) | scripted | recording sink | fake | no | is the wire shape right — ordering, upserts, replay |
+| 2 — **tool integration (`42qaxpc`)** | scripted | recording sink | **real** | no | do real tools work through the real conformance |
+| 3 — stdio contract (`yxj21nw`) | scripted | subprocess | real | yes | does framing survive a real process boundary |
+| 4 — eval (`hhzwwz2`) | **real** | in-process | real | yes | does the model *choose* to use tools, and succeed |
+
+**There is no "fake client" to build, because `ClientSideConnection` is the client.**
+That is worth stating plainly, since it is the thing people assume they must write and
+then never do. The wire package's own tests show the shape — a `Client` conformance is
+roughly ten lines:
+
+```swift
+private struct RecordingClient: Client {
+    let updates: UpdateCollector
+    func sessionUpdate(_ n: UpdateSessionNotification) async { await updates.append(n) }
+    func requestPermission(_ p: RequestPermissionRequest) async throws
+        -> RequestPermissionResponse { .init(outcome: .selected(optionId: "allow")) }
+}
+let (clientEnd, agentEnd) = InMemoryTransport.pair()
+let client = await ClientSideConnection(stream: clientEnd) { _ in RecordingClient(updates: c) }
+```
+
+That is a **sink**, not a simulation: it records notifications and answers permission
+with a scripted decision. Nothing renders, nothing pretends to be a person. Everything
+above tier 0 uses the same ten lines.
+
+**Tier 2 is the missing piece and the one that answers the question.** Real
+`ToolCatalog`, real `FileTool` and `Shelltool`, real `RoutedACPAgent`, real
+`session/new(cwd)` against a temp directory — with the *model* scripted. The seam is
+already public: inject a `ModelLoader` whose `LoadedLLMContainer.makeSession` returns a
+`LanguageModelSessionBackend` that emits a predetermined tool call. Router's own tests
+do exactly this (`ScriptedOverflowBackend`), so the pattern is proven and needs no
+upstream change. No MLX, no download, no Apple-silicon gate — it runs in CI on every
+commit.
+
+What tier 2 proves that no other tier does:
+
+1. **Composition** — `ToolCatalog` constructs each tool with the right `ToolContext`:
+   the root set derived from `cwd` + `additionalDirectories`, and that tool's decoded
+   config section.
+2. **Confinement through the protocol** — `session/new(cwd)` actually bounds
+   `PathGuard`. Ask the `files` tool for a path outside the root set and get a refusal,
+   driven from the client end rather than by constructing a guard directly.
+3. **Projection** — a real tool call becomes a correct `tool_call_update`: stable
+   `toolCallId` across its lifetime, `in_progress` → `completed`, populated
+   `locations`, `rawInput`/`rawOutput`, and the `title` on first report.
+4. **Turn ordering** — `{}` → `user_message` → `running` → tool updates →
+   `idle(end_turn)`, in that order (§9.1).
+5. **Enable/disable** — `shell: false` in the project config means no shell tool
+   reaches the session, verified from the client end.
+
+**The rule that makes tier 2 trustworthy: assert the filesystem, never the
+transcript.** If the test says a file was written, `read` it from disk and compare —
+do not believe a `tool_call_update` that claims success. This is the same discipline
+§10.3's evaluators use ("mechanical, re-verified outside the agent"), and it is what
+separates a test that catches a broken tool from one that only catches a broken
+*report* of a tool.
+
+**MCP gets tier-2 coverage for free**, once `4egfvw3` lands: `FoundationModelsMCP`
+already ships `MCPTestServerCLI` and a `ScriptedServer`, so the `mcp` built-in can be
+exercised against a real server process rather than a mock — spawn it, list its tools,
+call one, and assert the `tool_call_update` correlation holds.
+
+**Tiers 3 and 4 stay gated, and stay small.** Tier 3 exists for exactly one thing a
+tier-2 test cannot see: real process boundaries — stdout carrying nothing but ndJSON
+while `shell` runs subprocesses that write to *their* stdout, and messages containing
+no embedded newlines (§Transports, both protocol MUSTs). Tier 4 is the eval below.
+
+### 10.2 `Examples/acp-agent` — the example program, and the tier-3 fixture (`w7pce78`)
+
+**One executable serves both purposes, deliberately.** The family convention is an
+`Examples/` directory of runnable programs (Router and MCP both ship one), and the
+example this package owes is the obvious one: **how do I build an ACP server CLI on
+top of this?** That is also precisely what tier 3 needs to spawn. Writing it twice
+would guarantee the example rots while the fixture stays green.
+
+`Examples/acp-agent/main.swift`, and it should stay small enough to read in one
+sitting — the composition is the lesson:
+
+```swift
+// 1. the dotfolder name is the frontend's choice (§4) — everything else derives
+let agent = try await RoutedACPAgent(name: "acp-agent", workingDirectory: cwd)
+
+// 2. serve ACP over stdio; stdout is sacred, logs go to stderr
+let connection = await AgentSideConnection(stream: .stdio, logger: .standardError) { _ in agent }
+await connection.run()
+```
+
+What the example must demonstrate, because these are the questions a reader actually
+has: choosing the dotfolder name and what it controls; serving over
+`AgentSideConnection(stream: .stdio)`; **logging to stderr only**; and where a frontend
+would add its own tools to the merged roster (§7.1). What it must *not* grow into is a
+second product — no argument parsing beyond what stdio serving needs, no rendering, no
+config wizardry. The production CLI grows in its own repo from a copy of this (§9).
+
+#### Streaming is the part that is easy to get wrong
+
+ACP over stdio is **full duplex, not request/response**, and v2 makes that unavoidable
+rather than optional: `session/prompt` returns `{}` immediately and the entire turn —
+`user_message`, `running`, every `agent_message_chunk` and `tool_call_update`, then
+`idle` — arrives afterwards as notifications on the same pipe the connection is still
+reading requests from. An example written as a read-request / write-response loop
+would deadlock the moment it tried to emit an update mid-turn, so the shape matters
+pedagogically as much as functionally.
+
+Three things the wire package already handles, worth knowing so the example does not
+reinvent them:
+
+- **Frame serialization.** `StdioTransport`'s write "runs under a lock, so overlapping
+  calls from the connection actor's reentrant methods serialize into non-interleaved
+  frames." Concurrent sessions emitting updates simultaneously cannot produce a torn
+  line — exactly the corruption that would otherwise stay invisible until some client
+  failed to parse.
+- **Respond-then-notify ordering.**
+  `AgentSideConnection.afterRespondingToCurrentRequest(_:)` is the primitive §9.1's
+  prompt row requires: it defers work until *after* the `{}` has gone out, which is how
+  "respond first, then emit `user_message`" is achieved without racing. Use it rather
+  than spawning a detached task and hoping.
+- **Lifecycle.** The client launches the agent as a subprocess and terminates it; the
+  agent reads until stdin EOF. There is no teardown handshake to implement.
+
+**The one hazard the example must actively defend against is subprocess stdout.**
+`shell` spawns children, and a child that *inherits* the agent's stdout writes its
+output directly into the ACP frame stream — silently corrupting it in a way no unit
+test would catch, because the tool itself behaved correctly. Shelltool captures child
+output rather than inheriting it (§7.1), and tier 3 exists to prove that end to end:
+run a real shell turn through the real binary and assert every byte of stdout parses as
+ndJSON. That is a protocol MUST ("the agent MUST NOT write non-ACP content to stdout"),
+not a house rule.
+
+The wire package's `acp-test-agent` is the precedent and the contrast: it answers
+`initialize` and nothing else, existing purely for transport tests. Ours composes the
+real runtime and real tools, which is why it doubles as the tier-3 fixture rather than
+being a third thing to maintain.
+
+### 10.3 Evaluations — `PythonCLIEvaluation` (end-to-end coding agent)
 
 *(This eval drives real `files` + `shell` tools, which the runtime may never
 name — Router keeps the compaction-focused eval over sample tools (Router
