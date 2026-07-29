@@ -165,7 +165,6 @@ depends_on:
 - 01KY7EDAAEV7M16J19CESQ54ZR
 - 01KY7EDW19VD4WHHX8K612FMY1
 - 01KY7EDW27992S3HF62045QR29
-- 01KY7EDW2P2WR8QKN8BAX6SDNT
 position_column: todo
 position_ordinal: '8780'
 title: 'The Agent conformance: ACP methods over Router sessions'

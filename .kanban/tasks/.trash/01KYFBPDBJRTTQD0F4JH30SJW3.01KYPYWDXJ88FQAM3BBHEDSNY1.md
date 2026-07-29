@@ -1,8 +1,7 @@
 ---
 assignees:
 - claude-code
-depends_on:
-- 01KYD3V73Z3DP0QPQZGSEVE4R0
+depends_on: []
 position_column: todo
 position_ordinal: 8d80
 title: 'ACPTunnelTransport + elicitation: the unstable-schema surface (gated, follow-up)'

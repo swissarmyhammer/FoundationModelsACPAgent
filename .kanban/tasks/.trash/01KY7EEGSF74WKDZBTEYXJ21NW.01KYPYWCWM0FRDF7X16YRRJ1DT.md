@@ -1,7 +1,5 @@
 ---
-depends_on:
-- 01KY7EEGS0JJ5G6720FGSEBT3M
-- 01KY7EDW2P2WR8QKN8BAX6SDNT
+depends_on: []
 position_column: todo
 position_ordinal: '8880'
 title: 'acp-agent CLI: stdio serving + stdout purity (gated)'

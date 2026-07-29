@@ -1,6 +1,5 @@
 ---
-depends_on:
-- 01KY7EEGS0JJ5G6720FGSEBT3M
+depends_on: []
 position_column: todo
 position_ordinal: '8e80'
 title: 'Tool integration tests: real tools, scripted model, ungated'

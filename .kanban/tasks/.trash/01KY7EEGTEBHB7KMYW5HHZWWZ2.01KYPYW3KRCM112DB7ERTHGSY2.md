@@ -1,6 +1,5 @@
 ---
 depends_on:
-- 01KY7EEGS0JJ5G6720FGSEBT3M
 - 01KY7EEGSF74WKDZBTEYXJ21NW
 position_column: todo
 position_ordinal: 8a80
