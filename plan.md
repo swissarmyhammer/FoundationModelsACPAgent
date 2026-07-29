@@ -705,7 +705,7 @@ JSON-RPC error, or as `refusal`, is the failure that the spec names.
 
 ### 8.3 The upsert algebra
 
-The compaction and replay decisions stand on this. The agent-generated
+The replay decision stands on this. The agent-generated
 **`messageId`** keys the messages. v2: "the Agent owns session history, so it
 is the single source of message identity". That is our invariant ("the
 FoundationModels `Transcript` is the record") as the protocol's own position.
@@ -718,9 +718,8 @@ FoundationModels `Transcript` is the record") as the protocol's own position.
 | `*_chunk` | appends |
 | any update with a new `messageId` | a new message begins |
 
-The third row is load-bearing. It is why compaction can correct a client's
-view: we send the changed messages again. It is why replay-as-upserts
-converges a client that saw the chunk stream. `ContentChunk` requires
+The third row is load-bearing. It is why replay-as-upserts converges a client
+that saw the chunk stream (§7.4). `ContentChunk` requires
 `messageId` **and** `content`. The whole-message forms require only
 `messageId`.
 
@@ -732,7 +731,7 @@ converges a client that saw the chunk stream. `ContentChunk` requires
 | `reasoningDelta` | `agent_thought_chunk` |
 | `toolCall(id:name:argumentsJSON:)` | `tool_call_update` — v2 has no `tool_call` create variant; the first update carrying an unseen `toolCallId` *is* the creation, and SHOULD carry `title` |
 | `toolStatus(id:status:summary:)` | `tool_call_update` (`running` → `in_progress`) |
-| `compaction(CompactionResult)` | `agent_message` / `user_message` upserts — §8.5 |
+| `compaction(CompactionResult)` | `usage_update` — the context meter drops; no message change (§8.5) |
 | `turnEnded(TokenUsage)` | `usage_update` |
 | turn start / turn end | `state_update` — `running`, then `idle(stopReason)` |
 
@@ -753,18 +752,32 @@ This is an easy place for a wire error.
 
 ### 8.5 Compaction on the wire
 
-Compaction rewrites the history. A client that only accumulates becomes stale,
-silently. **At compaction, send `agent_message` / `user_message` upserts for
-the changed `messageId`s.** Send `content: null` for a message that the fold
-removed. Send the new `content` for a message that it rewrote. Add one
-`agent_message` for the fold's summary. The protocol's own vocabulary can show
-a history rewrite. There is no `_meta` extension and no client round-trip. The
-fallback for a client that missed the upserts, or that came late:
-`session/resume` + `replayFrom: start` (§7.4).
+**Verified in Router (2026-07-29): compaction does not rewrite the durable
+history.** The record is an append-only journal. Compaction appends a
+`CompactionSegment` checkpoint through the same recorder chokepoint
+(`diffAndRecordCompaction` → `recorder.append`). Router's reconstruction doc
+states it plainly: "compaction only ever appends (nothing before it is ever
+touched or removed)". Reconstruction gives two views over the one journal:
+`.fullHistory` (every entry; the checkpoint shows among them as a fold marker)
+and `.restore` (the newest checkpoint plus the entries after it — the model's
+working transcript). Only the model's in-memory working set is non-monotonic.
 
-**Upstream (open):** we must know which `messageId`s a fold touched. Thus
-Router's `CompactionResult` must carry message-level identity, not only a
-checkpoint.
+**Decision: the wire keeps the same shape — compaction changes no
+user-visible message.** We send no upserts that clear or rewrite folded
+messages. The session history that a client shows is the full conversation,
+and it only grows. What compaction emits:
+
+- **`usage_update`** with the new `used` size. The visible effect is that the
+  context meter drops.
+- Nothing else. The fold summary is model-context material. It stays in the
+  journal as the checkpoint, reachable through the transcript (§19.1). It is
+  not a chat message.
+
+Replay (§7.4) is consistent for free: it replays the full history, and
+checkpoint entries are not messages, so replay does not emit them. This also
+removes the old upstream ask on Router (`CompactionResult` message identity):
+we never need to know which messages a fold touched, because we never touch
+them on the wire.
 
 ### 8.6 Cancellation (`session/cancel`)
 
@@ -1502,7 +1515,7 @@ each contract here.
 Three representations, in a strict derivation order. Do not reverse the order:
 
 ```
-Transcript (FoundationModels)          THE RECORD — authoritative, non-monotonic
+Transcript (FoundationModels)          THE RECORD — journaled append-only (§8.5)
    |  Router projects changes
 SessionEvent  +  SessionProjection     keyed on Apple's own Transcript.ToolCall.id
    |  this package maps (§8.4)
@@ -1666,7 +1679,6 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 | `c2pad49` | FoundationModelsExtras | third `SlashCommand.Body` case, `.rendered` (§14.2) | **open** — workaround available, prefer the case |
 | `939nnzx` | FoundationModelsFileTool | multi-root `PathGuard` (§7.2) | **in progress** — the only blocker for `additionalDirectories` |
 | `4egfvw3` | FoundationModelsMCP | needed for tier-2 MCP coverage via `MCPTestServerCLI` (§20.1) | open |
-| — | FoundationModelsRouter | `CompactionResult` carries message-level identity (§8.5) | **open** — required for compaction upserts |
 | — | FoundationModelsRouter | in-flight turn cancellation (§8.6) | **open** — until then, "we stopped listening" |
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor (upstream promoted elicitation to stable), then generated `elicitation/*` types + `Client` entry points (§16) | **filed** 2026-07-29 — the wire is otherwise done: stable v2 verified, 95 tests green |
 | `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **filed** 2026-07-29 — blocked until upstream stabilizes `mcp/*` |
