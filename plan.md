@@ -567,48 +567,44 @@ are obligations rather than passthroughs:
   cursor should encode a stable sort key (`updatedAt` descending + `sessionId` as
   tiebreak) rather than an offset, so pagination survives concurrent writes.
 
-**`session/delete` — revised 2026-07-28 to a soft delete, and the reversal matters.**
-An earlier revision of this section decided a **hard** delete: unlink the session
-directory, "because a soft-deleted transcript still contains the prompts." That
-reasoning was sound when it was written and stopped being sound a few decisions
-later, when transcripts became **committed source** rather than a privacy hazard to
-contain. Two things changed under it:
+**`session/delete` removes the session — a real delete, not a tombstone.** Advertise
+`capabilities.session.delete` and honor it by removing
+`<cwd>/.<name>/transcripts/<sessionId>/` and its `sessions.jsonl` entry.
 
-- **The protocol asks for far less than we were offering.** The schema is narrow and
-  explicit: `DeleteSessionRequest` is "Request parameters for deleting an existing
-  session **from `session/list`**," and the capability means "the agent supports
-  deleting sessions **from `session/list`**." The normative requirement is only that
-  "deleted sessions no longer appear in future `session/list` results," and the page
-  says outright that soft-versus-hard "is not mandated — only the user-facing
-  behavior matters." We were volunteering destruction the spec never asked for.
-- **Destroying source on a list-removal gesture is disproportionate.** Under §5's own
-  framing the transcript *is* the source and the code is its output. A client
-  affordance that removes an item from a picker must not delete tracked files — it
-  would also stage a git deletion the user then has to reckon with, which is the
-  agent quietly editing a repo as a side effect of a UI click.
+The protocol permits either: the schema scopes the method to "deleting an existing
+session **from `session/list`**," and the page says soft-versus-hard "is not mandated —
+only the user-facing behavior matters." So this is our call, and a user who asks to
+delete a session means the session should be gone.
 
-And the original privacy argument no longer even pays: transcripts are committed, so
-a hard delete leaves the content in git history regardless. It buys nothing and costs
-the source.
+**Version control is what makes deleting safe, not a reason to avoid it.** A soft
+delete was considered and rejected: the argument for it was that transcripts are
+committed source and destroying source on a picker gesture is disproportionate. That
+argument proves too much — code is source too, and `git rm` is an ordinary operation
+precisely *because* history preserves what it removes. The same property applies here.
+Retention in git history is the safety net that makes the delete recoverable, not a
+caveat that makes it pointless.
 
-**Decision: advertise `capabilities.session.delete` and implement it as delisting.**
-Mark the session deleted — a tombstone in `sessions.jsonl`, which is append-only and
-already the listability index (§`session/list`) — and **leave `transcript.jsonl`
-untouched on disk**. `session/list` stops returning it, which is precisely and
-entirely what the protocol requires. Deleting the *content* stays a deliberate act the
-user performs on their own repo with their own tools, which is the right place for a
-destructive operation on committed source.
+A tombstone is also actively worse in a committed-file world: `sessions.jsonl` would
+grow forever with records of things the user deleted, and that growth ships to every
+clone. Meanwhile the transcript itself would still sit in the working tree, still be
+committed, still reach teammates — "deleted" but present, which is the confusing state
+no user asked for.
+
+**What to be honest about:** the delete removes it from the working tree and the index.
+Anything already committed remains in git history — recoverable, which is the point,
+but it means neither the ACP response nor the docs may claim the content is
+unrecoverable.
 
 **Two implementation-defined behaviors the spec hands us; both decided:**
 
 - **Deleting an active session:** close it first (`session/close` semantics — cancel
-  work, emit `idle` with `stopReason: "cancelled"`, free resources), then delist.
-- **Resuming a deleted session:** **error.** With the transcript still on disk, resume
-  could technically succeed, but a delete gesture that a later resume silently undoes
-  is not a delete. Recovery is un-tombstoning the record by hand, not a protocol call.
+  work, emit `idle` with `stopReason: "cancelled"`, free resources, close descendants),
+  then delete.
+- **Resuming a deleted session:** it fails, because the transcript is genuinely gone
+  from the working tree. No special case needed — the absence does the work.
 
-Already-deleted and never-existent both **SHOULD succeed silently** — with a tombstone
-this is naturally idempotent, which is a small argument in its own favor.
+Already-deleted and never-existent both **SHOULD succeed silently**, which a directory
+removal gives naturally: nothing to remove is not an error.
 
 The ownership boundary, stated plainly: **`TranscriptStore` never records and
 never restores.** It owns exactly three things — the root location policy, the
@@ -2122,7 +2118,7 @@ and anything with no peer is a capability switched off honestly, never faked.
 | `session_info_update` | title/metadata changing mid-session (e.g. the moment the first prompt yields a title) |
 | `session/resume` (`replayFrom`) | Router restore. v2 folded `session/load` in. **The client sends `cwd` and it MUST match the original** — so validate the client's `cwd` against the one Router recorded at session creation and error on mismatch rather than silently re-rooting confinement; `additionalDirectories` is **authoritative and replaceable on every resume**: a non-empty list is the complete resulting root set, it may legitimately differ from the previous one, and omitted/empty means *no* additional roots — never inherit the session's former roots. `replayFrom: {"type":"start"}` replays before the response returns; omitted/`null` skips replay. **Replay emits whole-message upserts** (`user_message` / `agent_message` / `agent_thought`) reusing the original `messageId`s — **not** the `*_chunk` variants a live turn produces. `ReplayFrom` is an *inclusive cursor* whose `start` is one variant, so write the replay path parameterized by cursor rather than hardcoded to replay-everything. **Replay comes from Router's full recorded history** (the conversation the user actually had); **the live session is constructed from the newest compaction checkpoint** (the model's working transcript) — two different transcripts, deliberately. Restore reassembles this package's side (config layer, instructions, confinement) from the recorded cwd (Router board 6j4bven) |
 | `session/close` | the agent drops the session from its bookkeeping. v2 makes this a **MUST**: cancel ongoing work **"as if `session/cancel` had been called"** — which carries cancellation's full semantics, so pending permission requests get the cancelled outcome and a `state_update` `idle` with `stopReason: "cancelled"` is emitted **before** the close response — then free resources: in-flight MCP calls, detached work, spawned stdio server processes, **and the session's descendants** — a running fork or in-flight sub-agent is this session's ongoing work, and leaving it burning a model gate after close is the failure this MUST exists to prevent (§5). Recording closed, transcript **retained** on disk |
-| `session/delete` | **capability-gated (`capabilities.session.delete`); advertised, implemented as delisting** (§5, revised). The schema scope is narrow — "deleting an existing session **from `session/list`**" — and soft-vs-hard is explicitly not mandated, so we write a tombstone in `sessions.jsonl` and **leave `transcript.jsonl` on disk**: under §5 the transcript is committed source, and a picker affordance must not delete tracked files. Already-deleted / never-existent SHOULD succeed silently (a tombstone is naturally idempotent). Two implementation-defined behaviors, both decided: an active session is closed first (`session/close` semantics), and **resuming a deleted session errors** — a delete a later resume silently undoes is not a delete |
+| `session/delete` | **capability-gated (`capabilities.session.delete`); advertised, and a real delete** — remove `<cwd>/.<name>/transcripts/<sessionId>/` and its `sessions.jsonl` entry. The schema scopes the method to removal "from `session/list`" and leaves soft-vs-hard unmandated, so it is our call: a user asking to delete means gone. **Version control is what makes that safe** — `git rm` is ordinary precisely because history preserves what it removes — so retention in git history is the recovery path, not a reason to keep the file in the working tree. Already-deleted / never-existent succeed silently (nothing to remove is not an error). An active session is closed first (`session/close` semantics, descendants included); resuming a deleted session simply fails, since the transcript is gone. Be honest in the docs: committed history still holds it |
 | session config options (`session/set_config_option`, `config_option_update`) | **now has a real peer, and it is Router's whole job.** v2 replaced modes with typed config options in categories `mode` / `model` / `model_config` / `thought_level`. `model` → the resident profile's slots (standard/flash) — profile and model switching finally gets a protocol-native surface. Fields are `configId`, `name`, `type` (`select` \| `boolean`), `currentValue`, `category`, and for selects an `options` array (`groupId` for grouping). A `set` returns the **complete** option list so dependent options can update; the agent may also push `config_option_update`. Every option MUST have a default so a client that ignores the feature still works. **The `session/new` and `session/resume` responses are where the list is first advertised** (both carry an optional `configOptions`), not just the `set` reply — so the selector must be constructible at session-creation time. **Day one ships one real option**, not an empty array: a `select` in category `model` over the resident profile's standard/flash slots — both already loaded, so it needs no upstream work and specifically not `kh01tv2`, which is only required to switch *profiles*. Array order is significant; `set` and the push both return the **complete** set, never a delta |
 | `plan_update` | **no peer — off, stated honestly.** Router has no planning noun, and v2 only says agents *SHOULD* report plans. `PlanUpdateContent` is a tagged union whose every variant MUST carry a `planId`; entries are `{content, priority, status}`. If a planner ever lands (FoundationModelsAgents), this is its surface. We emit nothing, and we say so rather than leaving it unmentioned |
 | `terminal_update` / `terminal_output_chunk` | `shell`'s byte-faithful display stream — **confirmed present in the vendored schema**; mapping in §8.6. Follow-up, not day one |

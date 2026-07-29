@@ -151,7 +151,32 @@ comments:
     **Router already distinguishes two kinds of descendant, and they are not the same thing:**
 
     | | What | Links via | Directory |
-    |---|---|---|---|
+    |
+- actor: claude-code
+  id: 01kypy9q8wef361bqry7c0prxf
+  text: |-
+    **Correction 2026-07-29 — back to a HARD delete. Supersedes my tombstone/delisting comment.**
+
+    My soft-delete argument was that transcripts are committed source, so destroying source on a picker gesture is disproportionate. **That argument proves too much: code is source too, and `git rm` is an ordinary operation precisely *because* history preserves what it removes.** Version control is what makes deleting safe, not a reason to avoid it. I had the relationship backwards — I treated git retention as evidence the delete was pointless, when it is exactly what makes the delete recoverable.
+
+    A tombstone is also actively worse in a committed-file world: `sessions.jsonl` would grow forever with records of things the user deleted, and that growth ships to every clone. Meanwhile the transcript would still sit in the working tree, still be committed, still reach teammates — "deleted" but present, which is a state no user asked for.
+
+    **Implementation: remove `<cwd>/.<name>/transcripts/<sessionId>/` and its `sessions.jsonl` entry.** The protocol permits either (scoped to removal "from `session/list`", soft-vs-hard explicitly not mandated), so it is our call, and a user asking to delete means gone.
+
+    **Restore these acceptance criteria** (they were correct before I revised them away):
+    - [ ] Delete removes the transcript directory and the index entry; the directory no longer exists afterward.
+    - [ ] The session disappears from subsequent `session/list` results.
+    - [ ] A second delete of the same id succeeds silently — nothing to remove is not an error, which a directory removal gives naturally.
+    - [ ] An active session is closed first (`session/close` semantics, **including descendants** per the fork/spawn correspondence), then deleted.
+    - [ ] Resuming a deleted session fails — no special case needed, the absence does the work.
+
+    **Drop** the tombstone criteria and the "un-tombstoning by hand" recovery path.
+
+    **Keep honest in the docs:** the delete clears the working tree and the index; anything already committed remains in git history. That is the recovery path rather than a caveat, but neither the ACP response nor the docs may claim the content is unrecoverable.
+  timestamp: 2026-07-29T12:41:25.020053+00:00
+title: Untitled
+---
+|---|---|---|
     | **fork** (`fork(workingDirectory:)`) | a branch of the *same conversation* | `parentId` | nests: `<rootId>/<forkId>/` |
     | **agent spawn** (`AgentSpawn(parentSessionId:parentToolCallId:)`) | a *sub-agent launched by a tool call*, possibly in another tree | `parentToolCallId` | own directory; linkage is the id, not nesting |
 
