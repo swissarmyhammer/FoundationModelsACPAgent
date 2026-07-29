@@ -1016,7 +1016,8 @@ JSON-RPC over ACP. **`ACPTunnelTransport` goes in this package.** It is an
 never depend on `FoundationModelsACP`. The transport plugs into that package's
 transport factory. The client owns the processes. Thus `StdioServerProcess` is
 not used. Two blocks exist: the wire package must generate the `mcp/*` payload
-types, and the methods must graduate to stable. Ship stdio + http first.
+types (filed as `kdvsjmj` on its board), and the methods must graduate to
+stable. Ship stdio + http first.
 
 **Process lifecycle is FoundationModelsMCP's job, not ours.** It spawns and
 owns the stdio subprocesses. Reconnects and cross-session pooling are upstream
@@ -1400,6 +1401,9 @@ exist in the unstable schema as **method names only**. There are no generated
 types and no handlers. (The docs show a `capabilities.elicitation` field. The
 stable schema does not have it.) The wire package must land the types and the
 client-side handler entry points first. Thus **this is not day-one scope.**
+Upstream has promoted elicitation to stable on its main branch. A schema
+re-vendor brings the types. The work is filed on the wire package's board:
+`7kgq5dw`, then `enzjy0q` (§21).
 The interim: `FoundationModelsMCP`'s coordinator gets a non-ACP fallback. It
 declines each elicitation with a clear reason: "this host cannot ask you
 questions yet". That is honest, and it unblocks the MCP built-in without the
@@ -1664,7 +1668,8 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 | `4egfvw3` | FoundationModelsMCP | needed for tier-2 MCP coverage via `MCPTestServerCLI` (§20.1) | open |
 | — | FoundationModelsRouter | `CompactionResult` carries message-level identity (§8.5) | **open** — required for compaction upserts |
 | — | FoundationModelsRouter | in-flight turn cancellation (§8.6) | **open** — until then, "we stopped listening" |
-| — | FoundationModelsACP | generated types + client handler entry points for `elicitation/*` (§16) and `mcp/*` tunnel (§11.5) | open — both unstable-schema |
+| `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor (upstream promoted elicitation to stable), then generated `elicitation/*` types + `Client` entry points (§16) | **filed** 2026-07-29 — the wire is otherwise done: stable v2 verified, 95 tests green |
+| `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **filed** 2026-07-29 — blocked until upstream stabilizes `mcp/*` |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
 | `6j4bven` | FoundationModelsRouter | checkpoint-aware session restore feeding `session/resume` (§7.4) | Router board |
