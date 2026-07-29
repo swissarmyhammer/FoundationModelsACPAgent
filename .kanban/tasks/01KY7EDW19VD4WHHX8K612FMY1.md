@@ -42,7 +42,41 @@ comments:
     What remains true is the readiness split, which is about shipping order only:
 
     | Half | Needs | Depends on |
-    |---|---|---|
+    |
+- actor: claude-code
+  id: 01kypxerj0fseb2q9hs1jmrgnb
+  text: |-
+    **2026-07-29 — `shell` config resolution: inject our layers, do not let Shelltool use its own dotfolder.** New plan §4.1.
+
+    Three things were being conflated, and only one is `tools:` configuration:
+
+    | | What | Written by | Where |
+    |---|---|---|---|
+    | `tools: shell:` | option-shaped settings, `false` to disable | user | our `config.yaml` |
+    | `shell.yaml` | the **policy ruleset** — `allow`/`deny`/`ask` pattern lists | user | our dotfolder, both layers |
+    | `decisions.yaml` | remembered `allow_always`/`reject_always` answers | **the agent** | our dotfolder, both layers |
+
+    **Why the ruleset is not just another `tools: shell:` key.** §4's merge is key-level override with *wholesale array replacement*. Shell policy needs the opposite — builtin ∪ user ∪ project — because a project tightening its rules must not silently drop the builtin denials protecting it. Putting the lists in `config.yaml` would require a second merge semantics inside the first.
+
+    **The conflict to fix in this task.** Left alone, `ShellPolicy` defaults to `~/.config/shell/config.yaml` and `<git root>/.shell/config.yaml` — a parallel stack unrelated to `<name>`, so a user would configure shell in two unconnected places with no defined precedence. **No upstream change needed: `ShellPolicy(userConfigURL:projectConfigURL:)` is injectable.** When the catalog constructs the shell tool, point both at our layers:
+
+    ```
+    ~/.config/<name>/shell.yaml       <cwd>/.<name>/shell.yaml
+    ~/.config/<name>/decisions.yaml   <cwd>/.<name>/decisions.yaml
+    ```
+
+    (`decisions.yaml` follows automatically — `ShellPolicy` derives it beside whatever config URL it is given.) Shelltool's own defaults stay untouched; they are what make it work standalone, they just never apply inside this agent.
+
+    **One thing already correct upstream, worth not breaking:** `ShellDecisionStore.Scope` defaults to **`.session`** (in memory, written nowhere), with `.project` / `.user` chosen deliberately. That matters now that the project dotfolder is **committed** (§5) — a user clicking "always allow" must not silently produce a tracked file change in a shared repo. Preserve that default when wiring the permission prompt.
+
+    Acceptance criteria to add:
+    - [ ] The constructed `ShellPolicy` reads from `<our dotfolder>/shell.yaml` at both layers, and never from `~/.config/shell/` or `<git root>/.shell/`.
+    - [ ] `decisions.yaml` resolves beside it in our dotfolder.
+    - [ ] A remembered decision defaults to session scope and writes no file unless the user chose `.project` or `.user`.
+  timestamp: 2026-07-29T12:26:41.600820+00:00
+title: Untitled
+---
+|---|---|
     | `/id` commands | Skills M1–M3 + M5 | Extras — shipped |
     | `search`/`list`/`use` tool | Skills M4 | `FoundationModelsOperations` 2/4/5 + `MetadataRegistry` M1–M4 — neither built |
 

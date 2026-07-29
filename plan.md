@@ -228,10 +228,60 @@ The same two locations carry every layered artifact, not just `config.yaml`:
 | *(skills are **not** in this stack — `~/.skills` + `<project>/.skills`, §6.2)* | — | — | — |
 | `_partials/` (§4 templating) | ✅ | ✅ | nearest layer wins per partial name |
 | `transcripts/` (§5) | opt-in | ✅ **default** | not layered — a location, not content |
-| `decisions.yaml` | — | — | Shelltool's, its own stack |
+| `shell.yaml` + `decisions.yaml` (§4.1) | ✅ | ✅ | Shelltool's own layered merge, **relocated into our dotfolder** |
 
 Note `AGENTS.md` is the one **additive** row. Everything else answers "which layer
 wins"; that one answers "in what order do they compose" (§6.1).
+
+#### 4.1 Why `shell` has files of its own, and how they stay in one dotfolder
+
+*(Clarified 2026-07-29 — an earlier revision of the table listed `decisions.yaml` as
+"Shelltool's, its own stack," which described the situation instead of deciding it and
+left a real conflict unresolved.)*
+
+**Three different things were being conflated, and only one of them is `tools:`
+configuration:**
+
+| | What it is | Who writes it | Where |
+|---|---|---|---|
+| `tools: shell:` in `config.yaml` | option-shaped settings, and `false` to disable (§7.1) | the user | our `config.yaml` |
+| `shell.yaml` | the **policy ruleset** — `allow` / `deny` / `ask` pattern lists | the user | our dotfolder, both layers |
+| `decisions.yaml` | remembered `allow_always` / `reject_always` answers | **the agent** | our dotfolder, both layers |
+
+**Why the ruleset is not just another `tools: shell:` key.** §4's merge is key-level
+override with wholesale array replacement — a later layer's array *replaces* an
+earlier one. Shell policy needs the opposite: builtin rules concatenate with user
+rules concatenate with project rules, because a project tightening its own rules must
+not silently drop the builtin denials protecting it. Expressing list-concatenation
+inside a config format whose one rule is replacement would mean a second merge
+semantics living inside the first — precisely the kind of special case §4 exists to
+avoid. So the ruleset keeps its own file and its own merge.
+
+**But it lives in *our* dotfolder, not a second one.** Left alone, `ShellPolicy`
+defaults to `~/.config/shell/config.yaml` and `<git root>/.shell/config.yaml` — a
+parallel stack unrelated to `<name>`, which would mean a user configuring shell in two
+unconnected places with no defined precedence. That is the conflict, and the fix needs
+no upstream change: **`ShellPolicy(userConfigURL:projectConfigURL:)` is injectable, so
+we inject.** This package points both at our own layers:
+
+```
+~/.config/<name>/shell.yaml          <cwd>/.<name>/shell.yaml
+~/.config/<name>/decisions.yaml      <cwd>/.<name>/decisions.yaml
+```
+
+Shelltool's own defaults stay exactly as they are — they are what make it work as a
+standalone tool — they simply never apply inside this agent. Same pattern as every
+other boundary here: the composing layer supplies locations, the tool package supplies
+behavior.
+
+**`decisions.yaml` is written by the agent, which matters now that the project layer
+is committed (§5).** A user clicking "always allow" must not silently produce a tracked
+file change in a shared repo. Shelltool already handles this correctly:
+`ShellDecisionStore.Scope` defaults to **`.session`** — in memory, written nowhere —
+with `.project` and `.user` chosen deliberately when the user picks a persisting
+option. So the agent never writes a tracked file as a side effect; it writes one only
+when the person answering asked it to. Worth keeping that default intact when wiring
+the permission prompt (§9.1).
 
 #### Precedence, stated once
 
