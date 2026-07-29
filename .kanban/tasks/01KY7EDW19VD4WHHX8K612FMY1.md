@@ -51,7 +51,31 @@ comments:
     Three things were being conflated, and only one is `tools:` configuration:
 
     | | What | Written by | Where |
-    |---|---|---|---|
+    |
+- actor: claude-code
+  id: 01kypxnxfjwrj64ztwxxtyyc0q
+  text: |-
+    **Correction 2026-07-29 — supersedes my previous comment. Tool packages take OBJECTS, not config files.**
+
+    My previous comment said to inject `ShellPolicy(userConfigURL:projectConfigURL:)` pointing at our dotfolder. That was a half-measure: it relocates the file I/O rather than removing it, and still leaves two files a user could edit for one tool.
+
+    **The rule is the one the rest of the plan already follows** — configuration is read in exactly one place (our `config.yaml`) and tool packages receive constructed values. Router receives values and never sees our config; Skills takes layer roots rather than naming a dotfolder; FileTool takes a root set and flags; MCP takes server descriptions. `ShellPolicy` reading its own YAML was the sole exception, and the cost of an exception here is a user editing `tools: shell:`, seeing no effect, and never learning that the real rules came from a file they did not know existed.
+
+    **So `tools: shell:` in our `config.yaml` is the whole story**, and this task constructs a `ShellPolicy` value from it.
+
+    **The merge objection I raised earlier dissolves under the object model** — worth stating since I argued the opposite. Shell rules need builtin ∪ user ∪ project while our config merge replaces arrays wholesale, which looked like a reason the ruleset needed its own file. It is not, once the policy is a value: the union happens **in code at construction**, `ShellPolicy(rules: builtin + configured, …)`. Builtin denials are concatenated by us, so **no config layer can remove them** — the security property is now enforced by construction rather than by a merge rule holding.
+
+    **One deliberate exception to §4 precedence: denials union across layers.** Every other key follows later-layer-wins, but a project-layer `deny` list must not replace a user's machine-wide one — opening a repo would otherwise silently drop "never run `rm -rf`" from the user's own machine. Denials are a floor; `allow` / `ask` follow ordinary override. Implement in our codec, where it is visible.
+
+    **Blocked on Shelltool `f9q2338`** — none of this is constructible today: `ShellSecurityConfig` and `PatternRule` are internal, and the only public `ShellPolicy` init takes config URLs. The ask covers public rule types, a value-based initializer, the builtin ruleset as a value, and host-owned decision persistence.
+
+    **Interim until it lands:** inject URLs pointing at our dotfolder (the superseded design). That keeps a single dotfolder even though it does not yet keep a single file — acceptable as a stopgap, not the target.
+
+    Preserve regardless: `ShellDecisionStore.Scope` defaults to `.session` (in memory, written nowhere). The project dotfolder is committed, so "always allow" must not silently produce a tracked file change.
+  timestamp: 2026-07-29T12:30:36.018438+00:00
+title: Untitled
+---
+|---|---|---|
     | `tools: shell:` | option-shaped settings, `false` to disable | user | our `config.yaml` |
     | `shell.yaml` | the **policy ruleset** — `allow`/`deny`/`ask` pattern lists | user | our dotfolder, both layers |
     | `decisions.yaml` | remembered `allow_always`/`reject_always` answers | **the agent** | our dotfolder, both layers |

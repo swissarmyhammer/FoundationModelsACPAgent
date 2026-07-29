@@ -228,210 +228,72 @@ The same two locations carry every layered artifact, not just `config.yaml`:
 | *(skills are **not** in this stack — `~/.skills` + `<project>/.skills`, §6.2)* | — | — | — |
 | `_partials/` (§4 templating) | ✅ | ✅ | nearest layer wins per partial name |
 | `transcripts/` (§5) | opt-in | ✅ **default** | not layered — a location, not content |
-| `shell.yaml` + `decisions.yaml` (§4.1) | ✅ | ✅ | Shelltool's own layered merge, **relocated into our dotfolder** |
+| *(no per-tool config files — tools take **objects**, §4.1)* | — | — | `decisions.yaml` lands here once Shelltool `f9q2338` allows host-owned persistence |
 
 Note `AGENTS.md` is the one **additive** row. Everything else answers "which layer
 wins"; that one answers "in what order do they compose" (§6.1).
 
-#### 4.1 Why `shell` has files of its own, and how they stay in one dotfolder
+#### 4.1 Tool packages take objects, not config files
 
-*(Clarified 2026-07-29 — an earlier revision of the table listed `decisions.yaml` as
-"Shelltool's, its own stack," which described the situation instead of deciding it and
-left a real conflict unresolved.)*
+**Decision (2026-07-29): configuration is read in exactly one place — here — and tool
+packages receive constructed values.** No tool package reads a config file of its own.
 
-**Three different things were being conflated, and only one of them is `tools:`
-configuration:**
+This is not a new rule, it is the rule the rest of the plan already follows and that
+`shell` was quietly violating: Router receives values and never sees our config (§4);
+Skills takes layer *roots* rather than naming a dotfolder convention (§6.2.1); FileTool
+takes a root set and flags; `FoundationModelsMCP` takes server descriptions. Extras is
+"the only thing that touches disk" for configuration. `ShellPolicy` reading its own
+YAML from `~/.config/shell/` was the one exception, and an exception here costs more
+than it saves: a user editing `tools: shell:` in our `config.yaml` and seeing no effect,
+because the real rules came from a file they did not know existed.
 
-| | What it is | Who writes it | Where |
-|---|---|---|---|
-| `tools: shell:` in `config.yaml` | option-shaped settings, and `false` to disable (§7.1) | the user | our `config.yaml` |
-| `shell.yaml` | the **policy ruleset** — `allow` / `deny` / `ask` pattern lists | the user | our dotfolder, both layers |
-| `decisions.yaml` | remembered `allow_always` / `reject_always` answers | **the agent** | our dotfolder, both layers |
+*(This supersedes an earlier revision of this section, which proposed pointing
+Shelltool's config URLs at our dotfolder. That was a half-measure — it relocated the
+file I/O rather than removing it, and left two files a user could edit for one tool.)*
 
-**Why the ruleset is not just another `tools: shell:` key.** §4's merge is key-level
-override with wholesale array replacement — a later layer's array *replaces* an
-earlier one. Shell policy needs the opposite: builtin rules concatenate with user
-rules concatenate with project rules, because a project tightening its own rules must
-not silently drop the builtin denials protecting it. Expressing list-concatenation
-inside a config format whose one rule is replacement would mean a second merge
-semantics living inside the first — precisely the kind of special case §4 exists to
-avoid. So the ruleset keeps its own file and its own merge.
+**So: `tools: shell:` in our `config.yaml` is the whole story**, decoded as Shelltool's
+own option type per §7.1, and this package constructs a `ShellPolicy` value from it.
 
-**But it lives in *our* dotfolder, not a second one.** Left alone, `ShellPolicy`
-defaults to `~/.config/shell/config.yaml` and `<git root>/.shell/config.yaml` — a
-parallel stack unrelated to `<name>`, which would mean a user configuring shell in two
-unconnected places with no defined precedence. That is the conflict, and the fix needs
-no upstream change: **`ShellPolicy(userConfigURL:projectConfigURL:)` is injectable, so
-we inject.** This package points both at our own layers:
+**The merge objection dissolves under the object model, which is worth spelling out
+because the earlier revision argued the opposite.** Shell rules need
+builtin ∪ user ∪ project, while §4's config merge replaces arrays wholesale — that
+looked like a reason the ruleset needed its own file with its own merge. It is not,
+once the policy is a value: the union happens **in code at construction**, not in YAML.
 
-```
-~/.config/<name>/shell.yaml          <cwd>/.<name>/shell.yaml
-~/.config/<name>/decisions.yaml      <cwd>/.<name>/decisions.yaml
+```swift
+ShellPolicy(rules: ShellPolicy.builtinRules + configured, decisions: store)
 ```
 
-Shelltool's own defaults stay exactly as they are — they are what make it work as a
-standalone tool — they simply never apply inside this agent. Same pattern as every
-other boundary here: the composing layer supplies locations, the tool package supplies
-behavior.
+The builtin denials are compiled into Shelltool and concatenated by us, so **no config
+layer can remove them** — which is the security property that mattered, now enforced by
+construction rather than by hoping a merge rule holds.
 
-**`decisions.yaml` is written by the agent, which matters now that the project layer
-is committed (§5).** A user clicking "always allow" must not silently produce a tracked
-file change in a shared repo. Shelltool already handles this correctly:
-`ShellDecisionStore.Scope` defaults to **`.session`** — in memory, written nowhere —
-with `.project` and `.user` chosen deliberately when the user picks a persisting
-option. So the agent never writes a tracked file as a side effect; it writes one only
-when the person answering asked it to. Worth keeping that default intact when wiring
-the permission prompt (§9.1).
+**One deliberate exception to §4's precedence, and it is security-shaped: denials
+union across layers.** Every other key follows the normal later-layer-wins rule, but a
+project-layer `deny` list must **not** replace a user's machine-wide one — otherwise
+opening a repo could silently drop "never run `rm -rf`" from a user's own machine.
+Denials are a floor, not a setting: builtin, user, and project denials all apply.
+`allow` and `ask` follow ordinary override. Stated once here, implemented in our codec,
+where it is visible — rather than as a second merge engine inside a config format.
 
-#### Precedence, stated once
+**`decisions.yaml` is not configuration and needs its own answer.** Remembered
+`allow_always` / `reject_always` answers are accumulated state that the *agent* writes,
+not settings a user authors. The same ownership rule applies to the file: Shelltool
+should define the decision vocabulary and the matching logic; **this package decides
+where, and whether, it persists** — into our dotfolder, under our layering. Shelltool
+already gets the important half right: `ShellDecisionStore.Scope` defaults to
+`.session` — in memory, written nowhere — with `.project` / `.user` chosen deliberately.
+That default matters now that the project dotfolder is **committed** (§5): a user
+clicking "always allow" must not silently produce a tracked file change in a shared
+repo. Preserve it.
 
-**Later layer wins: code defaults < user < project.** A layer that does not mention
-a key is silent on it, not an assertion of the default — so a project layer setting
-only `recording.level` leaves the user layer's profile fully intact.
-
-Missing files are fine; a present-but-malformed file is a hard, early error naming the
-file and line (never silently fall back over a typo'd config). Merge semantics are
-**key-level override**: scalars and arrays replace wholesale when the later layer
-defines them; sections merge by key. Wholesale array replacement matches the family's
-full-replace override rule (Skills' `FolderStack`) and keeps "which models am I
-running?" answerable by reading one file.
-
-**Every dotfolder document is a template first.** Before decoding, each file
-renders through Extras' Stencil-backed `TemplateEngine`: `{{ variables }}`
-from a provided `TemplateContext`, env vars, and well-known values (dotfolder
-name, cwd, date) on the swissarmyhammer ladder (context > env > well-known),
-plus `{% include %}` partials from the stack's `_partials/` (nearest layer
-wins). Defaults render *trusted*; user/project layers *untrusted* (validated,
-side-effect-free — no filesystem or exec capability — and metered, as built:
-include-depth, loop-iteration, and output-size budgets). One rule
-for every format — config YAML, command templates and frontmatter (§6.2),
-`Instructions.md` (§6.0) and `AGENTS.md` (§6.1): **render the whole file, then
-parse**, so even frontmatter values can be templated.
-
-### Schema (config v1 — the config file's own version, unrelated to ACP's)
-
-```yaml
-# ~/.config/<name>/config.yaml  or  <project>/.<name>/config.yaml
-profile:
-  name: coding                    # optional; defaults to the dotfolder name
-  standard:                       # candidate lists, biggest-first, "org/repo@rev"
-    - mlx-community/Qwen2.5-Coder-32B-Instruct-4bit
-    - mlx-community/Qwen2.5-Coder-14B-Instruct-4bit
-    - mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
-  flash:
-    - mlx-community/Qwen2.5-Coder-3B-Instruct-4bit
-  embedding:
-    - mlx-community/bge-small-en-v1.5-4bit
-
-# tools: is OPTIONAL AND OMITTED HERE ON PURPOSE — omitting it (or omitting any
-# individual tool within it) enables every built-in with its own defaults. Write a
-# `tools:` section only to *configure* a tool or to *disable* one:
-#
-# tools:
-#   files: {}                     # redundant — already on; harmless
-#   shell:                        #   configure: the body decodes as that tool
-#     policy: strict              #   package's own option type
-#   codeContext: false            # DISABLE just this one; everything else stays on
-#   mcp:                          # MCP servers — FoundationModelsMCP owns the
-#     - name: github              #   transport: `command` spawns a stdio
-#       command: ["npx", "-y", "@modelcontextprotocol/server-github"]
-#       env: { GITHUB_TOKEN: "{{ env.GITHUB_TOKEN }}" }  # templated (untrusted layers)
-#     - name: internal-docs
-#       url: https://mcp.example.com/mcp                 # http client (v2 removed sse)
-
-recording:
-  level: full                     # off | metadata | full → Router's RecordingLevel
-
-transcripts:
-  location: project               # project (default) | home | /absolute/path  (§5)
-
-# NOTE: there is no `instructions:` section. The system prompt is a markdown
-# file, not YAML — see §6.0. To replace it, drop an `Instructions.md` in
-# ~/.config/<name>/ or <project>/.<name>/. To *add* to it, use AGENTS.md (§6.1).
-```
-
-Everything maps 1:1 onto existing Router types (`ProfileDefinition`, `ModelRef`'s
-`"org/repo@rev"` Codable form, `RecordingLevel`) — the config layer is a codec, not a
-model. Unknown top-level keys warn (forward compatibility for tool sections, §7.3);
-unknown keys *inside* known sections are errors (typo protection).
-
-**System prompt: a clear, published artifact.** The builtin coding instructions are
-not a hidden string: they are `Instructions.md`, reproduced verbatim in DocC/README
-and surfaced at runtime (this package exposes the fully assembled prompt per
-session; the CLI prints it with a flag), so a user always knows exactly what they
-are replacing before they replace it. The full mechanism is §6.0.
-
-**Context size is deliberately not configurable.** It is derived from the model
-automatically: Router already fetches each candidate's HF `config.json` during
-sizing, which carries the model's native maximum (`max_position_embeddings`), and its
-joint-fit already prices KV-cache-per-context against the host budget. Deriving
-context where that metadata already lives is a small upstream change (§8, item 2);
-users pick models, the system picks the context they can afford.
-
-`AgentConfiguration` is `Codable + Sendable + Equatable`, constructible in
-tests without any file I/O, and **its property defaults are the shipped
-defaults** — there is no file to compare them against. Loading is Extras'
-`LayeredYAMLDocument` over the stack (decision 1b, head): locate → render →
-merge with the family's one rule, per-key source tracking — Extras remains the
-only thing that touches disk, and merge semantics are written exactly once
-family-wide.
-
-### Serializing config back out — `/config export`
-
-Defaults living in code creates one problem, and it has to be solved rather than
-tolerated: **a default you cannot see is a default you cannot change.** With no
-shipped `config.yaml`, a user has nothing to copy, nothing to diff against, and no
-way to discover that `recording.level` exists at all. The answer is the same one
-§6.0 gives for `Instructions.md` — the agent writes the file for you on request:
-
-- **`/config` — print the effective configuration** as commented YAML, to the
-  session, no file written. The read-only default.
-- **`/config export home`** — write it to `~/.config/<name>/config.yaml`.
-- **`/config export project`** — write it to `<project>/.<name>/config.yaml`.
-
-A builtin `.action` command (§6.2): it runs code, streams text, and never takes a
-model turn.
-
-**What gets exported is the effective merged config** — defaults plus whatever the
-user and project layers already say — because that is what "my current config"
-means to the person asking. It is also the hazard: exporting the fully-resolved
-result to the project layer *freezes* every inherited value, so later default
-improvements and user-layer edits stop reaching that repo. Mitigate it where the
-user will actually see it, in the file itself: `LayeredYAMLDocument` already
-carries **per-key source tracking**, so each key is annotated with where its value
-came from —
-
-```yaml
-recording:
-  level: full        # default
-transcripts:
-  location: project  # default
-```
-
-— and the emitted header states plainly that this file now pins these values. A
-user who only wanted to change one thing can then delete the annotated-as-`default`
-keys with confidence.
-
-**Writing is a side effect, so it asks before clobbering.** If the target exists,
-refuse and say so; overwrite only on an explicit `--force`. A hand-edited config
-silently replaced by a machine-generated one is exactly the failure that makes
-people stop trusting a tool. Creating the directory when absent is fine.
-
-**Emitting comments is the real engineering, because Yams will not do it.**
-`YAMLEncoder` produces values, not prose, so comments have to be attached
-deliberately. Whatever the mechanism, the failure mode to design against is
-**drift**: a key added to the schema that the emitter forgets, silently absent from
-every exported file thereafter. Two tests keep it honest, and they matter more than
-the emitter's implementation:
-
-1. **Round-trip** — export a config, decode the emitted YAML, assert it equals the
-   original. Proves the file is truthful.
-2. **Total coverage** — assert every `CodingKey` in the schema appears in the
-   emitted output. Proves the file is complete, and fails the moment someone adds
-   a key without a comment.
-
-The second is the one that catches the drift; without it the first passes happily
-on a file missing half the schema.
+**Upstream ask on `FoundationModelsShelltool`.** None of this is possible today:
+`ShellSecurityConfig` and `PatternRule` are internal, and the only public `ShellPolicy`
+initializer takes config file URLs. Filed as Shelltool **`f9q2338`** — the requirement is that a host can build a
+policy from values and supply its own persistence, with the file-reading path retained
+for standalone use. Until it lands, the interim is to inject URLs pointing at our
+dotfolder (the superseded design above), which keeps a single dotfolder even though it
+does not yet keep a single file.
 
 ## 5. Transcripts: where recordings live
 
