@@ -747,9 +747,34 @@ This is an easy place for a wire error.
 - ACP's `ToolCallStatus` is `pending` / `in_progress` / `completed` / `failed`
   / `cancelled`. `pending` (a queued call) and `cancelled` are additions to
   Router's vocabulary. A detached MCP call stays `in_progress` across turns.
-  The enum is extensible: MCP's `lost` result rides as **`_lost`** (§18). Add
-  "we do not know if this ran" in the text, for clients that ignore custom
-  values.
+
+**Decision: the terminal status comes from `OperationEvent.outcome`, through
+one total function `OperationOutcome → ToolCallStatus`.** OperationTool card
+`1ad4ydw` puts a shared terminal-outcome vocabulary — `succeeded` / `failed` /
+`timed_out` / `stopped` / `cancelled` / `lost` — on the `OperationEvent`
+envelope, and Shelltool (`jt19xwc`) and FoundationModelsMCP (`zfp4a3j`) emit
+it (§21). We write the function once, for every event-posting tool. We do not
+parse per-tool `detail` payloads to decide status. The mapping:
+
+| `OperationOutcome` | ACP `ToolCallStatus` | Text |
+|---|---|---|
+| `succeeded` | `completed` | — |
+| `failed` | `failed` | the tool's error |
+| `timed_out` | `failed` | names the timeout ("timed out after Ns") |
+| `stopped` | `cancelled` | authoritative — the work was killed |
+| `cancelled` | `cancelled` | advisory — "we stopped listening" (§8.6) |
+| `lost` | **`_lost`** | "we do not know if this ran" |
+| unknown / other | the raw value under the `_` rule (§18) | generic rendering |
+
+- **`timed_out` maps to `failed`, not `cancelled`.** Nobody asked for the
+  stop, and the caller must treat the result as an error. The text names the
+  timeout, so the failure is explicable.
+- **`lost` never flattens into `failed`** (the existing decision, unchanged).
+  The extensible status **`_lost`** rides with "we do not know if this ran"
+  in the text, for clients that ignore custom values.
+- An outcome value this function does not know keeps its raw value under the
+  `_` extension rule (§18), with a generic rendering. The function is total:
+  a new upstream outcome degrades the display, never the stream.
 
 ### 8.5 Compaction on the wire
 
@@ -1050,8 +1075,12 @@ The MCP call handle is the `OperationEvent.correlationID`, the ACP
 `toolCallId`, and the id that scopes an elicitation (§16). A detached MCP call
 is why `status` stays `in_progress` across turns. The mapping decisions:
 
-- A lost MCP connection rides as **`_lost`** (an extensible status, §18). Do
-  not flatten it into `failed`. Add "we do not know if this ran" in the text.
+- **The terminal status comes from `OperationEvent.outcome`**, through the
+  one total `OperationOutcome → ToolCallStatus` function of §8.4. The
+  function is written once, for every event-posting tool. No per-tool
+  `detail` parsing decides status. A lost MCP connection is `outcome: lost`
+  and rides as **`_lost`** (an extensible status, §18). Do not flatten it
+  into `failed`. Add "we do not know if this ran" in the text.
 - `rawInput` / `rawOutput` / `content` / `locations` need the **structured
   per-call record** from `FoundationModelsMCP`. They do not use its
   model-facing rendered string. That string is elided, intentionally.
@@ -1061,6 +1090,10 @@ is why `status` stays `in_progress` across turns. The mapping decisions:
   "hosts may gate on annotations" becomes real. The bridge never gates. This
   package gates only in the `policy` and `ask` modes; the default `"*"` mode
   never asks (§11.7).
+
+The shared-outcome decision changes terminal status only. The
+`ToolAnnotations`-driven decisions above — `ToolKind`, permission gating —
+are untouched.
 
 ### 11.6 Reporting: `tool_call_update`
 
@@ -1717,3 +1750,6 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 | M1–M3, M5 | FoundationModelsSkills | the `/id` command half (§14.2) | plan-only |
 | M4 (+ Operations 2/4/5, MetadataRegistry M1–M4) | FoundationModelsSkills | the model-facing tool half (§11.3) | plan-only; follow-up |
 | `d7jwam5` | FoundationModelsFileTool | *note, not an ask*: rename/copy path mapping is a translation here (§11.6) | — |
+| `1ad4ydw` | FoundationModelsOperationTool | shared `OperationOutcome` terminal vocabulary on the `OperationEvent` envelope — feeds the one total status mapping (§8.4, §11.5) | **landed** |
+| `jt19xwc` | FoundationModelsShelltool | emits `OperationOutcome` on detached-command terminal events (§8.4) | **landed** |
+| `zfp4a3j` | FoundationModelsMCP | emits `OperationOutcome` on call terminal events (§8.4, §11.5) | **landed** |
