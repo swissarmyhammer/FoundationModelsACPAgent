@@ -25,7 +25,31 @@ comments:
     - evidence: `swift build` — Build complete! (1.93 sec), exit 0. `swift test` — "error: no tests found; create a target in the 'Tests' directory" (exit 1), expected/accepted per docs-only change with no test target defined in Package.swift (single `.target(name: "FoundationModelsACPAgent")`, no test target). plan.md table sanity check: §8.4 session/update mapping (lines 729-737, 3-pipe/2-col rows consistent), §8.4 OperationOutcome→ToolCallStatus mapping (lines 759-767, 4-pipe/3-col rows consistent), §21 Upstream dependencies (lines 1738-1755, 5-pipe/4-col rows consistent). No files modified.
     - next: none — docs-only change, build/test gate satisfied
   timestamp: 2026-08-01T15:40:27.610266+00:00
-position_column: doing
+- actor: claude-code
+  id: 01kyyzt6ytadq07km7yeqc4w62
+  text: |-
+    ### commit — changed
+    - evidence: 08b46ae plan: tool-call wire status derives from OperationOutcome via one total mapping — 6 files changed, 109 insertions(+), 7 deletions(-): plan.md, .kanban/tasks/01KYSVA1A4HXA6RYSJBE2XERFM.{jsonl,md} (e2xerfm), .kanban/tasks/01KYYJRRSQA4V3SYC102P6913N.{jsonl,md} (2p6913n), .ralph/.gitignore. Not pushed.
+    - next: none
+    task: ^2p6913n
+  timestamp: 2026-08-01T15:41:49.402914+00:00
+- actor: claude-code
+  id: 01kyyzx78zzt8zg1h4b43eqfq7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (08b46ae) — engine counts {findings: 0, confirmed: 0, refuted: 0}; directed content check of plan.md §8.4/§11.5/§21 vs card requirements, §8.6 honesty note, §18 `_` rule: zero findings
+    - next: none — task done
+  timestamp: 2026-08-01T15:43:28.031981+00:00
+- actor: claude-code
+  id: 01kyyzxsz3cxejf1mf0t54x3qm
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — plan.md §8.4/§11.5/§21 (41+/5-); e2xerfm description synced; 5tfspgc inspected, intentionally unchanged
+    - test: green — swift build exit 0; no test target (docs-only, accepted); table pipe-counts consistent
+    - commit: 08b46ae
+    - review: clean — 0 findings on HEAD~1..HEAD; task moved to done
+  timestamp: 2026-08-01T15:43:47.171616+00:00
+position_column: done
 position_ordinal: '80'
 title: 'plan.md: derive tool-call wire status from the shared OperationOutcome (one total mapping)'
 ---
