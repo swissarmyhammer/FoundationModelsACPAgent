@@ -1708,7 +1708,7 @@ that tier 2 cannot see: real process boundaries. stdout carries only ndJSON
 while `shell` runs subprocesses that write to *their* stdout. And no message
 contains a newline. (Both are protocol MUSTs, §17.) Tier 4 is §20.3.
 
-### 20.2 `Examples/acp-agent` — the example program and the tier-3 fixture
+### 20.2 Examples: `acp-agent` (the server + the tier-3 fixture) and `acp-print` (the client driver)
 
 **One executable serves the two purposes, intentionally.** The family
 convention is an `Examples/` directory of runnable programs. The example that
@@ -1737,6 +1737,41 @@ read-request/write-response loop deadlocks when it sends a mid-turn update.
 Thus the full-duplex shape (§17) is a lesson as much as a function. (The wire
 package's `acp-test-agent` is the contrast: it answers `initialize` and
 nothing else. Ours composes the real runtime and real tools.)
+
+**`Examples/acp-print` — the client-server example.** The second example is a
+one-shot prompt CLI, in the shape of `claude --print`: send one prompt, run
+the turn to completion, print the answer, exit. It is the interop proof for
+the two role packages: the sibling **`FoundationModelsACPClient`** (the
+Client role) drives this package's server example across a real process
+boundary. Nothing goes through a private back door — every byte crosses ACP.
+
+```swift
+// 1. spawn Examples/acp-agent over stdio; the client package owns and reaps the process
+// 2. initialize → session/new(cwd) → session/prompt
+// 3. stream the turn's agent_message_chunk text to stdout; exit at the stop reason
+```
+
+(The shapes are illustrative. The client plan owns the API; its container is
+headless-usable by design.) The rules:
+
+- `acp-print <prompt>` takes one positional prompt argument, and nothing
+  else. The no-second-product rule of `acp-agent` applies here too: no
+  flag surface, no rendering options, no config wizardry.
+- **stdout carries only the answer text** (the `agent_message_chunk`
+  stream). Logs and the stop reason go to stderr. The exit code is 0 for
+  `end_turn`, and nonzero for `refusal`, `cancelled`, or an error.
+- The client package spawns and owns the `acp-agent` subprocess, with its
+  process-group and reaping obligations (client plan, "Transports"). The
+  `acp-print` target links only `FoundationModelsACPClient` and the wire —
+  never this package's library. A back-door import would break the proof.
+- A gated end-to-end test (`ACP_TIER3=1`, the same gate as tier 3) runs
+  `acp-print` as a subprocess and asserts: exit code 0, stdout is only the
+  answer text, and no agent process outlives the run.
+
+Upstream: `FoundationModelsACPClient` is plan-only today. `acp-print` needs
+its container and its stdio transport with process ownership (client plan
+M6). Filed in §21. Build `acp-agent` first; add `acp-print` when the client
+package ships those milestones.
 
 ### 20.3 Evaluations — `PythonCLIEvaluation`
 
@@ -1783,6 +1818,7 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 | — | FoundationModelsRouter | in-flight turn cancellation (§8.6) | **open** — until then, "we stopped listening" |
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor (upstream promoted elicitation to stable), then generated `elicitation/*` types + `Client` entry points (§16) | **filed** 2026-07-29 — the wire is otherwise done: stable v2 verified, 95 tests green |
 | `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **filed** 2026-07-29 — blocked until upstream stabilizes `mcp/*` |
+| — | FoundationModelsACPClient | the Client-role container plus the stdio transport with agent-process ownership (client plan, through M6) — needed for `Examples/acp-print` (§20.2) | plan-only |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
 | `6j4bven` | FoundationModelsRouter | checkpoint-aware session restore feeding `session/resume` (§7.4) | Router board |
