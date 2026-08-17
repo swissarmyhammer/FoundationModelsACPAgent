@@ -11,7 +11,7 @@ position_ordinal: '9880'
 title: 'Tier-2 integration suite: the five proofs with real tools'
 ---
 ## What
-Plan.md §20.1 tier 2 — real `ToolCatalog`, real FileTool/Shelltool, real `RoutedACPAgent`, real `session/new(cwd)` on a temp directory, scripted model. Create `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift` proving, from the client end:
+Plan.md §20.1 tier 2 — real `ToolCatalog`, a real `MultiTool` with the files and shell capabilities, real `RoutedACPAgent`, real `session/new(cwd)` on a temp directory, scripted model. Create `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift` proving, from the client end:
 
 1. **Composition** — ToolCatalog constructed each tool with the correct ToolContext (root set, decoded config section).
 2. **Confinement through the protocol** — ask `files` for an out-of-root path; observe the refusal in the tool_call_update.
@@ -21,7 +21,7 @@ Plan.md §20.1 tier 2 — real `ToolCatalog`, real FileTool/Shelltool, real `Rou
 
 Discipline: **check the filesystem, never the transcript** — a "file written" claim is verified by reading the file from disk (§20.1). No MLX, no download, no gates; runs at every commit.
 
-Also: when FoundationModelsMCP's `4egfvw3` (MCPTestServerCLI/ScriptedServer) lands, add the free MCP case — spawn the scripted server, list tools, call one, assert tool_call_update correlation. If not landed when this task runs, note it as a follow-up checklist item left unchecked with a comment on the task.
+Also: when the mcp capability's `4egfvw3` (MCPTestServerCLI/ScriptedServer) lands, add the free MCP case — spawn the scripted server, list tools, call one, assert tool_call_update correlation. If not landed when this task runs, note it as a follow-up checklist item left unchecked with a comment on the task.
 
 - [ ] Proof 1: composition
 - [ ] Proof 2: confinement via the wire

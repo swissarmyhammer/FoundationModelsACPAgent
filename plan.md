@@ -33,20 +33,24 @@ editors (Zed, …) ──ndJSON/stdio──┐          CLI / Mac app (thin fron
    FoundationModelsExtras (DotfolderStack, TemplateEngine, SlashCommand, AgentsMd, LayeredYAMLDocument)
 ```
 
-**Dependencies.** This package depends on the ACP wire, Router, and Extras. It
-also depends on the four sibling packages of the built-in roster, from day one:
-**`FoundationModelsFileTool`** (`files`), **`FoundationModelsShelltool`**
-(`shell`), **`FoundationModelsMCP`** (`mcp`), and **`FoundationModelsSkills`**
-(its slash-command half; §14.2). Only this package gives names to tool
-packages. The runtime may not do this. No cycle is possible: no tool package
-depends on this one.
+**Dependencies.** This package depends on the ACP wire, Router, Extras, and
+one tool package: **`FoundationModelsMultitool`** — the consolidated tool
+surface (see that package's `eventplan.md`). Multitool holds the built-in
+capability modules: `shell`, `files`, `mcp`, `skills`, and `agents`. The
+former sibling tool packages (Shelltool, FileTool, MCP, Skills, Agents)
+dissolve into those modules. `FoundationModelsOperationTool` is removed, and
+its role is eliminated: the event vocabulary (`OperationEvent`,
+`OperationOutcome`) moves into Router's `Hosting/` substrate, and code mode
+replaces the fused-operation pattern. Only this package gives names to tool
+packages. The runtime may not do this. No cycle is possible: Multitool does
+not depend on this package.
 
 **The composition, end to end:**
 
 ```
 config  (dotfolder stack, §2)
   → ProfileDefinition → Router.resolve → resident profile
-  → tools         (roster §11: config sections → constructed, confined tools)
+  → tools         (§11: config sections → Multitool capability modules → runCode + findAPIs)
   → instructions  (Instructions.md + AGENTS.md, §3)
   → per session:  router.makeSession(workingDirectory:tools:instructions:
                     budget:compactionPrompt:)   ← the self-folding runtime session
@@ -76,8 +80,9 @@ supply them. "Capability off" is not available for them.
 
 **One identity goes through the full stack.** Apple's `Transcript.ToolCall.id`
 = Router's `SessionEvent.toolCall(id:)` = ACP's `toolCallId` = the MCP call
-handle = `OperationEvent.correlationID` = `AgentSpawn.parentToolCallId`. This
-is one stable key across five layers. The key correlates the wire's tool
+handle = Router's `OperationEvent.correlationID` = Multitool's
+`completionToken` = `AgentSpawn.parentToolCallId`. This
+is one stable key across the full stack. The key correlates the wire's tool
 updates. It scopes elicitations. It keys SwiftUI `ForEach`. It makes a
 sub-agent's transcript reachable from the tool call that the client saw.
 
@@ -192,29 +197,32 @@ tree with `Codable`. An unknown top-level section causes a warning. An unknown
 key in a known section causes an error. Router does not see the configuration.
 Sessions receive values.
 
-### 2.5 Tool packages take objects, not config files
+### 2.5 Capability modules take objects, not config files
 
-**Only this package reads configuration. Tool packages receive constructed
-values.** No tool package reads its own config file. No tool package names a
-dotfolder convention. The mechanical test: **a tool package that depends on
-Extras' `DotfolderStack` does configuration that it must not do.**
+**Only this package reads configuration. Multitool's capability modules
+receive constructed values.** No capability module reads its own config file.
+No capability module names a dotfolder convention. The mechanical test: **a
+capability module that depends on Extras' `DotfolderStack` does configuration
+that it must not do.** Each module gets its values through its `Builder`
+call:
 
-| Package | Takes | Status |
+| Capability (Builder call) | Takes | Status |
 |---|---|---|
-| `FoundationModelsFileTool` | `root`, `additionalRoots`, `readOnly`, `allowSymlinks` | ✅ complies |
-| `FoundationModelsMCP` | server descriptions | ✅ complies |
-| `FoundationModelsSkills` | layer **roots** (ordered, lowest first — §14.2) | ✅ by design: for skills the folders *are* the data (content discovery, not self-configuration) |
-| `FoundationModelsShelltool` | a `ShellSecurityConfig` value + a `ShellDecisionStore` with host-supplied decision-file URLs | ✅ complies — **`f9q2338`** landed 2026-07-29; the Extras dependency is gone (the completion signal). The file-based route stays for standalone use |
+| `files` — `withFiles(...)` | `root`, `additionalRoots`, `readOnly`, `allowSymlinks` | ✅ complies |
+| `mcp` — `withMCP(servers:)` | server descriptions | ✅ complies |
+| `skills` — `withSkills(roots:)` | layer **roots** (ordered, lowest first — §14.2) | ✅ by design: for skills the folders *are* the data (content discovery, not self-configuration) |
+| `shell` — `withShell(...)` | a `ShellSecurityConfig` value + a `ShellDecisionStore` with host-supplied decision-file URLs | ✅ complies — **`f9q2338`** landed 2026-07-29 in Shelltool, and the values route moves with the code into the shell capability |
+| `agents` — `withAgents(...)` | agent definitions from the `AgentsMd` walk (§3.2) | plan-only |
 
 **`tools: shell:` in our `config.yaml` is the full story.** We decode it as
-Shelltool's own option type (§11.1). This package then constructs the policy
-value:
+the shell capability's own option type (§11.1). This package then constructs
+the policy value:
 
 ```swift
 ShellPolicy(rules: ShellPolicy.builtinRules.merged(with: configured), decisions: store)
 ```
 
-Shelltool contains the compiled builtin denials. Its values initializer checks
+The shell capability contains the compiled builtin denials. Its values initializer checks
 `builtinRules.deny` unconditionally, before the host rules. Thus **no config
 layer can remove them**, and the host cannot forget the merge. We merge
 `builtinRules` in anyway: then the composed value describes the full rule set,
@@ -229,7 +237,7 @@ obey the usual override. Our codec applies this rule. This section states it.
 
 **`decisions.yaml` is state, not configuration.** The agent writes the
 `allow_always` / `reject_always` answers. The user does not author them.
-Shelltool defines the decision vocabulary and the match logic. **This package
+The shell capability defines the decision vocabulary and the match logic. **This package
 decides where the data persists, and if it persists**:
 `ShellDecisionStore(userDecisionsURL:projectDecisionsURL:)` takes the
 decision-file locations from the host. We point them at our dotfolder layers,
@@ -302,8 +310,8 @@ repo has the same limits as each other untrusted document.
 
 These files are context, not memory. Per [agents.md](https://agents.md/),
 `AGENTS.md` is "a README for agents". Nothing here keeps data across sessions.
-The discovery walk is Extras' `AgentsMd`. (FoundationModelsAgents uses the
-same walk for sub-agent instructions.) This layer consumes the walk.
+The discovery walk is Extras' `AgentsMd`. (The agents capability in Multitool
+uses the same walk for sub-agent instructions.) This layer consumes the walk.
 Resolution is **per session, relative to the session working directory**. It
 is never per process.
 
@@ -597,9 +605,9 @@ primary root. That is worse than no advertisement.
   confinement from the request contents, each time. This keeps a boundary that
   the client made narrow from silent re-widening.
 
-Upstream: FileTool `939nnzx` (multi-root `PathGuard`) is the one blocking
-dependency. It is in progress. Shelltool needs nothing. It is not
-root-confined (§11.4).
+Upstream: multi-root `PathGuard` (`939nnzx`, now in the files capability) is
+the one blocking dependency. It is in progress. The shell capability needs
+nothing. It is not root-confined (§11.4).
 
 ### 7.3 `mcpServers` — the client's servers
 
@@ -749,12 +757,15 @@ This is an easy place for a wire error.
   Router's vocabulary. A detached MCP call stays `in_progress` across turns.
 
 **Decision: the terminal status comes from `OperationEvent.outcome`, through
-one total function `OperationOutcome → ToolCallStatus`.** OperationTool card
-`1ad4ydw` puts a shared terminal-outcome vocabulary — `succeeded` / `failed` /
-`timed_out` / `stopped` / `cancelled` / `lost` — on the `OperationEvent`
-envelope, and Shelltool (`jt19xwc`) and FoundationModelsMCP (`zfp4a3j`) emit
-it (§21). We write the function once, for every event-posting tool. We do not
-parse per-tool `detail` payloads to decide status. The mapping:
+one total function `OperationOutcome → ToolCallStatus`.** The shared
+terminal-outcome vocabulary — `succeeded` / `failed` / `timed_out` /
+`stopped` / `cancelled` / `lost` — lives on the `OperationEvent` envelope in
+Router's `Hosting/` substrate. (Card `1ad4ydw` put it in OperationTool first.
+The Multitool consolidation moves it into Router and removes OperationTool.)
+Multitool's capability modules emit it on each terminal event: shell
+(`jt19xwc`) and mcp (`zfp4a3j`) do this already (§21). We write the function
+once, for every event-posting capability. We do not parse per-capability
+`detail` payloads to decide status. The mapping:
 
 | `OperationOutcome` | ACP `ToolCallStatus` | Text |
 |---|---|---|
@@ -903,48 +914,61 @@ the recovery path. It is not a reason to keep the file in the working tree.
 
 *This is the tools' home. v2 removed `fs/read_text_file`,
 `fs/write_text_file`, and all five `terminal/*` client methods. It points
-agents to their own file access, their own execution, and MCP. Thus the
-built-in roster below is the **full surface** through which this agent touches
-the user's world. In-process tools are the approved design, not an accepted
-risk. The confinement story stays ours: `PathGuard` bounds `files`. The
-composed `ShellPolicy` bounds `shell`. `session/request_permission` asks the
-user before either goes further.*
+agents to their own file access, their own execution, and MCP. The
+model-facing surface is one code-mode pair from `FoundationModelsMultitool`:
+`runCode` and `findAPIs`. The capability modules — `files`, `shell`, `mcp`,
+`skills`, `agents` — live inside the MultiTool registry, and they are the
+**full surface** through which this agent touches the user's world.
+In-process capabilities are the approved design, not an accepted risk. The
+confinement story stays ours: `PathGuard` bounds `files`. The composed
+`ShellPolicy` bounds `shell`. `session/request_permission` asks the user
+before either goes further.*
 
 ### 11.1 The catalog
 
 `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift` is the one place
-where we register tools. Each linked package gets one reserved config section.
-To add a tool: add a dependency, and add one catalog line:
+where we compose the tool surface. It builds one `MultiTool` through
+Multitool's `Builder`. Each capability module gets one reserved config
+section. To add a capability: decode its section, construct its values, and
+add one builder line:
 
 ```swift
 /// The tool catalog.
 ///
 /// ══════════════════════════════════════════════════════════════════
-///   ADD NEW TOOLS HERE — and only here.
-///   1. Put the implementation in Tools/<Name>/.
-///   2. Append its constructor to `builtin(context:)` below.
+///   ADD NEW CAPABILITIES HERE — and only here.
+///   1. Decode the module's config section (§11.2).
+///   2. Append its `with…()` call to `multitool(context:)` below.
 ///   3. Add a row to the table in README.md § Tools.
 ///   Nothing else in this package needs to change.
 /// ══════════════════════════════════════════════════════════════════
 public enum ToolCatalog {
-    public static func builtin(context: ToolContext) -> [any FoundationModels.Tool]
+    public static func multitool(context: CatalogContext) throws -> [any FoundationModels.Tool]
 }
 ```
 
-`ToolContext` carries what each constructor needs: the session working
-directory, the session's additional roots, and the decoded config section.
-Frontends can append their own tools. `makeSession(tools:)` receives the
-merged array. Catalog entries also register slash-command providers (§14.2).
-An entry can pair its tool with a `SlashCommandProviding` conformer. The
-catalog feeds it into the session's command registry. The direction rule is
-absolute: tool packages conform to the leaf's protocol. No code outside this
-package names this package's types.
+The function returns the composed pair — the `MultiTool` (`runCode`) and its
+discovery tool (`findAPIs`). That pair is the array for
+`makeSession(tools:)`. Router mounts `ElevatingTool` around each native
+entry. `ToolInvoker` binds the ambient `ToolContext` around each `tools.*`
+call (Multitool eventplan). We name our construction context
+`CatalogContext`, because Router's `Hosting/` substrate owns the name
+`ToolContext`. `CatalogContext` carries what each builder call needs: the
+session working directory, the session's additional roots, and the decoded
+config section. Frontends can register their own capabilities through
+`withCapability(_:)` before the build. Catalog entries also register
+slash-command providers (§14.2). An entry can pair its capability with a
+`SlashCommandProviding` conformer. The catalog feeds it into the session's
+command registry. The direction rule is absolute: Multitool conforms to the
+leaf's protocol. No code outside this package names this package's types.
 
 ### 11.2 The enable/disable rule
 
-**Each built-in is on, unless the config sets it off. Absence enables.** A
-user with no config file gets an agent with all tools, each with its own
-defaults. One rule, five shapes:
+**Each built-in capability is on, unless the config sets it off. Absence
+enables.** A user with no config file gets an agent with all capabilities,
+each with its own defaults. Multitool's `Builder` keeps its modules off until
+a `with…()` call opts them in. This layer makes that call for each enabled
+module. The config decides which calls occur. One rule, five shapes:
 
 | Config | Meaning |
 |---|---|
@@ -983,32 +1007,33 @@ first checks for a scalar `false`. Then it decodes the mapping.
 
 ### 11.3 The roster
 
-**Built in, day one — declared dependencies, in the default roster:**
+**One source package: `FoundationModelsMultitool`. The roster is its set of
+capability modules, composed by the catalog:**
 
-| Tool | Source package | Blocked on | Config section |
+| Capability | Builder call | Blocked on | Config section |
 |---|---|---|---|
-| `files` | `FoundationModelsFileTool` (**built**) | nothing | `files:` |
-| `shell` | `FoundationModelsShelltool` (**built**) | nothing | `shell:` |
-| MCP servers | `FoundationModelsMCP` (**built**) — `MCPToolProvider` | nothing; the ACP tunnel is unstable-gated (§11.5) | `mcp:` (plus ACP's per-session `mcpServers`) |
-| skills → `/id` commands | `FoundationModelsSkills` (**plan-only**) — the command-provider half | Skills M1–M3 + M5; Extras only (shipped) | `skills:` |
-| skills → `search`/`list`/`use` tool | `FoundationModelsSkills` (**plan-only**) — the model-facing half | Skills M4 → `FoundationModelsOperations` 2/4/5 **and** `FoundationModelsMetadataRegistry` M1–M4, neither built | `skills:` |
+| `files` | `withFiles(...)` — code is **built**, moves in at eventplan phase 3 | nothing | `files:` |
+| `shell` | `withShell(...)` — code is **built**, moves in at eventplan phase 2 | nothing | `shell:` |
+| `mcp` | `withMCP(servers:)` — code is **built**, moves in at eventplan phase 4 | nothing; the ACP tunnel is unstable-gated (§11.5) | `mcp:` (plus ACP's per-session `mcpServers`) |
+| skills → `/id` commands | the skills capability's command-provider half (**plan-only**) | Skills M1–M3 + M5, moved into Multitool; Extras only (shipped) | `skills:` |
+| skills → discovery | the skills capability's registry entries, surfaced through `findAPIs` (**plan-only**) | the skills capability itself — `FoundationModelsMetadataRegistry` is already a Multitool dependency, and the old `FoundationModelsOperations` chain is gone with OperationTool | `skills:` |
+| sub-agents | `withAgents(...)` (**plan-only**) | that capability | `agents:` |
 
-**Follow-ups — one catalog line each, as each package ships:**
+**Follow-ups — one `withCapability(_:)` line each, as each capability ships:**
 
-| Tool | Source | Blocked on | Config section |
+| Capability | Source | Blocked on | Config section |
 |---|---|---|---|
-| code-context ops (`searchSymbol`, `callGraph`, `blastRadius`, …) | thin `Tool` shim over `CodeContext` | nothing; first follow-up | `codeContext:` |
-| `runCode` | `MultiTool` (JS composition over the catalog) | nothing | `multitool:` |
-| sub-agents | FoundationModelsAgents | that package (plan-only) | `agents:` |
+| code-context ops (`searchSymbol`, `callGraph`, `blastRadius`, …) | a `Capability` over `CodeContext` | nothing; first follow-up | `codeContext:` |
 
-**Skills is a tool and a command provider. The two halves answer different
-questions.** The tool is *discovery* ("what can I do here?", for the model).
-The `/id` commands are *explicit dispatch* ("do this specific thing", for the
-user). Day one ships **explicit dispatch without discovery**. The command half
-depends only on shipped Extras. The tool half's dependency chain does not
-exist yet. Until it lands, the model cannot see skills at all. That is a real
-difference from `files`/`shell`. We decide it. We do not inherit it from a
-dependency chain. (The two integration gaps: §14.2.)
+**Skills is a capability and a command provider. The two halves answer
+different questions.** Discovery is `findAPIs` over the skills entries ("what
+can I do here?", for the model). The `/id` commands are *explicit dispatch*
+("do this specific thing", for the user). Day one ships **explicit dispatch
+without discovery**. The command half depends only on shipped Extras. The
+discovery half waits for the skills capability in Multitool. Until it lands,
+the model cannot see skills at all. That is a real difference from
+`files`/`shell`. We decide it. We do not inherit it from a dependency chain.
+(The two integration gaps: §14.2.)
 
 ### 11.4 Confinement
 
@@ -1019,7 +1044,9 @@ dependency chain. (The two integration gaps: §14.2.)
   results (`.allow` / `.ask(reason)` / `.deny(message)`). A
   `ShellDecisionStore` sits behind `remember(...)`. The `allow_always` /
   `reject_always` options of `session/request_permission` bind to it, when the
-  permission mode asks (§11.7).
+  permission mode asks (§11.7). The `.ask` route is the ambient context: the
+  shell capability sends `.ask` through `ToolContext.elicit`, and the
+  elicitation coordinator (§16) turns it into `session/request_permission`.
   **The shell is not root-confined. `additionalDirectories` does not change
   that.** `ShellContext` has no workspace root. `check(workingDirectory:)`
   validates only `..` traversal and existence. Confinement for `shell` is
@@ -1027,8 +1054,9 @@ dependency chain. (The two integration gaps: §14.2.)
   radius of a shell command has a policy limit. A wider workspace does not
   widen it. (A different open question: must `shell` *also* be root-confined?)
 - **`mcp`**: dynamic. The tools that it gives depend on what the servers
-  advertise. Connection completes before the array reaches
-  `makeSession(tools:)` (§7.3).
+  advertise. Connection completes before `buildRegistry()` (§7.3). A late
+  server, a reconnect, or a `tools/list_changed` starts a registry rebuild.
+  MultiTool swaps the new surface in at the next turn boundary (eventplan).
 
 ### 11.5 MCP wiring: two sources, two transports (+ one unstable), two sinks
 
@@ -1042,7 +1070,7 @@ after config-derived servers, and never persist).
 - **stdio** → `StdioServerProcess`. The `McpServerStdio` fields map one to
   one. `capabilities.session.mcp.stdio`.
 - **http** → `HTTPClientTransport`. ACP's `headers` supply the auth.
-  (Authorization stays the host's job, per `FoundationModelsMCP`'s decision.)
+  (Authorization stays the host's job, per the mcp capability's decision.)
   `capabilities.session.mcp.http`.
 - v2 removed `sse` fully. There is no `McpServerSse`, and no third stable
   transport.
@@ -1052,17 +1080,19 @@ it.** `mcp/connect` + `mcp/message` + `mcp/disconnect` exist only in
 `acp-v2.meta.unstable.json`. No stable capability can ask for a tunnel. The
 design, when it lands: the **client** hosts the server. The agent tunnels MCP
 JSON-RPC over ACP. **`ACPTunnelTransport` goes in this package.** It is an
-`MCP.Transport` conformance that needs ACP types. `FoundationModelsMCP` must
-never depend on `FoundationModelsACP`. The transport plugs into that package's
-transport factory. The client owns the processes. Thus `StdioServerProcess` is
+`MCP.Transport` conformance that needs ACP types. Multitool must
+never depend on `FoundationModelsACP`. The transport plugs into the mcp
+capability's transport factory. The client owns the processes. Thus `StdioServerProcess` is
 not used. Two blocks exist: the wire package must generate the `mcp/*` payload
 types (filed as `kdvsjmj` on its board), and the methods must graduate to
 stable. Ship stdio + http first.
 
-**Process lifecycle is FoundationModelsMCP's job, not ours.** It spawns and
-owns the stdio subprocesses. Reconnects and cross-session pooling are upstream
-asks on that package. This package passes entries to `MCPToolProvider` and
-receives `[any Tool]`.
+**Process lifecycle is the mcp capability's job, not ours.** It spawns and
+owns the stdio subprocesses. Server subprocesses are infrastructure with
+session lifetime — they are never runs, and they never get a
+`completionToken` (eventplan). Reconnects and cross-session pooling are
+upstream asks on Multitool. This package passes server entries to
+`withMCP(servers:)`.
 
 **Two sinks receive one tool call.** A long MCP call reports to two audiences:
 
@@ -1082,7 +1112,7 @@ is why `status` stays `in_progress` across turns. The mapping decisions:
   and rides as **`_lost`** (an extensible status, §18). Do not flatten it
   into `failed`. Add "we do not know if this ran" in the text.
 - `rawInput` / `rawOutput` / `content` / `locations` need the **structured
-  per-call record** from `FoundationModelsMCP`. They do not use its
+  per-call record** from the mcp capability. They do not use its
   model-facing rendered string. That string is elided, intentionally.
 - **`ToolAnnotations` → `ToolKind`**: the correct use of MCP's untrusted
   hints. A UI hint feeds a UI hint. It is never a gate.
@@ -1106,13 +1136,14 @@ update with a new `toolCallId` is the creation.
 - `ToolCallUpdate` requires only `toolCallId`. `title` SHOULD be on the first
   report.
 - **The diff mapping trap**: ACP's `path` is absolute and **post-operation**.
-  For `move` / `copy` (`DiffPathPairChange {oldPath, path}`), FileTool models
+  For `move` / `copy` (`DiffPathPairChange {oldPath, path}`), the files
+  capability models
   the same data in the other direction. Map `FileChange.path → oldPath` and
   `FileChange.destinationPath → path`, for those two kinds only. For `add` /
   `delete` / `modify`, map `path → path` without change. A naive
   `path → path` map shows the pre-rename filename at each move, silently.
-  (FileTool's shape is self-consistent. This is a translation note, not an
-  upstream ask; `d7jwam5`.)
+  (The files capability's shape is self-consistent. This is a translation
+  note, not an upstream ask; `d7jwam5`.)
 - `DiffChange` carries optional `fileType` / `mimeType`. Fill them where the
   tool knows them. They drive syntax highlighting in the client.
   `ToolCallLocation` requires `path`. `line` is optional (`GrepMatch` supplies
@@ -1161,8 +1192,9 @@ prompt copy (`title`/`description`) is separate from the structured `subject`.
   and `terminalId`.
 - `PermissionOption` requires all three of `optionId`, `name`, `kind`.
   `PermissionOptionKind` includes `allow_always` / `reject_always`. Thus
-  **this package persists the always-decisions**. They bind to Shelltool's
-  `ShellDecisionStore`, with `.session` as the default scope (§2.5).
+  **this package persists the always-decisions**. They bind to the shell
+  capability's `ShellDecisionStore`, with `.session` as the default scope
+  (§2.5).
 - The result is `cancelled` or `selected(optionId)`, plus an `other` extension
   variant. **Handle an unknown result as a refusal.** Never handle it as an
   approval.
@@ -1182,7 +1214,8 @@ client-execution surface again. We execute. The client renders. The schema:
 | `TerminalOutput` | authoritative replacement snapshot of output bytes |
 | `TerminalExitStatus` | `{exitCode?, signal?}`; its presence marks exited, even with neither known |
 
-The mapping is `shell`'s user-visible payoff. Shelltool's `commandID` →
+The mapping is `shell`'s user-visible payoff. The shell capability's
+`commandID` (= the run's `correlationID` = its `completionToken`) →
 `terminalId`. Incremental line streaming → `terminal_output_chunk` (base64 for
 each chunk; byte-true, with no lossy text coercion). The stored record →
 `TerminalOutput` (what a reconnecting client needs). Command exit →
@@ -1229,7 +1262,7 @@ the answer.
 **It has no peer. It is off, and we say so.** Router has no planning noun. v2
 says only that agents SHOULD report plans. We send nothing, and we say so.
 
-For the time when a planner lands (FoundationModelsAgents), know this
+For the time when a planner lands (the agents capability), know this
 asymmetry: **`plan_update` is the one v2 update that replaces. It does not
 patch.** Agents MUST send the complete entry list. Clients MUST replace the
 previous contents fully. An implementer who knows the upsert algebra (§8.3)
@@ -1274,7 +1307,8 @@ reserved. Nothing replaces them.
    roster entries (§11.1). This is the *code-backed* lane. Only linked Swift
    can construct `.action`. That is the trust boundary. In-process code is
    already trusted as tools.
-3. **Skills**: the *data* lane. `FoundationModelsSkills` finds and renders
+3. **Skills**: the *data* lane. The skills capability (Multitool) finds and
+   renders
    `SKILL.md` files. `SlashCommandProviding` surfaces them. One skill = one
    `/id` command. `commandUpdates` pushes changes when files change. Skill
    markdown is **data**. It can only make a prompt. A broken or hostile
@@ -1300,7 +1334,7 @@ of a second stack. There is no new mechanism. The XDG rule is the same.
   isolation. (Precedent: the project-level `AGENTS.md` also has no qualifier,
   §3.2.)
 - **We construct the stack. Skills takes what it gets** (§2.5).
-  `FoundationModelsSkills` accepts its layer roots as a construction parameter
+  The skills capability accepts its layer roots as a construction parameter
   (ordered, lowest first). It names no dotfolder convention. A host that wants
   a different layout passes different roots.
 - **Trust**: both layers are untrusted. Skill markdown renders under the
@@ -1333,7 +1367,8 @@ reader needs. Structured parameter prompting is an `_meta` extension, if a
 client wants it.
 
 **The phases obey §11.3's roster**: ship the command-provider half first. The
-model-facing tool half comes after its dependency chain. A plan that handles
+discovery half comes when the skills capability lands in Multitool and its
+entries surface through `findAPIs`. A plan that handles
 "skills as a built-in" as one indivisible item will stall.
 
 ### 14.3 Dispatch — at the prompt owner
@@ -1420,8 +1455,9 @@ Schema details:
 ## 16. Elicitation
 
 **This package owns elicitation.** It is the only layer with a live two-way
-channel to a thing that has a user. `FoundationModelsMCP` defines the
-`ElicitationCoordinator` protocol and owns no UI. Router owns no user channel
+channel to a thing that has a user. Multitool defines the
+`ElicitationCoordinator` protocol — the host seam of `ToolContext.elicit`
+(eventplan) — and owns no UI. Router owns no user channel
 (`SessionOutbox` is one-way, outbound). Thus the coordinator lives here:
 **`ACPElicitationCoordinator`**, which holds the `AgentSideConnection`.
 
@@ -1479,7 +1515,7 @@ client-side handler entry points first. Thus **this is not day-one scope.**
 Upstream has promoted elicitation to stable on its main branch. A schema
 re-vendor brings the types. The work is filed on the wire package's board:
 `7kgq5dw`, then `enzjy0q` (§21).
-The interim: `FoundationModelsMCP`'s coordinator gets a non-ACP fallback. It
+The interim: Multitool's coordinator gets a non-ACP fallback. It
 declines each elicitation with a clear reason: "this host cannot ask you
 questions yet". That is honest, and it unblocks the MCP built-in without the
 unstable surface.
@@ -1513,7 +1549,8 @@ become a sequence hazard here.
 **Defend against one hazard: subprocess stdout.** `shell` spawns children. A
 child that *inherits* the agent's stdout writes into the ACP frame stream.
 That damage is invisible to unit tests, because the tool itself was correct.
-Shelltool captures child output. It does not let children inherit. Tier 3
+The shell capability captures child output. It does not let children
+inherit. Tier 3
 (§20.1) proves this, end to end.
 
 ## 18. Extensibility
@@ -1609,7 +1646,7 @@ tools" are different questions.** Only the second needs a model.
 
 | Tier | Model | Client | Tools | Gated | Answers |
 |---|---|---|---|---|---|
-| 0 — unit | — | — | — | no | do the tools work in isolation *(done upstream: FileTool 461, Shelltool 298, Router 624 tests)* |
+| 0 — unit | — | — | — | no | do the tools work in isolation *(done upstream: Multitool's capability suites — files, shell, mcp — and Router's 624 tests)* |
 | 1 — golden conformance | scripted | recording sink | fake | no | is the wire shape right — ordering, upserts, replay |
 | 2 — tool integration | scripted | recording sink | **real** | no | do real tools work through the real conformance |
 | 3 — stdio contract | scripted | subprocess | real | yes | does framing survive a real process boundary |
@@ -1632,8 +1669,9 @@ let client = await ClientSideConnection(stream: clientEnd) { _ in RecordingClien
 That is a **sink**, not a simulation. Each tier above tier 0 uses these same
 ten lines.
 
-**Tier 2 is the tier that answers the question.** A real `ToolCatalog`, a real
-`FileTool` and `Shelltool`, a real `RoutedACPAgent`, a real `session/new(cwd)`
+**Tier 2 is the tier that answers the question.** A real `ToolCatalog`, a
+real `MultiTool` with the files and shell capabilities, a real
+`RoutedACPAgent`, a real `session/new(cwd)`
 against a temp directory — with a scripted *model*: inject a `ModelLoader`
 whose `LoadedLLMContainer.makeSession` returns a `LanguageModelSessionBackend`
 that sends a known tool call. (Router's own `ScriptedOverflowBackend` proves
@@ -1660,7 +1698,7 @@ disk. Do not believe a `tool_call_update` that claims success. This is the
 same discipline as §20.3's evaluators. It divides a test that catches a broken
 tool from a test that only catches a broken *report* of a tool.
 
-**MCP gets tier-2 coverage free**, when `4egfvw3` lands. `FoundationModelsMCP`
+**MCP gets tier-2 coverage free**, when `4egfvw3` lands. The mcp capability
 ships `MCPTestServerCLI` and a `ScriptedServer`. Spawn a real server process.
 List its tools. Call one. Confirm that the `tool_call_update` correlation
 holds.
@@ -1737,19 +1775,21 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 
 | Id | Package | What | Status |
 |---|---|---|---|
-| `f9q2338` | FoundationModelsShelltool | build `ShellPolicy` from values, host-owned persistence (§2.5); the Extras dependency is gone | **landed** 2026-07-29 |
+| — | FoundationModelsMultitool + Router | the consolidation itself (Multitool `eventplan.md`): Router `Hosting/` substrate, then the shell, files, and mcp capabilities move in (phases 1–4); OperationTool is removed at phase 5; the skills and agents capabilities follow the same route | **in progress** |
+| `f9q2338` | FoundationModelsMultitool (shell capability) | build `ShellPolicy` from values, host-owned persistence (§2.5); the Extras dependency is gone | **landed** 2026-07-29 in Shelltool; moves in at eventplan phase 2 |
 | `c2pad49` | FoundationModelsExtras | third `SlashCommand.Body` case, `.rendered` (§14.2) | **open** — workaround available, prefer the case |
-| `939nnzx` | FoundationModelsFileTool | multi-root `PathGuard` (§7.2) | **in progress** — the only blocker for `additionalDirectories` |
-| `4egfvw3` | FoundationModelsMCP | needed for tier-2 MCP coverage via `MCPTestServerCLI` (§20.1) | open |
+| `939nnzx` | FoundationModelsMultitool (files capability) | multi-root `PathGuard` (§7.2) | **in progress** — the only blocker for `additionalDirectories` |
+| `4egfvw3` | FoundationModelsMultitool (mcp capability) | needed for tier-2 MCP coverage via `MCPTestServerCLI` (§20.1) | open |
 | — | FoundationModelsRouter | in-flight turn cancellation (§8.6) | **open** — until then, "we stopped listening" |
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor (upstream promoted elicitation to stable), then generated `elicitation/*` types + `Client` entry points (§16) | **filed** 2026-07-29 — the wire is otherwise done: stable v2 verified, 95 tests green |
 | `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **filed** 2026-07-29 — blocked until upstream stabilizes `mcp/*` |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
 | `6j4bven` | FoundationModelsRouter | checkpoint-aware session restore feeding `session/resume` (§7.4) | Router board |
-| M1–M3, M5 | FoundationModelsSkills | the `/id` command half (§14.2) | plan-only |
-| M4 (+ Operations 2/4/5, MetadataRegistry M1–M4) | FoundationModelsSkills | the model-facing tool half (§11.3) | plan-only; follow-up |
-| `d7jwam5` | FoundationModelsFileTool | *note, not an ask*: rename/copy path mapping is a translation here (§11.6) | — |
-| `1ad4ydw` | FoundationModelsOperationTool | shared `OperationOutcome` terminal vocabulary on the `OperationEvent` envelope — feeds the one total status mapping (§8.4, §11.5) | **landed** |
-| `jt19xwc` | FoundationModelsShelltool | emits `OperationOutcome` on detached-command terminal events (§8.4) | **landed** |
-| `zfp4a3j` | FoundationModelsMCP | emits `OperationOutcome` on call terminal events (§8.4, §11.5) | **landed** |
+| M1–M3, M5 | FoundationModelsMultitool (skills capability) | the `/id` command half (§14.2) | plan-only |
+| M4 | FoundationModelsMultitool (skills capability) | the discovery half: skills entries in the registry, surfaced through `findAPIs` (§11.3) — the old Operations chain is gone with OperationTool, and MetadataRegistry is already a Multitool dependency | plan-only; follow-up |
+| — | FoundationModelsMultitool (agents capability) | `withAgents(...)`: sub-agents over the `AgentsMd` walk (§11.3) | plan-only |
+| `d7jwam5` | FoundationModelsMultitool (files capability) | *note, not an ask*: rename/copy path mapping is a translation here (§11.6) | — |
+| `1ad4ydw` | FoundationModelsRouter (`Hosting/`) | shared `OperationOutcome` terminal vocabulary on the `OperationEvent` envelope — feeds the one total status mapping (§8.4, §11.5); landed in OperationTool, and the consolidation moves it into Router | **landed** |
+| `jt19xwc` | FoundationModelsMultitool (shell capability) | emits `OperationOutcome` on detached-command terminal events (§8.4) | **landed** |
+| `zfp4a3j` | FoundationModelsMultitool (mcp capability) | emits `OperationOutcome` on call terminal events (§8.4, §11.5) | **landed** |

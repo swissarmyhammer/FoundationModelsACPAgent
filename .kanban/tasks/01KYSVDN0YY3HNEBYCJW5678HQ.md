@@ -9,7 +9,7 @@ position_ordinal: '9680'
 title: 'additionalDirectories: multi-root confinement end to end'
 ---
 ## What
-Plan.md §7.2. Extend confinement from single-root to the full root set. **Upstream gate: FileTool `939nnzx` (multi-root `PathGuard`) — in progress. Do not start this task until it lands; do not reimplement multi-root guarding here.**
+Plan.md §7.2. Extend confinement from single-root to the full root set. **Upstream gate: the Multitool files capability's `939nnzx` (multi-root `PathGuard`) — in progress. Do not start this task until it lands; do not reimplement multi-root guarding here.**
 
 - `session/new` and `session/resume` accept `additionalDirectories: [AbsolutePath]`; absolute required per item; the array has `x-deserialize-skip-invalid-items` — skip and log a bad entry, never refuse the session. The list is **ordered** and persists per session (SessionIndex).
 - Roots extend confinement only — `cwd` stays singular for: relative-path base, config layer, AGENTS.md walk, transcript directory. A second root must never fork the transcript location.

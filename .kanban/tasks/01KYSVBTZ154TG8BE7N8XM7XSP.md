@@ -15,7 +15,7 @@ Plan.md §11.7 (wire + gating; the config codec landed earlier). Create `Sources
 - Resolve the effective mode per tool from `PermissionsConfig`: `"*"` (default — never ask; shell `.ask` outcomes resolve as allow; MCP hints never gate), `policy` (defer to shell's `.ask` rules and MCP `destructiveHint`/`openWorldHint`), `ask` (every call asks). `"*"` never touches the deny floor — denials refuse with a message and no prompt.
 - When asking: send `session/request_permission` with `{sessionId, title, options[≥1], description?, subject?}`. `subject: tool_call` carries a **full `ToolCallUpdate`**, and the ask happens **before** any `tool_call_update` for that call is sent — no pending call in the timeline for something refusable; the first update goes out at approval (§11.7). Wrap the wait in `requires_action` + Router's `awaitingUser { }` (§8.2).
 - Register each outstanding ask in the pending-request table so the cancellation task's hook (§8.6) answers it `cancelled` on `session/cancel` — the wire-level proof of that interaction lives HERE.
-- Options include `allow_always`/`reject_always`; persist those decisions through Shelltool's `ShellDecisionStore` with `.session` as the default remembered scope (§2.5).
+- Options include `allow_always`/`reject_always`; persist those decisions through the shell capability's `ShellDecisionStore` with `.session` as the default remembered scope (§2.5).
 - Results: `cancelled` or `selected(optionId)`; **an unknown/`other` result is a refusal, never an approval**.
 
 - [ ] Effective-mode resolution per tool

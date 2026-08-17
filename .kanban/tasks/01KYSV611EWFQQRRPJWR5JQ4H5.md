@@ -11,7 +11,7 @@ title: 'Configuration: tool-section codec, permissions modes, denial union'
 Plan.md §2.5, §11.2, §11.7 (config side only — the wire method is a later task). In `Sources/FoundationModelsACPAgent/Configuration/`:
 
 - `ToolSectionCodec.swift` — the enable/disable rule for `tools:`. Per tool key: absent / `{}` / null / `true` → on with defaults; scalar `false` → off (checked before body decode); a mapping body decodes as **that tool package's own option type** (unknown key in a body = error). No `tools: false` global switch, no `only:` allowlist. `mcp:` is the one list-bodied entry: omitted → on with no servers; `mcp: [...]` → those servers; `mcp: false` → fully off including refusing client-supplied servers (that refusal enforced in the MCP task).
-- Shell policy composition (§2.5): decode `tools.shell` as Shelltool's option type, then compose `ShellPolicy(rules: ShellPolicy.builtinRules.merged(with: configured), decisions: store)`. **Denials union across layers** (builtin + user + project all apply — never overridden); `allow`/`ask` follow normal nearest-wins.
+- Shell policy composition (§2.5): decode `tools.shell` as the shell capability's option type, then compose `ShellPolicy(rules: ShellPolicy.builtinRules.merged(with: configured), decisions: store)`. **Denials union across layers** (builtin + user + project all apply — never overridden); `allow`/`ask` follow normal nearest-wins.
 - `PermissionsConfig.swift` (§11.7): `permissions:` decodes `"*"` (default when absent) / `policy` / `ask` / mapping form `{shell: policy, mcp: ask}` (unmentioned tool → `"*"`). Layering: a layer may only move a tool **stricter** (`"*"` → `policy` → `ask`), never looser.
 
 - [ ] Per-tool scalar-false-then-body codec
