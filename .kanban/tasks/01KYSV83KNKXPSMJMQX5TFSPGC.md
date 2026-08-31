@@ -5,33 +5,51 @@ depends_on:
 - 01KYSV76CBJV66C92Z0EM2S73K
 position_column: todo
 position_ordinal: '8880'
-title: 'MCP composition: config servers, client mcpServers, elicitation decline fallback'
+title: 'MCP composition: config servers, client mcpServers, server pool, surface refresh'
 ---
 ## What
-Plan.md §7.3, §11.2 (mcp entry), §11.5, §16 (interim only). Create `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift`:
+Plan.md §7.3, §11.2, §11.5. Create `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift`.
 
-- Compose two sources into the `withMCP(servers:)` entries of the ToolCatalog build: config-derived `mcp:` servers first, then client-supplied per-session `mcpServers` (session scope, **never persisted** — `session/resume` re-supplies them, §7.3). ACP's `name` maps to `ServerIdentity`.
-- **Decide and document the open §7.3 collision rule** — recommended: a client-supplied server whose name collides with a config-derived server is **refused with a logged error** (config is the user's committed intent; silent replacement would let a connecting editor shadow a trusted server). Record the decision in a doc comment and in plan.md §7.3.
-- Transports: `McpServerStdio` → `StdioServerProcess`, `McpServerHttp` → `HTTPClientTransport` with ACP `headers` as auth (§11.5). `env`/`headers` are arrays of `{name, value}`; duplicate names — last wins. No SSE. The ACP tunnel (`mcp/connect` etc.) is unstable-schema-only: do NOT build it.
-- Connection completes **before** `buildRegistry()` and thus before the composed pair reaches `makeSession(tools:)` (§7.3, §11.4) — expose an async `connect` step the session/new task awaits. A later server change starts a registry rebuild, and MultiTool swaps the new surface in at the next turn boundary (eventplan).
-- `mcp: false` → fully off AND client-supplied servers refused with a logged reason (§11.2).
-- Interim elicitation (§16): provide a coordinator conforming to Multitool's `ElicitationCoordinator` (the host seam of `ToolContext.elicit`) that **declines every request** with the reason "this host cannot ask you questions yet". The real `ACPElicitationCoordinator` is blocked on wire tasks `7kgq5dw`/`enzjy0q`.
+Compose two sources into `withMCP(servers:)`: the config-derived `mcp:` servers first, then the client-supplied per-session `mcpServers`. The client list is session scope and is **never persisted**; `session/resume` re-supplies it.
+
+**The MCP API changed. These are the facts as of 2026-08-31:**
+
+- **`withMCP(servers: [MCPServer]) async throws -> Self`** takes `MCPServer` actors, not plain server descriptions.
+- `MCPServer(name:version:clock:callTimeout:renderBudget:elicitationHandler:logger:)`. Connect with `connect(via: any Transport)` or `connect(via: @escaping TransportFactory)`, each also taking a `BackoffPolicy`. Then `waitUntilReady()`. Also available: `reconnect()`, `disconnect()`, `call(name:arguments:)`.
+- `MCPServerState` is `connecting`, `ready`, `disconnected`, `faulted(String)`. `ServerIdentity` is only `{ name: String }`. ACP's `name` maps to `MCPServer.name`.
+- **The server name is the noun.** A tool is `tools.github.createIssue`, never `tools.mcp.github.createIssue`. There is no `tools.mcp` group. The model must not see the transport.
+- Stdio: `StdioServerProcess(command:args:env:name:) throws`. **The command must be an absolute path.** `EnvVariable {name, value}` layers onto the inherited environment and never replaces it. It has `respawn() -> any Transport` and `shutdown()`.
+- HTTP: an `MCP.Transport` conformer built from the ACP `headers`. `env` and `headers` are arrays of `{name, value}`; for duplicate names, last wins. No SSE. The ACP tunnel (`mcp/connect`) is unstable-schema only. Do not build it.
+- **Connect before `buildRegistry()`.** Router's tool-instancing pipeline is synchronous. Expose an async `connect` step that session/new awaits.
+- **NEW — hold the servers in a pool.** `MCPServerPool` is an actor with `add(server:)`, `add(process:)`, `attach(attachment:)` and `shutdownAll()`. `Builder.serverPool` already holds every server that `withMCP(servers:)` recorded. Add each `StdioServerProcess` we spawned. The lifecycle task shuts it down after the session sweep.
+- **NEW — refresh the surface on `tools/list_changed`.** `SurfaceRefresher(source:staging:servers:logger:)` watches for changes and stages a rebuilt registry. Get `source` from `Builder.registrySource` and `staging` from `Registry.makeSessionToolsAndStaging(librarian:)`. The staged registry is applied at `MultiTool.turnWillBegin()`, so in-flight runs keep the registry they started with. **It asserts in `deinit` if it is released while its watch task runs**, so attach it to the pool or call `stop()`.
+- An MCP verb is a plain synchronous `Tool`. It does not background. A transport drop throws a `LostRunError` and the run settles `.lost`, never `.failed`.
+
+**Decide and document the §7.3 collision rule.** Recommended: refuse a client-supplied server whose name collides with a config-derived server, and log the error. Config is the user's committed intent, and a silent replacement would let a connecting editor shadow a trusted server. Record the decision in a doc comment and in plan.md §7.3.
+
+`mcp: false` turns MCP fully off AND refuses client-supplied servers with a logged reason.
+
+**The elicitation fallback is gone. Do not build it.** The old task asked for a coordinator conforming to Multitool's `ElicitationCoordinator`. That protocol and `MCPElicitationTool` were deleted upstream. The current design has three answerers in a fixed order: the `ToolContext` of the calling run through Router's mailbox; else the host's `elicitationHandler`; else `cancel` to the server. Upstream states that Router wins when present, so **a Router host never sets the handler**. We are a Router host, so leave `elicitationHandler` nil. Our seam is Router's: `RoutedSession.respond(elicitationId:response:)` and `RoutedSession.complete(elicitationId:)`. Elicitation is not the permission system.
 
 - [ ] Two-source composition, config first
-- [ ] Collision rule decided + documented in plan.md
-- [ ] Connect-before-makeSession sequencing
+- [ ] Collision rule decided and documented
+- [ ] Connect and `waitUntilReady()` before `buildRegistry()`
+- [ ] Servers and spawned processes added to `MCPServerPool`
+- [ ] `SurfaceRefresher` started and attached so it is stopped
 - [ ] `mcp: false` refuses client servers with a log
-- [ ] Declining `ElicitationCoordinator` fallback
+- [ ] `elicitationHandler` left nil
 
 ## Acceptance Criteria
-- [ ] Given config servers A,B and client servers C — provider order is A,B,C
-- [ ] Client server named A (collision) is refused per the documented rule; session still starts
-- [ ] With `mcp: false`, client-supplied servers produce zero tools and one logged refusal
-- [ ] Elicitation requests resolve as decline with the stated reason
+- [ ] Given config servers A and B and client server C, the noun order is A, B, C
+- [ ] A client server named A is refused per the documented rule, and the session still starts
+- [ ] With `mcp: false`, client-supplied servers give zero tools and one logged refusal
+- [ ] A server's tools appear as `tools.<serverName>.<verb>`, with no `mcp` segment
+- [ ] A `tools/list_changed` from a scripted server stages a new registry, and the new tool appears only at the next turn boundary
 - [ ] Nothing about client servers appears in `sessions.jsonl`
+- [ ] Releasing the composition does not trip the `SurfaceRefresher` deinit assertion
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift` — composition/collision/refusal against stub server descriptions (no real processes); elicitation fallback unit test
+- [ ] `Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift` — composition, collision and refusal against the `MCPTestServer` and `mcp-test-server` products that Multitool now ships; the list_changed case drives a real scripted server
 - [ ] `swift test` → green
 
 ## Workflow

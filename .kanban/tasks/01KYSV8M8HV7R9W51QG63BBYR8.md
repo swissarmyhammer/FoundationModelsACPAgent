@@ -14,29 +14,52 @@ position_ordinal: '8980'
 title: 'session/new: compose config, instructions, tools into a root Router session'
 ---
 ## What
-Plan.md §7.1 (+§4.2 identity). In `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift` (+ additions to `RoutedACPAgent.swift`):
+Plan.md §7.1 (and §4.2 identity). Work in `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift`, plus additions to `RoutedACPAgent.swift`.
 
-- `session/new(cwd, mcpServers, additionalDirectories)`: require absolute `cwd` (error otherwise). Per session: resolve the cwd config layer (ConfigurationLoader), assemble instructions (InstructionsAssembler), await MCP connection (MCPComposition), construct the roster (`ToolCatalog.builtin(context:)`), then `router.makeSession(workingDirectory:tools:instructions:budget:compactionPrompt:recordingRoot:)` on the resident profile (ProfileResolution) with the transcript root from TranscriptLocation.
-- **The ACP `sessionId` IS the root Router session's ULID, serialized** — no mapping table (§4.2).
-- Multiple concurrent sessions from the start: sessions keyed by `sessionId` in an actor-held table; each session carries its own config, instructions, confinement, transcript dir (§7.1).
-- One prompt per session at a time: track per-session idle/busy; a `session/prompt` while not idle → client error, not a queue entry (§7.1) — enforced here, exercised in the prompt task.
-- Register the cwd in `ProjectRegistry` at session/new. **Do NOT append the `SessionIndex` record here** — per §9's zero-turn rule ("has a persisted transcript is the listability test"), the index record is written at first recorded activity, by the prompt-turn task, together with the title. This is the chosen design; the store's directory-less-entry exclusion is a safety net, not the mechanism.
-- `NewSessionResponse` carries `configOptions` (empty array placeholder until the config-options task fills it — leave a marked TODO).
+`session/new(cwd, mcpServers, additionalDirectories)`:
+
+- Require an absolute `cwd`. Error if it is relative.
+- Per session: resolve the cwd config layer (ConfigurationLoader), assemble the instructions (InstructionsAssembler), connect the MCP servers (MCPComposition), then build the roster with `ToolCatalog.sessionTools(context:)`.
+
+**Make the session from the profile, not from the router.** The old task text said `router.makeSession(...)`. That call does not exist. `Router` has only three public members: `id`, `init` and `resolve(profile:reporting:)`. The session comes from the profile's model handle:
+
+```swift
+profile.standard.makeSession(
+    instructions: assembled,
+    workingDirectory: cwd,
+    recordingRoot: transcriptRoot,
+    tools: sessionTools,
+    budget: budget,
+    compactionPrompt: .default)
+```
+
+`RoutedLLM.makeSession(configuration: SessionConfiguration)` is the other door. `SessionConfiguration` carries the same fields plus `grammar`. Leave `grammar` nil; a non-nil grammar vends a guided session.
+
+**Hold the profile for the life of the agent.** A `RoutedModel` holds its owning profile weakly. Every public `makeSession` traps with `preconditionFailure` if the profile was released. Only the vended session retains it. So the agent must keep a strong reference to the resident profile.
+
+Other rules:
+- **The ACP `sessionId` IS the root Router session's ULID, serialized.** No mapping table (§4.2). Parse a ULID string with the library initializer `ULID(ulidString:)`. Router's own `ULID.init?(_ string:)` is internal.
+- Support many sessions at once from the start. Keep sessions in an actor-held table keyed by `sessionId`. Each session carries its own config, instructions, confinement and transcript directory.
+- One prompt per session at a time. Track idle and busy per session. A `session/prompt` while not idle gives a client error, not a queue entry. Do not expose Router's own prompt queue.
+- Register the cwd in `ProjectRegistry` at session/new. **Do not append the `SessionIndex` record here.** §9's zero-turn rule makes a persisted transcript the listability test. The prompt-turn task writes the index record at first recorded activity, with the title.
+- `NewSessionResponse` carries `configOptions`. Leave an empty array and a marked TODO until the config-options task fills it.
 
 - [ ] Absolute-cwd validation
 - [ ] Per-session composition pipeline
+- [ ] `profile.standard.makeSession(...)`, with the profile held strongly
 - [ ] sessionId = Router ULID
-- [ ] Concurrent session table + idle/busy tracking
+- [ ] Concurrent session table with idle and busy tracking
 - [ ] Registry write at new; index write deferred to first activity
 
 ## Acceptance Criteria
-- [ ] `session/new` on a temp dir returns a sessionId that parses as a ULID and matches the Router session directory name on disk
-- [ ] Relative `cwd` → error
-- [ ] Two concurrent sessions in two temp repos load different project-layer config values (assert via a config-visible behavior, e.g. shell disabled in one)
-- [ ] After `session/new` alone: `projects.jsonl` has the cwd and `sessions.jsonl` has NO record for the session (zero-turn rule)
+- [ ] `session/new` on a temp dir returns a sessionId that parses as a ULID and equals the Router session directory name on disk
+- [ ] A relative `cwd` gives an error
+- [ ] Two sessions at once in two temp repos read different project-layer config values, asserted through a visible behavior such as shell disabled in one
+- [ ] After `session/new` alone, `projects.jsonl` holds the cwd and `sessions.jsonl` holds no record for the session
+- [ ] The agent keeps the profile alive across two sequential sessions, and the second `makeSession` does not trap
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift` — on the test harness (RecordingClient + scripted ModelLoader); temp-dir repos
+- [ ] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift` — on the test harness (RecordingClient and a scripted ModelLoader), with temp-dir repos
 - [ ] `swift test` → green
 
 ## Workflow

@@ -28,35 +28,71 @@ editors (Zed, …) ──ndJSON/stdio──┐          CLI / Mac app (thin fron
    FoundationModelsACP (the wire: types, role protocols, connections — zero deps)
                     ▼
    FoundationModelsRouter — the runtime: models, sessions (self-folding,
-                    │      token-metered, event-streaming, recorded), restore
+                    │      token-metered, event-streaming, recorded)
+                    │      NOTE: restore is not public today — see §4.6
                     ▼
    FoundationModelsExtras (DotfolderStack, TemplateEngine, SlashCommand, AgentsMd, LayeredYAMLDocument)
 ```
 
 **Dependencies.** This package depends on the ACP wire, Router, Extras, and
-one tool package: **`FoundationModelsMultitool`** — the consolidated tool
-surface (see that package's `eventplan.md`). Multitool holds the built-in
-capability modules: `shell`, `files`, `mcp`, `skills`, and `agents`. The
-former sibling tool packages (Shelltool, FileTool, MCP, Skills, Agents)
-dissolve into those modules. `FoundationModelsOperationTool` is removed, and
-its role is eliminated: the event vocabulary (`OperationEvent`,
-`OperationOutcome`) moves into Router's `Hosting/` substrate, and code mode
-replaces the fused-operation pattern. Only this package gives names to tool
-packages. The runtime may not do this. No cycle is possible: Multitool does
-not depend on this package.
+two tool packages: **`FoundationModelsMultitool`** — the consolidated tool
+surface (see that package's `eventplan.md`) — and **`FoundationModelsSkills`**.
+Multitool holds three built-in capability modules: `shell`, `files`, and
+`mcp`. The former sibling tool packages Shelltool, FileTool and MCP dissolve
+into those modules. **Skills does not dissolve into Multitool.** Skills is a
+standalone package that gives one plain `FoundationModels.Tool`. Neither
+package depends on the other, in either direction (§14.2).
+
+Multitool has no `@_exported import`. Therefore this package declares its own
+dependencies on `FoundationModelsRouter`, `FoundationModelsExtras`, and
+swift-sdk's `MCP` to name those types. Use the org fork
+`https://github.com/swissarmyhammer/swift-sdk`, branch `main`. Do not also
+depend on `modelcontextprotocol/swift-sdk`: two identities of the same package
+cause a resolution conflict. `swift-subprocess` is pinned `exact:
+"1.0.0-beta.1"`. Multitool has no semver tags, so depend on `branch: "main"`.
+**The platform declaration is the string form `.macOS("27.0")`.** Router,
+Multitool and Skills all declare it. Our `Package.swift` still declares
+`.macOS(.v26)`; change it to the string form so the dependency graph resolves.
+
+The `FoundationModelsOperationTool` **package** is removed. The
+`OperationTool` **type** is not removed: it lives in Extras at
+`Sources/Operations/OperationTool.swift` and ships as Extras' `Operations`
+product. Skills is built on it today. The event vocabulary (`OperationEvent`,
+`OperationOutcome`) lives in Extras, and Router re-exports it as typealiases
+in `Hosting/OperationVocabulary.swift`. Code mode replaces the fused-operation
+pattern in Multitool only. Only this package gives names to tool packages. The
+runtime may not do this. No cycle is possible: Multitool does not depend on
+this package.
 
 **The composition, end to end:**
 
 ```
 config  (dotfolder stack, §2)
   → ProfileDefinition → Router.resolve → resident profile
-  → tools         (§11: config sections → Multitool capability modules → runCode + findAPIs)
+  → tools         (§11: config sections → Multitool capability modules
+                    → searchTools + runCode + wait; plus the standalone
+                      skills tool the catalog appends)
   → instructions  (Instructions.md + AGENTS.md, §3)
-  → per session:  router.makeSession(workingDirectory:tools:instructions:
-                    budget:compactionPrompt:)   ← the self-folding runtime session
+  → per session:  profile.standard.makeSession(instructions:workingDirectory:
+                    recordingRoot:tools:budget:compactionPrompt:summarization:
+                    agentSpawn:discoveryPriming:)  ← the self-folding session
   → RoutedACPAgent(name:router:configuration:commands:)  ← `name` is the
                     dotfolder name the frontend chose (§2.1)
 ```
+
+**`makeSession` is not on `Router`.** `Router` has exactly three public
+members: `id`, `init`, and `resolve(profile:reporting:)`. A session comes from
+a model handle on the resolved profile:
+`RoutedLLM.makeSession(instructions:workingDirectory:recordingRoot:tools:budget:compactionPrompt:summarization:agentSpawn:discoveryPriming:)
+-> RoutedSession`, or the overload
+`RoutedLLM.makeSession(configuration: SessionConfiguration)`.
+`SessionConfiguration` carries the same fields plus `grammar`; a non-nil
+`grammar` vends a guided session.
+
+**Trap: a `RoutedModel` holds its owning profile weakly.** Every public
+`makeSession` calls `preconditionFailure` if the profile is already released.
+Only the vended session retains the profile. Therefore the agent must hold the
+resident profile for the full life of the process.
 
 **The conformance is a translation, not a construction.** Each ACP noun names
 its peer in this stack. If a noun has no peer, we set that capability off,
@@ -73,8 +109,11 @@ has the name `Agent`. Thus `RoutedACPAgent: Agent` is not ambiguous.)
 `auth/login`, `auth/logout`, `session/new`, `session/resume`, `session/list`,
 `session/delete`, `session/close`, `session/prompt`, `session/cancel`,
 `session/set_config_option`, `session/request_permission`, `session/update`.
-`elicitation/*`, `mcp/*`, and `session/fork` are in the **unstable schema
-only**. We plan them, but we gate them (§16, §11.5, §7.5). `session/list` /
+`mcp/*` and `session/fork` are in the **unstable schema only**. **Upstream has
+promoted `elicitation/*` to stable on its main branch, but the schema
+re-vendor is still pending**, so our vendored schema still carries
+`elicitation/*` as method names only (§16). We plan all three, and we gate
+them (§16, §11.5, §7.5). `session/list` /
 `resume` / `close` are baseline in v2. Each agent that supports sessions must
 supply them. "Capability off" is not available for them.
 
@@ -174,7 +213,7 @@ The dot position obeys the convention of each directory:
 | `_partials/` | ✅ | ✅ | nearest layer wins per partial name |
 | `transcripts/` (§4) | opt-in | ✅ **default** | not layered — a location, not content |
 | *(skills are their own stack — `DotfolderStack(name: "skills")`, §14.2)* | — | — | — |
-| *(no per-tool config files — tools take **objects**, §2.5)* | — | — | `decisions.yaml` lands here; this package supplies its location (§2.5) |
+| *(no per-tool config files — tools take **objects**, §2.5)* | — | — | there is no `decisions.yaml`; the shell permission layer is deleted (§2.5, §11.7) |
 
 `AGENTS.md` is the one **additive** row. It answers "in which order do the
 files compose". Each other row answers "which layer wins".
@@ -182,9 +221,11 @@ files compose". Each other row answers "which layer wins".
 ### 2.4 Schema and loading
 
 **The `AgentConfiguration` schema** contains `profile` (standard/flash/
-embedding slots), `tools` (built-in sections + `mcp`, §11.2), `permissions`
-(the ask-before-running mode, §11.7), `recording`, `transcripts`, and
-`compaction`. There is **no `instructions` section**. The
+embedding slots), `tools` (built-in sections + `mcp`, §11.2), `recording`,
+`transcripts`, `compaction`, and `sandbox` (§11.7). There is **no
+`permissions` section**: the sandbox is the only gate, and it has no policy to
+configure (§11.7). The `sandbox` section holds one key, `extraWritePaths`.
+There is **no `instructions` section**. The
 system prompt is a markdown file (§3.1). The context size comes from the
 model. It is not configurable, and this is intentional.
 
@@ -208,43 +249,49 @@ call:
 
 | Capability (Builder call) | Takes | Status |
 |---|---|---|
-| `files` — `withFiles(...)` | `root`, `additionalRoots`, `readOnly`, `allowSymlinks` | ✅ complies |
-| `mcp` — `withMCP(servers:)` | server descriptions | ✅ complies |
-| `skills` — `withSkills(roots:)` | layer **roots** (ordered, lowest first — §14.2) | ✅ by design: for skills the folders *are* the data (content discovery, not self-configuration) |
-| `shell` — `withShell(...)` | a `ShellSecurityConfig` value + a `ShellDecisionStore` with host-supplied decision-file URLs | ✅ complies — **`f9q2338`** landed 2026-07-29 in Shelltool, and the values route moves with the code into the shell capability |
-| `agents` — `withAgents(...)` | agent definitions from the `AgentsMd` walk (§3.2) | plan-only |
+| `files` — `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)` | `root: URL`, `additionalRoots: Set<URL>`, three flags | ✅ complies |
+| `mcp` — `withMCP(servers:) async throws` | `[MCPServer]` | ✅ complies |
+| `shell` — `withShell(storeDirectory:sandbox:outputChunkStream:) throws` | an optional store directory, an optional `any CommandSandbox`, an optional `ShellOutputChunkStream` | ✅ complies |
+| *(anything else)* | `withCapability(_:)`, `addTool`, `addTools`, `register(noun:tool:)`, `addGroup(named:_:)` | the open door for a host-supplied capability |
 
-**`tools: shell:` in our `config.yaml` is the full story.** We decode it as
-the shell capability's own option type (§11.1). This package then constructs
-the policy value:
+The build calls are `build() throws -> APISurface`, `buildRegistry() throws
+-> MultiTool.Registry`, and `rebuildRegistry() async throws ->
+MultiTool.Registry`.
 
-```swift
-ShellPolicy(rules: ShellPolicy.builtinRules.merged(with: configured), decisions: store)
-```
+**There is no `withSkills(roots:)` and no `withAgents(...)`.** Skills is a
+standalone package, not a Multitool capability (§1, §14.2). Do not look for a
+builder call for it.
 
-The shell capability contains the compiled builtin denials. Its values initializer checks
-`builtinRules.deny` unconditionally, before the host rules. Thus **no config
-layer can remove them**, and the host cannot forget the merge. We merge
-`builtinRules` in anyway: then the composed value describes the full rule set,
-for print and inspection.
+**The shell permission layer is deleted.** Upstream removed it on 2026-08-24.
+These types exist nowhere now: `ShellPolicy`, `ShellPolicy.builtinRules`,
+`.merged(with:)`, `ShellSecurityConfig`, `ShellDecisionStore`, `ShellContext`,
+`check(workingDirectory:)`, `remember(...)`, the `.allow` / `.ask(reason)` /
+`.deny(message)` results, and the `decisions.yaml` file. There is no policy
+layer. There is no remembered `allow_always` / `reject_always` store. There is
+no denial-union rule, because there are no denial rules.
 
-**One intentional exception to §2.2's precedence exists, and it is
-security-shaped: denials union across layers.** A project-layer `deny` list
-must not replace the user's machine-wide list. If it did, an open repo could
-silently remove "never run `rm -rf`" from a user's machine. Denials are a
-floor: the builtin, user, and project denials all apply. `allow` and `ask`
-obey the usual override. Our codec applies this rule. This section states it.
+**The upstream reason, recorded here:** a denylist over command text is
+bypassable. The sandbox is a kernel boundary. It does not care how a command
+is spelled.
 
-**`decisions.yaml` is state, not configuration.** The agent writes the
-`allow_always` / `reject_always` answers. The user does not author them.
-The shell capability defines the decision vocabulary and the match logic. **This package
-decides where the data persists, and if it persists**:
-`ShellDecisionStore(userDecisionsURL:projectDecisionsURL:)` takes the
-decision-file locations from the host. We point them at our dotfolder layers,
-or pass `nil` for no persistence. The `.session` scope stays in memory,
-written nowhere. Keep `.session` as the default scope for a remembered
-answer. The project dotfolder is **committed** (§4). A click on "always
-allow" must not silently make a tracked file change in a shared repo.
+**`SeatbeltSandbox` is the only gate on a command.** It conforms to
+`public protocol CommandSandbox: Sendable`, which declares
+`wrap(...) -> SandboxedInvocation` and `preflight(...) throws` (default
+no-op). The host builds
+`SeatbeltSandbox.Options(writableRoots: [String] = [], extraWritePaths:
+[String] = [])` from the session root set and passes the sandbox to
+`withShell(sandbox:)`.
+
+- **Hard precondition:** every directory given to `wrap` must already be
+  `realpath(3)`-resolved. `URL.resolvingSymlinksInPath()` does **not** satisfy
+  this on macOS: it strips `/private` and gives exactly the form that Seatbelt
+  cannot match. `SeatbeltSandbox.Options.init` runs `resolvedPath` over both
+  lists for you.
+- `preflight` runs a canary before any command starts. A failed preflight
+  means the command does not run. There is no path from a failed preflight to
+  an unconfined spawn.
+- **Stated limit:** the sandbox bounds writing and deleting only. Reads are
+  free and the network is open. Therefore exfiltration is not bounded.
 
 ## 3. Instructions
 
@@ -300,6 +347,12 @@ let rendered = try engine.render(text, context: context, trust: trust)
 - **Partials also stack, and that part is useful.** A project can replace one
   partial and keep the full prompt. This gives back the granularity that
   wholesale replacement removes. It does not add a merge rule for prose.
+- **Preloaded skill bodies join the prompt here, and this layer owns that
+  step.** Call `registry.preloadedBodies()` (§14.2). It returns the bodies of
+  the `preload: true` skills, already rendered, as **one** `String`. Append
+  that string after the rendered base prompt and before the `AGENTS.md`
+  documents. **Refresh it when the skills registry reloads.** A `nil` or empty
+  registry adds nothing.
 
 The untrusted render is validated and has no side effects. It has no
 filesystem or exec reach. Budgets meter the include depth, the loop
@@ -310,8 +363,7 @@ repo has the same limits as each other untrusted document.
 
 These files are context, not memory. Per [agents.md](https://agents.md/),
 `AGENTS.md` is "a README for agents". Nothing here keeps data across sessions.
-The discovery walk is Extras' `AgentsMd`. (The agents capability in Multitool
-uses the same walk for sub-agent instructions.) This layer consumes the walk.
+The discovery walk is Extras' `AgentsMd`. This layer consumes the walk.
 Resolution is **per session, relative to the session working directory**. It
 is never per process.
 
@@ -327,7 +379,9 @@ At session creation, this layer assembles two sources:
    directory. The outermost file goes first. Thus the file nearest to the cwd
    goes last (the spec: "closest one takes precedence").
 
-**Assembly order:** the base prompt (`Instructions.md`, §3.1) → the user-level
+**Assembly order:** the base prompt (`Instructions.md`, §3.1) → the preloaded
+skill bodies (`registry.preloadedBodies()`, one rendered string, §3.1 and
+§14.2) → the user-level
 `AGENTS.md` → the project-level documents (root → cwd). The nearest
 `AGENTS.md` has the last word. A header with the absolute path of each file
 divides the files. Thus the model, and each reader of the session
@@ -372,6 +426,20 @@ repo gets it.
 - **`transcripts.location` gives the override**: `project` (default), `home`
   (shared root + slugs), or an absolute path.
 
+**Router's on-disk layout, confirmed.** With `recordingRoot` set, a session
+records to `<recordingRoot>/<sessionId>/`. Build the read side (§4.6) on these
+facts:
+
+- **A fork nests inside its parent's directory, and the nesting *is* the
+  lineage record.** No file stores a parent path.
+- **Identity is the directory name, and it must parse as a ULID.**
+- **A directory is a session if and only if it holds `session.json`.**
+  `session.json` is write-once.
+- **`transcript.jsonl` is append-only.** It fsyncs only after a `.response`
+  event. Therefore the final line can be torn after a crash. A reader drops a
+  torn **final** line with a warning. A corrupt **earlier** line throws.
+- **`seq` is global across directories.** The merge sorts by `(ts, seq)`.
+
 ### 4.2 One ACP session is one root Router session — and nothing else is
 
 **The ACP `sessionId` *is* the ULID of the root Router session.** It is the
@@ -396,8 +464,13 @@ the tool call that the client saw gives access to the sub-agent's transcript.
 Two rules come from this:
 
 - **`session/list` shows only roots**: a session is listable if
-  `parentId == nil` and `agentSpawn == nil`. The sidecar has both facts. Thus
-  the cost is one predicate.
+   `parentId == nil` and there is no agent spawn. **Read both halves from
+   `TranscriptEvent`, not from the sidecar.** `SessionSidecar` is public but
+   publishes **no** public stored property at all. What is public is the
+   nested type `SessionSidecar.AgentSpawn` and the `init(from decoder:)`.
+   Therefore a caller can decode a `session.json` that it already located, but
+   it can read no field from the decoded value. `TranscriptEvent.parentId` is
+   public and arrives with `merged(under:)` (§4.6).
 - **`session/close` closes the tree**: a fork or sub-agent that operates is
   part of the session's work (§10.1).
 
@@ -426,9 +499,11 @@ obligation:
 - **Repo size is a real cost. There is no clean mitigation.** At
   `RecordingLevel.full`, a transcript contains the full contents of each file
   that a tool receives. `recording.level` is the control, and it is
-  per-project. A repo can select `metadata`. Then it keeps the shape of its
-  history without the payload. Say this in the docs, clearly: full transcripts
-  are the default because they are the valuable thing, and they are not free.
+  per-project. **`RecordingLevel` has only two cases: `off` and `full`. There
+  is no `metadata` level.** Therefore the only choice is full recording or no
+  recording. There is no middle escape hatch for repo size. Say this in the
+  docs, clearly: full transcripts are the default because they are the
+  valuable thing, and they are not free.
 
 ### 4.4 No redaction — deliberately
 
@@ -444,8 +519,8 @@ whose history must stay private. Two positive reasons:
   secret. Persons then think a "redacted" transcript is safe to publish.
   Verbatim-and-private is an honest position.
 
-**`recording.level` stays the control for repos that want less.** `metadata`
-records the shape without the content. `off` records nothing. Commit the level
+**`recording.level` stays the control for repos that want less.** The level is
+`full` or `off`, and nothing between: `off` records nothing. Commit the level
 in the project layer. Then it applies to each person who works there. If the
 assumption stops being true (a public repo, a regulated codebase, production
 credentials), the answer is `recording.level`, not redaction. One line in the
@@ -465,15 +540,42 @@ can delete it. Skip stale entries on read.
 This is the read side that the frontends and `session/list` (§9) need:
 `sessions(inProject:)` (a plain directory read), a paged variant for cursor
 pagination (§9), `allProjects()` through the registry, and
-`transcript(for sessionID:) -> [Transcript.Entry]` through Router's
-`TranscriptTree` reconstruction.
+`transcript(for sessionID:)`.
+
+**Build the read side on `TranscriptEvent.merged(under:) throws ->
+[TranscriptEvent]`. It is the only public read that Router gives.** It returns
+one flat list, sorted by `(ts, seq)`, with no tree. Group the list by
+`sessionId` and rebuild parentage from `parentId`. The public fields are
+`sessionId`, `parentId`, `slot`, `seq`, `kind`, `text`, `tokensIn`,
+`tokensOut`, `ms`, and `entry`. The fields `routerId`, `model`, `ts` and
+`grammar`, and the initializer, are all internal.
+
+**Session restore, list and delete are not public.** `restoreSessionTree`,
+`RestoredSessionTree`, `transcriptTree(recordingRoot:)` and
+`makeLanguageModel(resuming:)` are internal. `TranscriptTree.load(under:)`,
+`.roots`, `SessionNode` and `effectiveTranscript(forSession:view:)` are
+package. Therefore live resume is **blocked** on an upstream Router ask for a
+public restore entry point (§21). We sent the ask on 2026-08-31, and the
+decision is pending. **We will not reimplement restore against
+`transcript.jsonl`.** That forks Router's format, and it breaks silently at
+the next format change.
+
+Two smaller gaps to expect:
+
+- `SessionSidecar` is public, but it has **no** public stored property at all.
+  Only the nested type `SessionSidecar.AgentSpawn` and the
+  `init(from decoder:)` are public. Therefore a caller can decode a
+  `session.json` that it already located, but it can read no field from the
+  decoded value. Take `parentId` and the spawn fact from `TranscriptEvent`.
+- No shipped `TranscriptRecorder` is reachable: `.jsonl`, `.inMemory` and
+  `.none` are internal. Therefore a test cannot build a recording fixture
+  (§20.1).
 
 The ownership boundary: **`TranscriptStore` does not record and does not
 restore.** It owns the root location policy, the project registry, and light
 browse summaries. Router owns everything that gives a `transcript.jsonl` its
 meaning: event writes, entry reconstruction, compaction checkpoints, and
-live-session rebuild (`RoutedLLM.restoreSessionTree`). This package calls
-Router for those.
+live-session rebuild. This package calls Router for those.
 
 The store persists three values for each session. `session/list` (§9) needs
 them, and they are not derivable later: a generated **title** (from the first
@@ -561,7 +663,8 @@ configurations** (§7.3).
 
 One ACP session = one root Router session, with the same ULID (§4.2).
 `session/new(cwd)` ⇒ the per-cwd config layer (§2.2) + the tool roster (§11)
-+ the assembled instructions (§3) → `router.makeSession(...)`. `cwd` MUST be
++ the assembled instructions (§3) → `profile.standard.makeSession(...)` (§1).
+`cwd` MUST be
 absolute. It MUST be part of the session's effective root set. This is
 load-bearing: `cwd` is where the transcripts go (§4.1).
 
@@ -597,27 +700,32 @@ primary root. That is worse than no advertisement.
   config layer (§2.2), the AGENTS.md walk (§3.2), and the transcript directory
   (§4.1). A vendored dependency that you can read is not a project whose
   `AGENTS.md` governs you. A second root must never fork the transcript
-  location. `PathGuard` gets the root set. `ShellPolicy` accepts the roots as
-  valid working directories.
+  location. **`PathGuard` is internal, so a consumer cannot name it.** Reach
+  multi-root confinement only through
+  `withFiles(root:additionalRoots:)` (§2.5). The shell side takes the same
+  root set as `SeatbeltSandbox.Options(writableRoots:)` (§11.7).
 - **On resume, the list is authoritative and replaceable. It is not sticky.**
   A non-empty list is the complete resulting root set. Omitted or empty means
   **no** additional roots. Do not inherit the session's former roots. Rebuild
   confinement from the request contents, each time. This keeps a boundary that
   the client made narrow from silent re-widening.
 
-Upstream: multi-root `PathGuard` (`939nnzx`, now in the files capability) is
-the one blocking dependency. It is in progress. The shell capability needs
-nothing. It is not root-confined (§11.4).
+Upstream: multi-root `PathGuard` (`939nnzx`, in the files capability) is
+**done and shipped**. Nothing here blocks. The shell capability is not
+root-confined by a guard; `SeatbeltSandbox` bounds its writes (§11.4).
 
 ### 7.3 `mcpServers` — the client's servers
 
 `session/new` and `session/resume` both carry `mcpServers: [McpServer]`.
 Client-supplied servers have session scope. We connect them **in addition to**
 the config-derived servers, after them. (ACP's `name` is our
-`ServerIdentity`.) **One decision is open, and we record it as open**: at a
-name collision, can a client-supplied server *replace* a config-derived
-server, or do we refuse the collision? State the rule before implementation.
-Connection must complete **before** the tool array reaches
+`ServerIdentity`, which is exactly `{ name: String }`.) **The server name is
+the noun**: a verb mounts as `tools.github.createIssue`, never
+`tools.mcp.github.createIssue`. There is no `tools.mcp` group. Therefore a
+name collision is a noun collision. **One decision is open, and we record it
+as open**: at a name collision, can a client-supplied server *replace* a
+config-derived server, or do we refuse the collision? State the rule before
+implementation. Connection must complete **before** the tool array reaches
 `makeSession(tools:)`. Router's tool-instancing pipeline is synchronous. Thus
 we connect during the `session/new`/`session/resume` handling.
 
@@ -645,7 +753,13 @@ the wire. The last one wins.
   change.)
 - Restore assembles this package's side again (the config layer, the
   instructions, the confinement) from the recorded cwd. Router restores the
-  session itself (Router board `6j4bven`).
+  session itself. **This is blocked today: Router's restore entry points are
+  internal (§4.6).** We sent an ask for a public entry point to the Router
+  team on 2026-08-31. The decision is pending, and it is escalated to that
+  team's user, because publishing a restore entry point is a substantial
+  public-surface commitment. **Do not reimplement restore against
+  `transcript.jsonl` while the decision is pending.** That forks Router's
+  format, and it breaks silently at the next format change (§21).
 - `replayFrom: {"type": "start"}` replays the history before the response
   returns. Omitted or `null` skips the replay. **Replay sends whole-message
   upserts** (`user_message` / `agent_message` / `agent_thought`) with the
@@ -688,14 +802,21 @@ echo is a MUST**: "the Agent MUST report where the user message was inserted
 in session history". That update is the source of truth for the agent-owned
 `messageId`. A `user_message_chunk` stream also satisfies the rule.
 
+**`turnEnded` is not the end of the turn.** Router emits it once for each
+inner generate call. A turn that retries after a recovered overflow emits one
+`turnStarted` and two `turnEnded` (§8.4). Therefore the `idle` update must key
+on the completion of our own turn task, not on a `turnEnded` event. Sum the
+usage across every `turnEnded` in the turn. Report that sum one time. Two
+`turnEnded` events are one turn, not two turns. Send `idle` one time.
+
 ### 8.2 The state machine
 
 `state_update` carries `running` / `idle` / `requires_action`. The conformance
 needs a named owner for this state machine:
 
 - `running` at turn start.
-- **`requires_action` each time we stop on the human**: around
-  `session/request_permission`, and around each elicitation round-trip (§16).
+- **`requires_action` each time we stop on the human**: around each
+  elicitation round-trip (§16). We send no permission requests (§11.7).
   Pair it with Router's `awaitingUser { }`. Then the per-model generation gate
   opens at the same moment that the protocol says "blocked on user". Go back
   to `running` at the answer. (`requires_action` is "foreground work is
@@ -734,58 +855,130 @@ that saw the chunk stream (§7.4). `ContentChunk` requires
 
 ### 8.4 The `session/update` stream — Router's events on the wire
 
+**`SessionEvent` has thirteen cases. Handle all of them.** The enum has no
+library evolution, and its doc comment says a consumer must write a `default`
+arm. Write one.
+
 | Router `SessionEvent` | ACP `SessionUpdate` (v2 discriminator) |
 |---|---|
-| `textDelta` | `agent_message_chunk` (with the agent-generated `messageId`) |
-| `reasoningDelta` | `agent_thought_chunk` |
+| `turnStarted(TurnStart)` | `state_update: running` |
+| `textDelta(String)` | `agent_message_chunk` (with the agent-generated `messageId`) |
+| `textReset` | a **whole-message** `agent_message` upsert that replaces the accumulated content (§8.3, row 3) |
+| `reasoningDelta(String)` | `agent_thought_chunk` |
 | `toolCall(id:name:argumentsJSON:)` | `tool_call_update` — v2 has no `tool_call` create variant; the first update carrying an unseen `toolCallId` *is* the creation, and SHOULD carry `title` |
-| `toolStatus(id:status:summary:)` | `tool_call_update` (`running` → `in_progress`) |
+| `toolStatus(id:status:summary:output:)` | `tool_call_update` (`running` → `in_progress`) — `output: [SegmentPayload]?` is the fourth parameter; map it to the call's content |
+| `toolInvocation(ToolInvocationRecord)` | `tool_call_update` — the settled record for the call |
+| `entryRecorded(id:kind:)` | nothing on the wire — a recording fact (§4) |
 | `compaction(CompactionResult)` | `usage_update` — the context meter drops; no message change (§8.5) |
-| `turnEnded(TokenUsage)` | `usage_update` |
-| turn start / turn end | `state_update` — `running`, then `idle(stopReason)` |
+| `discoveryPrimingFailed(DiscoveryPrimingFailure)` | nothing on the wire — log it |
+| `generationStalled(GenerationStall)` | nothing on the wire — log it |
+| `runSettled(OperationEvent)` | `tool_call_update` with the **terminal** status (see the mapping below) |
+| `turnEnded(TokenUsage)` | `usage_update` only (the `idle` `state_update` comes from the completion of our own turn task, never from this event — §8.1) |
+
+**`textReset` means "discard the text accumulated so far".** Therefore it
+cannot ride as a chunk. Send the whole-message form, which replaces
+everything accumulated (§8.3).
+
+**Trap: `turnEnded` fires once for each inner generate call, not once for a
+logical turn.** A turn that retries after a recovered overflow emits one
+`turnStarted` and **two** `turnEnded`. Therefore do not send `idle` at the
+first `turnEnded`. Sum the usage across every `turnEnded` in the turn, then
+report that sum one time. Two `turnEnded` events are one turn, not two turns
+(§8.1).
+
+**Two subscription channels carry different sets. Pick with care:**
+
+| Channel | Life | Carries |
+|---|---|---|
+| `streamEvents(to:maxTokens:)` | one turn | every case, `textDelta` and `textReset` included |
+| `streamSessionEvents()` | the full session | every case **except** `textDelta` and `textReset` |
+
+- **Abandoning a `streamEvents` stream cancels the turn.** It does not drain
+  the run plane. Read it to the end, or cancel on purpose (§8.6).
+- Each `streamSessionEvents()` call vends an independent subscription with an
+  unbounded buffer. `close()` finishes every outstanding one (§10.1).
+
+**Order within a turn**: `turnStarted` → `textDelta` fragments → (after the
+turn's diff) the tool-call and tool-status events, `reasoningDelta`, and one
+`entryRecorded` for each recorded entry → `turnEnded`. A **proactive** fold's
+`compaction` comes **after** `turnStarted` and **before** the rest of the
+turn's events: Router emits `.turnStarted` first, then runs the proactive fold
+block. A **reactive** fold's `compaction` comes **after** the failed attempt's
+`turnEnded`.
 
 The v2 discriminators are **`snake_case`** (`agent_message_chunk`,
 `tool_call_update`, `in_progress`). The JSON *properties* are `camelCase`.
 This is an easy place for a wire error.
 
 - **`usage_update` is the context meter, and it is native**: `{used, size,
-  cost?}` maps directly to Router's token meter and resolved context.
+  cost?}` maps to Router's `TokenUsage { tokensIn, tokensOut, contextFill }`
+  and the resolved context. **`TokenUsage` has no cost field**, so send no
+  `cost`. **Trap: `contextFill` returns `Double.nan` when there is no stamp**,
+  and the naming constant is internal. Therefore test `.isNaN` yourself and
+  omit the meter for that turn. Do not put a `NaN` on the wire.
 - **`session_info_update`** carries title/metadata changes in a session.
   Example: the moment when the first prompt gives a title (§4.6).
 - ACP's `ToolCallStatus` is `pending` / `in_progress` / `completed` / `failed`
   / `cancelled`. `pending` (a queued call) and `cancelled` are additions to
   Router's vocabulary. A detached MCP call stays `in_progress` across turns.
+- **Router's own `ToolCallStatus` has only three cases**: `running`,
+  `completed`, `failed`. Router derives it from the SDK transcript diff, not
+  from `OperationOutcome`. Therefore `toolStatus` alone cannot tell you
+  `cancelled` from `failed`. The richer terminal vocabulary arrives only
+  through `runSettled`.
 
 **Decision: the terminal status comes from `OperationEvent.outcome`, through
-one total function `OperationOutcome → ToolCallStatus`.** The shared
-terminal-outcome vocabulary — `succeeded` / `failed` / `timed_out` /
-`stopped` / `cancelled` / `lost` — lives on the `OperationEvent` envelope in
-Router's `Hosting/` substrate. (Card `1ad4ydw` put it in OperationTool first.
-The Multitool consolidation moves it into Router and removes OperationTool.)
-Multitool's capability modules emit it on each terminal event: shell
-(`jt19xwc`) and mcp (`zfp4a3j`) do this already (§21). We write the function
-once, for every event-posting capability. We do not parse per-capability
-`detail` payloads to decide status. The mapping:
+one total function `OperationOutcome → ToolCallStatus`.** `runSettled(OperationEvent)`
+is the event that carries it to us. That is the mechanism this mapping runs on.
 
-| `OperationOutcome` | ACP `ToolCallStatus` | Text |
+`OperationOutcome` **lives in `FoundationModelsExtras`, not in Router.**
+Router re-exports it, with 17 other names, as typealiases in
+`Hosting/OperationVocabulary.swift`. The envelope is
+`OperationEvent { tool, op, correlationID, kind, detail, outcome,
+elicitation }`, where `OperationEventKind` is `progress` / `completed` /
+`elicitation`. **Only `.completed` is terminal, and `outcome` is non-nil if
+and only if `kind == .completed`.** Therefore key the terminal update on the
+kind, and never read `outcome` on a progress event.
+
+**That rule is a convention, not a type guarantee.** The upstream source
+states it in doc comments only. Nothing enforces it: the sole initializer is a
+plain memberwise `init` with `outcome: … = nil`, there is no precondition, no
+assert, and no validating factory, and the `Codable` conformance is
+synthesized, so decoding does not validate either. **Therefore the projection
+reads defensively.** A `.completed` event with a `nil` outcome, and a
+non-`.completed` event that carries an outcome, are both cases that the
+projection must survive. Log them and pick a safe status. Do not crash.
+
+**Router contains no `OperationOutcome → ToolCallStatus` mapping. We own this
+function.** We write it once, for every event-posting capability. We do not
+parse per-capability `detail` payloads to decide status. The mapping:
+
+| `OperationOutcome` (Swift case) | ACP `ToolCallStatus` | Text |
 |---|---|---|
 | `succeeded` | `completed` | — |
 | `failed` | `failed` | the tool's error |
-| `timed_out` | `failed` | names the timeout ("timed out after Ns") |
+| `timedOut` (wire `timed_out`) | `failed` | names the timeout ("timed out after Ns") |
 | `stopped` | `cancelled` | authoritative — the work was killed |
 | `cancelled` | `cancelled` | advisory — "we stopped listening" (§8.6) |
 | `lost` | **`_lost`** | "we do not know if this ran" |
-| unknown / other | the raw value under the `_` rule (§18) | generic rendering |
+| `other(String)` | the raw value under the `_` rule (§18) | generic rendering |
 
-- **`timed_out` maps to `failed`, not `cancelled`.** Nobody asked for the
+- **The Swift case is `timedOut` (camelCase). Its wire string is
+  `timed_out`.** Do not mix the two spellings.
+- **`timedOut` maps to `failed`, not `cancelled`.** Nobody asked for the
   stop, and the caller must treat the result as an error. The text names the
   timeout, so the failure is explicable.
+- **The three upstream semantic rules, recorded:** `.stopped` is an
+  authoritative kill, and the work is certainly dead. `.cancelled` is a
+  **request only**, and the work may continue. `.lost` is unknowable.
 - **`lost` never flattens into `failed`** (the existing decision, unchanged).
   The extensible status **`_lost`** rides with "we do not know if this ran"
   in the text, for clients that ignore custom values.
-- An outcome value this function does not know keeps its raw value under the
-  `_` extension rule (§18), with a generic rendering. The function is total:
-  a new upstream outcome degrades the display, never the stream.
+- **`other(_)` is the carrier for an unknown wire value.** An unknown wire
+  value decodes to `.other(rawValue)` and round-trips. Put that raw value on
+  the wire under the `_` extension rule (§18), with a generic rendering. The
+  function is total: a new upstream outcome degrades the display, never the
+  stream.
 
 ### 8.5 Compaction on the wire
 
@@ -819,19 +1012,53 @@ them on the wire.
 ### 8.6 Cancellation (`session/cancel`)
 
 It is a notification with a defined confirmation. Answer each pending
-`session/request_permission` with the **cancelled** result. Stop the work.
+elicitation with the **cancelled** result (§16). Stop the work.
 Then send `state_update` `idle` with `stopReason: "cancelled"`. Agents MAY
 send updates after `session/cancel`, but MUST send them *before* the idle
 update. `idle` + `cancelled` is strictly the terminator. The client has its
-own half: it marks unfinished tool calls as cancelled, and it answers pending
-permissions. We still send correct terminal tool statuses. But we do not hold
-the `idle` for that.
+own half: it marks unfinished tool calls as cancelled. We send no permission
+requests (§11.7), so the client has no permission duty here. We still send
+correct terminal tool statuses. But we do not hold the `idle` for that.
 
-**The chain has a known gap.** Router's cancellation is queue-side. A turn
-that went to the model runs to completion. The chain from `session/cancel` to
-an in-flight MCP call needs Router's in-flight cancellation first (open,
-upstream). And MCP's `notifications/cancelled` is advisory. Thus the honest UI
-result is "we stopped listening", not "it stopped".
+**Router's cancellation is no longer queue-side only. It now reaches the
+model call.** Use the right call for the right object:
+
+| What you cancel | Call | Result |
+|---|---|---|
+| the turn in flight | `RoutedSession.cancelCurrentTurn()` | `.requested` / `.noTurnInFlight` |
+| a **queued** prompt — **NOT REACHABLE on our surface** | `cancelPrompt(id:)` | `.withdrawn` / `.turnCancelled` / `.alreadyFinished` |
+| a background run | `ToolContext.cancel(completionToken:)` | `CancelOutcome` |
+
+`cancelCurrentTurn()` is cooperative and best-effort. Read `.requested` as
+"the request was recorded", not as "the model has stopped". It cancels the
+`Task` that runs the model call. Therefore cancellation **does** reach the
+tools that the SDK invokes. A stream keeps the fragments that it already
+yielded. The transcript records a cancelled turn as a failed turn.
+
+**The row for a queued prompt is not reachable on our surface.**
+`cancelPrompt(id:)` exists in Router. We never create a queued prompt: a
+prompt that arrives while the session is busy is a client error, and we do not
+expose Router's prompt queue over ACP (§7.1). The row stays here so that a
+reader knows why we do not call it.
+
+**A cancelled turn does not always throw.** It **usually** surfaces a
+`CancellationError`, and we must catch that error and map it to
+`stopReason: "cancelled"` (§8.2) when it appears. But Router's contract says
+that model work which never checks for cancellation runs to completion and the
+turn returns its response. The runner re-raises only what the body threw.
+Therefore the turn owner must handle both results. Do not assume a throw.
+
+Two limits stay, and we state them honestly:
+
+- **Model work that never checks for cancellation runs to completion.**
+  Propagation past a process boundary stays advisory.
+- **An in-flight MCP call cannot be forced to stop.** MCP's
+  `notifications/cancelled` is advisory. Thus the honest UI result for that
+  call is "we stopped listening", not "it stopped" (§8.4, `.cancelled`).
+
+**Abandoning a `streamResponse` or `streamEvents` stream also cancels the turn
+behind it.** Therefore never drop such a stream to "move on": that is a
+cancellation, and the client will see it as one.
 
 ## 9. Session List (`session/list`)
 
@@ -872,8 +1099,18 @@ stays correct through concurrent writes. There are no duplicates and no skips.
 
 The zero-turn rule is free. We write a session directory when there is data to
 record. Thus "has a persisted transcript" *is* the listability test. Roots
-only: `parentId == nil && agentSpawn == nil` (§4.2). Forks and sub-agents do
+only: no `parentId` and no agent spawn (§4.2). Forks and sub-agents do
 not show as conversations.
+
+**Both halves of the test read from `TranscriptEvent`, not from the sidecar.**
+Router's list and restore entry points are not public (§4.6). The one public
+read is `TranscriptEvent.merged(under:)`. Group its flat `(ts, seq)`-sorted
+result by `sessionId` and rebuild parentage from `parentId`. `SessionSidecar`
+is public but exposes **no** public stored property at all — only the nested
+type `SessionSidecar.AgentSpawn` and the `init(from decoder:)` are public. A
+caller can decode a `session.json` that it already located, but it can read no
+field from the decoded value. Therefore the sidecar can supply neither
+`parentId` nor the spawn fact.
 
 ## 10. Session Management (`session/close`, `session/delete`)
 
@@ -881,7 +1118,8 @@ not show as conversations.
 
 This is a **MUST**: cancel the session's work "as if `session/cancel` had been
 called", then release the resources. That includes cancellation's full
-semantics (§8.6). Pending permission requests get the cancelled result. A
+semantics (§8.6). Answer each pending elicitation with the **cancelled**
+result (§16). We send no permission requests (§11.7). A
 close during an active turn **sends `state_update` `idle` with
 `stopReason: "cancelled"` before the close response**. If not, a client with a
 spinner does not learn that the turn ended. Then release: in-flight MCP calls,
@@ -890,6 +1128,17 @@ descendants**. A fork or sub-agent that operates is this session's work. If it
 continues after close, it burns a model gate with no watcher. That is the
 failure that this MUST prevents. Recording closes. The transcript **stays** on
 disk.
+
+**`RoutedSession.close()` does most of this for us.** It runs
+`SessionMailbox.sweep()`: it cancels every background run, rejects every
+pending elicitation, journals the terminal events, and finishes every
+`streamSessionEvents()` subscription. It is idempotent, so a double close is
+safe. **`deinit` does not run the sweep. The host must call `close()`.**
+Therefore `session/close` calls it, and so does agent shutdown.
+
+**The shutdown order matters**: sweep the sessions first, then call
+`MCPServerPool.shutdownAll()` (§11.5). A pool shutdown before the sweep drops
+the transports that the settling runs still need.
 
 ### 10.2 `session/delete`
 
@@ -915,14 +1164,14 @@ the recovery path. It is not a reason to keep the file in the working tree.
 *This is the tools' home. v2 removed `fs/read_text_file`,
 `fs/write_text_file`, and all five `terminal/*` client methods. It points
 agents to their own file access, their own execution, and MCP. The
-model-facing surface is one code-mode pair from `FoundationModelsMultitool`:
-`runCode` and `findAPIs`. The capability modules — `files`, `shell`, `mcp`,
-`skills`, `agents` — live inside the MultiTool registry, and they are the
-**full surface** through which this agent touches the user's world.
-In-process capabilities are the approved design, not an accepted risk. The
-confinement story stays ours: `PathGuard` bounds `files`. The composed
-`ShellPolicy` bounds `shell`. `session/request_permission` asks the user
-before either goes further.*
+model-facing surface is three code-mode tools from
+`FoundationModelsMultitool`: `searchTools`, `runCode`, and `wait`. The
+capability modules — `files`, `shell`, `mcp` — live inside the MultiTool
+registry, and with the standalone `skills` tool they are the **full surface**
+through which this agent touches the user's world. In-process capabilities are
+the approved design, not an accepted risk. The confinement story stays ours:
+`withFiles(root:additionalRoots:)` bounds `files`. `SeatbeltSandbox` bounds
+`shell`. **There is no permission prompt and no policy layer** (§11.7).*
 
 ### 11.1 The catalog
 
@@ -938,26 +1187,37 @@ add one builder line:
 /// ══════════════════════════════════════════════════════════════════
 ///   ADD NEW CAPABILITIES HERE — and only here.
 ///   1. Decode the module's config section (§11.2).
-///   2. Append its `with…()` call to `multitool(context:)` below.
+///   2. Append its `with…()` call to `sessionTools(context:)` below.
 ///   3. Add a row to the table in README.md § Tools.
 ///   Nothing else in this package needs to change.
 /// ══════════════════════════════════════════════════════════════════
 public enum ToolCatalog {
-    public static func multitool(context: CatalogContext) throws -> [any FoundationModels.Tool]
+    public static func sessionTools(context: CatalogContext) async throws -> [any FoundationModels.Tool]
 }
 ```
 
-The function returns the composed pair — the `MultiTool` (`runCode`) and its
-discovery tool (`findAPIs`). That pair is the array for
-`makeSession(tools:)`. Router mounts `ElevatingTool` around each native
+The function returns the composed tool array for `makeSession(tools:)`. **It
+is `async` because it must be.** `withMCP(servers:)` is `async throws` (§2.5).
+A synchronous function cannot call it.
+`MultiTool.Registry.makeSessionTools(librarian:sampleGenerator:)` vends
+**three** tools, in this mount order: `searchTools`, `runCode`, `wait`. In
+direct mode it vends `runCode` and `wait`. **`wait` is mounted in both
+modes.** The catalog appends the standalone `skills` tool (§14.2) to that
+array. Router mounts `ElevatingTool` around each native
 entry. `ToolInvoker` binds the ambient `ToolContext` around each `tools.*`
 call (Multitool eventplan). We name our construction context
 `CatalogContext`, because Router's `Hosting/` substrate owns the name
 `ToolContext`. `CatalogContext` carries what each builder call needs: the
-session working directory, the session's additional roots, and the decoded
-config section. Frontends can register their own capabilities through
+session working directory, the session's additional roots, the decoded config
+section, **and the resolved profile**.
+
+**The profile is load-bearing here, not a convenience.**
+`makeSessionTools(librarian: RoutedLLM?, sampleGenerator: RoutedLLM? = nil)
+throws -> [any Tool]` needs a librarian model, and the host passes
+`profile.flash`. Therefore the catalog receives the resolved profile, not only
+config values. Frontends can register their own capabilities through
 `withCapability(_:)` before the build. Catalog entries also register
-slash-command providers (§14.2). An entry can pair its capability with a
+slash-command providers (§14.1, source 2). An entry can pair its capability with a
 `SlashCommandProviding` conformer. The catalog feeds it into the session's
 command registry. The direction rule is absolute: Multitool conforms to the
 leaf's protocol. No code outside this package names this package's types.
@@ -975,7 +1235,7 @@ module. The config decides which calls occur. One rule, five shapes:
 | no `tools:` section | every built-in on, with defaults |
 | `tools:` present, tool not mentioned | that tool on, with defaults |
 | `shell: {}` / `shell:` (null) / `shell: true` | on, with defaults — explicit but redundant |
-| `shell: {policy: strict}` | on, body decoded as **that package's own option type** |
+| `shell: {storeDirectory: …}` | on, body decoded as **that package's own option type** |
 | **`shell: false`** | **off** — not constructed, never reaches the model |
 
 `false` is intentionally *outside* the body. The body is the tool package's
@@ -1007,17 +1267,17 @@ first checks for a scalar `false`. Then it decodes the mapping.
 
 ### 11.3 The roster
 
-**One source package: `FoundationModelsMultitool`. The roster is its set of
-capability modules, composed by the catalog:**
+**Two source packages: `FoundationModelsMultitool` for the capability modules,
+and `FoundationModelsSkills` for one standalone tool. The catalog composes
+both:**
 
 | Capability | Builder call | Blocked on | Config section |
 |---|---|---|---|
-| `files` | `withFiles(...)` — code is **built**, moves in at eventplan phase 3 | nothing | `files:` |
-| `shell` | `withShell(...)` — code is **built**, moves in at eventplan phase 2 | nothing | `shell:` |
-| `mcp` | `withMCP(servers:)` — code is **built**, moves in at eventplan phase 4 | nothing; the ACP tunnel is unstable-gated (§11.5) | `mcp:` (plus ACP's per-session `mcpServers`) |
-| skills → `/id` commands | the skills capability's command-provider half (**plan-only**) | Skills M1–M3 + M5, moved into Multitool; Extras only (shipped) | `skills:` |
-| skills → discovery | the skills capability's registry entries, surfaced through `findAPIs` (**plan-only**) | the skills capability itself — `FoundationModelsMetadataRegistry` is already a Multitool dependency, and the old `FoundationModelsOperations` chain is gone with OperationTool | `skills:` |
-| sub-agents | `withAgents(...)` (**plan-only**) | that capability | `agents:` |
+| `files` | `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)` — **shipped** | nothing | `files:` |
+| `shell` | `withShell(storeDirectory:sandbox:outputChunkStream:)` — **shipped** | nothing | `shell:` |
+| `mcp` | `withMCP(servers:)` — **shipped** | nothing; the ACP tunnel is unstable-gated (§11.5) | `mcp:` (plus ACP's per-session `mcpServers`) |
+| skills → `/id` commands | `SkillsRegistry` as a `SlashCommandProviding` conformer — **shipped in Skills** | nothing | `skills:` |
+| skills → model access | the standalone `skills` tool, appended to the tool array — **shipped in Skills** | nothing | `skills:` |
 
 **Follow-ups — one `withCapability(_:)` line each, as each capability ships:**
 
@@ -1025,38 +1285,57 @@ capability modules, composed by the catalog:**
 |---|---|---|---|
 | code-context ops (`searchSymbol`, `callGraph`, `blastRadius`, …) | a `Capability` over `CodeContext` | nothing; first follow-up | `codeContext:` |
 
-**Skills is a capability and a command provider. The two halves answer
-different questions.** Discovery is `findAPIs` over the skills entries ("what
-can I do here?", for the model). The `/id` commands are *explicit dispatch*
-("do this specific thing", for the user). Day one ships **explicit dispatch
-without discovery**. The command half depends only on shipped Extras. The
-discovery half waits for the skills capability in Multitool. Until it lands,
-the model cannot see skills at all. That is a real difference from
-`files`/`shell`. We decide it. We do not inherit it from a dependency chain.
-(The two integration gaps: §14.2.)
+**Skills is a standalone tool and a command provider. The two halves answer
+different questions.** The `skills` tool is model access ("what can I do
+here?", for the model). The `/id` commands are *explicit dispatch* ("do this
+specific thing", for the user). One `SkillsRegistry` serves both halves.
+
+**Skills is not a Multitool capability and is not a registry entry behind
+`searchTools`.** It is a plain `FoundationModels.Tool` that the catalog
+appends to the tool array. Neither package depends on the other (§1, §14.2).
+**The design reason is this project's decision, not an upstream claim: a skill
+loads in one request/response step.** Skills is deliberately not an async
+code-mode capability here, because
+loading a skill into context must stay short, and code mode is for
+long-running asynchronous work.
+
+**The `OperationTool` type is not gone.** Removing the standalone
+`FoundationModelsOperationTool` package removed a package, not a type.
+`OperationTool` lives at
+`FoundationModelsExtras/Sources/Operations/OperationTool.swift:25`, ships as
+Extras' `Operations` product
+(`public struct OperationTool<Context: Sendable>: Tool`, with
+`Arguments = GeneratedContent` and `Output = String`), and Skills is built on
+it today. (The two integration gaps: §14.2.)
 
 ### 11.4 Confinement
 
-- **`files`**: `PathGuard` confines it to a **root set**: the session cwd plus
-  its `additionalDirectories` (§7.2). `cwd` stays the special member (the base
-  for relative paths). But a path in any root validates.
-- **`shell`**: the composed `ShellPolicy` (§2.5) gates it. The policy has three
-  results (`.allow` / `.ask(reason)` / `.deny(message)`). A
-  `ShellDecisionStore` sits behind `remember(...)`. The `allow_always` /
-  `reject_always` options of `session/request_permission` bind to it, when the
-  permission mode asks (§11.7). The `.ask` route is the ambient context: the
-  shell capability sends `.ask` through `ToolContext.elicit`, and the
-  elicitation coordinator (§16) turns it into `session/request_permission`.
-  **The shell is not root-confined. `additionalDirectories` does not change
-  that.** `ShellContext` has no workspace root. `check(workingDirectory:)`
-  validates only `..` traversal and existence. Confinement for `shell` is
-  command-and-environment pattern rules, not a filesystem boundary. The blast
-  radius of a shell command has a policy limit. A wider workspace does not
-  widen it. (A different open question: must `shell` *also* be root-confined?)
+- **`files`**: the files capability confines it to a **root set**: the session
+  cwd plus its `additionalDirectories` (§7.2). `cwd` stays the special member
+  (the base for relative paths). But a path in any root validates. Pass the
+  set through `withFiles(root:additionalRoots:)`. **`PathGuard` is internal.
+  Do not try to name it.** The verbs are `tools.files.read`, `.write`,
+  `.edit`, `.patch`, `.glob`, `.grep`. Their argument and output structs are
+  internal too: only `FilesCapability` is public. **Every output carries a
+  `correction: String?`.** A corrective result is in-band. It is never thrown.
+  Therefore the wire mapping (§11.6) must read `correction`, not an error.
+- **`shell`**: **`SeatbeltSandbox` is the only gate** (§2.5, §11.7). Build its
+  `Options(writableRoots:)` from the same root set, so writing and deleting
+  stay inside the session's roots. **There is no policy, no denylist, no ask
+  route and no remembered decision.** The stated limit stays: reads are free
+  and the network is open, so the sandbox does not bound exfiltration. The
+  verbs are `tools.shell.execute`, `tools.shell.getLines`,
+  `tools.shell.grepHistory`. The capability's own `status()` and `cancel()`
+  verbs are **removed**: Router's background engine owns the run plane. The
+  MCP follow-up pseudo-tools `get_result`, `list_calls` and `cancel_call` are
+  removed too, and the snippet globals `status()`, `wait()` and `cancel()`
+  replace them.
 - **`mcp`**: dynamic. The tools that it gives depend on what the servers
   advertise. Connection completes before `buildRegistry()` (§7.3). A late
-  server, a reconnect, or a `tools/list_changed` starts a registry rebuild.
-  MultiTool swaps the new surface in at the next turn boundary (eventplan).
+  server, a reconnect, or a `tools/list_changed` starts a registry rebuild
+  (`rebuildRegistry()` → `RegistryStaging.stage(_:)`). MultiTool applies the
+  staged registry at `MultiTool.turnWillBegin()`. **An in-flight run keeps the
+  registry that it started with.**
 
 ### 11.5 MCP wiring: two sources, two transports (+ one unstable), two sinks
 
@@ -1067,8 +1346,13 @@ after config-derived servers, and never persist).
 **Transports** (advertise them as `McpCapabilities` at `initialize`,
 `capabilities.session.mcp`; nothing does that today):
 
-- **stdio** → `StdioServerProcess`. The `McpServerStdio` fields map one to
-  one. `capabilities.session.mcp.stdio`.
+- **stdio** → `StdioServerProcess(command:args:env:name:) throws`. The
+  `McpServerStdio` fields map one to one, with one hard rule: **`command` must
+  be an absolute path.** Resolve the client's command before you construct the
+  process. The process has `respawn() -> any Transport` and `shutdown()`. Its
+  env entries are `EnvVariable { name, value }`, and **env layers onto the
+  inherited environment. It never replaces it.**
+  `capabilities.session.mcp.stdio`.
 - **http** → `HTTPClientTransport`. ACP's `headers` supply the auth.
   (Authorization stays the host's job, per the mcp capability's decision.)
   `capabilities.session.mcp.http`.
@@ -1090,9 +1374,29 @@ stable. Ship stdio + http first.
 **Process lifecycle is the mcp capability's job, not ours.** It spawns and
 owns the stdio subprocesses. Server subprocesses are infrastructure with
 session lifetime — they are never runs, and they never get a
-`completionToken` (eventplan). Reconnects and cross-session pooling are
-upstream asks on Multitool. This package passes server entries to
+`completionToken` (eventplan). This package passes server entries to
 `withMCP(servers:)`.
+
+**The shapes we build against:**
+
+- **`MCPServer` is an actor**:
+  `MCPServer(name:version:clock:callTimeout:renderBudget:elicitationHandler:logger:)`,
+  with `connect(via: any Transport)` and `connect(via: @escaping
+  TransportFactory)` — each also taking a `BackoffPolicy` — plus
+  `reconnect()`, `disconnect()`, `waitUntilReady()` and
+  `call(name:arguments:)`. `MCPServerState` is `connecting` / `ready` /
+  `disconnected` / `faulted(String)`.
+- **Reconnects and pooling shipped.** `MCPServerPool` is an actor with
+  `add(server:)`, `add(process:)`, `attach(attachment:)` and
+  `shutdownAll()`. Reach it as `Builder.serverPool`.
+- **`SurfaceRefresher(source:staging:servers:logger:)`** watches
+  `tools/list_changed` and stages a new registry. **It asserts in `deinit` if
+  it is released while its watch task runs.** Therefore the host must call
+  `stop()` on it, or attach it to the pool. Do not drop it.
+- **Shutdown order matters**: sweep the sessions first, then call
+  `MCPServerPool.shutdownAll()` (§10.1).
+- **An MCP verb is a plain synchronous `Tool`. It does not background.** A
+  transport drop throws a `LostRunError`, and the run settles `.lost` (§8.4).
 
 **Two sinks receive one tool call.** A long MCP call reports to two audiences:
 
@@ -1116,14 +1420,12 @@ is why `status` stays `in_progress` across turns. The mapping decisions:
   model-facing rendered string. That string is elided, intentionally.
 - **`ToolAnnotations` → `ToolKind`**: the correct use of MCP's untrusted
   hints. A UI hint feeds a UI hint. It is never a gate.
-- **`destructiveHint` / `openWorldHint` → `session/request_permission`**: here
-  "hosts may gate on annotations" becomes real. The bridge never gates. This
-  package gates only in the `policy` and `ask` modes; the default `"*"` mode
-  never asks (§11.7).
+- **`destructiveHint` / `openWorldHint` are UI hints only.** They gate
+  nothing. There is no permission prompt in this agent (§11.7). Render them.
+  Do not act on them.
 
 The shared-outcome decision changes terminal status only. The
-`ToolAnnotations`-driven decisions above — `ToolKind`, permission gating —
-are untouched.
+`ToolAnnotations` → `ToolKind` decision above is untouched.
 
 ### 11.6 Reporting: `tool_call_update`
 
@@ -1152,52 +1454,44 @@ update with a new `toolCallId` is the creation.
   `x-deserialize-default-on-error`. A bad field degrades. It does not fail the
   notification.
 
-### 11.7 `session/request_permission`
+### 11.7 `session/request_permission` — we do not use it
 
-**The permission mode: allow by default.** Approval prompts cost the user
-time on every tool call. The default is trust: a stock agent never sends
-`session/request_permission`. Asking is an opt-in for the careful, not a toll
-on everyone. The `permissions:` config section (§2.4) controls it:
+**The decision is sandbox-only. This agent does not advertise and does not
+send `session/request_permission`.** There is no permission mode, no
+`permissions:` config section, no `policy` or `ask` setting, and no
+remembered `allow_always` / `reject_always` store. Upstream deleted the shell
+permission layer on 2026-08-24 (§2.5). We follow it.
 
-| Config | Meaning |
-|---|---|
-| absent, or `permissions: "*"` | **the default** — never ask; every tool call that confinement and the deny floor permit runs |
-| `permissions: policy` | defer to each tool's own signals: shell's `.ask` rules, MCP's `destructiveHint` / `openWorldHint` |
-| `permissions: ask` | ask before every tool call |
-| mapping form — `permissions: {shell: policy, mcp: ask}` | one mode per tool; an unmentioned tool uses `"*"` |
+**The reason:** a denylist over command text is bypassable. The sandbox is a
+kernel boundary, and it does not care how a command is spelled. A prompt that
+the user answers a hundred times a day is not a boundary either.
 
-Two rules bound the mode:
+**`SeatbeltSandbox` is the only gate.** The host builds
+`SeatbeltSandbox.Options(writableRoots:extraWritePaths:)` and passes the
+sandbox to `withShell(sandbox:)`. `preflight` runs a canary before any
+command starts, and a failed preflight means the command does not run. There
+is no path from a failed preflight to an unconfined spawn.
 
-- **`"*"` does not touch the deny floor.** Denials (§2.5) refuse, with a
-  message, and without a prompt. Allow-everything means "do not ask". It does
-  not mean "permit what is denied".
-- **A layer can only make the mode stricter.** The order is `"*"` → `policy`
-  → `ask`. A project layer can move a tool up this order, never down. If it
-  could, a cloned repo would silently switch off the prompts that a careful
-  user opted into — the same shape as §2.5's denial union.
+**The `sandbox:` config section (§2.4).** It replaces the deleted
+`permissions:` section, and it holds one key:
 
-Under `"*"`, shell's `.ask(reason)` outcomes resolve as allow, and MCP's
-hints never gate. Under `policy`, each signal does what it says. Under `ask`,
-every call asks. The wire shape below applies whenever the mode does ask.
+- **`writableRoots` is not a config key.** It defaults to the session root set
+  — the cwd plus the additional roots (§7.2). Configuration does not set it.
+- **`extraWritePaths` is the only knob.** It comes from the `sandbox:`
+  section. Use it for a build cache or a temporary directory outside the
+  roots.
+- **Build the options only through
+  `SeatbeltSandbox.Options(writableRoots:extraWritePaths:)`.** That
+  initializer runs `resolvedPath` over both lists. Never pass the output of
+  `URL.resolvingSymlinksInPath()`. On macOS that call strips `/private` and
+  gives the one path form that Seatbelt cannot match.
 
-The shape: `{sessionId, title, options[≥1], description?, subject?}`. The
-prompt copy (`title`/`description`) is separate from the structured `subject`.
+**The stated limit, recorded here so nobody assumes more:** the sandbox bounds
+**writing and deleting only**. Reads are free and the network is open.
+**Therefore the sandbox does not bound exfiltration.** Say this in the docs.
 
-- **`subject: tool_call` carries a full `ToolCallUpdate`, not a
-  `toolCallId`.** The request itself gives the title, the kind, `rawInput`,
-  and the locations. The design result: **ask before you send a
-  `tool_call_update` for that call.** Then no "pending" call sits in the
-  timeline for a thing that the user can refuse. Ask first. Send at approval.
-- `subject: command` is `{command, cwd}`, required, plus optional `toolCallId`
-  and `terminalId`.
-- `PermissionOption` requires all three of `optionId`, `name`, `kind`.
-  `PermissionOptionKind` includes `allow_always` / `reject_always`. Thus
-  **this package persists the always-decisions**. They bind to the shell
-  capability's `ShellDecisionStore`, with `.session` as the default scope
-  (§2.5).
-- The result is `cancelled` or `selected(optionId)`, plus an `other` extension
-  variant. **Handle an unknown result as a refusal.** Never handle it as an
-  approval.
+A client that asks for the permission capability gets "off", honestly (§1's
+rule for a noun with no peer).
 
 ### 11.8 Agent-owned display terminals
 
@@ -1223,6 +1517,21 @@ each chunk; byte-true, with no lossy text coercion). The stored record →
 with a soft-deadline kill). The tool call sends a `Terminal` content
 reference. The bytes ride the terminal stream.
 
+**The precondition is satisfied. Raw bytes survive.** The shell capability
+gives us these types:
+
+| Type | What it carries |
+|---|---|
+| `ShellOutputChunkStream` | an `AsyncSequence` of `ShellOutputEvent { commandID, kind }`; pass it to `withShell(outputChunkStream:)` |
+| `ShellRawOutput` | `{ bytes: [UInt8], binaryDetected: Bool, truncated: Bool, storedByteCount: Int }` |
+| `ShellOutputSnapshot` | `{ stdout, stderr }`, read with `snapshot(for commandID:)` |
+
+Map `ShellRawOutput.bytes` to `terminal_output_chunk` (base64, byte-true) and
+`ShellOutputSnapshot` to `TerminalOutput` for a reconnecting client.
+
+**But the package has no PTY, no ANSI parser and no terminal renderer.**
+Terminal presentation is our layer. Plan for it here, not upstream.
+
 **Sequence**: the stream is additive over the usual tool-call content. Thus
 `shell` ships text-in-`content` first. The terminal stream is a follow-up. But
 do not design the shell tool's output path so that it discards raw bytes
@@ -1246,8 +1555,12 @@ and drop.
 through the `files` tool. Refuse each other scheme and each out-of-bounds
 path, with a reason.** A silent fetch of an `http://` URI from a prompt is a
 request that the user did not make, from a process that holds the user's
-credentials. `PathGuard` refuses `file://` outside the root set, as it refuses
-each other out-of-bounds path.
+credentials. The refusal is the files verb's own. Resolve the URI through the
+`files` capability that `withFiles(root:additionalRoots:)` bounds (§7.2,
+§11.4). A path outside the root set comes back refused **in band**: the files
+verbs return their output's `correction: String?` field, and they do not
+throw. Read that field and report the reason. Do not name `PathGuard`; it is
+internal.
 
 Field details, so that no one must find them again: `TextContent` requires
 `text`. `ImageContent` / `AudioContent` require `data` + `mimeType` (image
@@ -1262,7 +1575,7 @@ the answer.
 **It has no peer. It is off, and we say so.** Router has no planning noun. v2
 says only that agents SHOULD report plans. We send nothing, and we say so.
 
-For the time when a planner lands (the agents capability), know this
+For the time when a planner lands, know this
 asymmetry: **`plan_update` is the one v2 update that replaces. It does not
 patch.** Agents MUST send the complete entry list. Clients MUST replace the
 previous contents fully. An implementer who knows the upsert algebra (§8.3)
@@ -1307,10 +1620,14 @@ reserved. Nothing replaces them.
    roster entries (§11.1). This is the *code-backed* lane. Only linked Swift
    can construct `.action`. That is the trust boundary. In-process code is
    already trusted as tools.
-3. **Skills**: the *data* lane. The skills capability (Multitool) finds and
-   renders
-   `SKILL.md` files. `SlashCommandProviding` surfaces them. One skill = one
-   `/id` command. `commandUpdates` pushes changes when files change. Skill
+3. **Skills**: the *data* lane, and it is **shipped, not plan-only**.
+   `SkillsRegistry` (the `FoundationModelsSkills` package) finds and renders
+   `SKILL.md` files, and it **already conforms to `SlashCommandProviding`**:
+   `commands(workingDirectory:) async -> [SlashCommand]` and
+   `commandUpdates: AsyncStream<[SlashCommand]>?`. The stream is `nil` when
+   the registry was built with `watch: false`. One skill = one `/id` command.
+   Each command carries `.prompt(template:)` with the skill's **raw,
+   unrendered** body (see the render-fidelity warning in §14.2). Skill
    markdown is **data**. It can only make a prompt. A broken or hostile
    `SKILL.md` makes, at worst, a bad prompt under the usual tool confinement.
    It can never become `.action`.
@@ -1333,29 +1650,58 @@ of a second stack. There is no new mechanism. The XDG rule is the same.
   the intent. We put it on the record because §2.1 makes a point of name-based
   isolation. (Precedent: the project-level `AGENTS.md` also has no qualifier,
   §3.2.)
-- **We construct the stack. Skills takes what it gets** (§2.5).
-  The skills capability accepts its layer roots as a construction parameter
-  (ordered, lowest first). It names no dotfolder convention. A host that wants
-  a different layout passes different roots.
+- **We construct the stack. Skills takes what it gets** (§2.5). Build
+  `SkillsRegistry(stack: DotfolderStack(name: "skills", …))`. The other
+  initializers are `init(roots:)` and `init(layers:)`. **The derived trust
+  differs**: `init(roots:)` treats **every** root as untrusted, while
+  `init(stack:)` keeps each layer's `Layer.source`, from which the real trust
+  follows. Use `init(stack:)`. **A `DotfolderStack.Layer` carries no trust
+  tag.** It has exactly `source: Source` and `root: URL`. Trust is a
+  `TemplateEngine` concept, and each consumer **derives** it from
+  `Layer.source` on its own, because the source-to-trust mapping is a private
+  helper and not public API. Extras derives it inside `LayeredYAMLDocument`.
+  Skills derives its own equivalent inside its Stencil pass. The two mappings
+  agree today, and nothing in the type system holds them together.
+- **Preload feeds the system prompt.** `registry.preloadedBodies()` renders
+  the `preload: true` skills through all three render passes and returns the
+  result as **one joined `String`**. It is not raw text, and it is not a
+  collection. Fold that one string into the session `Instructions` (§3.1).
 - **Trust**: both layers are untrusted. Skill markdown renders under the
   untrusted template rules.
 - **The `skills:` config section stays in the `<name>` stack.** The content is
   shared. The behavior is per-agent. `skills: false` stops discovery for this
   agent. It does not touch a different person's library.
 
-**Gap 1: Extras' `SlashCommand.Body` needs a third case.** Skills matches
-neither current kind. It is not `.prompt(template:)`: Skills renders with its
-own pipeline and argument model. If we give the raw body to Extras' Stencil
-engine, the substitution obeys the wrong rules, silently. It is not `.action`:
-that kind does not touch the model, but a skill's rendered body *becomes* the
-turn. The necessary case:
-`case rendered(@Sendable (Invocation) async throws -> String)`. The conformer
+**Gap 1: render fidelity. Extras' `SlashCommand.Body` already has the third
+case, and it closes the gap.** `SlashCommand.Body` ships **three** cases:
+`case prompt(template: String)`, `case action(@Sendable (Invocation) ->
+AsyncThrowingStream<String, Error>)`, and
+`case rendered(@Sendable (Invocation) async throws -> String)`. Extras
+documents `.rendered` as the escape hatch for exactly this problem: a provider
+whose substitution model does not match the Stencil engine. The conformer
 renders. The dispatcher gives the result to the model, as it does for
-`.prompt`. Filed on Extras as **`c2pad49`**. The trust boundary stays: only
-linked Swift can construct a closure. **This is wanted, not blocking.** The
-workaround: dispatch skill commands through `registry.call(id:arguments:)`
-directly, as a special case in our dispatcher. Use it if `c2pad49` is slow.
-Prefer the case.
+`.prompt`. **Therefore the dispatcher prefers a `.rendered` body wherever a
+provider offers one.** The trust boundary stays: only linked Swift can
+construct a closure.
+
+**What remains is a Skills-side adoption.** `SkillsRegistry` vends commands
+today, and each one still carries `.prompt(template:)` with the skill's
+**raw, unrendered** body. **A host that runs that template through the harness
+engine gets only that engine's rendering.** Skills' own passes never run: the
+`$`-argument substitution and the `` !`shell` `` injection. Therefore `$0`,
+`$ARGUMENTS` and backtick-shell syntax pass through inert, and the user sees
+the literal text. **Until Skills adopts `.rendered`, our dispatcher routes
+skill commands through `registry.call(id:arguments:)`**, as a special case,
+for full fidelity. The adoption is filed as **`c2pad49`** (§21).
+
+**Visibility is per-skill front matter. Map it to the two surfaces:**
+
+| Front matter | In the `/` menu | Searchable by the model | In `Instructions` |
+|---|---|---|---|
+| *(default)* | yes | yes | no |
+| `disable-model-invocation: true` | yes | **no** | no |
+| `user-invocable: false` | **no** | yes | no |
+| `preload: true` | yes | yes | **yes** |
 
 **Gap 2: ACP flattens the parameter model.** Skills has a real model
 (`SkillParameter { name, position, required, variadic, placeholder }` +
@@ -1366,10 +1712,33 @@ through, verbatim, as the hint.** It is already in display syntax
 reader needs. Structured parameter prompting is an `_meta` extension, if a
 client wants it.
 
-**The phases obey §11.3's roster**: ship the command-provider half first. The
-discovery half comes when the skills capability lands in Multitool and its
-entries surface through `findAPIs`. A plan that handles
-"skills as a built-in" as one indivisible item will stall.
+**Both halves are shipped, so ship them together** (§11.3). One
+`SkillsRegistry` serves the `/id` commands and the `skills` tool. Construct
+the tool with
+`SkillsTool.make(registry:session:embedder:followReloads:visibilityPredicate:)
+async throws -> OperationTool<SkillsToolContext>`. There is an overload that
+takes a session factory closure
+`@escaping @Sendable (String) -> any AgentSession`, and one with **no
+`session:` at all** — keyword retrieval only, with no model and no tokens.
+Use the last one when the config turns model access off.
+
+The model-facing tool name is `"skills"`. Its description is "Search, list,
+and use skills from the local skill library." **It is one fused tool with six
+operations behind an `op` discriminator**: `search skill`, `list skill`,
+`use skill`, `list resource`, `read resource`, `run script`.
+
+Skills' own package facts: the product is `FoundationModelsSkills`, from
+`git@github.com:swissarmyhammer/FoundationModelsSkills.git`, platform
+`.macOS("27.0")`, with dependencies on FoundationModelsExtras (products
+`FoundationModelsExtras`, `Operations`, `OperationsCLI`),
+FoundationModelsMetadataRegistry, and Yams. It does `@_exported import` of
+Extras and MetadataRegistry. Therefore one import of `FoundationModelsSkills`
+reaches `DotfolderStack`, `TemplateEngine`, `SlashCommand`, and
+`SlashCommandProviding` from Extras. It also reaches `AgentSession` and the
+`LanguageModelSession: AgentSession` conformance, but **those two are not
+Extras**. They live in **FoundationModelsRanker**. MetadataRegistry re-exports
+Ranker, and Skills re-exports MetadataRegistry, so the names arrive through
+that chain.
 
 ### 14.3 Dispatch — at the prompt owner
 
@@ -1424,6 +1793,33 @@ necessary only for a *profile* switch. Say in the option's `description` that
 this selects among the profile's slots. Then a user does not expect the full
 candidate list.
 
+**The profile shapes, exactly:**
+
+- `ProfileDefinition(name:description:standard:flash:embedding:context:)`.
+  **`standard`, `flash` and `embedding` are `[ModelRef]` candidate lists, not
+  single values.** `description` is required. `context: Int?` defaults to
+  8192, and `nil` opts into ladder derivation from each candidate's native
+  max context. `ModelSlot` is `standard` / `flash` / `embedding`.
+- **Trap: `ModelRef`'s `repo`, `revision`, `init(repo:revision:)` and
+  `init(_ string:)` are all internal.** From outside, build a `ModelRef` only
+  from a string literal or by decoding, and read it back only as
+  `stringValue`. The separator is `@`, as in `"org/repo@rev"`. Therefore the
+  `select` option's values are `stringValue` strings.
+- `LanguageModelProfile` exposes `definitionName`, `standard`, `flash`,
+  `embedding` and `release()`. Its init is `package`. Therefore
+  `Router.resolve(profile:reporting:)` is the only way to get one. Residency
+  is pooled and reference-counted.
+- **`ResolutionFailure` — the error that `resolve` throws when no trio fits —
+  is internal, so we cannot catch it by type.** The same is true of
+  `SessionReentryError` and of the restoration and reconstruction errors: they
+  are internal, and we get `any Error`. Therefore report a resolution failure
+  by its message, and never by a `catch` on a case.
+- **Five Router error types are public, and we catch these by type:**
+  `GuidedRequestError`, `GenerationError`, `ToolMountError`,
+  `DiscoveryPrimingFailure`, and the protocol `LostRunError`. `LostRunError`
+  matters to us: a tool error that conforms to it makes the run settle
+  `.lost` (§11.6).
+
 What we intentionally do not give (each decided in a different section):
 `model_config` context size (it comes from the model, §2.4), `mode` (no modes
 exist here), `thought_level` (Router shows no reasoning-level knob). A thing
@@ -1455,11 +1851,32 @@ Schema details:
 ## 16. Elicitation
 
 **This package owns elicitation.** It is the only layer with a live two-way
-channel to a thing that has a user. Multitool defines the
-`ElicitationCoordinator` protocol — the host seam of `ToolContext.elicit`
-(eventplan) — and owns no UI. Router owns no user channel
-(`SessionOutbox` is one-way, outbound). Thus the coordinator lives here:
-**`ACPElicitationCoordinator`**, which holds the `AgentSideConnection`.
+channel to a thing that has a user. Multitool and Router own no UI.
+
+**`ElicitationCoordinator` and `MCPElicitationTool` no longer exist. Do not
+plan against them.** Multitool's seam is now one closure on the server:
+`MCPServer.init(elicitationHandler: ElicitationHandler?)`, where
+`public typealias ElicitationHandler = @Sendable (ElicitationRequest) async ->
+ElicitationResponse`. Three answerers run in a fixed order:
+
+1. the `ToolContext` of the calling run, through Router's `SessionMailbox`;
+2. else the host's `elicitationHandler`;
+3. else `cancel` to the server.
+
+**Upstream states: "Router wins when present, so a Router host never sets the
+handler." We are a Router host.** Therefore our seam is Router's, not
+Multitool's:
+
+- `RoutedSession.respond(elicitationId:response:) -> ElicitationAnswerDelivery`
+- `RoutedSession.complete(elicitationId:) -> ElicitationCompletionDelivery`
+
+Build the ACP relay on those two calls. Leave
+`MCPServer(elicitationHandler:)` nil.
+
+**Elicitation is not the permission system.** Upstream says so in as many
+words, and §11.7 says the same from our side: there is no permission prompt
+in this agent. An elicitation asks the user a question that a tool needs
+answered. It does not authorize anything.
 
 **It is a relay, not a translation.** MCP and ACP elicitation are almost
 isomorphic:
@@ -1471,9 +1888,8 @@ isomorphic:
 | `Result.Action { accept, decline, cancel }` | `action: accept \| decline \| cancel` (+ optional `content`) |
 | `notifications/elicitation/complete { elicitationId }` | `elicitation/complete { elicitationId }` (agent → client) |
 
-The two directions of MCP elicitation both go through the one coordinator: a
-server that stops in a tool call, and the model that asks through
-`MCPElicitationTool`.
+Both directions of MCP elicitation reach the same seam: a server that stops in
+a tool call, and a tool that asks the user through the run's `ToolContext`.
 
 **Requirements:**
 
@@ -1485,9 +1901,9 @@ server that stops in a tool call, and the model that asks through
   `ClientCapabilities` has only `_meta`. Thus elicitation support is a
   `_meta`-negotiated extension while `elicitation/*` is unstable. Absent means
   unsupported (§5). When the necessary mode is unsupported, return MCP
-  **`decline` with a clear reason**. Do not compress into
-  `session/request_permission`. That method is options-based. It cannot carry
-  a `requestedSchema`.
+  **`decline` with a clear reason**. There is no permission method to fall
+  back to (§11.7), and an options-based method could not carry a
+  `requestedSchema` anyway.
 - **Relay the URL-mode completion.** Create → accept → `elicitation/complete`
   is a three-message flow. Send MCP's completion notification through,
   directly. The ids agree by design.
@@ -1515,10 +1931,9 @@ client-side handler entry points first. Thus **this is not day-one scope.**
 Upstream has promoted elicitation to stable on its main branch. A schema
 re-vendor brings the types. The work is filed on the wire package's board:
 `7kgq5dw`, then `enzjy0q` (§21).
-The interim: Multitool's coordinator gets a non-ACP fallback. It
-declines each elicitation with a clear reason: "this host cannot ask you
-questions yet". That is honest, and it unblocks the MCP built-in without the
-unstable surface.
+The interim: our Router-side relay declines each elicitation with a clear
+reason: "this host cannot ask you questions yet". That is honest, and it
+unblocks the MCP built-in without the unstable surface.
 
 ## 17. Transports
 
@@ -1659,6 +2074,9 @@ A `Client` conformance is about ten lines:
 private struct RecordingClient: Client {
     let updates: UpdateCollector
     func sessionUpdate(_ n: UpdateSessionNotification) async { await updates.append(n) }
+    // The `Client` protocol requires this member, so the conformance keeps it.
+    // We never send `session/request_permission` (§11.7), so no test drives
+    // this path. Do not read it as a live one.
     func requestPermission(_ p: RequestPermissionRequest) async throws
         -> RequestPermissionResponse { .init(outcome: .selected(optionId: "allow")) }
 }
@@ -1680,8 +2098,9 @@ and no Apple-silicon gate. It runs in CI at each commit. Only tier 2 proves
 these:
 
 1. **Composition**: `ToolCatalog` constructs each tool with the correct
-   `ToolContext`: the root set from `cwd` + `additionalDirectories`, and that
-   tool's decoded config section.
+   `CatalogContext` (§11.1 — Router owns the name `ToolContext`): the root set
+   from `cwd` + `additionalDirectories`, that tool's decoded config section,
+   and the resolved profile.
 2. **Confinement through the protocol**: ask `files` for a path outside the
    root set, and get a refusal, from the client end.
 3. **Projection**: a real tool call becomes a correct `tool_call_update`: a
@@ -1698,10 +2117,34 @@ disk. Do not believe a `tool_call_update` that claims success. This is the
 same discipline as §20.3's evaluators. It divides a test that catches a broken
 tool from a test that only catches a broken *report* of a tool.
 
-**MCP gets tier-2 coverage free**, when `4egfvw3` lands. The mcp capability
-ships `MCPTestServerCLI` and a `ScriptedServer`. Spawn a real server process.
-List its tools. Call one. Confirm that the `tool_call_update` correlation
-holds.
+**MCP gets tier-2 coverage free. The test support is shipped** (`4egfvw3` is
+done). Multitool ships two products: **`MCPTestServer`** (a library) and
+**`mcp-test-server`** (an executable). (The old names `MCPTestServerCLI` and
+`ScriptedServer` are wrong. Do not look for them.) Spawn a real server
+process. List its tools. Call one. Confirm that the `tool_call_update`
+correlation holds.
+
+**The scripted-model seam is real, and Router ships test support.** Inject a
+`ModelLoader`. `LoadedLLMContainer` gives
+`makeSession(instructions:)`, `(instructions:tools:)`, `(transcript:)` and
+`(transcript:tools:)`. A fake conforms to `LanguageModelSessionBackend`, whose
+required members are `respond(to:maxTokens:)`,
+`streamResponse(to:maxTokens:)`, `respond(to:following:maxTokens:)`,
+`makeFork()`, `transcriptEntries()` and `usageTokenCounts()`. Router also
+ships the products `FoundationModelsRouterTestSupport`,
+`FoundationModelsRouterRealModelSupport` and
+`FoundationModelsRouterEvalSupport`.
+
+**Trap: some Router types have no public init, so a fake cannot construct
+them**: `TurnOutcome`, `ToolCallEntry`, `BackgroundRun`, `ToolContext`,
+`TranscriptEvent` and `TranscriptEvent.Partial`. `SessionSidecar` is the one
+exception: its memberwise init is internal, but `init(from decoder:)` is
+public, so a test can decode a `session.json` it already located — and then
+read no field from it. **No
+shipped `TranscriptRecorder` is reachable either** (`.jsonl`, `.inMemory` and
+`.none` are internal, §4.6). Therefore a test cannot build a recording
+fixture. Assert on the filesystem and on the wire, not on a constructed Router
+value.
 
 **Tiers 3 and 4 stay gated, and stay small.** Tier 3 exists for the one thing
 that tier 2 cannot see: real process boundaries. stdout carries only ndJSON
@@ -1810,22 +2253,19 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 
 | Id | Package | What | Status |
 |---|---|---|---|
-| — | FoundationModelsMultitool + Router | the consolidation itself (Multitool `eventplan.md`): Router `Hosting/` substrate, then the shell, files, and mcp capabilities move in (phases 1–4); OperationTool is removed at phase 5; the skills and agents capabilities follow the same route | **in progress** |
-| `f9q2338` | FoundationModelsMultitool (shell capability) | build `ShellPolicy` from values, host-owned persistence (§2.5); the Extras dependency is gone | **landed** 2026-07-29 in Shelltool; moves in at eventplan phase 2 |
-| `c2pad49` | FoundationModelsExtras | third `SlashCommand.Body` case, `.rendered` (§14.2) | **open** — workaround available, prefer the case |
-| `939nnzx` | FoundationModelsMultitool (files capability) | multi-root `PathGuard` (§7.2) | **in progress** — the only blocker for `additionalDirectories` |
-| `4egfvw3` | FoundationModelsMultitool (mcp capability) | needed for tier-2 MCP coverage via `MCPTestServerCLI` (§20.1) | open |
-| — | FoundationModelsRouter | in-flight turn cancellation (§8.6) | **open** — until then, "we stopped listening" |
+| — | FoundationModelsMultitool | the consolidation itself: the shell, files and mcp capabilities are in, and `searchTools` + `runCode` + `wait` is the model-facing surface (§11.1) | **landed** 2026-08-24..27 |
+| — | FoundationModelsMultitool (shell capability) | the shell permission layer is **deleted**; `SeatbeltSandbox` is the only gate (§2.5, §11.7) | **landed** 2026-08-24 — an upstream decision, not an ask |
+| `c2pad49` | FoundationModelsSkills | adopt Extras' `.rendered` `SlashCommand.Body` case in Skills' `SlashCommandProviding` conformance, in place of `.prompt(template:)` with raw text (§14.2) | **the Extras half is done** — `.rendered` ships; the Skills adoption is **open**, and until it lands we dispatch skill commands through `registry.call(id:arguments:)` |
+| `939nnzx` | FoundationModelsMultitool (files capability) | multi-root confinement through `withFiles(root:additionalRoots:)` (§7.2) | **done** |
+| `4egfvw3` | FoundationModelsMultitool (mcp capability) | tier-2 MCP coverage through the `MCPTestServer` library and the `mcp-test-server` executable (§20.1) | **done** |
+| — | FoundationModelsRouter | a **public restore entry point feeding `session/resume`** (§4.6, §7.4) — `restoreSessionTree` and the tree types are internal, and the only public read is `TranscriptEvent.merged(under:)` | **open** — asked 2026-08-31, decision pending; do **not** reimplement restore against `transcript.jsonl` in the meantime |
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor (upstream promoted elicitation to stable), then generated `elicitation/*` types + `Client` entry points (§16) | **filed** 2026-07-29 — the wire is otherwise done: stable v2 verified, 95 tests green |
 | `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **filed** 2026-07-29 — blocked until upstream stabilizes `mcp/*` |
 | — | FoundationModelsACPClient | the Client-role container plus the stdio transport with agent-process ownership (client plan, through M6) — needed for `Examples/acp-print` (§20.2) | plan-only |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
-| `6j4bven` | FoundationModelsRouter | checkpoint-aware session restore feeding `session/resume` (§7.4) | Router board |
-| M1–M3, M5 | FoundationModelsMultitool (skills capability) | the `/id` command half (§14.2) | plan-only |
-| M4 | FoundationModelsMultitool (skills capability) | the discovery half: skills entries in the registry, surfaced through `findAPIs` (§11.3) — the old Operations chain is gone with OperationTool, and MetadataRegistry is already a Multitool dependency | plan-only; follow-up |
-| — | FoundationModelsMultitool (agents capability) | `withAgents(...)`: sub-agents over the `AgentsMd` walk (§11.3) | plan-only |
+| — | FoundationModelsRouter | turn cancellation that reaches the model call: `cancelCurrentTurn()`, `cancelPrompt(id:)`, `ToolContext.cancel(completionToken:)` (§8.6) | **landed** — an in-flight MCP call still cannot be forced to stop |
+| M1–M3, M5 | FoundationModelsSkills | the `/id` command half: `SkillsRegistry` conforms to `SlashCommandProviding` (§14.2) | **shipped** |
+| M4 | FoundationModelsSkills | model access: the standalone `skills` tool, appended to the tool array (§11.3) | **shipped** |
 | `d7jwam5` | FoundationModelsMultitool (files capability) | *note, not an ask*: rename/copy path mapping is a translation here (§11.6) | — |
-| `1ad4ydw` | FoundationModelsRouter (`Hosting/`) | shared `OperationOutcome` terminal vocabulary on the `OperationEvent` envelope — feeds the one total status mapping (§8.4, §11.5); landed in OperationTool, and the consolidation moves it into Router | **landed** |
-| `jt19xwc` | FoundationModelsMultitool (shell capability) | emits `OperationOutcome` on detached-command terminal events (§8.4) | **landed** |
-| `zfp4a3j` | FoundationModelsMultitool (mcp capability) | emits `OperationOutcome` on call terminal events (§8.4, §11.5) | **landed** |
+| `1ad4ydw` | FoundationModelsExtras | the `OperationOutcome` terminal vocabulary on the `OperationEvent` envelope; Router re-exports it in `Hosting/OperationVocabulary.swift` — it feeds the one total status mapping that **we** own (§8.4, §11.5) | **landed** |

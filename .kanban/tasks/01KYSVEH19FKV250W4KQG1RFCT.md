@@ -8,35 +8,40 @@ depends_on:
 - 01KYSV76CBJV66C92Z0EM2S73K
 position_column: todo
 position_ordinal: '9880'
-title: 'Tier-2 integration suite: the five proofs with real tools'
+title: 'Tier-2 integration suite: the six proofs with real tools'
 ---
 ## What
-Plan.md §20.1 tier 2 — real `ToolCatalog`, a real `MultiTool` with the files and shell capabilities, real `RoutedACPAgent`, real `session/new(cwd)` on a temp directory, scripted model. Create `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift` proving, from the client end:
+Plan.md §20.1 tier 2 — a real `ToolCatalog`, a real `MultiTool` with the files and shell capabilities, a real `RoutedACPAgent`, a real `session/new(cwd)` on a temp directory, and a scripted model.
 
-1. **Composition** — ToolCatalog constructed each tool with the correct ToolContext (root set, decoded config section).
-2. **Confinement through the protocol** — ask `files` for an out-of-root path; observe the refusal in the tool_call_update.
-3. **Projection** — a real tool call becomes a correct tool_call_update: stable toolCallId, `in_progress` → `completed`, filled `locations`, `rawInput`/`rawOutput`, title on first report.
+Create `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift`, proving these from the client end:
+
+1. **Composition** — `ToolCatalog` built each capability with the correct `CatalogContext`: the root set and that capability's decoded config section. Assert through the built `APISurface` entries, because the per-verb argument and output structs are internal.
+2. **Confinement through the protocol** — ask `tools.files.read` for a path outside the root set and observe the refusal in the `tool_call_update`. Note the files capability returns corrections in band through a `correction` field; it does not throw.
+3. **Projection** — a real tool call becomes a correct `tool_call_update`: a stable `toolCallId`, `in_progress` then `completed`, filled `locations`, `rawInput` and `rawOutput`, and a title on the first report.
 4. **Turn order** — `{}` → `user_message` → `running` → tool updates → `idle(end_turn)`.
-5. **Enable/disable** — project config `shell: false` ⇒ no shell tool reaches the session, confirmed from the client end.
+5. **Enable and disable** — project config `shell: false` means no shell namespace reaches the session, confirmed from the client end.
 
-Discipline: **check the filesystem, never the transcript** — a "file written" claim is verified by reading the file from disk (§20.1). No MLX, no download, no gates; runs at every commit.
+**Assert the tool names that ship today.** The session tools are `searchTools`, `runCode` and `wait`, plus the stand-alone `skills` tool. `findAPIs` no longer exists, and the surface is not a pair.
 
-Also: when the mcp capability's `4egfvw3` (MCPTestServerCLI/ScriptedServer) lands, add the free MCP case — spawn the scripted server, list tools, call one, assert tool_call_update correlation. If not landed when this task runs, note it as a follow-up checklist item left unchecked with a comment on the task.
+Discipline: **check the filesystem, never the transcript.** Verify a "file written" claim by reading the file from disk (§20.1). No MLX, no download and no gates. It runs at every commit.
+
+**Add the MCP case now. It is no longer blocked.** Multitool ships the `MCPTestServer` library and the `mcp-test-server` executable, so upstream card `4egfvw3` is satisfied. Spawn the test server, list its tools, call one, and assert the `tool_call_update` correlation. Assert the noun is the server name, as in `tools.<serverName>.<verb>`, with no `mcp` segment. The old names `MCPTestServerCLI` and `ScriptedServer` are wrong; do not look for them.
 
 - [ ] Proof 1: composition
-- [ ] Proof 2: confinement via the wire
+- [ ] Proof 2: confinement through the wire
 - [ ] Proof 3: projection fidelity
 - [ ] Proof 4: turn order
-- [ ] Proof 5: enable/disable
+- [ ] Proof 5: enable and disable
+- [ ] Proof 6: MCP through the shipped test server
 
 ## Acceptance Criteria
-- [ ] All five proofs pass in plain `swift test` on any host
-- [ ] The write-a-file proof reads the actual bytes from disk
-- [ ] Suite runs ungated in CI
+- [ ] All six proofs pass in a plain `swift test` on any host
+- [ ] The write-a-file proof reads the real bytes from disk
+- [ ] The suite runs ungated in CI
 
 ## Tests
 - [ ] This task IS tests: `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift`
 - [ ] `swift test` → green
 
 ## Workflow
-- Use `/tdd` — this suite may drive fixes in earlier components; keep those fixes in this task only when trivial, else file follow-up tasks.
+- Use `/tdd` — this suite can drive fixes in earlier components. Keep those fixes in this task only when they are trivial; otherwise file follow-up tasks.

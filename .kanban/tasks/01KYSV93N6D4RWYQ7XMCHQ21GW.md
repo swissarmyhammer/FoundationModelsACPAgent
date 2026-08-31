@@ -8,25 +8,40 @@ position_ordinal: 8a80
 title: 'Test harness: RecordingClient sink and scripted model backend fixture'
 ---
 ## What
-Plan.md §20.1. The shared fixture every tier-1/2 test uses. Built against the agent skeleton only — sessions and prompt turns do not exist yet; the end-to-end scripted-turn proof lives in the prompt-turn task. Create `Tests/FoundationModelsACPAgentTests/Support/`:
+Plan.md §20.1. The shared fixture every tier-1 and tier-2 test uses. Build it against the agent skeleton only. Sessions and prompt turns do not exist yet; the end-to-end scripted-turn proof lives in the prompt-turn task.
 
-- `RecordingClient.swift` — the ten-line `Client` conformance from §20.1: an `UpdateCollector` actor that appends every `session/update` notification in arrival order, and a configurable `requestPermission` answer (default `selected("allow")`). Plus a convenience that wires `InMemoryTransport.pair()` + `ClientSideConnection` + a `RoutedACPAgent` and returns (client connection, collector, agent).
-- `ScriptedModel.swift` — an injectable `ModelLoader` whose `LoadedLLMContainer.makeSession` returns a `LanguageModelSessionBackend` that emits a scripted sequence (text deltas, a known tool call with fixed arguments, turn end). Follow Router's `ScriptedOverflowBackend` pattern — no MLX, no download, no Apple-silicon gate; runs in CI at every commit.
-- Assertion helpers: `collector.updates(ofKind:)`, ordered-subsequence assertion for turn-order checks, and a filesystem-truth helper (read the file from disk — never trust a `tool_call_update` claim, §20.1).
-- Migrate the InitializationTests wiring onto this harness.
+Create `Tests/FoundationModelsACPAgentTests/Support/`:
 
-- [ ] `RecordingClient` + collector
-- [ ] Scripted `ModelLoader`/backend
-- [ ] Wiring convenience + assertion helpers
-- [ ] InitializationTests migrated onto the harness
+- `RecordingClient.swift` — the `Client` conformance from §20.1. An `UpdateCollector` actor appends every `session/update` notification in arrival order. Add a convenience that wires `InMemoryTransport.pair()`, `ClientSideConnection` and a `RoutedACPAgent`, and returns the client connection, the collector and the agent. **Drop the configurable `requestPermission` answer.** We no longer send permission requests; the sandbox is the only gate.
+
+- `ScriptedModel.swift` — an injectable `ModelLoader`. The seam is real and public:
+  - `ModelLoader.loadLLM(ref:slot:context:reporting:) async throws -> any LoadedLLMContainer`
+  - `LoadedLLMContainer.makeSession(instructions:)` and `makeSession(transcript:)` are required; the `tools:` overloads have defaults
+  - `LanguageModelSessionBackend` required members: `respond(to:maxTokens:)`, `streamResponse(to:maxTokens:)`, `respond(to:following:maxTokens:)`, `makeFork()`, `transcriptEntries()`, `usageTokenCounts()`
+  
+  Emit a scripted sequence: text deltas, a known tool call with fixed arguments, and a turn end. No MLX, no download, no Apple-silicon gate. It runs in CI at every commit.
+  
+  Router also ships test-support products — `FoundationModelsRouterTestSupport`, `FoundationModelsRouterRealModelSupport` and `FoundationModelsRouterEvalSupport`. Check `FoundationModelsRouterTestSupport` first and reuse a scripted backend from it rather than writing one, if a suitable one is vended.
+
+**Know what you cannot construct.** These have no public init, so a fake cannot build one: `TurnOutcome`, `ToolCallEntry`, `BackgroundRun`, `ToolContext`, `TranscriptEvent`, `TranscriptEvent.Partial`, `SessionSidecar`. No shipped `TranscriptRecorder` is reachable either, because `.jsonl`, `.inMemory` and `.none` are internal. So a recording fixture must come from driving a real recorded session, not from assembling events by hand. Design the helpers around that limit.
+
+**Write a `default` arm anywhere you switch on `SessionEvent`.** It has thirteen cases and no library evolution, and upstream tells consumers to absorb new cases.
+
+- Assertion helpers: `collector.updates(ofKind:)`, an ordered-subsequence assertion for turn-order checks, and a filesystem-truth helper that reads the file from disk. Never trust a `tool_call_update` claim.
+- Move the InitializationTests wiring onto this harness.
+
+- [ ] `RecordingClient` and the collector
+- [ ] Scripted `ModelLoader` and backend, reusing Router test support where it fits
+- [ ] Wiring convenience and assertion helpers
+- [ ] InitializationTests moved onto the harness
 
 ## Acceptance Criteria
-- [ ] The convenience constructs the pair and completes an `initialize` round trip observed from the client end
-- [ ] The scripted backend, driven directly (no session/prompt yet), emits its scripted sequence of deltas + tool call + turn end
-- [ ] The harness runs on any CI host (no model download, no GPU, no network)
+- [ ] The convenience builds the pair and completes an `initialize` round trip observed from the client end
+- [ ] The scripted backend, driven directly with no session/prompt yet, emits its scripted sequence of deltas, tool call and turn end
+- [ ] The harness runs on any CI host, with no model download, no GPU and no network
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift` — construction + initialize round trip; direct scripted-backend sequence assertion
+- [ ] `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift` — construction, the initialize round trip, and a direct scripted-backend sequence assertion
 - [ ] `swift test` → green
 
 ## Workflow
