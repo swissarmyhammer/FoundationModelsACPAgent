@@ -16,23 +16,24 @@ Plan.md §20.1 tier 2 — a real `ToolCatalog`, a real `MultiTool` with the file
 Create `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift`, proving these from the client end:
 
 1. **Composition** — `ToolCatalog` built each capability with the correct `CatalogContext`: the root set and that capability's decoded config section. Assert through the built `APISurface` entries, because the per-verb argument and output structs are internal.
-2. **Confinement through the protocol** — ask `tools.files.read` for a path outside the root set and observe the refusal in the `tool_call_update`. Note the files capability returns corrections in band through a `correction` field; it does not throw.
+2. **Confinement through the protocol** — ask `tools.files.read` for a path outside the root set and observe the refusal in the `tool_call_update`. The files capability returns corrections **in band** through a `correction: String?` field on every result; it does not throw.
 3. **Projection** — a real tool call becomes a correct `tool_call_update`: a stable `toolCallId`, `in_progress` then `completed`, filled `locations`, `rawInput` and `rawOutput`, and a title on the first report.
 4. **Turn order** — `{}` → `user_message` → `running` → tool updates → `idle(end_turn)`.
 5. **Enable and disable** — project config `shell: false` means no shell namespace reaches the session, confirmed from the client end.
+6. **MCP** — spawn a real server, list its tools, call one, and assert the `tool_call_update` correlation. Assert the noun is the server name, as in `tools.<serverName>.<verb>`, with no `mcp` segment.
 
-**Assert the tool names that ship today.** The session tools are `searchTools`, `runCode` and `wait`, plus the stand-alone `skills` tool. `findAPIs` no longer exists, and the surface is not a pair.
+**Assert the tool names that ship today.** The session tools are `searchTools`, `runCode` and `wait`, plus the stand-alone `skills` tool. `findAPIs` no longer exists, and the surface is not a pair. Note Multitool's own README and eventplan still say `findAPIs` in prose; the code is authoritative.
+
+**The MCP test support is shipped**, so proof 6 is not blocked. Multitool ships the `MCPTestServer` library and the `mcp-test-server` executable. `MCPTestServerCLI` is the old name and is gone, but **`ScriptedServer` still exists** — it is a `public actor` in the `MCPTestServer` library with its own self-test suite. Use it to script the server's answers rather than writing a stub.
 
 Discipline: **check the filesystem, never the transcript.** Verify a "file written" claim by reading the file from disk (§20.1). No MLX, no download and no gates. It runs at every commit.
 
-**Add the MCP case now. It is no longer blocked.** Multitool ships the `MCPTestServer` library and the `mcp-test-server` executable, so upstream card `4egfvw3` is satisfied. Spawn the test server, list its tools, call one, and assert the `tool_call_update` correlation. Assert the noun is the server name, as in `tools.<serverName>.<verb>`, with no `mcp` segment. The old names `MCPTestServerCLI` and `ScriptedServer` are wrong; do not look for them.
-
 - [ ] Proof 1: composition
-- [ ] Proof 2: confinement through the wire
+- [ ] Proof 2: confinement through the wire, read from the `correction` field
 - [ ] Proof 3: projection fidelity
 - [ ] Proof 4: turn order
 - [ ] Proof 5: enable and disable
-- [ ] Proof 6: MCP through the shipped test server
+- [ ] Proof 6: MCP through `ScriptedServer`
 
 ## Acceptance Criteria
 - [ ] All six proofs pass in a plain `swift test` on any host

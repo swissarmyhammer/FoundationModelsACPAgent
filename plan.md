@@ -276,7 +276,8 @@ is spelled.
 
 **`SeatbeltSandbox` is the only gate on a command.** It conforms to
 `public protocol CommandSandbox: Sendable`, which declares
-`wrap(...) -> SandboxedInvocation` and `preflight(...) throws` (default
+`wrap(...) throws -> SandboxedInvocation` and
+`preflight(workingDirectory:temporaryDirectory:) async throws` (default
 no-op). The host builds
 `SeatbeltSandbox.Options(writableRoots: [String] = [], extraWritePaths:
 [String] = [])` from the session root set and passes the sandbox to
@@ -1349,7 +1350,8 @@ after config-derived servers, and never persist).
 - **stdio** → `StdioServerProcess(command:args:env:name:) throws`. The
   `McpServerStdio` fields map one to one, with one hard rule: **`command` must
   be an absolute path.** Resolve the client's command before you construct the
-  process. The process has `respawn() -> any Transport` and `shutdown()`. Its
+  process. The process has `respawn() async throws -> any Transport` and
+  `shutdown() async`. Its
   env entries are `EnvVariable { name, value }`, and **env layers onto the
   inherited environment. It never replaces it.**
   `capabilities.session.mcp.stdio`.
@@ -1389,8 +1391,12 @@ session lifetime — they are never runs, and they never get a
 - **Reconnects and pooling shipped.** `MCPServerPool` is an actor with
   `add(server:)`, `add(process:)`, `attach(attachment:)` and
   `shutdownAll()`. Reach it as `Builder.serverPool`.
-- **`SurfaceRefresher(source:staging:servers:logger:)`** watches
-  `tools/list_changed` and stages a new registry. **It asserts in `deinit` if
+- **`SurfaceRefresher(source:staging:servers:logger:)`** consumes each
+  server's `catalogUpdates` stream and stages a new registry. It does NOT
+  subscribe to `tools/list_changed` directly: the stream also fires when a
+  connect reaches `.ready`, and when a connect fails after an earlier
+  success. Therefore expect a rebuild on a reconnect, not only on a re-list.
+  **It asserts in `deinit` if
   it is released while its watch task runs.** Therefore the host must call
   `stop()` on it, or attach it to the pool. Do not drop it.
 - **Shutdown order matters**: sweep the sessions first, then call
@@ -1468,9 +1474,16 @@ the user answers a hundred times a day is not a boundary either.
 
 **`SeatbeltSandbox` is the only gate.** The host builds
 `SeatbeltSandbox.Options(writableRoots:extraWritePaths:)` and passes the
-sandbox to `withShell(sandbox:)`. `preflight` runs a canary before any
-command starts, and a failed preflight means the command does not run. There
-is no path from a failed preflight to an unconfined spawn.
+sandbox to `withShell(sandbox:)`. `preflight` is `async throws` and runs a
+canary before any command starts. A failed preflight means the command does
+not run. There is no path from a failed preflight to an unconfined spawn.
+
+**Never pass an empty `writableRoots`.** The initializer replaces an empty
+list with the process working directory before it resolves the paths. So an
+empty array does not mean "write nothing". It silently means "write wherever
+this process happens to be running", which is the widest grant the type can
+give and the opposite of the intent. Always pass the session root set, and
+fail loudly if it is empty rather than handing an empty array through.
 
 **The `sandbox:` config section (§2.4).** It replaces the deleted
 `permissions:` section, and it holds one key:
@@ -2119,8 +2132,10 @@ tool from a test that only catches a broken *report* of a tool.
 
 **MCP gets tier-2 coverage free. The test support is shipped** (`4egfvw3` is
 done). Multitool ships two products: **`MCPTestServer`** (a library) and
-**`mcp-test-server`** (an executable). (The old names `MCPTestServerCLI` and
-`ScriptedServer` are wrong. Do not look for them.) Spawn a real server
+**`mcp-test-server`** (an executable). (`MCPTestServerCLI` is the old name and
+is gone. **`ScriptedServer` still exists**, as a `public actor` inside the
+`MCPTestServer` library, with its own self-test suite — use it to script a
+server's answers.) Spawn a real server
 process. List its tools. Call one. Confirm that the `tool_call_update`
 correlation holds.
 
