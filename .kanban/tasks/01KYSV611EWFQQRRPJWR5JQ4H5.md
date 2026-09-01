@@ -28,10 +28,30 @@ comments:
     - evidence: swift test — 52 tests in 6 suites passed, 0 failed, 0 skipped; swift build --build-tests shows 0 warnings
     - next: commit
   timestamp: 2026-09-01T21:24:04.944691+00:00
+- actor: claude-code
+  id: 01m1fdr3hvs0vyy8jns77ggrsx
+  text: |-
+    ### commit — changed
+    - evidence: 4852ca6 feat(config): add the tool-section codec and the sandbox config section — 9 files changed, 894 insertions(+), 59 deletions(-)
+    - next: review
+  timestamp: 2026-09-01T21:24:35.003255+00:00
+- actor: claude-code
+  id: 01m1fdxx7qfabcnn5gjpxeeskp
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — counts: 0 findings, 0 confirmed, 0 refuted; 7 files reviewed, 2 skipped by .reviewignore (.kanban/)
+    - next: done
+
+    ### finish iteration 1 — done
+    - implement: changed
+    - test: green (swift test — 52 tests in 6 suites, 0 failed, 0 skipped, 0 warnings)
+    - commit: 4852ca6
+    - review: clean → task moved to done
+  timestamp: 2026-09-01T21:27:45.143226+00:00
 depends_on:
 - 01KYSV5606NB4K39ZXQYPBH0A9
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8480'
 title: 'Configuration: tool-section codec and the sandbox config section'
 ---
 ## What
@@ -48,23 +68,30 @@ Write these instead:
 
 Record the stated limit in a doc comment: the sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
 
-- [ ] Per-tool scalar-false-then-body codec
-- [ ] `mcp:` list decoding with the three states
-- [ ] `sandbox:` section decoded into `SeatbeltSandbox.Options`
-- [ ] The root set defaults the writable roots
-- [ ] The exfiltration limit is documented
+- [x] Per-tool scalar-false-then-body codec
+- [x] `mcp:` list decoding with the three states
+- [x] `sandbox:` section decoded into `SeatbeltSandbox.Options`
+- [x] The root set defaults the writable roots
+- [x] The exfiltration limit is documented
 
 ## Acceptance Criteria
-- [ ] The five shapes of §11.2's table each decode to the documented meaning
-- [ ] An unknown key inside a `tools.shell:` body gives an error; an unknown top-level tool section gives a warning only
-- [ ] With no `sandbox:` section, the writable roots equal the session root set
-- [ ] A `sandbox.extraWritePaths` entry reaches the built options
-- [ ] A writable root given as a `/tmp` symlink path arrives resolved, with the `/private` prefix kept
+- [x] The five shapes of §11.2's table each decode to the documented meaning
+- [x] An unknown key inside a `tools.shell:` body gives an error; an unknown top-level tool section gives a warning only
+- [x] With no `sandbox:` section, the writable roots equal the session root set
+- [x] A `sandbox.extraWritePaths` entry reaches the built options
+- [x] A writable root given as a `/tmp` symlink path arrives resolved, with the `/private` prefix kept
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift` — the §11.2 five-shape matrix, the mcp tri-state, and the unknown-key error
-- [ ] `Tests/FoundationModelsACPAgentTests/SandboxConfigTests.swift` — the root-set default, the extra paths, and the symlink resolution case
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift` — the §11.2 five-shape matrix, the mcp tri-state, and the unknown-key error
+- [x] `Tests/FoundationModelsACPAgentTests/SandboxConfigTests.swift` — the root-set default, the extra paths, and the symlink resolution case
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-01 16:24)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
