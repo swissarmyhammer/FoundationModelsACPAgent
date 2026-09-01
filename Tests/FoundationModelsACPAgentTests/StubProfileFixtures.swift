@@ -109,6 +109,11 @@ struct StubModelLoader: ModelLoader {
     /// observes a complete download.
     private static let completeProgress = DownloadProgress(bytesDownloaded: 1, bytesTotal: 1)
 
+    /// The factory for the LLM container each load vends. The default vends
+    /// ``EchoLLMContainer``; a recording test injects a container whose
+    /// backend accumulates transcript entries instead.
+    var makeLLMContainer: @Sendable () -> any LoadedLLMContainer = { EchoLLMContainer() }
+
     func loadLLM(
         ref: ModelRef,
         slot: ModelSlot,
@@ -116,7 +121,7 @@ struct StubModelLoader: ModelLoader {
         reporting: @escaping @Sendable (DownloadProgress) -> Void
     ) async throws -> any LoadedLLMContainer {
         reporting(Self.completeProgress)
-        return EchoLLMContainer()
+        return makeLLMContainer()
     }
 
     func loadEmbedder(
@@ -159,17 +164,28 @@ struct StubMetadata: MetadataSource {
 
 /// Resolves a profile over the stub models, resident and generation-free.
 ///
-/// - Parameter cacheDirectory: Where the router caches. A fresh temporary
-///   directory per call keeps runs of one suite apart.
+/// - Parameters:
+///   - cacheDirectory: Where the router caches. A fresh temporary
+///     directory per call keeps runs of one suite apart.
+///   - recordingsDirectory: The durable transcripts root, or `nil` (the
+///     default) to record nothing.
+///   - loader: The loader the router loads through. The default vends the
+///     echo containers; a recording test injects a transcript-accumulating
+///     container through ``StubModelLoader/makeLLMContainer``.
 /// - Returns: The resolved profile. It retains its router, so the caller
 ///   holds the profile alone.
 /// - Throws: Whatever resolving the profile throws.
-func makeStubProfile(cacheDirectory: URL) async throws -> LanguageModelProfile {
+func makeStubProfile(
+    cacheDirectory: URL,
+    recordingsDirectory: URL? = nil,
+    loader: StubModelLoader = StubModelLoader()
+) async throws -> LanguageModelProfile {
     let router = Router(
         cacheDir: cacheDirectory,
+        recordingsDir: recordingsDirectory,
         probe: StubMachine(),
         metadataSource: StubMetadata(),
-        loader: StubModelLoader()
+        loader: loader
     )
     return try await router.resolve(
         profile: ProfileDefinition(

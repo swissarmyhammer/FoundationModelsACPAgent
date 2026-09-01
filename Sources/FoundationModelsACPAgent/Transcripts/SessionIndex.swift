@@ -258,7 +258,9 @@ public struct SessionIndex: Sendable {
     /// no transcript yet, or the current instant when neither date reads.
     /// The date is truncated to a whole second — the precision the RFC 3339
     /// line has — so a rebuilt record equals its own round trip.
-    private static func lastActivityDate(inSessionDirectory directory: URL) -> Date {
+    /// `TranscriptStore` shares it for a session the scan finds without an
+    /// index line, so the two fallbacks cannot drift.
+    static func lastActivityDate(inSessionDirectory directory: URL) -> Date {
         for fileName in [transcriptFileName, sidecarFileName] {
             let file = directory.appendingPathComponent(fileName)
             let values = try? file.resourceValues(forKeys: [.contentModificationDateKey])

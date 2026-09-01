@@ -1,10 +1,56 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fj4y9hbecr3w2eysrsc68k
+  text: |-
+    ### Research discoveries (implement, before code)
+
+    - `TranscriptEvent.merged(under:)` is at `Recording/MergedTranscript.swift` in the Router. It reads each nested `transcript.jsonl` and sorts by `(ts, seq)`. The public fields on `TranscriptEvent` are `sessionId`, `parentId`, `slot`, `seq`, `kind`, `text`, `tokensIn`, `tokensOut`, `ms`, `entry`. The field `ts` is internal, so the store cannot read a time from an event.
+    - Because `ts` is internal, `updatedAt` for a session with no index line must come from the file system scan (the same source `SessionIndex.rebuild` uses), not from the events.
+    - Open risk, to verify by test: the source trace shows `RoutedLLM.makeSession(agentSpawn:)` constructs the session actor with `parentId: nil` and writes `agentSpawn` only into `session.json`. If that holds at run time, the merged event stream carries no spawn fact. The test fixture will show the truth.
+    - Test fixtures: Router's own tests drive a stub backend that accumulates `.prompt` and `.response` `Transcript.Entry` values (`Tests/.../Helpers/StubSessionBackend.swift`), because the recorder derives events from `backend.transcriptEntries()` diffs. The `EchoSessionBackend` in this package records nothing, so the new tests need a stateful stub backend.
+    - `profile.standard` and `profile.flash` are public `RoutedLLM` values; `makeSession(instructions:workingDirectory:recordingRoot:tools:budget:compactionPrompt:summarization:agentSpawn:discoveryPriming:)` and `fork(workingDirectory:)` are the public drivers.
+    - A zero-turn session writes `session.json` at construction but no `transcript.jsonl` until the first recorded event, so "has a persisted transcript" equals "the session contributes at least one merged event".
+  timestamp: 2026-09-01T22:41:29.905969+00:00
+- actor: claude-code
+  id: 01m1fjp1xqf71hs6s7cnbewnra
+  text: |-
+    ### Blocker found and verified by a live fixture (2026-09-01)
+
+    The card says: "Take BOTH facts you need — parentId and the spawn fact — from TranscriptEvent." The parentage half is correct. The spawn half is not possible with the pinned Router revision (87c660b). Evidence from a real driven fixture (stub profile, `makeSession(agentSpawn:)`, one turn, then `TranscriptEvent.merged(under:)`):
+
+    - A fork's events carry `parentId` set, and its directory nests in the parent directory. The fork exclusion works from the events.
+    - An agent-spawned session's events ALL carry `parentId == nil`. Its `session.json` carries the `agentSpawn` object, but every stored property of `SessionSidecar` is internal, and the card forbids a private read of `session.json`.
+    - No event field, and no `entry` payload field, carries the spawn fact. `RoutedLLM.makeSession` constructs the session actor with `parentId: nil` and threads `agentSpawn` only into the sidecar write (`RoutedSessionActor.init` -> `writeSidecarIfNew`).
+
+    So the public event stream cannot separate an agent-spawned session from a plain root session. The plan (§4.2, §9) states the opposite; that premise is wrong against the source.
+
+    Plan for this card: implement the whole store with the roots-only predicate the events CAN express (`parentId == nil` on every event, plus at least one persisted event). Every acceptance criterion on the card is implementable and will be tested, including the fork exclusion. A canary test drives the `makeSession(agentSpawn:)` fixture and pins the upstream gap, so it fails loudly the day the Router publishes a spawn fact — that is the signal to finish the predicate. The card's spawn-exclusion requirement itself stays open; a person must decide the upstream ask (for example: the Router stamps `parentId` on a spawned session's events, or publishes a spawn accessor). The final outcome of this pass is `stuck` with that one gap named, not `done`.
+  timestamp: 2026-09-01T22:50:50.679286+00:00
+- actor: claude-code
+  id: 01m1fk1yg2xt1mh1svkfe9k7xt
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — `Sources/FoundationModelsACPAgent/Transcripts/TranscriptStore.swift` (new), `Sources/FoundationModelsACPAgent/Transcripts/SessionIndex.swift` (`lastActivityDate` opened to internal for the scan fallback), `Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift` (new, 16 tests), `Tests/FoundationModelsACPAgentTests/TranscriptRecordingFixtures.swift` (new), `Tests/FoundationModelsACPAgentTests/StubProfileFixtures.swift` (loader and recordings-directory injection).
+    - TDD: the suite was written first and failed with "cannot find type 'TranscriptStore' in scope"; the implementation then made all 16 tests pass.
+    - Discovery recorded above as a blocker: the Router permits ONE live writer per recording root (`owner.lock`, released at deinit), so the two-recorder-runs test drives its runs sequentially in their own scopes.
+    - The spawn-exclusion half of the listability predicate stays open (see the blocker comment); a canary test pins the gap.
+    - next: `/test` over the whole suite.
+    task: ^nh9myws
+  timestamp: 2026-09-01T22:57:20.386117+00:00
+- actor: claude-code
+  id: 01m1fk33mz17x02jnq05nf96qr
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 111 tests in 13 suites passed, 0 failed, 0 skipped; `swift build --build-tests` — 0 warnings from this package's files.
+    - next: `/commit`.
+  timestamp: 2026-09-01T22:57:58.431440+00:00
 depends_on:
 - 01KYSV6QHJ631K7T7FRF4B8338
-position_column: todo
-position_ordinal: '8780'
+position_column: doing
+position_ordinal: '80'
 title: 'TranscriptStore: read side, cursor pagination, project browsing'
 ---
 ## What
