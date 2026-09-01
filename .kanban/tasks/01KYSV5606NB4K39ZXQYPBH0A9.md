@@ -46,10 +46,33 @@ comments:
     - evidence: `swift test` — 25 tests in 3 suites passed, 0 failed, 0 skipped; no compiler warning in package sources; no disabled test
     - next: commit
   timestamp: 2026-09-01T18:19:12.699670+00:00
+- actor: claude-code
+  id: 01m1f354k43ddrxbzmg0mmz485
+  text: |-
+    ### commit — changed
+    - evidence: 7815bd3 feat(config): add DotfolderName, AgentConfiguration and the layered ConfigurationLoader
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-01T18:19:27.716534+00:00
+- actor: claude-code
+  id: 01m1f39s3z5afm24remtcar5zs
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (7815bd3) — counts: 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed; 5 Swift files reviewed, the 2 `.kanban/` files excluded by `.reviewignore`. No prior `## Review Findings` section on the card.
+    - next: move to done
+  timestamp: 2026-09-01T18:21:59.807983+00:00
+- actor: claude-code
+  id: 01m1f39z1qq0nds0zkxwzhrx0e
+  text: |-
+    ### finish iteration 1 — review clean, task done
+    - implement: changed — 5 files (3 in Sources/FoundationModelsACPAgent/Configuration/, 2 in Tests/FoundationModelsACPAgentTests/)
+    - test: green — swift test, 25 tests in 3 suites passed, 0 failed, 0 skipped, 0 warnings in package sources
+    - commit: 7815bd3
+    - review: clean — review sha HEAD~1..HEAD, 0 findings of 7 validators attempted
+  timestamp: 2026-09-01T18:22:05.879526+00:00
 depends_on:
 - 01KYSV4RJGFQ3HYG7J5C3P8H6D
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8280'
 title: 'Configuration: dotfolder name validation, stack construction, layered config.yaml loading'
 ---
 ## What
