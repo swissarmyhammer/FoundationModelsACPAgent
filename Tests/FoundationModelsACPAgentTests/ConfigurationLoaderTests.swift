@@ -55,6 +55,13 @@ import Testing
                 userDirectory: userDirectory,
                 environment: [:])
         }
+
+        /// Writes `contents` as the project-layer `config.yaml` and loads
+        /// the stack — the one-call path the codec suites decode through.
+        func loadProjectConfig(_ contents: String) throws -> LoadedConfiguration {
+            writeConfig(contents, in: projectDirectory)
+            return try makeLoader().load()
+        }
     }
 
     // MARK: - Defaults and layering
@@ -230,23 +237,23 @@ import Testing
         }
     }
 
-    /// The `tools` and `sandbox` sections are open until the codec task
-    /// decodes their bodies: a body under them is neither checked nor
-    /// rejected.
-    @Test func toolsAndSandboxBodiesAreAcceptedWithoutKeyChecks() throws {
+    /// The `tools` and `sandbox` sections decode their bodies through the
+    /// codec (plan.md §11.2, §11.7): a `shell: false` turns the tool off and
+    /// an `extraWritePaths` entry lands in the sandbox section.
+    @Test func toolsAndSandboxBodiesDecodeThroughTheCodec() throws {
         let fixture = Fixture()
-        fixture.writeConfig(
+
+        let loaded = try fixture.loadProjectConfig(
             """
             tools:
               shell: false
             sandbox:
               extraWritePaths:
                 - /tmp/cache
-            """, in: fixture.projectDirectory)
+            """)
 
-        let loaded = try fixture.makeLoader().load()
-
-        #expect(loaded.configuration == AgentConfiguration())
+        #expect(loaded.configuration.tools.shell == .disabled)
+        #expect(loaded.configuration.sandbox.extraWritePaths == ["/tmp/cache"])
         #expect(loaded.warnings.isEmpty)
     }
 

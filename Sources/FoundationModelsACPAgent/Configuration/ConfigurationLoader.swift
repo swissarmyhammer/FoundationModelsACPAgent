@@ -25,16 +25,39 @@ public enum ConfigurationError: Error, Equatable, Sendable, CustomStringConverti
     }
 }
 
+extension ConfigurationError {
+    /// Throws `.unknownKey` for the first key of `body`, in key order, that
+    /// `knownKeys` does not contain. A body that is not a mapping has no
+    /// keys to check.
+    static func checkKeys(of body: YAMLValue, against knownKeys: Set<String>, section: String)
+        throws
+    {
+        guard case .dictionary(let keys) = body else {
+            return
+        }
+        if let unknownKey = keys.keys.sorted().first(where: { !knownKeys.contains($0) }) {
+            throw ConfigurationError.unknownKey(section: section, key: unknownKey)
+        }
+    }
+}
+
 /// A condition the loader reports and continues past (plan.md §2.4).
 public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     /// A top-level section no schema section is named after.
     case unknownSection(name: String)
+
+    /// A key under `tools:` that names no tool in the roster (plan.md
+    /// §11.2).
+    case unknownToolSection(name: String)
 
     /// A human-readable message that names the section.
     public var description: String {
         switch self {
         case .unknownSection(let name):
             return "\(ConfigurationLoader.configFileName): unknown section \"\(name)\" is ignored"
+        case .unknownToolSection(let name):
+            return
+                "\(ConfigurationLoader.configFileName): unknown tool section \"tools.\(name)\" is ignored"
         }
     }
 }
@@ -130,41 +153,44 @@ public struct ConfigurationLoader: Sendable {
     /// The warnings a walk of the merged tree against
     /// `AgentConfiguration.sectionSchemas` gives.
     ///
-    /// - Returns: One warning per unknown top-level section, in key order.
+    /// - Returns: The warnings in key order: one per unknown top-level
+    ///   section, and one per unknown tool key under `tools:`.
     /// - Throws: `ConfigurationError.documentNotAMapping` when the root is
     ///   a scalar or a list; `ConfigurationError.unknownKey` for a key a
-    ///   checked section does not decode.
+    ///   checked section or a known tool body does not decode.
     private static func schemaWarnings(in root: YAMLValue) throws -> [ConfigurationWarning] {
         switch root {
         case .null:
             return []
         case .dictionary(let sections):
-            return try sections.sorted { $0.key < $1.key }.compactMap { section in
-                try schemaWarning(forSection: section.key, body: section.value)
+            return try sections.sorted { $0.key < $1.key }.flatMap { section in
+                try schemaWarnings(forSection: section.key, body: section.value)
             }
         case .string, .int, .double, .bool, .array:
             throw ConfigurationError.documentNotAMapping
         }
     }
 
-    /// The warning one top-level section gives, after its keys pass.
+    /// The warnings one top-level section gives, after its keys pass.
     ///
     /// - Returns: The unknown-section warning when no schema section has
-    ///   this name; `nil` when the section is known and its keys pass.
+    ///   this name; the tool-roster warnings for `tools:`; nothing when the
+    ///   section is known and its keys pass.
     /// - Throws: `ConfigurationError.unknownKey` for the first key, in key
-    ///   order, that a checked section does not decode.
-    private static func schemaWarning(forSection name: String, body: YAMLValue) throws
-        -> ConfigurationWarning?
+    ///   order, that a checked section or a known tool body does not
+    ///   decode.
+    private static func schemaWarnings(forSection name: String, body: YAMLValue) throws
+        -> [ConfigurationWarning]
     {
         guard let schema = AgentConfiguration.sectionSchemas[name] else {
-            return .unknownSection(name: name)
+            return [.unknownSection(name: name)]
         }
-        guard case .checked(let knownKeys) = schema, case .dictionary(let keys) = body else {
-            return nil
+        switch schema {
+        case .checked(let knownKeys):
+            try ConfigurationError.checkKeys(of: body, against: knownKeys, section: name)
+            return []
+        case .toolRoster:
+            return try ToolsConfiguration.schemaWarnings(inBody: body)
         }
-        if let unknownKey = keys.keys.sorted().first(where: { !knownKeys.contains($0) }) {
-            throw ConfigurationError.unknownKey(section: name, key: unknownKey)
-        }
-        return nil
     }
 }

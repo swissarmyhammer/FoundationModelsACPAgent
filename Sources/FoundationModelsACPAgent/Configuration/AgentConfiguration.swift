@@ -29,8 +29,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     /// The model profile: the `standard`, `flash` and `embedding` slots.
     public var profile = ProfileConfiguration()
 
-    /// The tool roster (§11.2). Its body decodes in the codec task; until
-    /// then the section is open and its keys are not checked.
+    /// The tool roster (§11.2): per-tool enable and disable through the
+    /// section codec, plus the `mcp:` server list.
     public var tools = ToolsConfiguration()
 
     /// How much of each session is recorded.
@@ -42,8 +42,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     /// The thresholds of the self-folding session's token budget.
     public var compaction = CompactionConfiguration()
 
-    /// The sandbox section (§11.7). Its body decodes in the codec task;
-    /// until then the section is open and its keys are not checked.
+    /// The sandbox section (§11.7): the extra write grants beyond the
+    /// session root set.
     public var sandbox = SandboxConfiguration()
 
     /// The YAML spelling of each top-level section.
@@ -78,8 +78,9 @@ extension AgentConfiguration {
     enum SectionSchema: Equatable, Sendable {
         /// The section decodes exactly these keys; any other key is an error.
         case checked(Set<String>)
-        /// The section's body is not decoded yet, so no key is checked.
-        case open
+        /// The `tools:` roster (§11.2): a known tool's body keys are
+        /// checked, and an unknown tool key is a warning only.
+        case toolRoster
     }
 
     /// The schema of every top-level section, by its YAML spelling. A
@@ -87,11 +88,11 @@ extension AgentConfiguration {
     /// the loader reports as a warning (§2.4).
     static let sectionSchemas: [String: SectionSchema] = [
         CodingKeys.profile.stringValue: .checked(ProfileConfiguration.knownKeys),
-        CodingKeys.tools.stringValue: .open,
+        CodingKeys.tools.stringValue: .toolRoster,
         CodingKeys.recording.stringValue: .checked(RecordingConfiguration.knownKeys),
         CodingKeys.transcripts.stringValue: .checked(TranscriptsConfiguration.knownKeys),
         CodingKeys.compaction.stringValue: .checked(CompactionConfiguration.knownKeys),
-        CodingKeys.sandbox.stringValue: .open,
+        CodingKeys.sandbox.stringValue: .checked(SandboxConfiguration.knownKeys),
     ]
 }
 
@@ -147,18 +148,6 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
         flash = try container.decodeIfPresent([ModelRef].self, forKey: .flash) ?? flash
         embedding = try container.decodeIfPresent([ModelRef].self, forKey: .embedding) ?? embedding
     }
-}
-
-// MARK: - tools
-
-/// The `tools:` section (plan.md §11.2). The codec task decodes its body;
-/// until then any body is accepted and nothing is read from it.
-public struct ToolsConfiguration: Codable, Equatable, Sendable {
-    /// The default roster: every built-in on.
-    public init() {}
-
-    /// Accepts any body without reading it.
-    public init(from decoder: any Decoder) throws {}
 }
 
 // MARK: - recording
@@ -320,15 +309,3 @@ public struct CompactionConfiguration: Codable, Equatable, Sendable, KeyCheckedS
     }
 }
 
-// MARK: - sandbox
-
-/// The `sandbox:` section (plan.md §11.7). The codec task decodes its body
-/// into the sandbox options; until then any body is accepted and nothing is
-/// read from it.
-public struct SandboxConfiguration: Codable, Equatable, Sendable {
-    /// The default: no extra write paths.
-    public init() {}
-
-    /// Accepts any body without reading it.
-    public init(from decoder: any Decoder) throws {}
-}
