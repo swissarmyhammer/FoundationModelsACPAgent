@@ -16,7 +16,7 @@ Plan.md §20.2 and §17. One executable, two purposes: the family-convention exa
 - Must NOT grow argument parsing, rendering or config wizardry.
 - Full-duplex shape. Never a read-request then write-response loop, which deadlocks on mid-turn updates (§20.2).
 
-- Tier-3 gated test `Tests/FoundationModelsACPAgentTests/Integration/StdioContractTests.swift`, gated by an env var such as `ACP_TIER3=1`. Spawn the example as a subprocess. Drive initialize → session/new → a prompt whose turn runs a real shell command that writes to ITS stdout. Assert the protocol MUSTs of §17:
+- Tier-3 gated test `Tests/FoundationModelsACPAgentTests/Integration/StdioContractTests.swift`, gated by an env var such as `ACP_TIER3=1`. **Spawn the example through `AgentProcess(command:arguments:)` from `FoundationModelsACPClient`** (plan.md §20.1), with the absolute path of the built `acp-agent`. It spawns in its own process group and vends `transport`. Wrap `agent.transport` in a tap that records the raw inbound bytes, then `client.connect(over: tap)`. Drive initialize → session/new → a prompt whose turn runs a real shell command that writes to ITS stdout. Assert the protocol MUSTs of §17 on the tapped bytes, and assert teardown with `processIdentifier == nil` after `shutdown()`:
   - The agent's stdout carries only ndJSON frames. Child output must not leak, because the shell capability captures output and children do not inherit the agent's stdout.
   - No frame contains an interior newline.
   - Framing survives the process boundary, so every line parses as a JSON-RPC message.

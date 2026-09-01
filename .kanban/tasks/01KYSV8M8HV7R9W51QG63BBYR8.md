@@ -35,6 +35,8 @@ profile.standard.makeSession(
 
 `RoutedLLM.makeSession(configuration: SessionConfiguration)` is the other door. `SessionConfiguration` carries the same fields plus `grammar`. Leave `grammar` nil; a non-nil grammar vends a guided session.
 
+**Leave `agentSpawn:` at its default `nil`.** Agents are not implemented yet. A later iteration adds them as a Multitool code-mode background capability (plan.md §11.3). Only that capability makes a spawned session, and it does so from inside a tool call, never from `session/new`.
+
 **Hold the profile for the life of the agent.** A `RoutedModel` holds its owning profile weakly. Every public `makeSession` traps with `preconditionFailure` if the profile was released. Only the vended session retains it. So the agent must keep a strong reference to the resident profile.
 
 Other rules:

@@ -64,6 +64,12 @@ pattern in Multitool only. Only this package gives names to tool packages. The
 runtime may not do this. No cycle is possible: Multitool does not depend on
 this package.
 
+**The test target and the `Examples/` executables also depend on the sibling
+`FoundationModelsACPClient`, the Client role.** It is the client driver for
+every integration tier (§20.1) and for `acp-print` (§20.2). The library
+target never imports it. The client depends on the wire and Extras only, so
+no cycle is possible there either.
+
 **The composition, end to end:**
 
 ```
@@ -89,6 +95,10 @@ a model handle on the resolved profile:
 `SessionConfiguration` carries the same fields plus `grammar`; a non-nil
 `grammar` vends a guided session.
 
+**`agentSpawn:` stays `nil` in this iteration.** Agents are not implemented
+yet. A later iteration adds them as a Multitool capability behind the
+code-mode surface, as a long-running background tool (§11.3).
+
 **Trap: a `RoutedModel` holds its owning profile weakly.** Every public
 `makeSession` calls `preconditionFailure` if the profile is already released.
 Only the vended session retains the profile. Therefore the agent must hold the
@@ -109,11 +119,12 @@ has the name `Agent`. Thus `RoutedACPAgent: Agent` is not ambiguous.)
 `auth/login`, `auth/logout`, `session/new`, `session/resume`, `session/list`,
 `session/delete`, `session/close`, `session/prompt`, `session/cancel`,
 `session/set_config_option`, `session/request_permission`, `session/update`.
-`mcp/*` and `session/fork` are in the **unstable schema only**. **Upstream has
-promoted `elicitation/*` to stable on its main branch, but the schema
-re-vendor is still pending**, so our vendored schema still carries
-`elicitation/*` as method names only (§16). We plan all three, and we gate
-them (§16, §11.5, §7.5). `session/list` /
+`mcp/*` and `session/fork` are in the **unstable schema only**.
+**`elicitation/*` is stable, and the wire package ships it**: the vendored
+schema is `schema-v2.0.0-alpha.3`, `ClientCapabilities.elicitation` is a
+generated field, and `AgentSideConnection` has `createElicitation(_:)` and
+`elicitationComplete(_:)` (§16, verified 2026-09-01). We plan all three, and
+we gate them (§16, §11.5, §7.5). `session/list` /
 `resume` / `close` are baseline in v2. Each agent that supports sessions must
 supply them. "Capability off" is not available for them.
 
@@ -480,6 +491,15 @@ sub-agent's own cwd. A sub-agent in a different repo goes in *that* repo's
 transcripts. `parentToolCallId` links it, as a sibling. Forks share the parent
 conversation. Thus forks stay nested under the parent, as before.
 
+**Status: agent spawns do not occur in this iteration.** Agents are not
+implemented yet. No tool in the roster starts a sub-agent, and `session/new`
+passes `agentSpawn: nil` (§7.1). A later iteration adds agents as a Multitool
+capability behind the code-mode surface, as a long-running background tool
+(§11.3). The rules in this section stay in force now, because the read side
+(§4.6, §9) and the close path (§10.1) must already accept a spawned session
+when that capability arrives. Until then, only a test fixture can make one,
+through `makeSession(agentSpawn:)`.
+
 ### 4.3 Transcripts are committed — the transcript is the source
 
 **We commit transcripts. We do not ignore them.** The transcript is the new
@@ -626,10 +646,14 @@ honestly. Let the client disconnect.
 - **We omit `capabilities.auth` and `authMethods`** (§6).
 
 **Read the client's capabilities with this rule: absent means unsupported.**
-This is the spec's own MUST. Stable v2's `ClientCapabilities` has only
-`_meta`. Thus there is nothing to read today. The rule stays important: the
-`_meta`-negotiated elicitation gate (§16) must default to unsupported when the
-key is missing.
+This is the spec's own MUST. Stable v2's `ClientCapabilities` has two
+fields: `auth` (`terminal`) and `elicitation` (`form`, `url`). Each is an
+object or absent. We read only `elicitation` (§16): an omitted or `null`
+`elicitation` means the client cannot ask the user anything; `form` and `url`
+are present, non-null objects only when that mode is supported. We never read
+`auth.terminal`, because we have no auth (§6). The generated type is
+`ClientCapabilities.elicitation: ElicitationCapabilities?` with `form:
+ElicitationFormCapabilities?` and `url: ElicitationUrlCapabilities?`.
 
 **Accept malformed capabilities.** The schema marks `capabilities` with
 `x-deserialize-default-on-error` and `default: {}`. A capabilities object that
@@ -879,6 +903,19 @@ arm. Write one.
 **`textReset` means "discard the text accumulated so far".** Therefore it
 cannot ride as a chunk. Send the whole-message form, which replaces
 everything accumulated (§8.3).
+
+**One wire update has no `SessionEvent` source: `tool_call_content_chunk`.**
+It appends one `ToolCallContent` item to a tool call's content, and a later
+`tool_call_update` with `content` replaces the whole array (the tool-call
+half of §8.3). Its live source is not Router's event stream. It is the
+host-owned `ShellOutputChunkStream` that the catalog passes to
+`withShell(outputChunkStream:)` (§11.8): each `ShellOutputEvent` with
+`.output(stream:bytes:)` becomes one `tool_call_content_chunk` with a text
+`content` item, keyed by the run's `commandID` (= `completionToken`, the
+`toolCallId`). The settlement `tool_call_update` from `runSettled` then
+carries the complete `content` from the stored record. That final replace is
+the convergence step: a client that missed a chunk still ends correct
+(§11.6). Decided 2026-09-01.
 
 **Trap: `turnEnded` fires once for each inner generate call, not once for a
 logical turn.** A turn that retries after a recovered overflow emits one
@@ -1137,6 +1174,24 @@ pending elicitation, journals the terminal events, and finishes every
 safe. **`deinit` does not run the sweep. The host must call `close()`.**
 Therefore `session/close` calls it, and so does agent shutdown.
 
+**The unknown-id policy (decided 2026-09-01).** The spec says an agent MAY
+return an error when a `session/close` names a session that does not exist
+or is not active. We make one rule for every session method:
+
+| Request | `sessionId` unknown | known, but closed |
+|---|---|---|
+| `session/prompt`, `session/set_config_option` | JSON-RPC invalid params (`-32602`), the id in `data` | `-32602`, reason "closed; resume it first" — a closed session is resumable (§9), not promptable |
+| `session/resume` | `-32602` (a deleted session is unknown, §7.4) | success — this is what resume is for |
+| `session/close` | `-32602` | success `{}` — close is idempotent, as `RoutedSession.close()` is |
+| `session/cancel` | a notification, so no response: log and ignore | log and ignore |
+| `session/delete` | silent success (§10.2) | success — the delete proceeds |
+
+Silence for an unknown id would hide a client bug: a client could prompt a
+conversation that does not exist and see `idle` for nothing. The wire package
+supplies the error values: `RequestError.invalidParams` is the bare form, and
+`ACPError(code: .invalidParams, message:data:)` carries the id and the
+reason. Use those, never a bare integer.
+
 **The shutdown order matters**: sweep the sessions first, then call
 `MCPServerPool.shutdownAll()` (§11.5). A pool shutdown before the sweep drops
 the transports that the settling runs still need.
@@ -1285,6 +1340,28 @@ both:**
 | Capability | Source | Blocked on | Config section |
 |---|---|---|---|
 | code-context ops (`searchSymbol`, `callGraph`, `blastRadius`, …) | a `Capability` over `CodeContext` | nothing; first follow-up | `codeContext:` |
+| `agents` — sub-agent delegation (start, check, send, cancel) | a `Capability` in Multitool — **not implemented yet**; a later iteration | the Multitool agents capability, which is plan-only upstream (§21) | `agents:` (reserved) |
+
+**Agents are not implemented yet.** They arrive in a later iteration, as a
+Multitool capability behind the code-mode surface. The model does not get a
+stand-alone `agents` tool. It calls `runCode`, and the snippet calls
+`tools.agents.*`. A sub-agent is a long-running background tool, so the
+capability must mount `.background`, in the same way as `runCode` and the
+`shell` commands: a start call hands back a `completionToken` at once, and the
+model collects the result through `wait(completionToken, seconds)`, examines
+it through `status()`, and ends it through `cancel()` (§11.4). Router's
+background engine owns that run plane. This is also why the design fits the
+one-identity rule in §1: the `completionToken` is the `toolCallId` that the
+client sees, and it becomes `AgentSpawn.parentToolCallId` on the child
+session. Each run is a Router session made through `makeSession(agentSpawn:)`.
+It is never an ACP session (§4.2). The design source is
+`../FoundationModelsAgents/plan.md`. That plan predates code mode: it describes
+a fused `OperationTool` named `agents` over the removed
+`FoundationModelsOperationTool` package, and the Multitool capability replaces
+that shape. Until it ships: no `agents:` config section, no `withCapability`
+line for it, and `agentSpawn: nil` at `session/new` (§7.1). When it ships,
+add it here with one `withCapability(_:)` line (§11.1), and release it as a
+user-visible roster change (§11.2).
 
 **Skills is a standalone tool and a command provider. The two halves answer
 different questions.** The `skills` tool is model access ("what can I do
@@ -1443,6 +1520,13 @@ update with a new `toolCallId` is the creation.
   queued.
 - `ToolCallUpdate` requires only `toolCallId`. `title` SHOULD be on the first
   report.
+- **Two content forms, one algebra.** `tool_call_content_chunk` appends one
+  `ToolCallContent` item. A `tool_call_update` with `content` replaces the
+  whole array. `content` omitted leaves it unchanged. Stream live output as
+  chunks. Send the complete content in the settlement update, from the
+  stored record, so the final replace converges a client that missed a
+  chunk. Never send a chunk after the settlement update. `locations` is
+  replaced as a whole array too.
 - **The diff mapping trap**: ACP's `path` is absolute and **post-operation**.
   For `move` / `copy` (`DiffPathPairChange {oldPath, path}`), the files
   capability models
@@ -1545,10 +1629,18 @@ Map `ShellRawOutput.bytes` to `terminal_output_chunk` (base64, byte-true) and
 **But the package has no PTY, no ANSI parser and no terminal renderer.**
 Terminal presentation is our layer. Plan for it here, not upstream.
 
-**Sequence**: the stream is additive over the usual tool-call content. Thus
-`shell` ships text-in-`content` first. The terminal stream is a follow-up. But
-do not design the shell tool's output path so that it discards raw bytes
-before the wire.
+**Sequence** (decided 2026-09-01, §8.4): the terminal stream is additive over
+the usual tool-call content, and it is a follow-up. Day one, `shell` streams
+live output as **`tool_call_content_chunk`** with a text `content` item per
+`ShellOutputEvent.Kind.output(stream:bytes:)`, decoded as UTF-8 with
+replacement; a `.gap(stream:droppedByteCount:)` becomes one chunk that names
+the dropped byte count; `.completed` ends the run's chunks. The settlement
+`tool_call_update` then carries the complete `content` from the stored record
+(§11.6). When the terminal stream lands, `shell` moves its bytes to
+`terminal_output_chunk` and the tool call carries a `terminal` reference;
+`tool_call_content_chunk` stays for every other streaming source. Do not
+design the shell tool's output path so that it discards raw bytes before the
+wire.
 
 ## 12. Content
 
@@ -1853,6 +1945,13 @@ Schema details:
 - **`set` and the push each carry the complete state**
   (`required: ["configOptions"]`). It is the full set each time, never a
   delta.
+- **The `set` request's value is tagged by `type`.** A select option is set
+  with `type: "id"` and the value id; a boolean with `type: "boolean"` and
+  `true`/`false`. The wire's `SetSessionConfigOptionRequest` value is
+  `.id(SessionConfigValueId)`, `.boolean(Bool)` or `.other(String,
+  JSONValue)` for an unknown tag. A `.other` value, or a value whose type
+  does not match the option, is invalid params (§10.1's error values); the
+  state does not change and no push goes out.
 - `SessionConfigOption` requires only `configId` + `name`. The `select` /
   `boolean` / `other` variants supply `currentValue` (and `options`). Grouping
   is a wrapper (`SessionConfigSelectGroup{groupId, name, options}`), not a
@@ -1894,7 +1993,7 @@ answered. It does not authorize anything.
 **It is a relay, not a translation.** MCP and ACP elicitation are almost
 isomorphic:
 
-| MCP (swift-sdk) | ACP (`elicitation/*` — unstable schema) |
+| MCP (swift-sdk) | ACP (`elicitation/*` — stable v2, generated in the wire package) |
 |---|---|
 | `CreateElicitation` `.form(FormParameters{message, mode?, requestedSchema})` | `elicitation/create`, `mode: "form"`, `message`, `requestedSchema` |
 | `.url(URLParameters{message, mode, url, elicitationId})` | `mode: "url"`, `message`, `url`, `elicitationId` |
@@ -1910,12 +2009,13 @@ a tool call, and a tool that asks the user through the run's `ToolContext`.
   maps to it; then the client can show *which* tool call asks, including a
   detached long call that would otherwise ask with no context); or a
   `requestId` for interactions outside a session.
-- **Gate on capability. Degrade honestly. The gate is `_meta`.** Stable v2's
-  `ClientCapabilities` has only `_meta`. Thus elicitation support is a
-  `_meta`-negotiated extension while `elicitation/*` is unstable. Absent means
-  unsupported (§5). When the necessary mode is unsupported, return MCP
-  **`decline` with a clear reason**. There is no permission method to fall
-  back to (§11.7), and an options-based method could not carry a
+- **Gate on capability. Degrade honestly. The gate is the real
+  `capabilities.elicitation` field, not `_meta`.** Stable v2's
+  `ClientCapabilities` carries `elicitation: ElicitationCapabilities?` with
+  `form` and `url` sub-objects (§5). Absent or `null` means unsupported, at
+  each level. Check the mode the tool needs. When that mode is unsupported,
+  return MCP **`decline` with a clear reason**. There is no permission method
+  to fall back to (§11.7), and an options-based method could not carry a
   `requestedSchema` anyway.
 - **Relay the URL-mode completion.** Create → accept → `elicitation/complete`
   is a three-message flow. Send MCP's completion notification through,
@@ -1936,17 +2036,34 @@ a tool call, and a tool that asks the user through the run's `ToolContext`.
   paired with `state_update: requires_action`. The gate release and the state
   transition are two halves of one action (§8.2).
 
-**The gate, and the interim.** `elicitation/create` / `elicitation/complete`
-exist in the unstable schema as **method names only**. There are no generated
-types and no handlers. (The docs show a `capabilities.elicitation` field. The
-stable schema does not have it.) The wire package must land the types and the
-client-side handler entry points first. Thus **this is not day-one scope.**
-Upstream has promoted elicitation to stable on its main branch. A schema
-re-vendor brings the types. The work is filed on the wire package's board:
-`7kgq5dw`, then `enzjy0q` (§21).
-The interim: our Router-side relay declines each elicitation with a clear
-reason: "this host cannot ask you questions yet". That is honest, and it
-unblocks the MCP built-in without the unstable surface.
+**The wire is ready. The Router request side is not.** The wire package
+vendored `schema-v2.0.0-alpha.3` and generated the types (`7kgq5dw` and
+`enzjy0q` are done, §21). `AgentSideConnection.createElicitation(_
+params: CreateElicitationRequest) async throws -> CreateElicitationResponse`
+sends the request, and `elicitationComplete(_:)` sends the URL-mode
+completion. `CreateElicitationRequest` is `{ message, mode }`, where `mode`
+is the flattened form/url payload. `CreateElicitationResponse` is a
+`JSONValue` typealias today, so the relay decodes `action` and `content`
+itself. The client sibling's M7 is done too, so a tier-2 test drives both
+ends with `SwiftUIACPClient.acceptElicitation(_:content:)` and
+`declineElicitation(_:)` (§20.1).
+
+**Router gives a host no public live signal that an elicitation is
+pending.** `ToolContext.elicit(_:)` posts an `OperationEvent` with `kind:
+.elicitation` to the session outbox. But `SessionEvent` has no case for it,
+`SessionMailbox.pendingElicitationIds()` and `SessionOutbox.pending()` are
+internal (Router's audit "Close the public surface to what a host actually
+calls" made them so), and `TranscriptEvent.operationEvents` is a recorded
+read that arrives at the next turn drain, not live. Router's own tests reach
+the internal mailbox. The answer side is public
+(`respond(elicitationId:response:)`, `complete(elicitationId:)`); the request
+side is not. **This is an upstream ask** (§21): a `SessionEvent` case on
+`streamSessionEvents()` that carries the `.elicitation` `OperationEvent`, or
+a public `RoutedSession.pendingElicitations()` read with a wakeup. Do not
+poll the transcript. The relay is board task `2z6qtqy`, and it waits on that
+ask. The interim stays: our Router-side relay declines each elicitation with
+a clear reason: "this host cannot ask you questions yet". That is honest, and
+it keeps the MCP built-in unblocked.
 
 ## 17. Transports
 
@@ -1985,8 +2102,9 @@ inherit. Tier 3
 
 - **Each extension goes in `_meta`, never adjacent to it.** Implementations
   MUST NOT add custom fields at the root level of spec-defined types. All root
-  names are reserved for future protocol versions. This covers the elicitation
-  capability gate (§16) and each other extension that we think of. Root-level
+  names are reserved for future protocol versions. Elicitation is **not** an
+  extension any more: its gate is the real `capabilities.elicitation` field
+  (§5, §16). `_meta` covers each other extension that we think of. Root-level
   `traceparent` / `tracestate` / `baggage` are reserved for W3C trace context.
   Obey them if we send tracing.
 - **`_`-prefixed values are the extension mechanism for extensible enums.**
@@ -2075,30 +2193,62 @@ tools" are different questions.** Only the second needs a model.
 | Tier | Model | Client | Tools | Gated | Answers |
 |---|---|---|---|---|---|
 | 0 — unit | — | — | — | no | do the tools work in isolation *(done upstream: Multitool's capability suites — files, shell, mcp — and Router's 624 tests)* |
-| 1 — golden conformance | scripted | recording sink | fake | no | is the wire shape right — ordering, upserts, replay |
-| 2 — tool integration | scripted | recording sink | **real** | no | do real tools work through the real conformance |
-| 3 — stdio contract | scripted | subprocess | real | yes | does framing survive a real process boundary |
-| 4 — eval | **real** | in-process | real | yes | does the model *choose* to use tools, and succeed |
+| 1 — golden conformance | scripted | `SwiftUIACPClient`, in-process | fake | no | is the wire shape right — ordering, upserts, replay |
+| 2 — tool integration | scripted | `SwiftUIACPClient`, in-process | **real** | no | do real tools work through the real conformance |
+| 3 — stdio contract | scripted | `SwiftUIACPClient` over `AgentProcess` | real | yes | does framing survive a real process boundary |
+| 4 — eval | **real** | `SwiftUIACPClient`, in-process | real | yes | does a local model, driven over ACP end to end, *choose* to use tools, and succeed |
 
-**There is no "fake client" to build. `ClientSideConnection` is the client.**
-A `Client` conformance is about ten lines:
+**The client driver is the sibling `FoundationModelsACPClient`. Do not write
+a test client.** The package shipped: its board shows M0–M7 done, and its
+README documents the shape below. `SwiftUIACPClient` is the `Client`
+conformance. It is `@MainActor` and `@Observable`, it does not import SwiftUI,
+and a headless test can use it. `connect(over:logger:)` takes any
+`ACPTransport` and returns the `ClientSideConnection` that drives the agent.
+One `ACPSessionState` per session holds the projection: the ordered
+`entries`, `toolCalls` keyed by `toolCallId`, `turnState`, `lastStopReason`,
+`availableCommands`, `configOptions`, `title`, `updatedAt` and `usage`.
+**That state is the primary assertion surface.** It is the same projection
+that the Mac app binds to. A test that passes against it proves what the app
+shows.
 
 ```swift
-private struct RecordingClient: Client {
-    let updates: UpdateCollector
-    func sessionUpdate(_ n: UpdateSessionNotification) async { await updates.append(n) }
-    // The `Client` protocol requires this member, so the conformance keeps it.
-    // We never send `session/request_permission` (§11.7), so no test drives
-    // this path. Do not read it as a live one.
-    func requestPermission(_ p: RequestPermissionRequest) async throws
-        -> RequestPermissionResponse { .init(outcome: .selected(optionId: "allow")) }
-}
 let (clientEnd, agentEnd) = InMemoryTransport.pair()
-let client = await ClientSideConnection(stream: clientEnd) { _ in RecordingClient(updates: c) }
+let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
+let client = SwiftUIACPClient(coalescingCadence: cadence, clock: testClock)
+let connection = await client.connect(over: clientEnd)
+// drive:  connection.initialize(_:) → connection.newSession(_:) → connection.prompt(_:)
+// assert: client.session(for: id).turnState, .toolCalls, .entries — after flushPendingChunks()
 ```
 
-That is a **sink**, not a simulation. Each tier above tier 0 uses these same
-ten lines.
+Each tier above tier 0 uses this same wiring. The rules:
+
+- **Inject the clock.** The client coalesces chunks on a cadence. A test that
+  asserts text must call `flushPendingChunks()` or step the injected clock.
+  Never sleep.
+- **Arrival order is not in the state.** The container is a projection.
+  `turnState` is a scalar and keeps no history. A proof that asserts order —
+  the turn order (§8.1), cancellation (§8.6), replay upserts (§7.4) — needs
+  the raw notification sequence. For those, the harness wraps the client in
+  a ten-line forwarding recorder: it appends each `UpdateSessionNotification`
+  to an `UpdateCollector`, then forwards it to
+  `SwiftUIACPClient.sessionUpdate(_:)`. Build that path with
+  `ClientSideConnection(stream: clientEnd) { _ in recorder }`, because
+  `connect(over:)` binds the client itself. Both views see one stream, so a
+  test can assert order on the collector and final state on the container.
+- **`requestPermission` is pending state on the client.** We never send it
+  (§11.7). A test asserts that `pendingPermissionRequests` stays empty.
+- **Tier 3 spawns through `AgentProcess(command:arguments:)`.** It spawns the
+  built `acp-agent` in its own process group and vends `transport`. `command`
+  must be an absolute path. Hand the transport to `connect(over:)`. Teardown
+  is proven by `processIdentifier == nil` after `shutdown()`; on transport
+  teardown the child is group-killed and reaped. For the framing MUSTs (§17),
+  wrap `agent.transport` in a tap that records the raw inbound bytes, and
+  assert that each line parses as JSON-RPC and holds no interior newline. The
+  client package wraps a transport the same way for its disconnect signal.
+- **Dependency direction.** The test target and the `Examples/` executables
+  depend on `FoundationModelsACPClient`. The library target never does. The
+  client depends on the wire and Extras only, never on this package, so no
+  cycle is possible (§1).
 
 **Tier 2 is the tier that answers the question.** A real `ToolCatalog`, a
 real `MultiTool` with the files and shell capabilities, a real
@@ -2226,10 +2376,14 @@ headless-usable by design.) The rules:
   `acp-print` as a subprocess and asserts: exit code 0, stdout is only the
   answer text, and no agent process outlives the run.
 
-Upstream: `FoundationModelsACPClient` is plan-only today. `acp-print` needs
-its container and its stdio transport with process ownership (client plan
-M6). Filed in §21. Build `acp-agent` first; add `acp-print` when the client
-package ships those milestones.
+**The upstream gate is cleared.** `FoundationModelsACPClient` shipped; its
+board shows M0–M7 done (§21). The shapes above are real: `AgentProcess`
+spawns the agent in its own process group and vends `transport`;
+`SwiftUIACPClient.connect(over:)` returns the connection;
+`client.session(for:)` carries the streamed `entries`. Build `acp-agent`
+first, because `acp-print` spawns it. The same client package is the driver
+for every integration tier (§20.1), so `acp-print` and the tier-3 test share
+one spawn-and-connect path.
 
 ### 20.3 Evaluations — `PythonCLIEvaluation`
 
@@ -2242,8 +2396,16 @@ network:
 1. **Subject**: `subject(from sample:)` makes a fresh temp workspace (the
    session's `workingDirectory` and the tools' confinement root). It wires
    recording to a temp location. It constructs the composed agent with real
-   `files`/`shell` and the coding instructions. It runs to completion. It
-   returns the workspace path + the transcript + the run stats.
+   `files`/`shell` and the coding instructions. **It drives the agent over
+   ACP, end to end** (decided 2026-09-01): `InMemoryTransport.pair()`, an
+   `AgentSideConnection` around the real `RoutedACPAgent`,
+   `SwiftUIACPClient.connect(over:)` (§20.1), then `initialize` →
+   `session/new(workspace)` → `session/prompt`, and it waits for
+   `turnState == .idle`. It never calls the Router session directly.
+   "Working" means a Client can drive the Agent, so the one tier with a real
+   local model proves the same path that the Mac app and an editor use. It
+   returns the workspace path + the transcript + the `ACPSessionState` + the
+   recorder's notification list + the run stats.
 2. **Dataset**: an `ArrayLoader` of `ModelSample`s. Each is a variant of
    "build a small Python CLI" (`pyproject.toml`, a third-party package such as
    `click`, the CLI, pytest tests, a project-local venv, pytest green, then
@@ -2253,8 +2415,13 @@ network:
 3. **Evaluators: mechanical, and confirmed outside the agent.** They do not
    trust the transcript's claims. One `Metric` each: `PytestGreen` (runs
    pytest again in the venv; exit 0), `CLIRuns` (runs the CLI against
-   `expected` and checks the output), `FilesPresent`, `ToolTraffic` (the
-   transcript contains `files` and `shell` calls).
+   `expected` and checks the output), `FilesPresent`, `ToolTraffic` (two
+   readings that must agree: the transcript's operation events show
+   `tools.files.*` and `tools.shell.execute` under `runCode`, and the wire
+   shows the same — `ACPSessionState.toolCalls` holds completed `runCode`
+   calls and the recorder holds `tool_call_content_chunk` updates for the
+   shell steps, §8.4; tool traffic that never reached the wire is a
+   projection defect).
 4. **Aggregation**: `MetricsAggregator.computeMean` for each metric. The
    `@Test` asserts the mean pass rates against thresholds. The turn count, the
    tool-call counts, and the token usage ride along, keyed by the resolved
@@ -2273,10 +2440,12 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 | `c2pad49` | FoundationModelsSkills | adopt Extras' `.rendered` `SlashCommand.Body` case in Skills' `SlashCommandProviding` conformance, in place of `.prompt(template:)` with raw text (§14.2) | **the Extras half is done** — `.rendered` ships; the Skills adoption is **open**, and until it lands we dispatch skill commands through `registry.call(id:arguments:)` |
 | `939nnzx` | FoundationModelsMultitool (files capability) | multi-root confinement through `withFiles(root:additionalRoots:)` (§7.2) | **done** |
 | `4egfvw3` | FoundationModelsMultitool (mcp capability) | tier-2 MCP coverage through the `MCPTestServer` library and the `mcp-test-server` executable (§20.1) | **done** |
+| — | FoundationModelsMultitool (agents capability) | sub-agent delegation as a code-mode **background** capability, reached through `runCode` → `tools.agents.*` and collected with `wait` (§11.3, §4.2); the design source is `../FoundationModelsAgents/plan.md`, which predates code mode | **plan-only** — not implemented; a later iteration. Nothing in this iteration waits on it: `agentSpawn: nil` at `session/new` |
 | — | FoundationModelsRouter | a **public restore entry point feeding `session/resume`** (§4.6, §7.4) — `restoreSessionTree` and the tree types are internal, and the only public read is `TranscriptEvent.merged(under:)` | **open** — asked 2026-08-31, decision pending; do **not** reimplement restore against `transcript.jsonl` in the meantime |
-| `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor (upstream promoted elicitation to stable), then generated `elicitation/*` types + `Client` entry points (§16) | **filed** 2026-07-29 — the wire is otherwise done: stable v2 verified, 95 tests green |
-| `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **filed** 2026-07-29 — blocked until upstream stabilizes `mcp/*` |
-| — | FoundationModelsACPClient | the Client-role container plus the stdio transport with agent-process ownership (client plan, through M6) — needed for `Examples/acp-print` (§20.2) | plan-only |
+| `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor to `schema-v2.0.0-alpha.3` (elicitation stable), generated `elicitation/*` types, `ClientCapabilities.elicitation`, and the `createElicitation` / `elicitationComplete` entry points on both connections (§16) | **done** — verified 2026-09-01 |
+| — | FoundationModelsRouter | a **public live signal for a pending elicitation** (§16): a `SessionEvent` case on `streamSessionEvents()` that carries the `.elicitation` `OperationEvent`, or a public `RoutedSession.pendingElicitations()` read with a wakeup. Today the answer side is public and the request side is not: `SessionMailbox.pendingElicitationIds()` and `SessionOutbox.pending()` are internal, and `TranscriptEvent.operationEvents` is a recorded read | **open** — to file; the relay (board `2z6qtqy`) waits on it, and the interim declines with a reason |
+| `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **closed without code** — verified 2026-09-01: `mcp/connect`, `mcp/message` and `mcp/disconnect` are still only routing names in `acp-v2.meta.unstable.json`, the published v2 pages name only `stdio` and `http`, and the wire task was closed by decision. Re-file when upstream stabilizes `mcp/*`. Our stance is unchanged: do not build the tunnel |
+| — | FoundationModelsACPClient | the Client-role container (`SwiftUIACPClient`, `ACPSessionState`) plus the stdio transport with agent-process ownership (`AgentProcess`) — the client driver for every integration tier (§20.1) and for `Examples/acp-print` (§20.2) | **shipped** — M0–M7 done on its board, verified 2026-09-01; our test target depends on it, the library never does |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
 | — | FoundationModelsRouter | turn cancellation that reaches the model call: `cancelCurrentTurn()`, `cancelPrompt(id:)`, `ToolContext.cancel(completionToken:)` (§8.6) | **landed** — an in-flight MCP call still cannot be forced to stop |

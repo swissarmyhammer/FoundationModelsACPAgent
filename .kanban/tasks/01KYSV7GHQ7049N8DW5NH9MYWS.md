@@ -26,7 +26,7 @@ Build these:
 - A paged variant for §9's cursor pagination. Sort by `updatedAt` descending with `sessionId` as the tiebreak. The cursor is an opaque token that encodes the sort key, not an offset, so it stays stable under concurrent writes with no duplicates and no skips. An invalid cursor gives an error. Enforce a page-size limit.
 - `allProjects()` — through `projects.jsonl`, skipping stale entries.
 - `transcript(for sessionID:)` — return the session's ordered `[TranscriptEvent]`. **This store never records and never restores.** Live restore is the resume task's problem and is blocked upstream.
-- The listability predicate for §9: the session has a persisted transcript (a zero-turn session never wrote one) AND it is a root, meaning `parentId == nil` and no agent spawn.
+- The listability predicate for §9: the session has a persisted transcript (a zero-turn session never wrote one) AND it is a root, meaning `parentId == nil` and no agent spawn. **Agent spawns do not occur in this iteration** (plan.md §11.3), but the predicate must already exclude them, because a later Multitool agents capability will make them. No tool starts one yet, so make the spawned-session fixture through `makeSession(agentSpawn:)`.
 
 **Know the `seq` limit.** `seq` is global across directories only WITHIN one recorder instance, and it restarts at 0 per run. That is why `ts` is the primary sort key in `merged(under:)`. Do not treat `seq` as globally unique across runs.
 

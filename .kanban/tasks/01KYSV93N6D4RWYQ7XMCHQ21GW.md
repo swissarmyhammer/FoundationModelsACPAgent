@@ -12,7 +12,11 @@ Plan.md §20.1. The shared fixture every tier-1 and tier-2 test uses. Build it a
 
 Create `Tests/FoundationModelsACPAgentTests/Support/`:
 
-- `RecordingClient.swift` — the `Client` conformance from §20.1. An `UpdateCollector` actor appends every `session/update` notification in arrival order. Add a convenience that wires `InMemoryTransport.pair()`, `ClientSideConnection` and a `RoutedACPAgent`, and returns the client connection, the collector and the agent. **Drop the configurable `requestPermission` answer.** We no longer send permission requests; the sandbox is the only gate.
+- **The client driver is `FoundationModelsACPClient`. Do not write a test client.** The sibling package shipped (its board shows M0–M7 done). `SwiftUIACPClient` is the `Client` conformance, `@MainActor` and `@Observable`, with no SwiftUI import. `connect(over:logger:)` takes any `ACPTransport` and returns the `ClientSideConnection`. `client.session(for:)` gives the `ACPSessionState` projection: `entries`, `toolCalls`, `turnState`, `lastStopReason`, `availableCommands`, `configOptions`, `title`, `usage`. That state is the primary assertion surface, because it is what the Mac app binds to.
+
+- `Harness.swift` — the wiring convenience: `InMemoryTransport.pair()`, `AgentSideConnection` around a `RoutedACPAgent`, `SwiftUIACPClient(coalescingCadence:clock:)` with an injected test clock, then `client.connect(over: clientEnd)`. Return the client, the connection and the agent. Add a `flush` helper that calls `flushPendingChunks()`; a test never sleeps for coalescing.
+
+- `RecordingClient.swift` — the ten-line forwarding recorder for order proofs. The container is a projection and keeps no history, so a turn-order, cancellation or replay proof needs the raw sequence. An `UpdateCollector` actor appends every `UpdateSessionNotification` in arrival order, then the recorder forwards it to `SwiftUIACPClient.sessionUpdate(_:)`. Wire that path with `ClientSideConnection(stream: clientEnd) { _ in recorder }`, because `connect(over:)` binds the client itself. Forward `requestPermission` to the client too. **Drop the configurable `requestPermission` answer.** We no longer send permission requests; the sandbox is the only gate, and a test asserts `pendingPermissionRequests` stays empty.
 
 - `ScriptedModel.swift` — an injectable `ModelLoader`. The seam is real and public:
   - `ModelLoader.loadLLM(ref:slot:context:reporting:) async throws -> any LoadedLLMContainer`

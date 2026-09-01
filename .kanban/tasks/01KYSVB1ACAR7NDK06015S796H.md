@@ -74,7 +74,10 @@ Assert it through `TranscriptEvent.kind == .divergence`, and pin the text agains
 - [ ] Cursor-shaped replay sending whole-message upserts
 - [ ] Deleted-session path catching `TranscriptTreeError.sessionNotFound`
 
+**Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/resume` with an unknown `sessionId` — a deleted session included — gives JSON-RPC invalid params (`-32602`) with the id in `data`. Map `TranscriptTreeError.sessionNotFound` to that error. A known, closed session resumes normally; that is what resume is for.
+
 ## Acceptance Criteria
+- [ ] `session/resume` on an unknown id gives `-32602` with the id in `data`
 - [ ] Record a scripted two-turn session, then resume with `replayFrom: start`: the collector receives whole-message upserts with the original messageIds, no chunks, before the resume response completes
 - [ ] Resume with a different cwd errors, and no session was constructed — assert the scripted loader was never asked for a backend
 - [ ] Resume after delete gives a clean protocol error, driven by catching `TranscriptTreeError.sessionNotFound`

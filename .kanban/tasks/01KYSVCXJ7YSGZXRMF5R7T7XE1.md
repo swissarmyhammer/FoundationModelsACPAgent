@@ -30,7 +30,10 @@ Plan.md §15. Create `Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift
 - [ ] `set_config_option` full-state semantics
 - [ ] Divergence push through `config_option_update`
 
+**Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/set_config_option` with an unknown `sessionId` gives JSON-RPC invalid params (`-32602`) with the id in `data`. A known but closed session gives `-32602` with the reason "closed; resume it first".
+
 ## Acceptance Criteria
+- [ ] `session/set_config_option` on an unknown or closed id gives `-32602` and pushes no `config_option_update`
 - [ ] The `session/new` response carries exactly one config option, kind select, with a `currentValue` default
 - [ ] The option's labels show each slot's `chosen.stringValue`
 - [ ] `set_config_option` to `flash` succeeds, the returned complete state shows `flash`, and later turns use the flash slot, asserted through the scripted loader

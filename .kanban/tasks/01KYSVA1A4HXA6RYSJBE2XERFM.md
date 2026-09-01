@@ -35,6 +35,8 @@ Plan.md §8.4–§8.5, §11.6. Create `Sources/FoundationModelsACPAgent/Agent/Ev
 
 **The enum has no library evolution.** Upstream tells a consumer to write a `default` arm. Write one.
 
+**One wire update has no `SessionEvent` source: `tool_call_content_chunk`** (plan.md §8.4, §11.6, §11.8; decided 2026-09-01). The spec says it appends one `ToolCallContent` item, and a later `tool_call_update` with `content` replaces the whole array. The live source is the host-owned `ShellOutputChunkStream` that the catalog passes to `withShell(outputChunkStream:)`. Consume it in the projection: each `ShellOutputEvent` whose kind is `.output(stream:bytes:)` becomes one `tool_call_content_chunk` with a text `content` item (decode the bytes as UTF-8 with replacement; never drop bytes silently), keyed by `commandID`, which is the run's `completionToken` and the `toolCallId`. A gap event becomes one chunk that says bytes were dropped. At settlement (`runSettled`), the `tool_call_update` carries the complete `content` from the stored record; that replace is the convergence step. The wire type is `ToolCallContentChunk { toolCallId, content: ToolCallContent, meta }`.
+
 **`textReset` is load-bearing.** It means "discard the text collected so far". Send a whole-message upsert with `content: [X]` to replace what the client accumulated. Do not send another `*_chunk`. This is §8.3's replace row.
 
 **Terminal status comes from `runSettled(OperationEvent)`:**

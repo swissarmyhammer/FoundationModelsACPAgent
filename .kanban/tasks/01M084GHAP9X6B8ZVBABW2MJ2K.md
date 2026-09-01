@@ -10,7 +10,7 @@ title: 'Examples/acp-print: one-shot client-server prompt CLI'
 ## What
 Plan.md §20.2 (`acp-print`). A one-shot prompt CLI in the shape of `claude --print`: send one prompt, run the turn to completion, print the answer, exit. `FoundationModelsACPClient` (the Client role) drives `Examples/acp-agent` across a real process boundary — the client-server interop example for the two role packages.
 
-**Upstream gate: `FoundationModelsACPClient` is plan-only. This task needs its container and its stdio transport with agent-process ownership (client plan, through M6). Do not start until those land, and do not hand-roll a second client here.**
+**The upstream gate is CLEARED.** `FoundationModelsACPClient` shipped; its board shows M0–M7 done. Use `AgentProcess(command:arguments:)` to spawn `acp-agent` (absolute path; own process group; group-kill and reap on `shutdown()` and on transport teardown), `SwiftUIACPClient.connect(over: agent.transport)` for the connection, and `client.session(for:)` for the streamed `entries`. Do not hand-roll a second client here. This task still waits on `acp-agent`, because it spawns it.
 
 - `Examples/acp-print/main.swift` — one positional prompt argument, nothing else (the no-second-product rule of `acp-agent` applies: no flag surface, no rendering options, no config wizardry). Add the executable target to Package.swift.
 - The target links only `FoundationModelsACPClient` and the wire — never this package's library. Every byte crosses ACP; a back-door import would break the interop proof.

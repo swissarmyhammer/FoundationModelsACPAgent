@@ -35,7 +35,7 @@ Session handlers land in later tasks. Stub them here to throw method-not-availab
 - [ ] `auth/login` gives error code `-32601`
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/InitializationTests.swift` — drive the agent through `InMemoryTransport.pair()` and `ClientSideConnection`; assert negotiation, the capabilities shape, the order rule and the auth refusal
+- [ ] `Tests/FoundationModelsACPAgentTests/InitializationTests.swift` — drive the agent through `InMemoryTransport.pair()` and `SwiftUIACPClient.connect(over:)` from `FoundationModelsACPClient` (plan.md §20.1); assert negotiation, the capabilities shape, the order rule and the auth refusal. Send `ACPClient.supportedProtocolVersion` and `ACPClient.advertisedCapabilities` as the client's values.
 - [ ] `swift test` → green
 
 ## Workflow

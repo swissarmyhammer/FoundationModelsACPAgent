@@ -10,7 +10,7 @@ title: 'PythonCLIEvaluation: gated end-to-end coding eval'
 ## What
 Plan.md §20.3, tier 4. Gated on Apple silicon, real models and network, through an env-var gate that follows the family convention. Create `Tests/FoundationModelsACPAgentTests/Evaluations/PythonCLIEvaluation.swift` on Apple's Evaluations framework, which is swift-testing native.
 
-1. **Subject** — `subject(from sample:)`: a fresh temp workspace as the session cwd and the confinement root; recording to a temp location; the composed agent with real files and shell and the coding instructions; run to completion; return the workspace path, the transcript and the run stats.
+1. **Subject** — `subject(from sample:)`: a fresh temp workspace as the session cwd and the confinement root; recording to a temp location; the composed agent with real files and shell and the coding instructions. **Drive it over ACP, end to end** (plan.md §20.1, §20.3; decided 2026-09-01): `InMemoryTransport.pair()`, `AgentSideConnection` around a real `RoutedACPAgent`, `SwiftUIACPClient.connect(over:)` from `FoundationModelsACPClient`, then `initialize → session/new(workspace) → session/prompt`, and wait for `client.session(for:).turnState == .idle` with its `lastStopReason`. Never call the Router session directly; "working" means a Client can drive the Agent. Return the workspace path, the transcript, the `ACPSessionState`, the recorder's notification list, and the run stats.
 2. **Dataset** — an `ArrayLoader` of 20 to 30 hand-written `ModelSample` variants of "build a small Python CLI": pyproject.toml, a third-party package such as `click`, the CLI, pytest tests, a project-local venv, pytest green, then run it. `expected` carries the fixed input and output pair.
 3. **Evaluators — mechanical, and verified outside the agent.** Never trust the transcript's claims. `PytestGreen` re-runs pytest in the venv and checks for exit 0. `CLIRuns` runs the CLI against `expected` and checks the output. `FilesPresent` checks the files. `ToolTraffic` checks the transcript holds real tool traffic.
 4. **Aggregation** — `MetricsAggregator.computeMean` per metric. The `@Test` asserts mean pass rates against thresholds. Turn, tool-call and token stats ride along, keyed by the resolved model from `manifest.json`.
@@ -19,7 +19,7 @@ Plan.md §20.3, tier 4. Gated on Apple silicon, real models and network, through
 **Two corrections from the 2026-08-31 survey:**
 
 - **The sandbox must allow the workspace.** `SeatbeltSandbox` bounds writing and deleting, so a run that creates a venv and installs a package writes a great deal. Put the temp workspace in the writable roots. Build the options through `SeatbeltSandbox.Options(writableRoots:)` so the paths arrive `realpath`-resolved; a macOS temp directory is usually a `/var` symlink to `/private/var`, and an unresolved path is exactly the form Seatbelt cannot match. An eval that fails only inside the sandbox is almost always this.
-- **`ToolTraffic` must match the code-mode shape.** The model does not call `files` and `shell` directly. It calls `runCode`, and the snippet calls `tools.files.*` and `tools.shell.execute`. Assert on the recorded tool traffic for those paths, not on a top-level tool named `files` or `shell`. Read the operation events with `TranscriptEvent.operationEvents`, which is public.
+- **`ToolTraffic` must match the code-mode shape.** The model does not call `files` and `shell` directly. It calls `runCode`, and the snippet calls `tools.files.*` and `tools.shell.execute`. Assert on the recorded tool traffic for those paths, not on a top-level tool named `files` or `shell`. Read the operation events with `TranscriptEvent.operationEvents`, which is public. **Add the wire-side reading:** `ACPSessionState.toolCalls` must hold `runCode` calls with `completed` status, and the recorder's notification list must hold `tool_call_content_chunk` updates for the shell steps (plan.md §8.4). A sample passes `ToolTraffic` only when both readings agree; a transcript with tool traffic that never reached the wire is a projection defect, and the eval must catch it.
 
 - [ ] Subject wiring
 - [ ] The 20 to 30 sample dataset
@@ -30,6 +30,7 @@ Plan.md §20.3, tier 4. Gated on Apple silicon, real models and network, through
 
 ## Acceptance Criteria
 - [ ] A gated run executes at least one sample end to end on Apple silicon and produces per-metric means
+- [ ] The subject reaches the agent only through `SwiftUIACPClient` and the wire: a test double for the Router session is never touched, and `ACPSessionState` for the sample shows `turnState == .idle`, `lastStopReason == .endTurn`, and completed `runCode` tool calls
 - [ ] The venv creation and the package install both succeed inside the sandbox
 - [ ] Ungated evaluator-honesty test: `PytestGreen` and `CLIRuns`, given a fabricated transcript that claims success over a workspace that deliberately fails, both grade FAIL. This proves they grade from the filesystem and the exit codes, not from transcript text.
 - [ ] Ungated `swift test` skips the gated suite and stays green

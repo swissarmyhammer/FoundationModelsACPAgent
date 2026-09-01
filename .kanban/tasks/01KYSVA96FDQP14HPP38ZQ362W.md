@@ -36,7 +36,10 @@ Also note:
 - [ ] Terminal tool statuses sent without holding the idle
 - [ ] Idle-session cancel is a no-op
 
+**Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/cancel` is a notification, so there is no response. For an unknown or closed `sessionId`, log it and ignore it. Send no `state_update`.
+
 ## Acceptance Criteria
+- [ ] `session/cancel` with an unknown id produces a log line and no `session/update`
 - [ ] Cancelling a scripted long-running turn makes `idle(cancelled)` the last update, and no update of any kind arrives after it
 - [ ] A scripted turn that raises `CancellationError` reports `idle(cancelled)`, not a JSON-RPC error and not `refusal`
 - [ ] A scripted turn that IGNORES cancellation and returns a normal response still reports `idle(cancelled)` and does not report `end_turn`

@@ -32,7 +32,10 @@ Plan.md §8.1–§8.3. Create `Sources/FoundationModelsACPAgent/Agent/PromptTurn
 - [ ] StopReason mapping, including the CancellationError catch
 - [ ] Index record and title at first activity, plus `session_info_update`
 
+**Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/prompt` with an unknown `sessionId` gives JSON-RPC invalid params (`-32602`) with the id in `data`. A known but closed session gives `-32602` with the reason "closed; resume it first", because a closed session is resumable, not promptable. Never answer either with `{}` and `idle`.
+
 ## Acceptance Criteria
+- [ ] `session/prompt` on an unknown id gives `-32602` and sends no `session/update`; on a closed id it gives `-32602` with the resume hint
 - [ ] On the harness, a scripted "model calls tool X then says Y" turn produces client-end notifications in exactly the §8.1 order
 - [ ] A scripted retry turn sends two `turnEnded` and exactly one `idle`
 - [ ] A second `session/prompt` during a running turn gives an error and does not disturb the first

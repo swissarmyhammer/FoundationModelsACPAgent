@@ -18,6 +18,8 @@ Declare these dependencies in `Package.swift`. Use the family convention `.packa
 
 Do not add FileTool, Shelltool, or MCP packages. Those three dissolved into Multitool. The agents capability is plan-only upstream.
 
+**Agents are not implemented yet.** A later iteration adds them as a Multitool capability. The model will reach them through code mode (`runCode` → `tools.agents.*`), as a long-running background tool that hands back a `completionToken` and is collected with `wait` (plan.md §11.3). Do not add `FoundationModelsAgents` to the manifest.
+
 Obey these facts. They come from a survey of the packages on 2026-08-31:
 
 - **Use `branch: "main"` for Multitool.** Multitool has no semver tags. It has only two milestone tags. A `from:` requirement does not resolve.
@@ -27,7 +29,10 @@ Obey these facts. They come from a survey of the packages on 2026-08-31:
 
 Add the products to the `FoundationModelsACPAgent` target. Add a `FoundationModelsACPAgentTests` test target.
 
+**Add `FoundationModelsACPClient` to the test target only.** It is the client driver for every integration tier (plan.md §20.1) and, later, for `Examples/acp-print`. The library target never imports it. The client depends on the wire and Extras only, so there is no cycle. Use the same `.package(url:branch: "main")` form.
+
 - [ ] The five family dependencies are declared
+- [ ] `FoundationModelsACPClient` is declared, on the test target only
 - [ ] The platform is `.macOS("27.0")`
 - [ ] The test target `Tests/FoundationModelsACPAgentTests/` is added
 - [ ] The import smoke test is added
