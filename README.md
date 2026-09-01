@@ -4,6 +4,21 @@ The composed ACP agent over the Router runtime: `AgentConfiguration` over the
 dotfolder stack, the tool roster, the slash-command registry, and
 `RoutedACPAgent`, the ACP `Agent` conformance over Router sessions.
 
+## Tools
+
+The model-facing surface is three code-mode tools from
+`FoundationModelsMultitool` — `searchTools`, `runCode`, and `wait` — plus the
+standalone `skills` tool. The capability modules mount inside the Multitool
+registry, one row here per capability. Each capability is on by default; set
+its config section to `false` to turn it off.
+
+| Capability | What it gives the model | Config section |
+|---|---|---|
+| `files` | The `tools.files.*` verbs, confined to the session root set | `tools.files` |
+| `shell` | The `tools.shell.*` verbs, under a Seatbelt sandbox over the root set | `tools.shell` |
+| `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
+| `skills` | The standalone `skills` tool, over the `skills` dotfolder stack | `tools.skills` |
+
 ## Builtin instructions
 
 The system prompt is one markdown file, `Instructions.md`, resolved through

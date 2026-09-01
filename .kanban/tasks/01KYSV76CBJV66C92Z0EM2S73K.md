@@ -1,10 +1,42 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fgp6a4xvzwya1jge2rthmj
+  text: |-
+    Research findings (verified in the upstream sources):
+    - `MultiTool.Builder` is a final class with `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)`, `withShell(storeDirectory:sandbox:outputChunkStream:) throws`, `withCapability(_:)`, `buildRegistry() throws`.
+    - `Registry.makeSessionTools(librarian: RoutedLLM?, sampleGenerator: RoutedLLM? = nil) throws -> [any Tool]` vends `searchTools`, `runCode`, `wait` in that order. A `nil` librarian keeps the searcher in retrieval mode.
+    - `Registry` has `public let surface: APISurface` and `public let tools: [String: any Tool]` keyed by entry path. `ToolInvoker.invoke(_:content:)` is public and can invoke a verb from a test through implicit existential opening.
+    - A refused files path answers in band: `ReadResult.correction` is set and no error is thrown. The output erases to `any PromptRepresentable`; a test reads it through `ConvertibleToGeneratedContent.generatedContent.jsonString`.
+    - `SkillsTool.make(registry:session:)` has a closure overload `session: @escaping @Sendable (String) -> any AgentSession`, `async throws`, returns `OperationTool<SkillsToolContext>` named `skills`. One `import FoundationModelsSkills` re-exports `AgentSession` and `DotfolderStack`.
+    - Router's `RoutedSession` does not conform to `AgentSession`; Multitool holds an internal adapter. This package needs its own small adapter with the load-bearing `fork()` override.
+    - `SkillsRegistry(stack:policy:watch:)` passes stack layers through unchanged; `commandUpdates` is non-nil only for `watch: true`.
+    - `SandboxConfiguration.sandboxOptions(workingDirectory:additionalRoots:)` already builds `SeatbeltSandbox.Options` over the root set; `SeatbeltSandbox(options:)` is public.
+    - Tests can resolve a real `LanguageModelProfile` through `Router(cacheDir:probe:metadataSource:loader:)` with stub loader, machine probe and metadata, in the pattern of Multitool's `StubRouterFixtures.swift`.
+    - The roster for the README table check is enumerable as `ToolsConfiguration.CodingKeys.allCases` (files, shell, skills, mcp).
+  timestamp: 2026-09-01T22:15:58.020697+00:00
+- actor: claude-code
+  id: 01m1fh1737ts039w6k5xwr09kt
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/Tools/CatalogContext.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Sources/FoundationModelsACPAgent/Tools/SelectionAgentSession.swift, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift, Tests/FoundationModelsACPAgentTests/StubProfileFixtures.swift, Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift, plus README.md § Tools
+    - next: run the test step, then commit, then review
+
+    TDD order was followed: the tests were written first and failed with "cannot find 'ToolCatalog' in scope"; then the three source files and the README section made them pass. All 9 catalog tests and the README table test are green. Full run: 95 tests in 12 suites, all pass, zero compiler warnings.
+  timestamp: 2026-09-01T22:21:59.271246+00:00
+- actor: claude-code
+  id: 01m1fh407d9tjgec9f271wf0w5
+  text: |-
+    ### test — green
+    - evidence: swift test — 95 passed, 0 failed, 0 skipped, in 12 suites. This package's targets compile with zero warnings (verified with a forced recompile of every changed file). The only warnings in a full clean rebuild come from the third-party mlx-swift dependency checkout (`constexpr if is a C++17 extension` in its Metal headers, and the build database's `missing creator` notice for its Cmlx bundle); both are present on clean main with this change stashed, and are not touchable from this repository.
+    - next: commit
+  timestamp: 2026-09-01T22:23:30.541737+00:00
 depends_on:
 - 01KYSV611EWFQQRRPJWR5JQ4H5
-position_column: todo
-position_ordinal: '8680'
+position_column: doing
+position_ordinal: '80'
 title: 'ToolCatalog: build the MultiTool session tools and append the skills tool'
 ---
 ## What
