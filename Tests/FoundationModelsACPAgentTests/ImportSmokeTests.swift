@@ -47,8 +47,8 @@ import Testing
         #expect(String(describing: SwiftUIACPClient.self) == "SwiftUIACPClient")
     }
 
-    /// This package: the placeholder namespace the library target exports.
-    @Test func libraryExportsItsNamespace() {
-        #expect(String(describing: RoutedACPAgentPackage.self) == "RoutedACPAgentPackage")
+    /// This package: the `Agent` conformance the library target exports.
+    @Test func libraryExportsTheAgentConformance() {
+        #expect(String(describing: RoutedACPAgent.self) == "RoutedACPAgent")
     }
 }
