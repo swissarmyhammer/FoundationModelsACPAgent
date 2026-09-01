@@ -1,6 +1,10 @@
 .build/
 .DS_Store
 
+# Each family dependency tracks a branch. The lock file pins one revision on
+# one machine, and no sibling package commits it.
+Package.resolved
+
 # Claude Code machine-local settings
 .claude/settings.local.json
 
