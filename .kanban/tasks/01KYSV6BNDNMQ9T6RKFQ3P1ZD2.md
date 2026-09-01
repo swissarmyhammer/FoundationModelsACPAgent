@@ -27,10 +27,33 @@ comments:
     - evidence: swift test — 65 passed, 0 failed, 0 skipped; swift build --build-tests — 0 warnings
     - next: commit
   timestamp: 2026-09-01T21:39:27.876377+00:00
+- actor: claude-code
+  id: 01m1feksvg9vtcvsfz23p8s4kv
+  text: |-
+    ### commit — changed
+    - evidence: c6589b6 feat(instructions): add the builtin floor, the wholesale-replacement assembler and the AGENTS.md walk
+    - next: review
+  timestamp: 2026-09-01T21:39:42.576667+00:00
+- actor: claude-code
+  id: 01m1fes05js2eape52hc4tq43k
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted; 4 files reviewed
+    - next: done
+  timestamp: 2026-09-01T21:42:32.882426+00:00
+- actor: claude-code
+  id: 01m1fes5efer11sx19ym0h6m1a
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed
+    - test: green (65 passed, 0 failed, 0 skipped, 0 warnings)
+    - commit: c6589b6
+    - review: clean (0 findings)
+  timestamp: 2026-09-01T21:42:38.287525+00:00
 depends_on:
 - 01KYSV5606NB4K39ZXQYPBH0A9
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8580'
 title: 'Instructions: compiled-in floor, wholesale replacement, AGENTS.md assembly'
 ---
 ## What
@@ -52,27 +75,27 @@ Plan.md §3. Create `Sources/FoundationModelsACPAgent/Instructions/`:
 
 - Discoverability obligation (§3.1): the README, and the DocC page if one exists, shows the builtin instructions text **verbatim**, sourced so it cannot drift. Assert the README section against `BuiltinInstructions` in a test.
 
-- [ ] Builtin floor text
-- [ ] Wholesale replacement and trust-from-source rendering
-- [ ] Partials resolve through the stack
-- [ ] Preloaded skill bodies folded in at the right position, and refreshed on reload
-- [ ] AGENTS.md walk and assembly order with path headers
-- [ ] README shows the builtin text verbatim
+- [x] Builtin floor text
+- [x] Wholesale replacement and trust-from-source rendering
+- [x] Partials resolve through the stack
+- [x] Preloaded skill bodies folded in at the right position, and refreshed on reload
+- [x] AGENTS.md walk and assembly order with path headers
+- [x] README shows the builtin text verbatim
 
 ## Acceptance Criteria
-- [ ] With no files, the assembled text is exactly the rendered builtin
-- [ ] A project-layer `Instructions.md` fully replaces the builtin, with no merge
-- [ ] A project can replace one `_partials/` file and keep the builtin prompt
-- [ ] A skill marked `preload: true` has its rendered body in the assembled instructions; a skill without the flag does not
-- [ ] Editing that skill on disk changes the next assembly, which proves the reload refresh
-- [ ] Nested repo directories produce root-to-cwd AGENTS ordering; `CLAUDE.md` is honored as an alias; the nearest file appears last
-- [ ] Every included file's absolute path appears as a divider header
-- [ ] A test asserts README.md contains the builtin instructions text verbatim
+- [x] With no files, the assembled text is exactly the rendered builtin
+- [x] A project-layer `Instructions.md` fully replaces the builtin, with no merge
+- [x] A project can replace one `_partials/` file and keep the builtin prompt
+- [x] A skill marked `preload: true` has its rendered body in the assembled instructions; a skill without the flag does not
+- [x] Editing that skill on disk changes the next assembly, which proves the reload refresh
+- [x] Nested repo directories produce root-to-cwd AGENTS ordering; `CLAUDE.md` is honored as an alias; the nearest file appears last
+- [x] Every included file's absolute path appears as a divider header
+- [x] A test asserts README.md contains the builtin instructions text verbatim
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift` — temp-dir layer fixtures for each criterion, including the unreadable-file warning case and a temp skills directory for the preload cases
-- [ ] `Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift` — README contains `BuiltinInstructions` verbatim
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift` — temp-dir layer fixtures for each criterion, including the unreadable-file warning case and a temp skills directory for the preload cases
+- [x] `Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift` — README contains `BuiltinInstructions` verbatim
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
