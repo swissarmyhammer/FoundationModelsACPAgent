@@ -64,6 +64,10 @@ public struct TranscriptStore: Sendable {
     /// The separator between the cursor's two fields.
     private static let cursorFieldSeparator: Character = ":"
 
+    /// The number of fields a decoded cursor holds: the `updatedAt`
+    /// milliseconds and the session id.
+    private static let cursorFieldCount = 2
+
     /// Milliseconds per second — the scale the cursor stores `updatedAt`
     /// at, which keeps the whole-second RFC 3339 dates lossless.
     private static let millisecondsPerSecond: Double = 1_000
@@ -298,7 +302,7 @@ public struct TranscriptStore: Sendable {
         }
         let fields = raw.split(separator: cursorFieldSeparator)
         guard
-            fields.count == 2,
+            fields.count == Self.cursorFieldCount,
             let updatedAtMilliseconds = Int64(fields[0]),
             ULID(ulidString: String(fields[1])) != nil
         else {

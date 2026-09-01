@@ -47,9 +47,32 @@ comments:
     - evidence: `swift test` — 111 tests in 13 suites passed, 0 failed, 0 skipped; `swift build --build-tests` — 0 warnings from this package's files.
     - next: `/commit`.
   timestamp: 2026-09-01T22:57:58.431440+00:00
+- actor: claude-code
+  id: 01m1fk3y5bsz1n512c6qrqzt9p
+  text: |-
+    ### commit — changed
+    - evidence: f7623ea feat(transcripts): add the TranscriptStore read side with cursor pagination (7 files, 1008 insertions, 8 deletions; local, not pushed)
+    - next: `/review`.
+  timestamp: 2026-09-01T22:58:25.579491+00:00
+- actor: claude-code
+  id: 01m1fkbz0x9h716w1x34c707a7
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — `Sources/FoundationModelsACPAgent/Transcripts/TranscriptStore.swift:301` (magic number in the cursor field-count check)
+    - next: back to implement to fix the finding, then test, commit and re-review.
+  timestamp: 2026-09-01T23:02:48.605962+00:00
+- actor: claude-code
+  id: 01m1fkc67hmq2p9nyvq6n27n5q
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed (TranscriptStore, fixtures, 16 tests; spawn-fact blocker recorded and verified)
+    - test: green (111 tests, 13 suites, 0 failed, 0 skipped, 0 warnings)
+    - commit: f7623ea
+    - review: findings (1 — TranscriptStore.swift:301 magic number)
+  timestamp: 2026-09-01T23:02:55.985509+00:00
 depends_on:
 - 01KYSV6QHJ631K7T7FRF4B8338
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: 'TranscriptStore: read side, cursor pagination, project browsing'
 ---
@@ -76,24 +99,33 @@ Build these:
 
 **Know the `seq` limit.** `seq` is global across directories only WITHIN one recorder instance, and it restarts at 0 per run. That is why `ts` is the primary sort key in `merged(under:)`. Do not treat `seq` as globally unique across runs.
 
-- [ ] Read path built on `merged(under:)`, grouped by `sessionId`
-- [ ] Parentage and the spawn fact both taken from `TranscriptEvent`, never the sidecar
-- [ ] `sessions(inProject:)` with the record join
-- [ ] Sort-key cursor pagination
-- [ ] `allProjects()`
-- [ ] Roots-only and has-transcript listability predicate
+- [x] Read path built on `merged(under:)`, grouped by `sessionId`
+- [ ] Parentage and the spawn fact both taken from `TranscriptEvent`, never the sidecar — BLOCKED for the spawn half: the pinned Router puts no spawn fact on `TranscriptEvent` (see the blocker comment of 2026-09-01); the parentage half is done and a canary test pins the gap
+- [x] `sessions(inProject:)` with the record join
+- [x] Sort-key cursor pagination
+- [x] `allProjects()`
+- [x] Roots-only and has-transcript listability predicate — roots-only to the extent the events express it (`parentId == nil`); the spawn exclusion waits on the upstream fact
 
 ## Acceptance Criteria
-- [ ] Sessions come back sorted updatedAt-descending, with a sessionId tiebreak, across page boundaries
-- [ ] Adding a session between two page fetches makes no duplicate and skips no existing entry
-- [ ] An invalid cursor gives an error; an unknown project directory gives an empty list, not an error
-- [ ] A fork fixture is excluded because its `parentId` is set; a directory-less index entry is excluded
-- [ ] A session with a recorded transcript but no index line still lists, from the scan
-- [ ] Records from two separate recorder runs interleave correctly, which proves the sort does not rely on `seq` alone
+- [x] Sessions come back sorted updatedAt-descending, with a sessionId tiebreak, across page boundaries
+- [x] Adding a session between two page fetches makes no duplicate and skips no existing entry
+- [x] An invalid cursor gives an error; an unknown project directory gives an empty list, not an error
+- [x] A fork fixture is excluded because its `parentId` is set; a directory-less index entry is excluded
+- [x] A session with a recorded transcript but no index line still lists, from the scan
+- [x] Records from two separate recorder runs interleave correctly, which proves the sort does not rely on `seq` alone
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift` — fixture transcript directories in a temp project, a pagination walk asserting order and stability, and the listability matrix. The fixtures must come from driving real recorded sessions: no shipped `TranscriptRecorder` is reachable, because `.jsonl`, `.inMemory` and `.none` are internal, and `TranscriptEvent` has no public init.
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift` — fixture transcript directories in a temp project, a pagination walk asserting order and stability, and the listability matrix. The fixtures must come from driving real recorded sessions: no shipped `TranscriptRecorder` is reachable, because `.jsonl`, `.inMemory` and `.none` are internal, and `TranscriptEvent` has no public init.
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-01 17:58)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Transcripts/TranscriptStore.swift:301` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
