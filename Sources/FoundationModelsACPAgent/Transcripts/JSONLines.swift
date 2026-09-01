@@ -1,4 +1,10 @@
 import Foundation
+import os
+
+/// The logger every warning of the transcripts module goes to, shared by
+/// `SessionIndex` and `ProjectRegistry` so the subsystem and the category
+/// exist once.
+let transcriptLogger = Logger(subsystem: "FoundationModelsACPAgent", category: "Transcripts")
 
 /// Shared plumbing for the two JSON-lines files this package writes:
 /// `sessions.jsonl` (plan.md §4.3) and `projects.jsonl` (§4.5). One record

@@ -1,10 +1,5 @@
 import Foundation
 import FoundationModelsRouter
-import os
-
-/// The logger the index reports each dropped torn line to.
-private let sessionIndexLogger = Logger(
-    subsystem: "FoundationModelsACPAgent", category: "Transcripts")
 
 /// One line of `sessions.jsonl` (plan.md §4.3): a self-contained summary of
 /// one ACP session. The record carries exactly the fields `session/list`
@@ -180,7 +175,7 @@ public struct SessionIndex: Sendable {
                     throw SessionIndexError.corruptLine(number: numbered.offset + 1)
                 }
                 let warning = SessionIndexWarning.tornFinalLine
-                sessionIndexLogger.warning("\(warning.description, privacy: .public)")
+                transcriptLogger.warning("\(warning.description, privacy: .public)")
                 warnings.append(warning)
             }
         }

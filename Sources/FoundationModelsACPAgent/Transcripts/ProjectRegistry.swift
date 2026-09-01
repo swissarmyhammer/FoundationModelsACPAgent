@@ -1,9 +1,4 @@
 import Foundation
-import os
-
-/// The logger the registry reports each skipped line to.
-private let projectRegistryLogger = Logger(
-    subsystem: "FoundationModelsACPAgent", category: "Transcripts")
 
 /// One line of `projects.jsonl` (plan.md §4.5): a project the user worked
 /// in. Paths only, never content.
@@ -107,7 +102,7 @@ public struct ProjectRegistry: Sendable {
             do {
                 return try decoder.decode(ProjectRegistryRecord.self, from: Data(line.utf8))
             } catch {
-                projectRegistryLogger.warning(
+                transcriptLogger.warning(
                     "\(Self.registryFileName): skipped a line that does not decode")
                 return nil
             }
