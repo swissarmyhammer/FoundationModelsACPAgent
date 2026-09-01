@@ -1,10 +1,36 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fejrzdxvkhqk9vjqbqkhb6
+  text: |-
+    Research notes:
+    - `DotfolderStack.content(_:)` gives text only, with no layer. The assembler finds the winning layer with `nearest(_:)` and a root match, and it derives trust in one private helper: `nil` (the builtin floor) and `.defaults` are trusted, `.user` and `.project` are untrusted.
+    - `content(_:)` gives `nil` for a missing file and also for a file that does not decode as UTF-8. The pair `nearest != nil` with `content == nil` identifies the "present but unreadable" case without a second read.
+    - `AgentsMd.documents(from:)` throws `AgentsMdError.fileNotReadable` for the full walk. The assembler catches it, appends a `fileUnreadable` warning, and continues with no project documents.
+    - The builtin prompt stays self-contained (no `{% include %}`). A compiled-in include of a missing partial would break the no-files case. The partial-layering criterion is proven with a user-layer `Instructions.md` that includes `style`, and a project `_partials/style.md` that shadows only the partial.
+    - `preloadedBodies()` reads the current catalog snapshot. The assembler calls it at each `assemble`, so a `watch: true` registry shows a disk edit in the next assembly. The test proves it with a poll loop.
+    - Unreadable-file fixtures use invalid UTF-8 bytes, not `chmod`, so the tests also run as root.
+  timestamp: 2026-09-01T21:39:08.909180+00:00
+- actor: claude-code
+  id: 01m1fejtz7tj3e4gvm9nezkwhw
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift, Sources/FoundationModelsACPAgent/Instructions/InstructionsAssembler.swift, Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift, Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift, README.md
+    - next: test
+  timestamp: 2026-09-01T21:39:10.951802+00:00
+- actor: claude-code
+  id: 01m1fekbg45cyxaekc2dzkdj32
+  text: |-
+    ### test — green
+    - evidence: swift test — 65 passed, 0 failed, 0 skipped; swift build --build-tests — 0 warnings
+    - next: commit
+  timestamp: 2026-09-01T21:39:27.876377+00:00
 depends_on:
 - 01KYSV5606NB4K39ZXQYPBH0A9
-position_column: todo
-position_ordinal: '8480'
+position_column: doing
+position_ordinal: '80'
 title: 'Instructions: compiled-in floor, wholesale replacement, AGENTS.md assembly'
 ---
 ## What
