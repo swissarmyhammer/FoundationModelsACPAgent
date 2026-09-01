@@ -53,7 +53,7 @@ Upstream's first implementation of the fix was itself broken in the same shape: 
 
 Supplying instructions that differ from the recorded ones appends one `TranscriptEvent` of kind `.divergence`, carrying a stable phrase plus both character counts, with neither body and no hash. `nil` or an identical string writes nothing. Nothing is added to the return value for it — the audience is whoever reads the committed transcript later, not the caller.
 
-Assert it through `TranscriptEvent.kind == .divergence`. The phrase constant itself is internal upstream, so do not try to name it.
+Assert it through `TranscriptEvent.kind == .divergence`, and pin the text against `RestoredSession.instructionsDivergencePhrase`, which upstream made public at their commit `6be2294`. Name the symbol; never copy the literal into our source. The phrase is the documented grep target for a repository of committed transcripts, so a saved grep breaks if it drifts — pinning the symbol is what makes that drift a compile error rather than a silent miss.
 
 ## The work
 
