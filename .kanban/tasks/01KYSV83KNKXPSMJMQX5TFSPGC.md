@@ -37,10 +37,26 @@ comments:
     - evidence: 10 files — Package.swift, Sources/.../Tools/MCPComposition.swift (new), Sources/.../Tools/ToolCatalog.swift, Sources/.../Tools/CatalogContext.swift, Tests/.../MCPCompositionTests.swift (new), Tests/.../MCPTestServerLocator.swift (new), Tests/.../ToolCatalogTests.swift, Tests/.../TranscriptStoreTests.swift, plan.md, .kanban
     - next: test
   timestamp: 2026-09-01T23:29:48.352230+00:00
+- actor: claude-code
+  id: 01m1fn2r2m1ybfw8s2xb7jysc6
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (0 confirmed, 0 refuted), 8 files reviewed; .kanban and plan.md excluded by rule
+    - next: done
+  timestamp: 2026-09-01T23:32:43.732077+00:00
+- actor: claude-code
+  id: 01m1fn2zc7fs5sem6pkzn02103
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed (10 files — MCPComposition.swift, ToolCatalog.swift, CatalogContext.swift, Package.swift, plan.md, MCPCompositionTests.swift, MCPTestServerLocator.swift, ToolCatalogTests.swift, TranscriptStoreTests.swift, .kanban)
+    - test: green (swift test — 126 tests in 14 suites passed, 0 failed, 0 skipped, 0 warnings)
+    - commit: 2600fa3
+    - review: clean (review sha HEAD~1..HEAD — 0 findings, 8 files reviewed)
+  timestamp: 2026-09-01T23:32:51.207035+00:00
 depends_on:
 - 01KYSV76CBJV66C92Z0EM2S73K
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8880'
 title: 'MCP composition: config servers, client mcpServers, server pool, surface refresh'
 ---
 ## What
