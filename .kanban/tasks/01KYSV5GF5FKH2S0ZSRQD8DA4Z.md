@@ -41,10 +41,26 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Sources/FoundationModelsACPAgent/Agent/Initialization.swift, Tests/FoundationModelsACPAgentTests/InitializationTests.swift, Tests/FoundationModelsACPAgentTests/ImportSmokeTests.swift
     - next: /test, then /commit and /review
   timestamp: 2026-09-01T18:33:45.309760+00:00
+- actor: claude-code
+  id: 01m1f47twmg9dhtjkxbc42z5zz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — counts {findings: 0, confirmed: 0, refuted: 2}; 4 files reviewed, .kanban excluded by .reviewignore
+    - next: task moved to done
+  timestamp: 2026-09-01T18:38:24.660487+00:00
+- actor: claude-code
+  id: 01m1f47xmp6br0mkykbq3qrce8
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed — 4 files: Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Sources/FoundationModelsACPAgent/Agent/Initialization.swift, Tests/FoundationModelsACPAgentTests/InitializationTests.swift, Tests/FoundationModelsACPAgentTests/ImportSmokeTests.swift
+    - test: green — swift test: 33 tests in 4 suites passed, 0 failed, 0 skipped; swift build --build-tests -Xswiftc -warnings-as-errors: clean
+    - commit: 6cf059e
+    - review: clean — review sha HEAD~1..HEAD, 0 findings
+  timestamp: 2026-09-01T18:38:27.478468+00:00
 depends_on:
 - 01KYSV4RJGFQ3HYG7J5C3P8H6D
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8380'
 title: 'RoutedACPAgent skeleton: initialize, version negotiation, no-auth surface'
 ---
 ## What
