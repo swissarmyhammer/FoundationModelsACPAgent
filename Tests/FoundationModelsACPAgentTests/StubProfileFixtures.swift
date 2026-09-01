@@ -25,7 +25,11 @@ import FoundationModelsRouter
 /// The catalog tests construct tools and read surfaces; no test generates
 /// text. The echo answer keeps the backend honest for an accidental call
 /// without a model and without a download.
-final class EchoSessionBackend: LanguageModelSessionBackend, @unchecked Sendable {
+///
+/// A class, not a struct, because `LanguageModelSessionBackend` requires
+/// `AnyObject`. The type holds no state, so its `Sendable` conformance is
+/// compiler-checked — no `@unchecked` assertion is needed.
+final class EchoSessionBackend: LanguageModelSessionBackend {
     func respond(to prompt: String, maxTokens: Int?) async throws -> String {
         prompt
     }

@@ -12,15 +12,10 @@ import FoundationModelsSkills
 /// A `RoutedSession` presented to the skills selection tier as an
 /// `AgentSession`.
 struct SelectionAgentSession: AgentSession {
-    /// The Router session every call travels to.
-    private let session: any RoutedSession
-
-    /// Makes the presentation over one Router session.
-    ///
-    /// - Parameter session: The session to present.
-    init(session: any RoutedSession) {
-        self.session = session
-    }
+    /// The Router session every call travels to. Internal rather than
+    /// private, so the synthesized memberwise initializer stays visible to
+    /// the catalog.
+    let session: any RoutedSession
 
     /// Sends `prompt` to the session and answers with its complete text.
     ///
