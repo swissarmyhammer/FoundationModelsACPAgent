@@ -70,6 +70,24 @@ comments:
     - commit: f7623ea
     - review: findings (1 — TranscriptStore.swift:301 magic number)
   timestamp: 2026-09-01T23:02:55.985509+00:00
+- actor: claude-code
+  id: 01m1fkgc9frewdvta0g5fsx16e
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on 9b52725 — 0 findings; the one prior finding (TranscriptStore.swift:301) is fixed and checked.
+    - The task does NOT move to done: the card requirement "the spawn fact taken from TranscriptEvent" stays blocked upstream (see the blocker comment of 2026-09-01). The code review is clean, but the card is not complete, so the task stays in `review` for a person to decide the upstream ask.
+    - next: a person decides the upstream Router ask (stamp `parentId` on a spawned session's events, or publish a spawn accessor), then the predicate and the canary test get finished.
+  timestamp: 2026-09-01T23:05:13.263889+00:00
+- actor: claude-code
+  id: 01m1fkghzsq4722erxgf234rpe
+  text: |-
+    ### finish iteration 2 — stuck (one named gap; code clean)
+    - implement: changed (named constant `cursorFieldCount` replaces the magic number; the finding is checked)
+    - test: green (111 tests, 13 suites, 0 failed, 0 skipped, 0 warnings)
+    - commit: 9b52725
+    - review: clean (0 findings)
+    - The loop stops here on purpose: the spawn-exclusion half of the listability predicate is a true conflict between the card and the pinned Router's public API, verified by a live fixture. The task stays in `review`. A person must decide the upstream ask. All acceptance criteria on the card pass; only the spawn-fact subtask stays open.
+  timestamp: 2026-09-01T23:05:19.097590+00:00
 depends_on:
 - 01KYSV6QHJ631K7T7FRF4B8338
 position_column: review
