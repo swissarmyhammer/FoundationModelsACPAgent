@@ -12,70 +12,77 @@ title: 'session/resume: cwd equality, restore, replay as whole-message upserts'
 ## What
 Plan.md §7.4 and §8.3. Work in `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift`.
 
-**Status as of 2026-08-31: the upstream restore API is APPROVED and being built.** The Router team's user chose to publish now, so this no longer waits for us to compile. Their card is `01M1CY02GKDW8CXY74NW30HZSY`. **Keep this task blocked until that lands**, then build against the real signature.
+**The upstream block is LIFTED.** Router published the restore surface on `main` at commit `587cfe7` (2026-08-31). Verified against their source. This task now waits only on its own dependencies.
 
-Why it was closed in the first place: restore was public when written, then demoted on 2026-08-26 by a pass that proved the public surface against four consumers. This package was not one of them, because a consumer that nobody builds cannot break a build.
+## The API, verified
 
-## The API being published
+`Sources/FoundationModelsRouter/Recording/SessionRestoration.swift`
 
 ```swift
-let restored = try await profile.standard.restoreSession(
-    id: sessionId,
-    recordingRoot: transcriptRoot,
-    instructions: freshInstructions,   // nil keeps the recorded instructions
-    tools: try await ToolCatalog.sessionTools(context: context)
-)
-// restored.session             -> RoutedSession
-// restored.configurationReport -> missingTools
-// restored.contextMismatches
+public func restoreSession(
+    id: ULID,
+    recordingRoot: URL? = nil,
+    instructions: String? = nil,
+    tools: [any Tool] = []
+) async throws -> RestoredSession
+
+public func recordedWorkingDirectory(
+    ofSession id: ULID, recordingRoot: URL? = nil
+) throws -> URL          // NOTE: synchronous, not async
 ```
 
-`SessionConfigurationRestorationReport`, `MissingTool` and `ContextMismatch` become public with `RestoredSession`. `restoreSessionTree` and `RestoredSessionTree` stay internal; we asked for no tree walk.
+`RestoredSession` carries `session: RoutedSession`, `configurationReport: SessionConfigurationRestorationReport` and `contextMismatches: [RestoredSession.ContextMismatch]`. `ContextMismatch` holds `session: ULID`, `recorded: Int`, `resolved: Int` — the recorded working context against the live resolution.
 
-Why this shape:
-- **One session by id, not a tree.** Our ACP `sessionId` IS the root Router session ULID (§4.2). We never address a fork or a spawn over the wire: §7.5 leaves `session/fork` unbuilt and §9 lists roots only.
-- **We need the mismatch report.** Resume is where our roster legitimately differs from the recording: a project layer that now says `shell: false`, an MCP server that fails `waitUntilReady()` and takes all of its verbs with it, a replaced `additionalDirectories` set, or a deleted skill. `missingTools` is how we say that out loud instead of resuming into a quietly smaller roster. **Report it to the client. Do not swallow it.**
-- **Name-based tool re-attachment is enough.** We build all per-session state and hand over the instances.
-- **`instructions:` closes a live trap.** Without it, restore re-applies `node.sidecar.instructions` silently. Our fresh assembly would have gone nowhere and the session would have run on stale recorded instructions, with no error and no report.
-- **A changed instructions string is journalled, not returned.** Router appends one `TranscriptEvent.Kind.divergence` event carrying a stable phrase and the two string lengths, with neither body and no hash. Identical or nil instructions journal nothing. The party who needs to know is whoever reads the committed transcript later, who did not pass the argument.
+Public: `restoreSession`, `recordedWorkingDirectory`, `RestoredSession`, `RestoredSession.ContextMismatch`, `SessionConfigurationRestorationReport` and its `MissingTool`, `SessionTreeRestorationError`, `TranscriptTreeError`. `restoreSessionTree` and `RestoredSessionTree` stay internal, as we asked.
 
-## Two upstream details to check when it lands
+## Three details that decide the implementation
 
-**The deleted-session error is NOT the obvious one.** A missing session raises **`TranscriptTreeError.sessionNotFound`**, not `SessionTreeRestorationError`. `SessionTreeRestorationError` covers restore-specific failures such as a non-root id. Catch the case that a missing session actually raises, and confirm it against the shipped code before relying on it. Do not match on a message string.
+**1. Check the cwd BEFORE restoring.** Router added `recordedWorkingDirectory(ofSession:recordingRoot:)` for us. It loads the tree and nothing else — no backend, no session, no write — and it is **synchronous `throws`**, so it needs no await. Call it first, compare against the resume `cwd`, and error on a mismatch. Do not restore and then reject; that builds a whole session in order to throw it away.
 
-**The cwd pre-check is undecided upstream.** Our §7.4 refuses a resume whose `cwd` differs from the recorded creation cwd. There is no public way to read the recorded cwd without restoring: `SessionSidecar` publishes no stored property and `TranscriptEvent` does not carry cwd. Upstream will either add a read-only accessor, if it costs one property, or document restore-then-compare as the supported path. **Check which shipped.** If it is the accessor, check before restoring. If not, restore and then compare `restored.session.workingDirectory`, reject on a mismatch, and close the session you just built rather than leaking it.
+**2. A missing session raises `TranscriptTreeError.sessionNotFound`, NOT `SessionTreeRestorationError`.** Both are public, and `recordedWorkingDirectory` raises the same case, so the deleted-session path errors at the cheap pre-check. `SessionTreeRestorationError` covers restore-specific failures such as a non-root id. Catch the typed case; never match a message string.
 
-**Do not reimplement restore against `transcript.jsonl`.** That forks Router's format and breaks silently on their next change.
+**3. The instructions override applies to the NAMED ROOT only.** A recorded fork keeps its own recorded instructions. That suits us, because `restoreSession(id:)` releases those forks anyway and we never address a fork over ACP. A live fork taken later from the restored root does inherit the supplied string.
 
-**The phantom card.** Plan.md §7.4 formerly cited Router card `6j4bven`. No such card exists on their board. It is removed.
+## Why the override exists, and the trap it closed
 
-## The replay half can proceed now
+Without it, restore re-applies the recorded instructions and says nothing. Our §7.4 reassembles instructions from the current config layer, the AGENTS.md walk and the preloaded skill bodies, so that work would have gone nowhere and the session would have run on the stale recorded string.
 
-It reads through `TranscriptStore`, built on the public `TranscriptEvent.merged(under:)`.
+Upstream's first implementation of the fix was itself broken in the same shape: it set a `RoutedSessionActor.instructions` property that no generation path reads, because the restore path calls `container.makeSession(transcript:tools:)`, which takes no instructions argument — the SDK reads them from the transcript's leading `.instructions` entry. Their review caught it and fixed it at the transcript seam rather than documenting it. **Do not assume a supplied value reached the model because a property holds it.** Assert on behavior.
+
+## The divergence event
+
+Supplying instructions that differ from the recorded ones appends one `TranscriptEvent` of kind `.divergence`, carrying a stable phrase plus both character counts, with neither body and no hash. `nil` or an identical string writes nothing. Nothing is added to the return value for it — the audience is whoever reads the committed transcript later, not the caller.
+
+Assert it through `TranscriptEvent.kind == .divergence`. The phrase constant itself is internal upstream, so do not try to name it.
+
+## The work
 
 `session/resume(sessionId, cwd, mcpServers, additionalDirectories, replayFrom)`:
 
-- `cwd` MUST equal the recorded original. A mismatch gives an error, never a silent re-root.
+- `cwd` MUST equal the recorded original, checked with `recordedWorkingDirectory` before any restore. A mismatch gives an error, never a silent re-root.
 - Reassemble our side from the recorded cwd: the config layer, the instructions, the tools and the confinement. Reconnect the config and client MCP servers. The client list is authoritative on each reconnect and is never persisted.
+- Pass the freshly assembled instructions as `instructions:`. Pass the roster as `tools:`; Router matches by recorded name and we supply the instances.
+- **Report `configurationReport.missingTools` to the client. Do not swallow it.** Resume is where our roster legitimately differs from the recording: `shell: false` newly set, an MCP server that failed to connect, a replaced `additionalDirectories` set, a deleted skill.
 - `additionalDirectories` is authoritative and replaceable. A non-empty list is the complete new root set. Omitted or empty means no additional roots. Never inherit former roots. Persist the new ordered list to the index.
 - Replay: `replayFrom: {"type": "start"}` replays before the response returns. Omitted or null means no replay. Replay sends whole-message upserts (`user_message`, `agent_message`, `agent_thought`) with the original `messageId` values, never `*_chunk`, so a client that saw chunks converges through §8.3's replace row. Replay reads the full recorded history; fold checkpoints are not messages and are not sent. Write the replay path with `ReplayFrom` as an inclusive cursor parameter.
 - `ResumeSessionResponse` carries `configOptions`, from the same source as session/new.
 
-- [ ] cwd equality check, by whichever route shipped
+- [ ] cwd equality check through `recordedWorkingDirectory`, before restore
 - [ ] Composition reassembly and root-set replacement
+- [ ] `restoreSession(id:recordingRoot:instructions:tools:)` with fresh instructions
+- [ ] `missingTools` reported to the client
 - [ ] Cursor-shaped replay sending whole-message upserts
-- [ ] Deleted-session failure path, catching the real error case
-- [ ] Live restore through `restoreSession(id:recordingRoot:instructions:tools:)`
-- [ ] `missingTools` reported to the client, not swallowed
+- [ ] Deleted-session path catching `TranscriptTreeError.sessionNotFound`
 
 ## Acceptance Criteria
 - [ ] Record a scripted two-turn session, then resume with `replayFrom: start`: the collector receives whole-message upserts with the original messageIds, no chunks, before the resume response completes
-- [ ] Resume with a different cwd gives an error, and no session is left open
+- [ ] Resume with a different cwd errors, and no session was constructed — assert the scripted loader was never asked for a backend
+- [ ] Resume after delete gives a clean protocol error, driven by catching `TranscriptTreeError.sessionNotFound`
 - [ ] Resume omitting `additionalDirectories` on a session that had extra roots rebuilds confinement with the cwd only, asserted because a file outside the cwd is now refused
-- [ ] Resume after delete gives a clean protocol error, driven by catching the typed case and not a message string
 - [ ] A resumed session continues the conversation, and its next turn sees the earlier context
 - [ ] Resuming with `shell: false` newly set reports the missing shell verbs from `configurationReport`
-- [ ] Resuming with changed instructions writes one `divergence` event; resuming with unchanged instructions writes none
+- [ ] **Resuming with changed instructions makes the MODEL see them** — assert through the scripted backend's received transcript, not through any property that holds the string
+- [ ] Resuming with changed instructions writes one `.divergence` event; resuming with unchanged or nil instructions writes none
 
 ## Tests
 - [ ] `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift` — harness, record-then-resume round trips in temp repos
