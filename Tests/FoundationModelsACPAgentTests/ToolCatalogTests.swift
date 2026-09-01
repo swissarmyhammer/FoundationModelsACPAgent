@@ -114,9 +114,9 @@ import Testing
     @Test func aDefaultContextMountsTheFourSessionTools() async throws {
         let context = try await Self.makeContext()
 
-        let tools = try await ToolCatalog.sessionTools(context: context)
+        let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        #expect(tools.map(\.name) == Self.defaultToolNames)
+        #expect(surface.tools.map(\.name) == Self.defaultToolNames)
     }
 
     @Test func aDisabledSkillsSectionAppendsNoSkillsTool() async throws {
@@ -124,9 +124,9 @@ import Testing
             configuration.tools.skills = .disabled
         }
 
-        let tools = try await ToolCatalog.sessionTools(context: context)
+        let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        #expect(tools.map(\.name) == Self.multitoolOnlyNames)
+        #expect(surface.tools.map(\.name) == Self.multitoolOnlyNames)
     }
 
     // MARK: The built surface
@@ -134,7 +134,7 @@ import Testing
     @Test func aDefaultRegistrySurfacesTheFilesAndShellNouns() async throws {
         let context = try await Self.makeContext()
 
-        let registry = try ToolCatalog.makeRegistry(context: context)
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
 
         let paths = registry.surface.entries.map(\.path)
         #expect(paths.contains(Self.readVerbPath))
@@ -146,7 +146,7 @@ import Testing
             configuration.tools.shell = .disabled
         }
 
-        let registry = try ToolCatalog.makeRegistry(context: context)
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
 
         #expect(!registry.surface.entries.contains { $0.group == Self.shellNoun })
         #expect(registry.surface.entries.contains { $0.path == Self.readVerbPath })
@@ -157,7 +157,7 @@ import Testing
             configuration.tools.files = .disabled
         }
 
-        let registry = try ToolCatalog.makeRegistry(context: context)
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
 
         #expect(!registry.surface.entries.contains { $0.group == Self.filesNoun })
         #expect(registry.surface.entries.contains { $0.path == Self.executeVerbPath })
@@ -171,7 +171,7 @@ import Testing
             .appendingPathComponent("secret.txt")
         try "outside the roots".write(to: outside, atomically: true, encoding: .utf8)
 
-        let registry = try ToolCatalog.makeRegistry(context: context)
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
         let result = try await Self.invokeRead(in: registry, path: outside.path)
 
         #expect(result.correction != nil)
@@ -184,7 +184,7 @@ import Testing
         try "inside the additional root".write(to: insideFile, atomically: true, encoding: .utf8)
         let context = try await Self.makeContext(additionalRoots: [additionalRoot])
 
-        let registry = try ToolCatalog.makeRegistry(context: context)
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
         let result = try await Self.invokeRead(in: registry, path: insideFile.path)
 
         #expect(result.correction == nil)

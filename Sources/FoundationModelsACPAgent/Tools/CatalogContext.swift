@@ -1,9 +1,11 @@
 import Foundation
+import FoundationModelsACP
 import FoundationModelsRouter
 
 /// What each builder call of the tool catalog needs (plan.md §11.1): the
 /// session working directory, the session's additional roots, the decoded
-/// configuration, and the resolved profile.
+/// configuration, the resolved profile, and the client's per-session MCP
+/// servers.
 ///
 /// The name is `CatalogContext` because Router's `Hosting/` substrate owns
 /// the name `ToolContext`.
@@ -28,6 +30,14 @@ public struct CatalogContext: Sendable {
     /// was released before the call.
     public let profile: LanguageModelProfile
 
+    /// The client-supplied per-session MCP servers (plan.md §7.3), in wire
+    /// order — the `mcpServers` of `session/new` or `session/resume`.
+    ///
+    /// Session scope only: this list is never persisted, because the
+    /// `headers` of an http entry carry bearer tokens and `sessions.jsonl`
+    /// is committed (§4.3). `session/resume` supplies the list again.
+    public let clientMCPServers: [FoundationModelsACP.MCPServer]
+
     /// Makes a catalog context.
     ///
     /// - Parameters:
@@ -36,15 +46,19 @@ public struct CatalogContext: Sendable {
     ///     Defaults to none.
     ///   - configuration: The decoded configuration.
     ///   - profile: The resolved profile, retained by this context.
+    ///   - clientMCPServers: The client-supplied per-session MCP servers,
+    ///     in wire order. Defaults to none.
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
         configuration: AgentConfiguration,
-        profile: LanguageModelProfile
+        profile: LanguageModelProfile,
+        clientMCPServers: [FoundationModelsACP.MCPServer] = []
     ) {
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
         self.configuration = configuration
         self.profile = profile
+        self.clientMCPServers = clientMCPServers
     }
 }

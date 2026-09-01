@@ -747,10 +747,13 @@ the config-derived servers, after them. (ACP's `name` is our
 `ServerIdentity`, which is exactly `{ name: String }`.) **The server name is
 the noun**: a verb mounts as `tools.github.createIssue`, never
 `tools.mcp.github.createIssue`. There is no `tools.mcp` group. Therefore a
-name collision is a noun collision. **One decision is open, and we record it
-as open**: at a name collision, can a client-supplied server *replace* a
-config-derived server, or do we refuse the collision? State the rule before
-implementation. Connection must complete **before** the tool array reaches
+name collision is a noun collision. **The collision rule is decided**, and
+`MCPComposition` implements and documents it: we **refuse** a
+client-supplied server whose name collides with an already accepted server —
+a config-derived one, or an earlier client-supplied one. The refusal is
+logged, and the session still starts. Config is the user's own committed
+intent; a silent replacement would let a connecting editor shadow a trusted
+server. Connection must complete **before** the tool array reaches
 `makeSession(tools:)`. Router's tool-instancing pipeline is synchronous. Thus
 we connect during the `session/new`/`session/resume` handling.
 
@@ -1243,18 +1246,20 @@ add one builder line:
 /// ══════════════════════════════════════════════════════════════════
 ///   ADD NEW CAPABILITIES HERE — and only here.
 ///   1. Decode the module's config section (§11.2).
-///   2. Append its `with…()` call to `sessionTools(context:)` below.
+///   2. Append its `with…()` call to `makeRegistry(context:)` below.
 ///   3. Add a row to the table in README.md § Tools.
 ///   Nothing else in this package needs to change.
 /// ══════════════════════════════════════════════════════════════════
 public enum ToolCatalog {
-    public static func sessionTools(context: CatalogContext) async throws -> [any FoundationModels.Tool]
+    public static func sessionSurface(context: CatalogContext) async throws -> SessionSurface
 }
 ```
 
-The function returns the composed tool array for `makeSession(tools:)`. **It
-is `async` because it must be.** `withMCP(servers:)` is `async throws` (§2.5).
-A synchronous function cannot call it.
+The function returns a `SessionSurface`: the composed tool array for
+`makeSession(tools:)`, plus the `MCPServerPool` the session lifecycle shuts
+down after the session sweep (§10.1, §11.5). **It is `async` because it must
+be.** `withMCP(servers:)` is `async throws` (§2.5). A synchronous function
+cannot call it.
 `MultiTool.Registry.makeSessionTools(librarian:sampleGenerator:)` vends
 **three** tools, in this mount order: `searchTools`, `runCode`, `wait`. In
 direct mode it vends `runCode` and `wait`. **`wait` is mounted in both

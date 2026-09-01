@@ -378,9 +378,9 @@ import Testing
 
         let firstPage = try fixture.store.sessions(
             inProject: fixture.workingDirectory, limit: 1, cursor: nil)
+        let cursor = try #require(firstPage.nextCursor)
         let secondPage = try fixture.store.sessions(
-            inProject: fixture.workingDirectory, limit: 1,
-            cursor: try #require(firstPage.nextCursor))
+            inProject: fixture.workingDirectory, limit: 1, cursor: cursor)
         #expect(firstPage.records.map(\.sessionId) == [expected[0]])
         #expect(secondPage.records.map(\.sessionId) == [expected[1]])
         #expect(secondPage.nextCursor == nil)

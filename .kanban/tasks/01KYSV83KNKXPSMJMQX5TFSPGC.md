@@ -1,10 +1,46 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fm3cbh6c9fn1yfvyj4z3g8
+  text: |-
+    Research results (from ../FoundationModelsMultitool and this repository):
+
+    - `MCPServer` actor: `init(name:version:clock:callTimeout:renderBudget:elicitationHandler:logger:)`. Connect calls: `connect(via: any Transport)`, `connect(via: TransportFactory)`, each also with a `BackoffPolicy` variant. `waitUntilReady()`, `reconnect()`, `disconnect()`, `call(name:arguments:)`. `elicitationHandler` is internal, so a test cannot read it. We do not pass it, and a doc comment records the rule.
+    - `MCPServerPool` actor: `add(server:)`, `add(process:)`, `attach(attachment:)`, `shutdownAll()`. `Builder.serverPool` holds each server that `withMCP(servers:)` recorded. `withMCP(servers:)` needs servers that are already connected (`MCPCapability.init(server:)` reads the catalog).
+    - `SurfaceRefresher(source:staging:servers:logger:)` + `start()`. `MCPServerPool.shutdownAll()` stops an attached refresher first. The `deinit` assertion trips only when the watch task still runs. The refresher rebuilds on the first snapshot of each server, and it does not stage when `snapshot.diff(from: previous).isEmpty` — this is the unchanged-catalog no-op.
+    - `StdioServerProcess(command:args:env:name:) throws` — `hasPrefix("/")` guard throws `commandNotAbsolute`. `respawn()` is the transport factory. `shutdown()` is async. `env` layers onto the inherited environment; a later repeated name wins.
+    - HTTP transport: `HTTPClientTransport(endpoint:configuration:)` from the `MCP` module (swissarmyhammer/swift-sdk fork). Our manifest must declare that package with the same URL Multitool uses: `https://github.com/swissarmyhammer/swift-sdk.git`, branch `main`.
+    - ACP wire types: `FoundationModelsACP.MCPServer` enum with `.stdio(MCPServerStdio)`, `.http(MCPServerHTTP)`, `.unknown`. Name collision with Multitool's `MCPServer` actor — code must qualify by module.
+    - Test support: Multitool ships the `MCPTestServer` library product (`ScriptedServer`, `ServerMode`, `LoopbackHTTPServer`) and the `mcp-test-server` executable product. Multitool's own manifest says a test target cannot depend on an executable; their unit tests find the binary beside the test bundle because `swift test` builds every target of the same package. For our package, an experiment must show if a cross-package executable product dependency is possible; the fallback is a small local `.executableTarget` over the shipped `MCPTestServer` library with the same `main.swift` shape.
+    - `MultiTool.call(arguments: RunCodeArguments)` and `MultiTool.turnWillBegin()` are public — a test can read the mounted surface with a `help()` snippet and drive the turn boundary by hand, as the upstream `SurfaceRefresherTests` does.
+    - `ToolCatalog.sessionTools(context:)` mounts with `makeSessionTools` today and drops the staging. The composition needs `makeSessionToolsAndStaging(librarian:)`, the refresher, and the pool. The mount entry must return the pool, so the plan is a `SessionSurface { tools, serverPool }` value.
+    - `SessionIndex` has a fixed field set and no MCP field; plan.md line comment already forbids `mcpServers` in `sessions.jsonl`.
+    - Config side is complete: `MCPToolSection` (.disabled / .enabled(servers:)) and `MCPServerConfiguration` (.stdio / .http) in ToolSectionCodec.swift.
+  timestamp: 2026-09-01T23:15:35.921203+00:00
+- actor: claude-code
+  id: 01m1fmxct0mjdtr4p92hcgb8y6
+  text: |-
+    Implementation landed, TDD order (failing suite first, then the code):
+
+    - New `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift`: `composeRoster` (config first, then client; collision and mcp-disabled refusals; env/header pair normalization with last-wins), `connectServers` (connects each entry, `waitUntilReady()`, spawns `StdioServerProcess` for stdio, `HTTPClientTransport` factory for http, cleanup on a partial failure), `startSurfaceRefresher` (starts and attaches to the pool; no refresher when there is no server). `elicitationHandler` is never passed. The collision rule is in the type doc comment and in plan.md §7.3.
+    - `ToolCatalog`: `makeRegistry(context:)` is now async and returns `BuiltRegistry { registry, source, pool, mcpServers }`; the public mount entry is `sessionSurface(context:) -> SessionSurface { tools, serverPool }`. `sessionTools` is replaced, because a session with MCP servers must get the pool for `shutdownAll()`.
+    - `CatalogContext` gains `clientMCPServers: [FoundationModelsACP.MCPServer] = []`.
+    - `Package.swift`: declares the swift-sdk fork (`https://github.com/swissarmyhammer/swift-sdk.git`, the URL Multitool uses) and links `MCP` in the library; the test target links Multitool's `MCPTestServer` library product and the `mcp-test-server` executable product. The executable-product dependency works cross-package, so `swift test` builds the binary beside the test bundle.
+    - Tests: `MCPCompositionTests.swift` (13 cases — roster order, collisions, disabled refusal, unknown transport, env/header normalization, relative-command throw, bad-url throw, mounted noun order with three spawned `mcp-test-server` subprocesses, list_changed staged and applied only at `turnWillBegin()`, reconnect rebuild + unchanged no-op with pool `shutdownAll()`, `SessionIndexRecord` key set) and `MCPTestServerLocator.swift` (a port of Multitool's locator).
+    - Discovery for the next agent: `swift build --product mcp-test-server` also works from this package root; a cross-package executable product IS a legal test-target dependency on this toolchain.
+    - Also fixed a pre-existing `#require` redundancy warning in `TranscriptStoreTests` to keep the run at zero warnings.
+    - plan.md: §7.3 records the decided collision rule; the §11.1 sketch now shows `sessionSurface`.
+
+    ### implement — changed
+    - evidence: 10 files — Package.swift, Sources/.../Tools/MCPComposition.swift (new), Sources/.../Tools/ToolCatalog.swift, Sources/.../Tools/CatalogContext.swift, Tests/.../MCPCompositionTests.swift (new), Tests/.../MCPTestServerLocator.swift (new), Tests/.../ToolCatalogTests.swift, Tests/.../TranscriptStoreTests.swift, plan.md, .kanban
+    - next: test
+  timestamp: 2026-09-01T23:29:48.352230+00:00
 depends_on:
 - 01KYSV76CBJV66C92Z0EM2S73K
-position_column: todo
-position_ordinal: '8880'
+position_column: doing
+position_ordinal: '80'
 title: 'MCP composition: config servers, client mcpServers, server pool, surface refresh'
 ---
 ## What
@@ -33,29 +69,29 @@ Compose two sources into `withMCP(servers:)`: the config-derived `mcp:` servers 
 
 **The elicitation fallback is gone. Do not build it.** The old task asked for a coordinator conforming to Multitool's `ElicitationCoordinator`. That protocol and `MCPElicitationTool` were deleted upstream. The current seam is `MCPServer.ElicitationHandler`, and the answering order is: the `ToolContext` of the calling run through Router's mailbox, then the host's `elicitationHandler`, then `cancel` to the server. The source comment says it outright — "Router wins when present, so a Router host never sets the handler." We are a Router host, so **leave `elicitationHandler` nil**. Our seam is `RoutedSession.respond(elicitationId:response:)` and `RoutedSession.complete(elicitationId:)`. Note the `ToolContext` binding applies only when exactly one call is in flight. Elicitation is not the permission system.
 
-- [ ] Two-source composition, config first
-- [ ] Collision rule decided and documented
-- [ ] Connect and `waitUntilReady()` before `buildRegistry()`
-- [ ] Servers and spawned processes added to `MCPServerPool`
-- [ ] `SurfaceRefresher` started and attached so it is stopped
-- [ ] Rebuild is idempotent, because reconnects trigger it too
-- [ ] `mcp: false` refuses client servers with a log
-- [ ] `elicitationHandler` left nil
+- [x] Two-source composition, config first
+- [x] Collision rule decided and documented
+- [x] Connect and `waitUntilReady()` before `buildRegistry()`
+- [x] Servers and spawned processes added to `MCPServerPool`
+- [x] `SurfaceRefresher` started and attached so it is stopped
+- [x] Rebuild is idempotent, because reconnects trigger it too
+- [x] `mcp: false` refuses client servers with a log
+- [x] `elicitationHandler` left nil
 
 ## Acceptance Criteria
-- [ ] Given config servers A and B and client server C, the noun order is A, B, C
-- [ ] A client server named A is refused per the documented rule, and the session still starts
-- [ ] With `mcp: false`, client-supplied servers give zero tools and one logged refusal
-- [ ] A server's tools appear as `tools.<serverName>.<verb>`, with no `mcp` segment
-- [ ] A relative command path to `StdioServerProcess` throws rather than spawning
-- [ ] A `tools/list_changed` from a scripted server stages a new registry, and the new tool appears only at the next turn boundary
-- [ ] A reconnect also stages a rebuild, and it changes nothing when the catalog is unchanged
-- [ ] Nothing about client servers appears in `sessions.jsonl`
-- [ ] Releasing the composition does not trip the `SurfaceRefresher` deinit assertion
+- [x] Given config servers A and B and client server C, the noun order is A, B, C
+- [x] A client server named A is refused per the documented rule, and the session still starts
+- [x] With `mcp: false`, client-supplied servers give zero tools and one logged refusal
+- [x] A server's tools appear as `tools.<serverName>.<verb>`, with no `mcp` segment
+- [x] A relative command path to `StdioServerProcess` throws rather than spawning
+- [x] A `tools/list_changed` from a scripted server stages a new registry, and the new tool appears only at the next turn boundary
+- [x] A reconnect also stages a rebuild, and it changes nothing when the catalog is unchanged
+- [x] Nothing about client servers appears in `sessions.jsonl`
+- [x] Releasing the composition does not trip the `SurfaceRefresher` deinit assertion
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift` — composition, collision and refusal driven by the `MCPTestServer` library's `ScriptedServer` and the `mcp-test-server` executable that Multitool ships
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift` — composition, collision and refusal driven by the `MCPTestServer` library's `ScriptedServer` and the `mcp-test-server` executable that Multitool ships
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

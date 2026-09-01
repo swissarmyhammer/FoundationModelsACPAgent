@@ -55,14 +55,32 @@ private let skillsDependencyName = "FoundationModelsSkills"
 /// depends on the wire and Extras only, so no cycle is possible.
 private let clientDependencyName = "FoundationModelsACPClient"
 
+/// The MCP swift-sdk, reached through the organization fork
+/// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
+/// declares, because a second URL for the same package identity makes the
+/// resolve fail. The MCP composition (plan.md §11.5) names the sdk's
+/// `HTTPClientTransport` for the http transport of a composed server.
+private let mcpSDKPackage = "swift-sdk"
+
+/// The one product of `mcpSDKPackage` this package links.
+private let mcpSDKProduct = Target.Dependency.product(name: "MCP", package: mcpSDKPackage)
+
+/// The test-support products of Multitool (plan.md §20): the `MCPTestServer`
+/// scripted-server library, and the `mcp-test-server` stdio executable the
+/// MCP composition suite spawns. The executable is a product dependency so
+/// `swift test` builds it into the products directory beside the test
+/// bundle, where `MCPTestServerLocator` finds it.
+private let multitoolTestProducts: [Target.Dependency] = [
+    .product(name: "MCPTestServer", package: multitoolDependencyName),
+    .product(name: "mcp-test-server", package: multitoolDependencyName),
+]
+
 /// The five family packages the library target depends on (plan.md §1).
 ///
 /// Router and Extras are declared by name, and not reached through Multitool:
 /// Multitool has no `@_exported import`, so its dependencies do not come for
-/// free. No MCP type is named in this package, so swift-sdk is not declared.
-/// Multitool reaches it through the organization fork
-/// `https://github.com/swissarmyhammer/swift-sdk`, and a second URL for the
-/// same package identity makes the resolve fail.
+/// free. The MCP composition (plan.md §11.5) names `MCP.Transport` types for
+/// its http path, so `mcpSDKPackage` declares the sdk as well.
 private let familyDependencyNames = [
     wireDependencyName,
     routerDependencyName,
@@ -106,19 +124,23 @@ let package = Package(
         .library(name: packageName, targets: [packageName])
     ],
     dependencies: familyDependencyNames.map(makeFamilyPackage(name:)) + [
-        makeFamilyPackage(name: clientDependencyName)
+        makeFamilyPackage(name: clientDependencyName),
+        // The sdk fork, by the same URL Multitool declares — see
+        // `mcpSDKPackage`.
+        .package(url: "https://github.com/swissarmyhammer/\(mcpSDKPackage).git", branch: mainBranch),
     ],
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts
+            dependencies: familyProducts + [mcpSDKProduct]
         ),
         // The import smoke suite. It links the client driver as well — see
-        // `clientDependencyName`.
+        // `clientDependencyName` — and Multitool's test-support products —
+        // see `multitoolTestProducts`.
         .testTarget(
             name: testTargetName,
             dependencies: [.target(name: packageName), makeFamilyProduct(name: clientDependencyName)]
-                + familyProducts
+                + familyProducts + multitoolTestProducts
         ),
     ]
 )
