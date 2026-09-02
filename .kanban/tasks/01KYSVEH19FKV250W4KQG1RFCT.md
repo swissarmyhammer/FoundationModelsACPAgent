@@ -52,13 +52,38 @@ comments:
     - commit: afb8a11
     - review: findings (5 open)
   timestamp: 2026-09-02T05:48:27.508879+00:00
+- actor: claude-code
+  id: 01m1gancn83jdz1x3wdrc24vv5
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — TierTwoTests.swift (runCodeArgumentsJSON and jsonStringLiteral now delegate to encodedText; jsonStringLiteral(text:) and encodedWireText(updates:) labeled), ScriptedTurnFixture.swift (writeProjectConfig(yaml:under:) labeled). All 5 review findings worked and checked.
+    - next: test, commit, review
+    ### test — green
+    - evidence: `swift test` — 276 tests in 28 suites passed, 0 failed, 0 skipped, zero new warnings
+    - next: commit
+    ### commit — changed
+    - evidence: 7a6238b refactor(tests): work the tier-2 review findings — reuse encodedText and label the arguments
+    - next: review
+  timestamp: 2026-09-02T05:49:54.728686+00:00
+- actor: claude-code
+  id: 01m1garz35aefd87wt3fr8aq81
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings; all 5 prior findings checked; task moved to done
+    - next: none
+    ### finish iteration 2 — clean
+    - implement: changed (worked the 5 review findings)
+    - test: green (swift test — 276 passed, 0 failed, 0 skipped, zero new warnings)
+    - commit: 7a6238b
+    - review: clean → done
+  timestamp: 2026-09-02T05:51:51.909291+00:00
 depends_on:
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
 - 01KYSVA1A4HXA6RYSJBE2XERFM
 - 01KYSV611EWFQQRRPJWR5JQ4H5
 - 01KYSV76CBJV66C92Z0EM2S73K
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9580'
 title: 'Tier-2 integration suite: the seven proofs with real tools'
 ---
 ## What
