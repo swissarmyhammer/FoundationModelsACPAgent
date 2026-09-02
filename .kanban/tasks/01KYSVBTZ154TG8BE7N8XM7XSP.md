@@ -29,11 +29,34 @@ comments:
     - evidence: `swift test` — 144 tests in 16 suites passed, 0 failures, 0 skipped. Zero compiler warnings from source files. The one build log warning ("missing creator for mutated node" for the mlx-swift Cmlx bundle) is a pre-existing build-system note about a dependency artifact, present before this change. The "1 known issue" is the pre-existing deliberate `withKnownIssue` self-test of the assertion helper in HarnessSmokeTests, not a skip.
     - next: commit
   timestamp: 2026-09-02T00:18:59.616335+00:00
+- actor: claude-code
+  id: 01m1fqr1n1vdaa7v2j2fcey275
+  text: |-
+    ### commit — changed
+    - evidence: 724ff7b feat(tools): confine the shell with SandboxComposition over the session root set — 8 files changed, 474 insertions(+), 31 deletions(-)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-02T00:19:18.817980+00:00
+- actor: claude-code
+  id: 01m1fqxmrhbfchzxkfjcmfdd0t
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — counts: 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. Skipped by rule: .kanban/ (reviewignore), README.md (no validator matches).
+    - next: task moves to done
+  timestamp: 2026-09-02T00:22:22.225439+00:00
+- actor: claude-code
+  id: 01m1fqxwbmh5hekmqtbv702zz2
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed (SandboxComposition.swift, ToolCatalog.swift, README.md, SandboxCompositionTests.swift, ResolvedTemporaryDirectory.swift, SandboxConfigTests.swift)
+    - test: green (swift test — 144 tests in 16 suites, 0 failures, 0 skipped, 0 source warnings)
+    - commit: 724ff7b
+    - review: clean (review sha HEAD~1..HEAD — 0 findings)
+  timestamp: 2026-09-02T00:22:30.004464+00:00
 depends_on:
 - 01KYSV611EWFQQRRPJWR5JQ4H5
 - 01KYSV76CBJV66C92Z0EM2S73K
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8a80
 title: 'Sandbox confinement: SeatbeltSandbox over the session root set'
 ---
 ## What
@@ -78,7 +101,7 @@ Do not advertise ACP `session/request_permission`, and do not send one. The init
 
 ## Tests
 - [x] `Tests/FoundationModelsACPAgentTests/SandboxCompositionTests.swift` — the write-in and write-out cases with filesystem truth, the empty-root-set case, the preflight refusal, and the symlink case
-- [ ] `swift test` → green
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
