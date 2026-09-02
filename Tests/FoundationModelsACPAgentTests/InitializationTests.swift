@@ -4,48 +4,6 @@ import FoundationModelsACPAgent
 import FoundationModelsACPClient
 import Testing
 
-/// One in-process wiring of `RoutedACPAgent` and the client driver
-/// (plan.md §20.1): `InMemoryTransport.pair()`, an `AgentSideConnection`
-/// around the agent, and `SwiftUIACPClient.connect(over:)` on the other end.
-struct InitializationHarness {
-    /// The dotfolder name the harness constructs the agent with. The wire
-    /// must never carry it (plan.md §5).
-    static let dotfolderName = "coding"
-
-    /// The agent side of the wire.
-    let agentConnection: AgentSideConnection
-
-    /// The client side of the wire, which drives the agent.
-    let connection: ClientSideConnection
-
-    /// Makes an agent for ``dotfolderName``.
-    ///
-    /// - Returns: The agent.
-    /// - Throws: `DotfolderNameError` when `dotfolderName` is refused.
-    static func makeAgent() throws -> RoutedACPAgent {
-        RoutedACPAgent(name: try DotfolderName(dotfolderName))
-    }
-
-    /// Wires a fresh agent and client over an in-memory transport pair.
-    ///
-    /// - Returns: The connected harness.
-    /// - Throws: `DotfolderNameError` when `dotfolderName` is refused.
-    static func make() async throws -> InitializationHarness {
-        let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agent = try makeAgent()
-        let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
-        let client = await SwiftUIACPClient()
-        let connection = await client.connect(over: clientEnd)
-        return InitializationHarness(agentConnection: agentConnection, connection: connection)
-    }
-
-    /// Closes both ends of the wire.
-    func close() async {
-        await connection.close()
-        await agentConnection.close()
-    }
-}
-
 /// The `initialize` handshake of `RoutedACPAgent` (plan.md §5 and §6):
 /// version negotiation, the advertised capabilities, the order rule, and
 /// the refused authentication methods.
@@ -66,22 +24,6 @@ struct InitializationHarness {
     /// A session id no session has, so that the order rule is the only
     /// thing a pre-initialize session call can trip on.
     static let unknownSessionId = SessionId(rawValue: "01ARZ3NDEKTSV4RRFFQ69G5FAV")
-
-    /// The client's `initialize` request with the driver's own values.
-    ///
-    /// - Parameters:
-    ///   - protocolVersion: The latest version the client supports.
-    ///   - capabilities: The client's capabilities.
-    /// - Returns: The request.
-    static func makeInitializeRequest(
-        protocolVersion: ProtocolVersion = ACPClient.supportedProtocolVersion,
-        capabilities: ClientCapabilities = ACPClient.advertisedCapabilities
-    ) -> InitializeRequest {
-        InitializeRequest(
-            info: Implementation(name: "initialization-tests", version: "1.0.0"),
-            protocolVersion: protocolVersion,
-            capabilities: capabilities)
-    }
 
     /// Encodes a wire model and decodes it back as a JSON tree, so a test
     /// can assert the shape that crosses the wire.
@@ -119,13 +61,13 @@ struct InitializationHarness {
     /// identity and no authentication surface.
     @Test(.timeLimit(.minutes(1)))
     func initializeEchoesVersion2AndReportsTheImplementation() async throws {
-        let harness = try await InitializationHarness.make()
-        let response = try await harness.connection.initialize(Self.makeInitializeRequest())
+        let harness = try await AgentClientHarness.make()
+        let response = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
         await harness.close()
 
         #expect(response.protocolVersion == ACPClient.supportedProtocolVersion)
         #expect(response.info == RoutedACPAgent.implementation)
-        #expect(response.info.name != InitializationHarness.dotfolderName)
+        #expect(response.info.name != AgentClientHarness.dotfolderName)
         #expect(!response.info.version.isEmpty)
         #expect(response.info.title != nil)
         #expect(response.authMethods == nil)
@@ -135,9 +77,9 @@ struct InitializationHarness {
     /// A client that sends `1` gets `2` back in a normal, successful
     /// response, not an error (plan.md §5).
     @Test func initializeWithVersion1AnswersVersion2Successfully() async throws {
-        let agent = try InitializationHarness.makeAgent()
+        let agent = try AgentClientHarness.makeAgent()
         let response = try await agent.initialize(
-            Self.makeInitializeRequest(protocolVersion: Self.protocolVersion1))
+            AgentClientHarness.makeInitializeRequest(protocolVersion: Self.protocolVersion1))
 
         #expect(response.protocolVersion == .v2)
         #expect(response.info == RoutedACPAgent.implementation)
@@ -147,10 +89,10 @@ struct InitializationHarness {
     /// its `1`, and then decides to disconnect with its own mismatch error.
     @Test(.timeLimit(.minutes(1)))
     func initializeWithVersion1ReachesTheClientAsASuccessfulVersion2Answer() async throws {
-        let harness = try await InitializationHarness.make()
+        let harness = try await AgentClientHarness.make()
         do {
             _ = try await harness.connection.initialize(
-                Self.makeInitializeRequest(protocolVersion: Self.protocolVersion1))
+                AgentClientHarness.makeInitializeRequest(protocolVersion: Self.protocolVersion1))
             Issue.record("expected the client's own protocol-version mismatch error")
         } catch let error as ProtocolVersionMismatchError {
             #expect(error.sent == Self.protocolVersion1)
@@ -166,8 +108,8 @@ struct InitializationHarness {
     /// and no permission capability (plan.md §5, §11.7).
     @Test(.timeLimit(.minutes(1)))
     func advertisedCapabilitiesCarryTheFourSessionMarkersAsObjects() async throws {
-        let harness = try await InitializationHarness.make()
-        let response = try await harness.connection.initialize(Self.makeInitializeRequest())
+        let harness = try await AgentClientHarness.make()
+        let response = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
         await harness.close()
 
         let tree = try Self.jsonTree(of: response.capabilities)
@@ -189,15 +131,15 @@ struct InitializationHarness {
     /// Before `initialize`, nothing is negotiated. An advertised elicitation
     /// capability is read as supported; an absent one as unsupported.
     @Test func clientCapabilitiesAreReadWithAbsentMeaningUnsupported() async throws {
-        let agent = try InitializationHarness.makeAgent()
+        let agent = try AgentClientHarness.makeAgent()
         #expect(await agent.negotiatedClientCapabilities == nil)
 
-        _ = try await agent.initialize(Self.makeInitializeRequest())
+        _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
         let advertised = try #require(await agent.negotiatedClientCapabilities)
         #expect(advertised.supportsFormElicitation)
         #expect(advertised.supportsURLElicitation)
 
-        _ = try await agent.initialize(Self.makeInitializeRequest(capabilities: ClientCapabilities()))
+        _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest(capabilities: ClientCapabilities()))
         let absent = try #require(await agent.negotiatedClientCapabilities)
         #expect(!absent.supportsFormElicitation)
         #expect(!absent.supportsURLElicitation)
@@ -208,7 +150,7 @@ struct InitializationHarness {
     @Test(.timeLimit(.minutes(1)))
     func malformedClientCapabilitiesDegradeToSupportsNothing() async throws {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agent = try InitializationHarness.makeAgent()
+        let agent = try AgentClientHarness.makeAgent()
         let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
 
@@ -275,7 +217,7 @@ struct InitializationHarness {
     /// invalid-request error (plan.md §5).
     @Test(.timeLimit(.minutes(1)), arguments: SessionMethod.allCases)
     func sessionMethodBeforeInitializeGivesInvalidRequest(method: SessionMethod) async throws {
-        let harness = try await InitializationHarness.make()
+        let harness = try await AgentClientHarness.make()
         await Self.expectRequestError(.invalidRequest, wireValue: Self.invalidRequestWireValue) {
             try await method.call(over: harness.connection)
         }
@@ -288,8 +230,8 @@ struct InitializationHarness {
     /// (plan.md §6).
     @Test(.timeLimit(.minutes(1)))
     func authMethodsGiveMethodNotFound() async throws {
-        let harness = try await InitializationHarness.make()
-        _ = try await harness.connection.initialize(Self.makeInitializeRequest())
+        let harness = try await AgentClientHarness.make()
+        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
 
         await Self.expectRequestError(.methodNotFound, wireValue: Self.methodNotFoundWireValue) {
             _ = try await harness.connection.loginAuth(
