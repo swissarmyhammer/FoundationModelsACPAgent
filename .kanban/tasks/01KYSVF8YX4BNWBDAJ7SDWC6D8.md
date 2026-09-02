@@ -116,10 +116,33 @@ comments:
     - evidence: `swift test` — 293 tests in 33 suites passed, 0 failed, after the finding fixes; the 1 known issue and the 1 build warning are the pre-existing ones
     - next: commit, then review
   timestamp: 2026-09-02T08:05:54.157876+00:00
+- actor: claude-code
+  id: 01m1gjev3yqh6nn8123gph1r0w
+  text: |-
+    ### commit — changed
+    - evidence: 533fff9 refactor(eval): name the numeric constants the review flagged (5 files, +70/-4)
+    - next: review 533fff9 (HEAD~1..HEAD)
+  timestamp: 2026-09-02T08:06:08.766114+00:00
+- actor: claude-code
+  id: 01m1gjh01zqzb3zhtv3bf6vt3e
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (533fff9) — counts findings=0 confirmed=0 refuted=0; both prior findings checked; task moved to done
+    - next: none
+  timestamp: 2026-09-02T08:07:19.359811+00:00
+- actor: claude-code
+  id: 01m1gjh5ad9ngrwvy2tmmt1mbv
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files, both magic-number findings fixed with named constants; the same cause swept from the whole change
+    - test: green — `swift test` 293 tests in 33 suites, 0 failed
+    - commit: changed — 533fff9 refactor(eval): name the numeric constants the review flagged
+    - review: clean — 0 findings on HEAD~1..HEAD, all prior items checked; task moved to done
+  timestamp: 2026-09-02T08:07:24.749387+00:00
 depends_on:
 - 01KYSVEH19FKV250W4KQG1RFCT
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9780'
 title: 'PythonCLIEvaluation: gated end-to-end coding eval'
 ---
 ## What
