@@ -424,11 +424,15 @@ extension RoutedACPAgent {
 
     /// Clears the finished turn, so the session accepts a new prompt.
     /// Runs after the turn's `idle` went out, so a second turn's
-    /// `running` can never pass the first turn's terminator.
+    /// `running` can never pass the first turn's terminator. It then
+    /// reconciles the config-option state (plan.md §15): a turn that ran
+    /// on a model the announced options do not show pushes one
+    /// `config_option_update`, after the turn's terminator.
     ///
     /// - Parameter sessionId: The session whose turn finished.
-    func turnFinished(sessionId: SessionId) {
+    func turnFinished(sessionId: SessionId) async {
         sessions[sessionId]?.activeTurn = nil
+        await reconcileConfigOptions(for: sessionId)
     }
 
     /// The first-activity index write, or `nil` when the session already

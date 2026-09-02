@@ -65,7 +65,8 @@ import Testing
     // MARK: Identity (§4.2)
 
     /// The sessionId parses as a ULID, names the Router session directory
-    /// on disk, and the response carries the empty `configOptions` list.
+    /// on disk, and the response carries the one model-slot config
+    /// option (plan.md §15).
     @Test(.timeLimit(.minutes(1)))
     func sessionIdIsARouterULIDAndNamesTheSessionDirectory() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -75,7 +76,7 @@ import Testing
         let response = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
 
         #expect(ULID(ulidString: response.sessionId.rawValue) != nil)
-        #expect(response.configOptions == [])
+        #expect(response.configOptions?.map(\.configId) == [ConfigOptions.modelOptionId])
 
         let sessionDirectory = Self.projectTranscriptsRoot(of: cwd)
             .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)

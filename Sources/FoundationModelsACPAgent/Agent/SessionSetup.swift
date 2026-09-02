@@ -27,9 +27,12 @@ enum SessionAvailability: Equatable, Sendable {
 /// directory, and the mounted tool surface whose pool the session
 /// lifecycle shuts down at close.
 struct ActiveSession: Sendable {
-    /// The root Router session. Retaining it is what keeps the resident
-    /// profile alive for this session's lifetime.
-    let session: any RoutedSession
+    /// The Router session that answers this ACP session's turns.
+    /// Retaining it is what keeps the resident profile alive for this
+    /// session's lifetime. Born as the root session from the standard
+    /// slot; a model-slot switch (plan.md §15) replaces it with one
+    /// vended from the selected slot's handle.
+    var session: any RoutedSession
 
     /// The merged per-cwd configuration this session was composed from
     /// (plan.md §2.2).
@@ -62,6 +65,16 @@ struct ActiveSession: Sendable {
     /// at session creation. The `prompt()` handler dispatches a leading
     /// `/name` through it before anything touches the session (§14.3).
     let commands: CommandRegistry
+
+    /// The model slot ``session`` was vended from (plan.md §15). Only
+    /// `standard` and `flash` occur; embedding is not a chat slot.
+    var selectedSlot: ModelSlot
+
+    /// The config-option state the client last saw (plan.md §15):
+    /// what `session/new` or `session/set_config_option` answered, or a
+    /// `config_option_update` pushed. The divergence check compares the
+    /// truth against this baseline.
+    var announcedConfigOptions: [SessionConfigOption]
 
     /// The running turn's state owner, or `nil` when no turn is in
     /// flight (plan.md §8.2). `session/cancel` reaches the turn through
@@ -231,6 +244,14 @@ extension RoutedACPAgent {
                 transcriptDirectory: session.recordingDirectory,
                 registry: commands))
 
+        // The first announcement of the config-option list (plan.md
+        // §15): one select over the profile's chat slots, defaulting to
+        // the standard slot the session was just composed from. The
+        // announced state is recorded so the divergence check compares
+        // against what the client actually saw.
+        let configOptions = ConfigOptions.options(
+            profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
+
         sessions[sessionId] = ActiveSession(
             session: session,
             configuration: composition.configuration,
@@ -240,16 +261,15 @@ extension RoutedACPAgent {
             transcriptDirectory: session.recordingDirectory,
             surface: composition.surface,
             commands: commands,
+            selectedSlot: ConfigOptions.defaultSlot,
+            announcedConfigOptions: configOptions,
             activeTurn: nil)
 
         // The command set publishes after the response, and again on
         // every registry change (plan.md §14.4).
         publishAvailableCommands(from: commands, sessionId: sessionId)
 
-        // TODO(^r7t7xe1): the config-options task fills `configOptions`
-        // with the model slot selector; until then the list is honestly
-        // empty.
-        return NewSessionResponse(sessionId: sessionId, configOptions: [])
+        return NewSessionResponse(sessionId: sessionId, configOptions: configOptions)
     }
 
     /// Runs the per-session composition pipeline (plan.md §7.1): resolve

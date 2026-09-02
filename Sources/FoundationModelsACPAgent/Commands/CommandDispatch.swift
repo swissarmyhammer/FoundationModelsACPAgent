@@ -279,7 +279,7 @@ extension RoutedACPAgent {
                         arguments: command.arguments,
                         workingDirectory: entry.workingDirectory))
             } catch {
-                turnFinished(sessionId: params.sessionId)
+                await turnFinished(sessionId: params.sessionId)
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
             return scheduleModelTurn(

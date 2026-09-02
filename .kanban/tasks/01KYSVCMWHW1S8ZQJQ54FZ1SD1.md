@@ -28,10 +28,23 @@ comments:
     - evidence: swift test — 229 passed, 0 failed, 0 skipped, 0 warnings (1 pre-existing withKnownIssue marker in HarnessSmokeTests). swift build clean.
     - next: commit.
   timestamp: 2026-09-02T03:42:18.351477+00:00
+- actor: claude-code
+  id: 01m1g3js8qv9atmmkck39nbrnm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted. .kanban/ excluded by .reviewignore.
+    - next: task moved to done.
+
+    ### finish iteration 1 — done
+    - implement: changed (BuiltinCommands.swift, ConfigurationYAML.swift, SessionSetup.swift, BuiltinCommandsTests.swift, CommandDispatchTests.swift)
+    - test: green (229 passed, 0 failed, 0 warnings)
+    - commit: fb96c6f
+    - review: clean (0 findings) — task moved to done
+  timestamp: 2026-09-02T03:46:09.303589+00:00
 depends_on:
 - 01KYSVCAH5MAEMCH4R5A8MNCSF
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9180'
 title: 'Builtin slash commands: /compact /context /memory /status /config /help'
 ---
 ## What

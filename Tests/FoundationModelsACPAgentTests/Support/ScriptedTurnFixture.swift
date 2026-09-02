@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPClient
+import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -37,6 +38,10 @@ struct ScriptedTurnFixture {
     /// The session working directory.
     let cwd: URL
 
+    /// The `configOptions` list the `session/new` response announced
+    /// (plan.md §15), for the config-options assertions.
+    let newSessionConfigOptions: [SessionConfigOption]?
+
     /// Closes the harness wire.
     func close() async {
         await harness.close()
@@ -54,6 +59,23 @@ struct ScriptedTurnFixture {
     static func make(
         script: [ScriptedTurnStep], label: String
     ) async throws -> ScriptedTurnFixture {
+        try await make(loader: makeScriptedModelLoader(script: script), label: label)
+    }
+
+    /// Wires an agent over `loader`, completes `initialize`, and opens
+    /// one session. The config-options suite injects a per-slot loader
+    /// here; the plain `make(script:label:)` builds the shared scripted
+    /// loader.
+    ///
+    /// - Parameters:
+    ///   - loader: The model loader the agent resolves against.
+    ///   - label: The directory label of the calling suite, so a
+    ///     leftover directory says where it came from.
+    /// - Returns: The fixture.
+    /// - Throws: Whatever the construction or the handshake throws.
+    static func make(
+        loader: any ModelLoader, label: String
+    ) async throws -> ScriptedTurnFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = makeResolvedDirectory(label: "\(label)-repo")
         let agent = try await makeStubAgent(
@@ -61,14 +83,15 @@ struct ScriptedTurnFixture {
             cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
             recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
             userDirectory: userDirectory,
-            loader: makeScriptedModelLoader(script: script))
+            loader: loader)
         let harness = await AgentClientHarness.makeRecording(agent: agent)
         _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
         let response = try await harness.connection.newSession(
             NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: cwd.path))))
         let collector = try #require(harness.collector)
         return ScriptedTurnFixture(
-            harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd)
+            harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd,
+            newSessionConfigOptions: response.configOptions)
     }
 
     /// The prompt request with one text block.

@@ -1,10 +1,34 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1g4nyfvqj9sdp5vmmbt3ydt
+  text: |-
+    Research and implementation notes (TDD: the failing tests came first, then the code).
+
+    Discoveries:
+    - `RoutedSession` binds to one slot at `makeSession` and has no mid-session model switch. Thus the slot switch replaces the entry's Router session with one vended from the selected slot's resident handle. The replacement records under the ACP session's own transcript directory, so the lineage stays on disk the way §4.2 states it for a fork's nesting. The replaced session is closed when idle.
+    - Value ids are the stable slot names ("standard" / "flash"); the labels show each slot's `chosen.stringValue`, per the card. `SessionConfigSelectOptions` is a deferred union (raw JSON) in the wire package; the flat list is encoded through the generated `SessionConfigSelectOption` coder so the wire shape cannot drift.
+    - The divergence push: each session stores the announced option state (`announcedConfigOptions`). `turnFinished` reconciles the truth against it and pushes ONE `config_option_update` with the full list on a difference. The test scripts a divergence through `recordAnnouncedConfigOptions`, the same production seam `session/new` and `set_config_option` use.
+    - Test support: `StubModelLoader.makeLLMContainer` now receives the `ModelSlot`, so a per-slot scripted loader proves which slot generated a turn.
+
+    ### implement — changed
+    - evidence: 9 files — Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift (new), Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift, Sources/FoundationModelsACPAgent/Commands/CommandDispatch.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTests/ConfigOptionsTests.swift (new), Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift, Tests/FoundationModelsACPAgentTests/StubProfileFixtures.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift (+ AssertionHelpers, ScriptedModel, BuiltinCommandsTests, TranscriptRecordingFixtures call-site updates)
+    - next: run the full test suite
+    task: ^r7t7xe1
+  timestamp: 2026-09-02T04:05:21.531613+00:00
+- actor: claude-code
+  id: 01m1g4q406y05rtqkvwznhwgme
+  text: |-
+    ### test — green
+    - evidence: swift test — 235 passed in 25 suites, 0 failed, 0 skipped; swift build --build-tests — 0 warnings. The 1 "known issue" is pre-existing and deliberate: HarnessSmokeTests proves the ordered-subsequence helper can fail through `withKnownIssue`.
+    - next: commit
+  timestamp: 2026-09-02T04:05:59.942436+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
-position_column: todo
-position_ordinal: '9480'
+position_column: doing
+position_ordinal: '80'
 title: 'Session config options: model slot select over standard/flash'
 ---
 ## What

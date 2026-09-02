@@ -112,5 +112,5 @@ func makeRecordingStubProfile(
     try await makeStubProfile(
         cacheDirectory: cacheDirectory,
         recordingsDirectory: recordingsDirectory,
-        loader: StubModelLoader(makeLLMContainer: { TranscriptStubContainer() }))
+        loader: StubModelLoader(makeLLMContainer: { _ in TranscriptStubContainer() }))
 }

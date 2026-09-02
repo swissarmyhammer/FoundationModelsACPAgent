@@ -102,6 +102,22 @@ func expectOrderedSubsequence<Element: Equatable>(
         sourceLocation: sourceLocation)
 }
 
+/// Reads one string field of a wire error's `data` object, so a refusal
+/// assertion names the id or reason the error carried (plan.md §10.1).
+///
+/// - Parameters:
+///   - name: The field name.
+///   - error: The wire error.
+/// - Returns: The string value, or `nil` when absent.
+func errorDataField(_ name: String, of error: RequestError) -> String? {
+    guard case .object(let fields) = error.data ?? .null,
+        case .string(let value) = fields[name] ?? .null
+    else {
+        return nil
+    }
+    return value
+}
+
 /// Reads the UTF-8 text of the file at `url` from disk.
 ///
 /// The disk is the truth a tool-call claim is checked against

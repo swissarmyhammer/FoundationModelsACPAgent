@@ -205,12 +205,8 @@ public actor RoutedACPAgent: Agent {
         try refuseUnimplemented(ACPMethod.sessionDelete)
     }
 
-    /// Refuses until the config-options task lands.
-    public func setSessionConfigOption(
-        _ params: SetSessionConfigOptionRequest
-    ) async throws -> SetSessionConfigOptionResponse {
-        try refuseUnimplemented(ACPMethod.sessionSetConfigOption)
-    }
+    // `setSessionConfigOption` lives in `Agent/ConfigOptions.swift`
+    // (plan.md §15).
 }
 
 /// The wire names of the session requests this agent serves, as the

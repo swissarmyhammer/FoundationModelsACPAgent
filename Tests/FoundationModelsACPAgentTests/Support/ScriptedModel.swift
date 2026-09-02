@@ -244,6 +244,6 @@ struct ScriptedLLMContainer: LoadedLLMContainer {
 /// - Returns: The loader to inject.
 func makeScriptedModelLoader(script: [ScriptedTurnStep]) -> StubModelLoader {
     var loader = StubModelLoader()
-    loader.makeLLMContainer = { ScriptedLLMContainer(script: script) }
+    loader.makeLLMContainer = { _ in ScriptedLLMContainer(script: script) }
     return loader
 }

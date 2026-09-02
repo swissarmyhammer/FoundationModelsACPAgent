@@ -405,7 +405,7 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     /// - Returns: The loader to inject into the stub agent.
     static func makeLoader(shouldFail: Bool) -> StubModelLoader {
         var loader = StubModelLoader()
-        loader.makeLLMContainer = { CompactionStubContainer(shouldFail: shouldFail) }
+        loader.makeLLMContainer = { _ in CompactionStubContainer(shouldFail: shouldFail) }
         return loader
     }
 

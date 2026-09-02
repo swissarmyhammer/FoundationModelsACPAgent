@@ -110,10 +110,15 @@ struct StubModelLoader: ModelLoader {
     /// observes a complete download.
     private static let completeProgress = DownloadProgress(bytesDownloaded: 1, bytesTotal: 1)
 
-    /// The factory for the LLM container each load vends. The default vends
-    /// ``EchoLLMContainer``; a recording test injects a container whose
-    /// backend accumulates transcript entries instead.
-    var makeLLMContainer: @Sendable () -> any LoadedLLMContainer = { EchoLLMContainer() }
+    /// The factory for the LLM container each load vends, given the slot
+    /// being loaded. The default vends ``EchoLLMContainer`` for every
+    /// slot; a recording test injects a container whose backend
+    /// accumulates transcript entries, and a config-options test injects
+    /// per-slot containers so a turn's text names the slot that
+    /// generated it.
+    var makeLLMContainer: @Sendable (ModelSlot) -> any LoadedLLMContainer = { _ in
+        EchoLLMContainer()
+    }
 
     func loadLLM(
         ref: ModelRef,
@@ -122,7 +127,7 @@ struct StubModelLoader: ModelLoader {
         reporting: @escaping @Sendable (DownloadProgress) -> Void
     ) async throws -> any LoadedLLMContainer {
         reporting(Self.completeProgress)
-        return makeLLMContainer()
+        return makeLLMContainer(slot)
     }
 
     func loadEmbedder(
