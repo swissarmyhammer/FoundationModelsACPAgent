@@ -104,6 +104,14 @@ private let mcpSDKPackage = "swift-sdk"
 /// The one product of `mcpSDKPackage` this package links.
 private let mcpSDKProduct = Target.Dependency.product(name: "MCP", package: mcpSDKPackage)
 
+/// Router's hermetic test-support product (plan.md §20.1). The gated
+/// tier-4 eval reads `MetalLibraryTestBootstrap.ensureColocatedMetallib`
+/// from it before the first GPU evaluation: under `swift test`,
+/// mlx-swift does not find its shader library beside the test binary
+/// on its own, and the bootstrap symlinks it once per process.
+private let routerTestSupportProduct = Target.Dependency.product(
+    name: "\(routerDependencyName)TestSupport", package: routerDependencyName)
+
 /// The test-support products of Multitool (plan.md §20): the `MCPTestServer`
 /// scripted-server library, and the `mcp-test-server` stdio executable the
 /// MCP composition suite spawns. The executable is a product dependency so
@@ -198,8 +206,12 @@ let package = Package(
         // `clientDependencyName` — Multitool's test-support products — see
         // `multitoolTestProducts` — the MCP sdk, whose tool-result
         // content types the passthrough-map tests construct (plan.md §12),
-        // and the example executable, so `swift test` builds the tier-3
-        // fixture beside the test bundle — see `exampleExecutableName`.
+        // the example executable, so `swift test` builds the tier-3
+        // fixture beside the test bundle — see `exampleExecutableName` —
+        // and the live-loader products, so the gated tier-4 eval
+        // (plan.md §20.3) constructs the same real `LiveModelLoader` the
+        // example does. The graph already carries them; this adds linking
+        // only — see `liveLoaderProducts`.
         .testTarget(
             name: testTargetName,
             dependencies: [
@@ -208,6 +220,7 @@ let package = Package(
                 makeFamilyProduct(name: clientDependencyName),
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
+                + liveLoaderProducts + [routerTestSupportProduct]
         ),
     ]
 )
