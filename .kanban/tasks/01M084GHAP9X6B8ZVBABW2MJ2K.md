@@ -48,10 +48,34 @@ comments:
     - evidence: `swift test` — 296 passed, 0 failed, 0 skipped in 34 suites (1 known issue: the pre-existing deliberate meta-test in HarnessSmokeTests). Gated suites stay disabled without `ACP_TIER3`. `ACP_TIER3=1 swift test --filter ClientServerTests` — 3 passed, 0 failed. `ACP_TIER3=1 swift test --filter StdioContractTests` — 1 passed, 0 failed. `swift build --build-tests` shows zero new warnings; the one "missing creator for mutated node" line for the mlx-swift Cmlx bundle is pre-existing build-system output.
     - next: commit
   timestamp: 2026-09-02T08:18:50.317166+00:00
+- actor: claude-code
+  id: 01m1gk6kafffkwq0svr7xsj51a
+  text: |-
+    ### commit — changed
+    - evidence: 37a8ee2 feat(examples): add acp-print, the one-shot client-server prompt CLI (7 files, 542 insertions, 58 deletions)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-02T08:19:07.215734+00:00
+- actor: claude-code
+  id: 01m1gkds62xp6gfb241qcm6027
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 2 refuted; 5 files reviewed, .kanban excluded by .reviewignore
+    - next: task moved to done
+  timestamp: 2026-09-02T08:23:02.594128+00:00
+- actor: claude-code
+  id: 01m1gke1x8jytfnrtrp84zc8re
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed — 5 source files (Package.swift, Examples/acp-print/main.swift, ClientServerTests.swift, TierThreeFixture.swift, StdioContractTests.swift); TDD: RED (executable not found) then GREEN
+    - test: green — `swift test` 296 passed, 0 failed, 0 skipped; `ACP_TIER3=1 swift test --filter ClientServerTests` 3 passed; `ACP_TIER3=1 swift test --filter StdioContractTests` 1 passed; zero new warnings
+    - commit: changed — 37a8ee2 feat(examples): add acp-print, the one-shot client-server prompt CLI
+    - review: clean — review sha HEAD~1..HEAD, 0 findings, 2 refuted
+    - outcome: the task is done in one iteration
+  timestamp: 2026-09-02T08:23:11.528411+00:00
 depends_on:
 - 01KYSVEYTDHNBFA6B0XX36HV94
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9880'
 title: 'Examples/acp-print: one-shot client-server prompt CLI'
 ---
 ## What
