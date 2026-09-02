@@ -35,6 +35,29 @@ comments:
     - evidence: `swift test` — 158 tests in 18 suites passed, 0 failed, 0 skipped; `swift build --build-tests` shows zero compiler warnings. The one "known issue" is HarnessSmokeTests' deliberate negative check of `expectOrderedSubsequence`, which runs and can fail — not a skip.
     - next: commit, then review.
   timestamp: 2026-09-02T01:05:18.573426+00:00
+- actor: claude-code
+  id: 01m1ftcq4fhs73xs1p08whx3mk
+  text: |-
+    ### commit — changed
+    - evidence: 531d369 feat(agent): compose session/new into a root Router session with the actor-held table (8 files, +593/-29, kanban state included)
+    - next: review 531d369 (HEAD~1..HEAD).
+  timestamp: 2026-09-02T01:05:33.327045+00:00
+- actor: claude-code
+  id: 01m1fth30kjq4x65bsmqm752yy
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on 531d369 — 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed; the 4 `.kanban/` files were excluded by .reviewignore. No prior findings sections existed.
+    - next: task moved to done.
+  timestamp: 2026-09-02T01:07:56.563693+00:00
+- actor: claude-code
+  id: 01m1fthbq83z8hqqctp67pmv5v
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed (SessionSetup.swift + RoutedACPAgent.swift + SessionSetupTests.swift + StubProfileFixtures.swift; TDD red first)
+    - test: green (swift test — 158 passed, 0 failed, 0 skipped, 0 warnings)
+    - commit: 531d369
+    - review: clean (0 findings on HEAD~1..HEAD) → task moved to done
+  timestamp: 2026-09-02T01:08:05.480577+00:00
 depends_on:
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
 - 01KYSV6BNDNMQ9T6RKFQ3P1ZD2
@@ -43,8 +66,8 @@ depends_on:
 - 01KYSV83KNKXPSMJMQX5TFSPGC
 - 01KYSVR3HG5TB7G8DA7NZ60Y96
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8c80
 title: 'session/new: compose config, instructions, tools into a root Router session'
 ---
 ## What
