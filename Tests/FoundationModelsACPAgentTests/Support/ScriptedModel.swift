@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsMultitool
 import FoundationModelsRouter
+import Synchronization
 
 // MARK: - The scripted-model seam (plan.md §20.1)
 //
@@ -98,17 +99,48 @@ enum ScriptedModelError: Error, Equatable {
 /// A session backend that plays a fixed script: text deltas, known
 /// tool calls with fixed arguments, and a turn end.
 ///
-/// Every generating call plays the same script from the start; the
-/// backend keeps no call state.
+/// Every generating call plays the same script from the start.
+///
+/// Each `toolCall` step also appends the SDK transcript entries a real
+/// model session would record — a `.toolCalls` entry before the
+/// invocation, and a `.toolOutput` entry after it — so Router's
+/// transcript diff derives the `toolCall` and `toolStatus` session
+/// events for the tier-2 projection proofs (plan.md §8.4, §20.1). The
+/// entries are SDK `Transcript` values with public initializers, never
+/// Router recording values.
 ///
 /// A class, not a struct, because `LanguageModelSessionBackend`
-/// requires `AnyObject`. It holds only immutable state, so its
-/// `Sendable` conformance is compiler-checked.
+/// requires `AnyObject`. The one mutable member is guarded by a
+/// `Mutex`, so its `Sendable` conformance stays compiler-checked.
 final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// The token usage every scripted backend reports, in the pattern
     /// of `EchoSessionBackend`: a constant one/one, so a usage consumer
     /// observes a report.
     private static let scriptedUsage = (input: 1, output: 1)
+
+    /// The prefix of every synthesized SDK tool-call id. The suffix is
+    /// the one-based ordinal of the call, so a test addresses the first
+    /// scripted call as `scripted-call-1`.
+    static let scriptedCallIdPrefix = "scripted-call-"
+
+    /// The schema name the synthesized structured output segment
+    /// declares. The value only satisfies the SDK initializer.
+    private static let outputSchemaName = "ScriptedToolOutput"
+
+    /// The synthesized transcript of one backend: the SDK entries the
+    /// played tool calls appended, and how many tool calls played —
+    /// the source of the deterministic scripted call ids.
+    private struct SynthesizedTranscript {
+        /// The appended SDK entries, in append order.
+        var entries: [Transcript.Entry] = []
+
+        /// The number of tool calls played so far.
+        var playedToolCallCount = 0
+    }
+
+    /// The synthesized transcript, guarded for the sync
+    /// `transcriptEntries()` read against the async playback append.
+    private let synthesized = Mutex(SynthesizedTranscript())
 
     /// The steps this backend plays, in order.
     private let script: [ScriptedTurnStep]
@@ -166,11 +198,11 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     func transcriptEntries() -> [Transcript.Entry] {
-        // Empty on purpose. Router's recording types have no public
-        // init, so a fixture never assembles transcript values by hand;
-        // a test asserts on the wire and on the filesystem instead
-        // (plan.md §20.1).
-        []
+        // The SDK entries the played tool calls appended. Router's
+        // transcript diff reads them and derives the `toolCall` and
+        // `toolStatus` session events, the way it does for a real
+        // model session (plan.md §8.4).
+        synthesized.withLock { $0.entries }
     }
 
     func usageTokenCounts() -> (input: Int, output: Int)? {
@@ -210,7 +242,11 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
         try Task.checkCancellation()
     }
 
-    /// Invokes the handed tool `name` with the fixed arguments.
+    /// Invokes the handed tool `name` with the fixed arguments, and
+    /// appends the SDK transcript entries a real model session records
+    /// around a tool call: `.toolCalls` before the invocation, and
+    /// `.toolOutput` after it. Router's transcript diff derives the
+    /// `toolCall` and `toolStatus` session events from them.
     ///
     /// - Parameters:
     ///   - name: The name of the tool to invoke.
@@ -222,7 +258,58 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
             throw ScriptedModelError.unknownTool(name)
         }
         let content = try GeneratedContent(json: argumentsJSON)
-        _ = try await ToolInvoker.invoke(tool, content: content)
+        let callId = appendToolCallsEntry(name: name, arguments: content)
+        let output = try await ToolInvoker.invoke(tool, content: content)
+        appendToolOutputEntry(callId: callId, name: name, output: output)
+    }
+
+    /// Appends the `.toolCalls` entry of one played call and mints the
+    /// call's deterministic id.
+    ///
+    /// - Parameters:
+    ///   - name: The invoked tool's name.
+    ///   - arguments: The call's arguments.
+    /// - Returns: The minted scripted call id.
+    private func appendToolCallsEntry(name: String, arguments: GeneratedContent) -> String {
+        synthesized.withLock { state in
+            state.playedToolCallCount += 1
+            let callId = Self.scriptedCallIdPrefix + String(state.playedToolCallCount)
+            state.entries.append(
+                .toolCalls(
+                    Transcript.ToolCalls(
+                        id: callId + "-batch",
+                        [Transcript.ToolCall(id: callId, toolName: name, arguments: arguments)])))
+            return callId
+        }
+    }
+
+    /// Appends the `.toolOutput` entry that answers one played call.
+    ///
+    /// The output rides as a structured segment when the value converts
+    /// to `GeneratedContent` — every session-tool output is a `String`,
+    /// which does — so the projection's `rawOutput` reads the real
+    /// value. Any other output degrades to a text segment.
+    ///
+    /// - Parameters:
+    ///   - callId: The scripted call id the output answers.
+    ///   - name: The invoked tool's name.
+    ///   - output: The value the tool returned.
+    private func appendToolOutputEntry(callId: String, name: String, output: Any) {
+        let segment: Transcript.Segment
+        if let convertible = output as? any ConvertibleToGeneratedContent {
+            segment = .structure(
+                Transcript.StructuredSegment(
+                    id: callId + "-output",
+                    schemaName: Self.outputSchemaName,
+                    content: convertible.generatedContent))
+        } else {
+            segment = .text(Transcript.TextSegment(content: String(describing: output)))
+        }
+        synthesized.withLock { state in
+            state.entries.append(
+                .toolOutput(
+                    Transcript.ToolOutput(id: callId, toolName: name, segments: [segment])))
+        }
     }
 }
 

@@ -54,12 +54,28 @@ struct ScriptedTurnFixture {
     ///   - script: The steps the model plays on every turn.
     ///   - label: The directory label of the calling suite, so a
     ///     leftover directory says where it came from.
+    ///   - workingDirectory: The session working directory to open the
+    ///     session in, or `nil` to make a fresh one. A suite passes a
+    ///     pre-made directory when the script embeds its path.
+    ///   - projectConfigYAML: The project `config.yaml` to write under
+    ///     `<cwd>/.<name>/` before `session/new`, or `nil` for none.
+    ///   - mcpServers: The client's per-session MCP servers to pass in
+    ///     `session/new`, or `nil` for none.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
-        script: [ScriptedTurnStep], label: String
+        script: [ScriptedTurnStep],
+        label: String,
+        workingDirectory: URL? = nil,
+        projectConfigYAML: String? = nil,
+        mcpServers: [MCPServer]? = nil
     ) async throws -> ScriptedTurnFixture {
-        try await make(loader: makeScriptedModelLoader(script: script), label: label)
+        try await make(
+            loader: makeScriptedModelLoader(script: script),
+            label: label,
+            workingDirectory: workingDirectory,
+            projectConfigYAML: projectConfigYAML,
+            mcpServers: mcpServers)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -71,13 +87,27 @@ struct ScriptedTurnFixture {
     ///   - loader: The model loader the agent resolves against.
     ///   - label: The directory label of the calling suite, so a
     ///     leftover directory says where it came from.
+    ///   - workingDirectory: The session working directory to open the
+    ///     session in, or `nil` to make a fresh one. A suite passes a
+    ///     pre-made directory when the script embeds its path.
+    ///   - projectConfigYAML: The project `config.yaml` to write under
+    ///     `<cwd>/.<name>/` before `session/new`, or `nil` for none.
+    ///   - mcpServers: The client's per-session MCP servers to pass in
+    ///     `session/new`, or `nil` for none.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
-        loader: any ModelLoader, label: String
+        loader: any ModelLoader,
+        label: String,
+        workingDirectory: URL? = nil,
+        projectConfigYAML: String? = nil,
+        mcpServers: [MCPServer]? = nil
     ) async throws -> ScriptedTurnFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
-        let cwd = makeResolvedDirectory(label: "\(label)-repo")
+        let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
+        if let projectConfigYAML {
+            try writeProjectConfig(projectConfigYAML, under: cwd)
+        }
         let agent = try await makeStubAgent(
             name: AgentClientHarness.dotfolderName,
             cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
@@ -87,11 +117,29 @@ struct ScriptedTurnFixture {
         let harness = await AgentClientHarness.makeRecording(agent: agent)
         _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
         let response = try await harness.connection.newSession(
-            NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: cwd.path))))
+            NewSessionRequest(
+                cwd: try #require(AbsolutePath(rawValue: cwd.path)),
+                mcpServers: mcpServers))
         let collector = try #require(harness.collector)
         return ScriptedTurnFixture(
             harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd,
             newSessionConfigOptions: response.configOptions)
+    }
+
+    /// Writes `yaml` as the project-layer `config.yaml` of `cwd`, the
+    /// file the session's configuration load reads (plan.md §2.2).
+    ///
+    /// - Parameters:
+    ///   - yaml: The configuration document to write.
+    ///   - cwd: The session working directory the dotfolder roots at.
+    /// - Throws: The directory-creation or write error.
+    static func writeProjectConfig(_ yaml: String, under cwd: URL) throws {
+        let dotfolder = cwd.appendingPathComponent(
+            ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)
+        try yaml.write(
+            to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
+            atomically: true, encoding: .utf8)
     }
 
     /// The prompt request with one text block.
