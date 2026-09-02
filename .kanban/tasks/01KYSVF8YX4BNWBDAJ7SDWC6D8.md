@@ -79,6 +79,43 @@ comments:
     - evidence: `swift test` — 293 tests in 33 suites passed, 0 failed; the 1 "known issue" is the pre-existing deliberate `withKnownIssue` in HarnessSmokeTests. The one build warning ("missing creator for mutated node", the mlx-swift Cmlx bundle) is a build-system message that reproduces on main with this change parked, so it is pre-existing. The gated suites (ACP_TIER3, ACP_EVAL) skip without their env vars, as the card requires.
     - next: commit, then review
   timestamp: 2026-09-02T07:58:07.433467+00:00
+- actor: claude-code
+  id: 01m1gj0rykkhhp7dq6xxkr73zk
+  text: |-
+    ### commit — changed
+    - evidence: 318e46b feat(eval): add the gated PythonCLIEvaluation tier-4 coding eval (12 files, +2327/-18)
+    - next: review 318e46b (HEAD~1..HEAD)
+  timestamp: 2026-09-02T07:58:27.795081+00:00
+- actor: claude-code
+  id: 01m1gjc27a8rr953pebr266r5r
+  text: |-
+    ### review — findings
+    - evidence: 2 findings — Tests/FoundationModelsACPAgentTests/Evaluations/PythonCLIEvaluation.swift:62, Tests/FoundationModelsACPAgentTests/Evaluations/PythonCLISubject.swift:242 (code-hygiene/magic-numbers-swift); counts findings=2 confirmed=2 refuted=3
+    - next: implement pulls the task back to doing and fixes the unchecked items
+  timestamp: 2026-09-02T08:04:37.738703+00:00
+- actor: claude-code
+  id: 01m1gjc8tdnc71nhy4tgmcpyyh
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 code files (the Evaluations directory and Package.swift), commit-ready; follow-up task ^pez780d filed for the zero-token empty-turn defect the eval caught
+    - test: green — `swift test` 293 tests in 33 suites, 0 failed; the 1 known issue and the 1 build warning are pre-existing; gated suites skip without their env vars
+    - commit: changed — 318e46b feat(eval): add the gated PythonCLIEvaluation tier-4 coding eval
+    - review: findings — 2 items (magic numbers at PythonCLIEvaluation.swift:62 and PythonCLISubject.swift:242), appended to the card; task stays in review; next iteration fixes them
+  timestamp: 2026-09-02T08:04:44.493564+00:00
+- actor: claude-code
+  id: 01m1gje80ww2rmv7jacxdcydj2
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — PythonCLIEvaluation.swift (named `evalSecondsPerMinute` for the suite-ceiling division), PythonCLISubject.swift (named `availabilityDeadlineSeconds`), PythonCLISubjectTests.swift (named `scriptedIdleDeadlineSeconds`; same cause swept from the whole change). Both review findings checked.
+    - next: test, commit, review
+  timestamp: 2026-09-02T08:05:49.212655+00:00
+- actor: claude-code
+  id: 01m1gjecvd38sx1ckhjzmsg7d7
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 293 tests in 33 suites passed, 0 failed, after the finding fixes; the 1 known issue and the 1 build warning are the pre-existing ones
+    - next: commit, then review
+  timestamp: 2026-09-02T08:05:54.157876+00:00
 depends_on:
 - 01KYSVEH19FKV250W4KQG1RFCT
 position_column: doing
@@ -120,3 +157,13 @@ Plan.md §20.3, tier 4. Gated on Apple silicon, real models and network, through
 
 ## Workflow
 - Use `/tdd` where it applies. The subject and evaluator units are testable ungated with a scripted backend.
+
+## Review Findings (2026-09-02 02:58)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Evaluations/PythonCLIEvaluation.swift:62` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsACPAgentTests/Evaluations/PythonCLISubject.swift:242` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

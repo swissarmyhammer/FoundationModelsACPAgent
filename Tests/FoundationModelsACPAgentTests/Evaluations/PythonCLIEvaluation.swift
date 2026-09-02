@@ -53,13 +53,17 @@ private var evalSampleLimit: Int? {
 /// minute end to end.
 private let evalSampleIdleCeilingSeconds = 300
 
+/// The number of seconds in one minute, for the suite-ceiling
+/// arithmetic.
+private let evalSecondsPerMinute = 60
+
 /// The gated suite's wall-clock ceiling in minutes: the whole dataset
 /// at the per-turn ceiling times the turn cap, plus one first-run
 /// model download and load. A capped evidence run finishes far
 /// inside it.
 private let evalSuiteTimeLimitMinutes =
     PythonCLIDataset.sampleSpecs.count * evalMaxTurnsPerSample
-    * evalSampleIdleCeilingSeconds / 60
+    * evalSampleIdleCeilingSeconds / evalSecondsPerMinute
     + evalModelLoadAllowanceMinutes
 
 /// The minutes the suite ceiling grants the first-run model download

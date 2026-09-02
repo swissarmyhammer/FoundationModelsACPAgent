@@ -70,8 +70,11 @@ import Testing
     /// The line the scripted shell command prints.
     private static let shellLine = "scripted-shell-line"
 
+    /// The number of seconds in ``scriptedIdleDeadline``.
+    private static let scriptedIdleDeadlineSeconds = 60
+
     /// How long the scripted turn may run before the wait gives up.
-    private static let scriptedIdleDeadline: Duration = .seconds(60)
+    private static let scriptedIdleDeadline: Duration = .seconds(scriptedIdleDeadlineSeconds)
 
     /// The `wait` plays after the snippet: one settles the `runCode`
     /// run, and one joins the nested background shell run.

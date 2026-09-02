@@ -237,9 +237,12 @@ struct PythonCLISubjectHost {
             turnCount: turnCount)
     }
 
+    /// The number of seconds in ``availabilityDeadline``.
+    private static let availabilityDeadlineSeconds = 10
+
     /// How long a follow-up prompt waits for the session to accept
     /// one after the previous turn's idle notification.
-    private static let availabilityDeadline: Duration = .seconds(10)
+    private static let availabilityDeadline: Duration = .seconds(availabilityDeadlineSeconds)
 
     /// Polls the collector until the session's `minimumIdleCount`-th
     /// idle terminator arrives or the deadline passes.
