@@ -25,10 +25,26 @@ comments:
     - evidence: swift test — 235 passed in 25 suites, 0 failed, 0 skipped; swift build --build-tests — 0 warnings. The 1 "known issue" is pre-existing and deliberate: HarnessSmokeTests proves the ordered-subsequence helper can fail through `withKnownIssue`.
     - next: commit
   timestamp: 2026-09-02T04:05:59.942436+00:00
+- actor: claude-code
+  id: 01m1g4x14f9cq8t9rxdmwr34gc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (1dbac50) — 0 findings, 13 files reviewed, 7 validator runs, 0 failed. Task moved to done; the subtask and acceptance boxes are checked with the tests as evidence.
+    - next: none
+  timestamp: 2026-09-02T04:09:13.615767+00:00
+- actor: claude-code
+  id: 01m1g4x5bytzv60gtjc36xnrw3
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed (TDD — the 6 failing tests came first; ConfigOptions.swift and the session-table wiring made them pass)
+    - test: green (swift test — 235 passed, 0 failed, 0 skipped; 0 warnings)
+    - commit: 1dbac50
+    - review: clean (review sha HEAD~1..HEAD — 0 findings); task moved to done
+  timestamp: 2026-09-02T04:09:17.950928+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9280'
 title: 'Session config options: model slot select over standard/flash'
 ---
 ## What
@@ -49,23 +65,23 @@ Plan.md §15. Create `Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift
 
 - Intentionally absent: `mode`, `thought_level` (Router shows no reasoning-level knob), and a `model_config` context size. No groups.
 
-- [ ] The select option built from the resident profile
-- [ ] Announcement in the session/new response
-- [ ] `set_config_option` full-state semantics
-- [ ] Divergence push through `config_option_update`
+- [x] The select option built from the resident profile
+- [x] Announcement in the session/new response
+- [x] `set_config_option` full-state semantics
+- [x] Divergence push through `config_option_update`
 
 **Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/set_config_option` with an unknown `sessionId` gives JSON-RPC invalid params (`-32602`) with the id in `data`. A known but closed session gives `-32602` with the reason "closed; resume it first".
 
 ## Acceptance Criteria
-- [ ] `session/set_config_option` on an unknown or closed id gives `-32602` and pushes no `config_option_update`
-- [ ] The `session/new` response carries exactly one config option, kind select, with a `currentValue` default
-- [ ] The option's labels show each slot's `chosen.stringValue`
-- [ ] `set_config_option` to `flash` succeeds, the returned complete state shows `flash`, and later turns use the flash slot, asserted through the scripted loader
-- [ ] A scripted resolution divergence produces one `config_option_update` carrying the full option list
+- [x] `session/set_config_option` on an unknown or closed id gives `-32602` and pushes no `config_option_update`
+- [x] The `session/new` response carries exactly one config option, kind select, with a `currentValue` default
+- [x] The option's labels show each slot's `chosen.stringValue`
+- [x] `set_config_option` to `flash` succeeds, the returned complete state shows `flash`, and later turns use the flash slot, asserted through the scripted loader
+- [x] A scripted resolution divergence produces one `config_option_update` carrying the full option list
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ConfigOptionsTests.swift` — harness-driven
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/ConfigOptionsTests.swift` — harness-driven
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
