@@ -6,10 +6,39 @@ comments:
   id: 01kyyzmzkpvv98r3c4rwpvhrej
   text: 'Description updated by card 2p6913n (plan-only OperationOutcome mapping): the "Status vocabulary" bullet now derives terminal status from `OperationEvent.outcome` via the ONE total `OperationOutcome → ToolCallStatus` function of plan.md §8.4 (upstream: OperationTool `1ad4ydw`, Shelltool `jt19xwc`, MCP `zfp4a3j` — all landed, see §21). Added a matching subtask line and acceptance criterion for full-enum + unknown-value mapping. Structure otherwise unchanged.'
   timestamp: 2026-08-01T15:38:58.038179+00:00
+- actor: claude-code
+  id: 01m1fwtst3cnjk00ncs3yks1p0
+  text: |-
+    Research findings before implementation:
+    - `SessionEvent` (Router, Session/SessionEvent.swift) has the 13 cases the card lists. The enum doc tells a consumer to write a `default` arm. A cross-module switch that lists all 13 cases plus a plain `default` compiles with zero warnings (verified with a two-module scratch compile), because a non-frozen imported enum can gain cases.
+    - `OperationEvent` / `OperationOutcome` live in Extras; Router re-exports them through `Hosting/OperationVocabulary.swift`. `OperationOutcome.rawValue` for `timedOut` is `timed_out`. The memberwise init defaults `outcome` to nil with no validation — the defensive reads the card demands are necessary.
+    - `ShellOutputEvent`, `ShellOutputSnapshot`, `ShellRawOutput` (Multitool, Shell/OutputChunkStream.swift) have public inits, so a test can construct them. `ShellOutputChunkStream.send`/`complete` are internal to Multitool — only the shell runner feeds a real stream. The projection therefore consumes the stream as a generic `AsyncSequence` of `ShellOutputEvent`, and takes a snapshot-provider closure for the settlement replace, so tests can inject both.
+    - Multitool's `FileChange` / `FileChangeKind` are internal, and the files capability posts no operation events with change payloads yet. The move/copy direction mapping is therefore a total function this package owns over its own change description, into ACP `DiffChange` (`DiffPathPairChange {oldPath, path}` for move/copy, `DiffPathChange {path}` for add/delete/modify).
+    - `TurnStart` has an internal init, so a synthetic stream cannot script `.turnStarted`; the harness-driven scripted turn covers that arm.
+    - `ScriptedSessionBackend.transcriptEntries()` returns `[]`, so a harness turn never emits `toolCall`/`toolStatus`/`runSettled`; those arms are driven through `PromptTurn.drive(events:)` with synthetic streams, the pattern PromptTurnTests already uses.
+    - The raw-JSON shape assertion follows the `InitializationTests` pattern: `InMemoryTransport.pair()` + `NDJSONCodec.frames(from:)` reading the agent side's real encoder output.
+    - `PromptTurn` (from ^0svz8qf) holds the inline projection (`TurnProjection` + `handle`) to refactor into `EventProjection.swift`.
+  timestamp: 2026-09-02T01:48:11.971920+00:00
+- actor: claude-code
+  id: 01m1fxxjfnk1faz2jyt7nvsmyv
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift (new: the one mapping — all 13 `SessionEvent` cases plus an `@unknown default` arm, the total `OperationOutcome -> ToolCallStatus` function with `_lost` and the `_` rule, defensive envelope reads, the shell `tool_call_content_chunk` mapping over `ShellOutputEvent` with UTF-8-with-replacement decode and gap notes, the snapshot-based settlement replace, the compaction `usage_update`, and the move/copy `oldPath`/`path` direction mapping), Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift (projection refactored out; `drive` now delegates to `EventProjection`; new `shellSnapshot` seam), Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift (new: 18 tests, one raw-JSON wire-shape test through `InMemoryTransport` + `NDJSONCodec`), Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift (new: shared `SinkRecorder` / `makeSinkedTurn` / `makeEventStream` fixtures), Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift (uses the shared fixtures; the tool-event test now asserts the projected `tool_call_update` order)
+    - notes: TDD followed — the suite failed to compile against the missing API first, then went green. `default` arms on cross-module enum switches produce "default will never be executed" warnings in this build, so every absorber arm is `@unknown default` (still the default arm the `SessionEvent` contract asks for). `swift test`: 197 tests, 0 failures, 1 pre-existing known issue (HarnessSmokeTests).
+    - next: test step, then commit and review
+    task: ^e2xerfm
+  timestamp: 2026-09-02T02:07:11.349877+00:00
+- actor: claude-code
+  id: 01m1fxy7g51v4sb01nmxyz04qx
+  text: |-
+    ### test — green
+    - evidence: swift test — 197 tests in 20 suites passed, 0 failed, 0 skipped; swift build --build-tests exits 0 with zero compiler warnings (the one "missing creator" line is pre-existing build-system noise, not a compiler warning). The "1 known issue" is the pre-existing deliberate `withKnownIssue` self-test in HarnessSmokeTests.
+    - next: commit, then review
+  timestamp: 2026-09-02T02:07:32.869656+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: todo
-position_ordinal: 8c80
+position_column: doing
+position_ordinal: '80'
 title: 'Event projection: Router SessionEvent to session/update, tool_call_update, usage'
 ---
 ## What

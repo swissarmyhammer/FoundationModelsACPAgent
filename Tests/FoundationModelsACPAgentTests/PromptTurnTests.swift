@@ -26,9 +26,6 @@ import Testing
     /// one-line title is observable.
     private static let promptText = "Say hello to the tests\nwith a second line"
 
-    /// A well-formed ULID that names no live session.
-    private static let unknownSessionIdValue = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
-
     // MARK: - Harness
 
     /// One wired prompt-turn fixture: a scripted agent, a recording
@@ -361,50 +358,10 @@ import Testing
     }
 
     // MARK: - The projection core (synthetic event streams)
-
-    /// A sink that collects every update a turn sends.
-    private actor SinkRecorder {
-        /// The collected updates, in send order.
-        private(set) var updates: [SessionUpdate] = []
-
-        /// Appends one update.
-        ///
-        /// - Parameter update: The update to record.
-        func append(_ update: SessionUpdate) {
-            updates.append(update)
-        }
-    }
-
-    /// Makes a turn over a recording sink. The synthetic stream tests
-    /// drive `drive(events:)` directly and never touch a session.
-    private static func makeSinkedTurn() -> (turn: PromptTurn, recorder: SinkRecorder) {
-        let recorder = SinkRecorder()
-        let send: SessionUpdateSink = { update in await recorder.append(update) }
-        let turn = PromptTurn(
-            sessionId: SessionId(rawValue: unknownSessionIdValue),
-            promptBlocks: [],
-            turnState: TurnStateOwner(send: send),
-            send: send,
-            firstActivity: nil)
-        return (turn, recorder)
-    }
-
-    /// Makes a finished synthetic stream of `events`.
-    ///
-    /// - Parameters:
-    ///   - events: The events to yield, in order.
-    ///   - error: The terminal error, or `nil` for a clean finish.
-    /// - Returns: The stream.
-    private static func makeEventStream(
-        _ events: [SessionEvent], throwing error: (any Error)? = nil
-    ) -> AsyncThrowingStream<SessionEvent, Error> {
-        AsyncThrowingStream { continuation in
-            for event in events {
-                continuation.yield(event)
-            }
-            continuation.finish(throwing: error)
-        }
-    }
+    //
+    // The sinked-turn and event-stream fixtures live in
+    // `Support/ProjectionTestSupport.swift`, shared with
+    // `EventProjectionTests`.
 
     /// The number of idle state updates in a raw update sequence.
     private static func idleCount(in updates: [SessionUpdate]) -> Int {
@@ -417,9 +374,9 @@ import Testing
     /// A retry turn carries two `turnEnded` events; the turn still ends
     /// with exactly one `idle`, keyed on stream completion (§8.1).
     @Test func aRetryTurnSendsTwoTurnEndedAndExactlyOneIdle() async throws {
-        let (turn, recorder) = Self.makeSinkedTurn()
+        let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
-            events: Self.makeEventStream([
+            events: makeEventStream([
                 .textDelta("first attempt"),
                 .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
                 .textReset,
@@ -441,9 +398,9 @@ import Testing
     /// `textReset` discards the collected text as a whole-message
     /// replace on the same message id, never as another chunk (§8.3).
     @Test func textResetSendsAWholeMessageReplaceOnTheSameMessageId() async throws {
-        let (turn, recorder) = Self.makeSinkedTurn()
+        let (turn, recorder) = makeSinkedTurn()
         _ = await turn.drive(
-            events: Self.makeEventStream([
+            events: makeEventStream([
                 .textDelta("draft"), .textReset, .textDelta("final"),
             ]))
         let updates = await recorder.updates
@@ -460,12 +417,14 @@ import Testing
         #expect(final.messageId == draft.messageId)
     }
 
-    /// Tool events pass the default arm without breaking the §8.1 order;
-    /// their wire mapping is the §8.4 projection task.
-    @Test func toolEventsPassTheDefaultArmWithoutBreakingTheOrder() async throws {
-        let (turn, recorder) = Self.makeSinkedTurn()
+    /// Tool events project to `tool_call_update` sends in stream order
+    /// (§8.4) and do not disturb the text stream: the two text chunks
+    /// still share one message id, and the turn still ends with one
+    /// `idle`.
+    @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
+        let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
-            events: Self.makeEventStream([
+            events: makeEventStream([
                 .textDelta("a"),
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
@@ -475,15 +434,24 @@ import Testing
         let updates = await recorder.updates
 
         #expect(reason == .endTurn)
-        #expect(updates.map(\.kind) == [.agentMessageChunk, .agentMessageChunk, .stateUpdate])
+        #expect(
+            updates.map(\.kind) == [
+                .agentMessageChunk, .toolCallUpdate, .toolCallUpdate,
+                .agentMessageChunk, .stateUpdate,
+            ])
+        let chunkIds = updates.compactMap { update -> MessageId? in
+            if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
+            return nil
+        }
+        #expect(Set(chunkIds).count == 1)
     }
 
     /// The usage of every `turnEnded` is summed and reported one time,
     /// before the idle terminator (§8.1).
     @Test func turnEndedUsageIsSummedIntoOneUsageUpdate() async throws {
-        let (turn, recorder) = Self.makeSinkedTurn()
+        let (turn, recorder) = makeSinkedTurn()
         _ = await turn.drive(
-            events: Self.makeEventStream([
+            events: makeEventStream([
                 .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
                 .turnEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
             ]))
@@ -502,9 +470,9 @@ import Testing
     /// A thrown `CancellationError` maps to the `cancelled` stop reason;
     /// it never escapes as an error and never reads as `refusal` (§8.2).
     @Test func aThrownCancellationBecomesTheCancelledStopReason() async throws {
-        let (turn, recorder) = Self.makeSinkedTurn()
+        let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
-            events: Self.makeEventStream([.textDelta("partial")], throwing: CancellationError()))
+            events: makeEventStream([.textDelta("partial")], throwing: CancellationError()))
         let updates = await recorder.updates
 
         #expect(reason == .cancelled)
@@ -572,7 +540,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func anUnknownSessionIdAnswersInvalidParamsAndSendsNoUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.endTurn])
-        let bogus = SessionId(rawValue: Self.unknownSessionIdValue)
+        let bogus = SessionId(rawValue: syntheticSessionIdValue)
 
         do {
             _ = try await fixture.harness.connection.prompt(

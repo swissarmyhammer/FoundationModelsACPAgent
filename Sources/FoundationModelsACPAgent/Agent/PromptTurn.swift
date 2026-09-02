@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsMultitool
 import FoundationModelsRouter
 
 /// Why one prompt turn stopped, in this agent's own vocabulary
@@ -67,28 +68,11 @@ struct PromptTurn: Sendable {
     /// The first-activity index write, or `nil` when the record exists.
     let firstActivity: FirstActivity?
 
-    /// The mutable projection state of one turn drive.
-    private struct TurnProjection {
-        /// The one agent message id of the turn, made at the first text
-        /// delta (§8.3: a new id starts a new message).
-        var agentMessageId: MessageId?
-
-        /// The one agent thought id of the turn.
-        var thoughtMessageId: MessageId?
-
-        /// The prompt tokens summed across every `turnEnded` (§8.1).
-        var tokensIn = 0
-
-        /// The completion tokens summed across every `turnEnded`.
-        var tokensOut = 0
-
-        /// The newest context fill. `nan` means "no stamp": send no
-        /// meter for the turn (§8.4).
-        var contextFill = Double.nan
-
-        /// Why the turn stopped.
-        var stop = TurnStop.completed
-    }
+    /// The reader of a settled run's stored output, handed to the
+    /// projection for the §11.6 convergence replace. The default finds
+    /// no run; the catalog wiring supplies the host-owned stream's
+    /// `snapshot(for:)`.
+    var shellSnapshot: ShellSnapshotProvider = { _ in nil }
 
     /// Runs the turn: the echo, the first-activity record, and the
     /// session's event stream to completion (plan.md §8.1).
@@ -97,7 +81,8 @@ struct PromptTurn: Sendable {
     func run(session: any RoutedSession) async {
         await send(
             .userMessage(
-                UserMessage(messageId: Self.makeMessageId(), content: .value(promptBlocks))))
+                UserMessage(
+                    messageId: EventProjection.makeMessageId(), content: .value(promptBlocks))))
         await recordFirstActivity()
         await drive(
             events: session.streamEvents(
@@ -116,87 +101,29 @@ struct PromptTurn: Sendable {
     func drive<Events: AsyncSequence>(
         events: Events
     ) async -> StopReason where Events.Element == SessionEvent {
-        var projection = TurnProjection()
+        var projection = EventProjection(
+            sessionId: sessionId,
+            turnState: turnState,
+            send: send,
+            shellSnapshot: shellSnapshot)
+        var stop = TurnStop.completed
         do {
             for try await event in events {
-                await handle(event, projection: &projection)
+                await projection.project(event)
             }
         } catch {
-            projection.stop = Self.classify(error)
+            stop = Self.classify(error)
         }
         // A cancelled turn does not always throw (§8.6): model work that
         // never checks for cancellation runs to completion. The recorded
         // request still ends the turn as cancelled.
         if await turnState.cancelRequested {
-            projection.stop = .cancelled
+            stop = .cancelled
         }
-        await sendUsage(projection)
-        let reason = Self.stopReason(for: projection.stop)
+        await projection.reportUsage()
+        let reason = Self.stopReason(for: stop)
         await turnState.turnDidEnd(reason: reason)
         return reason
-    }
-
-    // MARK: - The event projection (plan.md §8.4, this task's slice)
-
-    /// Projects one event. This task maps the text stream, the state
-    /// transitions, and the usage; the §8.4 projection task maps the
-    /// tool events, which pass the default arm here.
-    ///
-    /// - Parameters:
-    ///   - event: The event to project.
-    ///   - projection: The turn's mutable projection state.
-    private func handle(_ event: SessionEvent, projection: inout TurnProjection) async {
-        switch event {
-        case .turnStarted:
-            await turnState.turnDidStart()
-        case .textDelta(let text):
-            let messageId = projection.agentMessageId ?? Self.makeMessageId()
-            projection.agentMessageId = messageId
-            await send(
-                .agentMessageChunk(
-                    ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
-        case .textReset:
-            // "Discard the text collected so far" cannot ride as a chunk:
-            // send the whole-message form, which replaces everything
-            // accumulated (§8.3). With no message yet there is nothing
-            // to discard.
-            guard let messageId = projection.agentMessageId else { return }
-            await send(.agentMessage(AgentMessage(messageId: messageId, content: .value([]))))
-        case .reasoningDelta(let text):
-            let messageId = projection.thoughtMessageId ?? Self.makeMessageId()
-            projection.thoughtMessageId = messageId
-            await send(
-                .agentThoughtChunk(
-                    ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
-        case .turnEnded(let usage):
-            // One event per inner generate call, not per turn: sum, and
-            // never send `idle` from here (§8.1).
-            projection.tokensIn += usage.tokensIn
-            projection.tokensOut += usage.tokensOut
-            projection.contextFill = usage.contextFill
-        default:
-            // `SessionEvent` requires a default arm by its own contract.
-            // The tool, compaction, and diagnostic events map in the
-            // §8.4 projection task.
-            turnLogger.debug(
-                "session \(sessionId.rawValue, privacy: .public): unprojected event \(String(describing: event), privacy: .public)"
-            )
-        }
-    }
-
-    /// Sends the one `usage_update` of the turn, from the summed usage.
-    /// A `nan` context fill means "no stamp": no meter goes on the wire
-    /// (plan.md §8.4).
-    ///
-    /// - Parameter projection: The turn's final projection state.
-    private func sendUsage(_ projection: TurnProjection) async {
-        let used = projection.tokensIn + projection.tokensOut
-        guard used > 0, projection.contextFill.isFinite, projection.contextFill > 0 else {
-            return
-        }
-        // `contextFill` is used divided by size, so the size is derived.
-        let size = Int((Double(used) / projection.contextFill).rounded())
-        await send(.usageUpdate(UsageUpdate(size: max(size, used), used: used)))
     }
 
     // MARK: - The first activity (plan.md §9)
@@ -265,12 +192,6 @@ struct PromptTurn: Sendable {
     }
 
     // MARK: - Helpers
-
-    /// Makes one agent-owned message id (plan.md §8.3): a fresh ULID, in
-    /// the id vocabulary the session ids already use.
-    static func makeMessageId() -> MessageId {
-        MessageId(rawValue: ULID.generate().description)
-    }
 
     /// The model prompt of the request: the text blocks joined by
     /// newlines. The remaining block kinds are the content task's slice
