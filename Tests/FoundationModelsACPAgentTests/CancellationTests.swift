@@ -143,7 +143,7 @@ import Testing
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(updates.map(\.update.kind) == Self.uncancelledTurnKinds)
+        #expect(turnUpdates(in: updates).map(\.update.kind) == Self.uncancelledTurnKinds)
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
@@ -161,7 +161,7 @@ import Testing
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(updates.map(\.update.kind) == Self.uncancelledTurnKinds)
+        #expect(turnUpdates(in: updates).map(\.update.kind) == Self.uncancelledTurnKinds)
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
@@ -178,7 +178,7 @@ import Testing
 
         _ = try await fixture.harness.connection.newSession(
             NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: fixture.cwd.path))))
-        #expect(await fixture.collector.updates.isEmpty)
+        #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }
 }

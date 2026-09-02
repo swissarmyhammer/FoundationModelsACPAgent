@@ -64,6 +64,18 @@ extension UpdateCollector {
     }
 }
 
+/// The turn updates of a collected sequence: every notification except
+/// the `available_commands_update` publications, which ride the same
+/// stream at session start and on each registry change (plan.md §14.4).
+/// A turn-order proof filters them out, because their timing is the
+/// registry's, not the turn's.
+///
+/// - Parameter updates: The collected notifications.
+/// - Returns: The notifications that belong to a turn.
+func turnUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSessionNotification] {
+    updates.filter { $0.update.kind != .availableCommandsUpdate }
+}
+
 /// Asserts that `expected` occurs within `sequence` in order, with gaps
 /// permitted — the shape of a turn-order proof over a collected
 /// notification sequence.

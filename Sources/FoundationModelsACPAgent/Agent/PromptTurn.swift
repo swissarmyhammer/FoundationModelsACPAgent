@@ -68,6 +68,11 @@ struct PromptTurn: Sendable {
     /// The first-activity index write, or `nil` when the record exists.
     let firstActivity: FirstActivity?
 
+    /// The expanded command text that replaces the blocks' text as the
+    /// model prompt, or `nil` for a plain prompt (plan.md §14.3). The
+    /// echo always carries the original blocks verbatim.
+    var modelPrompt: String?
+
     /// The reader of a settled run's stored output, handed to the
     /// projection for the §11.6 convergence replace. The default finds
     /// no run; the catalog wiring supplies the host-owned stream's
@@ -86,7 +91,7 @@ struct PromptTurn: Sendable {
         await recordFirstActivity()
         await drive(
             events: session.streamEvents(
-                to: Self.promptText(from: promptBlocks), maxTokens: nil))
+                to: modelPrompt ?? Self.promptText(from: promptBlocks), maxTokens: nil))
     }
 
     /// Drives one event stream to completion and closes the turn: each
@@ -296,7 +301,8 @@ extension RoutedACPAgent {
     /// - Parameter params: The prompt request.
     /// - Returns: The empty acceptance.
     /// - Throws: The order rule's error, `unknownSession` (§10.1),
-    ///   `closedSession` (§10.1), or `busySession` (§7.1).
+    ///   `closedSession` (§10.1), `busySession` (§7.1), or a command
+    ///   refusal (§14.3).
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
         try requireInitialized(before: ACPMethod.sessionPrompt)
         guard let entry = sessions[params.sessionId] else {
@@ -315,18 +321,71 @@ extension RoutedACPAgent {
                 detail: "the agent has no bound connection to notify through")
         }
 
+        // A leading /name goes through the registry before anything
+        // touches the session (plan.md §14.3). It never reaches the
+        // model as a prompt.
+        if let command = CommandDispatch.parseCommand(blocks: params.prompt) {
+            return try await dispatchCommand(
+                command, params: params, entry: entry, connection: connection)
+        }
+
+        let (owner, send) = beginTurn(params: params, connection: connection)
+        return scheduleModelTurn(
+            overridePrompt: nil,
+            params: params, entry: entry, connection: connection, owner: owner, send: send)
+    }
+
+    /// Marks the session busy for one turn: builds the update sink over
+    /// `connection` and installs a fresh turn-state owner as the
+    /// session's active turn.
+    ///
+    /// - Parameters:
+    ///   - params: The prompt request.
+    ///   - connection: The bound connection the sink posts through.
+    /// - Returns: The installed owner and the sink.
+    func beginTurn(
+        params: PromptRequest, connection: AgentSideConnection
+    ) -> (owner: TurnStateOwner, send: SessionUpdateSink) {
         let sessionId = params.sessionId
         let send: SessionUpdateSink = { update in
             await connection.post(update, in: sessionId)
         }
         let owner = TurnStateOwner(send: send)
         sessions[sessionId]?.activeTurn = owner
+        return (owner, send)
+    }
+
+    /// Defers one model turn to run after the `{}` response through
+    /// `afterRespondingToCurrentRequest`, and returns `{}` at once.
+    /// Never a detached task that races the response (plan.md §8.1).
+    ///
+    /// - Parameters:
+    ///   - overridePrompt: The expanded command text that replaces the
+    ///     blocks' text as the model prompt, or `nil` for a plain
+    ///     prompt (§14.3).
+    ///   - params: The prompt request.
+    ///   - entry: The session's table entry.
+    ///   - connection: The bound connection the turn registers with.
+    ///   - owner: The turn-state owner ``beginTurn(params:connection:)``
+    ///     installed.
+    ///   - send: The sink every update of the turn goes to.
+    /// - Returns: The empty acceptance.
+    func scheduleModelTurn(
+        overridePrompt: String?,
+        params: PromptRequest,
+        entry: ActiveSession,
+        connection: AgentSideConnection,
+        owner: TurnStateOwner,
+        send: @escaping SessionUpdateSink
+    ) -> PromptResponse {
+        let sessionId = params.sessionId
         let turn = PromptTurn(
             sessionId: sessionId,
             promptBlocks: params.prompt,
             turnState: owner,
             send: send,
-            firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt))
+            firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
+            modelPrompt: overridePrompt)
         let session = entry.session
         connection.afterRespondingToCurrentRequest {
             await turn.run(session: session)

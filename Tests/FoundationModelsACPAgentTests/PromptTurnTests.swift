@@ -89,7 +89,7 @@ import Testing
         ])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = turnUpdates(in: try await ScriptedTurnFixture.waitForIdle(fixture.collector))
         await fixture.close()
 
         #expect(
@@ -413,7 +413,7 @@ import Testing
             #expect(Self.dataField("sessionId", of: error) == bogus.rawValue)
         }
 
-        #expect(await fixture.collector.updates.isEmpty)
+        #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }
 
@@ -433,7 +433,7 @@ import Testing
             #expect(Self.dataField("reason", of: error) == "closed; resume it first")
         }
 
-        #expect(await fixture.collector.updates.isEmpty)
+        #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }
 

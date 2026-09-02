@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Synchronization
 import os
@@ -65,6 +66,21 @@ public actor RoutedACPAgent: Agent {
     /// Each entry carries its own config, instructions, confinement,
     /// transcript directory, and idle/busy state.
     var sessions: [SessionId: ActiveSession] = [:]
+
+    /// The registered linked `SlashCommandProviding` conformers
+    /// (plan.md §14.1, source 2), in registration order. They join
+    /// every later session's command registry, after the catalog's own
+    /// conformers and before the skills source.
+    var commandProviders: [any SlashCommandProviding] = []
+
+    /// Registers linked slash-command conformers for the sessions
+    /// created after this call. The frontend seam of the code-backed
+    /// lane; the test harness stubs it.
+    ///
+    /// - Parameter providers: The conformers to append, in order.
+    func registerCommandProviders(_ providers: [any SlashCommandProviding]) {
+        commandProviders.append(contentsOf: providers)
+    }
 
     /// The bound wire connection, or `nil` before ``bind(connection:)``.
     ///

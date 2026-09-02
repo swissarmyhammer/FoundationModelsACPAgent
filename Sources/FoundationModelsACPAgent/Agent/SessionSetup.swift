@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
+import FoundationModelsSkills
 
 /// Whether a session can accept a new prompt (plan.md §7.1). `idle` means
 /// "ready for a new prompt"; a `session/prompt` that arrives while the
@@ -56,6 +57,11 @@ struct ActiveSession: Sendable {
     /// `surface.serverPool.shutdownAll()` after the session sweep
     /// (plan.md §11.5).
     let surface: SessionSurface
+
+    /// The session's slash-command registry (plan.md §14.1), assembled
+    /// at session creation. The `prompt()` handler dispatches a leading
+    /// `/name` through it before anything touches the session (§14.3).
+    let commands: CommandRegistry
 
     /// The running turn's state owner, or `nil` when no turn is in
     /// flight (plan.md §8.2). `session/cancel` reaches the turn through
@@ -129,6 +135,9 @@ struct SessionComposition {
     /// The mounted tool surface (plan.md §11.1).
     let surface: SessionSurface
 
+    /// The loaded slash-command registry (plan.md §14.1).
+    let commands: CommandRegistry
+
     /// The user layer root the stack resolved, for the project registry
     /// and the `home` transcript location.
     let userLayerRoot: URL
@@ -201,7 +210,12 @@ extension RoutedACPAgent {
             additionalRoots: additionalRoots,
             transcriptDirectory: session.recordingDirectory,
             surface: composition.surface,
+            commands: composition.commands,
             activeTurn: nil)
+
+        // The command set publishes after the response, and again on
+        // every registry change (plan.md §14.4).
+        publishAvailableCommands(from: composition.commands, sessionId: sessionId)
 
         // TODO(^r7t7xe1): the config-options task fills `configOptions`
         // with the model slot selector; until then the list is honestly
@@ -241,21 +255,77 @@ extension RoutedACPAgent {
             profile: residentProfile,
             clientMCPServers: clientMCPServers)
 
+        // One watched registry serves the preload assembly here and the
+        // slash-command source below (plan.md §14.2). `watch: true` is
+        // what makes its `commandUpdates` non-nil.
+        let skills = ToolCatalog.makeSkillsRegistry(context: context)
         let instructions = try InstructionsAssembler(
             stack: loader.stack, workingDirectory: workingDirectory
-        ).assemble(skills: ToolCatalog.makeSkillsRegistry(context: context))
+        ).assemble(skills: skills)
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
+
+        let commands = CommandRegistry(
+            // TODO(^4fz1sd1): the builtins task fills this list with the
+            // six `.action` builtins; the reserved-name rule is already
+            // enforced by the registry merge.
+            builtins: [],
+            providers: makeCommandProviders(surface: surface, skills: skills),
+            workingDirectory: workingDirectory)
+        await commands.load()
 
         let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
         return SessionComposition(
             configuration: loaded.configuration,
             instructions: instructions.text,
             surface: surface,
+            commands: commands,
             userLayerRoot: userLayerRoot,
             transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
                 workingDirectory: workingDirectory,
                 name: name,
                 userDirectory: userLayerRoot))
+    }
+
+    /// Assembles the registry's later sources in precedence order
+    /// (plan.md §14.1): the catalog's linked `SlashCommandProviding`
+    /// conformers first, then the registered providers, then the skills
+    /// source last, so skills win a non-builtin collision.
+    ///
+    /// - Parameters:
+    ///   - surface: The mounted tool surface whose conformers join.
+    ///   - skills: The session's skills registry, or `nil` when the
+    ///     `skills:` section is off.
+    /// - Returns: The providers, in precedence order.
+    private func makeCommandProviders(
+        surface: SessionSurface, skills: SkillsRegistry?
+    ) -> [any SlashCommandProviding] {
+        var providers = surface.tools.compactMap { $0 as? any SlashCommandProviding }
+        providers.append(contentsOf: commandProviders)
+        if let skills {
+            providers.append(SkillCommandSource(registry: skills))
+        }
+        return providers
+    }
+
+    /// Publishes the session's command set at session start and on
+    /// every registry change (plan.md §14.4): the initial publication
+    /// goes out after the `session/new` response, and each provider
+    /// update republishes through the same sink.
+    ///
+    /// - Parameters:
+    ///   - commands: The session's loaded registry.
+    ///   - sessionId: The session the updates belong to.
+    func publishAvailableCommands(from commands: CommandRegistry, sessionId: SessionId) {
+        guard let connection = boundConnection else { return }
+        connection.afterRespondingToCurrentRequest {
+            await commands.beginPublishing { commandSet in
+                await connection.post(
+                    .availableCommandsUpdate(
+                        AvailableCommandsUpdate(
+                            availableCommands: CommandRegistry.availableCommands(for: commandSet))),
+                    in: sessionId)
+            }
+        }
     }
 }
