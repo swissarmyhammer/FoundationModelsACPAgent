@@ -35,10 +35,33 @@ comments:
     - evidence: swift test — 197 tests in 20 suites passed, 0 failed, 0 skipped; swift build --build-tests exits 0 with zero compiler warnings (the one "missing creator" line is pre-existing build-system noise, not a compiler warning). The "1 known issue" is the pre-existing deliberate `withKnownIssue` self-test in HarnessSmokeTests.
     - next: commit, then review
   timestamp: 2026-09-02T02:07:32.869656+00:00
+- actor: claude-code
+  id: 01m1fxzcx65ngt7sbzvqbmm4mz
+  text: |-
+    ### commit — changed
+    - evidence: 0d5a878 feat(agent): project every Router SessionEvent to the wire in EventProjection (7 files, +1328/−162; local only, not pushed)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-02T02:08:11.174679+00:00
+- actor: claude-code
+  id: 01m1fy539gd1f6gdvkvzy8rvkw
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — counts {findings: 0, confirmed: 0, refuted: 0}; 5 files reviewed, 2 .kanban files excluded by .reviewignore. No prior Review Findings sections. Task moved to done.
+    - next: none
+  timestamp: 2026-09-02T02:11:17.936668+00:00
+- actor: claude-code
+  id: 01m1fy5btm223frm9ps1618eav
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed (EventProjection.swift new; PromptTurn.swift refactored; EventProjectionTests.swift + ProjectionTestSupport.swift new; PromptTurnTests.swift updated)
+    - test: green (swift test — 197 tests in 20 suites, 0 failed, 0 skipped, zero compiler warnings)
+    - commit: 0d5a878
+    - review: clean (review sha HEAD~1..HEAD — 0 findings; task moved to done)
+  timestamp: 2026-09-02T02:11:26.676148+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8e80'
 title: 'Event projection: Router SessionEvent to session/update, tool_call_update, usage'
 ---
 ## What
