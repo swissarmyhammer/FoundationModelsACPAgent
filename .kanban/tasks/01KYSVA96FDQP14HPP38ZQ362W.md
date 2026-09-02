@@ -76,10 +76,23 @@ comments:
     - evidence: ee2b135 refactor(tests): name the poll-interval milliseconds in the shared fixture
     - next: review
   timestamp: 2026-09-02T02:32:14.184741+00:00
+- actor: claude-code
+  id: 01m1fze638pb41sj0f5ewwwzkr
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD on f002989 — 0 findings; the one prior finding is checked. Task moved to done.
+    - next: none
+
+    ### finish iteration 2 — clean
+    - implement: changed (named the poll-interval milliseconds constant)
+    - test: green (swift test — 204 tests, 21 suites, 0 failed, 0 skipped)
+    - commit: f002989
+    - review: clean (0 findings; prior finding checked; task moved to done)
+  timestamp: 2026-09-02T02:33:44.296576+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: 8f80
 title: 'Cancellation: session/cancel confirmation semantics'
 ---
 ## What
