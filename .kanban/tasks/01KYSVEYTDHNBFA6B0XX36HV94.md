@@ -64,11 +64,27 @@ comments:
     - commit: ef26270
     - review: findings (1 — Examples/acp-agent/main.swift:112 swift/fluent-usage)
   timestamp: 2026-09-02T06:28:50.701487+00:00
+- actor: claude-code
+  id: 01m1gd3hjjpdaswna5t3tk6jst
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c32b87e) — 0 findings, 0 confirmed, 0 refuted; the one prior finding is checked
+    - next: task moved to done
+  timestamp: 2026-09-02T06:32:35.666867+00:00
+- actor: claude-code
+  id: 01m1gd3q4th1jnxb6m0g8f02mm
+  text: |-
+    ### finish iteration 2 — done
+    - implement: changed (Examples/acp-agent/main.swift — labeled the connection parameter, the one review finding)
+    - test: green (277 passed ungated with the tier-3 suite skipped; gated StdioContract passed in 74.3 s with ACP_TIER3=1)
+    - commit: c32b87e
+    - review: clean (0 findings on HEAD~1..HEAD; prior finding checked; task moved to done)
+  timestamp: 2026-09-02T06:32:41.370327+00:00
 depends_on:
 - 01KYSVEH19FKV250W4KQG1RFCT
 - 01KYSVCAH5MAEMCH4R5A8MNCSF
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9680'
 title: Examples/acp-agent and the gated tier-3 stdio contract test
 ---
 ## What
@@ -120,4 +136,4 @@ Plan.md §20.2 and §17. One executable, two purposes: the family-convention exa
 > ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
 > missing-docs-swift found no file at Tests/FoundationModelsACPAgentTests/MCPTestServerLocator.swift, so its declarations are unread
 
-- [ ] `Examples/acp-agent/main.swift:112` `swift/fluent-usage` — First parameter of a non-conversion function should be labeled. The fluent-usage rule requires: 'Omit the first argument label only for value-preserving conversions. Otherwise, label it.' This function does not perform a type conversion, so the unlabeled parameter violates the rule. Change to `func holdOpenUntilTerminated(connection: AgentSideConnection) async {`. Update the call site at line 118 to `await holdOpenUntilTerminated(connection: connection)`.
+- [x] `Examples/acp-agent/main.swift:112` `swift/fluent-usage` — First parameter of a non-conversion function should be labeled. The fluent-usage rule requires: 'Omit the first argument label only for value-preserving conversions. Otherwise, label it.' This function does not perform a type conversion, so the unlabeled parameter violates the rule. Change to `func holdOpenUntilTerminated(connection: AgentSideConnection) async {`. Update the call site at line 118 to `await holdOpenUntilTerminated(connection: connection)`.
