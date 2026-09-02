@@ -1,11 +1,37 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1g5arhzrj1ehj1h5t6f6naf
+  text: |-
+    Research done. The discoveries:
+
+    - The read verb `tools.files.read` is internal in Multitool, but `MultiTool.Registry.tools` is a public map keyed by path (`"files.read"`), and `ToolInvoker.invoke(_:content:)` is a public door that opens the existential. `ToolCatalogTests.invokeRead` already uses this pattern and decodes the wire JSON `{correction, lines}` through `ConvertibleToGeneratedContent.generatedContent.jsonString`.
+    - `SessionSurface` (ToolCatalog.swift) keeps only the mounted session tools and the pool. The plan: add the read verb tool to `SessionSurface`, taken from `built.registry.tools["files.read"]` in `sessionSurface(context:)`. A disabled files section gives `nil`, and the resolver then refuses with a reason.
+    - `PromptTurn.run` computes the model prompt with `promptText(from:)` (text blocks only). The plan: a new `PromptContent` type folds text, resolved resource links, and embedded resources into the model prompt; `PromptTurn` calls it when no command override is set.
+    - Wire facts: ACP `EmbeddedResourceResource` is a typealias of `JSONValue`, so the fold pattern-matches the `text`/`blob`/`uri` members. `PromptCapabilities(audio:embeddedContext:image:)` — all optional markers. MCP `Tool.Content` cases: text, image, audio, resource(Resource.Content: uri/mimeType/text?/blob?), resourceLink. ACP `Role` has `.unknown(String)`; MCP `Audience` is user/assistant only.
+    - The scripted backend (`ScriptedSessionBackend`) drops the prompt it receives. The harness test needs a small additive prompt recorder in the scripted seam to assert what the backend received.
+    - The initialize advertisement lives in `Initialization.swift` (`advertisedCapabilities`), which builds `PromptCapabilities()` inline today. It will reference the one `PromptContent` advertisement instead.
+  timestamp: 2026-09-02T04:16:43.583523+00:00
+- actor: claude-code
+  id: 01m1g64wx241xtc5p5097mk30m
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsACPAgent/Agent/PromptContent.swift (new), Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift, Sources/FoundationModelsACPAgent/Agent/Initialization.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Package.swift, Tests/FoundationModelsACPAgentTests/PromptContentTests.swift (new), Tests/FoundationModelsACPAgentTests/Support/ScriptedModel.swift, Tests/FoundationModelsACPAgentTests/InitializationTests.swift
+    - TDD: the 26 new tests failed first (the symbols did not exist), then the implementation made them pass.
+    - The InitializationTests wire assertion changed from a bare `{}` prompt marker to `{"embeddedContext": {}}` — the card requires the honest advertisement, so the old assertion described the old behavior.
+    - next: test
+
+    ### test — green
+    - evidence: swift test — 261 passed, 0 failed, 0 skipped (1 pre-existing `withKnownIssue` self-test in HarnessSmokeTests reports as passed). Zero compiler warnings from this package; the one SwiftPM notice about the prebuilt mlx-swift bundle predates this task and comes from an upstream binary artifact.
+    - next: commit
+  timestamp: 2026-09-02T04:31:00.002320+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
 - 01KYSV76CBJV66C92Z0EM2S73K
-position_column: todo
-position_ordinal: '9580'
+position_column: doing
+position_ordinal: '80'
 title: 'Prompt content: honest capabilities and resource_link resolution'
 ---
 ## What

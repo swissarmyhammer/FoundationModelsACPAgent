@@ -135,12 +135,13 @@ let package = Package(
             dependencies: familyProducts + [mcpSDKProduct]
         ),
         // The import smoke suite. It links the client driver as well — see
-        // `clientDependencyName` — and Multitool's test-support products —
-        // see `multitoolTestProducts`.
+        // `clientDependencyName` — Multitool's test-support products — see
+        // `multitoolTestProducts` — and the MCP sdk, whose tool-result
+        // content types the passthrough-map tests construct (plan.md §12).
         .testTarget(
             name: testTargetName,
             dependencies: [.target(name: packageName), makeFamilyProduct(name: clientDependencyName)]
-                + familyProducts + multitoolTestProducts
+                + familyProducts + multitoolTestProducts + [mcpSDKProduct]
         ),
     ]
 )

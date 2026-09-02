@@ -19,14 +19,27 @@ public struct SessionSurface: Sendable {
     /// The pool the session lifecycle shuts down after the session sweep.
     public let serverPool: MCPServerPool
 
+    /// The mounted `tools.files.read` verb, or `nil` when the files
+    /// section is off. The prompt turn's resource-link resolver reads
+    /// through it (plan.md §12), so a linked file is bounded by the same
+    /// root set the model reads under.
+    public let filesReadVerb: (any FoundationModels.Tool)?
+
     /// Makes a session surface.
     ///
     /// - Parameters:
     ///   - tools: The composed tools, in mount order.
     ///   - serverPool: The pool the session lifecycle shuts down.
-    public init(tools: [any FoundationModels.Tool], serverPool: MCPServerPool) {
+    ///   - filesReadVerb: The mounted read verb, or `nil` when the
+    ///     files section is off.
+    public init(
+        tools: [any FoundationModels.Tool],
+        serverPool: MCPServerPool,
+        filesReadVerb: (any FoundationModels.Tool)? = nil
+    ) {
         self.tools = tools
         self.serverPool = serverPool
+        self.filesReadVerb = filesReadVerb
     }
 }
 
@@ -49,6 +62,10 @@ public enum ToolCatalog {
     /// for the user layer and `<workingDirectory>/.skills` for the
     /// project layer.
     static let skillsDotfolderName = "skills"
+
+    /// The surface path of the files read verb, the door the prompt
+    /// turn's resource-link resolver reads through (plan.md §12).
+    static let filesReadVerbPath = "files.read"
 
     /// One built registry and the MCP composition around it: the recorded
     /// registrations for a rebuild, the pool that owns the servers, and
@@ -99,7 +116,10 @@ public enum ToolCatalog {
         await MCPComposition.startSurfaceRefresher(
             source: built.source, staging: mounted.staging, servers: built.mcpServers,
             pool: built.pool)
-        return SessionSurface(tools: tools, serverPool: built.pool)
+        return SessionSurface(
+            tools: tools,
+            serverPool: built.pool,
+            filesReadVerb: built.registry.tools[Self.filesReadVerbPath])
     }
 
     /// Builds the Multitool registry over the enabled capability modules.

@@ -104,7 +104,8 @@ import Testing
     // MARK: - Capabilities
 
     /// The response carries `capabilities.session` with the four markers as
-    /// `{}` objects, `mcp` with both transports, and nothing else: no auth
+    /// objects, `mcp` with both transports, `prompt` with the honest
+    /// `embeddedContext` marker (plan.md §12), and nothing else: no auth
     /// and no permission capability (plan.md §5, §11.7).
     @Test(.timeLimit(.minutes(1)))
     func advertisedCapabilitiesCarryTheFourSessionMarkersAsObjects() async throws {
@@ -121,7 +122,7 @@ import Testing
         #expect(Set(session.keys) == ["additionalDirectories", "delete", "mcp", "prompt"])
         #expect(session["additionalDirectories"] == .object([:]))
         #expect(session["delete"] == .object([:]))
-        #expect(session["prompt"] == .object([:]))
+        #expect(session["prompt"] == .object(["embeddedContext": .object([:])]))
         #expect(session["mcp"] == .object(["stdio": .object([:]), "http": .object([:])]))
         #expect(response.capabilities.auth == nil)
     }

@@ -74,6 +74,20 @@ enum ScriptedFailure: Sendable, Equatable {
     }
 }
 
+/// Records every model prompt the scripted backend receives, so a
+/// harness test asserts what the model was given (plan.md §20.1).
+actor PromptRecorder {
+    /// The recorded prompts, in arrival order.
+    private(set) var prompts: [String] = []
+
+    /// Records one prompt.
+    ///
+    /// - Parameter prompt: The prompt the backend received.
+    func record(_ prompt: String) {
+        prompts.append(prompt)
+    }
+}
+
 /// The failure of a scripted step.
 enum ScriptedModelError: Error, Equatable {
     /// A `toolCall` step named a tool the session was not handed. The
@@ -102,17 +116,25 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// The tools the session was handed; `toolCall` steps invoke them.
     private let tools: [any Tool]
 
+    /// The recorder each received prompt goes to, or `nil` when the
+    /// test does not observe the prompt.
+    private let recorder: PromptRecorder?
+
     /// Creates a backend that plays `script` against `tools`.
     ///
     /// - Parameters:
     ///   - script: The steps to play, in order.
     ///   - tools: The tools `toolCall` steps invoke.
-    init(script: [ScriptedTurnStep], tools: [any Tool]) {
+    ///   - recorder: The recorder each received prompt goes to, or
+    ///     `nil` to record nothing.
+    init(script: [ScriptedTurnStep], tools: [any Tool], recorder: PromptRecorder? = nil) {
         self.script = script
         self.tools = tools
+        self.recorder = recorder
     }
 
     func respond(to prompt: String, maxTokens: Int?) async throws -> String {
+        await recorder?.record(prompt)
         var text = ""
         try await playScript { text += $0 }
         return text
@@ -128,6 +150,7 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
         AsyncThrowingStream { continuation in
             let playback = Task {
                 do {
+                    await recorder?.record(prompt)
                     try await playScript { continuation.yield($0) }
                     continuation.finish()
                 } catch {
@@ -139,7 +162,7 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     func makeFork() -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: tools)
+        ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
     }
 
     func transcriptEntries() -> [Transcript.Entry] {
@@ -213,24 +236,28 @@ struct ScriptedLLMContainer: LoadedLLMContainer {
     /// The script every session plays.
     let script: [ScriptedTurnStep]
 
+    /// The recorder each session's prompts go to, or `nil` to record
+    /// nothing.
+    var recorder: PromptRecorder?
+
     func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: [])
+        ScriptedSessionBackend(script: script, tools: [], recorder: recorder)
     }
 
     func makeSession(
         instructions: String?, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: tools)
+        ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
     }
 
     func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: [])
+        ScriptedSessionBackend(script: script, tools: [], recorder: recorder)
     }
 
     func makeSession(
         transcript: Transcript, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: tools)
+        ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
     }
 }
 
@@ -240,10 +267,15 @@ struct ScriptedLLMContainer: LoadedLLMContainer {
 /// fixtures already have — so a scripted test downloads nothing and
 /// loads nothing.
 ///
-/// - Parameter script: The steps every session plays.
+/// - Parameters:
+///   - script: The steps every session plays.
+///   - recorder: The recorder each received prompt goes to, or `nil`
+///     to record nothing.
 /// - Returns: The loader to inject.
-func makeScriptedModelLoader(script: [ScriptedTurnStep]) -> StubModelLoader {
+func makeScriptedModelLoader(
+    script: [ScriptedTurnStep], recorder: PromptRecorder? = nil
+) -> StubModelLoader {
     var loader = StubModelLoader()
-    loader.makeLLMContainer = { _ in ScriptedLLMContainer(script: script) }
+    loader.makeLLMContainer = { _ in ScriptedLLMContainer(script: script, recorder: recorder) }
     return loader
 }

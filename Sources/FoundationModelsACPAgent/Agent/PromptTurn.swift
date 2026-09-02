@@ -79,8 +79,16 @@ struct PromptTurn: Sendable {
     /// `snapshot(for:)`.
     var shellSnapshot: ShellSnapshotProvider = { _ in nil }
 
+    /// The resolver of the prompt's resource links (plan.md §12). The
+    /// default holds no read verb and refuses every link with a reason;
+    /// the scheduling wiring supplies the session surface's verb.
+    var contentResolver = ResourceLinkResolver(readVerb: nil)
+
     /// Runs the turn: the echo, the first-activity record, and the
-    /// session's event stream to completion (plan.md §8.1).
+    /// session's event stream to completion (plan.md §8.1). A plain
+    /// prompt folds through `PromptContent` (§12); an expanded command
+    /// keeps its override text (§14.3). The echo always carries the
+    /// original blocks verbatim.
     ///
     /// - Parameter session: The Router session that generates the turn.
     func run(session: any RoutedSession) async {
@@ -89,9 +97,14 @@ struct PromptTurn: Sendable {
                 UserMessage(
                     messageId: EventProjection.makeMessageId(), content: .value(promptBlocks))))
         await recordFirstActivity()
-        await drive(
-            events: session.streamEvents(
-                to: modelPrompt ?? Self.promptText(from: promptBlocks), maxTokens: nil))
+        let prompt: String
+        if let modelPrompt {
+            prompt = modelPrompt
+        } else {
+            prompt = await PromptContent.modelPrompt(
+                from: promptBlocks, resolver: contentResolver)
+        }
+        await drive(events: session.streamEvents(to: prompt, maxTokens: nil))
     }
 
     /// Drives one event stream to completion and closes the turn: each
@@ -198,12 +211,13 @@ struct PromptTurn: Sendable {
 
     // MARK: - Helpers
 
-    /// The model prompt of the request: the text blocks joined by
-    /// newlines. The remaining block kinds are the content task's slice
-    /// (plan.md §12); the echo still carries every block verbatim.
+    /// The plain text of the request: the text blocks joined by
+    /// newlines. The session title derives from it (plan.md §4.6); the
+    /// model prompt goes through `PromptContent.modelPrompt` instead,
+    /// which also folds resource links and embedded resources (§12).
     ///
     /// - Parameter blocks: The request's content blocks.
-    /// - Returns: The prompt text.
+    /// - Returns: The text.
     static func promptText(from blocks: [ContentBlock]) -> String {
         blocks.compactMap { block in
             if case .text(let content) = block {
@@ -385,7 +399,8 @@ extension RoutedACPAgent {
             turnState: owner,
             send: send,
             firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
-            modelPrompt: overridePrompt)
+            modelPrompt: overridePrompt,
+            contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb))
         let session = entry.session
         connection.afterRespondingToCurrentRequest {
             await turn.run(session: session)

@@ -78,8 +78,9 @@ extension RoutedACPAgent {
     ///
     /// Each marker is an object, never a boolean: `{}` means supported, and
     /// an omitted member means not supported. `capabilities.session` carries
-    /// `prompt` (the baseline: text and resource links, plan.md §12), `mcp`
-    /// with both `stdio` and `http` (§11.5), `delete` (§10.2), and
+    /// `prompt` — the one `PromptContent` advertisement, next to the
+    /// consumption code it describes (plan.md §12) — `mcp` with both
+    /// `stdio` and `http` (§11.5), `delete` (§10.2), and
     /// `additionalDirectories` (§7.2). There is no `auth` member (§6), and
     /// there is no permission capability: the sandbox is the only gate
     /// (§11.7).
@@ -88,7 +89,7 @@ extension RoutedACPAgent {
             additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
             delete: SessionDeleteCapabilities(),
             mcp: MCPCapabilities(http: MCPHTTPCapabilities(), stdio: MCPStdioCapabilities()),
-            prompt: PromptCapabilities()))
+            prompt: PromptContent.advertisedCapabilities))
 
     /// Negotiates the protocol version and the capabilities (plan.md §5).
     ///
