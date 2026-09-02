@@ -77,7 +77,7 @@ import Testing
     /// A client that sends `1` gets `2` back in a normal, successful
     /// response, not an error (plan.md §5).
     @Test func initializeWithVersion1AnswersVersion2Successfully() async throws {
-        let agent = try AgentClientHarness.makeAgent()
+        let agent = try await AgentClientHarness.makeAgent()
         let response = try await agent.initialize(
             AgentClientHarness.makeInitializeRequest(protocolVersion: Self.protocolVersion1))
 
@@ -131,7 +131,7 @@ import Testing
     /// Before `initialize`, nothing is negotiated. An advertised elicitation
     /// capability is read as supported; an absent one as unsupported.
     @Test func clientCapabilitiesAreReadWithAbsentMeaningUnsupported() async throws {
-        let agent = try AgentClientHarness.makeAgent()
+        let agent = try await AgentClientHarness.makeAgent()
         #expect(await agent.negotiatedClientCapabilities == nil)
 
         _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
@@ -150,7 +150,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func malformedClientCapabilitiesDegradeToSupportsNothing() async throws {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agent = try AgentClientHarness.makeAgent()
+        let agent = try await AgentClientHarness.makeAgent()
         let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
 

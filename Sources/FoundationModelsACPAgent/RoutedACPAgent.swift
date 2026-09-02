@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsRouter
 import os
 
 /// The logger of the session surface: the order rule and the ignored
@@ -30,6 +31,15 @@ public actor RoutedACPAgent: Agent {
     /// the wire: `initialize` reports ``implementation`` instead (§5).
     public let name: DotfolderName
 
+    /// The resident profile, resolved at construction and held strongly
+    /// for the life of the agent (plan.md §1).
+    ///
+    /// Every `RoutedModel` holds its owning profile weakly, and each
+    /// public `makeSession` traps once the profile is released; only the
+    /// vended session retains it. This reference keeps the resident
+    /// models alive between sessions.
+    public nonisolated let residentProfile: LanguageModelProfile
+
     /// The client's capabilities as read at the latest `initialize`, or
     /// `nil` before the first one (plan.md §5).
     ///
@@ -37,12 +47,39 @@ public actor RoutedACPAgent: Agent {
     /// came before `initialize`, and is refused.
     public internal(set) var negotiatedClientCapabilities: NegotiatedClientCapabilities?
 
-    /// Creates an agent for the dotfolder `name`.
+    /// Creates an agent for the dotfolder `name` and resolves the
+    /// configured profile to a resident one (plan.md §1: `config →
+    /// ProfileDefinition → Router.resolve → resident profile`).
     ///
-    /// - Parameter name: The dotfolder name the frontend chose (plan.md
-    ///   §2.1).
-    public init(name: DotfolderName) {
+    /// The default `configuration` is the in-code layer-1 default (plan.md
+    /// §2.2): a coding profile that operates on a 16 GB machine.
+    ///
+    /// - Parameters:
+    ///   - name: The dotfolder name the frontend chose (plan.md §2.1). It
+    ///     is also the fallback for the profile's name.
+    ///   - router: The router that resolves the profile and owns its
+    ///     residency.
+    ///   - configuration: The agent configuration whose `profile` section
+    ///     is resolved.
+    ///   - reporting: The UI-bindable resolution progress, or `nil` for a
+    ///     fresh unobserved one.
+    /// - Throws: `ProfileResolutionError` when the profile does not
+    ///   resolve.
+    public init(
+        name: DotfolderName,
+        router: Router,
+        configuration: AgentConfiguration = AgentConfiguration(),
+        reporting: ResolutionProgress? = nil
+    ) async throws {
         self.name = name
+        let progress: ResolutionProgress
+        if let reporting {
+            progress = reporting
+        } else {
+            progress = await ResolutionProgress()
+        }
+        residentProfile = try await configuration.profile.resolveResident(
+            fallbackName: name, router: router, reporting: progress)
     }
 
     // MARK: - The order rule

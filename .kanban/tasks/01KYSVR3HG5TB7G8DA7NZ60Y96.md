@@ -1,11 +1,50 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fr68yneh3d4wvr1d1f3vpf
+  text: |-
+    Research complete. Facts found:
+    - Upstream `ProfileDefinition` (../FoundationModelsRouter/Sources/FoundationModelsRouter/Core/ProfileDefinition.swift) agrees with the card: `init(name:description:standard:flash:embedding:context:)`, `context` default 8192, `nil` opts into ladder derivation.
+    - `Router.resolve(profile:reporting:)` is public and throws `ResolutionFailure` (internal) or loader errors. `ResolutionProgress` is `@MainActor`; its `init` is isolated, so a nonisolated caller must `await` its construction.
+    - `ProfileConfiguration` (Configuration/AgentConfiguration.swift) already holds the layer-1 default coding profile for a 16 GB machine and has no `context` key, per plan §2.4.
+    - `LanguageModelProfile` is `Sendable` with `let standard/flash/embedding` handles; `RoutedModel` holds the profile weakly and `makeSession` traps when it is released. `RoutedSession` exposes `nonisolated var profile`.
+    - Tests already have `StubProfileFixtures.swift` (StubModelLoader, StubMachine, StubMetadata) and `Support/ScriptedModel.swift`. `AgentClientHarness.makeAgent()` is the one construction path in the tests; three call sites in InitializationTests plus `makeParts()`.
+    Plan of work:
+    - Add `Configuration/ProfileResolution.swift`: map `ProfileConfiguration` to `ProfileDefinition` (configured name wins, dotfolder name is the fallback, `context: nil`), resolve through `Router.resolve(profile:reporting:)`, catch `any Error`, and wrap it in a readable `ProfileResolutionError`.
+    - Replace `RoutedACPAgent.init(name:)` with an async throwing `init(name:router:configuration:reporting:)` that resolves the resident profile at construction and holds it strongly in a `let`.
+    - Update the test harness to construct through a stub router; write ProfileResolutionTests first (TDD).
+  timestamp: 2026-09-02T00:27:05.045839+00:00
+- actor: claude-code
+  id: 01m1frsr9q80bcvyaw6t6wtwqq
+  text: |-
+    Implementation landed with TDD (RED observed as a compile failure that named the missing API, then GREEN):
+    - `Sources/FoundationModelsACPAgent/Configuration/ProfileResolution.swift` — `ProfileResolutionError` (readable message with the profile name), `ProfileConfiguration.definition(fallbackName:)` (configured name wins, dotfolder fallback, `context: nil` for the ladder), and `ProfileConfiguration.resolveResident(fallbackName:router:reporting:)` which calls `Router.resolve(profile:reporting:)` and catches `any Error`.
+    - `Sources/FoundationModelsACPAgent/RoutedACPAgent.swift` — the old sync `init(name:)` is replaced by `init(name:router:configuration:reporting:) async throws`, which resolves at construction; the resident profile is a strong `nonisolated let residentProfile`.
+    - `Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift` — 8 tests: the mapping matrix (name fallback, configured name, three candidates through the YAML decode with `stringValue` and the `@` separator, description and each slot, `context == nil`), construction over the scripted loader, the readable failure report through `FailingModelLoader`, and two sequential sessions after close, with `session.profile === agent.residentProfile`.
+    - `Tests/.../StubProfileFixtures.swift` — new shared `makeStubRouter(cacheDirectory:recordingsDirectory:loader:)`; `makeStubProfile` now uses it, so router construction is not copied.
+    - `Tests/.../Support/Harness.swift` and `InitializationTests.swift` — `makeAgent()` is now async over the stub router; three call sites updated.
+    `swift test`: 152 tests in 17 suites pass; the one "known issue" is the pre-existing deliberate `withKnownIssue` self-test in HarnessSmokeTests.
+
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/Configuration/ProfileResolution.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift, Tests/FoundationModelsACPAgentTests/StubProfileFixtures.swift, Tests/FoundationModelsACPAgentTests/Support/Harness.swift, Tests/FoundationModelsACPAgentTests/InitializationTests.swift
+    - next: test, then commit and review
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:37:43.351051+00:00
+- actor: claude-code
+  id: 01m1frvtr52wt9kn31qt8aqjph
+  text: |-
+    ### test — green
+    - evidence: swift test (clean rebuild) — 152 tests in 17 suites passed, 0 failed, 0 skipped; zero warnings in this package's own Sources/ and Tests/ (the only warnings come from the vendored mlx-swift checkout); the one known issue is the deliberate withKnownIssue self-test in HarnessSmokeTests
+    - next: commit, then review
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:38:51.397968+00:00
 depends_on:
 - 01KYSV5606NB4K39ZXQYPBH0A9
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
-position_column: todo
-position_ordinal: 9b80
+position_column: doing
+position_ordinal: '80'
 title: 'Profile resolution: ProfileDefinition from config, name fallback, resident profile'
 ---
 ## What
@@ -39,23 +78,23 @@ Resolve with **`Router.resolve(profile:reporting:)`**. The label is `profile:`. 
 
 **Error handling, corrected.** An earlier draft said no Router error type can be caught. That is wrong. `ResolutionFailure` — the error `resolve` throws when no candidate trio fits — IS internal, so catch `any Error` on the resolve path and report its message. But Router does publish catchable error types, and later tasks use them: `GenerationError`, `GuidedRequestError`, `ToolMountError`, `DiscoveryPrimingFailure`, and the `LostRunError` protocol. `LostRunError` matters most: a tool error that conforms makes the run settle `.lost`.
 
-- [ ] `profile` section → `ProfileDefinition` mapping, with candidate lists
-- [ ] `profile.name` → `<name>` fallback
-- [ ] Resolution through `Router.resolve(profile:reporting:)` at construction
-- [ ] The resident profile is held strongly and reaches session creation
-- [ ] The resolve path catches `any Error` and reports the message
+- [x] `profile` section → `ProfileDefinition` mapping, with candidate lists
+- [x] `profile.name` → `<name>` fallback
+- [x] Resolution through `Router.resolve(profile:reporting:)` at construction
+- [x] The resident profile is held strongly and reaches session creation
+- [x] The resolve path catches `any Error` and reports the message
 
 ## Acceptance Criteria
-- [ ] With no `profile.name` configured, the resolved profile name equals the dotfolder name; a configured name wins
-- [ ] A config listing three `standard` candidates produces a `ProfileDefinition` with three `ModelRef` values, asserted by `stringValue`
-- [ ] `context` omitted from config produces `nil`, not 8192, so the ladder applies
-- [ ] Agent construction with the default configuration resolves and touches no network, observed through the scripted loader
-- [ ] A scripted resolution failure surfaces as a reported error with a readable message
-- [ ] Two sequential sessions both construct, which proves the profile stayed alive and no `preconditionFailure` fired
+- [x] With no `profile.name` configured, the resolved profile name equals the dotfolder name; a configured name wins
+- [x] A config listing three `standard` candidates produces a `ProfileDefinition` with three `ModelRef` values, asserted by `stringValue`
+- [x] `context` omitted from config produces `nil`, not 8192, so the ladder applies
+- [x] Agent construction with the default configuration resolves and touches no network, observed through the scripted loader
+- [x] A scripted resolution failure surfaces as a reported error with a readable message
+- [x] Two sequential sessions both construct, which proves the profile stayed alive and no `preconditionFailure` fired
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift` — the mapping matrix, the fallback, the failure path, and the construction path with the injected loader
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift` — the mapping matrix, the fallback, the failure path, and the construction path with the injected loader
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

@@ -162,6 +162,30 @@ struct StubMetadata: MetadataSource {
     }
 }
 
+/// Makes a router over the stub components: a large machine, tiny
+/// metadata, and a loader that downloads nothing.
+///
+/// - Parameters:
+///   - cacheDirectory: Where the router caches. A fresh temporary
+///     directory per call keeps runs of one suite apart.
+///   - recordingsDirectory: The durable transcripts root, or `nil` (the
+///     default) to record nothing.
+///   - loader: The loader the router loads through.
+/// - Returns: The router to resolve against.
+func makeStubRouter(
+    cacheDirectory: URL,
+    recordingsDirectory: URL? = nil,
+    loader: any ModelLoader = StubModelLoader()
+) -> Router {
+    Router(
+        cacheDir: cacheDirectory,
+        recordingsDir: recordingsDirectory,
+        probe: StubMachine(),
+        metadataSource: StubMetadata(),
+        loader: loader
+    )
+}
+
 /// Resolves a profile over the stub models, resident and generation-free.
 ///
 /// - Parameters:
@@ -180,11 +204,9 @@ func makeStubProfile(
     recordingsDirectory: URL? = nil,
     loader: StubModelLoader = StubModelLoader()
 ) async throws -> LanguageModelProfile {
-    let router = Router(
-        cacheDir: cacheDirectory,
-        recordingsDir: recordingsDirectory,
-        probe: StubMachine(),
-        metadataSource: StubMetadata(),
+    let router = makeStubRouter(
+        cacheDirectory: cacheDirectory,
+        recordingsDirectory: recordingsDirectory,
         loader: loader
     )
     return try await router.resolve(
