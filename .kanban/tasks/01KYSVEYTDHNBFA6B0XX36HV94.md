@@ -48,11 +48,27 @@ comments:
     - evidence: 5 files — Examples/acp-agent/main.swift (new), Package.swift, Tests/FoundationModelsACPAgentTests/Integration/StdioContractTests.swift (new), Tests/FoundationModelsACPAgentTests/BuiltProductLocator.swift (renamed from MCPTestServerLocator.swift, generalized), call-site updates in TierTwoTests.swift and MCPCompositionTests.swift
     - next: test, commit, review
   timestamp: 2026-09-02T06:22:32.113123+00:00
+- actor: claude-code
+  id: 01m1gcwg8zw1b2ypgqfzcx27vx
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Examples/acp-agent/main.swift:112 (swift/fluent-usage: label the first parameter of holdOpenUntilTerminated)
+    - next: implement works the finding, then test, commit, and review again
+  timestamp: 2026-09-02T06:28:44.959703+00:00
+- actor: claude-code
+  id: 01m1gcwnwdyy08zzr4za14sxgj
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed (Examples/acp-agent/main.swift, Package.swift, StdioContractTests.swift, BuiltProductLocator.swift rename, 2 call-site files)
+    - test: green (277 passed, 0 failed; gated StdioContract passed with ACP_TIER3=1 in 85.8 s; tier-3 suite skipped ungated)
+    - commit: ef26270
+    - review: findings (1 — Examples/acp-agent/main.swift:112 swift/fluent-usage)
+  timestamp: 2026-09-02T06:28:50.701487+00:00
 depends_on:
 - 01KYSVEH19FKV250W4KQG1RFCT
 - 01KYSVCAH5MAEMCH4R5A8MNCSF
-position_column: doing
-position_ordinal: '80'
+position_column: review
+position_ordinal: '8180'
 title: Examples/acp-agent and the gated tier-3 stdio contract test
 ---
 ## What
@@ -87,3 +103,21 @@ Plan.md §20.2 and §17. One executable, two purposes: the family-convention exa
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 01:23)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> ⚠️ tool rule 'code-hygiene/function-length-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> function-length-swift found no file at Tests/FoundationModelsACPAgentTests/MCPTestServerLocator.swift, so its bodies are unread
+
+> ⚠️ tool rule 'code-hygiene/magic-numbers-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> magic-numbers-swift found no file at Tests/FoundationModelsACPAgentTests/MCPTestServerLocator.swift, so its literals are unread
+
+> ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> missing-docs-swift found no file at Tests/FoundationModelsACPAgentTests/MCPTestServerLocator.swift, so its declarations are unread
+
+- [ ] `Examples/acp-agent/main.swift:112` `swift/fluent-usage` — First parameter of a non-conversion function should be labeled. The fluent-usage rule requires: 'Omit the first argument label only for value-preserving conversions. Otherwise, label it.' This function does not perform a type conversion, so the unlabeled parameter violates the rule. Change to `func holdOpenUntilTerminated(connection: AgentSideConnection) async {`. Update the call site at line 118 to `await holdOpenUntilTerminated(connection: connection)`.

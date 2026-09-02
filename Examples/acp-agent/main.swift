@@ -109,10 +109,10 @@ let keepAliveSleepSeconds = 3600
 /// there is no teardown handshake to wait for here.
 ///
 /// - Parameter connection: The live connection to hold open.
-func holdOpenUntilTerminated(_ connection: AgentSideConnection) async {
+func holdOpenUntilTerminated(connection: AgentSideConnection) async {
     while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(keepAliveSleepSeconds))
     }
 }
 
-await holdOpenUntilTerminated(connection)
+await holdOpenUntilTerminated(connection: connection)
