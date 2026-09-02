@@ -64,9 +64,14 @@ struct AgentClientHarness {
     /// wire must never carry it (plan.md §5).
     static let dotfolderName = "coding"
 
+    /// The number of seconds in ``coalescingCadence``. The name records
+    /// that the length is arbitrary: the ``HoldingClock`` never reaches
+    /// any deadline.
+    private static let inertCadenceSeconds = 60
+
     /// The coalescing cadence the harness client is created with. The
     /// value is inert: the ``HoldingClock`` never reaches any deadline.
-    static let coalescingCadence: Swift.Duration = .seconds(60)
+    static let coalescingCadence: Swift.Duration = .seconds(inertCadenceSeconds)
 
     /// The agent under test.
     let agent: RoutedACPAgent

@@ -31,10 +31,33 @@ comments:
     - evidence: swift test — 136 tests in 15 suites, all pass, 0 failures, 0 skipped. The 1 "known issue" is the deliberate withKnownIssue negative case that proves expectOrderedSubsequence can fail. Zero warnings from this repository's sources; the one remaining build warning ("missing creator for mutated node" on the mlx-swift Cmlx bundle) is emitted by the SwiftPM build system for the upstream mlx-swift artifact and is present on the pristine tree before this change.
     - next: commit.
   timestamp: 2026-09-02T00:00:19.553468+00:00
+- actor: claude-code
+  id: 01m1fpp31dg8cgb3jr5ecdrxa9
+  text: |-
+    ### commit — changed
+    - evidence: ef68f28 test(harness): add the shared client-driver harness, recorder, and scripted model fixture — 8 files, 860 insertions, 85 deletions
+    - next: review of HEAD~1..HEAD.
+  timestamp: 2026-09-02T00:00:46.125775+00:00
+- actor: claude-code
+  id: 01m1fpvtvq69gn9qqpnbap5stp
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/Support/Harness.swift:69 (code-hygiene/magic-numbers-swift: the coalescing-cadence literal 60 must be a named constant)
+    - next: implement works the finding, then test, commit, and re-review.
+  timestamp: 2026-09-02T00:03:54.359118+00:00
+- actor: claude-code
+  id: 01m1fpw05xram1qkqv38qm3b8f
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed (6 files: the Support harness, recorder, scripted model, assertion helpers, smoke tests, and the InitializationTests migration)
+    - test: green (swift test — 136 tests in 15 suites, 0 failures, 0 skipped)
+    - commit: ef68f28
+    - review: findings (1 — Support/Harness.swift:69, code-hygiene/magic-numbers-swift)
+  timestamp: 2026-09-02T00:03:59.805338+00:00
 depends_on:
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
-position_column: doing
-position_ordinal: '80'
+position_column: review
+position_ordinal: '8180'
 title: 'Test harness: RecordingClient sink and scripted model backend fixture'
 ---
 ## What
@@ -80,3 +103,12 @@ Create `Tests/FoundationModelsACPAgentTests/Support/`:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-01 19:00)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [ ] `Tests/FoundationModelsACPAgentTests/Support/Harness.swift:69` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
