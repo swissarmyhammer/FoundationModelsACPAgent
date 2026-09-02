@@ -49,8 +49,28 @@ comments:
     - evidence: swift test — 301 tests in 34 suites passed, 0 failed, 0 skipped; the 1 "known issue" is the deliberate withKnownIssue negative assertion in HarnessSmokeTests (a test-helper test, present before this change); the single build warning comes from the pinned mlx-swift dependency's bundle build phase, not from this package's sources, and was present before this change.
     - next: commit
   timestamp: 2026-09-02T09:12:12.741840+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1gp8fwh884db3f5ttehee6d
+  text: |-
+    ### commit — changed
+    - evidence: e76928c fix(agent): report the honest _no_output stop reason for a zero-token empty turn (16 files, 440 insertions, 4 deletions; local only, not pushed)
+    - next: review
+  timestamp: 2026-09-02T09:12:34.961005+00:00
+- actor: claude-code
+  id: 01m1gpcxjycntt30h5hy3m2d10
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (0 confirmed, 0 refuted; 4 files reviewed, .kanban excluded by ignore rule); no prior open findings
+    - next: done
+
+    ### finish iteration 1 — clean
+    - implement: changed (4 source/test files)
+    - test: green (301 tests, 34 suites, 0 failed)
+    - commit: e76928c (local only)
+    - review: clean, task moved to done
+  timestamp: 2026-09-02T09:15:00.062847+00:00
+position_column: done
+position_ordinal: '9980'
 title: Investigate intermittent zero-token empty responses in live-model prompt turns
 ---
 ## What
@@ -67,5 +87,5 @@ The tier-4 gated eval (PythonCLIEvaluation, task ^sdwc6d8) found an intermittent
 - Whether an internal generation error is swallowed and surfaces as an empty completed stream.
 
 ## Acceptance Criteria
-- [ ] The cause of the empty zero-token turn is named.
-- [ ] A turn that generates nothing reports an honest reason (an error, a refusal, or real token counts), never an empty `end_turn`.
+- [x] The cause of the empty zero-token turn is named.
+- [x] A turn that generates nothing reports an honest reason (an error, a refusal, or real token counts), never an empty `end_turn`.
