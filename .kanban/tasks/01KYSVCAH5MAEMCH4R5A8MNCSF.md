@@ -68,10 +68,36 @@ comments:
     - commit: 053ae0a
     - review: findings (1 — CommandTestSupport.swift:85 code-security/injection)
   timestamp: 2026-09-02T03:07:45.012510+00:00
+- actor: claude-code
+  id: 01m1g1et15kgxw61nq2s161rgg
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/CommandTestSupport.swift; writeSkillFixture now refuses an id that is not one plain path segment (empty, `/`, or `..`), which closes the code-security/injection finding; the finding checkbox is marked
+    - next: test, commit, review
+
+    ### test — green
+    - evidence: swift test — 217 tests in 23 suites, all passed, 0 failed, 0 skipped; 1 pre-existing known issue; 0 compiler warnings
+
+    ### commit — changed
+    - evidence: 3067e6c fix(tests): refuse a traversal id in the skill fixture writer
+    - next: review of HEAD~1..HEAD
+  timestamp: 2026-09-02T03:09:01.861474+00:00
+- actor: claude-code
+  id: 01m1g1hvfjweevan0nwytgrztn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3067e6c) — 0 findings; the one prior finding is checked; task moved to done
+
+    ### finish iteration 2 — done
+    - implement: changed (traversal guard in the skill fixture writer)
+    - test: green (217 tests, 0 failed, 0 skipped, 0 warnings)
+    - commit: 3067e6c
+    - review: clean — task moved to done
+  timestamp: 2026-09-02T03:10:41.650458+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '9080'
 title: 'Slash commands: registry, precedence, dispatch at the prompt owner'
 ---
 ## What
