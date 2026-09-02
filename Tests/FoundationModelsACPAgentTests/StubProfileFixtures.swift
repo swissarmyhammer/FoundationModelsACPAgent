@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgent
 import FoundationModelsRouter
 
 // MARK: - A resolved profile over stub models
@@ -184,6 +185,27 @@ func makeStubRouter(
         metadataSource: StubMetadata(),
         loader: loader
     )
+}
+
+/// Makes an agent over a stub router, so the construction-time profile
+/// resolution downloads nothing and touches no network. The one test
+/// agent factory: every suite constructs through it.
+///
+/// - Parameters:
+///   - name: The bare dotfolder name to construct the agent with.
+///   - cacheDirectory: Where the router caches. A fresh temporary
+///     directory per call keeps runs of one suite apart.
+///   - loader: The loader the router loads through.
+/// - Returns: The constructed agent.
+/// - Throws: `DotfolderNameError` when `name` is refused, or
+///   `ProfileResolutionError` when the stub resolution fails.
+func makeStubAgent(
+    name: String,
+    cacheDirectory: URL,
+    loader: any ModelLoader = StubModelLoader()
+) async throws -> RoutedACPAgent {
+    let router = makeStubRouter(cacheDirectory: cacheDirectory, loader: loader)
+    return try await RoutedACPAgent(name: DotfolderName(name), router: router)
 }
 
 /// Resolves a profile over the stub models, resident and generation-free.

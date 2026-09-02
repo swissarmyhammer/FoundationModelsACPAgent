@@ -89,16 +89,17 @@ struct AgentClientHarness {
     /// harness was wired without one (``make()``).
     let collector: UpdateCollector?
 
-    /// Makes an agent for ``dotfolderName`` over a stub router, so the
-    /// construction-time profile resolution downloads nothing.
+    /// Makes an agent for ``dotfolderName`` through the shared
+    /// `makeStubAgent` factory, so the construction-time profile
+    /// resolution downloads nothing.
     ///
     /// - Returns: The agent.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
     ///   or `ProfileResolutionError` when the stub resolution fails.
     static func makeAgent() async throws -> RoutedACPAgent {
-        let router = makeStubRouter(
+        try await makeStubAgent(
+            name: dotfolderName,
             cacheDirectory: makeResolvedDirectory(label: "AgentClientHarness-cache"))
-        return try await RoutedACPAgent(name: DotfolderName(dotfolderName), router: router)
     }
 
     /// The client's `initialize` request with the driver's own values.

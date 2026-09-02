@@ -60,8 +60,8 @@ struct FailingModelLoader: ModelLoader {
         makeResolvedDirectory(label: "ProfileResolutionTests-\(role)")
     }
 
-    /// An agent over a stub router, constructed with the in-code default
-    /// configuration.
+    /// An agent through the shared `makeStubAgent` factory, constructed
+    /// with the in-code default configuration.
     ///
     /// - Parameter loader: The loader the router loads through.
     /// - Returns: The constructed agent.
@@ -69,9 +69,10 @@ struct FailingModelLoader: ModelLoader {
     private static func makeAgent(
         loader: any ModelLoader = StubModelLoader()
     ) async throws -> RoutedACPAgent {
-        let router = makeStubRouter(
-            cacheDirectory: makeCacheDirectory(role: "cache"), loader: loader)
-        return try await RoutedACPAgent(name: makeDotfolderName(), router: router)
+        try await makeStubAgent(
+            name: dotfolderWord,
+            cacheDirectory: makeCacheDirectory(role: "cache"),
+            loader: loader)
     }
 
     // MARK: - The mapping matrix

@@ -40,11 +40,54 @@ comments:
     - next: commit, then review
     task: ^nz60y96
   timestamp: 2026-09-02T00:38:51.397968+00:00
+- actor: claude-code
+  id: 01m1frwb9zm7517je12k1sm7tb
+  text: |-
+    ### commit — changed
+    - evidence: 6041c5e feat(profile): resolve the config profile to a resident profile at agent construction (8 files, 411 insertions, 32 deletions; local only, not pushed)
+    - next: review 6041c5e (HEAD~1..HEAD)
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:39:08.351305+00:00
+- actor: claude-code
+  id: 01m1fs3vy309v0wbcr66myv2wc
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 1 finding: Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift:69 (reuse/reuse — extract one shared test agent factory used by ProfileResolutionTests.makeAgent and Harness.makeAgent)
+    - next: implement the finding, test, commit, review again
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:43:14.755792+00:00
+- actor: claude-code
+  id: 01m1fs3xhjrwr19mw4735peb3h
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed (6 files; ProfileResolution.swift, RoutedACPAgent init, tests, harness)
+    - test: green (152 tests, 0 failed, 0 skipped, zero own-code warnings)
+    - commit: 6041c5e
+    - review: findings (1 — ProfileResolutionTests.swift:69 reuse/reuse)
+  timestamp: 2026-09-02T00:43:16.402395+00:00
+- actor: claude-code
+  id: 01m1fs6cya14tear4z07qn3s6x
+  text: |-
+    Worked the review finding: extracted the shared factory `makeStubAgent(name:cacheDirectory:loader:)` in StubProfileFixtures.swift, beside makeStubRouter and makeStubProfile. Both Harness.makeAgent and ProfileResolutionTests.makeAgent now forward to it; neither constructs a router or an agent on its own.
+
+    ### implement — changed
+    - evidence: 3 files — Tests/FoundationModelsACPAgentTests/StubProfileFixtures.swift, Tests/FoundationModelsACPAgentTests/Support/Harness.swift, Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift
+    - next: test, commit, review
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:44:37.706911+00:00
+- actor: claude-code
+  id: 01m1fs6h7s8tr6914h6mvdpvd2
+  text: |-
+    ### test — green
+    - evidence: swift test — 152 tests in 17 suites passed, 0 failed, 0 skipped; zero warnings in this package's own code
+    - next: commit, then review
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:44:42.105433+00:00
 depends_on:
 - 01KYSV5606NB4K39ZXQYPBH0A9
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
-position_column: doing
-position_ordinal: '80'
+position_column: review
+position_ordinal: '8180'
 title: 'Profile resolution: ProfileDefinition from config, name fallback, resident profile'
 ---
 ## What
@@ -98,3 +141,12 @@ Resolve with **`Router.resolve(profile:reporting:)`**. The label is `profile:`. 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-01 19:39)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ProfileResolutionTests.swift:69` `reuse/reuse` — Reinvents agent construction logic duplicated in Harness.makeAgent. Both methods create a stub router and construct RoutedACPAgent using identical patterns; this shared capability should have one implementation. Extract a parameterized helper—e.g. makeTestAgent(name:cacheDirectory:loader:)—in StubProfileFixtures alongside makeStubRouter and makeStubProfile. Have ProfileResolutionTests.makeAgent and Harness.makeAgent call this shared factory.
