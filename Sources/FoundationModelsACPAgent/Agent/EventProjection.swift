@@ -69,8 +69,10 @@ struct EventProjection {
     /// The text of a `stopped` settlement: the kill is authoritative.
     private static let stoppedNoteText = "the run was stopped; the work is dead"
 
-    /// The text of a `cancelled` settlement: the request is advisory.
-    private static let cancelledNoteText = "cancellation was requested; the work can continue"
+    /// The text of a `cancelled` settlement (plan.md §8.4, §8.6): the
+    /// request is advisory past a process boundary, so the honest claim
+    /// is that we stopped listening, not that the work stopped.
+    private static let cancelledNoteText = "we stopped listening; the work can continue"
 
     /// The text of a terminal event that carries no outcome.
     private static let missingOutcomeNoteText = "the run ended with no recorded outcome"

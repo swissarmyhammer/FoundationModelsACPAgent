@@ -219,6 +219,18 @@ import Testing
         #expect(Self.texts(in: call.content).contains { $0.contains("timed out") })
     }
 
+    /// A `.cancelled` outcome settles as `cancelled` and says "we
+    /// stopped listening" (§8.6): a still-running detached call cannot
+    /// be forced to stop past a process boundary, so the honest claim
+    /// is that we stopped listening, not that the work stopped.
+    @Test func aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening() async throws {
+        let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .cancelled))])
+        let call = try #require(Self.toolCallUpdates(in: updates).first)
+
+        #expect(call.status == .value(.cancelled))
+        #expect(Self.texts(in: call.content).contains { $0.contains("we stopped listening") })
+    }
+
     /// A `.completed` event that arrives with a nil outcome — the rule
     /// is a doc comment, not a type guarantee — settles as unknown and
     /// does not crash the projection.

@@ -1,10 +1,47 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fyk345d6k38p27y3a2maer
+  text: |-
+    Research done. Findings:
+
+    - Much of the cancel path landed with ^0svz8qf. `RoutedACPAgent.sessionCancel` calls `noteCancelRequested()` then `RoutedSession.cancelCurrentTurn()`, logs the result, and ignores an unknown id or an idle session. `PromptTurn.drive` catches `CancellationError` through `classify`, and reads `turnState.cancelRequested` after the stream ends, so a normal completion after a cancel also reports `cancelled`. The `idle` update is the last send of `drive` by construction.
+    - Router source (`RoutedSessionActorGeneration.swift`): the `streamEvents` surface calls `Task.checkCancellation()` after the model stream ends. A cancellation that lands on the model call ALWAYS surfaces as a thrown `CancellationError` on our surface. The normal-completion ending occurs only when the cancel request is recorded after the model call completed. A wire-level scripted turn cannot make that race deterministic, so the ignore-cancellation test drives `PromptTurn.drive` with a synthetic stream that completes normally while `cancelRequested` is set.
+    - `runSettled` carries only `.completed` operation events (`RoutedSessionActorRunJournal.swift`). A still-running detached call that we stop listening to settles with the advisory `.cancelled` outcome. Plan §8.4 table gives that outcome the text "we stopped listening". The current `EventProjection.cancelledNoteText` says "cancellation was requested; the work can continue" — this is the one production gap. Fix: change the note text.
+    - Elicitation is not on this agent's surface yet, and the card's checklist has no elicitation item. `RoutedSession.close()` holds that duty upstream. No work here.
+
+    Plan: add `Tests/Support/ScriptedTurnFixture.swift` (shared wire fixture, moved out of `PromptTurnTests` so `CancellationTests` does not copy it), add `CancellationTests.swift` (unknown-id no-op, idle-session no-op, strict idle-last order on a long-running turn, ignore-cancellation drive test, stopped-listening settlement text), change the note text in `EventProjection.swift`.
+  timestamp: 2026-09-02T02:18:56.517760+00:00
+- actor: claude-code
+  id: 01m1fz0k7bwnxsy7yd006xhyqv
+  text: |-
+    Implementation landed, with TDD:
+
+    - RED: `aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening` in `EventProjectionTests.swift` failed on the old note text. All other new tests document behavior that landed with ^0svz8qf and pass.
+    - GREEN: `EventProjection.cancelledNoteText` changed to "we stopped listening; the work can continue" (plan §8.4 table, §8.6).
+    - New `Tests/.../CancellationTests.swift`: strict idle(cancelled)-last order on a long-running turn, the ignore-cancellation ending through `drive` with `cancelRequested` set (Router's `streamEvents` surface always throws when a cancel lands mid-call — see the research comment — so the normal-completion ending is only reachable as the recorded-request race, which the drive-level test makes deterministic), post-cancel tool updates before the idle, and the three no-op cancels (idle, unknown, closed).
+    - New `Tests/.../Support/ScriptedTurnFixture.swift`: the wire fixture, waits, and readers moved out of `PromptTurnTests` so `CancellationTests` does not copy them. `PromptTurnTests` now delegates to it.
+    - Elicitation answering on cancel: not on this agent's surface yet, and not in the card's checklist. `RoutedSession.close()` holds that duty upstream.
+
+    `swift test`: 204 tests in 21 suites passed (1 known issue is the intentional `HarnessSmokeTests` self-check).
+
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Tests/FoundationModelsACPAgentTests/CancellationTests.swift, Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift
+    - next: test
+  timestamp: 2026-09-02T02:26:18.987216+00:00
+- actor: claude-code
+  id: 01m1fz1cd16edj83za7bqgffev
+  text: |-
+    ### test — green
+    - evidence: swift test — 204 tests in 21 suites passed, 0 failed, 0 skipped; swift build shows no compiler warning (the one "missing creator" note is a pre-existing build-graph message from the mlx-swift dependency bundle, present before this change)
+    - next: commit
+  timestamp: 2026-09-02T02:26:44.769837+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: todo
-position_ordinal: 8d80
+position_column: doing
+position_ordinal: '80'
 title: 'Cancellation: session/cancel confirmation semantics'
 ---
 ## What

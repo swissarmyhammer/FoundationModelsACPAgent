@@ -13,12 +13,6 @@ import Testing
 @Suite struct PromptTurnTests {
     // MARK: - Constants
 
-    /// The pause between two looks at the collector.
-    private static let pollInterval: Swift.Duration = .milliseconds(20)
-
-    /// The number of looks a wait makes before it records a failure.
-    private static let maxPollAttempts = 500
-
     /// The first prompt line. It becomes the session title.
     private static let promptTitleLine = "Say hello to the tests"
 
@@ -27,53 +21,24 @@ import Testing
     private static let promptText = "Say hello to the tests\nwith a second line"
 
     // MARK: - Harness
+    //
+    // The wired fixture, the collector waits, and the sequence readers
+    // live in `Support/ScriptedTurnFixture.swift`, shared with
+    // `CancellationTests`.
 
-    /// One wired prompt-turn fixture: a scripted agent, a recording
-    /// harness, an initialized wire, and one new session in `cwd`.
-    private struct Fixture {
-        /// The wired harness.
-        let harness: AgentClientHarness
-
-        /// The collector of the raw update sequence.
-        let collector: UpdateCollector
-
-        /// The id of the one open session.
-        let sessionId: SessionId
-
-        /// The session working directory.
-        let cwd: URL
-
-        /// Closes the harness wire.
-        func close() async {
-            await harness.close()
-        }
-    }
-
-    /// Wires a scripted agent, completes `initialize`, and opens one
-    /// session.
+    /// Wires the shared fixture with this suite's directory label.
     ///
     /// - Parameter script: The steps the model plays on every turn.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
-    private static func makeFixture(script: [ScriptedTurnStep]) async throws -> Fixture {
-        let userDirectory = makeResolvedDirectory(label: "PromptTurnTests-user")
-        let cwd = makeResolvedDirectory(label: "PromptTurnTests-repo")
-        let agent = try await makeStubAgent(
-            name: AgentClientHarness.dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "PromptTurnTests-cache"),
-            recordingsDirectory: makeResolvedDirectory(label: "PromptTurnTests-recordings"),
-            userDirectory: userDirectory,
-            loader: makeScriptedModelLoader(script: script))
-        let harness = await AgentClientHarness.makeRecording(agent: agent)
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        let response = try await harness.connection.newSession(
-            NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: cwd.path))))
-        let collector = try #require(harness.collector)
-        return Fixture(
-            harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd)
+    private static func makeFixture(
+        script: [ScriptedTurnStep]
+    ) async throws -> ScriptedTurnFixture {
+        try await ScriptedTurnFixture.make(script: script, label: "PromptTurnTests")
     }
 
-    /// The prompt request with one text block.
+    /// The prompt request with one text block and this suite's default
+    /// two-line text.
     ///
     /// - Parameters:
     ///   - sessionId: The session to prompt.
@@ -82,7 +47,7 @@ import Testing
     private static func makePromptRequest(
         sessionId: SessionId, text: String = promptText
     ) -> PromptRequest {
-        PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
+        ScriptedTurnFixture.makePromptRequest(sessionId: sessionId, text: text)
     }
 
     /// The index of the fixture session's recording root.
@@ -90,104 +55,9 @@ import Testing
     /// - Parameter fixture: The fixture whose session is open.
     /// - Returns: The `sessions.jsonl` index.
     /// - Throws: When the session is not in the agent's table.
-    private static func sessionIndex(of fixture: Fixture) async throws -> SessionIndex {
+    private static func sessionIndex(of fixture: ScriptedTurnFixture) async throws -> SessionIndex {
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
         return SessionIndex(root: entry.transcriptDirectory.deletingLastPathComponent())
-    }
-
-    // MARK: - Waits
-
-    /// Polls the collector until `condition` accepts the collected
-    /// sequence, then returns that sequence.
-    ///
-    /// - Parameters:
-    ///   - collector: The collector to poll.
-    ///   - label: What the wait is for, named in the failure.
-    ///   - condition: The acceptance test over the collected sequence.
-    /// - Returns: The first accepted sequence, or the final look.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    private static func waitForUpdates(
-        of collector: UpdateCollector,
-        toReach label: String,
-        _ condition: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
-    ) async throws -> [UpdateSessionNotification] {
-        for _ in 0..<maxPollAttempts {
-            let updates = await collector.updates
-            if condition(updates) {
-                return updates
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        Issue.record("the collector never reached: \(label)")
-        return await collector.updates
-    }
-
-    /// Waits until the collector holds `count` idle state updates.
-    ///
-    /// - Parameters:
-    ///   - collector: The collector to poll.
-    ///   - count: The number of turn ends to wait for.
-    /// - Returns: The collected sequence.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    private static func waitForIdle(
-        _ collector: UpdateCollector, count: Int = 1
-    ) async throws -> [UpdateSessionNotification] {
-        try await waitForUpdates(of: collector, toReach: "\(count) idle update(s)") { updates in
-            idleCount(in: updates) >= count
-        }
-    }
-
-    /// Waits for the running state update that starts a turn.
-    ///
-    /// - Parameter collector: The collector to poll.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    private static func waitForRunning(_ collector: UpdateCollector) async throws {
-        _ = try await waitForUpdates(of: collector, toReach: "a running update") { updates in
-            updates.contains { notification in
-                if case .stateUpdate(.running) = notification.update { return true }
-                return false
-            }
-        }
-    }
-
-    /// Polls the agent until the session accepts a new prompt again.
-    /// The idle notification goes out before the agent clears the turn,
-    /// so a follow-up prompt waits here first.
-    ///
-    /// - Parameters:
-    ///   - agent: The agent under test.
-    ///   - sessionId: The session to watch.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    private static func waitForAvailability(
-        _ agent: RoutedACPAgent, _ sessionId: SessionId
-    ) async throws {
-        for _ in 0..<maxPollAttempts {
-            if await agent.sessions[sessionId]?.availability == .idle {
-                return
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        Issue.record("the session never returned to idle availability")
-    }
-
-    // MARK: - Readers
-
-    /// The number of idle state updates in the sequence.
-    private static func idleCount(in updates: [UpdateSessionNotification]) -> Int {
-        updates.count { notification in
-            if case .stateUpdate(.idle) = notification.update { return true }
-            return false
-        }
-    }
-
-    /// The stop reason of the first idle state update, or `nil`.
-    private static func idleStopReason(in updates: [UpdateSessionNotification]) -> StopReason? {
-        for notification in updates {
-            if case .stateUpdate(.idle(let idle)) = notification.update {
-                return idle.stopReason
-            }
-        }
-        return nil
     }
 
     /// Reads one string field of a wire error's `data` object.
@@ -219,7 +89,7 @@ import Testing
         ])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await Self.waitForIdle(fixture.collector)
+        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
         #expect(
@@ -247,8 +117,8 @@ import Testing
             Issue.record("expected running before the turn output, got \(updates[2])")
             return
         }
-        #expect(Self.idleCount(in: updates) == 1)
-        #expect(Self.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
         if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
             Issue.record("expected idle as the terminator")
         }
@@ -265,7 +135,7 @@ import Testing
             try await fixture.harness.connection.prompt(
                 Self.makePromptRequest(sessionId: fixture.sessionId))
         }
-        try await Self.waitForRunning(fixture.collector)
+        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
 
         do {
             _ = try await fixture.harness.connection.prompt(
@@ -278,12 +148,12 @@ import Testing
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await Self.waitForIdle(fixture.collector)
+        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         _ = try await first.value
         await fixture.close()
 
-        #expect(Self.idleCount(in: updates) == 1)
-        #expect(Self.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
         #expect(updates.count { $0.update.kind == .userMessage } == 1)
     }
 
@@ -295,10 +165,10 @@ import Testing
         let fixture = try await Self.makeFixture(script: [.fail(.guardrailViolation)])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await Self.waitForIdle(fixture.collector)
+        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(Self.idleStopReason(in: updates) == .refusal)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .refusal)
     }
 
     /// A context overflow ends the turn as `idle` with `max_tokens`.
@@ -307,10 +177,10 @@ import Testing
         let fixture = try await Self.makeFixture(script: [.fail(.exceededContextWindow)])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await Self.waitForIdle(fixture.collector)
+        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(Self.idleStopReason(in: updates) == .maxTokens)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .maxTokens)
     }
 
     /// A `session/cancel` during a held turn surfaces as `idle` with
@@ -320,15 +190,15 @@ import Testing
         let fixture = try await Self.makeFixture(script: [.textDelta("thinking"), .hold])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await Self.waitForRunning(fixture.collector)
+        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await Self.waitForIdle(fixture.collector)
+        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(Self.idleCount(in: updates) == 1)
-        #expect(Self.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
     }
 
     /// The `TurnStop` to `StopReason` function is total, including the
@@ -363,14 +233,6 @@ import Testing
     // `Support/ProjectionTestSupport.swift`, shared with
     // `EventProjectionTests`.
 
-    /// The number of idle state updates in a raw update sequence.
-    private static func idleCount(in updates: [SessionUpdate]) -> Int {
-        updates.count { update in
-            if case .stateUpdate(.idle) = update { return true }
-            return false
-        }
-    }
-
     /// A retry turn carries two `turnEnded` events; the turn still ends
     /// with exactly one `idle`, keyed on stream completion (§8.1).
     @Test func aRetryTurnSendsTwoTurnEndedAndExactlyOneIdle() async throws {
@@ -386,7 +248,7 @@ import Testing
         let updates = await recorder.updates
 
         #expect(reason == .endTurn)
-        #expect(Self.idleCount(in: updates) == 1)
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         guard case .stateUpdate(.idle(let idle)) = try #require(updates.last) else {
             Issue.record("expected idle as the terminator, got \(updates)")
             return
@@ -476,7 +338,7 @@ import Testing
         let updates = await recorder.updates
 
         #expect(reason == .cancelled)
-        #expect(Self.idleCount(in: updates) == 1)
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
     }
 
     // MARK: - The requires_action pairing (§8.2)
@@ -588,7 +450,7 @@ import Testing
 
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let firstTurn = try await Self.waitForIdle(fixture.collector)
+        let firstTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
 
         let records = try index.read().records
         #expect(records.count == 1)
@@ -602,10 +464,10 @@ import Testing
         }
         #expect(titles == [.value(Self.promptTitleLine)])
 
-        try await Self.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
-        let secondTurn = try await Self.waitForIdle(fixture.collector, count: 2)
+        let secondTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
         await fixture.close()
 
         #expect(try index.read().records.count == 1)
