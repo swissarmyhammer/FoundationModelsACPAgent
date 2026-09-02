@@ -1,6 +1,67 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1gkrna0zty889x31ddfhavy
+  text: |-
+    ### block verification — the Router seam is missing
+
+    I examined the pinned checkout at .build/checkouts/FoundationModelsRouter, commit 87c660b6a16c2e9375219a1052ad68c2c846d41e (branch main).
+
+    Evidence, public surface:
+    - `SessionEvent` has no case for an elicitation. See Sources/FoundationModelsRouter/Session/SessionEvent.swift:9-62. The cases are: turnStarted, textDelta, textReset, reasoningDelta, toolCall, toolStatus, toolInvocation, entryRecorded, compaction, discoveryPrimingFailed, generationStalled, runSettled, turnEnded.
+    - `runSettled(OperationEvent)` goes live only when `event.kind == .completed`. See Sources/FoundationModelsRouter/Session/RoutedSessionActorRunJournal.swift:16-17. An OperationEvent with kind `.elicitation` goes only to the transcript journal.
+    - `SessionMailbox.pendingElicitationIds()` is internal. See Sources/FoundationModelsRouter/Hosting/SessionMailbox.swift:242.
+    - `RoutedSession` has `respond(elicitationId:response:)` (RoutedSession.swift:344) and `complete(elicitationId:)` (RoutedSession.swift:350). It has no public `pendingElicitations()` read and no wakeup.
+    - `ToolContext.elicit(_:)` posts the event to the outbox and suspends in `mailbox.awaitAnswer`. See Sources/FoundationModelsRouter/Hosting/ToolContext.swift:168 and :178.
+
+    Conclusion: the block holds. A host has no public live signal that an elicitation is pending. The answer side (`respond` / `complete`) is ready. The request side is not.
+  timestamp: 2026-09-02T08:28:59.072716+00:00
+- actor: claude-code
+  id: 01m1gks74gxqgq680ka4mcff9t
+  text: |-
+    ## Upstream ask for FoundationModelsRouter
+
+    The kanban tool operates only on the board of the current workspace. It has no board-path or external-board input. Thus I recorded the ask here, for a person to file on the Router board, and I also wrote it to /Users/wballard/github/swissarmyhammer/FoundationModelsRouter/UPSTREAM_ASKS.md (file created with a short header).
+
+    Ask 1 — a public live elicitation signal. Supply one of these two:
+    1. A `SessionEvent` case on `streamEvents()` / `streamSessionEvents()` that carries the `OperationEvent` with kind `.elicitation`.
+    2. A public `RoutedSession.pendingElicitations()` read, plus a wakeup signal.
+
+    Motivation: FoundationModelsACPAgent plan.md §16 and §21. The ACP agent must see a pending elicitation live, to relay `elicitation/create` to its client. The answer side (`respond` / `complete`) is public and ready. Today a tool that elicits stays suspended until the session closes.
+
+    Ask 2 — expose the subagent spawn fact on `TranscriptEvent`, not only in session.json. Source: task ^nh9myws. This standing ask went into the same file, because the file did not exist before.
+  timestamp: 2026-09-02T08:29:17.328698+00:00
+- actor: claude-code
+  id: 01m1gksqbbfm43trgy25hvqdty
+  text: |-
+    ### interim verification — the decline with the reason string is not present, and no reachable seam can hold it
+
+    The string "this host cannot ask you questions yet" is not in the agent sources. I searched Sources/ and Tests/ for "elicit", "decline", and the reason text.
+
+    What is in place today:
+    - MCPComposition builds each server as `MCPServer(name: entry.name)` with `elicitationHandler` nil. See Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:300, and the type documentation at MCPComposition.swift:46 (the recorded decision: "Every composed server keeps elicitationHandler nil ... Router wins when present").
+    - Every tool call in this agent runs under a `RoutedSession`. The selection tier also wraps a `RoutedSession` (Sources/FoundationModelsACPAgent/Tools/SelectionAgentSession.swift:18). Thus each elicitation from a tool call binds to a `ToolContext` and goes to Router's mailbox — answerer 1 in FoundationModelsMultitool, Sources/FoundationModelsMultitool/Capabilities/MCP/MCPServer+Elicitation.swift:12-24.
+    - Such an elicitation suspends in the mailbox. The host cannot see its id through a public API. On `RoutedSession.close()` the sweep resolves it with `.cancel` (SessionMailbox.swift:334).
+    - A request that arrives with no `ToolContext` bound gets `.cancel` from MCPServer (answerer 3), because the handler is nil.
+
+    Why I did not add the decline:
+    - To decline a Router-path elicitation, the agent must first see the pending elicitation. That is the blocked Router seam. The interim decline needs the same seam as the relay.
+    - The one settable seam is `MCPServer.elicitationHandler`. It is not reachable in this agent, because every call carries a `ToolContext`. Also, the card records the decision to keep it nil. A handler would be dead code and would go against the card.
+
+    Proven interim behavior: no elicitation content flows to the client, and every elicitation resolves as `.cancel` — at close for the Router path, immediately for a no-context request. The exact decline-with-reason demanded by the card is not implementable until the Router seam lands. No code change was made.
+  timestamp: 2026-09-02T08:29:33.931308+00:00
+- actor: claude-code
+  id: 01m1gktp9asypmnkx0m409xjb9
+  text: |-
+    ### finish — stuck
+    - Missing Router seam, at pinned commit 87c660b6a16c2e9375219a1052ad68c2c846d41e: `SessionEvent` has no elicitation case (Session/SessionEvent.swift:9-62); `runSettled` goes live only for kind `.completed` (Session/RoutedSessionActorRunJournal.swift:16-17); `SessionMailbox.pendingElicitationIds()` is internal (Hosting/SessionMailbox.swift:242); `RoutedSession` has no public `pendingElicitations()` read (Session/RoutedSession.swift); `ToolContext.elicit` suspends in the mailbox (Hosting/ToolContext.swift:168, :178).
+    - Filed: the full ask is in the "Upstream ask for FoundationModelsRouter" comment above, and in /Users/wballard/github/swissarmyhammer/FoundationModelsRouter/UPSTREAM_ASKS.md (file created; it also carries the standing ask from ^nh9myws). The kanban tool has no board-path input, so a person must copy the ask onto the Router board.
+    - Interim proven: no elicitation content flows to the client. Every elicitation resolves as `.cancel` — at close for the Router path (SessionMailbox.swift:334), immediately for a no-context request (MCPServer answerer 3; the handler stays nil, MCPComposition.swift:300). The exact decline with the reason "this host cannot ask you questions yet" is not implementable without the same missing seam; see the interim-verification comment.
+    - No code change, no commit. The card stays out of done, because the acceptance criteria cannot be met.
+    - next: when the Router seam lands, update the pin, then run the relay build per the card.
+  timestamp: 2026-09-02T08:30:05.610861+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
 - 01KYSV83KNKXPSMJMQX5TFSPGC
@@ -28,7 +89,7 @@ Build, once unblocked:
 - `session/cancel` and `session/close` answer every pending elicitation with `cancel` (§8.6, §10.1). `RoutedSession.close()` already rejects pending elicitations in its sweep.
 - Obey the security duties: form mode never asks for secrets; URL-mode credentials never come back over ACP; `elicitationId` stays unique among outstanding URL elicitations on the connection; `elicitation/complete` goes only to the client that received the create.
 
-- [ ] Upstream ask filed and linked here
+- [x] Upstream ask filed and linked here
 - [ ] Capability gate on `ClientCapabilities.elicitation`, per mode
 - [ ] Request mapping, form and url
 - [ ] `requires_action` pairing inside `awaitingUser { }`

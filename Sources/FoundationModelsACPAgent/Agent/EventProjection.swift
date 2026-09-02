@@ -111,6 +111,24 @@ struct EventProjection {
     /// for the turn (§8.4).
     private var contextFill = Double.nan
 
+    /// Whether the turn produced observable output: a text delta, a
+    /// reasoning delta, a tool call or status, an invocation record,
+    /// or a run settlement (task ^pez780d).
+    private var sawOutput = false
+
+    /// Whether at least one `turnEnded` usage report arrived
+    /// (task ^pez780d).
+    private var sawUsageReport = false
+
+    /// Whether the turn generated nothing: no observable output, while
+    /// at least one `turnEnded` arrived and the summed output tokens
+    /// are zero. `PromptTurn.drive` reads it to report the honest
+    /// `_no_output` stop reason instead of a bare `end_turn`
+    /// (plan.md §8.2's `_` rule; task ^pez780d).
+    var generatedNothing: Bool {
+        !sawOutput && sawUsageReport && tokensOut == 0
+    }
+
     // MARK: - The thirteen cases (§8.4)
 
     /// Projects one event to the wire.
@@ -129,6 +147,7 @@ struct EventProjection {
         case .turnStarted:
             await turnState.turnDidStart()
         case .textDelta(let text):
+            sawOutput = true
             let messageId = agentMessageId ?? Self.makeMessageId()
             agentMessageId = messageId
             await send(
@@ -142,16 +161,20 @@ struct EventProjection {
             guard let messageId = agentMessageId else { return }
             await send(.agentMessage(AgentMessage(messageId: messageId, content: .value([]))))
         case .reasoningDelta(let text):
+            sawOutput = true
             let messageId = thoughtMessageId ?? Self.makeMessageId()
             thoughtMessageId = messageId
             await send(
                 .agentThoughtChunk(
                     ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
         case .toolCall(let id, let name, let argumentsJSON):
+            sawOutput = true
             await projectToolCall(id: id, name: name, argumentsJSON: argumentsJSON)
         case .toolStatus(let id, let status, let summary, let output):
+            sawOutput = true
             await projectToolStatus(id: id, status: status, summary: summary, output: output)
         case .toolInvocation(let record):
+            sawOutput = true
             // A correlation record only, never a wire message: its
             // `correlationID` is the run's completion token, a
             // different identity space from `Transcript.ToolCall.id`.
@@ -172,10 +195,12 @@ struct EventProjection {
                 "session \(sessionIdValue, privacy: .public): \(stall.description, privacy: .public)"
             )
         case .runSettled(let operationEvent):
+            sawOutput = true
             await projectSettlement(of: operationEvent)
         case .turnEnded(let usage):
             // One event per inner generate call, not per turn: sum,
             // and never send `idle` from here (§8.1).
+            sawUsageReport = true
             tokensIn += usage.tokensIn
             tokensOut += usage.tokensOut
             contextFill = usage.contextFill

@@ -27,6 +27,13 @@ enum TurnStop: Equatable, Sendable {
     /// §8.2 mapping total for the task that adds the cap.
     case toolLoopCapped
 
+    /// The turn completed, but it generated nothing: no text, no
+    /// reasoning, no tool call, and a usage report of zero output
+    /// tokens. A bare `end_turn` would hide that, so the arm maps to
+    /// the `_no_output` extension value (§8.2's `_` rule; task
+    /// ^pez780d).
+    case noOutput
+
     /// The turn failed for a reason outside the mapped intents.
     case failed(message: String)
 }
@@ -52,6 +59,10 @@ struct PromptTurn: Sendable {
     /// The wire value an unmapped turn failure stops with, under the
     /// `_`-prefix extension rule (plan.md §18).
     static let unmappedStopReasonValue = "_error"
+
+    /// The wire value a completed turn that generated nothing stops
+    /// with, under the same `_`-prefix extension rule (task ^pez780d).
+    static let noOutputStopReasonValue = "_no_output"
 
     /// The id of the session this turn runs in.
     let sessionId: SessionId
@@ -138,6 +149,14 @@ struct PromptTurn: Sendable {
         if await turnState.cancelRequested {
             stop = .cancelled
         }
+        // A completed live turn that streamed no output and whose usage
+        // report says zero generated tokens must not read as a normal
+        // `end_turn` (task ^pez780d): the intermittent live-model defect
+        // ends exactly this shape of turn, and a bare `end_turn` would
+        // hide it. The honest `_no_output` extension value reports it.
+        if stop == .completed, projection.generatedNothing {
+            stop = .noOutput
+        }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
         await turnState.turnDidEnd(reason: reason)
@@ -180,6 +199,7 @@ struct PromptTurn: Sendable {
         case .cancelled: .cancelled
         case .budgetExhausted: .maxTokens
         case .toolLoopCapped: .maxTurnRequests
+        case .noOutput: .unknown(noOutputStopReasonValue)
         case .failed: .unknown(unmappedStopReasonValue)
         }
     }

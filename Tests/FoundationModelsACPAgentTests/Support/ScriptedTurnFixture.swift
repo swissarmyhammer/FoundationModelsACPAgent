@@ -263,4 +263,18 @@ struct ScriptedTurnFixture {
         }
         return nil
     }
+
+    /// The stop reason of the first idle state update in a raw update
+    /// sequence, or `nil`.
+    ///
+    /// - Parameter updates: The recorded raw updates.
+    /// - Returns: The stop reason, or `nil` when no idle arrived.
+    static func idleStopReason(in updates: [SessionUpdate]) -> StopReason? {
+        for update in updates {
+            if case .stateUpdate(.idle(let idle)) = update {
+                return idle.stopReason
+            }
+        }
+        return nil
+    }
 }

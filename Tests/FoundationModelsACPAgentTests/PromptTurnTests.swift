@@ -210,6 +210,9 @@ import Testing
         #expect(PromptTurn.stopReason(for: .budgetExhausted) == .maxTokens)
         #expect(PromptTurn.stopReason(for: .toolLoopCapped) == .maxTurnRequests)
         #expect(
+            PromptTurn.stopReason(for: .noOutput)
+                == .unknown(PromptTurn.noOutputStopReasonValue))
+        #expect(
             PromptTurn.stopReason(for: .failed(message: "boom"))
                 == .unknown(PromptTurn.unmappedStopReasonValue))
     }
@@ -339,6 +342,84 @@ import Testing
 
         #expect(reason == .cancelled)
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+    }
+
+    // MARK: - The no-output turn (§8.2, task ^pez780d)
+
+    /// A completed turn with no output and a zero-token usage report
+    /// ends with the honest `_no_output` extension stop reason, never
+    /// with a bare `end_turn`.
+    @Test func aZeroTokenTurnWithNoOutputEndsWithTheNoOutputStopReason() async throws {
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
+            ]))
+        let updates = await recorder.updates
+
+        #expect(reason == .unknown(PromptTurn.noOutputStopReasonValue))
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(
+            ScriptedTurnFixture.idleStopReason(in: updates)
+                == .unknown(PromptTurn.noOutputStopReasonValue))
+    }
+
+    /// A turn that streamed text keeps `end_turn`, also when the usage
+    /// report is zero: the text is real output.
+    @Test func aZeroTokenTurnWithTextKeepsTheEndTurnStopReason() async throws {
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .textDelta("real output"),
+                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
+    /// A turn that made a tool call keeps `end_turn`, also when the
+    /// usage report is zero: the call is real output.
+    @Test func aZeroTokenTurnWithAToolCallKeepsTheEndTurnStopReason() async throws {
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
+                .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
+                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
+    /// A completed turn with no usage report keeps `end_turn`: with no
+    /// report there is no zero-token evidence, and the turn must not
+    /// invent one.
+    @Test func aTurnWithNoUsageReportKeepsTheEndTurnStopReason() async throws {
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(events: makeEventStream([]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
+    /// A scripted turn that plays only `.endTurn` makes the live defect
+    /// shape on the wire: the Router turn completes with no output and
+    /// a zero-token usage delta. The idle terminator carries
+    /// `_no_output`, never a bare `end_turn`.
+    @Test(.timeLimit(.minutes(1)))
+    func aScriptedTurnWithNoOutputEndsIdleWithTheNoOutputStopReason() async throws {
+        let fixture = try await Self.makeFixture(script: [.endTurn])
+        _ = try await fixture.harness.connection.prompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId))
+        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        await fixture.close()
+
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(
+            ScriptedTurnFixture.idleStopReason(in: updates)
+                == .unknown(PromptTurn.noOutputStopReasonValue))
     }
 
     // MARK: - The requires_action pairing (§8.2)
