@@ -7,16 +7,13 @@ import Testing
 /// `extraWritePaths`, the session-root-set default for the writable roots,
 /// and the `realpath(3)` resolution the options initializer applies.
 @Suite struct SandboxConfigTests {
-    /// A throwaway directory that already sits under `/private/tmp`, so its
-    /// resolved path equals its written path and equality checks stay exact.
-    /// The OS reclaims `/tmp` on its own schedule.
+    /// A throwaway directory under `/private/tmp`, labeled with this
+    /// suite's name and the directory's role.
+    ///
+    /// - Parameter name: The directory's role.
+    /// - Returns: The created directory.
     private static func makeResolvedDirectory(named name: String) -> URL {
-        let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
-            .appendingPathComponent("SandboxConfigTests-\(name)-\(UUID().uuidString)",
-                isDirectory: true)
-        try! FileManager.default.createDirectory(
-            at: directory, withIntermediateDirectories: true)
-        return directory
+        FoundationModelsACPAgentTests.makeResolvedDirectory(label: "SandboxConfigTests-\(name)")
     }
 
     /// With no `sandbox:` section, the writable roots equal the session

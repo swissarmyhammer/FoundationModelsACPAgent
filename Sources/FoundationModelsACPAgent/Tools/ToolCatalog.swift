@@ -129,12 +129,11 @@ public enum ToolCatalog {
                 recordsChanges: options.recordsChanges)
         }
         if case .enabled(let options) = context.configuration.tools.shell {
-            try builder.withShell(
-                storeDirectory: options.storeDirectory,
-                sandbox: SeatbeltSandbox(
-                    options: context.configuration.sandbox.sandboxOptions(
-                        workingDirectory: context.workingDirectory,
-                        additionalRoots: context.additionalRoots)))
+            try SandboxComposition.composeShell(
+                into: builder,
+                options: options,
+                configuration: context.configuration.sandbox,
+                rootSet: [context.workingDirectory] + context.additionalRoots)
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,

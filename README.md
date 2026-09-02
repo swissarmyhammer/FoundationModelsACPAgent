@@ -19,6 +19,12 @@ its config section to `false` to turn it off.
 | `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack | `tools.skills` |
 
+### The sandbox limit
+
+The shell sandbox is the only gate on shell commands: there is no permission
+prompt, and the agent never sends `session/request_permission`. Know its limit.
+The sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
+
 ## Builtin instructions
 
 The system prompt is one markdown file, `Instructions.md`, resolved through
