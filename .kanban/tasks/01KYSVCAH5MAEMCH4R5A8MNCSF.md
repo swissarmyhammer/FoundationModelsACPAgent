@@ -45,10 +45,33 @@ comments:
     - evidence: swift test — 217 tests in 23 suites, all passed, 0 failed, 0 skipped; 1 pre-existing known issue (the deliberate negative proof in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); swift build --build-tests — 0 compiler warnings in Swift sources
     - next: commit
   timestamp: 2026-09-02T03:03:22.047345+00:00
+- actor: claude-code
+  id: 01m1g15fe2y2grjck6x0yh19ny
+  text: |-
+    ### commit — changed
+    - evidence: 053ae0a feat(commands): per-session slash-command registry and dispatch at the prompt owner — 13 files, 1451 insertions, 28 deletions; working tree clean
+    - next: review
+  timestamp: 2026-09-02T03:03:56.098478+00:00
+- actor: claude-code
+  id: 01m1g1ca9v6n6ec0n3dw8v3p39
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/Support/CommandTestSupport.swift:85 (code-security/injection: validate the skill `id` before appendingPathComponent)
+    - next: implement works the finding, then test, commit, review again
+  timestamp: 2026-09-02T03:07:40.219587+00:00
+- actor: claude-code
+  id: 01m1g1cezmm4m9qccr6sz8my1e
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed (registry, dispatch, session wiring, 13 tests via TDD)
+    - test: green (217 tests, 0 failed, 0 skipped, 0 warnings)
+    - commit: 053ae0a
+    - review: findings (1 — CommandTestSupport.swift:85 code-security/injection)
+  timestamp: 2026-09-02T03:07:45.012510+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: doing
-position_ordinal: '80'
+position_column: review
+position_ordinal: '8180'
 title: 'Slash commands: registry, precedence, dispatch at the prompt owner'
 ---
 ## What
@@ -114,3 +137,12 @@ ACP surface (§14.4): publish `available_commands_update` at session start and o
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-01 22:04)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/CommandTestSupport.swift:85` `code-security/injection` — Path traversal vulnerability: the `id` parameter is appended directly to a URL without validation, allowing `../` sequences to escape the intended `root` directory. An attacker or careless test could pass `id: "../../../etc/passwd"` to write files outside the intended skills directory. Validate that `id` does not contain path separators (`/`, `..`, etc.) or use a sanitization function: `guard !id.contains("/"), !id.contains(".."), !id.isEmpty else { throw /* error */ }` before calling `appendingPathComponent`.

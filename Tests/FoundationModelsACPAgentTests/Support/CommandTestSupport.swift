@@ -73,15 +73,27 @@ func makeRenderedCommand(name: String, prefix: String) -> SlashCommand {
         })
 }
 
+/// The refusal `writeSkillFixture` throws for a skill id that is not
+/// one plain path segment, so a traversal id can never escape `root`.
+struct SkillFixtureIDError: Error {
+    /// The refused id.
+    let id: String
+}
+
 /// Writes `<id>/SKILL.md` under `root`, so a `SkillsRegistry` over
 /// `root` discovers one skill with that id.
 ///
 /// - Parameters:
-///   - id: The skill id — the directory name.
+///   - id: The skill id — the directory name. It must be one plain
+///     path segment: not empty, no `/`, and no `..`.
 ///   - markdown: The complete `SKILL.md` content, frontmatter included.
 ///   - root: The skills root directory.
-/// - Throws: A file-system error when the write fails.
+/// - Throws: `SkillFixtureIDError` when `id` is not one plain path
+///   segment, or a file-system error when the write fails.
 func writeSkillFixture(id: String, markdown: String, under root: URL) throws {
+    guard !id.isEmpty, !id.contains("/"), !id.contains("..") else {
+        throw SkillFixtureIDError(id: id)
+    }
     let skillDirectory = root.appendingPathComponent(id, isDirectory: true)
     try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
     try markdown.write(
