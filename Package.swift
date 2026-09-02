@@ -94,6 +94,14 @@ private let liveLoaderProducts: [Target.Dependency] = [
 /// directory where the gated `StdioContractTests` spawns it.
 private let exampleExecutableName = "acp-agent"
 
+/// The one-shot client CLI example (plan.md §20.2): send one prompt,
+/// run the turn, print the answer, exit. It links ONLY the client
+/// package and the wire — never this package's library — so every byte
+/// crosses ACP into the spawned `exampleExecutableName` process. The
+/// test target depends on it, so `swift test` builds the binary into
+/// the products directory where the gated `ClientServerTests` runs it.
+private let printExecutableName = "acp-print"
+
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
 /// declares, because a second URL for the same package identity makes the
@@ -172,6 +180,9 @@ let package = Package(
         // The runnable example, published so `swift run acp-agent` and
         // the tier-3 spawn name one binary — see `exampleExecutableName`.
         .executable(name: exampleExecutableName, targets: [exampleExecutableName]),
+        // The one-shot client CLI, published so `swift run acp-print` and
+        // the tier-3 run name one binary — see `printExecutableName`.
+        .executable(name: printExecutableName, targets: [printExecutableName]),
     ],
     dependencies: familyDependencyNames.map(makeFamilyPackage(name:)) + [
         makeFamilyPackage(name: clientDependencyName),
@@ -202,6 +213,17 @@ let package = Package(
             ] + liveLoaderProducts,
             path: "Examples/\(exampleExecutableName)"
         ),
+        // The one-shot client CLI (plan.md §20.2). It links ONLY the
+        // client package and the wire — see `printExecutableName` — so
+        // every byte reaches the agent over ACP.
+        .executableTarget(
+            name: printExecutableName,
+            dependencies: [
+                makeFamilyProduct(name: clientDependencyName),
+                makeFamilyProduct(name: wireDependencyName),
+            ],
+            path: "Examples/\(printExecutableName)"
+        ),
         // The import smoke suite. It links the client driver as well — see
         // `clientDependencyName` — Multitool's test-support products — see
         // `multitoolTestProducts` — the MCP sdk, whose tool-result
@@ -217,6 +239,7 @@ let package = Package(
             dependencies: [
                 .target(name: packageName),
                 .target(name: exampleExecutableName),
+                .target(name: printExecutableName),
                 makeFamilyProduct(name: clientDependencyName),
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]

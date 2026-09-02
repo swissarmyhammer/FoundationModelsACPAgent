@@ -19,17 +19,6 @@ import Testing
 // configuration names the small `mlx-community` models the family's own
 // gated suites already load.
 
-/// The environment variable that opens the tier-3 gate.
-private let tierThreeGateVariable = "ACP_TIER3"
-
-/// The value of ``tierThreeGateVariable`` that opens the gate.
-private let tierThreeGateOpenValue = "1"
-
-/// Whether the tier-3 gate is open in this process.
-private var isTierThreeGateOpen: Bool {
-    ProcessInfo.processInfo.environment[tierThreeGateVariable] == tierThreeGateOpenValue
-}
-
 /// The gated case's time limit in minutes. It covers the first-run
 /// model download and the model load of the spawned example.
 private let gatedTimeLimitMinutes = 20
@@ -123,24 +112,13 @@ final class InboundTapTransport: ACPTransport, Sendable {
 /// first-run model download.
 @Suite(
     .enabled(
-        if: isTierThreeGateOpen,
-        "the tier-3 stdio contract runs only with \(tierThreeGateVariable)=\(tierThreeGateOpenValue)"
+        if: TierThreeFixture.isGateOpen,
+        "the tier-3 stdio contract runs only with \(TierThreeFixture.gateVariable)=\(TierThreeFixture.gateOpenValue)"
     ),
     .serialized,
     .timeLimit(.minutes(gatedTimeLimitMinutes)))
 struct StdioContractTests {
     // MARK: - Constants
-
-    /// The product name of the example executable this suite spawns.
-    private static let exampleExecutableName = "acp-agent"
-
-    /// The dotfolder name the example chose (plan.md §20.2). The user
-    /// configuration layer is `$XDG_CONFIG_HOME/<name>/config.yaml`.
-    private static let exampleDotfolderName = "acp-agent"
-
-    /// The environment variable that roots the user configuration
-    /// layer, set for the spawned child.
-    private static let configHomeVariable = "XDG_CONFIG_HOME"
 
     /// The id of the probe skill, and so its `/probe` command name.
     private static let probeSkillID = "probe"
@@ -164,17 +142,6 @@ struct StdioContractTests {
     /// The newline byte that divides ndJSON frames (plan.md §17).
     private static let newlineByte = UInt8(ascii: "\n")
 
-    /// The user-layer `config.yaml` the spawned example resolves its
-    /// profile from: the small real `mlx-community` models the family's
-    /// own gated suites load (Router's examples and Multitool's gated
-    /// fixture), so the first run downloads little.
-    private static let userConfigYAML = """
-        profile:
-          standard: ["mlx-community/SmolLM-135M-Instruct-4bit"]
-          flash: ["mlx-community/SmolLM-135M-Instruct-4bit"]
-          embedding: ["mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"]
-        """
-
     /// The `SKILL.md` of the probe skill. The body's first line is a
     /// shell injection: the render pass runs it through `/bin/sh -c`
     /// with captured output, so a real child writes the marker to ITS
@@ -191,19 +158,6 @@ struct StdioContractTests {
         """
 
     // MARK: - Fixtures
-
-    /// Writes the user-layer `config.yaml` under `configHome`, at
-    /// `<configHome>/<dotfolder name>/config.yaml`.
-    ///
-    /// - Parameter configHome: The injected `XDG_CONFIG_HOME` root.
-    /// - Throws: The directory-creation or write error.
-    private static func writeUserConfig(under configHome: URL) throws {
-        let dotfolder = configHome.appendingPathComponent(exampleDotfolderName, isDirectory: true)
-        try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)
-        try userConfigYAML.write(
-            to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
-            atomically: true, encoding: .utf8)
-    }
 
     /// Writes the probe skill into the session working directory's
     /// project skills layer, `<cwd>/.skills/probe/SKILL.md`.
@@ -226,19 +180,21 @@ struct StdioContractTests {
         return skillDirectory
     }
 
-    /// Sets `configHomeVariable` for this process — and so for every
-    /// child it spawns — and returns the restorer for the prior value.
+    /// Sets `TierThreeFixture.configHomeVariable` for this process —
+    /// and so for every child it spawns — and returns the restorer for
+    /// the prior value.
     ///
     /// - Parameter configHome: The directory to point the variable at.
     /// - Returns: The closure that puts the prior value back.
     private static func pointConfigHome(at configHome: URL) -> () -> Void {
-        let previous = ProcessInfo.processInfo.environment[configHomeVariable]
-        setenv(configHomeVariable, configHome.path, 1)
+        let variable = TierThreeFixture.configHomeVariable
+        let previous = ProcessInfo.processInfo.environment[variable]
+        setenv(variable, configHome.path, 1)
         return {
             if let previous {
-                setenv(configHomeVariable, previous, 1)
+                setenv(variable, previous, 1)
             } else {
-                unsetenv(configHomeVariable)
+                unsetenv(variable)
             }
         }
     }
@@ -303,14 +259,15 @@ struct StdioContractTests {
     @Test func framingSurvivesTheProcessBoundaryWhileAShellChildRuns() async throws {
         let workspace = makeResolvedDirectory(label: "StdioContract-repo")
         let configHome = makeResolvedDirectory(label: "StdioContract-config")
-        try Self.writeUserConfig(under: configHome)
+        try TierThreeFixture.writeUserConfig(under: configHome)
         let skillDirectory = try Self.writeProbeSkill(under: workspace)
         let restoreConfigHome = Self.pointConfigHome(at: configHome)
         defer { restoreConfigHome() }
 
         // Spawn the built example through the client package's process
         // owner, with the absolute path it requires (plan.md §20.1).
-        let command = try BuiltProductLocator.executableURL(named: Self.exampleExecutableName)
+        let command = try BuiltProductLocator.executableURL(
+            named: TierThreeFixture.agentExecutableName)
         let agent = try AgentProcess(command: command.path)
         let tap = InboundTapTransport(wrapping: agent.transport)
         let client = await SwiftUIACPClient()
