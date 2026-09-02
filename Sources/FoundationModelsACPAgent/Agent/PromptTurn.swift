@@ -393,6 +393,9 @@ extension RoutedACPAgent {
         send: @escaping SessionUpdateSink
     ) -> PromptResponse {
         let sessionId = params.sessionId
+        // The reader of a settled run's stored output (plan.md §11.8):
+        // the same host-owned stream the terminal projection consumes.
+        let shellOutput = entry.surface.shellOutput
         let turn = PromptTurn(
             sessionId: sessionId,
             promptBlocks: params.prompt,
@@ -400,6 +403,7 @@ extension RoutedACPAgent {
             send: send,
             firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
             modelPrompt: overridePrompt,
+            shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
             contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb))
         let session = entry.session
         connection.afterRespondingToCurrentRequest {
@@ -432,9 +436,15 @@ extension RoutedACPAgent {
     /// Marks the session closed. The session-close task (plan.md §10.1)
     /// flips this after its sweep; the prompt refusal reads it.
     ///
+    /// It also finishes the session's host-owned shell output stream
+    /// (plan.md §11.8): a host that stops listening must call
+    /// `finish()`, and the finish ends the terminal projection's
+    /// consumer loop.
+    ///
     /// - Parameter sessionId: The session to mark.
     func markSessionClosed(_ sessionId: SessionId) {
         sessions[sessionId]?.isClosed = true
+        sessions[sessionId]?.surface.shellOutput?.finish()
     }
 
     /// Clears the finished turn, so the session accepts a new prompt.

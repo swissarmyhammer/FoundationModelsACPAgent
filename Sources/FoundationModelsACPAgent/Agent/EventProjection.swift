@@ -39,10 +39,10 @@ enum ProjectedFileChange: Equatable, Sendable {
 ///
 /// One value projects one turn: `project(_:)` maps each of the
 /// thirteen `SessionEvent` cases, and `reportUsage()` closes the turn
-/// with its one summed `usage_update`. The live shell chunks have no
-/// `SessionEvent` source, so their mapping rides the static
-/// `update(for:)` and `projectShellOutput(_:to:)` functions over the
-/// host-owned `ShellOutputChunkStream` (§11.8).
+/// with its one summed `usage_update`. The live shell bytes have no
+/// `SessionEvent` source, so their mapping rides ``TerminalStream``
+/// over the host-owned `ShellOutputChunkStream` (§11.8); this
+/// projection's settlement carries the matching `Terminal` reference.
 struct EventProjection {
     // MARK: - The wire constants
 
@@ -313,8 +313,11 @@ struct EventProjection {
     /// nothing — an outcome riding on it is ignored — and a terminal
     /// event with no outcome reports the unknown status.
     ///
-    /// The update replaces the call's content with the complete stored
-    /// record, so a client that missed a live chunk converges (§11.6).
+    /// A run the shell store knows replaces the call's content with
+    /// its `Terminal` reference and the capture's honesty notes
+    /// (§11.8): the bytes ride the terminal stream, never coerced to
+    /// text, and a reconnecting client takes the
+    /// `TerminalUpdate.output` replacement instead.
     ///
     /// - Parameter operationEvent: The run's operation event.
     private func projectSettlement(of operationEvent: OperationEvent) async {
@@ -335,7 +338,9 @@ struct EventProjection {
             )
             status = .unknown(Self.unknownOutcomeStatusWireValue)
         }
-        var items = Self.contents(of: shellSnapshot(operationEvent.correlationID))
+        var items = Self.contents(
+            of: shellSnapshot(operationEvent.correlationID),
+            run: operationEvent.correlationID)
         if let note = Self.note(for: operationEvent.outcome) {
             items.append(Self.textItem(note))
         }
@@ -429,57 +434,6 @@ struct EventProjection {
     /// - Returns: The extension wire value.
     private static func extensionValue(_ raw: String) -> String {
         raw.hasPrefix(extensionValuePrefix) ? raw : extensionValuePrefix + raw
-    }
-
-    // MARK: - The live shell chunks (§8.4, §11.8)
-
-    /// Maps one live shell event to its `tool_call_content_chunk`, or
-    /// to nothing for the completion marker — the settlement update
-    /// from `runSettled` is the run's terminal report.
-    ///
-    /// An output chunk decodes as UTF-8 with replacement, so no byte
-    /// is dropped silently; a gap becomes one chunk that names the
-    /// dropped bytes. The chunk is keyed by the run's `commandID`,
-    /// which is the `toolCallId` (§11.8's identity rule).
-    ///
-    /// - Parameter event: The live shell event.
-    /// - Returns: The update, or `nil`.
-    static func update(for event: ShellOutputEvent) -> SessionUpdate? {
-        switch event.kind {
-        case .output(_, let bytes):
-            return .toolCallContentChunk(
-                ToolCallContentChunk(
-                    content: textItem(String(decoding: bytes, as: UTF8.self)),
-                    toolCallId: ToolCallId(rawValue: event.commandID)))
-        case .gap(let stream, let droppedByteCount):
-            return .toolCallContentChunk(
-                ToolCallContentChunk(
-                    content: textItem(
-                        "the stream dropped \(droppedByteCount) bytes of \(streamName(for: stream)) output"
-                    ),
-                    toolCallId: ToolCallId(rawValue: event.commandID)))
-        case .completed:
-            return nil
-        @unknown default:
-            turnLogger.debug(
-                "run \(event.commandID, privacy: .public): unprojected shell output event")
-            return nil
-        }
-    }
-
-    /// Consumes the host-owned live output stream to its end, sending
-    /// one chunk per payload event (plan.md §8.4, decided 2026-09-01).
-    ///
-    /// - Parameters:
-    ///   - events: The live stream, usually a `ShellOutputChunkStream`.
-    ///   - send: The sink each chunk goes to.
-    static func projectShellOutput<Events: AsyncSequence<ShellOutputEvent, Never>>(
-        _ events: Events, to send: SessionUpdateSink
-    ) async {
-        for await event in events {
-            guard let update = update(for: event) else { continue }
-            await send(update)
-        }
     }
 
     // MARK: - The diff path directions (§11.6)
@@ -582,34 +536,43 @@ struct EventProjection {
         return values.count == 1 ? .value(first) : .value(.array(values))
     }
 
-    /// The settlement content of a stored run: the stored stdout, then
-    /// the stored stderr, each with a truncation note when its store
-    /// hit its own cap. An absent snapshot contributes nothing.
+    /// The settlement content of a stored run (§11.8): the `Terminal`
+    /// reference first — the bytes ride the terminal stream, never a
+    /// coerced text copy — then the honesty notes of each stored
+    /// stream. An absent snapshot contributes nothing.
     ///
-    /// - Parameter snapshot: The stored raw output, or `nil`.
+    /// - Parameters:
+    ///   - snapshot: The stored raw output, or `nil`.
+    ///   - commandID: The run's completion token; its `terminalId`.
     /// - Returns: The content items.
-    private static func contents(of snapshot: ShellOutputSnapshot?) -> [ToolCallContent] {
+    private static func contents(
+        of snapshot: ShellOutputSnapshot?, run commandID: String
+    ) -> [ToolCallContent] {
         guard let snapshot else { return [] }
-        return items(for: snapshot.stdout, stream: .stdout)
-            + items(for: snapshot.stderr, stream: .stderr)
+        return [TerminalStream.terminalItem(for: commandID)]
+            + notes(for: snapshot.stdout, stream: .stdout)
+            + notes(for: snapshot.stderr, stream: .stderr)
     }
 
-    /// The content items of one stored stream: its decoded text, and a
-    /// truncation note when the store dropped bytes.
+    /// The honesty notes of one stored stream: the text says when the
+    /// store dropped bytes to stay under its cap, and when the capture
+    /// saw binary content — a partial or binary record must never read
+    /// as a complete text one.
     ///
     /// - Parameters:
     ///   - output: The stored raw output of the stream.
     ///   - stream: Which of the two streams it is.
-    /// - Returns: The content items; empty for an empty capture.
-    private static func items(
+    /// - Returns: The note items; empty for a complete text capture.
+    private static func notes(
         for output: ShellRawOutput, stream: ShellOutputStream
     ) -> [ToolCallContent] {
         var items: [ToolCallContent] = []
-        if !output.bytes.isEmpty {
-            items.append(textItem(String(decoding: output.bytes, as: UTF8.self)))
-        }
         if output.truncated {
             items.append(textItem("the stored \(streamName(for: stream)) output is truncated"))
+        }
+        if output.binaryDetected {
+            items.append(
+                textItem("the stored \(streamName(for: stream)) output carries binary content"))
         }
         return items
     }

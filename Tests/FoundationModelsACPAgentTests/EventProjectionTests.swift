@@ -8,9 +8,9 @@ import Testing
 
 /// The event projection (plan.md §8.4–§8.5, §11.6): the one mapping
 /// from Router's `SessionEvent` stream to the wire — the tool-call
-/// upserts, the terminal status from `OperationOutcome`, the live
-/// shell-output chunks, the compaction meter, and the diff path
-/// directions.
+/// upserts, the terminal status from `OperationOutcome`, the
+/// settlement's terminal reference, the compaction meter, and the diff
+/// path directions.
 @Suite struct EventProjectionTests {
     // MARK: - Constants
 
@@ -33,12 +33,6 @@ import Testing
 
     /// The estimated transcript size after the scripted fold.
     private static let tokensAfterFold = 300
-
-    /// The byte count the scripted gap event reports as dropped.
-    private static let droppedByteCount = 7
-
-    /// One byte that is not valid UTF-8, for the replacement decode.
-    private static let invalidUTF8Byte: UInt8 = 0xFF
 
     /// The number of notifications the raw wire test waits for: two
     /// tool-call updates and the idle terminator.
@@ -66,12 +60,19 @@ import Testing
 
     /// Makes the stored raw output of one stream from `text`.
     ///
-    /// - Parameter text: The stored text of the stream.
-    /// - Returns: The raw output, complete and not truncated.
-    private static func makeRawOutput(text: String) -> ShellRawOutput {
+    /// - Parameters:
+    ///   - text: The stored text of the stream.
+    ///   - truncated: Tells if the store dropped output; false by
+    ///     default.
+    ///   - binaryDetected: Tells if the capture saw binary content;
+    ///     false by default.
+    /// - Returns: The raw output.
+    private static func makeRawOutput(
+        text: String, truncated: Bool = false, binaryDetected: Bool = false
+    ) -> ShellRawOutput {
         let bytes = Array(text.utf8)
         return ShellRawOutput(
-            bytes: bytes, binaryDetected: false, truncated: false,
+            bytes: bytes, binaryDetected: binaryDetected, truncated: truncated,
             storedByteCount: bytes.count)
     }
 
@@ -91,25 +92,6 @@ import Testing
     }
 
     // MARK: - Readers
-
-    /// The tool-call updates in the sequence, in order.
-    private static func toolCallUpdates(in updates: [SessionUpdate]) -> [ToolCallUpdate] {
-        updates.compactMap { update in
-            if case .toolCallUpdate(let call) = update { return call }
-            return nil
-        }
-    }
-
-    /// The text of every plain-content item in a content patch.
-    private static func texts(in content: PatchField<[ToolCallContent]>) -> [String] {
-        guard case .value(let items) = content else { return [] }
-        return items.compactMap { item in
-            if case .content(let wrapped) = item, case .text(let text) = wrapped.content {
-                return text.text
-            }
-            return nil
-        }
-    }
 
     /// The message ids of the agent message chunks in the sequence.
     private static func chunkMessageIds(in updates: [SessionUpdate]) -> [MessageId] {
@@ -171,7 +153,7 @@ import Testing
                 id: Self.sdkToolCallId, status: .completed, summary: "done",
                 output: [.text(id: "segment-1", content: "file text")]),
         ])
-        let calls = Self.toolCallUpdates(in: updates)
+        let calls = toolCallUpdates(in: updates)
 
         #expect(calls.map(\.toolCallId.rawValue) == Array(repeating: Self.sdkToolCallId, count: calls.count))
         guard case (let creation?, let running?, let completion?) = (calls.first, calls.dropFirst().first, calls.dropFirst(2).first) else {
@@ -183,7 +165,7 @@ import Testing
         #expect(creation.rawInput == .value(.object(["path": .string("notes.txt")])))
         #expect(running.status == .value(.inProgress))
         #expect(completion.status == .value(.completed))
-        #expect(Self.texts(in: completion.content) == ["done", "file text"])
+        #expect(texts(in: completion.content) == ["done", "file text"])
     }
 
     /// A failed tool status reports `failed`.
@@ -191,7 +173,7 @@ import Testing
         let updates = await Self.drive([
             .toolStatus(id: Self.sdkToolCallId, status: .failed, summary: nil, output: nil)
         ])
-        let call = try #require(Self.toolCallUpdates(in: updates).first)
+        let call = try #require(toolCallUpdates(in: updates).first)
         #expect(call.status == .value(.failed))
     }
 
@@ -201,22 +183,22 @@ import Testing
     /// its text says the run's fate is unknown.
     @Test func aLostRunSettlesAsUnderscoreLostAndNeverFailed() async throws {
         let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .lost))])
-        let call = try #require(Self.toolCallUpdates(in: updates).first)
+        let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.toolCallId.rawValue == Self.completionToken)
         #expect(call.status == .value(.unknown(EventProjection.lostStatusWireValue)))
         #expect(call.status != .value(.failed))
-        #expect(Self.texts(in: call.content).contains { $0.contains("do not know") })
+        #expect(texts(in: call.content).contains { $0.contains("do not know") })
     }
 
     /// A `.timedOut` outcome settles as `failed` and names the timeout
     /// in the text.
     @Test func aTimedOutRunSettlesAsFailedAndNamesTheTimeout() async throws {
         let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .timedOut))])
-        let call = try #require(Self.toolCallUpdates(in: updates).first)
+        let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.status == .value(.failed))
-        #expect(Self.texts(in: call.content).contains { $0.contains("timed out") })
+        #expect(texts(in: call.content).contains { $0.contains("timed out") })
     }
 
     /// A `.cancelled` outcome settles as `cancelled` and says "we
@@ -225,10 +207,10 @@ import Testing
     /// is that we stopped listening, not that the work stopped.
     @Test func aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening() async throws {
         let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .cancelled))])
-        let call = try #require(Self.toolCallUpdates(in: updates).first)
+        let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.status == .value(.cancelled))
-        #expect(Self.texts(in: call.content).contains { $0.contains("we stopped listening") })
+        #expect(texts(in: call.content).contains { $0.contains("we stopped listening") })
     }
 
     /// A `.completed` event that arrives with a nil outcome — the rule
@@ -236,7 +218,7 @@ import Testing
     /// does not crash the projection.
     @Test func aCompletedEventWithNilOutcomeSettlesAsUnknown() async throws {
         let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: nil))])
-        let call = try #require(Self.toolCallUpdates(in: updates).first)
+        let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(
             call.status
@@ -249,13 +231,14 @@ import Testing
         let updates = await Self.drive([
             .runSettled(Self.makeOperationEvent(outcome: .succeeded, kind: .progress))
         ])
-        #expect(Self.toolCallUpdates(in: updates).isEmpty)
+        #expect(toolCallUpdates(in: updates).isEmpty)
     }
 
-    /// The settlement update replaces the call's content with the
-    /// complete stored record, so a client that missed a chunk
-    /// converges (§11.6).
-    @Test func aSettledRunReplacesContentFromTheStoredSnapshot() async throws {
+    /// The settlement update replaces the call's content with the run's
+    /// `Terminal` reference, keyed by the run's `commandID`, so the
+    /// bytes stay on the terminal stream and never come back as coerced
+    /// text (§11.8).
+    @Test func aSettledRunReplacesContentWithTheTerminalReference() async throws {
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: "hello"),
             stderr: Self.makeRawOutput(text: "oops"))
@@ -264,90 +247,49 @@ import Testing
         ) { commandID in
             commandID == Self.completionToken ? snapshot : nil
         }
-        let call = try #require(Self.toolCallUpdates(in: updates).first)
+        let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.status == .value(.completed))
-        #expect(Self.texts(in: call.content) == ["hello", "oops"])
+        #expect(terminalIds(in: call.content) == [Self.completionToken])
+        #expect(texts(in: call.content).isEmpty)
     }
 
-    // MARK: - The live shell chunks (§8.4, §11.8)
-
-    /// An output event becomes one `tool_call_content_chunk` keyed by
-    /// the run's `commandID`, decoded as UTF-8 with replacement so no
-    /// byte is dropped silently.
-    @Test func aShellOutputEventBecomesOneChunkKeyedByTheCommandID() throws {
-        let bytes = Array("build ok".utf8) + [Self.invalidUTF8Byte]
-        let update = EventProjection.update(
-            for: ShellOutputEvent(
-                commandID: Self.completionToken,
-                kind: .output(stream: .stdout, bytes: bytes)))
-
-        guard case .toolCallContentChunk(let chunk) = try #require(update) else {
-            Issue.record("expected a tool_call_content_chunk, got \(String(describing: update))")
-            return
+    /// A truncated capture is said in the settlement text, so a
+    /// partial record is never presented as complete (§11.8).
+    @Test func aTruncatedCaptureIsSaidInTheSettlementText() async throws {
+        let snapshot = ShellOutputSnapshot(
+            stdout: Self.makeRawOutput(text: "part", truncated: true),
+            stderr: Self.makeRawOutput(text: ""))
+        let updates = await Self.drive(
+            [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
+        ) { commandID in
+            commandID == Self.completionToken ? snapshot : nil
         }
-        #expect(chunk.toolCallId.rawValue == Self.completionToken)
-        guard case .content(let wrapped) = chunk.content, case .text(let text) = wrapped.content
-        else {
-            Issue.record("expected a text content item, got \(chunk.content)")
-            return
-        }
-        #expect(text.text.contains("build ok"))
-        #expect(text.text.contains("\u{FFFD}"))
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        #expect(
+            texts(in: call.content).contains { text in
+                text.contains("truncated") && text.contains("stdout")
+            })
     }
 
-    /// A gap event becomes one chunk that names the dropped byte count
-    /// and the stream it belongs to.
-    @Test func aGapEventBecomesOneChunkNamingTheDroppedBytes() throws {
-        let update = EventProjection.update(
-            for: ShellOutputEvent(
-                commandID: Self.completionToken,
-                kind: .gap(stream: .stderr, droppedByteCount: Self.droppedByteCount)))
-
-        guard case .toolCallContentChunk(let chunk) = try #require(update) else {
-            Issue.record("expected a tool_call_content_chunk, got \(String(describing: update))")
-            return
+    /// A binary detection is said in the settlement text, beside the
+    /// byte-true record on the terminal stream (§11.8).
+    @Test func aBinaryCaptureIsSaidInTheSettlementText() async throws {
+        let snapshot = ShellOutputSnapshot(
+            stdout: Self.makeRawOutput(text: ""),
+            stderr: Self.makeRawOutput(text: "raw", binaryDetected: true))
+        let updates = await Self.drive(
+            [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
+        ) { commandID in
+            commandID == Self.completionToken ? snapshot : nil
         }
-        guard case .content(let wrapped) = chunk.content, case .text(let text) = wrapped.content
-        else {
-            Issue.record("expected a text content item, got \(chunk.content)")
-            return
-        }
-        #expect(text.text.contains("\(Self.droppedByteCount)"))
-        #expect(text.text.contains("stderr"))
-    }
+        let call = try #require(toolCallUpdates(in: updates).first)
 
-    /// The completion marker sends nothing: the settlement update from
-    /// `runSettled` is the run's terminal report.
-    @Test func aCompletedMarkerSendsNoChunk() {
-        let update = EventProjection.update(
-            for: ShellOutputEvent(commandID: Self.completionToken, kind: .completed))
-        #expect(update == nil)
-    }
-
-    /// The projection consumes the host-owned live stream to its end,
-    /// sending one chunk per payload event.
-    @Test func theProjectionConsumesTheLiveShellStreamToChunks() async {
-        let recorder = SinkRecorder()
-        let (stream, continuation) = AsyncStream<ShellOutputEvent>.makeStream()
-        continuation.yield(
-            ShellOutputEvent(
-                commandID: Self.completionToken,
-                kind: .output(stream: .stdout, bytes: Array("line one\n".utf8))))
-        continuation.yield(
-            ShellOutputEvent(
-                commandID: Self.completionToken,
-                kind: .gap(stream: .stdout, droppedByteCount: Self.droppedByteCount)))
-        continuation.yield(
-            ShellOutputEvent(commandID: Self.completionToken, kind: .completed))
-        continuation.finish()
-
-        await EventProjection.projectShellOutput(stream) { update in
-            await recorder.append(update)
-        }
-        let updates = await recorder.updates
-
-        #expect(updates.map(\.kind) == [.toolCallContentChunk, .toolCallContentChunk])
+        #expect(
+            texts(in: call.content).contains { text in
+                text.contains("binary") && text.contains("stderr")
+            })
     }
 
     // MARK: - The message-closing entry record (§8.4)

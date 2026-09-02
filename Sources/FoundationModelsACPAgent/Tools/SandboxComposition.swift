@@ -90,19 +90,25 @@ public enum SandboxComposition {
     ///   - options: The decoded `tools.shell:` options.
     ///   - configuration: The decoded `sandbox:` section.
     ///   - rootSet: The session root set, working directory first.
+    ///   - outputChunkStream: The host-owned live output stream the
+    ///     capability tees raw bytes into (plan.md §11.8), or `nil` to
+    ///     tee nothing.
     /// - Throws: ``SandboxCompositionError/emptyRootSet`` for an empty
-    ///   root set, and whatever `withShell(storeDirectory:sandbox:)`
-    ///   throws when the store cannot prepare.
+    ///   root set, and whatever
+    ///   `withShell(storeDirectory:sandbox:outputChunkStream:)` throws
+    ///   when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
         options: ShellToolOptions,
         configuration: SandboxConfiguration,
-        rootSet: [URL]
+        rootSet: [URL],
+        outputChunkStream: ShellOutputChunkStream? = nil
     ) throws {
         try composeShell(
             into: builder,
             options: options,
-            sandbox: makeShellSandbox(rootSet: rootSet, configuration: configuration))
+            sandbox: makeShellSandbox(rootSet: rootSet, configuration: configuration),
+            outputChunkStream: outputChunkStream)
     }
 
     /// The one seam every shell mount goes through: `sandbox` is handed to
@@ -113,13 +119,21 @@ public enum SandboxComposition {
     ///   - builder: The registry builder the capability mounts into.
     ///   - options: The decoded `tools.shell:` options.
     ///   - sandbox: The confinement every command spawns under.
-    /// - Throws: Whatever `withShell(storeDirectory:sandbox:)` throws
+    ///   - outputChunkStream: The host-owned live output stream the
+    ///     capability tees raw bytes into (plan.md §11.8), or `nil` to
+    ///     tee nothing.
+    /// - Throws: Whatever
+    ///   `withShell(storeDirectory:sandbox:outputChunkStream:)` throws
     ///   when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
         options: ShellToolOptions,
-        sandbox: any CommandSandbox
+        sandbox: any CommandSandbox,
+        outputChunkStream: ShellOutputChunkStream? = nil
     ) throws {
-        try builder.withShell(storeDirectory: options.storeDirectory, sandbox: sandbox)
+        try builder.withShell(
+            storeDirectory: options.storeDirectory,
+            sandbox: sandbox,
+            outputChunkStream: outputChunkStream)
     }
 }

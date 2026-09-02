@@ -269,7 +269,28 @@ extension RoutedACPAgent {
         // every registry change (plan.md §14.4).
         publishAvailableCommands(from: commands, sessionId: sessionId)
 
+        startTerminalProjection(over: composition.surface, sessionId: sessionId)
+
         return NewSessionResponse(sessionId: sessionId, configOptions: configOptions)
+    }
+
+    /// Starts the session's terminal projection (plan.md §11.8): the
+    /// one consumer loop over the host-owned shell output stream,
+    /// posting each terminal update through the bound connection. A
+    /// session with no shell mount, or an agent with no bound
+    /// connection, starts nothing. The loop ends when
+    /// ``markSessionClosed(_:)`` finishes the stream.
+    ///
+    /// - Parameters:
+    ///   - surface: The session's mounted surface.
+    ///   - sessionId: The session the updates belong to.
+    private func startTerminalProjection(over surface: SessionSurface, sessionId: SessionId) {
+        guard let shellOutput = surface.shellOutput, let connection = boundConnection else {
+            return
+        }
+        TerminalStream.start(over: shellOutput) { update in
+            await connection.post(update, in: sessionId)
+        }
     }
 
     /// Runs the per-session composition pipeline (plan.md §7.1): resolve

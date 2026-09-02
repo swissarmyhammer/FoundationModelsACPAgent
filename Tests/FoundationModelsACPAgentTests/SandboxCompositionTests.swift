@@ -15,9 +15,6 @@ import Testing
 /// case and the `/private` symlink case are regression tests against the
 /// two silent widenings the upstream types permit.
 @Suite struct SandboxCompositionTests {
-    /// The surface path of the shell execute verb.
-    private static let executeVerbPath = "shell.execute"
-
     /// The marker a scripted preflight failure carries, so an assertion
     /// can find the reason in the tool answer.
     private static let preflightFailureMarker = "injected preflight failure"
@@ -57,39 +54,6 @@ import Testing
         return try await ToolCatalog.makeRegistry(context: context).registry
     }
 
-    /// Invokes `tools.shell.execute` and returns the rendered report.
-    ///
-    /// - Parameters:
-    ///   - registry: The built registry whose execute verb to invoke.
-    ///   - command: The shell command to run.
-    ///   - workingDirectory: The directory the command runs in.
-    /// - Returns: The verb's rendered answer.
-    /// - Throws: Whatever the invocation throws.
-    private static func invokeExecute(
-        in registry: MultiTool.Registry, command: String, workingDirectory: URL
-    ) async throws -> String {
-        let tool = try #require(registry.tools[executeVerbPath])
-        let argumentsJSON = try executeArgumentsJSON(
-            command: command, workingDirectory: workingDirectory)
-        let output = try await ToolInvoker.invoke(
-            tool, content: try GeneratedContent(json: argumentsJSON))
-        return try #require(output as? String)
-    }
-
-    /// The wire JSON of one execute call.
-    ///
-    /// - Parameters:
-    ///   - command: The shell command to run.
-    ///   - workingDirectory: The directory the command runs in.
-    /// - Returns: The arguments as JSON text.
-    /// - Throws: Whatever the encode throws.
-    private static func executeArgumentsJSON(
-        command: String, workingDirectory: URL
-    ) throws -> String {
-        let arguments = ["command": command, "workingDirectory": workingDirectory.path]
-        return String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
-    }
-
     /// A `CommandSandbox` whose preflight always refuses, so a test proves
     /// a failed preflight never reaches a spawn. `wrap` throws the same
     /// refusal: a caller that skipped the preflight still cannot spawn.
@@ -122,7 +86,7 @@ import Testing
         let root = Self.makeResolvedDirectory(named: "write-in")
         let registry = try await Self.makeRegistry(workingDirectory: root)
 
-        _ = try await Self.invokeExecute(
+        _ = try await ShellVerbSupport.invokeExecute(
             in: registry, command: "printf confined > inside.txt", workingDirectory: root)
 
         let written = root.appendingPathComponent("inside.txt")
@@ -139,7 +103,7 @@ import Testing
         let registry = try await Self.makeRegistry(workingDirectory: root)
         let escaped = outside.appendingPathComponent("escaped.txt")
 
-        let answer = try await Self.invokeExecute(
+        let answer = try await ShellVerbSupport.invokeExecute(
             in: registry,
             command: "printf escaped > '\(escaped.path)'",
             workingDirectory: root)
@@ -178,7 +142,7 @@ import Testing
             sandbox: RefusingPreflightSandbox())
         let registry = try builder.buildRegistry()
 
-        let answer = try await Self.invokeExecute(
+        let answer = try await ShellVerbSupport.invokeExecute(
             in: registry, command: "printf never > sentinel.txt", workingDirectory: root)
 
         #expect(answer.contains(Self.preflightFailureMarker))
@@ -213,7 +177,7 @@ import Testing
             .appendingPathComponent(resolved.lastPathComponent, isDirectory: true)
         let registry = try await Self.makeRegistry(workingDirectory: symlinked)
 
-        _ = try await Self.invokeExecute(
+        _ = try await ShellVerbSupport.invokeExecute(
             in: registry, command: "printf linked > linked.txt", workingDirectory: symlinked)
 
         let written = resolved.appendingPathComponent("linked.txt")
@@ -235,8 +199,8 @@ import Testing
 
         let root = Self.makeResolvedDirectory(named: "turn")
         let registry = try await Self.makeRegistry(workingDirectory: root)
-        let tool = try #require(registry.tools[Self.executeVerbPath])
-        let argumentsJSON = try Self.executeArgumentsJSON(
+        let tool = try #require(registry.tools[ShellVerbSupport.executeVerbPath])
+        let argumentsJSON = try ShellVerbSupport.executeArgumentsJSON(
             command: "printf turn > turn.txt", workingDirectory: root)
         let backend = ScriptedLLMContainer(
             script: [.toolCall(name: tool.name, argumentsJSON: argumentsJSON), .endTurn]

@@ -25,6 +25,13 @@ public struct SessionSurface: Sendable {
     /// root set the model reads under.
     public let filesReadVerb: (any FoundationModels.Tool)?
 
+    /// The host-owned live shell output stream (plan.md §11.8), or
+    /// `nil` when the shell section is off. The session start hands it
+    /// to the terminal projection, the prompt turn reads settlements
+    /// through its `snapshot(for:)`, and the session-close task calls
+    /// its `finish()` at teardown.
+    public let shellOutput: ShellOutputChunkStream?
+
     /// Makes a session surface.
     ///
     /// - Parameters:
@@ -32,14 +39,18 @@ public struct SessionSurface: Sendable {
     ///   - serverPool: The pool the session lifecycle shuts down.
     ///   - filesReadVerb: The mounted read verb, or `nil` when the
     ///     files section is off.
+    ///   - shellOutput: The host-owned live shell output stream, or
+    ///     `nil` when the shell section is off.
     public init(
         tools: [any FoundationModels.Tool],
         serverPool: MCPServerPool,
-        filesReadVerb: (any FoundationModels.Tool)? = nil
+        filesReadVerb: (any FoundationModels.Tool)? = nil,
+        shellOutput: ShellOutputChunkStream? = nil
     ) {
         self.tools = tools
         self.serverPool = serverPool
         self.filesReadVerb = filesReadVerb
+        self.shellOutput = shellOutput
     }
 }
 
@@ -85,6 +96,11 @@ public enum ToolCatalog {
         /// The connected MCP servers, in mount order — what the surface
         /// refresher watches.
         let mcpServers: [FoundationModelsMultitool.MCPServer]
+
+        /// The host-owned live shell output stream the build handed to
+        /// `withShell(outputChunkStream:)` (plan.md §11.8), or `nil`
+        /// when the shell section is off.
+        let shellOutput: ShellOutputChunkStream?
     }
 
     /// Builds the composed session surface: the Multitool session tools —
@@ -119,7 +135,8 @@ public enum ToolCatalog {
         return SessionSurface(
             tools: tools,
             serverPool: built.pool,
-            filesReadVerb: built.registry.tools[Self.filesReadVerbPath])
+            filesReadVerb: built.registry.tools[Self.filesReadVerbPath],
+            shellOutput: built.shellOutput)
     }
 
     /// Builds the Multitool registry over the enabled capability modules.
@@ -148,12 +165,20 @@ public enum ToolCatalog {
                 allowSymlinks: options.allowSymlinks,
                 recordsChanges: options.recordsChanges)
         }
+        var shellOutput: ShellOutputChunkStream?
         if case .enabled(let options) = context.configuration.tools.shell {
+            // The host-owned live view of every shell run (plan.md
+            // §11.8): the capability tees each raw chunk into it, the
+            // terminal projection reads it, and the settlement reads
+            // `snapshot(for:)` on the same stream.
+            let stream = ShellOutputChunkStream()
+            shellOutput = stream
             try SandboxComposition.composeShell(
                 into: builder,
                 options: options,
                 configuration: context.configuration.sandbox,
-                rootSet: [context.workingDirectory] + context.additionalRoots)
+                rootSet: [context.workingDirectory] + context.additionalRoots,
+                outputChunkStream: stream)
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,
@@ -168,7 +193,8 @@ public enum ToolCatalog {
             registry: try builder.buildRegistry(),
             source: builder.registrySource,
             pool: builder.serverPool,
-            mcpServers: composed.servers)
+            mcpServers: composed.servers,
+            shellOutput: shellOutput)
     }
 
     /// Builds the skills registry over the dotfolder stack, or `nil` when
