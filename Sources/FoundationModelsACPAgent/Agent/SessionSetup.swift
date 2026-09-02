@@ -135,8 +135,11 @@ struct SessionComposition {
     /// The mounted tool surface (plan.md §11.1).
     let surface: SessionSurface
 
-    /// The loaded slash-command registry (plan.md §14.1).
-    let commands: CommandRegistry
+    /// The later slash-command sources (plan.md §14.1), in precedence order:
+    /// the catalog's linked conformers, then the registered providers, then
+    /// the skills source. The registry is assembled in `newSession`, once the
+    /// live session the builtins capture exists.
+    let commandProviders: [any SlashCommandProviding]
 
     /// The user layer root the stack resolved, for the project registry
     /// and the `home` transcript location.
@@ -202,6 +205,32 @@ extension RoutedACPAgent {
             .recordSessionStart(workingDirectory: workingDirectory)
 
         let sessionId = SessionId(rawValue: session.id.description)
+
+        // Assemble the command registry now the session exists (plan.md
+        // §14.1): the six builtins capture a context bound to the live
+        // session and, through it, to the registry that carries them, so
+        // `/help` can list every registered command. The reserved-name rule
+        // is enforced by the registry merge.
+        let commandContext = BuiltinCommandContext(
+            workingDirectory: workingDirectory,
+            configuration: composition.configuration,
+            instructions: composition.instructions,
+            modelName: residentProfile.standard.chosen.stringValue,
+            profileName: residentProfile.definitionName,
+            dotfolderName: name,
+            userLayerRoot: composition.userLayerRoot)
+        let commands = CommandRegistry(
+            builtins: BuiltinCommands.make(context: commandContext),
+            providers: composition.commandProviders,
+            workingDirectory: workingDirectory)
+        await commands.load()
+        commandContext.bind(
+            BuiltinCommandContext.Binding(
+                session: session,
+                sessionId: sessionId,
+                transcriptDirectory: session.recordingDirectory,
+                registry: commands))
+
         sessions[sessionId] = ActiveSession(
             session: session,
             configuration: composition.configuration,
@@ -210,12 +239,12 @@ extension RoutedACPAgent {
             additionalRoots: additionalRoots,
             transcriptDirectory: session.recordingDirectory,
             surface: composition.surface,
-            commands: composition.commands,
+            commands: commands,
             activeTurn: nil)
 
         // The command set publishes after the response, and again on
         // every registry change (plan.md §14.4).
-        publishAvailableCommands(from: composition.commands, sessionId: sessionId)
+        publishAvailableCommands(from: commands, sessionId: sessionId)
 
         // TODO(^r7t7xe1): the config-options task fills `configOptions`
         // with the model slot selector; until then the list is honestly
@@ -265,21 +294,12 @@ extension RoutedACPAgent {
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        let commands = CommandRegistry(
-            // TODO(^4fz1sd1): the builtins task fills this list with the
-            // six `.action` builtins; the reserved-name rule is already
-            // enforced by the registry merge.
-            builtins: [],
-            providers: makeCommandProviders(surface: surface, skills: skills),
-            workingDirectory: workingDirectory)
-        await commands.load()
-
         let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
         return SessionComposition(
             configuration: loaded.configuration,
             instructions: instructions.text,
             surface: surface,
-            commands: commands,
+            commandProviders: makeCommandProviders(surface: surface, skills: skills),
             userLayerRoot: userLayerRoot,
             transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
                 workingDirectory: workingDirectory,

@@ -129,7 +129,7 @@ struct CommandDispatchTests {
 
         do {
             _ = try await fixture.harness.agent.prompt(
-                ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "/depoly now"))
+                ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "/deployy now"))
             Issue.record("expected the unknown-command refusal")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
@@ -137,7 +137,9 @@ struct CommandDispatchTests {
                 Issue.record("expected object data, got \(String(describing: error.data))")
                 return
             }
-            #expect(fields["command"] == .string("depoly"))
+            // `deployy` is one edit from the provider's `deploy` and far from
+            // every registered builtin, so the near miss is `deploy` alone.
+            #expect(fields["command"] == .string("deployy"))
             #expect(fields["suggestions"] == .array([.string("deploy")]))
         }
 

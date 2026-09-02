@@ -1,10 +1,37 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1g27cwrg6c94vh18w1fzn5v
+  text: |-
+    ### research done
+    Key facts found:
+    - `CommandRegistry(builtins:providers:workingDirectory:)` holds `builtins` as an immutable `let`; `SessionSetup.composeSession` builds the registry with `builtins: []` BEFORE `makeSession`. The session, its id, and the transcript directory do not exist yet. `/help` must also read the registry, which contains the builtins. So a late-bound context box is needed: builtins capture it, the registry is built with those builtins, then the box is filled with the live session and the registry after `makeSession`.
+    - `RoutedSession.compact()` and `contextFill` are public. `compact()` uses `TokenBudget(limit: contextTokens)` with defaults 0.80/0.50. Stub `contextTokens` = `ProfileDefinition.defaultContext` = 8192. A caller-driven fold does not degrade: a summarizer failure throws to the caller.
+    - `contextFill` is `0` before the first turn (usageState `.none`), and `Double.nan` only for a restored session with no stamp (usageState `.unknown`). So the NaN branch cannot be reached from a fresh wire session; the NaN guard is tested as a pure formatter, and the integration test asserts the streamed line never contains "nan".
+    - `CompactionResult` carries `tokensBefore`, `tokensAfter`, `summarizerModel` (the ModelRef stringValue, or nil for a deterministic-only or no-op fold).
+    - `/status` model = `residentProfile.standard.chosen.stringValue`; profile = `residentProfile.definitionName`.
+    - `/memory` prints `entry.instructions`; the assembler already puts `===== <abs path> =====` headers before each on-disk file.
+    - No YAML encoder is a declared dependency (Yams stays inside Extras). `/config` will emit block YAML through a JSONEncoder -> JSONSerialization -> `YAMLValue` bridge plus a small block writer with section comments; the round-trip is verified by re-loading through `ConfigurationLoader`.
+    - Test harness: `AgentClientHarness` + scripted/echo model; `CommandDispatchTests.Fixture` is the pattern (registerCommandProviders, initialize, newSession, collector). The echo model streams the prompt back, so "no chunk carries the prompt" proves no model turn ran.
+  timestamp: 2026-09-02T03:22:27.608775+00:00
+- actor: claude-code
+  id: 01m1g3bqqfk42d15v17c1r66cm
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Commands/BuiltinCommands.swift (new), Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift (new), Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift (registry now assembled in newSession with the six builtins after the session exists), Tests/FoundationModelsACPAgentTests/BuiltinCommandsTests.swift (new), Tests/FoundationModelsACPAgentTests/CommandDispatchTests.swift (near-miss typo isolated to the provider so the builtins no longer widen the suggestion set).
+    - design: the builtins capture a late-bound `BuiltinCommandContext` (a `Mutex`-guarded box) because the registry is built before the session exists yet `/help` must read the registry that carries the builtins. `/config` emits commented block YAML through a JSONEncoder -> JSONSerialization -> block writer; export writes to the layer's `config.yaml` and round-trips through the loader (proven, including an mcp server and non-default values).
+    - note: `contextFill` is `0` before the first turn (state `.none`), not `Double.nan` (`.unknown`, restore only). The NaN branch cannot be reached over a fresh wire session, so the guard is proven by a pure formatter test plus an integration test that the streamed line never contains "nan".
+
+    ### test — green
+    - evidence: swift test — 229 passed, 0 failed, 0 skipped, 0 warnings (1 pre-existing withKnownIssue marker in HarnessSmokeTests). swift build clean.
+    - next: commit.
+  timestamp: 2026-09-02T03:42:18.351477+00:00
 depends_on:
 - 01KYSVCAH5MAEMCH4R5A8MNCSF
-position_column: todo
-position_ordinal: '9380'
+position_column: doing
+position_ordinal: '80'
 title: 'Builtin slash commands: /compact /context /memory /status /config /help'
 ---
 ## What
