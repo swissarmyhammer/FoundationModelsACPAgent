@@ -46,10 +46,33 @@ comments:
     - evidence: swift test — 269 passed in 27 suites, 0 failed, 0 skipped; swift build --build-tests — zero compiler warnings. The one "known issue" is the pre-existing deliberate `withKnownIssue` self-test in HarnessSmokeTests, not a skip.
     - next: commit
   timestamp: 2026-09-02T05:04:25.681994+00:00
+- actor: claude-code
+  id: 01m1g82qm6c47jmjz4jnqfm2zr
+  text: |-
+    ### commit — changed
+    - evidence: f29d183 feat(agent): stream shell output as agent-owned terminal updates — 13 files changed, 917 insertions(+), 248 deletions(-)
+    - next: review
+  timestamp: 2026-09-02T05:04:46.214255+00:00
+- actor: claude-code
+  id: 01m1g88vqy5mj26b6beb7y87fq
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (7 validator runs attempted, 0 failed); 11 files reviewed, .kanban/ excluded by .reviewignore
+    - next: done
+  timestamp: 2026-09-02T05:08:07.038853+00:00
+- actor: claude-code
+  id: 01m1g8921gs7nmjfzyq3490zy9
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed
+    - test: green
+    - commit: f29d183
+    - review: clean
+  timestamp: 2026-09-02T05:08:13.488006+00:00
 depends_on:
 - 01KYSVA1A4HXA6RYSJBE2XERFM
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9480'
 title: 'Terminal display stream: shell output as terminal updates'
 ---
 ## What
@@ -72,23 +95,32 @@ Plan.md §11.8. Create `Sources/FoundationModelsACPAgent/Agent/TerminalStream.sw
 - Honor `truncated` and `binaryDetected`. Say in the text when output was truncated, rather than presenting a partial capture as complete.
 - Command exit becomes `TerminalUpdate.exitStatus` `{exitCode?, signal?}`. Presence marks exited even when neither value is known, which agrees with a soft-deadline kill.
 
-- [ ] Chunk stream built and passed to `withShell(outputChunkStream:)`
-- [ ] Terminal content reference on shell tool calls
-- [ ] Chunk streaming, base64 per chunk
-- [ ] Snapshot through `snapshot(for commandID:)`
-- [ ] `truncated` and `binaryDetected` reported honestly
-- [ ] Exit status mapping
-- [ ] `finish()` called at teardown
+- [x] Chunk stream built and passed to `withShell(outputChunkStream:)`
+- [x] Terminal content reference on shell tool calls
+- [x] Chunk streaming, base64 per chunk
+- [x] Snapshot through `snapshot(for commandID:)`
+- [x] `truncated` and `binaryDetected` reported honestly
+- [x] Exit status mapping
+- [x] `finish()` called at teardown
 
 ## Acceptance Criteria
-- [ ] A scripted shell command's bytes reassemble exactly from the client-end chunk stream, byte for byte, including invalid UTF-8 sequences
-- [ ] The tool_call_update carries a Terminal content variant whose terminalId equals the commandID
-- [ ] Output past `maxPendingBytes` reports `truncated`, and the text says so
-- [ ] After exit, a TerminalUpdate with exitStatus arrives; a deadline kill reports exited with no exitCode
+- [x] A scripted shell command's bytes reassemble exactly from the client-end chunk stream, byte for byte, including invalid UTF-8 sequences
+- [x] The tool_call_update carries a Terminal content variant whose terminalId equals the commandID
+- [x] Output past `maxPendingBytes` reports `truncated`, and the text says so
+- [x] After exit, a TerminalUpdate with exitStatus arrives; a deadline kill reports exited with no exitCode
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/TerminalStreamTests.swift` — harness, with a fixture command emitting known bytes including invalid UTF-8
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/TerminalStreamTests.swift` — harness, with a fixture command emitting known bytes including invalid UTF-8
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 00:04)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+Clean — zero findings.
