@@ -16,8 +16,11 @@ import Testing
 /// One wired prompt-turn fixture: a scripted agent, a recording
 /// harness, an initialized wire, and one new session in `cwd`.
 struct ScriptedTurnFixture {
+    /// The number of milliseconds in ``pollInterval``.
+    private static let pollIntervalMilliseconds = 20
+
     /// The pause between two looks at the collector.
-    static let pollInterval: Swift.Duration = .milliseconds(20)
+    static let pollInterval: Swift.Duration = .milliseconds(pollIntervalMilliseconds)
 
     /// The number of looks a wait makes before it records a failure.
     static let maxPollAttempts = 500

@@ -38,10 +38,48 @@ comments:
     - evidence: swift test — 204 tests in 21 suites passed, 0 failed, 0 skipped; swift build shows no compiler warning (the one "missing creator" note is a pre-existing build-graph message from the mlx-swift dependency bundle, present before this change)
     - next: commit
   timestamp: 2026-09-02T02:26:44.769837+00:00
+- actor: claude-code
+  id: 01m1fz1zq82jb9nmydcbh6bkd5
+  text: |-
+    ### commit — changed
+    - evidence: cafd91d feat(agent): confirm session/cancel with the strict idle(cancelled) terminator — 7 files, 468 insertions, 175 deletions
+    - next: review
+  timestamp: 2026-09-02T02:27:04.552041+00:00
+- actor: claude-code
+  id: 01m1fz9tpder8h7ay56s025dh6
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift:20 (code-hygiene/magic-numbers-swift). Subtask and acceptance boxes checked from the green run at cafd91d.
+    - next: implement (name the milliseconds value of pollInterval)
+  timestamp: 2026-09-02T02:31:21.549130+00:00
+- actor: claude-code
+  id: 01m1fza0cqad7pbkws5favc2w1
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed (5 source/test files; TDD with one RED on the stopped-listening text)
+    - test: green (swift test — 204 tests, 21 suites, 0 failed, 0 skipped)
+    - commit: cafd91d
+    - review: findings (1 — ScriptedTurnFixture.swift:20, magic-numbers-swift)
+  timestamp: 2026-09-02T02:31:27.383381+00:00
+- actor: claude-code
+  id: 01m1fzbe38np4gnybb96rq6j3c
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift. The poll-interval milliseconds value now rides the named constant `pollIntervalMilliseconds`, in the pattern of the harness cadence constant. Finding checkbox flipped.
+    - next: test
+
+    ### test — green
+    - evidence: swift test — 204 tests in 21 suites passed, 0 failed, 0 skipped; no compiler warning
+    - next: commit
+
+    ### commit — changed
+    - evidence: ee2b135 refactor(tests): name the poll-interval milliseconds in the shared fixture
+    - next: review
+  timestamp: 2026-09-02T02:32:14.184741+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
-position_column: doing
-position_ordinal: '80'
+position_column: review
+position_ordinal: '8180'
 title: 'Cancellation: session/cancel confirmation semantics'
 ---
 ## What
@@ -67,25 +105,34 @@ Also note:
 
 **The pending-permission hook is gone.** An earlier draft provided a hook that answered pending `session/request_permission` requests as cancelled. We no longer send permission requests. The equivalent duty now is elicitation: `RoutedSession.close()` rejects every pending elicitation on teardown, and a cancel answers a pending elicitation with the cancelled result.
 
-- [ ] `cancelCurrentTurn()` called, and both results handled
-- [ ] Both endings handled: a `CancellationError` and a normal completion after cancel
-- [ ] Strict `idle(cancelled)` terminator ordering
-- [ ] Terminal tool statuses sent without holding the idle
-- [ ] Idle-session cancel is a no-op
+- [x] `cancelCurrentTurn()` called, and both results handled
+- [x] Both endings handled: a `CancellationError` and a normal completion after cancel
+- [x] Strict `idle(cancelled)` terminator ordering
+- [x] Terminal tool statuses sent without holding the idle
+- [x] Idle-session cancel is a no-op
 
 **Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/cancel` is a notification, so there is no response. For an unknown or closed `sessionId`, log it and ignore it. Send no `state_update`.
 
 ## Acceptance Criteria
-- [ ] `session/cancel` with an unknown id produces a log line and no `session/update`
-- [ ] Cancelling a scripted long-running turn makes `idle(cancelled)` the last update, and no update of any kind arrives after it
-- [ ] A scripted turn that raises `CancellationError` reports `idle(cancelled)`, not a JSON-RPC error and not `refusal`
-- [ ] A scripted turn that IGNORES cancellation and returns a normal response still reports `idle(cancelled)` and does not report `end_turn`
-- [ ] Cancelling an idle session gives no error and no state change
-- [ ] A scripted detached call that is still running reports the "we stopped listening" text
+- [x] `session/cancel` with an unknown id produces a log line and no `session/update`
+- [x] Cancelling a scripted long-running turn makes `idle(cancelled)` the last update, and no update of any kind arrives after it
+- [x] A scripted turn that raises `CancellationError` reports `idle(cancelled)`, not a JSON-RPC error and not `refusal`
+- [x] A scripted turn that IGNORES cancellation and returns a normal response still reports `idle(cancelled)` and does not report `end_turn`
+- [x] Cancelling an idle session gives no error and no state change
+- [x] A scripted detached call that is still running reports the "we stopped listening" text
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/CancellationTests.swift` — harness with a long-running scripted turn, a cancellation-ignoring scripted turn, and order assertions on the collector
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/CancellationTests.swift` — harness with a long-running scripted turn, a cancellation-ignoring scripted turn, and order assertions on the collector
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-01 21:27)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift:20` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
