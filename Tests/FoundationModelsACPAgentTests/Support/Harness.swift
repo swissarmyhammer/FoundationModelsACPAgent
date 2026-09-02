@@ -124,7 +124,7 @@ struct AgentClientHarness {
     /// - Returns: The connected harness, with no collector.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
     static func make() async throws -> AgentClientHarness {
-        let parts = try await makeParts()
+        let parts = await makeParts(agent: try await makeAgent())
         let connection = await parts.client.connect(over: parts.clientEnd)
         return AgentClientHarness(
             agent: parts.agent,
@@ -138,13 +138,22 @@ struct AgentClientHarness {
     /// front of the client, so a test can assert the raw notification
     /// order on the collector and the final state on the client.
     ///
-    /// `ClientSideConnection(stream:)` binds the recorder here, because
-    /// `connect(over:)` binds the client itself (plan.md §20.1).
-    ///
     /// - Returns: The connected harness, with a collector.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
     static func makeRecording() async throws -> AgentClientHarness {
-        let parts = try await makeParts()
+        try await makeRecording(agent: makeAgent())
+    }
+
+    /// Wires the given agent — for example one whose model plays a
+    /// script — with a ``RecordingClient`` in front of the client.
+    ///
+    /// `ClientSideConnection(stream:)` binds the recorder here, because
+    /// `connect(over:)` binds the client itself (plan.md §20.1).
+    ///
+    /// - Parameter agent: The agent under test.
+    /// - Returns: The connected harness, with a collector.
+    static func makeRecording(agent: RoutedACPAgent) async -> AgentClientHarness {
+        let parts = await makeParts(agent: agent)
         let collector = UpdateCollector()
         let recorder = RecordingClient(forwardingTo: parts.client, collector: collector)
         let connection = await ClientSideConnection(stream: parts.clientEnd) { _ in recorder }
@@ -171,17 +180,21 @@ struct AgentClientHarness {
         await agentConnection.close()
     }
 
-    /// The wiring both factories share: the transport pair, the agent
-    /// with its connection, and the client over the holding clock.
-    private static func makeParts() async throws -> (
+    /// The wiring every factory shares: the transport pair, the agent
+    /// with its connection, and the client over the holding clock. The
+    /// factory closure binds the connection into the agent, so a prompt
+    /// turn can notify through it (plan.md §8.1).
+    private static func makeParts(agent: RoutedACPAgent) async -> (
         clientEnd: InMemoryTransport,
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
         client: SwiftUIACPClient
     ) {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agent = try await makeAgent()
-        let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
+        let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
+            agent.bind(connection: connection)
+            return agent
+        }
         let client = await SwiftUIACPClient(
             coalescingCadence: coalescingCadence, clock: HoldingClock())
         return (clientEnd, agent, agentConnection, client)

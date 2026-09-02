@@ -1,11 +1,48 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fvgccna00c8r1w53mm6eq6
+  text: |-
+    Research done. Facts found:
+
+    - Wire surface: `AgentSideConnection.afterRespondingToCurrentRequest(_:)` binds a task-local hook list around each handler call. The hook runs on the dispatch task after the response is written. Each inbound request runs in its own task, so a second `session/prompt` and `session/cancel` reach the agent while a turn runs.
+    - The agent does not hold the connection today. The factory `AgentSideConnection(stream:) { connection in ... }` gives the connection to the factory. I will add a nonisolated `bind(connection:)` seam on `RoutedACPAgent` (Mutex-held), and the harness will bind in `makeParts`.
+    - `PromptResponse` has no stopReason. The stop reason rides on `StateUpdate.idle(IdleStateUpdate(stopReason:))`. ACP `StopReason`: endTurn, maxTokens, maxTurnRequests, refusal, cancelled, unknown(String).
+    - Router `SessionEvent` has 13 cases; `TurnStart` has an internal init, so a test cannot construct `.turnStarted`. `TokenUsage` has a public init. The retry-turn test (two `turnEnded`, one `idle`) will drive the projection with a synthetic event stream through an update-sink seam; the harness cannot make Router emit a retry with the stub backend.
+    - No upstream error type exists for a tool-loop cap. Router error enums are internal. Mapping design: an owned `TurnStop` intent enum (completed, refusal, cancelled, budgetExhausted, toolLoopCapped, failed) with a total `TurnStop -> StopReason` function, plus `classify(any Error) -> TurnStop` that reads `CancellationError` and public `LanguageModelSession.GenerationError` cases (guardrailViolation/refusal -> refusal, exceededContextWindowSize -> budget). An unmapped error becomes the `_error` extension value under plan.md §18. `GenerationError.Context(debugDescription:)` is public, so scripted tests can throw the real SDK errors.
+    - The default session tool surface is Multitool code-mode (`runCode`, `searchTools`, `wait`) plus `skills`. A scripted call into those does real work or invokes the librarian tier, so the harness §8.1 order test scripts a text turn; tool events in the middle of a turn are covered by the synthetic projection test (this task maps tool events through the default arm only; §8.4 projection is a later task).
+    - "Known but closed": no close task has landed. I add `.closed` to `SessionAvailability` (computed from a stored `isClosed`), plus an internal `markSessionClosed(_:)` seam the session-close task will drive; tests use it for the resume-hint case.
+    - `sessions.jsonl`: `SessionIndex(root:)` + `append(SessionIndexRecord)` already exist; root = session recordingDirectory parent. Title = first non-empty line of the first prompt text.
+  timestamp: 2026-09-02T01:25:01.973676+00:00
+- actor: claude-code
+  id: 01m1fw500jqaxvvrc6b4gy1v9w
+  text: |-
+    Implementation landed, TDD order kept: the test suite was written first and failed to compile (no `bind`, no `PromptTurn`), then the production code made it green.
+
+    What landed:
+    - `Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift`: `prompt` accepts, marks the session busy, and defers the turn through `afterRespondingToCurrentRequest` — never a detached task. Order on the wire: `{}` -> `user_message` echo (agent-owned ULID messageId, content = the request blocks) -> first-activity `sessions.jsonl` append + `session_info_update` -> `running` (from `turnStarted`) -> chunks -> one summed `usage_update` when the meter has a stamp -> one `idle` with the stop reason, keyed on stream completion, never on a `turnEnded` count. `textReset` sends a whole-message `agent_message` replace with `content: []` on the same messageId. `TurnStop` intent enum + total `stopReason(for:)` + `classify(any Error)`: `CancellationError` -> cancelled, `LanguageModelError.guardrailViolation`/`.refusal` -> refusal, `.contextSizeExceeded` -> maxTokens, tool-loop arm -> maxTurnRequests (producer is a later task), unmapped -> `_error` under §18. `sessionCancel` records the request on the turn owner and calls `cancelCurrentTurn()`; the recorded request forces `cancelled` even when the model work runs to completion. Unknown id -> -32602 with the id in data; closed -> -32602 with "closed; resume it first"; busy -> -32600 with the reason.
+    - `Sources/FoundationModelsACPAgent/Agent/TurnState.swift`: `TurnStateOwner` actor — running / requires_action paired with Router's `awaitingUser` (back to running on value or error) / idle with stopReason — plus the `post` send helper that logs and drops a failed notify.
+    - `RoutedACPAgent.swift`: nonisolated Mutex-held `bind(connection:)` seam; the prompt/cancel stubs moved out.
+    - `SessionSetup.swift`: `SessionAvailability` gains `closed`; `ActiveSession` now derives availability from `activeTurn`/`isClosed` and tracks `indexRecorded`.
+    - Test support: `ScriptedTurnStep` gains `.fail(ScriptedFailure)` (real `LanguageModelError` values) and `.hold`; the harness binds the connection and takes a prebuilt (scripted) agent.
+
+    Decisions worth knowing:
+    - `LanguageModelSession.GenerationError` is deprecated on macOS 27; the classifier and the scripted failures use `LanguageModelError`, the vocabulary Router's own overflow recovery matches. Router only retries an overflow when a budget is set, and our sessions have none, so a scripted overflow propagates.
+    - `TurnStart` has an internal init, so the retry case (two `turnEnded`, one `idle`) drives `PromptTurn.drive(events:)` with a synthetic stream through the update-sink seam. The harness order test scripts a text turn: the default session tools are Multitool code-mode plus skills, and a scripted call into them does real work; tool events in mid-turn are covered by the synthetic projection test, and their wire mapping is the §8.4 projection task.
+
+    `swift test`: 175 tests, all pass, zero compiler warnings (the one pre-existing `withKnownIssue` in HarnessSmokeTests stays).
+
+    ### implement — changed
+    - evidence: 8 files — Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift, Sources/FoundationModelsACPAgent/Agent/TurnState.swift, Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedModel.swift, Tests/FoundationModelsACPAgentTests/Support/Harness.swift
+    - next: test
+  timestamp: 2026-09-02T01:36:17.426884+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
-position_column: todo
-position_ordinal: 8b80
+position_column: doing
+position_ordinal: '80'
 title: 'Prompt turn: acknowledge-then-notify, message echo, state machine, stop reasons'
 ---
 ## What

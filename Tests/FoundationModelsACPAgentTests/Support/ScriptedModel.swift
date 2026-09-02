@@ -25,8 +25,53 @@ enum ScriptedTurnStep: Sendable, Equatable {
     /// `argumentsJSON`.
     case toolCall(name: String, argumentsJSON: String)
 
+    /// Throws the real SDK error `failure` names, so a stop-reason test
+    /// drives the turn owner's error mapping (plan.md §8.2).
+    case fail(ScriptedFailure)
+
+    /// Suspends until the turn's task is cancelled, then throws
+    /// `CancellationError`. A cancellation test holds the turn open with
+    /// this step and cancels it from the client end (plan.md §8.6).
+    case hold
+
     /// Ends the turn. Steps after this one are never emitted.
     case endTurn
+}
+
+/// The SDK failure a ``ScriptedTurnStep/fail(_:)`` step throws.
+///
+/// The cases are `Equatable` markers; ``error`` makes the real
+/// `LanguageModelError` value — the macOS 27 vocabulary the turn
+/// classifier reads — from the public payload initializers.
+enum ScriptedFailure: Sendable, Equatable {
+    /// The context size the scripted overflow reports. The value only
+    /// satisfies the payload initializer.
+    private static let scriptedContextSize = 4096
+
+    /// The token count the scripted overflow reports; larger than
+    /// ``scriptedContextSize``, as a real overflow is.
+    private static let scriptedTokenCount = 8192
+
+    /// The guardrail refusal, which maps to the `refusal` stop reason.
+    case guardrailViolation
+
+    /// The context overflow, which maps to the `max_tokens` stop reason.
+    case exceededContextWindow
+
+    /// The real SDK error this failure throws.
+    var error: any Error {
+        switch self {
+        case .guardrailViolation:
+            LanguageModelError.guardrailViolation(
+                .init(debugDescription: "scripted guardrail refusal"))
+        case .exceededContextWindow:
+            LanguageModelError.contextSizeExceeded(
+                .init(
+                    contextSize: Self.scriptedContextSize,
+                    tokenCount: Self.scriptedTokenCount,
+                    debugDescription: "scripted context overflow"))
+        }
+    }
 }
 
 /// The failure of a scripted step.
@@ -122,10 +167,24 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 yield(text)
             case .toolCall(let name, let argumentsJSON):
                 try await invokeTool(named: name, argumentsJSON: argumentsJSON)
+            case .fail(let failure):
+                throw failure.error
+            case .hold:
+                try await Self.holdUntilCancelled()
             case .endTurn:
                 return
             }
         }
+    }
+
+    /// Suspends until the surrounding task is cancelled, then throws
+    /// `CancellationError`. A never-yielding stream carries the wait, so
+    /// only a cancellation ends the iteration.
+    private static func holdUntilCancelled() async throws {
+        let (stream, continuation) = AsyncStream<Never>.makeStream()
+        for await _ in stream {}
+        withExtendedLifetime(continuation) {}
+        try Task.checkCancellation()
     }
 
     /// Invokes the handed tool `name` with the fixed arguments.

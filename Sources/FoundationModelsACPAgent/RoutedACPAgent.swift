@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
+import Synchronization
 import os
 
 /// The logger of the session surface: the order rule and the ignored
@@ -64,6 +65,30 @@ public actor RoutedACPAgent: Agent {
     /// Each entry carries its own config, instructions, confinement,
     /// transcript directory, and idle/busy state.
     var sessions: [SessionId: ActiveSession] = [:]
+
+    /// The bound wire connection, or `nil` before ``bind(connection:)``.
+    ///
+    /// A `Mutex` holds it outside actor isolation, because the
+    /// connection factory closure is synchronous and binds during
+    /// `AgentSideConnection` construction.
+    private nonisolated let connectionHolder = Mutex<AgentSideConnection?>(nil)
+
+    /// Binds the wire connection this agent notifies through.
+    ///
+    /// The prompt turn sends every `session/update` through this
+    /// connection, and registers its post-response work with the
+    /// connection's `afterRespondingToCurrentRequest(_:)` (plan.md §8.1).
+    /// Call it from the `AgentSideConnection` factory closure.
+    ///
+    /// - Parameter connection: The connection around this agent.
+    public nonisolated func bind(connection: AgentSideConnection) {
+        connectionHolder.withLock { $0 = connection }
+    }
+
+    /// The bound connection, or `nil` before ``bind(connection:)``.
+    nonisolated var boundConnection: AgentSideConnection? {
+        connectionHolder.withLock { $0 }
+    }
 
     /// Creates an agent for the dotfolder `name` and resolves the
     /// configured profile to a resident one (plan.md §1: `config →
@@ -154,18 +179,8 @@ public actor RoutedACPAgent: Agent {
         try refuseUnimplemented(ACPMethod.sessionClose)
     }
 
-    /// Refuses until the prompt-turn task lands.
-    public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
-        try refuseUnimplemented(ACPMethod.sessionPrompt)
-    }
-
-    /// A notification, so it has no response. No prompt runs before the
-    /// prompt-turn task lands, so there is no turn to stop for any id:
-    /// log and ignore (plan.md §10.1).
-    public func sessionCancel(_ params: CancelSessionNotification) async {
-        sessionLogger.notice(
-            "session/cancel for session \(params.sessionId.rawValue, privacy: .public) with no running turn; ignored")
-    }
+    // `prompt` and `sessionCancel` live in `Agent/PromptTurn.swift`
+    // (plan.md §8.1–§8.3).
 
     // MARK: - Capability-gated (plan.md §10.2, §15; later tasks)
 

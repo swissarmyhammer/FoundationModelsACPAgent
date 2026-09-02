@@ -7,15 +7,17 @@ import FoundationModelsRouter
 /// "ready for a new prompt"; a `session/prompt` that arrives while the
 /// session is `busy` is a client error, not a queue entry — the composer
 /// owns queueing, and Router's own prompt queue is never shown over ACP.
+/// A `closed` session is resumable, not promptable (plan.md §10.1).
 enum SessionAvailability: Equatable, Sendable {
     /// The session is ready for a new prompt.
     case idle
 
     /// A prompt turn is in flight.
-    // The prompt-turn task is what moves a session here; until it lands,
-    // every session stays idle.
-    // periphery:ignore
     case busy
+
+    /// `session/close` released the session. The transcript stays, so
+    /// `session/resume` can bring it back.
+    case closed
 }
 
 /// One live session in the agent's table (plan.md §7.1): the root Router
@@ -55,8 +57,26 @@ struct ActiveSession: Sendable {
     /// (plan.md §11.5).
     let surface: SessionSurface
 
-    /// Whether the session is ready for a new prompt.
-    var availability: SessionAvailability
+    /// The running turn's state owner, or `nil` when no turn is in
+    /// flight (plan.md §8.2). `session/cancel` reaches the turn through
+    /// this reference.
+    var activeTurn: TurnStateOwner?
+
+    /// Whether `session/close` released this session (plan.md §10.1).
+    var isClosed = false
+
+    /// Whether the `sessions.jsonl` record was written. The first prompt
+    /// writes it, deferred from `session/new` by §9's zero-turn rule.
+    var indexRecorded = false
+
+    /// Whether the session can accept a new prompt. Derived, so the
+    /// stored turn reference stays the one source of the busy state.
+    var availability: SessionAvailability {
+        if isClosed {
+            return .closed
+        }
+        return activeTurn == nil ? .idle : .busy
+    }
 }
 
 /// The per-session composition helpers of `session/new` (plan.md §7.1):
@@ -181,7 +201,7 @@ extension RoutedACPAgent {
             additionalRoots: additionalRoots,
             transcriptDirectory: session.recordingDirectory,
             surface: composition.surface,
-            availability: .idle)
+            activeTurn: nil)
 
         // TODO(^r7t7xe1): the config-options task fills `configOptions`
         // with the model slot selector; until then the list is honestly
