@@ -83,11 +83,35 @@ comments:
     - next: commit, then review
     task: ^nz60y96
   timestamp: 2026-09-02T00:44:42.105433+00:00
+- actor: claude-code
+  id: 01m1fs6rg47avmbc3ns2msrbj0
+  text: |-
+    ### commit — changed
+    - evidence: 2ee3214 refactor(tests): route agent construction through one shared makeStubAgent factory (5 files, 96 insertions, 12 deletions; local only, not pushed)
+    - next: review 2ee3214 (HEAD~1..HEAD)
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:44:49.540648+00:00
+- actor: claude-code
+  id: 01m1fscbqv28s6hw862nh0em4j
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2ee3214) — 0 findings, 1 candidate refuted; the one prior finding is checked; task moved to done
+    task: ^nz60y96
+  timestamp: 2026-09-02T00:47:53.083517+00:00
+- actor: claude-code
+  id: 01m1fscf1zf81d60p6zypstdw9
+  text: |-
+    ### finish iteration 2 — done
+    - implement: changed (3 test files; shared makeStubAgent factory works the reuse finding)
+    - test: green (152 tests, 0 failed, 0 skipped, zero own-code warnings)
+    - commit: 2ee3214
+    - review: clean (0 findings; prior finding checked; task moved to done)
+  timestamp: 2026-09-02T00:47:56.479869+00:00
 depends_on:
 - 01KYSV5606NB4K39ZXQYPBH0A9
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: 8b80
 title: 'Profile resolution: ProfileDefinition from config, name fallback, resident profile'
 ---
 ## What
