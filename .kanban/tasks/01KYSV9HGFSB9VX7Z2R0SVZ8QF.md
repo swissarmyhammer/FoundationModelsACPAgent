@@ -38,11 +38,27 @@ comments:
     - evidence: 8 files — Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift, Sources/FoundationModelsACPAgent/Agent/TurnState.swift, Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedModel.swift, Tests/FoundationModelsACPAgentTests/Support/Harness.swift
     - next: test
   timestamp: 2026-09-02T01:36:17.426884+00:00
+- actor: claude-code
+  id: 01m1fwb3t7ysx0fp6j331ser7z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted; 7 files reviewed (the 2 .kanban files are review-ignored)
+    - next: done
+  timestamp: 2026-09-02T01:39:37.927481+00:00
+- actor: claude-code
+  id: 01m1fwb9qzggmz8rb7ghee5rqj
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed (8 files; TDD: red on compile, then green)
+    - test: green (swift test — 175 tests in 19 suites, 0 failed, 0 skipped, 0 compiler warnings)
+    - commit: 6cb0766
+    - review: clean (review sha HEAD~1..HEAD — 0 findings)
+  timestamp: 2026-09-02T01:39:43.999439+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8d80
 title: 'Prompt turn: acknowledge-then-notify, message echo, state machine, stop reasons'
 ---
 ## What
