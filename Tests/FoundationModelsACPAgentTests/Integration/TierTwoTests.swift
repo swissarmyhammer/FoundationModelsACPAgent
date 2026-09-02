@@ -105,14 +105,14 @@ import Testing
 
     // MARK: - Script builders
 
-    /// The `runCode` arguments JSON for `code`, built through
-    /// `JSONEncoder` so the snippet text is escaped correctly.
+    /// The `runCode` arguments JSON for `code`, encoded so the snippet
+    /// text is escaped correctly.
     ///
     /// - Parameter code: The snippet to run.
     /// - Returns: The arguments JSON.
     /// - Throws: The encoding error.
     private static func runCodeArgumentsJSON(code: String) throws -> String {
-        String(decoding: try JSONEncoder().encode(["code": code]), as: UTF8.self)
+        try encodedText(of: ["code": code])
     }
 
     /// A JSON string literal of `text`, for embedding a path or a
@@ -121,8 +121,8 @@ import Testing
     /// - Parameter text: The text to quote.
     /// - Returns: The quoted literal, double quotes included.
     /// - Throws: The encoding error.
-    private static func jsonStringLiteral(_ text: String) throws -> String {
-        String(decoding: try JSONEncoder().encode(text), as: UTF8.self)
+    private static func jsonStringLiteral(text: String) throws -> String {
+        try encodedText(of: text)
     }
 
     /// The script of one tool turn: `runCode` with `code`, then
@@ -257,7 +257,7 @@ import Testing
     /// - Parameter updates: The collected sequence.
     /// - Returns: The joined JSON text.
     /// - Throws: The encoding error.
-    private static func encodedWireText(_ updates: [UpdateSessionNotification]) throws -> String {
+    private static func encodedWireText(updates: [UpdateSessionNotification]) throws -> String {
         try updates.map { try encodedText(of: $0) }.joined(separator: "\n")
     }
 
@@ -306,7 +306,7 @@ import Testing
         let cwd = makeResolvedDirectory(label: "TierTwoTests-composition-repo")
         let serverCommand = try MCPTestServerLocator.executableURL().path
         try ScriptedTurnFixture.writeProjectConfig(
-            """
+            yaml: """
             tools:
               mcp:
                 - name: \(Self.mcpServerName)
@@ -358,7 +358,7 @@ import Testing
         let secretFile = outside.appendingPathComponent("secret.txt")
         try Self.outsideSecret.write(to: secretFile, atomically: true, encoding: .utf8)
         let code = """
-            const read = await tools.files.read({ path: \(try Self.jsonStringLiteral(secretFile.path)), format: "plain" });
+            const read = await tools.files.read({ path: \(try Self.jsonStringLiteral(text: secretFile.path)), format: "plain" });
             return read;
             """
 
@@ -366,7 +366,7 @@ import Testing
             code: code, label: "TierTwoTests-confinement")
         let waitUpdates = Self.toolCallUpdates(in: updates, for: Self.waitCallId)
         let waitText = try Self.encodedText(of: waitUpdates)
-        let wireText = try Self.encodedWireText(updates)
+        let wireText = try Self.encodedWireText(updates: updates)
         let accumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId)
         let pendingPermissionCount = await MainActor.run {
             fixture.harness.client.sessions[fixture.sessionId]?.pendingPermissionRequests.count
@@ -548,7 +548,7 @@ import Testing
         // sandbox rightly refuses as outside the session root set.
         let cwd = makeResolvedDirectory(label: "TierTwoTests-stream-repo")
         let code = """
-            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(command)), workingDirectory: \(try Self.jsonStringLiteral(cwd.path)) });
+            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)), workingDirectory: \(try Self.jsonStringLiteral(text: cwd.path)) });
             """
         let expectedOutput = Self.streamedLines.map { $0 + "\n" }.joined()
 

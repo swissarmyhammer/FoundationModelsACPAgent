@@ -106,7 +106,7 @@ struct ScriptedTurnFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
         if let projectConfigYAML {
-            try writeProjectConfig(projectConfigYAML, under: cwd)
+            try writeProjectConfig(yaml: projectConfigYAML, under: cwd)
         }
         let agent = try await makeStubAgent(
             name: AgentClientHarness.dotfolderName,
@@ -133,7 +133,7 @@ struct ScriptedTurnFixture {
     ///   - yaml: The configuration document to write.
     ///   - cwd: The session working directory the dotfolder roots at.
     /// - Throws: The directory-creation or write error.
-    static func writeProjectConfig(_ yaml: String, under cwd: URL) throws {
+    static func writeProjectConfig(yaml: String, under cwd: URL) throws {
         let dotfolder = cwd.appendingPathComponent(
             ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
         try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)

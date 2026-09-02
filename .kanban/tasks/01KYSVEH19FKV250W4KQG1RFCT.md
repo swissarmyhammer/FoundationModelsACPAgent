@@ -33,13 +33,32 @@ comments:
     - evidence: `swift test` — 276 tests in 28 suites passed, 0 failed, 0 skipped; 1 known issue is HarnessSmokeTests' own deliberate `withKnownIssue` proof that `expectOrderedSubsequence` can fail (pre-existing). The one build line `warning: missing creator for mutated node (mlx-swift_Cmlx.bundle)` is a SwiftPM build-system artifact from the mlx dependency; it is present on the pristine tree with this diff stashed (verified), so this change adds zero warnings.
     - next: commit
   timestamp: 2026-09-02T05:42:27.311539+00:00
+- actor: claude-code
+  id: 01m1ga8cx1zrnvp6tx26ymyk7t
+  text: |-
+    ### commit — changed
+    - evidence: afb8a11 test(integration): add the tier-2 suite — the seven proofs with real tools
+    - next: review
+  timestamp: 2026-09-02T05:42:48.993267+00:00
+- actor: claude-code
+  id: 01m1gajqfmpac7ba0yh5z98atg
+  text: |-
+    ### review — findings
+    - evidence: 5 findings — TierTwoTests.swift:114 (reuse), TierTwoTests.swift:124 (reuse), TierTwoTests.swift:124 (swift/fluent-usage), TierTwoTests.swift:260 (swift/fluent-usage), ScriptedTurnFixture.swift:136 (swift/fluent-usage); scope `review sha HEAD~1..HEAD`
+    - next: implement the findings
+    ### finish iteration 1 — findings
+    - implement: changed (3 files; suite added, backend transcript synthesis, fixture parameters; 3 follow-up tasks filed)
+    - test: green (swift test — 276 passed, 0 failed, 0 skipped, zero new warnings)
+    - commit: afb8a11
+    - review: findings (5 open)
+  timestamp: 2026-09-02T05:48:27.508879+00:00
 depends_on:
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
 - 01KYSVA1A4HXA6RYSJBE2XERFM
 - 01KYSV611EWFQQRRPJWR5JQ4H5
 - 01KYSV76CBJV66C92Z0EM2S73K
-position_column: doing
-position_ordinal: '80'
+position_column: review
+position_ordinal: '8180'
 title: 'Tier-2 integration suite: the seven proofs with real tools'
 ---
 ## What
@@ -83,3 +102,16 @@ Discipline: **check the filesystem, never the transcript.** Verify a "file writt
 ## Workflow
 - Use `/tdd` — this suite can drive fixes in earlier components. Keep those fixes in this task only when they are trivial; otherwise file follow-up tasks.
 - Follow-up tasks filed from this suite: ^9jfmhh0 (locations), ^yx45q1q (nested run settlement), ^fzx2r16 (shell default working directory).
+
+## Review Findings (2026-09-02 00:42)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 8 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift:114` `reuse/reuse` — runCodeArgumentsJSON reimplements the JSON-encoding pattern that encodedText provides. Both encode an Encodable value to JSON string with the same logic. The generic encodedText function (defined at line 250) already handles encoding dictionaries and any other Encodable type. Replace the implementation of runCodeArgumentsJSON with a call to encodedText: `try encodedText(of: ["code": code])`.
+- [x] `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift:124` `reuse/reuse` — jsonStringLiteral reimplements the same JSON-encoding pattern that encodedText provides. Both functions encode an Encodable value to a JSON string using identical logic: `String(decoding: try JSONEncoder().encode(...), as: UTF8.self)`. The generic encodedText function (defined at line 250) already handles this capability. Replace the implementation of jsonStringLiteral with a call to encodedText: `try encodedText(of: text)`.
+- [x] `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift:124` `swift/fluent-usage` — First argument label omitted on a non-value-preserving function. Converting a String to its JSON literal form is not a value-preserving conversion (the actual bytes/content change), so the first parameter should be labeled. Change `jsonStringLiteral(_ text: String)` to `jsonStringLiteral(text: String)`, making calls read `jsonStringLiteral(text: secretFile.path)` instead of `jsonStringLiteral(secretFile.path)`.
+- [x] `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift:260` `swift/fluent-usage` — First argument label omitted on a non-value-preserving function. Taking an array of updates and encoding them to wire text is not a value-preserving conversion (the structure changes from objects to text), so the first parameter should be labeled. Change `encodedWireText(_ updates: [UpdateSessionNotification])` to `encodedWireText(updates: [UpdateSessionNotification])`, making calls read `encodedWireText(updates: updates)` instead of `encodedWireText(updates)`.
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift:136` `swift/fluent-usage` — First argument label omitted on a non-value-preserving function. The first parameter should be labeled for clarity, since this is a write operation (with side effects), not a value-preserving conversion like `Int64(someUInt32)`. Change `writeProjectConfig(_ yaml: String, under cwd: URL)` to `writeProjectConfig(yaml: String, under cwd: URL)`, making the call read `writeProjectConfig(yaml: projectConfigYAML, under: cwd)`.
