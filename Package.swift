@@ -55,6 +55,45 @@ private let skillsDependencyName = "FoundationModelsSkills"
 /// depends on the wire and Extras only, so no cycle is possible.
 private let clientDependencyName = "FoundationModelsACPClient"
 
+/// The MLX-backed model package Router itself builds on, declared by the
+/// exact URL Router declares — `https://github.com/swissarmyhammer/` plus
+/// this name — because a second location for one package identity makes
+/// the resolve fail. The example executable links two of its products to
+/// construct a live `LiveModelLoader` through the `#hubDownloader()` and
+/// `#huggingFaceTokenizerLoader()` macros. The resolved graph already
+/// carries all of mlx-swift-lm transitively through Router, so this
+/// declaration adds linking only, no new compilation.
+private let mlxPackage = "mlx-swift-lm"
+
+/// The `mlxPackage` branch, matching Router's own declaration: `stable`
+/// is a published snapshot, not a working copy.
+private let mlxStableBranch = "stable"
+
+/// The Hugging Face Hub client package. The `#hubDownloader()` macro
+/// expands to code that references `HuggingFace.HubClient`, so the
+/// example target must link it. The version floor mirrors Router's.
+private let huggingFacePackage = "swift-huggingface"
+
+/// The Swift Transformers tokenizer package, paired with
+/// `huggingFacePackage`: the `#huggingFaceTokenizerLoader()` macro
+/// expansion references `Tokenizers.AutoTokenizer`.
+private let transformersPackage = "swift-transformers"
+
+/// The products the example's live-loader construction links, beside the
+/// library and the wire — see `mlxPackage`.
+private let liveLoaderProducts: [Target.Dependency] = [
+    .product(name: "MLXLMCommon", package: mlxPackage),
+    .product(name: "MLXHuggingFace", package: mlxPackage),
+    .product(name: "HuggingFace", package: huggingFacePackage),
+    .product(name: "Tokenizers", package: transformersPackage),
+]
+
+/// The name of the example executable (plan.md §20.2): the family
+/// convention example AND the tier-3 stdio fixture. The test target
+/// depends on it, so `swift test` builds the binary into the products
+/// directory where the gated `StdioContractTests` spawns it.
+private let exampleExecutableName = "acp-agent"
+
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
 /// declares, because a second URL for the same package identity makes the
@@ -69,7 +108,7 @@ private let mcpSDKProduct = Target.Dependency.product(name: "MCP", package: mcpS
 /// scripted-server library, and the `mcp-test-server` stdio executable the
 /// MCP composition suite spawns. The executable is a product dependency so
 /// `swift test` builds it into the products directory beside the test
-/// bundle, where `MCPTestServerLocator` finds it.
+/// bundle, where `BuiltProductLocator` finds it.
 private let multitoolTestProducts: [Target.Dependency] = [
     .product(name: "MCPTestServer", package: multitoolDependencyName),
     .product(name: "mcp-test-server", package: multitoolDependencyName),
@@ -121,26 +160,53 @@ let package = Package(
         .macOS("27.0")
     ],
     products: [
-        .library(name: packageName, targets: [packageName])
+        .library(name: packageName, targets: [packageName]),
+        // The runnable example, published so `swift run acp-agent` and
+        // the tier-3 spawn name one binary — see `exampleExecutableName`.
+        .executable(name: exampleExecutableName, targets: [exampleExecutableName]),
     ],
     dependencies: familyDependencyNames.map(makeFamilyPackage(name:)) + [
         makeFamilyPackage(name: clientDependencyName),
         // The sdk fork, by the same URL Multitool declares — see
         // `mcpSDKPackage`.
         .package(url: "https://github.com/swissarmyhammer/\(mcpSDKPackage).git", branch: mainBranch),
+        // The live-loader packages of the example executable — see
+        // `mlxPackage`, `huggingFacePackage` and `transformersPackage`.
+        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: mlxStableBranch),
+        .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
+        .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
     ],
     targets: [
         .target(
             name: packageName,
             dependencies: familyProducts + [mcpSDKProduct]
         ),
+        // The example executable (plan.md §20.2): the composition lesson
+        // and the tier-3 fixture in one small `main.swift`. It links the
+        // library, the wire and Router directly for what it imports, and
+        // the live-loader products for the real model path.
+        .executableTarget(
+            name: exampleExecutableName,
+            dependencies: [
+                .target(name: packageName),
+                makeFamilyProduct(name: wireDependencyName),
+                makeFamilyProduct(name: routerDependencyName),
+            ] + liveLoaderProducts,
+            path: "Examples/\(exampleExecutableName)"
+        ),
         // The import smoke suite. It links the client driver as well — see
         // `clientDependencyName` — Multitool's test-support products — see
-        // `multitoolTestProducts` — and the MCP sdk, whose tool-result
-        // content types the passthrough-map tests construct (plan.md §12).
+        // `multitoolTestProducts` — the MCP sdk, whose tool-result
+        // content types the passthrough-map tests construct (plan.md §12),
+        // and the example executable, so `swift test` builds the tier-3
+        // fixture beside the test bundle — see `exampleExecutableName`.
         .testTarget(
             name: testTargetName,
-            dependencies: [.target(name: packageName), makeFamilyProduct(name: clientDependencyName)]
+            dependencies: [
+                .target(name: packageName),
+                .target(name: exampleExecutableName),
+                makeFamilyProduct(name: clientDependencyName),
+            ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
         ),
     ]

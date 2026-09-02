@@ -304,7 +304,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func theCatalogComposesTheSurfaceFromTheLoadedConfiguration() async throws {
         let cwd = makeResolvedDirectory(label: "TierTwoTests-composition-repo")
-        let serverCommand = try MCPTestServerLocator.executableURL().path
+        let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         try ScriptedTurnFixture.writeProjectConfig(
             yaml: """
             tools:
@@ -495,7 +495,7 @@ import Testing
     /// the answer lands under the wait call's stable `toolCallId`.
     @Test(.timeLimit(.minutes(1)))
     func aClientDeclaredMCPServerMountsUnderItsOwnNoun() async throws {
-        let serverCommand = try MCPTestServerLocator.executableURL().path
+        let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         let server = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
                 command: try #require(AbsolutePath(rawValue: serverCommand)),

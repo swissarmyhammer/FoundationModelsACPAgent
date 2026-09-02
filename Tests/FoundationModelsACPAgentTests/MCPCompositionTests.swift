@@ -390,7 +390,7 @@ import Testing
     // MARK: - The mounted surface
 
     @Test func configNounsMountFirstThenClientNounsAndNoPathCarriesAnMCPSegment() async throws {
-        let command = try MCPTestServerLocator.executableURL().path
+        let command = try BuiltProductLocator.mcpTestServerURL().path
         let context = try await Self.makeContext(
             clientServers: [try Self.clientStdioServer(named: Self.gammaName, command: command)]
         ) { configuration in
@@ -421,7 +421,7 @@ import Testing
     }
 
     @Test func aToolListChangeIsStagedAndAppliesOnlyAtTheNextTurnBoundary() async throws {
-        let command = try MCPTestServerLocator.executableURL().path
+        let command = try BuiltProductLocator.mcpTestServerURL().path
         let context = try await Self.makeContext { configuration in
             configuration.tools.mcp = .enabled(servers: [
                 Self.configServer(named: Self.dynamicName, command: command, mode: Self.dynamicMode)

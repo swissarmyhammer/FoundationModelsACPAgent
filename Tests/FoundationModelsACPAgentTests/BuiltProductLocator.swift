@@ -1,21 +1,22 @@
-// `MCPTestServerLocator` — where the `mcp-test-server` binary stands.
+// `BuiltProductLocator` — where the executables beside the test bundle stand.
 //
 // A behavioral port of
-// `../FoundationModelsMultitool/Tests/FoundationModelsMultitoolTests/Support/TestServerLocator.swift`.
-// The test target of this package declares the `mcp-test-server` executable
-// product of Multitool as a dependency, so `swift test` builds the binary
-// into the products directory beside this test bundle. This locator finds
-// it there, for each test that spawns it through the MCP composition.
+// `../FoundationModelsMultitool/Tests/FoundationModelsMultitoolTests/Support/TestServerLocator.swift`,
+// generalized to any executable product the test target depends on. The
+// test target declares the `mcp-test-server` product of Multitool and the
+// `acp-agent` example product of this package, so `swift test` builds both
+// binaries into the products directory beside this test bundle. This
+// locator finds them there, for each test that spawns one.
 
 import Foundation
 
-/// Locates the `mcp-test-server` executable that SwiftPM builds beside the
-/// running test binary — so the `--test-bundle-path` / `.xctest`
-/// products-directory resolution stands in one place.
-enum MCPTestServerLocator {
-    /// The product name of the executable, as Multitool's `Package.swift`
-    /// declares it.
-    static let executableName = "mcp-test-server"
+/// Locates an executable that SwiftPM builds beside the running test
+/// binary — so the `--test-bundle-path` / `.xctest` products-directory
+/// resolution stands in one place.
+enum BuiltProductLocator {
+    /// The product name of Multitool's scripted MCP server executable, as
+    /// Multitool's `Package.swift` declares it.
+    static let mcpTestServerName = "mcp-test-server"
 
     /// The flag `swiftpm-testing-helper` passes the bundle path under.
     private static let testBundlePathFlag = "--test-bundle-path"
@@ -43,8 +44,8 @@ enum MCPTestServerLocator {
         /// not a directory.
         case productsDirectoryNotFound(path: String, derivedFromArgument: String)
 
-        /// No executable file stands at `path`.
-        case testServerNotFound(path: String)
+        /// No executable file named `name` stands at `path`.
+        case executableNotFound(name: String, path: String)
 
         /// A human-readable description of this error.
         var description: String {
@@ -55,16 +56,17 @@ enum MCPTestServerLocator {
             case .productsDirectoryNotFound(let path, let derivedFromArgument):
                 return
                     "Derived products directory \"\(path)\" (from argument \"\(derivedFromArgument)\") does not exist or is not a directory; the test-bundle argument parsing may no longer match this build's layout."
-            case .testServerNotFound(let path):
+            case .executableNotFound(let name, let path):
                 return
-                    "Could not find the \(executableName) executable at \(path); `swift test` builds it because the test target depends on the executable product."
+                    "Could not find the \(name) executable at \(path); `swift test` builds it because the test target depends on the executable product."
             }
         }
     }
 
     /// Locates the build products directory that holds the running test
-    /// binary — `.build/debug`, for example — so that ``executableURL()``
-    /// can find the sibling `mcp-test-server` SwiftPM built beside it.
+    /// binary — `.build/debug`, for example — so that
+    /// ``executableURL(named:)`` can find a sibling executable SwiftPM
+    /// built beside it.
     ///
     /// On Darwin, `swift test` hosts the swift-testing runner inside an
     /// `.xctest` bundle that a separate `swiftpm-testing-helper` process
@@ -133,17 +135,27 @@ enum MCPTestServerLocator {
         return candidate
     }
 
+    /// Locates the executable named `executableName` that SwiftPM built
+    /// beside the running test binary.
+    ///
+    /// - Parameter executableName: The executable's product name.
+    /// - Returns: The file URL of the executable.
+    /// - Throws: ``LocatorError`` when ``productsDirectoryURL()`` rejects the
+    ///   resolution, or when no executable file stands at the expected path.
+    static func executableURL(named executableName: String) throws -> URL {
+        let candidate = try productsDirectoryURL().appendingPathComponent(executableName)
+        guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
+            throw LocatorError.executableNotFound(name: executableName, path: candidate.path)
+        }
+        return candidate
+    }
+
     /// Locates the `mcp-test-server` executable SwiftPM built beside the
     /// running test binary.
     ///
     /// - Returns: The file URL of the executable.
-    /// - Throws: ``LocatorError`` when ``productsDirectoryURL()`` rejects the
-    ///   resolution, or when no executable file stands at the expected path.
-    static func executableURL() throws -> URL {
-        let candidate = try productsDirectoryURL().appendingPathComponent(executableName)
-        guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
-            throw LocatorError.testServerNotFound(path: candidate.path)
-        }
-        return candidate
+    /// - Throws: ``LocatorError`` — see ``executableURL(named:)``.
+    static func mcpTestServerURL() throws -> URL {
+        try executableURL(named: mcpTestServerName)
     }
 }
