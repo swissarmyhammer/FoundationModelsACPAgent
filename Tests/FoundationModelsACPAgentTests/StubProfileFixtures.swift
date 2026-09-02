@@ -191,10 +191,19 @@ func makeStubRouter(
 /// resolution downloads nothing and touches no network. The one test
 /// agent factory: every suite constructs through it.
 ///
+/// The agent's environment is empty on purpose, so a session never reads
+/// the real process environment; a suite that composes sessions injects
+/// `userDirectory` so nothing touches the real home directory either.
+///
 /// - Parameters:
 ///   - name: The bare dotfolder name to construct the agent with.
 ///   - cacheDirectory: Where the router caches. A fresh temporary
 ///     directory per call keeps runs of one suite apart.
+///   - recordingsDirectory: The durable transcripts root, or `nil` (the
+///     default) to record nothing — a session-composition suite passes a
+///     value so `makeSession` writes the session directory to disk.
+///   - userDirectory: The injected user layer root, or `nil` when the
+///     suite composes no session.
 ///   - loader: The loader the router loads through.
 /// - Returns: The constructed agent.
 /// - Throws: `DotfolderNameError` when `name` is refused, or
@@ -202,10 +211,19 @@ func makeStubRouter(
 func makeStubAgent(
     name: String,
     cacheDirectory: URL,
+    recordingsDirectory: URL? = nil,
+    userDirectory: URL? = nil,
     loader: any ModelLoader = StubModelLoader()
 ) async throws -> RoutedACPAgent {
-    let router = makeStubRouter(cacheDirectory: cacheDirectory, loader: loader)
-    return try await RoutedACPAgent(name: DotfolderName(name), router: router)
+    let router = makeStubRouter(
+        cacheDirectory: cacheDirectory,
+        recordingsDirectory: recordingsDirectory,
+        loader: loader)
+    return try await RoutedACPAgent(
+        name: DotfolderName(name),
+        router: router,
+        userDirectory: userDirectory,
+        environment: [:])
 }
 
 /// Resolves a profile over the stub models, resident and generation-free.

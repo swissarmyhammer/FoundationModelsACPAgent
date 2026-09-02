@@ -1,3 +1,4 @@
+import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
 import os
@@ -22,8 +23,10 @@ private let sessionLogger = Logger(subsystem: RoutedACPAgent.implementation.name
 /// `auth/logout` keep the wire package's default: `-32601`, the method is not
 /// available on this agent. The agent never raises `-32000`.
 ///
-/// The session handlers land in later tasks. Until then each one applies
-/// the order rule and then refuses with method-not-found, so the
+/// `session/new` lives in `Agent/SessionSetup.swift` (plan.md §7.1): the
+/// per-cwd composition pipeline and the actor-held session table. The
+/// remaining session handlers land in later tasks; until then each one
+/// applies the order rule and then refuses with method-not-found, so the
 /// conformance compiles and the wire shape stays honest.
 public actor RoutedACPAgent: Agent {
     /// The frontend-supplied dotfolder name (plan.md §2.1). It roots the
@@ -47,6 +50,21 @@ public actor RoutedACPAgent: Agent {
     /// came before `initialize`, and is refused.
     public internal(set) var negotiatedClientCapabilities: NegotiatedClientCapabilities?
 
+    /// The user layer root override, or `nil` to derive the XDG location
+    /// from ``environment`` and the home directory (plan.md §2.2). Tests
+    /// inject a value so they never touch the real home directory, the
+    /// same seam `ConfigurationLoader` documents.
+    nonisolated let userDirectory: URL?
+
+    /// The environment the per-session dotfolder stack reads
+    /// `XDG_CONFIG_HOME` from.
+    nonisolated let environment: [String: String]
+
+    /// The live sessions, keyed by the ACP session id (plan.md §7.1).
+    /// Each entry carries its own config, instructions, confinement,
+    /// transcript directory, and idle/busy state.
+    var sessions: [SessionId: ActiveSession] = [:]
+
     /// Creates an agent for the dotfolder `name` and resolves the
     /// configured profile to a resident one (plan.md §1: `config →
     /// ProfileDefinition → Router.resolve → resident profile`).
@@ -63,15 +81,23 @@ public actor RoutedACPAgent: Agent {
     ///     is resolved.
     ///   - reporting: The UI-bindable resolution progress, or `nil` for a
     ///     fresh unobserved one.
+    ///   - userDirectory: The user layer root, or `nil` to derive it from
+    ///     `environment` and the home directory. Tests inject a value so
+    ///     they never touch the real home directory.
+    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
     /// - Throws: `ProfileResolutionError` when the profile does not
     ///   resolve.
     public init(
         name: DotfolderName,
         router: Router,
         configuration: AgentConfiguration = AgentConfiguration(),
-        reporting: ResolutionProgress? = nil
+        reporting: ResolutionProgress? = nil,
+        userDirectory: URL? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) async throws {
         self.name = name
+        self.userDirectory = userDirectory
+        self.environment = environment
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting
@@ -109,12 +135,9 @@ public actor RoutedACPAgent: Agent {
         throw RequestError.methodNotFound(method)
     }
 
-    // MARK: - Session baseline (plan.md §7 to §10; later tasks)
+    // MARK: - Session baseline (plan.md §7 to §10)
 
-    /// Refuses until the session-setup task lands.
-    public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
-        try refuseUnimplemented(ACPMethod.sessionNew)
-    }
+    // `newSession` lives in `Agent/SessionSetup.swift` (plan.md §7.1).
 
     /// Refuses until the session-list task lands.
     public func listSessions(_ params: ListSessionsRequest) async throws -> ListSessionsResponse {
@@ -136,11 +159,12 @@ public actor RoutedACPAgent: Agent {
         try refuseUnimplemented(ACPMethod.sessionPrompt)
     }
 
-    /// A notification, so it has no response. With no session table yet,
-    /// every id is unknown: log and ignore (plan.md §10.1).
+    /// A notification, so it has no response. No prompt runs before the
+    /// prompt-turn task lands, so there is no turn to stop for any id:
+    /// log and ignore (plan.md §10.1).
     public func sessionCancel(_ params: CancelSessionNotification) async {
         sessionLogger.notice(
-            "session/cancel for unknown session \(params.sessionId.rawValue, privacy: .public); ignored")
+            "session/cancel for session \(params.sessionId.rawValue, privacy: .public) with no running turn; ignored")
     }
 
     // MARK: - Capability-gated (plan.md §10.2, §15; later tasks)

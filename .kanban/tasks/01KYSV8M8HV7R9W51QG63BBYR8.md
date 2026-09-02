@@ -1,6 +1,40 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1fsxdvxnpbaanjr4y7d2fb9
+  text: |-
+    Research findings before implementation:
+
+    - Verified in ../FoundationModelsRouter: `RoutedLLM.makeSession(instructions:workingDirectory:recordingRoot:tools:budget:compactionPrompt:summarization:agentSpawn:discoveryPriming:)` is public with defaults. `Router` has only `id`, `init`, `resolve`. The card is correct.
+    - The session directory on disk: `recordingDirectory(forSessionId:recordingRoot:)` gives `<recordingRoot>/<ulid>/`. The `session.json` sidecar is written at `makeSession` time only when the router records durably (`recordingsDir` not nil). Tests must construct the stub router with a recordings directory. I will extend `makeStubRouter`/`makeStubAgent` pass-through parameters.
+    - One discovery: Router gives no public read of the resolved context tokens (`SlotResolution.contextTokens` is `package`, `RoutedModel.resolution` is `package`). `TokenBudget` requires `limit`. Thus this task passes `budget: nil` with a marked TODO. The compaction config fractions connect when Router shows the resolved context. The card does not name a budget source and has no budget acceptance test.
+    - `AbsolutePath` already refuses a relative path at wire decode (`RequestError.invalidParams`, -32602). The agent adds its own check in `SessionSetup` with the same error code, and a raw NDJSON wire test shows the refusal end to end.
+    - The user layer root comes from `ConfigurationLoader.stack.layers` (`source == .user` always exists). `ProjectRegistry` and `TranscriptLocation.home` use it. Agent `init` gains `userDirectory:`/`environment:` test seams, in the pattern `ConfigurationLoader` documents.
+    - Visible config-difference behavior for the two-repo test: `tools: skills: false` in one repo removes the `skills` tool from the composed `SessionSurface.tools` roster (pattern from ToolCatalogTests).
+  timestamp: 2026-09-02T00:57:12.317945+00:00
+- actor: claude-code
+  id: 01m1ftat9fr57bz2bbqdehvsnt
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift (new), Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift (new), Tests/FoundationModelsACPAgentTests/StubProfileFixtures.swift. TDD: the new suite failed first for the missing API, then all 158 tests pass.
+    - next: run the test step, then commit and review.
+
+    Details:
+    - `newSession` composes per cwd: ConfigurationLoader → InstructionsAssembler (with the skills registry) → ToolCatalog.sessionSurface (MCPComposition runs inside it) → `profile.standard.makeSession(instructions:workingDirectory:recordingRoot:tools:budget:compactionPrompt:)`. Grammar and agentSpawn stay nil.
+    - The sessionId is `session.id.description`; the table `sessions: [SessionId: ActiveSession]` lives on the agent actor and carries config, instructions, confinement, transcript directory, surface, and idle/busy availability.
+    - ProjectRegistry records the cwd; no SessionIndex write.
+    - `budget: nil` with a marked TODO — Router shows no public resolved context; follow-up task ^f40jzjy created.
+    - Agent init gains `userDirectory:`/`environment:` test seams; `makeStubAgent` gains `recordingsDirectory:`/`userDirectory:` pass-through with an empty environment.
+  timestamp: 2026-09-02T01:04:31.023823+00:00
+- actor: claude-code
+  id: 01m1ftc8qdv3354sfxz0pr4e2p
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 158 tests in 18 suites passed, 0 failed, 0 skipped; `swift build --build-tests` shows zero compiler warnings. The one "known issue" is HarnessSmokeTests' deliberate negative check of `expectOrderedSubsequence`, which runs and can fail — not a skip.
+    - next: commit, then review.
+  timestamp: 2026-09-02T01:05:18.573426+00:00
 depends_on:
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
 - 01KYSV6BNDNMQ9T6RKFQ3P1ZD2
@@ -9,8 +43,8 @@ depends_on:
 - 01KYSV83KNKXPSMJMQX5TFSPGC
 - 01KYSVR3HG5TB7G8DA7NZ60Y96
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
-position_column: todo
-position_ordinal: '8980'
+position_column: doing
+position_ordinal: '80'
 title: 'session/new: compose config, instructions, tools into a root Router session'
 ---
 ## What
@@ -46,23 +80,27 @@ Other rules:
 - Register the cwd in `ProjectRegistry` at session/new. **Do not append the `SessionIndex` record here.** §9's zero-turn rule makes a persisted transcript the listability test. The prompt-turn task writes the index record at first recorded activity, with the title.
 - `NewSessionResponse` carries `configOptions`. Leave an empty array and a marked TODO until the config-options task fills it.
 
-- [ ] Absolute-cwd validation
-- [ ] Per-session composition pipeline
-- [ ] `profile.standard.makeSession(...)`, with the profile held strongly
-- [ ] sessionId = Router ULID
-- [ ] Concurrent session table with idle and busy tracking
-- [ ] Registry write at new; index write deferred to first activity
+- [x] Absolute-cwd validation
+- [x] Per-session composition pipeline
+- [x] `profile.standard.makeSession(...)`, with the profile held strongly
+- [x] sessionId = Router ULID
+- [x] Concurrent session table with idle and busy tracking
+- [x] Registry write at new; index write deferred to first activity
 
 ## Acceptance Criteria
-- [ ] `session/new` on a temp dir returns a sessionId that parses as a ULID and equals the Router session directory name on disk
-- [ ] A relative `cwd` gives an error
-- [ ] Two sessions at once in two temp repos read different project-layer config values, asserted through a visible behavior such as shell disabled in one
-- [ ] After `session/new` alone, `projects.jsonl` holds the cwd and `sessions.jsonl` holds no record for the session
-- [ ] The agent keeps the profile alive across two sequential sessions, and the second `makeSession` does not trap
+- [x] `session/new` on a temp dir returns a sessionId that parses as a ULID and equals the Router session directory name on disk
+- [x] A relative `cwd` gives an error
+- [x] Two sessions at once in two temp repos read different project-layer config values, asserted through a visible behavior such as shell disabled in one
+- [x] After `session/new` alone, `projects.jsonl` holds the cwd and `sessions.jsonl` holds no record for the session
+- [x] The agent keeps the profile alive across two sequential sessions, and the second `makeSession` does not trap
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift` — on the test harness (RecordingClient and a scripted ModelLoader), with temp-dir repos
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift` — on the test harness (RecordingClient and a scripted ModelLoader), with temp-dir repos
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Notes from implementation
+- The budget: Router shows no public read of the resolved context tokens, so `session/new` passes `budget: nil` with a marked TODO. Follow-up task: ^f40jzjy.
+- The config-difference behavior in the two-repo test uses `tools: skills: false` (the skills tool leaves the composed roster), the same kind of visible behavior as a disabled shell.
