@@ -54,10 +54,35 @@ comments:
     - commit: ef68f28
     - review: findings (1 — Support/Harness.swift:69, code-hygiene/magic-numbers-swift)
   timestamp: 2026-09-02T00:03:59.805338+00:00
+- actor: claude-code
+  id: 01m1fpy9h50kmfyz0yt13e9ptd
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/Harness.swift: the cadence literal 60 is now the named constant `inertCadenceSeconds`; the finding checkbox is checked. No other unnamed numeric literal exists in the file.
+    - next: test, commit, re-review.
+
+    ### test — green
+    - evidence: swift test — 136 tests in 15 suites, all pass, 0 failures, 0 skipped; zero source warnings.
+
+    ### commit — changed
+    - evidence: 924b3ec test(harness): name the inert coalescing-cadence seconds constant
+  timestamp: 2026-09-02T00:05:14.917923+00:00
+- actor: claude-code
+  id: 01m1fq0twx0qbse3jse0x9tj0e
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (924b3ec) — 0 findings; the one prior finding is checked. Task moved to done.
+
+    ### finish iteration 2 — clean
+    - implement: changed (Support/Harness.swift — the named `inertCadenceSeconds` constant)
+    - test: green (swift test — 136 tests in 15 suites, 0 failures, 0 skipped)
+    - commit: 924b3ec
+    - review: clean (0 findings; task moved to done)
+  timestamp: 2026-09-02T00:06:38.237576+00:00
 depends_on:
 - 01KYSV5GF5FKH2S0ZSRQD8DA4Z
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: '8980'
 title: 'Test harness: RecordingClient sink and scripted model backend fixture'
 ---
 ## What
@@ -111,4 +136,4 @@ Create `Tests/FoundationModelsACPAgentTests/Support/`:
 > 2 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 2 file(s)
 
-- [ ] `Tests/FoundationModelsACPAgentTests/Support/Harness.swift:69` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsACPAgentTests/Support/Harness.swift:69` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
