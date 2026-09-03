@@ -119,7 +119,8 @@ struct EventProjection {
 
     /// Whether the turn produced observable output: a text delta, a
     /// reasoning delta, a tool call or status, an invocation record,
-    /// or a run settlement (task ^pez780d).
+    /// an attachment report, a relayed elicitation, or a run
+    /// settlement (task ^pez780d).
     private var sawOutput = false
 
     /// Whether at least one `turnEnded` usage report arrived
@@ -204,13 +205,18 @@ struct EventProjection {
             sawOutput = true
             await projectSettlement(of: operationEvent)
         case .toolCallReport(let report):
-            // A correlation record only, like `toolInvocation`: the
-            // attachments already ride the answering `toolStatus`
-            // output segments, so no wire message goes out here. The
-            // task `^9vjyddw` tracks a richer projection.
-            turnLogger.debug(
-                "session \(sessionIdValue, privacy: .public): tool call report for run \(report.correlationID, privacy: .public) with \(report.attachments.count, privacy: .public) attachments"
-            )
+            // The "at least one attachment" rule is a doc comment
+            // upstream, not a type guarantee: an empty report sends
+            // nothing, because an empty content replace would erase
+            // the call's content.
+            guard !report.attachments.isEmpty else {
+                turnLogger.warning(
+                    "session \(sessionIdValue, privacy: .public): run \(report.correlationID, privacy: .public) reported no attachments; nothing goes to the wire"
+                )
+                return
+            }
+            sawOutput = true
+            await projectToolCallReport(report)
         case .elicitationRequested(let operationEvent):
             // The relay runs the round trip inline (plan.md §16): the
             // asking tool is suspended in Router's mailbox until the
@@ -405,6 +411,34 @@ struct EventProjection {
                     title: .value(operationEvent.op))))
     }
 
+    // MARK: - The attachment report (§8.4, §11.6)
+
+    /// Sends the attachment `tool_call_update` of one closed call: the
+    /// update keys on the run's `correlationID` — its
+    /// `completionToken`, its `toolCallId` — carries each attached
+    /// document as one content item in call order, and puts the parsed
+    /// documents in `rawOutput`. The `op` rides as the title, because
+    /// this update can be the creation of the wire call.
+    ///
+    /// The update claims no status: the report records what the call
+    /// attached, not how the call ended, and the terminal claim
+    /// belongs to `toolStatus` and `runSettled`. It fills no
+    /// `locations`: an attachment is an opaque document (`schemaName`
+    /// plus `contentJSON`) with no structured path contract, and a
+    /// location must never come from a rendered string (§11.6).
+    ///
+    /// - Parameter report: The report of the call's attachments.
+    private func projectToolCallReport(_ report: ToolCallReport) async {
+        let documents = report.attachments.map(\.contentJSON)
+        await send(
+            .toolCallUpdate(
+                ToolCallUpdate(
+                    toolCallId: ToolCallId(rawValue: report.correlationID),
+                    content: .value(documents.map(Self.textItem)),
+                    rawOutput: Self.rawOutputPatch(fromDocuments: documents),
+                    title: .value(report.op))))
+    }
+
     // MARK: - The status functions (§8.4)
 
     /// The one total `OperationOutcome` to `ToolCallStatus` function.
@@ -573,17 +607,28 @@ struct EventProjection {
     }
 
     /// The `rawOutput` patch of a `toolStatus` event, from the
-    /// structured segments — never from a rendered string (§11.6). One
-    /// structured segment is the value itself; several become an
-    /// array; none leaves the field unchanged.
+    /// structured segments — never from a rendered string (§11.6).
     ///
     /// - Parameter output: The answering output segments, or `nil`.
     /// - Returns: The raw-output patch.
     private static func rawOutputPatch(from output: [SegmentPayload]?) -> PatchField<FoundationModelsACP.JSONValue> {
-        let values = (output ?? []).compactMap { payload -> FoundationModelsACP.JSONValue? in
-            guard case .structure(_, _, let contentJSON) = payload else { return nil }
-            return jsonValue(from: contentJSON)
-        }
+        rawOutputPatch(
+            fromDocuments: (output ?? []).compactMap { payload -> String? in
+                guard case .structure(_, _, let contentJSON) = payload else { return nil }
+                return contentJSON
+            })
+    }
+
+    /// The `rawOutput` patch of a set of JSON documents: one parsed
+    /// document is the value itself; several become an array; none —
+    /// text that does not parse included — leaves the field unchanged.
+    ///
+    /// - Parameter documents: The JSON documents.
+    /// - Returns: The raw-output patch.
+    private static func rawOutputPatch(
+        fromDocuments documents: [String]
+    ) -> PatchField<FoundationModelsACP.JSONValue> {
+        let values = documents.compactMap { jsonValue(from: $0) }
         guard let first = values.first else { return .unchanged }
         return values.count == 1 ? .value(first) : .value(.array(values))
     }

@@ -393,6 +393,29 @@ import Testing
         #expect(reason == .endTurn)
     }
 
+    /// A turn that carried an attachment report keeps `end_turn`, also
+    /// when the usage report is zero: the report's `tool_call_update`
+    /// is real output.
+    @Test func aZeroTokenTurnWithAToolCallReportKeepsTheEndTurnStopReason() async throws {
+        let report = ToolCallReport(
+            tool: "files",
+            op: "edit file",
+            correlationID: "01SCRIPTEDRUNTOKEN00000000",
+            sessionID: ULID.generate(),
+            attachments: [
+                ToolCallAttachment(schemaName: "note", contentJSON: #"{"note":"kept"}"#)
+            ])
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .toolCallReport(report),
+                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
     /// A completed turn with no usage report keeps `end_turn`: with no
     /// report there is no zero-token evidence, and the turn must not
     /// invent one.

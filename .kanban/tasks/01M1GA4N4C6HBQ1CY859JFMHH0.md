@@ -46,6 +46,37 @@ comments:
 
     A confirmed upstream fix shape, recorded for the ask follow-up: drain the journal at the end of `MultiTool.call` through the captured `RunBinding`, and post the encoded `FileChangeSet` on an `OperationEvent` — `OperationEvent.detail` (OperationEvent.swift:36) is the public tool-owned JSON slot, and SandboxNoticeOutbox.swift:35 is a working precedent for posting an event from inside Multitool.
   timestamp: 2026-09-02T08:40:25.918422+00:00
+- actor: claude-code
+  id: 01m1jt1ztsytc6jrenzjz444fv
+  text: |-
+    ## Seam verification at the updated checkouts (Router ba55154, Multitool 03e43bb)
+
+    Each upstream half is complete. The two halves do not connect. No live event carries the file-change record to the host.
+
+    What is public now (the Multitool half):
+    - `FileChangeKind`, `FileChange`, and `FileChangeSet` are public and `Codable` (.build/checkouts/FoundationModelsMultitool/Sources/FoundationModelsMultitool/Capabilities/Files/FileChangeSet.swift:39, :73, :125).
+    - The envelope API is public: `FileChangeSet.operationEventDetailKey` (FileChangeSet.swift:226), `encodedOperationEventDetail()` (:235), `init(operationEventDetail:)` (:248).
+    - Each mutating verb call that lands posts ONE `.progress` `OperationEvent`. The event `detail` is the `fileChanges` envelope. The post goes through the ambient `ToolContext` (Capabilities/Files/FileChangeJournal.swift:131-146). The flag `recordsChanges` turns this on (Surface/MultiToolBuilder.swift:276-290). Our host already passes the flag from config (Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:161-167; default false, Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:81).
+    - An inner `tools.files.write` posts through the outer `runCode` context. `ToolContext.post(_:)` stamps the event again with the outer run's tool, op, and correlationID (Router Hosting/ToolContext.swift:140-155; Multitool Invocation/RunBinding.swift:149-159). The suite `FileChangeRunCodeTests` shows the event lands on the outer correlation, in the recorder (Multitool Tests/FoundationModelsMultitoolTests/FileChangeRunCodeTests.swift:1-17).
+
+    What is public now (the Router half):
+    - `SessionEvent.toolCallReport(ToolCallReport)` exists (Router Session/SessionEvent.swift:47). `ToolCallReport.attachments` carries `ToolCallAttachment` records (SessionEvent.swift:102-134). A report goes out only when a call attaches at least one record through `ToolContext.attach(_:)` (Hosting/ContextBindingTool.swift:82, :96-140; Hosting/ToolContext.swift:170-184).
+
+    Why the record does not reach the host live:
+    - Multitool never calls `ToolContext.attach(_:)`. No `attach` call exists in the Files capability or in `MultiTool.call`. Thus `toolCallReport` never carries the change set. The Router ask answer names this gap: "the Multitool half must still call `attach(_:)` with its `FileChangeSet` record" (/Users/wballard/github/swissarmyhammer/FoundationModelsRouter/UPSTREAM_ASKS.md:61, same text at the checkout copy line 61).
+    - The Router does not deliver a `.progress` `OperationEvent` live. A posted event is staged for the NEXT prompt and written to the durable recording only (Session/SessionOutbox.swift:117-160; Session/RoutedSessionActorRunJournal.swift:13-23). `deliverLive` fires only for `.completed` (as `runSettled`) and `.elicitation` (as `elicitationRequested`) (RoutedSessionActorRunJournal.swift:17-22). `SessionEvent` has no progress case (SessionEvent.swift:9-95).
+    - The staged copy is model-facing and coalesced per (tool, correlationID) pair (SessionOutbox.swift:146-160). The durable copy is a `.toolOutput` recording partial (RoutedSessionActorRunJournal.swift:57-68), not a live event. A succeeded run's terminal `detail` is the rendered output string, which plan.md §11.5 forbids as a source for `locations`.
+    - `RoutedSession` gives the host no other read: only `transcript`, `streamResponse`, `streamEvents`, and `streamSessionEvents` (Session/RoutedSession.swift:82, :170, :201, :222). There is no run-plane read and no live transcript-event stream.
+
+    Conclusion: the structured record is public and posted, but no live `SessionEvent` carries it to `EventProjection`. The remaining upstream gap is one hop, in one of two forms: (a) Multitool attaches the encoded `FileChangeSet` as a `ToolCallAttachment` at the end of each mutating call — the carrier the Router built for it; or (b) the Router delivers a `.progress` `OperationEvent` live as a `SessionEvent` case.
+  timestamp: 2026-09-03T04:57:25.081425+00:00
+- actor: claude-code
+  id: 01m1jt289wt9bczycbg1hfwswq
+  text: |-
+    ### finish — stuck
+    - evidence: At Router ba55154 and Multitool 03e43bb, no workable public LIVE source exists for `tool_call_update.locations`. The record is public: `FileChangeSet` and its `fileChanges` envelope (Multitool Capabilities/Files/FileChangeSet.swift:125, :226-255), posted per mutating call as ONE `.progress` `OperationEvent` (FileChangeJournal.swift:131-146). But the Router keeps `.progress` events out of the live surface: `deliverLive` fires only for `.completed` and `.elicitation` (Session/RoutedSessionActorRunJournal.swift:13-23), and the staged copy is model-facing next-prompt input (Session/SessionOutbox.swift:117-160). `SessionEvent.toolCallReport` (SessionEvent.swift:47) is the built live carrier, but it fires only on `ToolContext.attach(_:)` (ContextBindingTool.swift:82), and Multitool never calls `attach`. The Router ask answer records this exact gap as its known limit (FoundationModelsRouter/UPSTREAM_ASKS.md:61). The model-facing rendered string stays forbidden as a source (plan.md §11.5). No code change, no commit. The card stays in todo.
+    - next: Wait for the upstream one-hop fix: Multitool attaches the encoded `FileChangeSet` as a `ToolCallAttachment` at the end of each mutating call, or the Router delivers `.progress` `OperationEvent`s live as a `SessionEvent` case. Then decode the envelope in `EventProjection` (join by correlationID), map paths to `ToolCallLocation`, replace `locations` as a whole array (plan.md §11.6), and extend tier-2 proof 3.
+  timestamp: 2026-09-03T04:57:33.756385+00:00
 position_column: todo
 position_ordinal: a380
 title: Fill tool_call_update locations from the structured per-call record

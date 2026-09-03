@@ -28,6 +28,25 @@ import Testing
     /// run's `correlationID`, its `commandID`, and its `toolCallId`.
     private static let completionToken = "01SCRIPTEDRUNTOKEN00000000"
 
+    /// The tool name the scripted attachment report carries.
+    private static let reportedToolName = "files"
+
+    /// The operation name the scripted attachment report carries; the
+    /// update's title.
+    private static let reportedOpName = "edit file"
+
+    /// The schema name of the scripted file-change attachment.
+    private static let fileChangeSchemaName = "file-change"
+
+    /// The document of the scripted file-change attachment.
+    private static let fileChangeJSON = #"{"kind":"modify","path":"/tmp/notes.txt"}"#
+
+    /// The schema name of the scripted note attachment.
+    private static let noteSchemaName = "note"
+
+    /// The document of the scripted note attachment.
+    private static let noteJSON = #"{"note":"the run changed two files"}"#
+
     /// The estimated transcript size before the scripted fold.
     private static let tokensBeforeFold = 900
 
@@ -74,6 +93,21 @@ import Testing
         return ShellRawOutput(
             bytes: bytes, binaryDetected: binaryDetected, truncated: truncated,
             storedByteCount: bytes.count)
+    }
+
+    /// Makes an attachment report of the scripted run.
+    ///
+    /// - Parameter attachments: The records the report carries.
+    /// - Returns: The report.
+    private static func makeToolCallReport(
+        attachments: [ToolCallAttachment]
+    ) -> ToolCallReport {
+        ToolCallReport(
+            tool: reportedToolName,
+            op: reportedOpName,
+            correlationID: completionToken,
+            sessionID: ULID.generate(),
+            attachments: attachments)
     }
 
     /// Drives one synthetic event stream through a sinked turn.
@@ -347,6 +381,94 @@ import Testing
             .generationStalled(stall),
         ])
 
+        #expect(updates.map(\.kind) == [.stateUpdate])
+    }
+
+    // MARK: - The attachment report (§8.4, §11.6)
+
+    /// A tool call report sends one `tool_call_update` keyed by the
+    /// run's completion token: each attached document rides as one
+    /// content item in call order, the op rides as the title, and the
+    /// update claims no status and no locations.
+    @Test func aToolCallReportSendsOneUpdateKeyedByTheRunToken() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            ToolCallAttachment(
+                schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
+            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let calls = toolCallUpdates(in: updates)
+
+        #expect(calls.map(\.toolCallId.rawValue) == [Self.completionToken])
+        let call = try #require(calls.first)
+        #expect(call.title == .value(Self.reportedOpName))
+        #expect(texts(in: call.content) == [Self.fileChangeJSON, Self.noteJSON])
+        #expect(call.status == .unchanged)
+        #expect(call.locations == .unchanged)
+    }
+
+    /// One attached document becomes the report's `rawOutput` value
+    /// itself, parsed from the document — never a rendered string.
+    @Test func aSingleAttachmentDocumentBecomesTheRawOutputValue() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            ToolCallAttachment(
+                schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON)
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        guard case .value(let value) = call.rawOutput else {
+            Issue.record("expected a raw output value, got \(call.rawOutput)")
+            return
+        }
+        let fields = try #require(Self.objectFields(value))
+        #expect(Self.stringValue(fields["kind"]) == "modify")
+        #expect(Self.stringValue(fields["path"]) == "/tmp/notes.txt")
+    }
+
+    /// Several attached documents become one `rawOutput` array, in
+    /// call order.
+    @Test func severalAttachmentDocumentsBecomeARawOutputArray() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            ToolCallAttachment(
+                schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
+            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        guard case .value(.array(let values)) = call.rawOutput else {
+            Issue.record("expected a raw output array, got \(call.rawOutput)")
+            return
+        }
+        let first = try #require(Self.objectFields(values.first))
+        #expect(Self.stringValue(first["kind"]) == "modify")
+        let last = try #require(Self.objectFields(values.last))
+        #expect(Self.stringValue(last["note"]) == "the run changed two files")
+    }
+
+    /// A document that is not JSON still rides as a content item, and
+    /// the `rawOutput` stays unchanged: the projection never invents a
+    /// value from text it cannot parse.
+    @Test func aDocumentThatIsNotJSONStillRidesAsContent() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: "not json")
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        #expect(texts(in: call.content) == ["not json"])
+        #expect(call.rawOutput == .unchanged)
+    }
+
+    /// A report with no attachments sends nothing: the "at least one
+    /// attachment" rule is a doc comment upstream, not a type
+    /// guarantee, and an empty content replace would erase the call's
+    /// content.
+    @Test func aToolCallReportWithNoAttachmentsSendsNothing() async {
+        let updates = await Self.drive([
+            .toolCallReport(Self.makeToolCallReport(attachments: []))
+        ])
         #expect(updates.map(\.kind) == [.stateUpdate])
     }
 
