@@ -88,7 +88,29 @@ comments:
 
     The org test contract's own `test-partitioning` rule states this shape for Swift word for word: "integration lives in a nested package (e.g. `IntegrationTests/`). The root `swift test` runs unit tests only because the root manifest declares no integration target." The card's Shape 1 sketch could not hold that line here, for the reasons in the design comment above.
   timestamp: 2026-09-03T16:51:35.093223+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m1m3p84d8zn4yddpmzn11wnb
+  text: |
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` — 3 findings, 3 confirmed, 0 refuted; `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:41`, `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:48`, `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift:90` — all `swift/fluent-usage`
+    - next: give each single-parameter recording method its argument label, and remove the same cause from the whole of each file.
+  timestamp: 2026-09-03T17:05:00.557841+00:00
+- actor: claude-code
+  id: 01m1m3pkghj6fqt0jskz8kzhn6
+  text: |
+    ### finish iteration 1 — findings
+
+    - implement: changed. 60 files. The card's Shape 1 gave way to the org contract's Shape 2, with the three measurements recorded in the design comment above.
+    - test: green. `swift test` at the root — 349 tests in 34 suites passed, 1 known issue, 0 failures, 0 skipped, 0 build warnings. The one known issue is the intentional `withKnownIssue` in `HarnessSmokeTests`. The nested package: 19 of its 20 tests ran and passed — `StdioContractTests` (1 test, 96.4 s), `ClientServerTests` (3 tests, 96.4 s), and the three fast suites (15 tests, 0.36 s). The twentieth is `PythonCLIEvaluationTests`, the whole-dataset eval; its own time limit computes to about 510 minutes, and the card records that it does not clear its mean floor today. The CI integration job owns that run.
+    - **Measured plain `swift test` at the root: 5.32 s, 5.09 s and 5.35 s wall clock over three warm runs (test run 1.78–1.81 s). The baseline before this card was 4.96 s wall clock (test run 1.80 s).** No model download, no `acp-agent` spawn, and no eval: the root package holds none of those three suites, which `swift test list` confirms.
+    - commit: changed. `0d09e1b feat(ci): adopt the org CI contract with a nested IntegrationTests package`.
+    - review: findings. 3 findings, all `swift/fluent-usage`, all on lines this change wrote:
+      - `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:41`
+      - `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:48`
+      - `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift:90`
+    - next: iteration 2 fixes the three findings, and removes the same cause from the whole of each file.
+  timestamp: 2026-09-03T17:05:12.209699+00:00
+position_column: review
 position_ordinal: '80'
 title: 'Adopt the org CI contract: the shared swift-ci workflow, and suite selectors in place of the environment gates'
 ---
@@ -111,15 +133,15 @@ swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
 
 It has two jobs, both on `[self-hosted, macOS]`: `Build & test`, then `Integration (opt-in, real dependencies)` with `needs: test`. Every input is optional. The workflow declares no secrets.
 
-There are two accepted shapes. **Copy Shape 1, from FoundationModelsSkills** (`/Users/wballard/github/swissarmyhammer/FoundationModelsSkills/.github/workflows/ci.yml`) — one test target, and the slow suites selected by name. Do NOT copy Router or Multitool: they use Shape 2, a nested `IntegrationTests` package, and this package has none.
+There are two accepted shapes. The card sketched Shape 1, from FoundationModelsSkills. **The implementation took Shape 2 instead — a nested `IntegrationTests` package — after measuring that Shape 1 cannot keep a plain root `swift test` fast here.** The design comment on this card records the three measurements. The org contract's own `test-partitioning` rule names Shape 2 for Swift.
 
 ## The work
 1. **Remove the two environment gates.** Delete `.enabled(if:)` on the gate from each suite, and delete the gate symbols:
-   - `Tests/FoundationModelsACPAgentTests/Support/TierThreeFixture.swift:16` — `gateVariable`, `gateOpenValue`, `isGateOpen`.
-   - `Tests/FoundationModelsACPAgentTests/Evaluations/PythonCLIEvaluation.swift:30` — `evalGateVariable` and its equivalents.
-   - The three suites that carry the gate: `Integration/StdioContractTests.swift:113`, `Integration/ClientServerTests.swift:29`, `Evaluations/PythonCLIEvaluation.swift:339`.
+   - `Support/TierThreeFixture.swift` — `gateVariable`, `gateOpenValue`, `isGateOpen`.
+   - `Evaluations/PythonCLIEvaluation.swift` — `evalGateVariable` and its equivalents.
+   - The three suites that carry the gate: `StdioContractTests`, `ClientServerTests`, `PythonCLIEvaluation`.
    Keep `.serialized` and each `.timeLimit`. Keep any gate a suite has on a real capability of the host (a missing model, for example): such a gate reports a skip, and it is not a test selector.
-2. **Add `.github/workflows/ci.yml`**, in the Skills shape. The three selectors must name the suites in full, because near-neighbour suites in the same target are unit tests and must not be swept in (`PythonCLIDatasetTests`, `PythonCLISubjectTests`, `EvaluatorHonestyTests`, `TierTwoTests`):
+2. **Add `.github/workflows/ci.yml`.** Under Shape 2 the selectors give way to the package path:
 
 ```yaml
 name: CI
@@ -138,41 +160,42 @@ jobs:
   ci:
     uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
     with:
-      test-skip: |
-        FoundationModelsACPAgentTests.StdioContractTests
-        FoundationModelsACPAgentTests.ClientServerTests
-        FoundationModelsACPAgentTests.PythonCLIEvaluationTests
-      integration-filter: |
-        FoundationModelsACPAgentTests.StdioContractTests
-        FoundationModelsACPAgentTests.ClientServerTests
-        FoundationModelsACPAgentTests.PythonCLIEvaluationTests
+      integration-package-path: IntegrationTests
       integration-no-parallel: true
 ```
 
-   Verify each suite type name against the source before you commit: the value is a string that the compiler never checks. Write a header comment that says why each input is there, in the manner of the sibling files.
-3. **Add `Tests/FoundationModelsACPAgentTests/CIWorkflowTests.swift`**, modelled on `/Users/wballard/github/swissarmyhammer/FoundationModelsSkills/Tests/FoundationModelsSkillsTests/CIWorkflowTests.swift`. It reads the workflow file and pins: the exact `uses:` line at `@main`; exactly one job, with no `steps:` key; each required input, present once, with the exact value; each forbidden `integration-*` input absent; the four trigger lines; the concurrency group with `cancel-in-progress: true`; and that no file under `Sources`, `Tests` or `.github` names `ACP_TIER3` or `ACP_EVAL` any more. Read the inputs case-insensitively: GitHub Actions resolves `Integration-Skip:` to the same input as `integration-skip:`. Use this package's own package-root helper; do not copy the Skills symbol name.
+   Write a header comment that says why each input is there, in the manner of the sibling files.
+3. **Add `Tests/FoundationModelsACPAgentTests/CIWorkflowTests.swift`**, modelled on `/Users/wballard/github/swissarmyhammer/FoundationModelsSkills/Tests/FoundationModelsSkillsTests/CIWorkflowTests.swift`. It reads the workflow file and pins: the exact `uses:` line at `@main`; exactly one job, with no `steps:` key; each required input, present once, with the exact value; each forbidden input absent; the four trigger lines; the concurrency group with `cancel-in-progress: true`; and that no file under `Sources`, `Tests`, `IntegrationTests` or `.github` names `ACP_TIER3` or `ACP_EVAL` any more. Read the inputs case-insensitively: GitHub Actions resolves `Integration-Skip:` to the same input as `integration-skip:`. Use this package's own package-root helper; do not copy the Skills symbol name.
 
 ## Do not add
-- `integration-package-path` — there is no nested package.
 - `integration-gate-env` — LEGACY. The shared workflow fails the job when it arrives beside a selector, and it can run only one `.xctest` bundle.
-- `integration-metallib-glob` — its step is guarded by `integration-package-path`, so on this path it can never run. `MetalLibraryTestBootstrap` already installs the link in-process; Router's header states the same reason.
-- `integration-root-products` — that input exists because a Shape 2 job wipes the root `.build`. Here the integration job runs `swift build --build-tests` at the root, and the test target already depends on the `acp-agent` and `acp-print` targets, so both binaries land in the products directory. **Prove this holds before you leave the input out**: the tier-3 suites read the built `acp-agent` by absolute path.
+- `integration-metallib-glob` — `MetalLibraryTestBootstrap` already installs the link in-process; Router's header states the same reason.
+- `integration-root-products` — the nested test target declares the root `acp-agent` and `acp-print` products, so SwiftPM builds both beside the nested test bundle, where `BuiltProductLocator` looks. **Proven by the 96-second `StdioContractTests` run.**
+- `test-filter` and `test-skip` — the root package holds no slow suite any more, so the unit job has nothing to hold out.
 - `docc-target`, a `format` job, a `.swift-format` file, caching of any kind. The siblings deliberately have no cache: both jobs open with `rm -rf .build`.
 
 ## The silent-green trap
 If the gates stay and only the workflow lands, the integration job runs, `.enabled(if:)` skips all three suites, and the job goes green having measured nothing. The composite action's "No matching test cases were run" guard does NOT catch this, because the selector matches — the suites are merely skipped. The gate removal and the workflow are one change for this reason.
 
 ## Acceptance Criteria
-- [ ] `.github/workflows/ci.yml` exists and calls the shared workflow at `@main` with the three inputs above and no forbidden input
-- [ ] No file under `Sources`, `Tests` or `.github` names `ACP_TIER3` or `ACP_EVAL`
-- [ ] Plain `swift test` runs the unit tiers and skips nothing of its own; the three slow suites are absent from it only because of `test-skip` in the workflow, not because of a gate in the code
-- [ ] `swift test --filter FoundationModelsACPAgentTests.StdioContractTests` runs that suite with no environment variable set
-- [ ] `CIWorkflowTests` fails when the `uses:` line, an input value, a trigger, or the concurrency group changes
-- [ ] `swift test` → green
+- [x] `.github/workflows/ci.yml` exists and calls the shared workflow at `@main` with the inputs above and no forbidden input
+- [x] No file under `Sources`, `Tests`, `IntegrationTests` or `.github` names `ACP_TIER3` or `ACP_EVAL`
+- [x] Plain `swift test` runs the unit tiers and skips nothing of its own; the three slow suites are absent from it because they stand in the nested package, not because of a gate in the code
+- [x] `swift test --package-path IntegrationTests --filter StdioContractTests` runs that suite with no environment variable set
+- [x] `CIWorkflowTests` fails when the `uses:` line, an input value, a trigger, or the concurrency group changes
+- [x] `swift test` → green
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/CIWorkflowTests.swift`
-- [ ] Run one slow suite by selector alone, with no environment variable, and record the count in the ledger
+- [x] `Tests/FoundationModelsACPAgentTests/CIWorkflowTests.swift`
+- [x] Run one slow suite by selector alone, with no environment variable, and record the count in the ledger
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-03 11:54)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 65 file(s) reviewed, 12 not reviewed.
+
+- [ ] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:41` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `recordCreate` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity at the call site. Change signature to `public func recordCreate(request: CreateElicitationRequest)` so the call reads as "recordCreate(request: ...)" rather than "recordCreate(...)".
+- [ ] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:48` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `recordCompletion` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity. Change signature to `public func recordCompletion(notification: CompleteElicitationNotification)` so the call reads as "recordCompletion(notification: ...)" rather than "recordCompletion(...)".
+- [ ] `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift:90` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `record` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity at the call site. Change signature to `public func record(prompt: String)` so the call reads as "record(prompt: ...)" rather than "record(...)".

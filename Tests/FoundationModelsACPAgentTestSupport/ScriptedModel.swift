@@ -87,7 +87,7 @@ public actor PromptRecorder {
     /// Records one prompt.
     ///
     /// - Parameter prompt: The prompt the backend received.
-    public func record(_ prompt: String) {
+    public func record(prompt: String) {
         prompts.append(prompt)
     }
 }
@@ -169,7 +169,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-        await recorder?.record(prompt)
+        await recorder?.record(prompt: prompt)
         var text = ""
         try await playScript { text += $0 }
         return text
@@ -185,7 +185,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         AsyncThrowingStream { continuation in
             let playback = Task {
                 do {
-                    await recorder?.record(prompt)
+                    await recorder?.record(prompt: prompt)
                     try await playScript { continuation.yield($0) }
                     continuation.finish()
                 } catch {

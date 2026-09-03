@@ -214,7 +214,8 @@ final class PathRecordingTool: Tool, Sendable {
             .agentMessageChunk(chunk), .userMessageChunk(chunk), .agentMessageChunk(chunk),
         ]
         for update in arrivals {
-            await collector.append(UpdateSessionNotification(sessionId: sessionId, update: update))
+            await collector.append(
+                notification: UpdateSessionNotification(sessionId: sessionId, update: update))
         }
 
         let agentChunkKinds = await collector.updates(ofKind: .agentMessageChunk)

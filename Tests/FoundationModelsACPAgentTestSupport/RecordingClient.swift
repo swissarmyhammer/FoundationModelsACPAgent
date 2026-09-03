@@ -16,7 +16,7 @@ public actor UpdateCollector {
     /// Appends one notification.
     ///
     /// - Parameter notification: The notification to record.
-    public func append(_ notification: UpdateSessionNotification) {
+    public func append(notification: UpdateSessionNotification) {
         updates.append(notification)
     }
 }
@@ -38,14 +38,14 @@ public actor ElicitationWireRecorder {
     /// Appends one create request.
     ///
     /// - Parameter request: The request to record.
-    public func recordCreate(_ request: CreateElicitationRequest) {
+    public func recordCreate(request: CreateElicitationRequest) {
         creates.append(request)
     }
 
     /// Appends one completion notification.
     ///
     /// - Parameter notification: The notification to record.
-    public func recordCompletion(_ notification: CompleteElicitationNotification) {
+    public func recordCompletion(notification: CompleteElicitationNotification) {
         completions.append(notification)
     }
 }
@@ -90,7 +90,7 @@ final class RecordingClient: Client {
     }
 
     func sessionUpdate(_ notification: UpdateSessionNotification) async {
-        await collector.append(notification)
+        await collector.append(notification: notification)
         await client.sessionUpdate(notification)
     }
 
@@ -103,12 +103,12 @@ final class RecordingClient: Client {
     func createElicitation(
         _ params: CreateElicitationRequest
     ) async throws -> CreateElicitationResponse {
-        await elicitations.recordCreate(params)
+        await elicitations.recordCreate(request: params)
         return try await client.createElicitation(params)
     }
 
     func elicitationComplete(_ notification: CompleteElicitationNotification) async {
-        await elicitations.recordCompletion(notification)
+        await elicitations.recordCompletion(notification: notification)
         await client.elicitationComplete(notification)
     }
 }
