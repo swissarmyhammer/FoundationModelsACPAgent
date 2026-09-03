@@ -72,11 +72,34 @@ comments:
     - evidence: `swift test` — 339 tests in 38 suites passed, 0 failures, 1 pre-existing known issue. `swift build --build-tests` — 0 warnings.
     - next: commit iteration 2.
   timestamp: 2026-09-03T03:35:30.730840+00:00
+- actor: claude-code
+  id: 01m1jnc9z72aqgtg3ygh1p5m0w
+  text: |-
+    ### commit — changed
+    - evidence: 7b85d02 refactor(session): answer the review findings on the root converter (4 files, 73 insertions, 17 deletions; local commit only, not pushed)
+    - next: review 7b85d02 (HEAD~1..HEAD).
+  timestamp: 2026-09-03T03:35:40.263393+00:00
+- actor: claude-code
+  id: 01m1jnfgvpk5fk83xr1avj7eze
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on 7b85d02 — 0 findings, 0 confirmed, 0 refuted; both prior findings are checked. Task moved to done.
+    - next: write the finish ledger for iteration 2 and record the board state.
+  timestamp: 2026-09-03T03:37:25.622286+00:00
+- actor: claude-code
+  id: 01m1jnfnnawfdm2j3axqh381pt
+  text: |-
+    ### finish iteration 2 — done
+    - implement: changed — the root converter reuses `validatedWorkingDirectory(path:)` in a do-catch; the redundant `@Suite` attribute is removed from MultiRootConfinementTests.
+    - test: green — `swift test` 339 tests in 38 suites, 0 failures, 0 warnings, 1 pre-existing known issue.
+    - commit: changed — 7b85d02 refactor(session): answer the review findings on the root converter.
+    - review: clean — `review sha HEAD~1..HEAD` gave 0 findings; both prior findings are checked. Task moved to done.
+  timestamp: 2026-09-03T03:37:30.538822+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSVB1ACAR7NDK06015S796H
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9e80'
 title: 'additionalDirectories: multi-root confinement end to end'
 ---
 ## What
