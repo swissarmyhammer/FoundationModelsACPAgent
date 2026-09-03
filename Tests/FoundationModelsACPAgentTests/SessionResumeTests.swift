@@ -16,7 +16,7 @@ import Testing
 /// ``ResumeStubBackend`` and resumes over the same wire the client
 /// drives, so the proofs read behavior — the recorded events, the raw
 /// notification sequence, and what the restored backend received.
-@Suite struct SessionResumeTests {
+struct SessionResumeTests {
     /// One replayed message, as both the recording and the wire show it.
     private struct ReplayedMessage: Equatable {
         /// Which whole-message form carried it.

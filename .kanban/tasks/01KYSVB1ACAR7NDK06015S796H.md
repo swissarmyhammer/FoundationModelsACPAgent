@@ -45,11 +45,62 @@ comments:
     outcome: green
     task: ^15s796h
   timestamp: 2026-09-03T02:40:39.603818+00:00
+- actor: claude-code
+  id: 01m1jj87dfyxfztanxq3y3zgwr
+  text: |-
+    ### commit — changed
+    - evidence: a141ceb feat(agent): implement session/resume with the cwd pre-check, restore, and whole-message replay — 10 files changed, 1655 insertions(+), 56 deletions(-). Local commit only; not pushed.
+    - next: review HEAD~1..HEAD.
+    step: commit
+    outcome: changed
+    task: ^15s796h
+  timestamp: 2026-09-03T02:41:00.847598+00:00
+- actor: claude-code
+  id: 01m1jjgeztfbt2k2spem0htx07
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:19 `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments. Counts: 1 finding, 1 confirmed, 0 refuted.
+    - The findings section is appended to the card, and the card subtask and acceptance checkboxes are checked, because the tests prove each one.
+    - next: remove the @Suite attribute in the new test file, re-test, commit, re-review.
+    step: review
+    outcome: findings
+    task: ^15s796h
+  timestamp: 2026-09-03T02:45:30.746975+00:00
+- actor: claude-code
+  id: 01m1jjgnrqym2p1qkhfs5jaypg
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files; TDD with 13 new SessionResumeTests, all failed first on the old refusal.
+    - test: green — `swift test` 322 tests in 36 suites passed, 0 failures, 1 pre-existing known issue.
+    - commit: changed — a141ceb feat(agent): implement session/resume with the cwd pre-check, restore, and whole-message replay.
+    - review: findings — 1 finding: SessionResumeTests.swift:19 redundantSwiftTestingSuite (remove the argument-free @Suite attribute).
+    - next: iteration 2 fixes the finding.
+  timestamp: 2026-09-03T02:45:37.687837+00:00
+- actor: claude-code
+  id: 01m1jjjr610s3h465av2kc65y2
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift. Removed the argument-free @Suite attribute; the type declares its tests through @Test alone. The finding checkbox is checked.
+    - next: full test run.
+    step: implement
+    outcome: changed
+    task: ^15s796h
+  timestamp: 2026-09-03T02:46:45.697627+00:00
+- actor: claude-code
+  id: 01m1jjjw9gt90wkm97mkn2r41s
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 322 tests in 36 suites passed, 0 failures, 0 skipped, 1 pre-existing known issue.
+    - next: commit the fix.
+    step: test
+    outcome: green
+    task: ^15s796h
+  timestamp: 2026-09-03T02:46:49.904432+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSV7GHQ7049N8DW5NH9MYWS
 - 01KYSVA1A4HXA6RYSJBE2XERFM
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: 'session/resume: cwd equality, restore, replay as whole-message upserts'
 ---
@@ -111,29 +162,38 @@ Assert it through `TranscriptEvent.kind == .divergence`, and pin the text agains
 - Replay: `replayFrom: {"type": "start"}` replays before the response returns. Omitted or null means no replay. Replay sends whole-message upserts (`user_message`, `agent_message`, `agent_thought`) with the original `messageId` values, never `*_chunk`, so a client that saw chunks converges through §8.3's replace row. Replay reads the full recorded history; fold checkpoints are not messages and are not sent. Write the replay path with `ReplayFrom` as an inclusive cursor parameter.
 - `ResumeSessionResponse` carries `configOptions`, from the same source as session/new.
 
-- [ ] cwd equality check through `recordedWorkingDirectory`, before restore
-- [ ] Composition reassembly and root-set replacement
-- [ ] `restoreSession(id:recordingRoot:instructions:tools:)` with fresh instructions
-- [ ] `missingTools` reported to the client
-- [ ] Cursor-shaped replay sending whole-message upserts
-- [ ] Deleted-session path catching `TranscriptTreeError.sessionNotFound`
+- [x] cwd equality check through `recordedWorkingDirectory`, before restore
+- [x] Composition reassembly and root-set replacement
+- [x] `restoreSession(id:recordingRoot:instructions:tools:)` with fresh instructions
+- [x] `missingTools` reported to the client
+- [x] Cursor-shaped replay sending whole-message upserts
+- [x] Deleted-session path catching `TranscriptTreeError.sessionNotFound`
 
 **Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/resume` with an unknown `sessionId` — a deleted session included — gives JSON-RPC invalid params (`-32602`) with the id in `data`. Map `TranscriptTreeError.sessionNotFound` to that error. A known, closed session resumes normally; that is what resume is for.
 
 ## Acceptance Criteria
-- [ ] `session/resume` on an unknown id gives `-32602` with the id in `data`
-- [ ] Record a scripted two-turn session, then resume with `replayFrom: start`: the collector receives whole-message upserts with the original messageIds, no chunks, before the resume response completes
-- [ ] Resume with a different cwd errors, and no session was constructed — assert the scripted loader was never asked for a backend
-- [ ] Resume after delete gives a clean protocol error, driven by catching `TranscriptTreeError.sessionNotFound`
-- [ ] Resume omitting `additionalDirectories` on a session that had extra roots rebuilds confinement with the cwd only, asserted because a file outside the cwd is now refused
-- [ ] A resumed session continues the conversation, and its next turn sees the earlier context
-- [ ] Resuming with `shell: false` newly set reports the missing shell verbs from `configurationReport`
-- [ ] **Resuming with changed instructions makes the MODEL see them** — assert through the scripted backend's received transcript, not through any property that holds the string
-- [ ] Resuming with changed instructions writes one `.divergence` event; resuming with unchanged or nil instructions writes none
+- [x] `session/resume` on an unknown id gives `-32602` with the id in `data`
+- [x] Record a scripted two-turn session, then resume with `replayFrom: start`: the collector receives whole-message upserts with the original messageIds, no chunks, before the resume response completes
+- [x] Resume with a different cwd errors, and no session was constructed — assert the scripted loader was never asked for a backend
+- [x] Resume after delete gives a clean protocol error, driven by catching `TranscriptTreeError.sessionNotFound`
+- [x] Resume omitting `additionalDirectories` on a session that had extra roots rebuilds confinement with the cwd only, asserted because a file outside the cwd is now refused
+- [x] A resumed session continues the conversation, and its next turn sees the earlier context
+- [x] Resuming with `shell: false` newly set reports the missing shell verbs from `configurationReport`
+- [x] **Resuming with changed instructions makes the MODEL see them** — assert through the scripted backend's received transcript, not through any property that holds the string
+- [x] Resuming with changed instructions writes one `.divergence` event; resuming with unchanged or nil instructions writes none
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift` — harness, record-then-resume round trips in temp repos
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift` — harness, record-then-resume round trips in temp repos
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 21:41)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:19` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
