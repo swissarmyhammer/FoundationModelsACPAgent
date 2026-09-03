@@ -110,8 +110,20 @@ comments:
       - `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift:90`
     - next: iteration 2 fixes the three findings, and removes the same cause from the whole of each file.
   timestamp: 2026-09-03T17:05:12.209699+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1m42qe8m9fx69abq914rjzk
+  text: |
+    ### finish iteration 2 — done
+
+    - implement: changed. 4 files. The three `swift/fluent-usage` findings are fixed, and the same cause is removed from the whole of each named file: `UpdateCollector.append(notification:)`, `ElicitationWireRecorder.recordCreate(request:)`, `ElicitationWireRecorder.recordCompletion(notification:)` and `PromptRecorder.record(prompt:)` now label their one parameter. `RecordingClient.sessionUpdate(_:)` and `elicitationComplete(_:)` keep their omitted labels, because the `Client` protocol fixes those signatures. Every call site follows.
+    - test: green. `swift test` at the root — 349 tests in 34 suites passed, 1 known issue, 0 failures, 0 skipped. Both packages build with no warning. The nested package's fast suites: 15 tests in 3 suites passed after 0.35 s.
+    - **Measured plain `swift test` at the root: 6.71 s, 5.32 s and 5.94 s wall clock over three warm runs (test run 1.81–1.84 s). The baseline before this card was 4.96 s wall clock (test run 1.80 s).**
+    - commit: changed. `35d5e0c refactor(test-support): label the recorder parameters of the shared support`. `cli-plan.md` appeared in the working tree during this run from outside this card; it was taken back out of the commit and left untracked.
+    - review: clean. `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted, 7 attempted. Every prior finding is checked.
+    - next: none. The card is done.
+  timestamp: 2026-09-03T17:11:49.448456+00:00
+position_column: done
+position_ordinal: a580
 title: 'Adopt the org CI contract: the shared swift-ci workflow, and suite selectors in place of the environment gates'
 ---
 ## What
@@ -196,6 +208,10 @@ If the gates stay and only the workflow lands, the integration job runs, `.enabl
 
 > Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 65 file(s) reviewed, 12 not reviewed.
 
-- [ ] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:41` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `recordCreate` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity at the call site. Change signature to `public func recordCreate(request: CreateElicitationRequest)` so the call reads as "recordCreate(request: ...)" rather than "recordCreate(...)".
-- [ ] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:48` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `recordCompletion` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity. Change signature to `public func recordCompletion(notification: CompleteElicitationNotification)` so the call reads as "recordCompletion(notification: ...)" rather than "recordCompletion(...)".
-- [ ] `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift:90` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `record` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity at the call site. Change signature to `public func record(prompt: String)` so the call reads as "record(prompt: ...)" rather than "record(...)".
+- [x] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:41` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `recordCreate` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity at the call site. Change signature to `public func recordCreate(request: CreateElicitationRequest)` so the call reads as "recordCreate(request: ...)" rather than "recordCreate(...)".
+- [x] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:48` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `recordCompletion` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity. Change signature to `public func recordCompletion(notification: CompleteElicitationNotification)` so the call reads as "recordCompletion(notification: ...)" rather than "recordCompletion(...)".
+- [x] `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift:90` `swift/fluent-usage` — Single-parameter method omits argument label without value-preserving conversion. The method `record` performs a side-effect (recording) rather than converting a value, so the parameter should be labeled for clarity at the call site. Change signature to `public func record(prompt: String)` so the call reads as "record(prompt: ...)" rather than "record(...)".
+
+## Review Findings (2026-09-03 12:07)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed. Zero findings.
