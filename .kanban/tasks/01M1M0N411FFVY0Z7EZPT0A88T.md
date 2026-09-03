@@ -97,8 +97,26 @@ comments:
     - The live eval suites were never run; every nested-package run was filtered.
     - next: `/review`
   timestamp: 2026-09-03T18:45:31.849963+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1m9s610nd1nbr8wp9cryzxz
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 5d1bfcc). 7 validators ran, 0 failed. 0 findings, 0 confirmed, 0 refuted. 4 source files read, 2 `.kanban/` files excluded by the ignore rule.
+    - next: the task moves to done. No open finding is on the card.
+  timestamp: 2026-09-03T18:51:28.160829+00:00
+- actor: claude-code
+  id: 01m1m9sxfcamsx89a60xnpx78e
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 source files under IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Evaluations/: PythonCLIGraders.swift, PythonCLISubject.swift, EvaluatorHonestyTests.swift, PythonCLISubjectTests.swift. The grader now compares the transcript counts against the wire counts. `runCode` calls are strict equality, matched by tool-call id. Shell traffic is "at least one notification for each completed run", because `TerminalStream.project` puts the output chunks together.
+    - test: green — the filtered nested run, 17 tests in 3 suites passed. Root `swift test`, 351 tests in 34 suites passed, 1 pre-existing known issue. Both packages `build --build-tests` with zero warnings.
+    - RED watched first: both disagreement cases returned `passed: true` against the presence-only code. A third RED corrected a title match to an id match, because the settlement projection makes a second `runCode`-titled call on a correct run.
+    - commit: 5d1bfcc — 6 files, 409 insertions, 77 deletions. Local only. The four files of the other concurrent work stayed unstaged.
+    - review: clean — `review sha HEAD~1..HEAD`, 7 validators attempted, 0 failed, 0 findings.
+    - next: The card is in `done`. No open finding stands.
+  timestamp: 2026-09-03T18:51:52.172929+00:00
+position_column: done
+position_ordinal: a980
 title: Make the ToolTraffic grader compare the transcript and the wire, not only their presence
 ---
 ## What
