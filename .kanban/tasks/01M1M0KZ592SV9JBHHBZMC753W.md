@@ -43,8 +43,31 @@ comments:
     - evidence: root `swift test` — 349 tests in 34 suites passed, 0 failed, 0 skipped, 1 known issue (the pre-existing intentional `withKnownIssue` in `HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps`, which proves the helper catches a reversed pair). `swift build --build-tests` clean, zero warnings. The nested package links the changed test-support product, so `swift build --build-tests --package-path IntegrationTests` ran too: Build complete, zero warnings.
     - next: commit
   timestamp: 2026-09-03T17:52:50.474423+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1m6emn3bdtftgscdanpjsve
+  text: |-
+    ### commit — changed
+    - evidence: 21fe38d test(tier2): close the doc-versus-assertion gaps in proofs 2, 3, 4 and 6 — 7 files changed, 427 insertions, 39 deletions. Local only, not pushed. The untracked `cli-plan.md` was left alone.
+    - next: review
+  timestamp: 2026-09-03T17:53:16.963279+00:00
+- actor: claude-code
+  id: 01m1m6mz5rx17ksbkd4pgzyfaj
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. 5 files reviewed; the 2 `.kanban/` files are excluded by `.reviewignore`.
+    - next: done
+
+    ### finish iteration 1 — done
+
+    One iteration. Every acceptance item is met by an ASSERTION, and no claim was deleted to close a gap.
+
+    - implement — changed (5 source files, 1 of them new)
+    - test — green (349 tests in 34 suites, 0 failed, 0 skipped, 1 pre-existing known issue; the nested `IntegrationTests` package builds clean too, because it links the changed test-support product)
+    - commit — changed (21fe38d)
+    - review — clean (0 findings)
+  timestamp: 2026-09-03T17:56:44.344110+00:00
+position_column: done
+position_ordinal: a780
 title: Close the doc-versus-assertion gaps in tier-2 proofs 2, 3, 4 and 6
 ---
 ## What
@@ -69,15 +92,24 @@ Plan.md §20.1 asks the MCP proof to "confirm that the `tool_call_update` correl
 A comment that overstates its test is worse than no comment: the next reader stops looking for the coverage. Each of these four is a small edit, and together they decide whether the seven proofs mean what the file says they mean.
 
 ## Acceptance Criteria
-- [ ] Every doc comment in the file describes only what its body asserts
-- [ ] The `{}`-first MUST is asserted, or the sentence is gone and the card records why the fixture cannot observe it
-- [ ] Proof 3 asserts the `runCode` call's `rawOutput`, or names the carrying call
-- [ ] Proof 6 asserts the correlation, or the card records why it is not observable
-- [ ] Proof 2 names `PathGuard` as the mechanism it matches, and marks the permission assertion as a tripwire
-- [ ] `swift test` → green
+- [x] Every doc comment in the file describes only what its body asserts
+- [x] The `{}`-first MUST is asserted, or the sentence is gone and the card records why the fixture cannot observe it
+- [x] Proof 3 asserts the `runCode` call's `rawOutput`, or names the carrying call
+- [x] Proof 6 asserts the correlation, or the card records why it is not observable
+- [x] Proof 2 names `PathGuard` as the mechanism it matches, and marks the permission assertion as a tripwire
+- [x] `swift test` → green
 
 ## Tests
-- [ ] The four proofs, each new assertion watched to fail first
+- [x] The four proofs, each new assertion watched to fail first
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Outcome
+
+Every gap was closed by ASSERTING, not by deleting a claim.
+
+- Proof 4: the `{}`-first MUST is asserted on the raw wire lines, through a new `WireTap` on the client end of the transport. The ordered-subsequence limit is stated in the doc.
+- Proof 3: the `runCode` call's `rawOutput` is asserted (the pending envelope, and NOT the written line), beside the wait call's `rawOutput` that carries the line. The doc names each carrier.
+- Proof 6: the listing source and the answer source are separated in the snippet, and the `tool_call_update` correlation is asserted — the set of calls whose ANSWER carries the ping is exactly the wait call.
+- Proof 2: the doc names Multitool's `PathGuard`, records §11.7's "the sandbox bounds writing and deleting only", and marks the permission assertion as a regression tripwire. The same overstatement in `RecordingClient.swift` was corrected with it.
