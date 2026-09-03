@@ -57,8 +57,32 @@ comments:
     - evidence: `swift build --build-tests` clean; the one warning is the pre-existing SwiftPM `missing creator for mutated node` note about the mlx bundle, which is also on the untouched baseline. `swift test` — 349 tests in 34 suites passed in 1.82 s, 0 failed, 0 skipped, 1 pre-existing intentional known issue in `HarnessSmokeTests`.
     - next: commit, then review.
   timestamp: 2026-09-03T17:28:02.860232+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1m516czf56y3nfbkz9ddfag
+  text: |-
+    ### commit — changed
+    - evidence: 103e6e5 test(tier-2): assert the CatalogContext the tools received, not only the names. 3 files changed, 292 insertions, 22 deletions. Local only; nothing pushed. `cli-plan.md` stays untracked, as the brief requires.
+    - next: review HEAD~1..HEAD.
+  timestamp: 2026-09-03T17:28:27.807082+00:00
+- actor: claude-code
+  id: 01m1m56p9g96511xccgm1zxqa9
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. The two `.kanban/` files were excluded by `.reviewignore`. No prior finding sections stood open.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-03T17:31:27.920310+00:00
+- actor: claude-code
+  id: 01m1m56vms9x4r4snhbj7ddmp1
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed. 1 file — `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift`. No production file changed.
+    - test: green. 349 tests in 34 suites, 0 failed, 0 skipped, 1 pre-existing known issue.
+    - commit: changed. 103e6e5.
+    - review: clean. `review sha HEAD~1..HEAD` — 0 findings, 7 validators attempted.
+    - All five acceptance criteria and both test items are complete. All three facts of plan.md §20.1 proof 1 have an honest reading and are asserted; none was dropped.
+  timestamp: 2026-09-03T17:31:33.401962+00:00
+position_column: done
+position_ordinal: a680
 title: 'Tier-2 proof 1: assert the CatalogContext the tools received, not only the surface names'
 ---
 ## What
