@@ -60,9 +60,9 @@ public actor ElicitationWireRecorder {
 /// because `connect(over:)` binds the client itself.
 ///
 /// There is no configurable permission answer. This agent never sends
-/// `session/request_permission` — the sandbox is the only gate — and a
-/// test asserts `pendingPermissionRequests` stays empty. Every request
-/// therefore forwards to the client unchanged.
+/// `session/request_permission` (plan.md §11.7), and a test asserts
+/// `pendingPermissionRequests` stays empty as a regression tripwire.
+/// Every request therefore forwards to the client unchanged.
 final class RecordingClient: Client {
     /// The recorder of the raw update sequence.
     let collector: UpdateCollector

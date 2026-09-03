@@ -93,6 +93,14 @@ public struct AgentClientHarness: Sendable {
     /// harness was wired without one (``make()``).
     public let elicitations: ElicitationWireRecorder?
 
+    /// The tap on the client end of the wire, or `nil` when the harness
+    /// was wired without one.
+    ///
+    /// Only an order proof that spans a response and a notification
+    /// needs it (plan.md §8.1), so it is off by default and every other
+    /// suite runs the untapped wire.
+    public let wireTap: WireTap?
+
     /// Makes an agent for ``dotfolderName`` through the shared
     /// `makeStubAgent` factory, so the construction-time profile
     /// resolution downloads nothing.
@@ -151,7 +159,8 @@ public struct AgentClientHarness: Sendable {
             connection: connection,
             agentConnection: parts.agentConnection,
             collector: nil,
-            elicitations: nil)
+            elicitations: nil,
+            wireTap: nil)
     }
 
     /// Wires a fresh agent and client with a ``RecordingClient`` in
@@ -170,20 +179,29 @@ public struct AgentClientHarness: Sendable {
     /// `ClientSideConnection(stream:)` binds the recorder here, because
     /// `connect(over:)` binds the client itself (plan.md §20.1).
     ///
-    /// - Parameter agent: The agent under test.
+    /// - Parameters:
+    ///   - agent: The agent under test.
+    ///   - tapsWire: Whether a ``WireTap`` stands on the client end, so
+    ///     a proof can read the raw line order. Off by default, because
+    ///     only the §8.1 order proof reads it.
     /// - Returns: The connected harness, with a collector.
-    public static func makeRecording(agent: RoutedACPAgent) async -> AgentClientHarness {
+    public static func makeRecording(
+        agent: RoutedACPAgent, tapsWire: Bool = false
+    ) async -> AgentClientHarness {
         let parts = await makeParts(agent: agent)
         let collector = UpdateCollector()
         let recorder = RecordingClient(forwardingTo: parts.client, collector: collector)
-        let connection = await ClientSideConnection(stream: parts.clientEnd) { _ in recorder }
+        let wireTap = tapsWire ? WireTap(tapping: parts.clientEnd) : nil
+        let clientEnd: any ACPTransport = wireTap ?? parts.clientEnd
+        let connection = await ClientSideConnection(stream: clientEnd) { _ in recorder }
         return AgentClientHarness(
             agent: parts.agent,
             client: parts.client,
             connection: connection,
             agentConnection: parts.agentConnection,
             collector: collector,
-            elicitations: recorder.elicitations)
+            elicitations: recorder.elicitations,
+            wireTap: wireTap)
     }
 
     /// Flushes the coalescing buffer of every session, so a test
@@ -195,10 +213,11 @@ public struct AgentClientHarness: Sendable {
         }
     }
 
-    /// Closes both ends of the wire.
+    /// Closes both ends of the wire and ends the tap.
     public func close() async {
         await connection.close()
         await agentConnection.close()
+        wireTap?.stop()
     }
 
     /// The wiring every factory shares: the transport pair, the agent

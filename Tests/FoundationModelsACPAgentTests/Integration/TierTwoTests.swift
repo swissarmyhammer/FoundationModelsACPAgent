@@ -91,12 +91,36 @@ import Testing
             recordsChanges: true
         """
 
+    /// The flag of the pending envelope a background `runCode` answers.
+    /// It names the envelope apart from the run's own result, which
+    /// reaches the wire through the following `wait` call.
+    private static let pendingEnvelopeMarker = "\"pending\":true"
+
     /// The name the client-declared MCP test server mounts under —
     /// the noun of every `tools.<serverName>.<verb>` path.
     private static let mcpServerName = "alpha"
 
     /// The text the MCP proof sends through the echo tool.
     private static let echoPing = "tier two ping"
+
+    /// The outcome label of the MCP proof's surface-listing test: does
+    /// `help()` name the echo verb under the server's own noun?
+    private static let mountedPathLabel = "mounted"
+
+    /// The outcome label of the MCP proof's `mcp` segment test: does
+    /// `help()` name the echo verb under an `mcp` noun as well?
+    private static let prefixedPathLabel = "prefixed"
+
+    /// The outcome label of the MCP proof's round trip — the text the
+    /// real subprocess echoed back.
+    private static let echoedAnswerLabel = "echoed"
+
+    /// The text a JavaScript `true` becomes when the snippet joins it
+    /// onto an outcome line.
+    private static let snippetTrue = "true"
+
+    /// The text a JavaScript `false` becomes on an outcome line.
+    private static let snippetFalse = "false"
 
     /// The lines the streamed-shell proof prints, with a pause between
     /// each pair, so the output arrives as more than one chunk.
@@ -281,6 +305,32 @@ import Testing
         """
     }
 
+    /// The snippet of the MCP proof: one `help()` listing reduced to
+    /// the two path answers, and one echo call through the real
+    /// subprocess.
+    ///
+    /// The listing becomes two booleans, so the mounted-path lines
+    /// carry no verb text and the echoed line carries no path. A
+    /// reader of one line therefore cannot be answered by the other
+    /// line's source.
+    ///
+    /// - Parameters:
+    ///   - echoPath: The verb path the server's own noun gives.
+    ///   - prefixedPath: The verb path an `mcp` noun would give.
+    /// - Returns: The snippet.
+    /// - Throws: The path-quoting error.
+    private static func mcpCode(echoPath: String, prefixedPath: String) throws -> String {
+        """
+        const listing = help();
+        const answer = await tools.\(echoPath)({ \(ScriptedServer.echoTextArgument): "\(echoPing)" });
+        return [
+            "\(mountedPathLabel)=" + (listing.indexOf(\(try jsonStringLiteral(text: echoPath))) >= 0),
+            "\(prefixedPathLabel)=" + (listing.indexOf(\(try jsonStringLiteral(text: prefixedPath))) >= 0),
+            "\(echoedAnswerLabel)=" + answer
+        ].join("\\n");
+        """
+    }
+
     /// One labeled outcome line of ``compositionCode(insidePath:outsidePath:)``.
     ///
     /// - Parameters:
@@ -311,6 +361,8 @@ import Testing
     ///     composition proof passes a recording librarian here, because
     ///     `ToolCatalog.sessionSurface` hands `profile.flash` to
     ///     `searchTools`.
+    ///   - tapsWire: Whether the harness records the raw wire lines.
+    ///     Only the turn-order proof reads them.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
     private static func runToolTurn(
@@ -321,7 +373,8 @@ import Testing
         projectConfigYAML: String? = nil,
         mcpServers: [FoundationModelsACP.MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
-        flashContainer: (any LoadedLLMContainer)? = nil
+        flashContainer: (any LoadedLLMContainer)? = nil,
+        tapsWire: Bool = false
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
         let script = try makeToolTurnScript(code: code, waitStepCount: waitStepCount)
         var loader = makeScriptedModelLoader(script: script)
@@ -337,7 +390,8 @@ import Testing
             workingDirectory: workingDirectory,
             projectConfigYAML: projectConfigYAML,
             mcpServers: mcpServers,
-            additionalDirectories: additionalDirectories)
+            additionalDirectories: additionalDirectories,
+            tapsWire: tapsWire)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
@@ -348,14 +402,19 @@ import Testing
     /// Runs the shared write-then-read-back note turn, with change
     /// recording on.
     ///
-    /// - Parameter label: The directory label of the calling proof.
+    /// - Parameters:
+    ///   - label: The directory label of the calling proof.
+    ///   - tapsWire: Whether the harness records the raw wire lines.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
     private static func runNoteTurn(
-        label: String
+        label: String, tapsWire: Bool = false
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
         try await runToolTurn(
-            code: noteCode, label: label, projectConfigYAML: recordsChangesConfigYAML)
+            code: noteCode,
+            label: label,
+            projectConfigYAML: recordsChangesConfigYAML,
+            tapsWire: tapsWire)
     }
 
     // MARK: - Readers
@@ -414,6 +473,50 @@ import Testing
         String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
     }
 
+    /// The JSON text of one patch field's value, or the empty string
+    /// when the field carries none.
+    ///
+    /// - Parameter field: The field to read.
+    /// - Returns: The JSON text of the carried value.
+    /// - Throws: The encoding error.
+    private static func patchText<Value>(of field: PatchField<Value>) throws -> String {
+        guard case .value(let value) = field else { return "" }
+        return try encodedText(of: value)
+    }
+
+    /// The JSON text of one update's ANSWER — its `rawOutput` and its
+    /// `content`, never its `rawInput`.
+    ///
+    /// The `runCode` call's `rawInput` carries the snippet source, and
+    /// a snippet names the verbs it calls and the text it sends. A
+    /// reader that took the whole update would therefore find an answer
+    /// on the call that ASKED as well as on the call that ANSWERED.
+    ///
+    /// - Parameter update: The update to read.
+    /// - Returns: The joined JSON text of the answering fields.
+    /// - Throws: The encoding error.
+    private static func answerText(of update: ToolCallUpdate) throws -> String {
+        try patchText(of: update.rawOutput) + patchText(of: update.content)
+    }
+
+    /// The `toolCallId` of every call whose answer carries `text`.
+    ///
+    /// - Parameters:
+    ///   - text: The text to look for.
+    ///   - updates: The collected sequence.
+    /// - Returns: The ids, without repeats.
+    /// - Throws: The encoding error.
+    private static func toolCallIdsAnswering(
+        text: String, in updates: [UpdateSessionNotification]
+    ) throws -> Set<String> {
+        let ids = try updates.compactMap { notification -> String? in
+            guard case .toolCallUpdate(let update) = notification.update else { return nil }
+            return try answerText(of: update).contains(text)
+                ? update.toolCallId.rawValue : nil
+        }
+        return Set(ids)
+    }
+
     /// The JSON text of the whole collected sequence — the wire as one
     /// searchable string.
     ///
@@ -440,6 +543,10 @@ import Testing
         return try #require(state.toolCalls[ToolCallId(rawValue: id)])
     }
 
+    /// The `sessionUpdate` discriminator of the prompt echo, which is
+    /// both the order marker and the value the wire carries.
+    private static let userMessageMarker = "user_message"
+
     /// The order marker of one notification, for the §8.1 order proof:
     /// the echo, the running and idle states, and the tool updates.
     /// Every other update kind is not part of the ordered claim.
@@ -448,11 +555,53 @@ import Testing
     /// - Returns: The marker, or `nil` when the update is not ordered.
     private static func orderMarker(of notification: UpdateSessionNotification) -> String? {
         switch notification.update {
-        case .userMessage: "user_message"
+        case .userMessage: userMessageMarker
         case .stateUpdate(.running): "running"
         case .stateUpdate(.idle): "idle"
         case .toolCallUpdate: "tool_call_update"
         default: nil
+        }
+    }
+
+    /// The top-level JSON object of one recorded wire line.
+    ///
+    /// - Parameter line: The framed line the agent sent.
+    /// - Returns: The decoded object, or `nil` when the line is not one.
+    private static func decodedObject(of line: String) -> [String: Any]? {
+        let decoded = try? JSONSerialization.jsonObject(with: Data(line.utf8))
+        return decoded as? [String: Any]
+    }
+
+    /// The index of the `{}` acknowledgement of `session/prompt` in the
+    /// recorded wire lines.
+    ///
+    /// `PromptResponse` declares one optional `_meta`, so the
+    /// acknowledgement encodes as an empty result object. `initialize`
+    /// and `session/new` each answer a filled result, so an empty
+    /// result names the prompt acknowledgement alone.
+    ///
+    /// - Parameter lines: The recorded wire lines, in wire order.
+    /// - Returns: The index, or `nil` when no such line arrived.
+    private static func acknowledgementIndex(in lines: [String]) -> Int? {
+        lines.firstIndex { line in
+            guard let result = decodedObject(of: line)?["result"] as? [String: Any] else {
+                return false
+            }
+            return result.isEmpty
+        }
+    }
+
+    /// The index of the first `user_message` notification in the
+    /// recorded wire lines.
+    ///
+    /// - Parameter lines: The recorded wire lines, in wire order.
+    /// - Returns: The index, or `nil` when no echo arrived.
+    private static func userMessageIndex(in lines: [String]) -> Int? {
+        lines.firstIndex { line in
+            guard let params = decodedObject(of: line)?["params"] as? [String: Any],
+                let update = params["update"] as? [String: Any]
+            else { return false }
+            return update["sessionUpdate"] as? String == userMessageMarker
         }
     }
 
@@ -588,8 +737,20 @@ import Testing
     /// BAND: the `correction` rides the wait call's `tool_call_update`,
     /// nothing throws — the turn still ends `end_turn` and the call
     /// completes — and the outside file's content never crosses the
-    /// wire. The sandbox is the only gate: no permission request is
-    /// ever pending (plan.md §11.7).
+    /// wire.
+    ///
+    /// The mechanism the proof exercises is the files capability's own
+    /// path check — Multitool's `PathGuard`, whose wording the matched
+    /// marker carries. The seatbelt sandbox is NOT the gate here:
+    /// plan.md §11.7 says the sandbox "bounds writing and deleting
+    /// only. Reads are free", and this proof reads.
+    ///
+    /// The pending-permission assertion is a REGRESSION TRIPWIRE, and
+    /// not evidence of the refusal. No code path in this package sends
+    /// `session/request_permission` (plan.md §11.7), and
+    /// ``RecordingClient`` therefore carries no configurable permission
+    /// answer, so the count cannot rise today. The assertion fails on
+    /// the day a permission request is added.
     @Test(.timeLimit(.minutes(1)))
     func anOutOfRootReadRefusesInBandThroughTheCorrectionField() async throws {
         let outside = makeResolvedDirectory(label: "TierTwoTests-outside")
@@ -620,6 +781,8 @@ import Testing
         } else {
             Issue.record("the wait call never carried a status")
         }
+        // The tripwire, not the evidence: it fails on the day a
+        // permission request is added (plan.md §11.7).
         #expect(pendingPermissionCount == 0)
     }
 
@@ -629,9 +792,16 @@ import Testing
     /// one stable `toolCallId` from creation to completion, the title
     /// on the first report, `in_progress` before `completed`,
     /// `rawInput` carrying the call's real arguments, and `rawOutput`
-    /// carrying the tool's real answer — read from
+    /// carrying each call's real answer — read from
     /// `ACPSessionState.toolCalls`. The file the snippet claims to
     /// have written is read back from disk, never from the transcript.
+    ///
+    /// The two calls of the turn answer different things, and the proof
+    /// reads both. `runCode` mounts the run in the background, so ITS
+    /// `rawOutput` is the pending envelope that names the completion
+    /// token. The snippet's own result reaches the wire through the
+    /// `wait` call, so the WAIT call's `rawOutput` is the one that
+    /// carries the written line.
     @Test(.timeLimit(.minutes(1)))
     func aRealToolCallProjectsAStableUpsertLifecycle() async throws {
         let (fixture, updates) = try await Self.runNoteTurn(label: "TierTwoTests-projection")
@@ -671,6 +841,18 @@ import Testing
             return
         }
         #expect(codeArgument == Self.noteCode)
+
+        // The `runCode` call answers the pending envelope, because the
+        // run mounts in the background. The written line is not there.
+        guard case .value(.string(let runCodeOutput)) = accumulated.rawOutput else {
+            Issue.record("expected the runCode rawOutput string, got \(accumulated.rawOutput)")
+            return
+        }
+        #expect(runCodeOutput.contains(Self.pendingEnvelopeMarker))
+        #expect(!runCodeOutput.contains(Self.noteContent))
+
+        // The `wait` call answers the snippet's own result, so it is the
+        // call whose `rawOutput` carries the written line.
         guard case .value(let waitOutput) = waitAccumulated.rawOutput else {
             Issue.record("expected the wait rawOutput value, got \(waitAccumulated.rawOutput)")
             return
@@ -681,18 +863,39 @@ import Testing
     // MARK: - Proof 4: turn order
 
     /// The tool turn keeps §8.1's order on the wire: the `{}` response
-    /// acknowledges first (the prompt call returns), then
-    /// `user_message`, `running`, the tool updates, and one
-    /// `idle(end_turn)` as the terminator.
+    /// acknowledges first, then `user_message`, `running`, the tool
+    /// updates, and one `idle(end_turn)` as the terminator.
+    ///
+    /// The acknowledgement is read on the BYTES, through the harness
+    /// ``WireTap``. The collector starts at the client's notification
+    /// handler, which stands downstream of the JSON-RPC response the
+    /// same wire carried, so the collector alone cannot place the
+    /// response against the echo.
+    ///
+    /// The marker assertion is an ORDERED SUBSEQUENCE, and it permits
+    /// gaps. It proves that the four markers stand in that relative
+    /// order and nothing more: it does not prove that exactly one
+    /// `running` arrives, because a second `running` after a
+    /// `tool_call_update` also satisfies it, and it says nothing about
+    /// the update kinds the ordered claim leaves out.
     @Test(.timeLimit(.minutes(1)))
     func theToolTurnKeepsTheWireOrder() async throws {
-        let (fixture, updates) = try await Self.runNoteTurn(label: "TierTwoTests-order")
+        let (fixture, updates) = try await Self.runNoteTurn(
+            label: "TierTwoTests-order", tapsWire: true)
+        let wireTap = try #require(fixture.harness.wireTap)
+        let wireLines = await wireTap.lines
         await fixture.close()
+
+        // §8.1's MUST: the `{}` acknowledgement of `session/prompt`
+        // stands on the wire before the `user_message` echo.
+        let acknowledgementIndex = try #require(Self.acknowledgementIndex(in: wireLines))
+        let echoIndex = try #require(Self.userMessageIndex(in: wireLines))
+        #expect(acknowledgementIndex < echoIndex)
 
         let markers = updates.compactMap(Self.orderMarker(of:))
         expectOrderedSubsequence(
-            ["user_message", "running", "tool_call_update", "idle"], in: markers)
-        #expect(markers.first == "user_message")
+            [Self.userMessageMarker, "running", "tool_call_update", "idle"], in: markers)
+        #expect(markers.first == Self.userMessageMarker)
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
         if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
@@ -735,7 +938,20 @@ import Testing
     /// which is `ScriptedServer` over stdio — mounts under its own
     /// name: the surface listing shows `alpha.echo` with no `mcp`
     /// segment, the call round-trips through the real subprocess, and
-    /// the answer lands under the wait call's stable `toolCallId`.
+    /// the answer correlates to the tool call that ran it.
+    ///
+    /// The two claims read two SEPARATE sources. The snippet reduces
+    /// the `help()` listing to its own two answers, so the mounted-path
+    /// lines carry no verb text; the echoed line carries the ping and
+    /// nothing else. Neither assertion can therefore pass on the other
+    /// one's source.
+    ///
+    /// The correlation is plan.md §20.1's: the MCP call runs inside the
+    /// snippet, so it opens no ACP tool call of its own, and its answer
+    /// reaches the wire under the `wait` call that collected the run.
+    /// The proof reads every `tool_call_update` of the turn and asserts
+    /// that the ping stands in exactly one call's ANSWER — the wait
+    /// call's — and in no other.
     @Test(.timeLimit(.minutes(1)))
     func aClientDeclaredMCPServerMountsUnderItsOwnNoun() async throws {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
@@ -744,25 +960,38 @@ import Testing
                 command: try #require(AbsolutePath(rawValue: serverCommand)),
                 name: Self.mcpServerName,
                 args: [ServerMode.flagName, ServerMode.echo.rawValue]))
-        let code = """
-            const listing = help();
-            const answer = await tools.\(Self.mcpServerName).\(ScriptedServer.echoToolName)({ \(ScriptedServer.echoTextArgument): "\(Self.echoPing)" });
-            return { listing: listing, answer: answer };
-            """
+        let echoPath = "\(Self.mcpServerName).\(ScriptedServer.echoToolName)"
+        let prefixedPath = "mcp.\(ScriptedServer.echoToolName)"
 
         let (fixture, updates) = try await Self.runToolTurn(
-            code: code, label: "TierTwoTests-mcp", mcpServers: [server])
+            code: try Self.mcpCode(echoPath: echoPath, prefixedPath: prefixedPath),
+            label: "TierTwoTests-mcp",
+            mcpServers: [server])
         let waitText = try Self.encodedText(
             of: Self.toolCallUpdates(in: updates, for: Self.waitCallId))
         let accumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId)
+        let answeringIds = try Self.toolCallIdsAnswering(text: Self.echoPing, in: updates)
         let pool = await fixture.harness.agent.sessions[fixture.sessionId]?.surface.serverPool
         await pool?.shutdownAll()
         await fixture.close()
 
-        let echoPath = "\(Self.mcpServerName).\(ScriptedServer.echoToolName)"
-        #expect(waitText.contains(echoPath))
-        #expect(!waitText.contains("mcp.\(ScriptedServer.echoToolName)"))
-        #expect(waitText.contains(Self.echoPing))
+        // The surface listing alone: the echo verb mounts under the
+        // server's own noun, and under no `mcp` noun.
+        #expect(
+            waitText.contains(
+                Self.outcomeLine(label: Self.mountedPathLabel, value: Self.snippetTrue)))
+        #expect(
+            waitText.contains(
+                Self.outcomeLine(label: Self.prefixedPathLabel, value: Self.snippetFalse)))
+
+        // The round trip alone: the real subprocess echoed the ping.
+        #expect(
+            waitText.contains(
+                Self.outcomeLine(label: Self.echoedAnswerLabel, value: Self.echoPing)))
+
+        // The correlation: the answer rides the call that ran it, and
+        // no other call of the turn carries it.
+        #expect(answeringIds == [Self.waitCallId])
         #expect(accumulated.status == .value(.completed))
         let accumulatedText = try Self.encodedText(of: accumulated)
         #expect(accumulatedText.contains(Self.echoPing))

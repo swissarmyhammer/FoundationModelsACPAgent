@@ -1,8 +1,50 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+comments:
+- actor: claude-code
+  id: 01m1m5rzn6sjrs6mr66y1nf2vj
+  text: |-
+    ### research
+
+    Read the file after `^7dwcz2a` rewrote proof 1. The four gaps are found by test name, not by line number.
+
+    Facts that decide each gap:
+
+    - **Proof 4 (`theToolTurnKeepsTheWireOrder`).** `session/prompt` answers `PromptResponse`, whose only field is an optional `_meta`, so the acknowledgement is literally `{"result":{}}` on the wire. `initialize` and `session/new` answer filled results, thus an empty result names the prompt acknowledgement alone. The `UpdateCollector` starts at the client's notification handler, which is downstream of the JSON-RPC response the same wire carried, so the collector alone cannot see the response. A tap on the client end of the transport can: `ACPTransport` is a public protocol (`bytes` plus `write`), and `NDJSONFramer` is public, so a tapping transport records every framed line in wire order and hands the bytes on unchanged. The claim is therefore observable, and the plan calls it a MUST (§8.1).
+    - **Proof 3 (`aRealToolCallProjectsAStableUpsertLifecycle`).** The body asserts the `wait` call's `rawOutput`. What the `runCode` call's `rawOutput` carries must be measured, not guessed.
+    - **Proof 6 (`aClientDeclaredMCPServerMountsUnderItsOwnNoun`).** `help()` answers an ARRAY of surface paths (`MultiTool.makeHelpDocsHostFunctions`), and the snippet interpreter is JavaScriptCore, so the snippet can reduce the listing to a boolean. That separates the listing source from the answer source.
+    - **Proof 2 (`anOutOfRootReadRefusesInBandThroughTheCorrectionField`).** plan.md §11.7 says the seatbelt sandbox "bounds writing and deleting only. Reads are free". The proof reads a file outside the root set, thus the sandbox is not the gate that refuses it. The matched string is Multitool's `PathGuard` wording, which is the files capability's own path check.
+  timestamp: 2026-09-03T17:41:27.334652+00:00
+- actor: claude-code
+  id: 01m1m6c0dfk5n5ec9xqrf2rpaw
+  text: |-
+    ### implement — changed
+
+    What each proof got, and why:
+
+    **Proof 4 — asserted.** The `{}`-first MUST is now read on the BYTES. A new `WireTap` (`Tests/FoundationModelsACPAgentTestSupport/WireTap.swift`) wraps the client end of the transport, frames each incoming chunk with the public `NDJSONFramer`, keeps the line, and hands the chunk on unchanged. The harness stands the tap only when a caller asks (`makeRecording(agent:tapsWire:)`, default off), so every other suite runs the untapped wire. The proof asserts that the empty-result line — the `session/prompt` acknowledgement — stands before the first `user_message` notification. RED first: the inverted assertion failed with `echoIndex → 4`, `acknowledgementIndex → 3`. The doc now also states what `expectOrderedSubsequence` does not prove: it permits gaps, so it does not prove that exactly one `running` arrives.
+
+    **Proof 3 — asserted AND named.** Measured first: the `runCode` call's `rawOutput` is the pending envelope `{"pending":true,"completionToken":...}`, never the written line, because the run mounts in the background. The body now asserts the `runCode` call's own `rawOutput` (it carries the pending flag, and it does NOT carry the note content), beside the wait call's `rawOutput` that carries the line. The doc names which call carries which answer.
+
+    **Proof 6 — sources separated, correlation asserted.** The snippet now reduces the `help()` listing to two booleans (`mounted=true`, `prefixed=false`), so the listing lines carry no verb text at all, and the echoed line carries the ping alone. The path assertion and the round-trip assertion therefore no longer share a source. The correlation the plan names is asserted through a new reader that reads each update's ANSWER — its `rawOutput` and `content`, never its `rawInput`, because the `runCode` call's `rawInput` carries the snippet source and the snippet names both the verb path and the ping. The set of ids that answer with the ping is exactly the wait call's id.
+
+    **Proof 2 — comments corrected.** The doc no longer says "the sandbox is the only gate". It names Multitool's `PathGuard`, the files capability's own path check, whose wording the matched marker carries, and it records plan.md §11.7's statement that the seatbelt sandbox "bounds writing and deleting only. Reads are free". The pending-permission assertion is marked as the regression tripwire it is, in the doc and beside the assertion. The same overstatement in `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift` was corrected with it, because it is one cause in two places.
+
+    Negative run (each new assertion inverted): all six new assertions failed, and the diagnostics confirmed the measured values. Restored, then green.
+
+    - evidence: 6 files — Tests/FoundationModelsACPAgentTestSupport/WireTap.swift (new), Tests/FoundationModelsACPAgentTestSupport/Harness.swift, Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift, Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift
+    - next: test
+  timestamp: 2026-09-03T17:51:50.703976+00:00
+- actor: claude-code
+  id: 01m1m6dtsah9wprz2te3s8sset
+  text: |-
+    ### test — green
+    - evidence: root `swift test` — 349 tests in 34 suites passed, 0 failed, 0 skipped, 1 known issue (the pre-existing intentional `withKnownIssue` in `HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps`, which proves the helper catches a reversed pair). `swift build --build-tests` clean, zero warnings. The nested package links the changed test-support product, so `swift build --build-tests --package-path IntegrationTests` ran too: Build complete, zero warnings.
+    - next: commit
+  timestamp: 2026-09-03T17:52:50.474423+00:00
+position_column: doing
+position_ordinal: '80'
 title: Close the doc-versus-assertion gaps in tier-2 proofs 2, 3, 4 and 6
 ---
 ## What
