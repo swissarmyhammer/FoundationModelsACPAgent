@@ -629,7 +629,13 @@ import Testing
 
         // Convergence in the container: the terminal holds the complete
         // bytes, and the settled call completes with the Terminal
-        // reference.
+        // reference. The settlement rides `runSettled` and can land
+        // after the exit report, so wait for the container to hold
+        // the completed status first, never sleep for it.
+        try await ScriptedTurnFixture.waitForCompletedToolCall(
+            of: fixture.harness.client,
+            sessionId: fixture.sessionId,
+            id: ToolCallId(rawValue: terminalId.rawValue))
         let convergence = await MainActor.run {
             () -> (terminalText: String?, exited: Bool, call: ToolCallUpdate?) in
             guard let state = fixture.harness.client.sessions[fixture.sessionId] else {
@@ -648,14 +654,13 @@ import Testing
 
         #expect(convergence.terminalText == expectedOutput)
         #expect(convergence.exited)
-        // The accumulated call carries the Terminal reference, and the
-        // referenced terminal's exit status marks the run ended. The
-        // run's own `runSettled` settlement does not reach the wire
-        // today — a nested background run's terminal event is not
-        // forwarded to the session stream — so the call's `completed`
-        // status is not asserted here; the follow-up task on the board
-        // carries that forwarding.
+        // The accumulated call settles to the `completed` status —
+        // Router forwards the nested run's terminal from the mailbox
+        // to the outbox, and `runSettled` becomes the terminal
+        // `tool_call_update` (§8.4, §11.6) — and carries the Terminal
+        // reference, whose exit status marks the run ended.
         let settledCall = try #require(convergence.call)
+        #expect(settledCall.status == .value(.completed))
         guard case .value(let content) = settledCall.content else {
             Issue.record("expected the settled call to carry content")
             return

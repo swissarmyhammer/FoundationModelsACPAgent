@@ -277,6 +277,33 @@ struct ScriptedTurnFixture {
         Issue.record("the session never returned to idle availability")
     }
 
+    /// Polls the client container until the accumulated tool call
+    /// carries the settled `completed` status (§8.4, §11.6). The
+    /// settlement rides `runSettled` and can land after the turn's
+    /// idle and after the terminal exit report, so a reader of
+    /// `ACPSessionState.toolCalls` waits here first, never sleeps
+    /// for it.
+    ///
+    /// - Parameters:
+    ///   - client: The client container under test.
+    ///   - sessionId: The session to read.
+    ///   - id: The `toolCallId` to watch.
+    /// - Throws: `CancellationError` when the test is cancelled.
+    static func waitForCompletedToolCall(
+        of client: SwiftUIACPClient, sessionId: SessionId, id: ToolCallId
+    ) async throws {
+        for _ in 0..<maxPollAttempts {
+            let status = await MainActor.run {
+                client.sessions[sessionId]?.toolCalls[id]?.status
+            }
+            if status == .value(.completed) {
+                return
+            }
+            try await Task.sleep(for: pollInterval)
+        }
+        Issue.record("the tool call \(id.rawValue) never settled to the completed status")
+    }
+
     // MARK: - Readers
 
     /// The number of idle state updates in the sequence.
