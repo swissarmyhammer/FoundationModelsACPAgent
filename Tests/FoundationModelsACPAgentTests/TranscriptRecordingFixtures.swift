@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACPAgent
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
 
 // MARK: - Recorded-session fixtures for the transcript read side

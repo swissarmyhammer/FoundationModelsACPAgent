@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
@@ -211,7 +212,7 @@ import Testing
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-switch")
 
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
         let firstTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         #expect(Self.agentText(in: firstTurn).contains(Self.standardAnswer))
         try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
@@ -224,7 +225,7 @@ import Testing
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.selectedSlot == .flash)
 
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
         let bothTurns = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
         #expect(Self.agentText(in: bothTurns).contains(Self.flashAnswer))
 
@@ -270,7 +271,7 @@ import Testing
 
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.selectedSlot == .standard)
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "still standard"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "still standard"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         #expect(Self.agentText(in: updates).contains(Self.standardAnswer))
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
@@ -294,7 +295,7 @@ import Testing
         await agent.recordAnnouncedConfigOptions(stale, for: fixture.sessionId)
 
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
         let updates = try await ScriptedTurnFixture.waitForUpdates(
             of: fixture.collector, toReach: "one config_option_update"
         ) { updates in
@@ -310,7 +311,7 @@ import Testing
         // The push reconciled the state, so a second turn pushes nothing.
         try await ScriptedTurnFixture.waitForAvailability(agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
         _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
         try await ScriptedTurnFixture.waitForAvailability(agent, fixture.sessionId)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).count == 1)

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsMultitool
 import FoundationModelsRouter
@@ -205,7 +206,7 @@ import Testing
             projectConfigYAML: projectConfigYAML,
             mcpServers: mcpServers)
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         await fixture.harness.flushPendingChunks()
         return (fixture, updates)

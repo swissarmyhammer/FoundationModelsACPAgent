@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 
@@ -201,7 +202,7 @@ struct PythonCLISubjectHost {
                 else { break }
             }
             _ = try await harness.connection.prompt(
-                ScriptedTurnFixture.makePromptRequest(sessionId: sessionId, text: text))
+                AgentClientHarness.makePromptRequest(sessionId: sessionId, text: text))
             turnCount += 1
             stopReason = await Self.waitForSessionIdle(
                 collector: collector,

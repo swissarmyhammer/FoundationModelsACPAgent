@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import Synchronization
 import Testing
@@ -8,20 +9,23 @@ import Testing
 
 // MARK: - Tier 3: the stdio contract (plan.md §17, §20.1, §20.2)
 //
-// The one gated suite that spawns the built `acp-agent` example across a
-// real process boundary. It exists for the one thing tier 2 cannot see:
-// does the ndJSON framing survive a real process, while `shell` children
-// write to THEIR stdout. Set `ACP_TIER3=1` to run it. Without the
-// variable the suite is skipped and `swift test` stays green.
+// The suite that spawns the built `acp-agent` example across a real
+// process boundary. It exists for the one thing tier 2 cannot see: does
+// the ndJSON framing survive a real process, while `shell` children
+// write to THEIR stdout.
+//
+// It carries no gate. The package boundary is the selection: the root
+// `swift test` never sees this target, and
+// `swift test --package-path IntegrationTests` runs it.
 //
 // The spawned example resolves a REAL profile with a live loader, so
 // this suite needs the network on its first run: the injected user
 // configuration names the small `mlx-community` models the family's own
-// gated suites already load.
+// integration suites already load.
 
-/// The gated case's time limit in minutes. It covers the first-run
-/// model download and the model load of the spawned example.
-private let gatedTimeLimitMinutes = 20
+/// The case's time limit in minutes. It covers the first-run model
+/// download and the model load of the spawned example.
+private let spawnedRunTimeLimitMinutes = 20
 
 /// A transport that records every inbound byte while it forwards the
 /// stream and the writes unchanged (plan.md §20.1: wrap
@@ -103,20 +107,16 @@ final class InboundTapTransport: ACPTransport, Sendable {
     }
 }
 
-/// The gated tier-3 contract: one end-to-end drive of the spawned
-/// example, asserted on the tapped raw bytes.
+/// The tier-3 contract: one end-to-end drive of the spawned example,
+/// asserted on the tapped raw bytes.
 ///
 /// Serialized because the suite mutates the process environment —
 /// `XDG_CONFIG_HOME` must reach the spawned child, and `posix_spawn`
 /// passes this process's `environ` on. The time limit covers the
 /// first-run model download.
 @Suite(
-    .enabled(
-        if: TierThreeFixture.isGateOpen,
-        "the tier-3 stdio contract runs only with \(TierThreeFixture.gateVariable)=\(TierThreeFixture.gateOpenValue)"
-    ),
     .serialized,
-    .timeLimit(.minutes(gatedTimeLimitMinutes)))
+    .timeLimit(.minutes(spawnedRunTimeLimitMinutes)))
 struct StdioContractTests {
     // MARK: - Constants
 
@@ -252,7 +252,7 @@ struct StdioContractTests {
     // MARK: - The contract
 
     /// The whole tier-3 drive, in one case on purpose (plan.md §20.1:
-    /// tiers 3 and 4 stay gated, and stay small): spawn the built
+    /// tiers 3 and 4 stay small): spawn the built
     /// example, initialize, open a session, run one turn whose shell
     /// child writes to ITS stdout, then assert the §17 MUSTs on the
     /// tapped bytes and the reaped child on teardown.
@@ -288,7 +288,7 @@ struct StdioContractTests {
         // dropped by the router.
         let updates = connection.updates(for: session.sessionId)
         _ = try await connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(
+            AgentClientHarness.makePromptRequest(
                 sessionId: session.sessionId, text: Self.promptText))
         let stopReason = await Self.waitForIdle(on: updates)
         #expect(stopReason != nil, "the turn never reached an idle state update")

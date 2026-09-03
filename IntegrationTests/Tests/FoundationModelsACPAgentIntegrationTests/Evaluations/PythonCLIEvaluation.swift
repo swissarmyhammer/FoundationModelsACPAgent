@@ -1,5 +1,6 @@
 import Evaluations
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
 import FoundationModelsRouterTestSupport
 import HuggingFace
@@ -10,41 +11,20 @@ import Tokenizers
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - Tier 4: the gated end-to-end coding eval (plan.md §20.3)
+// MARK: - Tier 4: the end-to-end coding eval (plan.md §20.3)
 //
 // Run it with:
 //
-//     ACP_EVAL=1 swift test --filter PythonCLIEvaluation
+//     swift test --package-path IntegrationTests --filter PythonCLIEvaluation
 //
-// The gate needs Apple silicon, the real configured models, and the
-// network (the first run downloads the default coding profile, and
-// every sample's pip install fetches packages). Cap the dataset for an
-// evidence run with ACP_EVAL_SAMPLES, for example:
+// It carries no gate. The package boundary is the selection: the root
+// `swift test` never sees this target. The suite needs Apple silicon,
+// the real configured models, and the network — the first run downloads
+// the coding profile, and every sample's pip install fetches packages.
 //
-//     ACP_EVAL=1 ACP_EVAL_SAMPLES=1 swift test --filter PythonCLIEvaluation
-//
-// Without ACP_EVAL the suite is skipped and `swift test` stays green.
-
-/// The environment variable that opens the tier-4 gate, in the family
-/// convention of `StdioContractTests`' ACP_TIER3.
-private let evalGateVariable = "ACP_EVAL"
-
-/// The value of ``evalGateVariable`` that opens the gate.
-private let evalGateOpenValue = "1"
-
-/// Whether the tier-4 gate is open in this process.
-private var isEvalGateOpen: Bool {
-    ProcessInfo.processInfo.environment[evalGateVariable] == evalGateOpenValue
-}
-
-/// The environment variable that caps how many dataset samples the
-/// gated run drives — the evidence run drives one sample end to end.
-private let evalSampleLimitVariable = "ACP_EVAL_SAMPLES"
-
-/// The dataset cap of this process, or `nil` for the whole dataset.
-private var evalSampleLimit: Int? {
-    ProcessInfo.processInfo.environment[evalSampleLimitVariable].flatMap(Int.init)
-}
+// The drive takes the whole dataset. ``PythonCLIEvaluation`` takes a
+// `sampleLimit`, so a shorter drive is a shorter dataset in code, never
+// an environment variable.
 
 /// The ceiling of ONE prompt turn, in seconds: the prompt to its
 /// idle terminator, covering a multi-step build with a venv creation
@@ -323,24 +303,20 @@ private actor PythonCLIGatedRunner {
 /// value the `.evaluates(...)` trait references.
 private let pythonCLIGatedRunner = PythonCLIGatedRunner()
 
-/// The gated evaluation: the live runner over the (possibly capped)
-/// dataset. Constructing this value is cheap; the model loads inside
-/// the first sample's subject work, well after registration.
-private let pythonCLIGatedEvaluation = PythonCLIEvaluation(sampleLimit: evalSampleLimit) {
+/// The live evaluation: the live runner over the whole dataset.
+/// Constructing this value is cheap; the model loads inside the first
+/// sample's subject work, well after registration.
+private let pythonCLIGatedEvaluation = PythonCLIEvaluation(sampleLimit: nil) {
     expected in
     try await pythonCLIGatedRunner.run(expected: expected)
 }
 
-// MARK: - The gated suite
+// MARK: - The live suite
 
-/// The tier-4 gated run: the composed agent, the real configured
-/// models, real `files` and `shell` in a seatbelt sandbox, driven over
-/// ACP for every sample, and graded mechanically.
+/// The tier-4 run: the composed agent, the real configured models, real
+/// `files` and `shell` in a seatbelt sandbox, driven over ACP for every
+/// sample, and graded mechanically.
 @Suite(
-    .enabled(
-        if: isEvalGateOpen,
-        "the tier-4 coding eval runs only with \(evalGateVariable)=\(evalGateOpenValue)"
-    ),
     .serialized,
     .timeLimit(.minutes(evalSuiteTimeLimitMinutes)))
 struct PythonCLIEvaluationTests {

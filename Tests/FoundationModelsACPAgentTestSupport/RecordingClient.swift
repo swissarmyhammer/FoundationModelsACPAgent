@@ -6,14 +6,17 @@ import FoundationModelsACPClient
 /// The container (`ACPSessionState`) is a projection and keeps no
 /// history, so an order proof — turn order, cancellation, replay —
 /// reads this raw sequence instead (plan.md §20.1).
-actor UpdateCollector {
+public actor UpdateCollector {
     /// The collected notifications, in arrival order.
-    private(set) var updates: [UpdateSessionNotification] = []
+    public private(set) var updates: [UpdateSessionNotification] = []
+
+    /// Creates a collector that has collected nothing.
+    public init() {}
 
     /// Appends one notification.
     ///
     /// - Parameter notification: The notification to record.
-    func append(_ notification: UpdateSessionNotification) {
+    public func append(_ notification: UpdateSessionNotification) {
         updates.append(notification)
     }
 }
@@ -22,24 +25,27 @@ actor UpdateCollector {
 /// `elicitation/create` request and each `elicitation/complete`
 /// notification, in arrival order. The observable container keeps no
 /// history of them, so a count or an order proof reads this recorder.
-actor ElicitationWireRecorder {
+public actor ElicitationWireRecorder {
     /// The recorded create requests, in arrival order.
-    private(set) var creates: [CreateElicitationRequest] = []
+    public private(set) var creates: [CreateElicitationRequest] = []
 
     /// The recorded completion notifications, in arrival order.
-    private(set) var completions: [CompleteElicitationNotification] = []
+    public private(set) var completions: [CompleteElicitationNotification] = []
+
+    /// Creates a recorder that has recorded nothing.
+    public init() {}
 
     /// Appends one create request.
     ///
     /// - Parameter request: The request to record.
-    func recordCreate(_ request: CreateElicitationRequest) {
+    public func recordCreate(_ request: CreateElicitationRequest) {
         creates.append(request)
     }
 
     /// Appends one completion notification.
     ///
     /// - Parameter notification: The notification to record.
-    func recordCompletion(_ notification: CompleteElicitationNotification) {
+    public func recordCompletion(_ notification: CompleteElicitationNotification) {
         completions.append(notification)
     }
 }

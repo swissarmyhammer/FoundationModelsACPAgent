@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
@@ -105,7 +106,7 @@ struct BuiltinCommandsTests {
             text: String, updates: [UpdateSessionNotification]
         ) {
             _ = try await harness.connection.prompt(
-                ScriptedTurnFixture.makePromptRequest(sessionId: sessionId, text: command))
+                AgentClientHarness.makePromptRequest(sessionId: sessionId, text: command))
             let updates = try await ScriptedTurnFixture.waitForIdle(collector)
             return (Self.streamedText(in: updates), updates)
         }

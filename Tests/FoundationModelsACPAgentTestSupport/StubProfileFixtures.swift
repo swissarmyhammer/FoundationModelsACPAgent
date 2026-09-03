@@ -30,33 +30,36 @@ import FoundationModelsRouter
 /// A class, not a struct, because `LanguageModelSessionBackend` requires
 /// `AnyObject`. The type holds no state, so its `Sendable` conformance is
 /// compiler-checked — no `@unchecked` assertion is needed.
-final class EchoSessionBackend: LanguageModelSessionBackend {
-    func respond(to prompt: String, maxTokens: Int?) async throws -> String {
+public final class EchoSessionBackend: LanguageModelSessionBackend {
+    /// Creates a backend that echoes every prompt.
+    public init() {}
+
+    public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
         prompt
     }
 
-    func respond(
+    public func respond(
         to prompt: String, following grammar: Grammar, maxTokens: Int?
     ) async throws -> String {
         try await respond(to: prompt, maxTokens: maxTokens)
     }
 
-    func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
+    public func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(prompt)
             continuation.finish()
         }
     }
 
-    func makeFork() -> any LanguageModelSessionBackend {
+    public func makeFork() -> any LanguageModelSessionBackend {
         EchoSessionBackend()
     }
 
-    func transcriptEntries() -> [Transcript.Entry] {
+    public func transcriptEntries() -> [Transcript.Entry] {
         []
     }
 
-    func usageTokenCounts() -> (input: Int, output: Int)? {
+    public func usageTokenCounts() -> (input: Int, output: Int)? {
         (1, 1)
     }
 }
@@ -65,22 +68,25 @@ final class EchoSessionBackend: LanguageModelSessionBackend {
 ///
 /// All four factories are written out. See the file comment: the public
 /// default of `makeSession(instructions:tools:)` drops `tools`.
-struct EchoLLMContainer: LoadedLLMContainer {
-    func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
+public struct EchoLLMContainer: LoadedLLMContainer {
+    /// Creates a container that vends ``EchoSessionBackend``.
+    public init() {}
+
+    public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
         EchoSessionBackend()
     }
 
-    func makeSession(
+    public func makeSession(
         instructions: String?, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
         EchoSessionBackend()
     }
 
-    func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
+    public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
         EchoSessionBackend()
     }
 
-    func makeSession(
+    public func makeSession(
         transcript: Transcript, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
         EchoSessionBackend()
@@ -89,6 +95,9 @@ struct EchoLLMContainer: LoadedLLMContainer {
 
 /// An embedding model that answers a constant vector.
 struct StubEmbeddingContainer: LoadedEmbeddingContainer {
+    /// Creates an embedding container that answers a constant vector.
+    init() {}
+
     /// The one dimension count every stub vector has.
     private static let stubDimension = 8
 
@@ -105,7 +114,7 @@ struct StubEmbeddingContainer: LoadedEmbeddingContainer {
 }
 
 /// A loader that downloads nothing and loads the stub containers.
-struct StubModelLoader: ModelLoader {
+public struct StubModelLoader: ModelLoader {
     /// The one-byte progress a stub load reports, so a progress consumer
     /// observes a complete download.
     private static let completeProgress = DownloadProgress(bytesDownloaded: 1, bytesTotal: 1)
@@ -116,11 +125,24 @@ struct StubModelLoader: ModelLoader {
     /// accumulates transcript entries, and a config-options test injects
     /// per-slot containers so a turn's text names the slot that
     /// generated it.
-    var makeLLMContainer: @Sendable (ModelSlot) -> any LoadedLLMContainer = { _ in
+    public var makeLLMContainer: @Sendable (ModelSlot) -> any LoadedLLMContainer = { _ in
         EchoLLMContainer()
     }
 
-    func loadLLM(
+    /// Creates a loader over ``makeLLMContainer``.
+    ///
+    /// - Parameter makeLLMContainer: The container factory each LLM load
+    ///   vends through. The default vends ``EchoLLMContainer`` for every
+    ///   slot.
+    public init(
+        makeLLMContainer: @escaping @Sendable (ModelSlot) -> any LoadedLLMContainer = { _ in
+            EchoLLMContainer()
+        }
+    ) {
+        self.makeLLMContainer = makeLLMContainer
+    }
+
+    public func loadLLM(
         ref: ModelRef,
         slot: ModelSlot,
         context: Int,
@@ -130,7 +152,7 @@ struct StubModelLoader: ModelLoader {
         return makeLLMContainer(slot)
     }
 
-    func loadEmbedder(
+    public func loadEmbedder(
         ref: ModelRef,
         slot: ModelSlot,
         reporting: @escaping @Sendable (DownloadProgress) -> Void
@@ -139,11 +161,14 @@ struct StubModelLoader: ModelLoader {
         return StubEmbeddingContainer()
     }
 
-    func preload(container: any LoadedModelContainer) async throws {}
+    public func preload(container: any LoadedModelContainer) async throws {}
 }
 
 /// A machine large enough that slot fitting never becomes a variable.
 struct StubMachine: MachineProbe {
+    /// Creates a probe of the oversized stub machine.
+    init() {}
+
     let chip = "Apple Stub"
     let totalRAM: Int64 = 64 << 30
     let recommendedMaxWorkingSetSize: Int64 = 48 << 30
@@ -154,6 +179,9 @@ struct StubMachine: MachineProbe {
 /// The numbers match Multitool's stub fixture, which measured them as
 /// sufficient for the sizing pass.
 struct StubMetadata: MetadataSource {
+    /// Creates a metadata source of one tiny model.
+    init() {}
+
     func fetchRawMetadata(repo: String, revision: String?) async throws -> RawRepoMetadata {
         RawRepoMetadata(
             configJSON: Data(
@@ -213,7 +241,7 @@ func makeStubRouter(
 /// - Returns: The constructed agent.
 /// - Throws: `DotfolderNameError` when `name` is refused, or
 ///   `ProfileResolutionError` when the stub resolution fails.
-func makeStubAgent(
+public func makeStubAgent(
     name: String,
     cacheDirectory: URL,
     recordingsDirectory: URL? = nil,
@@ -244,7 +272,7 @@ func makeStubAgent(
 /// - Returns: The resolved profile. It retains its router, so the caller
 ///   holds the profile alone.
 /// - Throws: Whatever resolving the profile throws.
-func makeStubProfile(
+public func makeStubProfile(
     cacheDirectory: URL,
     recordingsDirectory: URL? = nil,
     loader: StubModelLoader = StubModelLoader()

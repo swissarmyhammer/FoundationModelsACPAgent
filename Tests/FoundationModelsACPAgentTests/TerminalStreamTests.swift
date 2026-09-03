@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import Testing
 
@@ -42,7 +43,7 @@ import Testing
     /// - Parameter name: The directory's role.
     /// - Returns: The created directory.
     private static func makeResolvedDirectory(named name: String) -> URL {
-        FoundationModelsACPAgentTests.makeResolvedDirectory(
+        FoundationModelsACPAgentTestSupport.makeResolvedDirectory(
             label: "TerminalStreamTests-\(name)")
     }
 

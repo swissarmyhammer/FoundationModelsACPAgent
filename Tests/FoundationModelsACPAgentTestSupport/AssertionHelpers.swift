@@ -4,7 +4,7 @@ import Testing
 
 /// The kind of one `SessionUpdate`, for filtering a collected sequence
 /// by discriminator instead of by full payload.
-enum SessionUpdateKind: Sendable, Hashable {
+public enum SessionUpdateKind: Sendable, Hashable {
     case userMessageChunk
     case userMessage
     case agentMessageChunk
@@ -30,7 +30,7 @@ extension SessionUpdate {
     /// The switch is exhaustive with no `default` arm: the wire union
     /// carries its own `unknown` case for an unlisted variant, and a new
     /// listed case must be mapped here deliberately.
-    var kind: SessionUpdateKind {
+    public var kind: SessionUpdateKind {
         switch self {
         case .userMessageChunk: .userMessageChunk
         case .userMessage: .userMessage
@@ -59,7 +59,7 @@ extension UpdateCollector {
     ///
     /// - Parameter kind: The kind to keep.
     /// - Returns: The matching notifications.
-    func updates(ofKind kind: SessionUpdateKind) -> [UpdateSessionNotification] {
+    public func updates(ofKind kind: SessionUpdateKind) -> [UpdateSessionNotification] {
         updates.filter { $0.update.kind == kind }
     }
 }
@@ -72,7 +72,7 @@ extension UpdateCollector {
 ///
 /// - Parameter updates: The collected notifications.
 /// - Returns: The notifications that belong to a turn.
-func turnUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSessionNotification] {
+public func turnUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSessionNotification] {
     updates.filter { $0.update.kind != .availableCommandsUpdate }
 }
 
@@ -84,7 +84,7 @@ func turnUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSessionNotif
 ///   - expected: The elements that must appear, in this order.
 ///   - sequence: The full sequence to search.
 ///   - sourceLocation: The test line a failure is reported at.
-func expectOrderedSubsequence<Element: Equatable>(
+public func expectOrderedSubsequence<Element: Equatable>(
     _ expected: [Element],
     in sequence: [Element],
     sourceLocation: SourceLocation = #_sourceLocation
@@ -108,7 +108,7 @@ func expectOrderedSubsequence<Element: Equatable>(
 /// - Parameter value: The value to encode.
 /// - Returns: The JSON text.
 /// - Throws: The encoding error.
-func encodedWireText(of value: some Encodable) throws -> String {
+public func encodedWireText(of value: some Encodable) throws -> String {
     String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
 }
 
@@ -119,7 +119,7 @@ func encodedWireText(of value: some Encodable) throws -> String {
 ///   - name: The field name.
 ///   - error: The wire error.
 /// - Returns: The string value, or `nil` when absent.
-func errorDataField(_ name: String, of error: RequestError) -> String? {
+public func errorDataField(_ name: String, of error: RequestError) -> String? {
     guard case .object(let fields) = error.data ?? .null,
         case .string(let value) = fields[name] ?? .null
     else {
@@ -138,6 +138,6 @@ func errorDataField(_ name: String, of error: RequestError) -> String? {
 /// - Returns: The file's text.
 /// - Throws: The read error when the file does not exist or does not
 ///   decode as UTF-8.
-func textOnDisk(at url: URL) throws -> String {
+public func textOnDisk(at url: URL) throws -> String {
     try String(contentsOf: url, encoding: .utf8)
 }

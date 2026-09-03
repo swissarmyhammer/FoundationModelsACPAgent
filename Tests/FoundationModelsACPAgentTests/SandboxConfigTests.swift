@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import Testing
 
@@ -13,7 +14,7 @@ import Testing
     /// - Parameter name: The directory's role.
     /// - Returns: The created directory.
     private static func makeResolvedDirectory(named name: String) -> URL {
-        FoundationModelsACPAgentTests.makeResolvedDirectory(label: "SandboxConfigTests-\(name)")
+        FoundationModelsACPAgentTestSupport.makeResolvedDirectory(label: "SandboxConfigTests-\(name)")
     }
 
     /// With no `sandbox:` section, the writable roots equal the session

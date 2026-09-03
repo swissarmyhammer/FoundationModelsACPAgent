@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
@@ -46,7 +47,7 @@ import Testing
     /// - Parameter sessionId: The session to prompt.
     /// - Returns: The request.
     private static func makePromptRequest(sessionId: SessionId) -> PromptRequest {
-        ScriptedTurnFixture.makePromptRequest(sessionId: sessionId, text: promptText)
+        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText)
     }
 
     // MARK: - The throw ending, and the strict terminator (§8.6)

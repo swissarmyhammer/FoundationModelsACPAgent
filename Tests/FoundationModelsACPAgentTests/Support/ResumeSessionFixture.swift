@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
 import Synchronization
 import Testing
@@ -260,7 +261,7 @@ struct ResumeSessionFixture {
     /// - Throws: Whatever the wire call or the waits throw.
     mutating func runTurn(_ text: String) async throws {
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: text))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
         completedTurnCount += 1
         _ = try await ScriptedTurnFixture.waitForIdle(
             fixture.collector, count: completedTurnCount)

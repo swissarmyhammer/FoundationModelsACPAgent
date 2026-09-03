@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgent
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Synchronization

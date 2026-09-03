@@ -1,15 +1,19 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
 
 // MARK: - Tier 3: the client-server interop contract (plan.md §20.2)
 //
-// The gated suite that runs the built `acp-print` example as a subprocess.
+// The suite that runs the built `acp-print` example as a subprocess.
 // `acp-print` itself spawns `acp-agent` through the client package, so one
 // run proves the two role packages interoperate across two real process
-// boundaries. Set `ACP_TIER3=1` to run it. Without the variable the suite
-// is skipped and `swift test` stays green.
+// boundaries.
+//
+// It carries no gate. The package boundary is the selection: the root
+// `swift test` never sees this target, and
+// `swift test --package-path IntegrationTests` runs it.
 //
 // The spawned agent resolves a REAL profile with a live loader, so the
 // prompt case needs the network on its first run, and the model load can
@@ -17,22 +21,18 @@ import Testing
 // empty zero-token answer; the assertions here state the card's contract
 // and the run reports what the model did.
 
-/// The gated case's time limit in minutes. It covers the first-run model
+/// The case's time limit in minutes. It covers the first-run model
 /// download and the model load of the spawned agent.
-private let gatedTimeLimitMinutes = 20
+private let spawnedRunTimeLimitMinutes = 20
 
-/// The gated tier-3 interop contract: run `acp-print` end to end and
-/// assert the exit code, the stdout purity, the stderr logs, and the
-/// agent reap.
+/// The tier-3 interop contract: run `acp-print` end to end and assert
+/// the exit code, the stdout purity, the stderr logs, and the agent
+/// reap.
 ///
 /// Serialized so at most one live model turn runs at a time.
 @Suite(
-    .enabled(
-        if: TierThreeFixture.isGateOpen,
-        "the tier-3 client-server contract runs only with \(TierThreeFixture.gateVariable)=\(TierThreeFixture.gateOpenValue)"
-    ),
     .serialized,
-    .timeLimit(.minutes(gatedTimeLimitMinutes)))
+    .timeLimit(.minutes(spawnedRunTimeLimitMinutes)))
 struct ClientServerTests {
     // MARK: - Constants
 

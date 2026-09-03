@@ -1,0 +1,56 @@
+name: CI
+
+# The org test contract (swissarmyhammer/workflows' docs/swift-ci.md) applies
+# here in full. This repository satisfies it with the document's Shape 2, and
+# with two jobs of the shared workflow:
+#
+# - The unit job runs `swift test` at the root. Every suite of the root
+#   `FoundationModelsACPAgentTests` target is a unit test: none spawns a
+#   binary, loads a real model, reaches the network, or takes much wall-clock
+#   time. Thus the unit job needs no selector, and neither `test-filter` nor
+#   `test-skip` is given.
+# - The nested `IntegrationTests` package holds the suites that do those
+#   things: the tier-3 stdio and client-server contracts, which spawn the
+#   built `acp-agent` and `acp-print` binaries, and the tier-4 coding eval,
+#   which loads the real configured models. `integration-package-path` alone
+#   starts the shared workflow's integration job on the `[self-hosted, macOS]`
+#   pool, and it also makes the unit job BUILD the nested package on every
+#   run, so those tests cannot break unseen.
+# - The package boundary is the whole selection. No suite reads an
+#   environment variable to decide whether it runs, and the root `swift test`
+#   never sees the slow targets.
+# - `integration-no-parallel` holds the live model turns to one at a time.
+#   Swift Testing starts a test's time limit BEFORE the test takes a
+#   turnstile, so a parallel run spends the limit on queue time and a queued
+#   suite fails in the same way as a hang.
+# - No other `integration-*` input is given. `integration-gate-env` is the
+#   legacy path, and the shared workflow stops the job when it arrives beside
+#   a package path. `integration-metallib-glob` is unnecessary: Router's
+#   `MetalLibraryTestBootstrap` installs the shader-library link in process.
+#   `integration-root-products` is unnecessary too: the nested test target
+#   declares the root `acp-agent` and `acp-print` products, so SwiftPM builds
+#   both beside the nested test bundle, where `BuiltProductLocator` looks.
+# - Every input of the shared workflow is optional. `CIWorkflowTests` pins the
+#   delegation from this side: the `uses:` target, the single job with no
+#   `steps:` of its own, the two inputs below, the triggers, and the
+#   concurrency group.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
+    with:
+      # Build and run the nested integration package. This input alone starts
+      # the integration job.
+      integration-package-path: IntegrationTests
+      # One live model turn at a time — see the header.
+      integration-no-parallel: true

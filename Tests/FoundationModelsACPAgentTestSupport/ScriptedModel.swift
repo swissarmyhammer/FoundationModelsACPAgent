@@ -18,7 +18,7 @@ import Synchronization
 //     -> ScriptedSessionBackend (LanguageModelSessionBackend)
 
 /// One step of a scripted turn.
-enum ScriptedTurnStep: Sendable, Equatable {
+public enum ScriptedTurnStep: Sendable, Equatable {
     /// Streams `text` as one delta.
     case textDelta(String)
 
@@ -44,7 +44,7 @@ enum ScriptedTurnStep: Sendable, Equatable {
 /// The cases are `Equatable` markers; ``error`` makes the real
 /// `LanguageModelError` value — the macOS 27 vocabulary the turn
 /// classifier reads — from the public payload initializers.
-enum ScriptedFailure: Sendable, Equatable {
+public enum ScriptedFailure: Sendable, Equatable {
     /// The context size the scripted overflow reports. The value only
     /// satisfies the payload initializer.
     private static let scriptedContextSize = 4096
@@ -60,7 +60,7 @@ enum ScriptedFailure: Sendable, Equatable {
     case exceededContextWindow
 
     /// The real SDK error this failure throws.
-    var error: any Error {
+    public var error: any Error {
         switch self {
         case .guardrailViolation:
             LanguageModelError.guardrailViolation(
@@ -77,20 +77,23 @@ enum ScriptedFailure: Sendable, Equatable {
 
 /// Records every model prompt the scripted backend receives, so a
 /// harness test asserts what the model was given (plan.md §20.1).
-actor PromptRecorder {
+public actor PromptRecorder {
     /// The recorded prompts, in arrival order.
-    private(set) var prompts: [String] = []
+    public private(set) var prompts: [String] = []
+
+    /// Creates a recorder that has recorded nothing.
+    public init() {}
 
     /// Records one prompt.
     ///
     /// - Parameter prompt: The prompt the backend received.
-    func record(_ prompt: String) {
+    public func record(_ prompt: String) {
         prompts.append(prompt)
     }
 }
 
 /// The failure of a scripted step.
-enum ScriptedModelError: Error, Equatable {
+public enum ScriptedModelError: Error, Equatable {
     /// A `toolCall` step named a tool the session was not handed. The
     /// turn fails loudly instead of passing while measuring nothing.
     case unknownTool(String)
@@ -112,7 +115,7 @@ enum ScriptedModelError: Error, Equatable {
 /// A class, not a struct, because `LanguageModelSessionBackend`
 /// requires `AnyObject`. The one mutable member is guarded by a
 /// `Mutex`, so its `Sendable` conformance stays compiler-checked.
-final class ScriptedSessionBackend: LanguageModelSessionBackend {
+public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// The token usage every scripted backend reports, in the pattern
     /// of `EchoSessionBackend`: a constant one/one, so a usage consumer
     /// observes a report.
@@ -121,7 +124,7 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// The prefix of every synthesized SDK tool-call id. The suffix is
     /// the one-based ordinal of the call, so a test addresses the first
     /// scripted call as `scripted-call-1`.
-    static let scriptedCallIdPrefix = "scripted-call-"
+    public static let scriptedCallIdPrefix = "scripted-call-"
 
     /// The schema name the synthesized structured output segment
     /// declares. The value only satisfies the SDK initializer.
@@ -159,26 +162,26 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///   - tools: The tools `toolCall` steps invoke.
     ///   - recorder: The recorder each received prompt goes to, or
     ///     `nil` to record nothing.
-    init(script: [ScriptedTurnStep], tools: [any Tool], recorder: PromptRecorder? = nil) {
+    public init(script: [ScriptedTurnStep], tools: [any Tool], recorder: PromptRecorder? = nil) {
         self.script = script
         self.tools = tools
         self.recorder = recorder
     }
 
-    func respond(to prompt: String, maxTokens: Int?) async throws -> String {
+    public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
         await recorder?.record(prompt)
         var text = ""
         try await playScript { text += $0 }
         return text
     }
 
-    func respond(
+    public func respond(
         to prompt: String, following grammar: Grammar, maxTokens: Int?
     ) async throws -> String {
         try await respond(to: prompt, maxTokens: maxTokens)
     }
 
-    func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
+    public func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let playback = Task {
                 do {
@@ -193,11 +196,11 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
         }
     }
 
-    func makeFork() -> any LanguageModelSessionBackend {
+    public func makeFork() -> any LanguageModelSessionBackend {
         ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
     }
 
-    func transcriptEntries() -> [Transcript.Entry] {
+    public func transcriptEntries() -> [Transcript.Entry] {
         // The SDK entries the played tool calls appended. Router's
         // transcript diff reads them and derives the `toolCall` and
         // `toolStatus` session events, the way it does for a real
@@ -205,7 +208,7 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
         synthesized.withLock { $0.entries }
     }
 
-    func usageTokenCounts() -> (input: Int, output: Int)? {
+    public func usageTokenCounts() -> (input: Int, output: Int)? {
         Self.scriptedUsage
     }
 
@@ -319,29 +322,40 @@ final class ScriptedSessionBackend: LanguageModelSessionBackend {
 /// `EchoLLMContainer`: the public default of
 /// `makeSession(instructions:tools:)` DROPS `tools`, and a scripted
 /// tool call needs them.
-struct ScriptedLLMContainer: LoadedLLMContainer {
+public struct ScriptedLLMContainer: LoadedLLMContainer {
     /// The script every session plays.
-    let script: [ScriptedTurnStep]
+    public let script: [ScriptedTurnStep]
 
     /// The recorder each session's prompts go to, or `nil` to record
     /// nothing.
-    var recorder: PromptRecorder?
+    public var recorder: PromptRecorder?
 
-    func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
+    /// Creates a container whose every session plays `script`.
+    ///
+    /// - Parameters:
+    ///   - script: The script every session plays.
+    ///   - recorder: The recorder each session's prompts go to, or `nil`
+    ///     (the default) to record nothing.
+    public init(script: [ScriptedTurnStep], recorder: PromptRecorder? = nil) {
+        self.script = script
+        self.recorder = recorder
+    }
+
+    public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
         ScriptedSessionBackend(script: script, tools: [], recorder: recorder)
     }
 
-    func makeSession(
+    public func makeSession(
         instructions: String?, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
         ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
     }
 
-    func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
+    public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
         ScriptedSessionBackend(script: script, tools: [], recorder: recorder)
     }
 
-    func makeSession(
+    public func makeSession(
         transcript: Transcript, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
         ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
@@ -359,7 +373,7 @@ struct ScriptedLLMContainer: LoadedLLMContainer {
 ///   - recorder: The recorder each received prompt goes to, or `nil`
 ///     to record nothing.
 /// - Returns: The loader to inject.
-func makeScriptedModelLoader(
+public func makeScriptedModelLoader(
     script: [ScriptedTurnStep], recorder: PromptRecorder? = nil
 ) -> StubModelLoader {
     var loader = StubModelLoader()

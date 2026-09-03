@@ -2075,7 +2075,7 @@ it keeps the MCP built-in unblocked.
 **Framing** (these are protocol MUSTs, not house style): messages are UTF-8
 JSON-RPC. `\n` divides them. A message MUST NOT contain a newline. There is no
 content-length header. The agent **MUST NOT write non-ACP content to stdout**.
-The gated integration test (§20.1, tier 3) asserts this MUST. stderr is free
+The tier-3 integration test (§20.1) asserts this MUST. stderr is free
 for logs. The client can capture, forward, or ignore it.
 
 **Consumers**: external clients speak ndJSON over stdio (`<cli> acp`; the
@@ -2316,7 +2316,11 @@ shipped `TranscriptRecorder` is reachable either** (`.jsonl`, `.inMemory` and
 fixture. Assert on the filesystem and on the wire, not on a constructed Router
 value.
 
-**Tiers 3 and 4 stay gated, and stay small.** Tier 3 exists for the one thing
+**Tiers 3 and 4 live in the nested `IntegrationTests` package, and stay
+small.** That package is the whole selection: `swift test` at the root never
+sees them, `swift test --package-path IntegrationTests` runs them, and the
+shared CI workflow's integration job runs them at each commit. No environment
+variable selects a test. Tier 3 exists for the one thing
 that tier 2 cannot see: real process boundaries. stdout carries only ndJSON
 while `shell` runs subprocesses that write to *their* stdout. And no message
 contains a newline. (Both are protocol MUSTs, §17.) Tier 4 is §20.3.
@@ -2377,9 +2381,9 @@ headless-usable by design.) The rules:
   process-group and reaping obligations (client plan, "Transports"). The
   `acp-print` target links only `FoundationModelsACPClient` and the wire —
   never this package's library. A back-door import would break the proof.
-- A gated end-to-end test (`ACP_TIER3=1`, the same gate as tier 3) runs
-  `acp-print` as a subprocess and asserts: exit code 0, stdout is only the
-  answer text, and no agent process outlives the run.
+- An end-to-end test in the nested `IntegrationTests` package (beside tier 3)
+  runs `acp-print` as a subprocess and asserts: exit code 0, stdout is only
+  the answer text, and no agent process outlives the run.
 
 **The upstream gate is cleared.** `FoundationModelsACPClient` shipped; its
 board shows M0–M7 done (§21). The shapes above are real: `AgentProcess`
@@ -2395,8 +2399,8 @@ one spawn-and-connect path.
 The end-to-end coding eval belongs to the layer that composes the roster.
 (Router keeps its compaction eval over sample tools.) The eval drives real
 `files` + `shell` through a real multi-turn build task, on Apple's Evaluations
-framework (swift-testing native). It is gated on Apple silicon + real models +
-network:
+framework (swift-testing native). It needs Apple silicon + real models +
+network, so it lives in the nested `IntegrationTests` package:
 
 1. **Subject**: `subject(from sample:)` makes a fresh temp workspace (the
    session's `workingDirectory` and the tools' confinement root). It wires

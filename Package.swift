@@ -9,6 +9,17 @@ private let packageName = "FoundationModelsACPAgent"
 /// The name of the unit test target, under `Tests/`.
 private let testTargetName = "\(packageName)Tests"
 
+/// The name of the shared test-support target and of its library product,
+/// under `Tests/`.
+///
+/// A library target, and not a second test target: the nested
+/// `IntegrationTests` package (plan.md §20.1, and the org test contract's
+/// Shape 2) reaches this code as a product, and a package cannot depend on
+/// another package's test target. Router publishes
+/// `FoundationModelsRouterTestSupport` the same way, from the same place
+/// under `Tests/`.
+private let testSupportTargetName = "\(packageName)TestSupport"
+
 /// The base URL of the packages under the swissarmyhammer GitHub organization.
 ///
 /// Each family sibling is a remote dependency on its `main` branch, never a
@@ -89,17 +100,18 @@ private let liveLoaderProducts: [Target.Dependency] = [
 ]
 
 /// The name of the example executable (plan.md §20.2): the family
-/// convention example AND the tier-3 stdio fixture. The test target
-/// depends on it, so `swift test` builds the binary into the products
-/// directory where the gated `StdioContractTests` spawns it.
+/// convention example AND the tier-3 stdio fixture. The nested
+/// `IntegrationTests` package declares this product, so SwiftPM builds
+/// the binary into the products directory where `StdioContractTests`
+/// spawns it.
 private let exampleExecutableName = "acp-agent"
 
 /// The one-shot client CLI example (plan.md §20.2): send one prompt,
 /// run the turn, print the answer, exit. It links ONLY the client
 /// package and the wire — never this package's library — so every byte
 /// crosses ACP into the spawned `exampleExecutableName` process. The
-/// test target depends on it, so `swift test` builds the binary into
-/// the products directory where the gated `ClientServerTests` runs it.
+/// nested `IntegrationTests` package declares this product too, so
+/// `ClientServerTests` runs the built binary.
 private let printExecutableName = "acp-print"
 
 /// The MCP swift-sdk, reached through the organization fork
@@ -111,14 +123,6 @@ private let mcpSDKPackage = "swift-sdk"
 
 /// The one product of `mcpSDKPackage` this package links.
 private let mcpSDKProduct = Target.Dependency.product(name: "MCP", package: mcpSDKPackage)
-
-/// Router's hermetic test-support product (plan.md §20.1). The gated
-/// tier-4 eval reads `MetalLibraryTestBootstrap.ensureColocatedMetallib`
-/// from it before the first GPU evaluation: under `swift test`,
-/// mlx-swift does not find its shader library beside the test binary
-/// on its own, and the bootstrap symlinks it once per process.
-private let routerTestSupportProduct = Target.Dependency.product(
-    name: "\(routerDependencyName)TestSupport", package: routerDependencyName)
 
 /// The test-support products of Multitool (plan.md §20): the `MCPTestServer`
 /// scripted-server library, and the `mcp-test-server` stdio executable the
@@ -183,6 +187,9 @@ let package = Package(
         // The one-shot client CLI, published so `swift run acp-print` and
         // the tier-3 run name one binary — see `printExecutableName`.
         .executable(name: printExecutableName, targets: [printExecutableName]),
+        // The shared test support, published so the nested `IntegrationTests`
+        // package reaches it — see `testSupportTargetName`.
+        .library(name: testSupportTargetName, targets: [testSupportTargetName]),
     ],
     dependencies: familyDependencyNames.map(makeFamilyPackage(name:)) + [
         makeFamilyPackage(name: clientDependencyName),
@@ -224,26 +231,38 @@ let package = Package(
             ],
             path: "Examples/\(printExecutableName)"
         ),
-        // The import smoke suite. It links the client driver as well — see
-        // `clientDependencyName` — Multitool's test-support products — see
-        // `multitoolTestProducts` — the MCP sdk, whose tool-result
-        // content types the passthrough-map tests construct (plan.md §12),
-        // the example executable, so `swift test` builds the tier-3
-        // fixture beside the test bundle — see `exampleExecutableName` —
-        // and the live-loader products, so the gated tier-4 eval
-        // (plan.md §20.3) constructs the same real `LiveModelLoader` the
-        // example does. The graph already carries them; this adds linking
-        // only — see `liveLoaderProducts`.
+        // The shared test support (plan.md §20.1): the in-process
+        // agent-and-client harness, the scripted model, the stub profile
+        // fixtures, the built-product locator, and the assertion helpers.
+        // A library target, so the nested `IntegrationTests` package
+        // reaches it as a product — see `testSupportTargetName`.
+        .target(
+            name: testSupportTargetName,
+            dependencies: [
+                .target(name: packageName),
+                makeFamilyProduct(name: clientDependencyName),
+            ] + familyProducts,
+            path: "Tests/\(testSupportTargetName)"
+        ),
+        // The unit suites. They link the shared test support — see
+        // `testSupportTargetName` — the client driver — see
+        // `clientDependencyName` — Multitool's test-support products —
+        // see `multitoolTestProducts` — and the MCP sdk, whose
+        // tool-result content types the passthrough-map tests construct
+        // (plan.md §12).
+        //
+        // The example executables and the live-loader products are NOT
+        // here: the suites that spawn a built binary or load a real model
+        // live in the nested `IntegrationTests` package, which declares
+        // them itself.
         .testTarget(
             name: testTargetName,
             dependencies: [
                 .target(name: packageName),
-                .target(name: exampleExecutableName),
-                .target(name: printExecutableName),
+                .target(name: testSupportTargetName),
                 makeFamilyProduct(name: clientDependencyName),
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
-                + liveLoaderProducts + [routerTestSupportProduct]
         ),
     ]
 )

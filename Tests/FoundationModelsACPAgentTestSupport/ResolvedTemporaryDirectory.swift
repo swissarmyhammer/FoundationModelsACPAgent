@@ -7,7 +7,7 @@ import Foundation
 /// - Parameter label: The prefix that names the calling suite and the
 ///   directory's role, so a leftover directory says where it came from.
 /// - Returns: The created directory.
-func makeResolvedDirectory(label: String) -> URL {
+public func makeResolvedDirectory(label: String) -> URL {
     let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
         .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
     try! FileManager.default.createDirectory(

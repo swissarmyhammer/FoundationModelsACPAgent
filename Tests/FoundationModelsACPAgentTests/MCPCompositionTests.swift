@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import MCPTestServer
 import Synchronization

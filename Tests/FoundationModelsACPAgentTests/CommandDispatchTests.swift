@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
 import Testing
@@ -129,7 +130,7 @@ struct CommandDispatchTests {
 
         do {
             _ = try await fixture.harness.agent.prompt(
-                ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "/deployy now"))
+                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/deployy now"))
             Issue.record("expected the unknown-command refusal")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
@@ -164,7 +165,7 @@ struct CommandDispatchTests {
         defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "/render alpha"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/render alpha"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         #expect(Self.chunkTexts(in: updates).contains { $0.contains("RENDERED alpha") })
     }
@@ -182,7 +183,7 @@ struct CommandDispatchTests {
         defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(
+            AgentClientHarness.makePromptRequest(
                 sessionId: fixture.sessionId, text: "/greet alpha beta"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
         #expect(Self.chunkTexts(in: updates).contains { $0.contains("Hello beta.") })
@@ -239,7 +240,7 @@ struct CommandDispatchTests {
         defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
 
         let texts = Self.chunkTexts(in: updates)

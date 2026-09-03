@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import FoundationModelsSkills

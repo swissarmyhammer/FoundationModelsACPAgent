@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
 import FoundationModelsRouter
@@ -243,7 +244,7 @@ struct ElicitationRelayTests {
     /// - Throws: Whatever the prompt request throws.
     private static func prompt(_ fixture: ScriptedTurnFixture) async throws {
         _ = try await fixture.harness.connection.prompt(
-            ScriptedTurnFixture.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
     }
 
     /// Polls the client until the session holds a pending elicitation.

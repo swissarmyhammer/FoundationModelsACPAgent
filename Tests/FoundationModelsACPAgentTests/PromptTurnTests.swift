@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
@@ -47,7 +48,7 @@ import Testing
     private static func makePromptRequest(
         sessionId: SessionId, text: String = promptText
     ) -> PromptRequest {
-        ScriptedTurnFixture.makePromptRequest(sessionId: sessionId, text: text)
+        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: text)
     }
 
     /// The index of the fixture session's recording root.

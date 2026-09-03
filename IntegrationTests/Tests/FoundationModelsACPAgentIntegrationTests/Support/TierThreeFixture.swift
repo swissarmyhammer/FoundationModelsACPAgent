@@ -1,28 +1,20 @@
-// `TierThreeFixture` — the shared setup of the gated tier-3 suites.
+// `TierThreeFixture` — the shared setup of the tier-3 suites.
 //
 // `StdioContractTests` and `ClientServerTests` both spawn built binaries
-// across a real process boundary, gate on the same environment variable,
-// and inject the same small-model user configuration. This one home keeps
-// the gate, the names, and the configuration in one place, so the two
-// suites cannot drift apart.
+// across a real process boundary, and inject the same small-model user
+// configuration. This one home keeps the names and the configuration in
+// one place, so the two suites cannot drift apart.
+//
+// The suites carry no gate. This package is the gate: the root
+// `swift test` never sees these targets, and
+// `swift test --package-path IntegrationTests` runs them.
 
 import Foundation
 
 @testable import FoundationModelsACPAgent
 
-/// The shared constants and fixtures of the gated tier-3 suites.
+/// The shared constants and fixtures of the tier-3 suites.
 enum TierThreeFixture {
-    /// The environment variable that opens the tier-3 gate.
-    static let gateVariable = "ACP_TIER3"
-
-    /// The value of ``gateVariable`` that opens the gate.
-    static let gateOpenValue = "1"
-
-    /// Whether the tier-3 gate is open in this process.
-    static var isGateOpen: Bool {
-        ProcessInfo.processInfo.environment[gateVariable] == gateOpenValue
-    }
-
     /// The product name of the agent example executable the suites spawn.
     static let agentExecutableName = "acp-agent"
 
@@ -35,7 +27,7 @@ enum TierThreeFixture {
 
     /// The user-layer `config.yaml` the spawned agent resolves its
     /// profile from: the small real `mlx-community` models the family's
-    /// own gated suites load (Router's examples and Multitool's gated
+    /// own integration suites load (Router's examples and Multitool's
     /// fixture), so the first run downloads little.
     static let userConfigYAML = """
         profile:

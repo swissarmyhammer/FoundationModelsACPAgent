@@ -249,8 +249,8 @@ enum PythonCLIDataset {
     /// dataset order, capped at `limit`.
     ///
     /// - Parameter limit: The largest number of samples to load, or
-    ///   `nil` for the whole dataset. A gated evidence run caps the
-    ///   dataset with `ACP_EVAL_SAMPLES`.
+    ///   `nil` for the whole dataset. A shorter drive names a smaller
+    ///   limit here, in code.
     /// - Returns: The loader.
     static func makeLoader(limit: Int? = nil) -> ArrayLoader<ModelSample<PythonCLIOutcome>> {
         let specs = limit.map { Array(sampleSpecs.prefix($0)) } ?? sampleSpecs

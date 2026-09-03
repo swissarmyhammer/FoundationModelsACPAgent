@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import Testing
@@ -31,7 +32,7 @@ import Testing
     /// - Parameter name: The directory's role.
     /// - Returns: The created directory.
     private static func makeResolvedDirectory(named name: String) -> URL {
-        FoundationModelsACPAgentTests.makeResolvedDirectory(
+        FoundationModelsACPAgentTestSupport.makeResolvedDirectory(
             label: "SandboxCompositionTests-\(name)")
     }
 

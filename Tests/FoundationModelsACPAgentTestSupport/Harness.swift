@@ -59,10 +59,10 @@ struct HoldingClock: Clock {
 /// ``makeRecording()`` wires a ``RecordingClient`` in front of it, so
 /// the raw notification order lands in an ``UpdateCollector`` while the
 /// observable state still lands in the client.
-struct AgentClientHarness {
+public struct AgentClientHarness: Sendable {
     /// The dotfolder name the harness constructs the agent with. The
     /// wire must never carry it (plan.md §5).
-    static let dotfolderName = "coding"
+    public static let dotfolderName = "coding"
 
     /// The number of seconds in ``coalescingCadence``. The name records
     /// that the length is arbitrary: the ``HoldingClock`` never reaches
@@ -71,27 +71,27 @@ struct AgentClientHarness {
 
     /// The coalescing cadence the harness client is created with. The
     /// value is inert: the ``HoldingClock`` never reaches any deadline.
-    static let coalescingCadence: Swift.Duration = .seconds(inertCadenceSeconds)
+    public static let coalescingCadence: Swift.Duration = .seconds(inertCadenceSeconds)
 
     /// The agent under test.
-    let agent: RoutedACPAgent
+    public let agent: RoutedACPAgent
 
     /// The observable client container, the primary assertion surface.
-    let client: SwiftUIACPClient
+    public let client: SwiftUIACPClient
 
     /// The client side of the wire, which drives the agent.
-    let connection: ClientSideConnection
+    public let connection: ClientSideConnection
 
     /// The agent side of the wire.
-    let agentConnection: AgentSideConnection
+    public let agentConnection: AgentSideConnection
 
     /// The recorder of the raw update sequence, or `nil` when the
     /// harness was wired without one (``make()``).
-    let collector: UpdateCollector?
+    public let collector: UpdateCollector?
 
     /// The recorder of the elicitation traffic, or `nil` when the
     /// harness was wired without one (``make()``).
-    let elicitations: ElicitationWireRecorder?
+    public let elicitations: ElicitationWireRecorder?
 
     /// Makes an agent for ``dotfolderName`` through the shared
     /// `makeStubAgent` factory, so the construction-time profile
@@ -100,7 +100,7 @@ struct AgentClientHarness {
     /// - Returns: The agent.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
     ///   or `ProfileResolutionError` when the stub resolution fails.
-    static func makeAgent() async throws -> RoutedACPAgent {
+    public static func makeAgent() async throws -> RoutedACPAgent {
         try await makeStubAgent(
             name: dotfolderName,
             cacheDirectory: makeResolvedDirectory(label: "AgentClientHarness-cache"))
@@ -112,7 +112,7 @@ struct AgentClientHarness {
     ///   - protocolVersion: The latest version the client supports.
     ///   - capabilities: The client's capabilities.
     /// - Returns: The request.
-    static func makeInitializeRequest(
+    public static func makeInitializeRequest(
         protocolVersion: ProtocolVersion = ACPClient.supportedProtocolVersion,
         capabilities: ClientCapabilities = ACPClient.advertisedCapabilities
     ) -> InitializeRequest {
@@ -122,12 +122,27 @@ struct AgentClientHarness {
             capabilities: capabilities)
     }
 
+    /// The prompt request with one text block.
+    ///
+    /// It stands beside ``makeInitializeRequest(protocolVersion:capabilities:)``
+    /// because every driver of this harness — the in-process unit suites
+    /// and the integration package's spawned-binary suites alike — sends
+    /// its turn through it.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session to prompt.
+    ///   - text: The text of the one block.
+    /// - Returns: The request.
+    public static func makePromptRequest(sessionId: SessionId, text: String) -> PromptRequest {
+        PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
+    }
+
     /// Wires a fresh agent and client over an in-memory transport pair,
     /// with the client bound through `connect(over:)`.
     ///
     /// - Returns: The connected harness, with no collector.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
-    static func make() async throws -> AgentClientHarness {
+    public static func make() async throws -> AgentClientHarness {
         let parts = await makeParts(agent: try await makeAgent())
         let connection = await parts.client.connect(over: parts.clientEnd)
         return AgentClientHarness(
@@ -145,7 +160,7 @@ struct AgentClientHarness {
     ///
     /// - Returns: The connected harness, with a collector.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
-    static func makeRecording() async throws -> AgentClientHarness {
+    public static func makeRecording() async throws -> AgentClientHarness {
         try await makeRecording(agent: makeAgent())
     }
 
@@ -157,7 +172,7 @@ struct AgentClientHarness {
     ///
     /// - Parameter agent: The agent under test.
     /// - Returns: The connected harness, with a collector.
-    static func makeRecording(agent: RoutedACPAgent) async -> AgentClientHarness {
+    public static func makeRecording(agent: RoutedACPAgent) async -> AgentClientHarness {
         let parts = await makeParts(agent: agent)
         let collector = UpdateCollector()
         let recorder = RecordingClient(forwardingTo: parts.client, collector: collector)
@@ -174,14 +189,14 @@ struct AgentClientHarness {
     /// Flushes the coalescing buffer of every session, so a test
     /// observes buffered text without sleeping for the cadence.
     @MainActor
-    func flushPendingChunks() {
+    public func flushPendingChunks() {
         for state in client.sessions.values {
             state.flushPendingChunks()
         }
     }
 
     /// Closes both ends of the wire.
-    func close() async {
+    public func close() async {
         await connection.close()
         await agentConnection.close()
     }

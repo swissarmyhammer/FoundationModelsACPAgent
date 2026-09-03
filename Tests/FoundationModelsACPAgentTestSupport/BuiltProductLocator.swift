@@ -13,10 +13,10 @@ import Foundation
 /// Locates an executable that SwiftPM builds beside the running test
 /// binary — so the `--test-bundle-path` / `.xctest` products-directory
 /// resolution stands in one place.
-enum BuiltProductLocator {
+public enum BuiltProductLocator {
     /// The product name of Multitool's scripted MCP server executable, as
     /// Multitool's `Package.swift` declares it.
-    static let mcpTestServerName = "mcp-test-server"
+    public static let mcpTestServerName = "mcp-test-server"
 
     /// The flag `swiftpm-testing-helper` passes the bundle path under.
     private static let testBundlePathFlag = "--test-bundle-path"
@@ -36,7 +36,7 @@ enum BuiltProductLocator {
     private static let bundleDepthBelowProductsDirectory = 4
 
     /// The failures of this locator.
-    enum LocatorError: Error, CustomStringConvertible {
+    public enum LocatorError: Error, CustomStringConvertible {
         /// `argumentName` (`value`) carried a `..` path component.
         case pathTraversalRejected(argumentName: String, value: String)
 
@@ -48,7 +48,7 @@ enum BuiltProductLocator {
         case executableNotFound(name: String, path: String)
 
         /// A human-readable description of this error.
-        var description: String {
+        public var description: String {
             switch self {
             case .pathTraversalRejected(let argumentName, let value):
                 return
@@ -86,7 +86,7 @@ enum BuiltProductLocator {
     /// - Returns: The products directory.
     /// - Throws: ``LocatorError`` when the argument carries a `..`
     ///   component, or when the derived candidate is not a directory.
-    static func productsDirectoryURL() throws -> URL {
+    public static func productsDirectoryURL() throws -> URL {
         let arguments = CommandLine.arguments
         if let flagIndex = arguments.firstIndex(of: testBundlePathFlag),
             arguments.indices.contains(flagIndex + 1)
@@ -142,7 +142,7 @@ enum BuiltProductLocator {
     /// - Returns: The file URL of the executable.
     /// - Throws: ``LocatorError`` when ``productsDirectoryURL()`` rejects the
     ///   resolution, or when no executable file stands at the expected path.
-    static func executableURL(named executableName: String) throws -> URL {
+    public static func executableURL(named executableName: String) throws -> URL {
         let candidate = try productsDirectoryURL().appendingPathComponent(executableName)
         guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
             throw LocatorError.executableNotFound(name: executableName, path: candidate.path)
@@ -155,7 +155,7 @@ enum BuiltProductLocator {
     ///
     /// - Returns: The file URL of the executable.
     /// - Throws: ``LocatorError`` — see ``executableURL(named:)``.
-    static func mcpTestServerURL() throws -> URL {
+    public static func mcpTestServerURL() throws -> URL {
         try executableURL(named: mcpTestServerName)
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsMultitool
 import Testing
@@ -122,7 +123,7 @@ struct MultiRootConfinementTests {
     /// - Parameter name: The directory's role.
     /// - Returns: The created directory.
     private static func makeResolvedDirectory(named name: String) -> URL {
-        FoundationModelsACPAgentTests.makeResolvedDirectory(
+        FoundationModelsACPAgentTestSupport.makeResolvedDirectory(
             label: "MultiRootConfinementTests-\(name)")
     }
 

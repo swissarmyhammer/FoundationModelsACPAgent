@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
@@ -158,16 +159,6 @@ struct ScriptedTurnFixture {
         try yaml.write(
             to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
             atomically: true, encoding: .utf8)
-    }
-
-    /// The prompt request with one text block.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The session to prompt.
-    ///   - text: The text of the one block.
-    /// - Returns: The request.
-    static func makePromptRequest(sessionId: SessionId, text: String) -> PromptRequest {
-        PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
     }
 
     // MARK: - Script builders
