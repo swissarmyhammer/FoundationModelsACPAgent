@@ -85,6 +85,12 @@ public enum SandboxComposition {
     /// Composes the shell capability into `builder`, confined by the
     /// `SeatbeltSandbox` over `rootSet` and `configuration`.
     ///
+    /// The first root — the session working directory — also becomes
+    /// the default working directory: a `tools.shell.execute` call
+    /// that omits `workingDirectory` runs there, never in the agent
+    /// process directory, which stands outside the root set and would
+    /// make the sandbox refuse the run.
+    ///
     /// - Parameters:
     ///   - builder: The registry builder the capability mounts into.
     ///   - options: The decoded `tools.shell:` options.
@@ -95,8 +101,8 @@ public enum SandboxComposition {
     ///     tee nothing.
     /// - Throws: ``SandboxCompositionError/emptyRootSet`` for an empty
     ///   root set, and whatever
-    ///   `withShell(storeDirectory:sandbox:outputChunkStream:)` throws
-    ///   when the store cannot prepare.
+    ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`
+    ///   throws when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
         options: ShellToolOptions,
@@ -108,7 +114,8 @@ public enum SandboxComposition {
             into: builder,
             options: options,
             sandbox: makeShellSandbox(rootSet: rootSet, configuration: configuration),
-            outputChunkStream: outputChunkStream)
+            outputChunkStream: outputChunkStream,
+            defaultWorkingDirectory: rootSet.first)
     }
 
     /// The one seam every shell mount goes through: `sandbox` is handed to
@@ -122,18 +129,24 @@ public enum SandboxComposition {
     ///   - outputChunkStream: The host-owned live output stream the
     ///     capability tees raw bytes into (plan.md §11.8), or `nil` to
     ///     tee nothing.
+    ///   - defaultWorkingDirectory: The directory a run that omits
+    ///     `workingDirectory` runs in — the session working directory —
+    ///     or `nil` to keep the capability's own process-directory
+    ///     default.
     /// - Throws: Whatever
-    ///   `withShell(storeDirectory:sandbox:outputChunkStream:)` throws
-    ///   when the store cannot prepare.
+    ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`
+    ///   throws when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
         options: ShellToolOptions,
         sandbox: any CommandSandbox,
-        outputChunkStream: ShellOutputChunkStream? = nil
+        outputChunkStream: ShellOutputChunkStream? = nil,
+        defaultWorkingDirectory: URL? = nil
     ) throws {
         try builder.withShell(
             storeDirectory: options.storeDirectory,
             sandbox: sandbox,
-            outputChunkStream: outputChunkStream)
+            outputChunkStream: outputChunkStream,
+            defaultWorkingDirectory: defaultWorkingDirectory)
     }
 }

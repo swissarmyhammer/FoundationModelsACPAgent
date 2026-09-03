@@ -540,17 +540,19 @@ import Testing
     /// completes with the `Terminal` reference.
     @Test(.timeLimit(.minutes(1)))
     func aStreamedShellRunRidesTheTerminalStreamAndConverges() async throws {
+        // The snippet omits `workingDirectory` on purpose: the shell
+        // composition defaults the run to the session cwd (task
+        // ^fzx2r16), and the trailing `pwd -P` line proves the run
+        // landed there.
         let command = Self.streamedLines
             .map { "echo \($0)" }
             .joined(separator: "; sleep \(Self.streamedPauseSeconds); ")
-        // The run's working directory must be named: the shell verb's
-        // own default is the agent PROCESS current directory, which the
-        // sandbox rightly refuses as outside the session root set.
+            + "; pwd -P"
         let cwd = makeResolvedDirectory(label: "TierTwoTests-stream-repo")
         let code = """
-            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)), workingDirectory: \(try Self.jsonStringLiteral(text: cwd.path)) });
+            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
             """
-        let expectedOutput = Self.streamedLines.map { $0 + "\n" }.joined()
+        let expectedOutput = Self.streamedLines.map { $0 + "\n" }.joined() + cwd.path + "\n"
 
         let (fixture, _) = try await Self.runToolTurn(
             code: code,

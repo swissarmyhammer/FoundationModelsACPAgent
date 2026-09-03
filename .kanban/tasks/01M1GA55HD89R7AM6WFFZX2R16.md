@@ -36,8 +36,36 @@ comments:
     - evidence: No public seam for a default working directory exists in the pinned Multitool checkout (revision e8c91a6). Proof: MultiToolBuilder.swift:235-239 (only `withShell` overload, no working-directory parameter); ShellCapability.swift:99 (public init, no working-directory parameter); Execute.swift:75, :93, :244, :772 (verb and arguments internal, `workingDirectory` passes through unchanged); ShellRunner.swift:71, :185, :458, :485 (internal runner, `nil` falls back to the process directory); SeatbeltSandbox.swift:146 (`Options` shapes the write grant only); CommandSandbox.swift:113 with ShellRunner.swift:447-458 (`wrap` cannot set the run directory). Upstream ask filed as Ask 6 in /Users/wballard/github/swissarmyhammer/FoundationModelsRouter/UPSTREAM_ASKS.md, owner FoundationModelsMultitool. No code change, no commit. The card stays in todo until the upstream seam lands.
     - next: When FoundationModelsMultitool supplies the seam, wire the session cwd through SandboxComposition.composeShell and drop the explicit workingDirectory from tier-2 proof 7.
   timestamp: 2026-09-02T08:51:07.395557+00:00
-position_column: todo
-position_ordinal: a180
+- actor: claude-code
+  id: 01m1js37rm05e5g56yf2b0zvjs
+  text: |-
+    ## Seam verification at Multitool 03e43bb
+
+    The pinned checkout at .build/checkouts/FoundationModelsMultitool moved to revision 03e43bb438a53aaf51e543d989134e1d3b237d5d. The upstream seam from Ask 6 now exists. The evidence:
+
+    - `MultiTool.Builder.withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)` — Sources/FoundationModelsMultitool/Surface/MultiToolBuilder.swift:239-243. The new parameter `defaultWorkingDirectory: URL? = nil` is at line 243 and goes to the capability at line 249.
+    - `ShellCapability.init(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)` — Sources/FoundationModelsMultitool/Capabilities/Shell/ShellCapability.swift:109. The init sets `runner.defaultWorkingDirectory = defaultWorkingDirectory?.path` at line 125.
+    - `ShellRunner.defaultWorkingDirectory: String?` — Capabilities/Shell/ShellRunner.swift:175. The resolution is `request.workingDirectory ?? defaultWorkingDirectory` at line 509, and both the sandbox directories (line 481) and the spawned configuration (line 544) use the same resolution.
+
+    Conclusion: the card is not blocked. I wire the session cwd through SandboxComposition.composeShell.
+  timestamp: 2026-09-03T04:40:37.396893+00:00
+- actor: claude-code
+  id: 01m1jsbebccy5sv7vkm9epbf6j
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/SandboxComposition.swift (the rootSet overload of composeShell now passes `defaultWorkingDirectory: rootSet.first` to the sandbox overload, which passes it to `withShell`), Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift (doc comment names the new `withShell` signature), Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift (proof 7 omits `workingDirectory` and appends `pwd -P` to the command; the expected output ends with the session cwd path, which proves the run lands there).
+    - TDD: the changed proof failed first for the correct cause — the refused run made zero terminal chunks and no exit report ("the collector never reached: the terminal exit report", chunks.count 0). After the wiring the proof passed in 0.7 s.
+    - next: run the full test suite.
+  timestamp: 2026-09-03T04:45:06.284656+00:00
+- actor: claude-code
+  id: 01m1jsca0n5ckbbj2jjp7v56fy
+  text: |-
+    ### test — green
+    - evidence: swift test — 352 tests in 39 suites passed after 1.768 s with 1 known issue (the expected withKnownIssue in HarnessSmokeTests). Zero failures. Zero new warnings (the mlx-swift bundle build note existed before this change). The tier-3 and tier-4 environment-gated suites are the same skips as the baseline at commit 1fa0768.
+    - next: commit, then review.
+  timestamp: 2026-09-03T04:45:34.613615+00:00
+position_column: doing
+position_ordinal: '80'
 title: Default the shell run working directory to the session root
 ---
 ## What
@@ -52,5 +80,5 @@ The agent process's current directory has no relation to the session working dir
 - Then drop the explicit `workingDirectory` from the tier-2 proof 7 snippet in `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift`.
 
 ## Acceptance Criteria
-- [ ] A `tools.shell.execute` with no `workingDirectory` runs in the session `cwd`
-- [ ] Tier-2 proof 7 passes without an explicit `workingDirectory`
+- [x] A `tools.shell.execute` with no `workingDirectory` runs in the session `cwd`
+- [x] Tier-2 proof 7 passes without an explicit `workingDirectory`

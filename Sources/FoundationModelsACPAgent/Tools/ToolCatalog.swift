@@ -153,7 +153,8 @@ public enum ToolCatalog {
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
     /// - Throws: Whatever the MCP composition,
-    ///   `withShell(storeDirectory:sandbox:)`, `withMCP(servers:)` or
+    ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`,
+    ///   `withMCP(servers:)` or
     ///   `buildRegistry()` throws.
     static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
         let builder = MultiTool.Builder()
