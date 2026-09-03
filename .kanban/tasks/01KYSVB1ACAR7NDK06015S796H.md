@@ -1,12 +1,56 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1jh8gwr0vd4dybh53nfy05y
+  text: |-
+    Research complete. Facts found:
+
+    - Router checkout ba55154 shows the API from the card without change: `restoreSession(id:recordingRoot:instructions:tools:)` is async throws on `RoutedModel where Container == any LoadedLLMContainer` (RoutedLLM). `recordedWorkingDirectory(ofSession:recordingRoot:)` is synchronous throws and returns the sidecar working directory. `RestoredSession.instructionsDivergencePhrase` is public.
+    - `TranscriptEntryPayload.entryId` is internal. The public identity on a recorded event is each segment id (`SegmentPayload.text(id:content:)` and its peers) plus `seq` and `sessionId`. The replay message id will use the first segment id, with `<sessionId>-<seq>` as the fallback for an entry with no segments.
+    - A fold checkpoint is a `.response` entry that carries a `.structure` segment with the schema name `FoundationModelsRouter.CompactionSegment` (CompactionSegment.swift, boundaryEntry). Replay must skip that shape.
+    - `RoutedSession.streamEvents` drives `backend.streamResponse`. `TranscriptStubBackend` appends transcript entries only in `respond`, so the resume tests need a backend that appends `.prompt` and `.response` entries in `streamResponse` too, and a container that records the transcript handed to `makeSession(transcript:tools:)` and counts backend requests.
+    - The recording root resolves from the request cwd (`transcripts.location`), so a mismatched cwd finds no session under the default `project` location. The mismatch test uses `transcripts: location: <absolute path>` in both project configs, so both cwds share one root and the pre-check sees the recorded cwd.
+    - `RequestError.unknownSession(id:)` already gives `-32602` with the id in `data` (PromptTurn.swift). The resume handler maps `TranscriptTreeError.sessionNotFound` to it.
+    - The missing-tool report will ride the `ResumeSessionResponse` `_meta` object, because `SessionUpdate` has no report kind and `_meta` is the ACP extension point.
+    - Plan: split `composeSession` into a config-load stage and a compose stage, so the cwd pre-check runs after the config load and before the tool composition and the restore. Extract the session mount steps that `newSession` and `resumeSession` share.
+  timestamp: 2026-09-03T02:23:41.976858+00:00
+- actor: claude-code
+  id: 01m1jj6ssbe6fe725e7ba9t36s
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsACPAgent/Agent/SessionResume.swift (new), Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift (new), Tests/FoundationModelsACPAgentTests/Support/ResumeSessionFixture.swift (new), Tests/FoundationModelsACPAgentTests/Support/FilesVerbSupport.swift (new), Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift
+    - TDD: 13 failing tests first (all failed on the old method-not-found refusal), then the implementation; `swift test --filter SessionResumeTests` now passes 13 of 13.
+    - Design notes:
+      - The cwd pre-check runs through the synchronous `recordedWorkingDirectory` after the config load and before the composition and the restore. The mismatch test asserts the loader was never asked for another backend.
+      - `TranscriptTreeError.sessionNotFound` maps to the existing `RequestError.unknownSession` (`-32602` with the id in `data`), on the pre-check and on the restore.
+      - The instructions override rides `restoreSession(instructions:)`; the test asserts through the transcript the restored backend received, and pins `RestoredSession.instructionsDivergencePhrase` by symbol.
+      - Replay is written over an internal `ReplayCursor` parameter (inclusive; `start` is the first variant). It sends whole-message upserts keyed by the recorded first segment id, skips fold checkpoints by the `FoundationModelsRouter.CompactionSegment` schema name, and never sends a chunk form. The card's "original messageId values" are the ids the recording itself holds: the live ids are not persisted, so the recorded segment id is the one stable identity, and a repeated replay sends the same ids.
+      - `missingTools` rides the `ResumeSessionResponse` `_meta` object, because `SessionUpdate` has no report kind. The shell-verbs test records a roster that names `shell.execute` directly against the resident profile, then resumes with `tools.shell: false` newly set.
+      - The resumed root set replaces the old one and is appended to `sessions.jsonl` when a record exists; a zero-record session defers to the first prompt per §9.
+      - `session/new` and `session/resume` share `activateSession` and the split `loadSessionContext`/`composeSession(from:)` pipeline, so the reassembly is one code path.
+    - next: run the full test suite.
+    step: implement
+    outcome: changed
+    task: ^15s796h
+  timestamp: 2026-09-03T02:40:14.123947+00:00
+- actor: claude-code
+  id: 01m1jj7jnkm5vnk940z75jy520
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 322 tests in 36 suites passed, 0 failures, 0 skipped, 1 known issue (the pre-existing withKnownIssue in HarnessSmokeTests). Baseline was 309 tests in 35 suites; the new SessionResumeTests suite adds 13. `swift build` shows no compiler warning from this package; the one "missing creator for mutated node" line is the pre-existing mlx-swift bundle note from the build system.
+    - next: commit.
+    step: test
+    outcome: green
+    task: ^15s796h
+  timestamp: 2026-09-03T02:40:39.603818+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSV7GHQ7049N8DW5NH9MYWS
 - 01KYSVA1A4HXA6RYSJBE2XERFM
-position_column: todo
-position_ordinal: 8f80
+position_column: doing
+position_ordinal: '80'
 title: 'session/resume: cwd equality, restore, replay as whole-message upserts'
 ---
 ## What

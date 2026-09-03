@@ -135,6 +135,28 @@ enum SessionSetup {
     }
 }
 
+/// The per-cwd configuration resolution one session request starts from
+/// (plan.md §2.2, §4.1): the loader whose stack the instructions assembly
+/// reads, the merged configuration, the user layer root, and the resolved
+/// recording root.
+///
+/// `session/new` resolves and composes in one motion; `session/resume`
+/// resolves first, runs the cwd pre-check against ``transcriptRoot``, and
+/// composes only after the check passes (plan.md §7.4).
+struct LoadedSessionContext {
+    /// The loader whose dotfolder stack the instructions assembly reads.
+    let loader: ConfigurationLoader
+
+    /// The merged and decoded configuration.
+    let loaded: LoadedConfiguration
+
+    /// The user layer root the stack resolved.
+    let userLayerRoot: URL
+
+    /// The resolved recording root (plan.md §4.1).
+    let transcriptRoot: URL
+}
+
 /// What one `session/new` composed before the session was made
 /// (plan.md §7.1): the merged config, the assembled instructions, the
 /// mounted tool surface, and the resolved recording root.
@@ -211,9 +233,43 @@ extension RoutedACPAgent {
             budget: nil,
             compactionPrompt: .default)
 
-        // Register the cwd now (plan.md §4.5). The `sessions.jsonl` index
-        // record is NOT written here: the prompt-turn task appends it at
-        // the first recorded activity, with the title (§9).
+        // The `sessions.jsonl` index record is NOT written here: the
+        // prompt-turn task appends it at the first recorded activity,
+        // with the title (§9).
+        let activation = try await activateSession(
+            session,
+            composition: composition,
+            workingDirectory: workingDirectory,
+            additionalRoots: additionalRoots,
+            indexRecorded: false)
+
+        return NewSessionResponse(
+            sessionId: activation.sessionId, configOptions: activation.configOptions)
+    }
+
+    /// Mounts one made or restored Router session into the agent (plan.md
+    /// §7.1, §7.4): the project-registry record, the command registry with
+    /// its bound builtin context, the table entry, the command-set
+    /// publication, and the terminal projection.
+    ///
+    /// - Parameters:
+    ///   - session: The root Router session to mount.
+    ///   - composition: What the composition pipeline built for it.
+    ///   - workingDirectory: The validated session working directory.
+    ///   - additionalRoots: The session's additional confinement roots,
+    ///     in wire order.
+    ///   - indexRecorded: Whether the `sessions.jsonl` record already
+    ///     exists, so the first prompt knows whether to append it (§9).
+    /// - Returns: The session id and the announced `configOptions` list.
+    /// - Throws: Whatever the project-registry record throws.
+    func activateSession(
+        _ session: any RoutedSession,
+        composition: SessionComposition,
+        workingDirectory: URL,
+        additionalRoots: [URL],
+        indexRecorded: Bool
+    ) async throws -> (sessionId: SessionId, configOptions: [SessionConfigOption]) {
+        // Register the cwd (plan.md §4.5).
         try ProjectRegistry(directory: composition.userLayerRoot)
             .recordSessionStart(workingDirectory: workingDirectory)
 
@@ -263,7 +319,8 @@ extension RoutedACPAgent {
             commands: commands,
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
-            activeTurn: nil)
+            activeTurn: nil,
+            indexRecorded: indexRecorded)
 
         // The command set publishes after the response, and again on
         // every registry change (plan.md §14.4).
@@ -271,7 +328,7 @@ extension RoutedACPAgent {
 
         startTerminalProjection(over: composition.surface, sessionId: sessionId)
 
-        return NewSessionResponse(sessionId: sessionId, configOptions: configOptions)
+        return (sessionId, configOptions)
     }
 
     /// Starts the session's terminal projection (plan.md §11.8): the
@@ -293,6 +350,32 @@ extension RoutedACPAgent {
         }
     }
 
+    /// Resolves the per-cwd configuration one session request starts from
+    /// (plan.md §2.2, §4.1): the config layer, the user layer root, and
+    /// the recording root.
+    ///
+    /// - Parameter workingDirectory: The validated session working
+    ///   directory.
+    /// - Returns: The resolved context.
+    /// - Throws: Whatever the config load throws.
+    func loadSessionContext(workingDirectory: URL) throws -> LoadedSessionContext {
+        let loader = ConfigurationLoader(
+            name: name,
+            workingDirectory: workingDirectory,
+            userDirectory: userDirectory,
+            environment: environment)
+        let loaded = try loader.load()
+        let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
+        return LoadedSessionContext(
+            loader: loader,
+            loaded: loaded,
+            userLayerRoot: userLayerRoot,
+            transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
+                workingDirectory: workingDirectory,
+                name: name,
+                userDirectory: userLayerRoot))
+    }
+
     /// Runs the per-session composition pipeline (plan.md §7.1): resolve
     /// the cwd config layer, assemble the instructions, then connect the
     /// MCP servers and build the tool roster through the catalog.
@@ -311,41 +394,57 @@ extension RoutedACPAgent {
         additionalRoots: [URL],
         clientMCPServers: [FoundationModelsACP.MCPServer]
     ) async throws -> SessionComposition {
-        let loader = ConfigurationLoader(
-            name: name,
-            workingDirectory: workingDirectory,
-            userDirectory: userDirectory,
-            environment: environment)
-        let loaded = try loader.load()
-
-        let context = CatalogContext(
+        try await composeSession(
+            from: loadSessionContext(workingDirectory: workingDirectory),
             workingDirectory: workingDirectory,
             additionalRoots: additionalRoots,
-            configuration: loaded.configuration,
+            clientMCPServers: clientMCPServers)
+    }
+
+    /// Composes one session over an already-resolved configuration
+    /// (plan.md §7.1): assemble the instructions, then connect the MCP
+    /// servers and build the tool roster through the catalog.
+    ///
+    /// - Parameters:
+    ///   - context: The resolved per-cwd configuration.
+    ///   - workingDirectory: The validated session working directory.
+    ///   - additionalRoots: The session's additional confinement roots,
+    ///     in wire order.
+    ///   - clientMCPServers: The client's session-scoped MCP servers, in
+    ///     wire order (§7.3).
+    /// - Returns: The composed inputs of `makeSession`.
+    /// - Throws: Whatever the instructions assembly or the tool
+    ///   composition throws.
+    func composeSession(
+        from context: LoadedSessionContext,
+        workingDirectory: URL,
+        additionalRoots: [URL],
+        clientMCPServers: [FoundationModelsACP.MCPServer]
+    ) async throws -> SessionComposition {
+        let catalogContext = CatalogContext(
+            workingDirectory: workingDirectory,
+            additionalRoots: additionalRoots,
+            configuration: context.loaded.configuration,
             profile: residentProfile,
             clientMCPServers: clientMCPServers)
 
         // One watched registry serves the preload assembly here and the
         // slash-command source below (plan.md §14.2). `watch: true` is
         // what makes its `commandUpdates` non-nil.
-        let skills = ToolCatalog.makeSkillsRegistry(context: context)
+        let skills = ToolCatalog.makeSkillsRegistry(context: catalogContext)
         let instructions = try InstructionsAssembler(
-            stack: loader.stack, workingDirectory: workingDirectory
+            stack: context.loader.stack, workingDirectory: workingDirectory
         ).assemble(skills: skills)
 
-        let surface = try await ToolCatalog.sessionSurface(context: context)
+        let surface = try await ToolCatalog.sessionSurface(context: catalogContext)
 
-        let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
         return SessionComposition(
-            configuration: loaded.configuration,
+            configuration: context.loaded.configuration,
             instructions: instructions.text,
             surface: surface,
             commandProviders: makeCommandProviders(surface: surface, skills: skills),
-            userLayerRoot: userLayerRoot,
-            transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
-                workingDirectory: workingDirectory,
-                name: name,
-                userDirectory: userLayerRoot))
+            userLayerRoot: context.userLayerRoot,
+            transcriptRoot: context.transcriptRoot)
     }
 
     /// Assembles the registry's later sources in precedence order

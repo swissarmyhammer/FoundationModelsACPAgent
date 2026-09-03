@@ -61,6 +61,8 @@ struct ScriptedTurnFixture {
     ///     `<cwd>/.<name>/` before `session/new`, or `nil` for none.
     ///   - mcpServers: The client's per-session MCP servers to pass in
     ///     `session/new`, or `nil` for none.
+    ///   - additionalDirectories: The `session/new` additional roots, or
+    ///     `nil` for none.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -68,14 +70,16 @@ struct ScriptedTurnFixture {
         label: String,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
-        mcpServers: [MCPServer]? = nil
+        mcpServers: [MCPServer]? = nil,
+        additionalDirectories: [AbsolutePath]? = nil
     ) async throws -> ScriptedTurnFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
             label: label,
             workingDirectory: workingDirectory,
             projectConfigYAML: projectConfigYAML,
-            mcpServers: mcpServers)
+            mcpServers: mcpServers,
+            additionalDirectories: additionalDirectories)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -94,6 +98,8 @@ struct ScriptedTurnFixture {
     ///     `<cwd>/.<name>/` before `session/new`, or `nil` for none.
     ///   - mcpServers: The client's per-session MCP servers to pass in
     ///     `session/new`, or `nil` for none.
+    ///   - additionalDirectories: The `session/new` additional roots, or
+    ///     `nil` for none.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -101,7 +107,8 @@ struct ScriptedTurnFixture {
         label: String,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
-        mcpServers: [MCPServer]? = nil
+        mcpServers: [MCPServer]? = nil,
+        additionalDirectories: [AbsolutePath]? = nil
     ) async throws -> ScriptedTurnFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -119,6 +126,7 @@ struct ScriptedTurnFixture {
         let response = try await harness.connection.newSession(
             NewSessionRequest(
                 cwd: try #require(AbsolutePath(rawValue: cwd.path)),
+                additionalDirectories: additionalDirectories,
                 mcpServers: mcpServers))
         let collector = try #require(harness.collector)
         return ScriptedTurnFixture(

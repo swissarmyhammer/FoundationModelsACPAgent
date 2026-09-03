@@ -26,7 +26,7 @@ import Testing
     private static let multitoolOnlyNames = ["searchTools", "runCode", "wait"]
 
     /// The surface path of the files read verb.
-    private static let readVerbPath = "files.read"
+    private static let readVerbPath = FilesVerbSupport.readVerbPath
 
     /// The surface path of the shell execute verb.
     private static let executeVerbPath = "shell.execute"
@@ -75,21 +75,8 @@ import Testing
                 cacheDirectory: try makeTemporaryDirectory(label: "cache")))
     }
 
-    /// The slice of the read verb's wire result these tests assert on.
-    ///
-    /// The verb's own output struct is internal upstream; the wire JSON is
-    /// the public shape, and a refused read answers in band through
-    /// `correction` rather than a thrown error.
-    private struct ReadVerbResult: Decodable {
-        /// Why the read answered no content, or `nil` when the content
-        /// stands.
-        let correction: String?
-
-        /// The selected window of lines.
-        let lines: [String]
-    }
-
-    /// Invokes `tools.files.read` on `path` and decodes the wire result.
+    /// Invokes `tools.files.read` on `path` and decodes the wire result
+    /// through the shared ``FilesVerbSupport`` helper.
     ///
     /// - Parameters:
     ///   - registry: The built registry whose read verb to invoke.
@@ -98,15 +85,9 @@ import Testing
     /// - Throws: Whatever the invocation or the decode throws.
     private static func invokeRead(
         in registry: MultiTool.Registry, path: String
-    ) async throws -> ReadVerbResult {
-        let tool = try #require(registry.tools[readVerbPath])
-        let argumentsJSON = String(
-            decoding: try JSONEncoder().encode(["path": path]), as: UTF8.self)
-        let output = try await ToolInvoker.invoke(
-            tool, content: try GeneratedContent(json: argumentsJSON))
-        let convertible = try #require(output as? any ConvertibleToGeneratedContent)
-        return try JSONDecoder().decode(
-            ReadVerbResult.self, from: Data(convertible.generatedContent.jsonString.utf8))
+    ) async throws -> FilesVerbSupport.ReadVerbResult {
+        try await FilesVerbSupport.invokeRead(
+            try #require(registry.tools[readVerbPath]), path: path)
     }
 
     // MARK: The session tools
