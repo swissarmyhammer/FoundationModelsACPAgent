@@ -101,7 +101,7 @@ extension RoutedACPAgent {
     /// same for every working directory.
     ///
     /// - Returns: The user layer root.
-    private func registryUserLayerRoot() -> URL {
+    func registryUserLayerRoot() -> URL {
         SessionSetup.userLayerRoot(
             of: ConfigurationLoader(
                 name: name,

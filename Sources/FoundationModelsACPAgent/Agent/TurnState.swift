@@ -48,6 +48,15 @@ actor TurnStateOwner {
     /// Whether `session/cancel` asked this turn to stop.
     private(set) var cancelRequested = false
 
+    /// Whether the turn has ended: whether ``turnDidEnd(reason:)`` sent the
+    /// `idle` terminator. `session/close` reads it, so the close response
+    /// follows the terminator (plan.md §10.1).
+    private var didEnd = false
+
+    /// The waiters suspended in ``waitForTurnEnd()`` until the terminator
+    /// goes out.
+    private var endWaiters: [CheckedContinuation<Void, Never>] = []
+
     /// Creates the owner over `send`.
     ///
     /// - Parameter send: The sink every state update goes to.
@@ -92,6 +101,25 @@ actor TurnStateOwner {
     /// - Parameter reason: Why the turn stopped.
     func turnDidEnd(reason: StopReason) async {
         await send(.stateUpdate(.idle(IdleStateUpdate(stopReason: reason))))
+        didEnd = true
+        let waiters = endWaiters
+        endWaiters = []
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    /// Suspends until the turn's `idle` terminator has gone out. A close
+    /// during an active turn awaits it, so the client learns the turn ended
+    /// before the close response (plan.md §10.1). It returns at once when the
+    /// terminator already went out.
+    func waitForTurnEnd() async {
+        guard !didEnd else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            endWaiters.append(continuation)
+        }
     }
 
     /// Records that `session/cancel` asked this turn to stop. The turn

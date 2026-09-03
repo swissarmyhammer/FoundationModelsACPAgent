@@ -1,11 +1,38 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1jk8s12s9633d1sw4peknt6
+  text: |-
+    ### research — findings
+
+    - The close/delete stubs are in RoutedACPAgent.swift (`closeSession`, `deleteSession` both call `refuseUnimplemented`). The task moves the real handlers into Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift.
+    - `markSessionClosed(_:)` is in Agent/PromptTurn.swift. It sets `isClosed` and finishes the shell output stream. Seven test files call it. The real close path can call it as one step.
+    - `ActiveSession` (Agent/SessionSetup.swift) already carries `surface: SessionSurface` with `serverPool`, `shellOutput`, `filesReadVerb`. The pool already holds each spawned `StdioServerProcess` (ToolCatalog.makeRegistry adds each one) and the attached `SurfaceRefresher` (MCPComposition.startSurfaceRefresher). `MCPServerPool.shutdownAll()` stops the refresher first, then disconnects servers, then shuts each subprocess down.
+    - `RoutedSession.close()` (Router checkout) finishes every `streamSessionEvents()` subscription, sweeps the mailbox, and journals terminal events. It is idempotent. It does not close descendants; the package must track them. `ActiveSession` gets a `descendants` list and the agent gets `adoptDescendant`, so a fork is released at close and the path stays open for spawned sessions.
+    - `TurnStateOwner` (Agent/TurnState.swift) has no wait for the turn end. The close path needs one: `turnDidEnd` resumes waiters after the idle update went out, so the close response follows `idle(cancelled)`.
+    - The wire notifications dispatch in read order (`Connection.dispatchSingle` awaits `notificationHandler`), so the ordering assertion "idle(cancelled) before the close response" is deterministic in the harness.
+    - `SessionIndex` is append-only with no removal. Delete adds `removeRecords(sessionId:)`: read, filter, atomic rewrite.
+    - `DeleteSessionRequest` carries only `sessionId` (no cwd). A session not in the table is found through `ProjectRegistry` + per-project `loadSessionContext(...).transcriptRoot`, the same walk `session/list` makes. The id is treated as a path segment only after a ULID parse, so no path traversal.
+    - Test support: `ScriptedTurnFixture` (scripted turns, `.hold` step for a long turn), `ResumeSessionFixture` (real recorded transcripts, fork-capable backend), `BuiltProductLocator.mcpTestServerURL()` for a stdio server spawn, `pgrep -f` reap pattern in Integration/ClientServerTests. The process test copies the server binary to a unique path so a parallel suite cannot match.
+    - `SessionDeleteCapabilities()` is already advertised in Agent/Initialization.swift.
+    - Validators read: Swift rule set (casing, optionals, guard-first, no magic numbers, docs on each item, functions under 250 lines), duplication + reuse, completeness, test-integrity. The delete path validates the id before it forms a path.
+  timestamp: 2026-09-03T02:58:47.458688+00:00
+- actor: claude-code
+  id: 01m1jkvcjsqxcsyh6yx34ckejr
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift (new: close, delete, adoptDescendant, disk removal), Sources/FoundationModelsACPAgent/Agent/TurnState.swift (waitForTurnEnd), Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift (ActiveSession.descendants), Sources/FoundationModelsACPAgent/Transcripts/SessionIndex.swift (removeRecords), Sources/FoundationModelsACPAgent/Agent/SessionList.swift (registryUserLayerRoot made internal for reuse), Sources/FoundationModelsACPAgent/RoutedACPAgent.swift (removed the close/delete stubs and the now-unused refuseUnimplemented). New tests: Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift (10 cases).
+    - close calls RoutedSession.close() (the sweep), then closes descendants, finishes the shell stream, and shuts the pool down after the sweep. deinit does not sweep. A close during an active turn cancels the turn and waits for idle(cancelled) before the response.
+    - delete closes an active session first, removes the transcript directory and the sessions.jsonl line; a non-ULID or absent id is silent success. Resume of a deleted session fails naturally.
+    - next: TEST
+  timestamp: 2026-09-03T03:08:57.305482+00:00
 depends_on:
 - 01KYSVA96FDQP14HPP38ZQ362W
 - 01KYSVB1ACAR7NDK06015S796H
-position_column: todo
-position_ordinal: '9080'
+position_column: doing
+position_ordinal: '80'
 title: 'session/close and session/delete: tree teardown and real removal'
 ---
 ## What

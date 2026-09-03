@@ -182,6 +182,26 @@ public struct SessionIndex: Sendable {
         return SessionIndexReadResult(records: records, warnings: warnings)
     }
 
+    /// Removes every record of `sessionId` and rewrites the file, so a real
+    /// delete drops the session's index line (plan.md §10.2). A missing file,
+    /// and an id no record names, both leave the file untouched — "nothing to
+    /// remove" is not an error.
+    ///
+    /// - Parameter sessionId: The ACP session id whose records to drop.
+    /// - Throws: The read error the index reports for a corrupt earlier line,
+    ///   or a file-system error when the rewrite fails.
+    public func removeRecords(sessionId: String) throws {
+        guard FileManager.default.fileExists(atPath: indexFile.path) else {
+            return
+        }
+        let kept = try read().records.filter { $0.sessionId != sessionId }
+        var contents = Data()
+        for record in kept {
+            contents.append(try JSONLines.encodedLine(of: record))
+        }
+        try contents.write(to: indexFile, options: .atomic)
+    }
+
     /// Rebuilds the index from a scan of the session directories and
     /// replaces `sessions.jsonl` with the result. The index is a cache, so
     /// a damaged file is not load-bearing (plan.md §4.3): a directory

@@ -26,10 +26,9 @@ private let sessionLogger = Logger(subsystem: RoutedACPAgent.implementation.name
 /// available on this agent. The agent never raises `-32000`.
 ///
 /// `session/new` lives in `Agent/SessionSetup.swift` (plan.md §7.1): the
-/// per-cwd composition pipeline and the actor-held session table. The
-/// remaining session handlers land in later tasks; until then each one
-/// applies the order rule and then refuses with method-not-found, so the
-/// conformance compiles and the wire shape stays honest.
+/// per-cwd composition pipeline and the actor-held session table. Each
+/// remaining session handler lives beside it in its own `Agent/` file, and
+/// the file comments below name where.
 public actor RoutedACPAgent: Agent {
     /// The frontend-supplied dotfolder name (plan.md §2.1). It roots the
     /// configuration stack and the transcript directory. It never goes on
@@ -164,18 +163,6 @@ public actor RoutedACPAgent: Agent {
         }
     }
 
-    /// Applies the order rule, then refuses a session request that no task
-    /// has implemented yet.
-    ///
-    /// - Parameter method: The wire name of the session request.
-    /// - Returns: Never; the function always throws.
-    /// - Throws: The order rule's invalid-request error, or
-    ///   `RequestError.methodNotFound(method)`.
-    private func refuseUnimplemented<Response>(_ method: String) throws -> Response {
-        try requireInitialized(before: method)
-        throw RequestError.methodNotFound(method)
-    }
-
     // MARK: - Session baseline (plan.md §7 to §10)
 
     // `newSession` lives in `Agent/SessionSetup.swift` (plan.md §7.1).
@@ -184,20 +171,13 @@ public actor RoutedACPAgent: Agent {
 
     // `resumeSession` lives in `Agent/SessionResume.swift` (plan.md §7.4).
 
-    /// Refuses until the session-close task lands.
-    public func closeSession(_ params: CloseSessionRequest) async throws -> CloseSessionResponse {
-        try refuseUnimplemented(ACPMethod.sessionClose)
-    }
+    // `closeSession` and `deleteSession` live in
+    // `Agent/SessionLifecycle.swift` (plan.md §10).
 
     // `prompt` and `sessionCancel` live in `Agent/PromptTurn.swift`
     // (plan.md §8.1–§8.3).
 
-    // MARK: - Capability-gated (plan.md §10.2, §15; later tasks)
-
-    /// Refuses until the session-delete task lands.
-    public func deleteSession(_ params: DeleteSessionRequest) async throws -> DeleteSessionResponse {
-        try refuseUnimplemented(ACPMethod.sessionDelete)
-    }
+    // MARK: - Capability-gated (plan.md §15)
 
     // `setSessionConfigOption` lives in `Agent/ConfigOptions.swift`
     // (plan.md §15).

@@ -81,6 +81,13 @@ struct ActiveSession: Sendable {
     /// this reference.
     var activeTurn: TurnStateOwner?
 
+    /// The session's descendants — its forks and, later, its spawned
+    /// sub-agents (plan.md §10.1). `session/close` closes each one, so no
+    /// orphan holds a model gate after the parent goes. This iteration holds
+    /// forks; the path stays open for the spawned sessions a later Multitool
+    /// agents capability starts.
+    var descendants: [any RoutedSession] = []
+
     /// Whether `session/close` released this session (plan.md §10.1).
     var isClosed = false
 
