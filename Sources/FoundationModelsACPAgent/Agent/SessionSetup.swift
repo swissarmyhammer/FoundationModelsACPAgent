@@ -3,6 +3,12 @@ import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
 import FoundationModelsSkills
+import os
+
+/// The logger of the session composition surface: the confinement-root
+/// conversion's skip reports.
+private let setupLogger = Logger(
+    subsystem: RoutedACPAgent.implementation.name, category: "SessionSetup")
 
 /// Whether a session can accept a new prompt (plan.md §7.1). `idle` means
 /// "ready for a new prompt"; a `session/prompt` that arrives while the
@@ -128,6 +134,29 @@ enum SessionSetup {
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    /// Converts the wire `additionalDirectories` path strings to
+    /// confinement root URLs, in wire order (plan.md §7.2).
+    ///
+    /// A non-absolute entry is skipped with a log and never refuses the
+    /// session: the wire decode already drops one silently
+    /// (`x-deserialize-skip-invalid-items`), and this guard keeps the
+    /// same rule for every caller, so the confinement boundary does not
+    /// rest on the care of the layer above.
+    ///
+    /// - Parameter paths: The requested directory paths, in wire order.
+    /// - Returns: The confinement root URLs, in the same order.
+    static func additionalRoots(fromPaths paths: [String]) -> [URL] {
+        paths.compactMap { path in
+            guard path.hasPrefix(absolutePathPrefix) else {
+                setupLogger.warning(
+                    "additionalDirectories entry \(path, privacy: .public) is not absolute; skipped"
+                )
+                return nil
+            }
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+    }
+
     /// The user layer's root in `stack`, `~/.config/<name>/` in
     /// production. `ProjectRegistry` lives there (plan.md §4.5), and the
     /// `home` transcript location resolves against it (§4.1).
@@ -213,9 +242,8 @@ extension RoutedACPAgent {
         try requireInitialized(before: ACPMethod.sessionNew)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
             path: params.cwd.rawValue)
-        let additionalRoots = (params.additionalDirectories ?? []).map { path in
-            URL(fileURLWithPath: path.rawValue, isDirectory: true)
-        }
+        let additionalRoots = SessionSetup.additionalRoots(
+            fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
 
         let composition = try await composeSession(
             workingDirectory: workingDirectory,

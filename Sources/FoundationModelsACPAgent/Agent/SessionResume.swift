@@ -276,9 +276,8 @@ extension RoutedACPAgent {
 
         // A non-empty list is the complete new root set; omitted or empty
         // means no additional roots. Former roots are never inherited.
-        let additionalRoots = (params.additionalDirectories ?? []).map { path in
-            URL(fileURLWithPath: path.rawValue, isDirectory: true)
-        }
+        let additionalRoots = SessionSetup.additionalRoots(
+            fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
         let composition = try await composeSession(
             from: context,
             workingDirectory: workingDirectory,
