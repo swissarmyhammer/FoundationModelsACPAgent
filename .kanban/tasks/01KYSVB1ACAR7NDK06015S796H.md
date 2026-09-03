@@ -96,12 +96,40 @@ comments:
     outcome: green
     task: ^15s796h
   timestamp: 2026-09-03T02:46:49.904432+00:00
+- actor: claude-code
+  id: 01m1jjk6v6v83xr9htkw5m2f9k
+  text: |-
+    ### commit — changed
+    - evidence: 038351a refactor(tests): remove the redundant argument-free Suite attribute from SessionResumeTests — 3 files changed (the test file plus the kanban state). Local commit only; not pushed.
+    - next: review HEAD~1..HEAD.
+    step: commit
+    outcome: changed
+    task: ^15s796h
+  timestamp: 2026-09-03T02:47:00.710380+00:00
+- actor: claude-code
+  id: 01m1jjn5caj8wy53hv349x5saz
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted; the one prior finding is checked. Task moved to done.
+    step: review
+    outcome: clean
+    task: ^15s796h
+  timestamp: 2026-09-03T02:48:04.746082+00:00
+- actor: claude-code
+  id: 01m1jjna2c6g0at3prtasn9kcq
+  text: |-
+    ### finish iteration 2 — done
+    - implement: changed — removed the argument-free @Suite attribute from SessionResumeTests.swift; the finding checkbox is checked.
+    - test: green — `swift test` 322 tests in 36 suites passed, 0 failures, 1 pre-existing known issue.
+    - commit: changed — 038351a refactor(tests): remove the redundant argument-free Suite attribute from SessionResumeTests.
+    - review: clean — 0 findings on HEAD~1..HEAD, every prior finding checked; task moved to done.
+  timestamp: 2026-09-03T02:48:09.548848+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSV7GHQ7049N8DW5NH9MYWS
 - 01KYSVA1A4HXA6RYSJBE2XERFM
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9c80
 title: 'session/resume: cwd equality, restore, replay as whole-message upserts'
 ---
 ## What
