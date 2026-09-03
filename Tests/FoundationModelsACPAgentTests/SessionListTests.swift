@@ -9,7 +9,7 @@ import Testing
 /// end of the harness: the `SessionInfo` join, the `cwd` filter, the
 /// opaque cursor walk, the invalid-cursor refusal, and the listability
 /// rules as a client observes them.
-@Suite struct SessionListTests {
+struct SessionListTests {
     /// The wire value of a JSON-RPC invalid-params error.
     private static let invalidParamsWireValue = -32602
 

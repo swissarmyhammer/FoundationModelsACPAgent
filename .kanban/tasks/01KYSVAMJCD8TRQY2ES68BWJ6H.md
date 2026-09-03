@@ -43,10 +43,45 @@ comments:
     - evidence: swift test — 309 tests in 35 suites, all pass, 0 failed, 0 skipped, 1 known issue (the pre-existing withKnownIssue in HarnessSmokeTests). swift build shows no compiler warning from this change; the one build-system line about mlx-swift_Cmlx.bundle also appears on a no-op rebuild, so it is pre-existing.
     - next: commit
   timestamp: 2026-09-03T02:09:35.859153+00:00
+- actor: claude-code
+  id: 01m1jgf9wk9esa1qcq49j1kek5
+  text: |-
+    ### commit — changed
+    - evidence: 3b66db6 feat(agent): serve session/list as the paged wire surface over TranscriptStore (9 files, +707/-25)
+    - next: review
+  timestamp: 2026-09-03T02:09:55.603429+00:00
+- actor: claude-code
+  id: 01m1jgp735vssks7fdydje1qmz
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 1 finding, 1 confirmed, 0 refuted: Tests/FoundationModelsACPAgentTests/SessionListTests.swift:12 code-hygiene/idioms-swift redundantSwiftTestingSuite
+    - next: implement the fix, then test, commit, and review again
+  timestamp: 2026-09-03T02:13:42.117339+00:00
+- actor: claude-code
+  id: 01m1jgpfj4ts747ebmt8spxzff
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files (SessionList.swift new, TranscriptStore.swift, RoutedACPAgent.swift, SessionListTests.swift new, TranscriptRecordingFixtures.swift); TDD RED then GREEN
+    - test: green — swift test, 309 tests in 35 suites, 0 failed, 0 skipped, 1 pre-existing known issue
+    - commit: changed — 3b66db6
+    - review: findings — 1 finding: SessionListTests.swift:12 code-hygiene/idioms-swift redundantSwiftTestingSuite
+    - next: iteration 2 removes the redundant @Suite attribute
+  timestamp: 2026-09-03T02:13:50.788156+00:00
+- actor: claude-code
+  id: 01m1jgq8cv81ns66z1tfpf4nfj
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/SessionListTests.swift; removed the redundant bare @Suite attribute (the struct with @Test functions is an implicit suite, so all 8 tests still run)
+    - next: test
+
+    ### test — green
+    - evidence: swift test — 309 tests in 35 suites, all pass, 0 failed, 0 skipped, 1 pre-existing known issue
+    - next: commit
+  timestamp: 2026-09-03T02:14:16.219209+00:00
 depends_on:
 - 01KYSV7GHQ7049N8DW5NH9MYWS
 - 01KYSV8M8HV7R9W51QG63BBYR8
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: 'session/list: paged, updatedAt-sorted, roots only'
 ---
@@ -80,3 +115,12 @@ Plan.md §9. Work in `Sources/FoundationModelsACPAgent/Agent/SessionList.swift`.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 21:10)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionListTests.swift:12` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
