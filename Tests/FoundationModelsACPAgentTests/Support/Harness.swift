@@ -89,6 +89,10 @@ struct AgentClientHarness {
     /// harness was wired without one (``make()``).
     let collector: UpdateCollector?
 
+    /// The recorder of the elicitation traffic, or `nil` when the
+    /// harness was wired without one (``make()``).
+    let elicitations: ElicitationWireRecorder?
+
     /// Makes an agent for ``dotfolderName`` through the shared
     /// `makeStubAgent` factory, so the construction-time profile
     /// resolution downloads nothing.
@@ -131,7 +135,8 @@ struct AgentClientHarness {
             client: parts.client,
             connection: connection,
             agentConnection: parts.agentConnection,
-            collector: nil)
+            collector: nil,
+            elicitations: nil)
     }
 
     /// Wires a fresh agent and client with a ``RecordingClient`` in
@@ -162,7 +167,8 @@ struct AgentClientHarness {
             client: parts.client,
             connection: connection,
             agentConnection: parts.agentConnection,
-            collector: collector)
+            collector: collector,
+            elicitations: recorder.elicitations)
     }
 
     /// Flushes the coalescing buffer of every session, so a test

@@ -102,6 +102,16 @@ func expectOrderedSubsequence<Element: Equatable>(
         sourceLocation: sourceLocation)
 }
 
+/// The JSON text of one encodable wire value, for a contains assertion
+/// over everything the value carries.
+///
+/// - Parameter value: The value to encode.
+/// - Returns: The JSON text.
+/// - Throws: The encoding error.
+func encodedWireText(of value: some Encodable) throws -> String {
+    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+}
+
 /// Reads one string field of a wire error's `data` object, so a refusal
 /// assertion names the id or reason the error carried (plan.md §10.1).
 ///

@@ -95,6 +95,12 @@ struct PromptTurn: Sendable {
     /// the scheduling wiring supplies the session surface's verb.
     var contentResolver = ResourceLinkResolver(readVerb: nil)
 
+    /// The handler of a live elicitation request (plan.md §16), or `nil`
+    /// when no relay is wired — a synthetic projection drive. The
+    /// scheduling wiring supplies the session's ``ElicitationRelay``
+    /// bound to the turn's session and owner.
+    var relayElicitation: ElicitationEventHandler?
+
     /// Runs the turn: the echo, the first-activity record, and the
     /// session's event stream to completion (plan.md §8.1). A plain
     /// prompt folds through `PromptContent` (§12); an expanded command
@@ -134,7 +140,8 @@ struct PromptTurn: Sendable {
             sessionId: sessionId,
             turnState: turnState,
             send: send,
-            shellSnapshot: shellSnapshot)
+            shellSnapshot: shellSnapshot,
+            relayElicitation: relayElicitation)
         var stop = TurnStop.completed
         do {
             for try await event in events {
@@ -416,6 +423,18 @@ extension RoutedACPAgent {
         // The reader of a settled run's stored output (plan.md §11.8):
         // the same host-owned stream the terminal projection consumes.
         let shellOutput = entry.surface.shellOutput
+        let session = entry.session
+        // The elicitation relay of this turn (plan.md §16): it holds the
+        // capabilities `initialize` read, and `session/cancel` and
+        // `session/close` reach it through the session's table entry. A
+        // missing negotiation reads as "supports nothing", the same rule
+        // `initialize` applies to an unparsable capabilities object.
+        let relay = ElicitationRelay(
+            sessionId: sessionId,
+            capabilities: negotiatedClientCapabilities
+                ?? NegotiatedClientCapabilities(reading: ClientCapabilities()),
+            connection: connection)
+        sessions[sessionId]?.activeElicitationRelay = relay
         let turn = PromptTurn(
             sessionId: sessionId,
             promptBlocks: params.prompt,
@@ -424,8 +443,10 @@ extension RoutedACPAgent {
             firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
             modelPrompt: overridePrompt,
             shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
-            contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb))
-        let session = entry.session
+            contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb),
+            relayElicitation: { event in
+                await relay.relay(event, on: session, turnState: owner)
+            })
         connection.afterRespondingToCurrentRequest {
             await turn.run(session: session)
             await self.turnFinished(sessionId: sessionId)
@@ -434,8 +455,11 @@ extension RoutedACPAgent {
     }
 
     /// Stops the session's running turn (plan.md §8.6): records the
-    /// request on the turn owner, then cancels Router's turn in flight.
-    /// A notification has no response, so an unknown id or an idle
+    /// request on the turn owner, answers every pending elicitation with
+    /// `cancel` — the suspended tool must resume before the `idle`
+    /// terminator, and Router's mailbox does not resume on task
+    /// cancellation — then cancels Router's turn in flight. A
+    /// notification has no response, so an unknown id or an idle
     /// session is logged and ignored (plan.md §10.1).
     ///
     /// - Parameter params: The cancellation notification.
@@ -447,6 +471,7 @@ extension RoutedACPAgent {
             return
         }
         await turn.noteCancelRequested()
+        await entry.activeElicitationRelay?.cancelPendingElicitations()
         let result = await entry.session.cancelCurrentTurn()
         turnLogger.info(
             "session \(params.sessionId.rawValue, privacy: .public): cancelCurrentTurn -> \(String(describing: result), privacy: .public)"
@@ -477,6 +502,9 @@ extension RoutedACPAgent {
     /// - Parameter sessionId: The session whose turn finished.
     func turnFinished(sessionId: SessionId) async {
         sessions[sessionId]?.activeTurn = nil
+        // The relay goes with the turn: a pending round trip holds the
+        // drive loop, so a finished turn has none left.
+        sessions[sessionId]?.activeElicitationRelay = nil
         await reconcileConfigOptions(for: sessionId)
     }
 

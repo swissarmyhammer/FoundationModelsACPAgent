@@ -18,10 +18,37 @@ actor UpdateCollector {
     }
 }
 
+/// Collects the elicitation traffic the agent sends to the client: each
+/// `elicitation/create` request and each `elicitation/complete`
+/// notification, in arrival order. The observable container keeps no
+/// history of them, so a count or an order proof reads this recorder.
+actor ElicitationWireRecorder {
+    /// The recorded create requests, in arrival order.
+    private(set) var creates: [CreateElicitationRequest] = []
+
+    /// The recorded completion notifications, in arrival order.
+    private(set) var completions: [CompleteElicitationNotification] = []
+
+    /// Appends one create request.
+    ///
+    /// - Parameter request: The request to record.
+    func recordCreate(_ request: CreateElicitationRequest) {
+        creates.append(request)
+    }
+
+    /// Appends one completion notification.
+    ///
+    /// - Parameter notification: The notification to record.
+    func recordCompletion(_ notification: CompleteElicitationNotification) {
+        completions.append(notification)
+    }
+}
+
 /// The forwarding recorder (plan.md §20.1): it appends each
 /// `UpdateSessionNotification` to its ``UpdateCollector`` and then
 /// forwards it to the `SwiftUIACPClient`, so one stream feeds both the
-/// order proof and the observable state.
+/// order proof and the observable state. The elicitation traffic lands in
+/// the ``ElicitationWireRecorder`` the same way.
 ///
 /// Wire it with `ClientSideConnection(stream: clientEnd) { _ in recorder }`,
 /// because `connect(over:)` binds the client itself.
@@ -34,6 +61,9 @@ final class RecordingClient: Client {
     /// The recorder of the raw update sequence.
     let collector: UpdateCollector
 
+    /// The recorder of the elicitation traffic.
+    let elicitations: ElicitationWireRecorder
+
     /// The observable client every message is forwarded to.
     private let client: SwiftUIACPClient
 
@@ -42,9 +72,15 @@ final class RecordingClient: Client {
     /// - Parameters:
     ///   - client: The observable client to forward to.
     ///   - collector: The recorder of the raw update sequence.
-    init(forwardingTo client: SwiftUIACPClient, collector: UpdateCollector) {
+    ///   - elicitations: The recorder of the elicitation traffic.
+    init(
+        forwardingTo client: SwiftUIACPClient,
+        collector: UpdateCollector,
+        elicitations: ElicitationWireRecorder = ElicitationWireRecorder()
+    ) {
         self.client = client
         self.collector = collector
+        self.elicitations = elicitations
     }
 
     func sessionUpdate(_ notification: UpdateSessionNotification) async {
@@ -61,10 +97,12 @@ final class RecordingClient: Client {
     func createElicitation(
         _ params: CreateElicitationRequest
     ) async throws -> CreateElicitationResponse {
-        try await client.createElicitation(params)
+        await elicitations.recordCreate(params)
+        return try await client.createElicitation(params)
     }
 
     func elicitationComplete(_ notification: CompleteElicitationNotification) async {
+        await elicitations.recordCompletion(notification)
         await client.elicitationComplete(notification)
     }
 }

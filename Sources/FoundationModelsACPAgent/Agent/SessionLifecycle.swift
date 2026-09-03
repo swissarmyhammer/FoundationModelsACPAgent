@@ -94,9 +94,13 @@ extension RoutedACPAgent {
         }
         // A close during an active turn cancels it as `session/cancel` would,
         // and waits for the `idle(cancelled)` terminator to go out before the
-        // close response (plan.md §10.1).
+        // close response (plan.md §10.1). Every pending elicitation is
+        // answered with `cancel` first (plan.md §16): the suspended tool must
+        // resume, or the turn's drive loop never ends and this wait holds
+        // forever — Router's mailbox does not resume on task cancellation.
         if let turn = entry.activeTurn {
             await turn.noteCancelRequested()
+            await entry.activeElicitationRelay?.cancelPendingElicitations()
             _ = await entry.session.cancelCurrentTurn()
             await turn.waitForTurnEnd()
         }

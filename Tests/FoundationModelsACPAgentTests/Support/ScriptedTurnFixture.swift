@@ -54,6 +54,9 @@ struct ScriptedTurnFixture {
     ///   - script: The steps the model plays on every turn.
     ///   - label: The directory label of the calling suite, so a
     ///     leftover directory says where it came from.
+    ///   - capabilities: The client capabilities `initialize` announces.
+    ///     The default is the driver's full advertisement; an
+    ///     elicitation-gate suite passes a reduced set.
     ///   - workingDirectory: The session working directory to open the
     ///     session in, or `nil` to make a fresh one. A suite passes a
     ///     pre-made directory when the script embeds its path.
@@ -68,6 +71,7 @@ struct ScriptedTurnFixture {
     static func make(
         script: [ScriptedTurnStep],
         label: String,
+        capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
         mcpServers: [MCPServer]? = nil,
@@ -76,6 +80,7 @@ struct ScriptedTurnFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
             label: label,
+            capabilities: capabilities,
             workingDirectory: workingDirectory,
             projectConfigYAML: projectConfigYAML,
             mcpServers: mcpServers,
@@ -91,6 +96,9 @@ struct ScriptedTurnFixture {
     ///   - loader: The model loader the agent resolves against.
     ///   - label: The directory label of the calling suite, so a
     ///     leftover directory says where it came from.
+    ///   - capabilities: The client capabilities `initialize` announces.
+    ///     The default is the driver's full advertisement; an
+    ///     elicitation-gate suite passes a reduced set.
     ///   - workingDirectory: The session working directory to open the
     ///     session in, or `nil` to make a fresh one. A suite passes a
     ///     pre-made directory when the script embeds its path.
@@ -105,6 +113,7 @@ struct ScriptedTurnFixture {
     static func make(
         loader: any ModelLoader,
         label: String,
+        capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
         mcpServers: [MCPServer]? = nil,
@@ -122,7 +131,8 @@ struct ScriptedTurnFixture {
             userDirectory: userDirectory,
             loader: loader)
         let harness = await AgentClientHarness.makeRecording(agent: agent)
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        _ = try await harness.connection.initialize(
+            AgentClientHarness.makeInitializeRequest(capabilities: capabilities))
         let response = try await harness.connection.newSession(
             NewSessionRequest(
                 cwd: try #require(AbsolutePath(rawValue: cwd.path)),
@@ -158,6 +168,38 @@ struct ScriptedTurnFixture {
     /// - Returns: The request.
     static func makePromptRequest(sessionId: SessionId, text: String) -> PromptRequest {
         PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
+    }
+
+    // MARK: - Script builders
+
+    /// The name of the code-mode session tool a scripted tool turn invokes.
+    static let runCodeToolName = "runCode"
+
+    /// The name of the collector session tool. `runCode` mounts in the
+    /// background and answers a pending envelope, so a tool turn plays
+    /// `wait` after it to settle the run inside the turn.
+    static let waitToolName = "wait"
+
+    /// The script of one tool turn: `runCode` with `code`, then
+    /// `waitStepCount` plays of `wait`, then the turn end.
+    ///
+    /// One `wait` settles the `runCode` run itself. A snippet that starts
+    /// a nested background run needs a second `wait`: the nested run
+    /// registers only when the snippet resolves.
+    ///
+    /// - Parameters:
+    ///   - code: The snippet the turn runs.
+    ///   - waitStepCount: How many `wait` plays follow the snippet.
+    /// - Returns: The script.
+    /// - Throws: The arguments-encoding error.
+    static func makeToolTurnScript(
+        code: String, waitStepCount: Int = 1
+    ) throws -> [ScriptedTurnStep] {
+        let arguments = String(decoding: try JSONEncoder().encode(["code": code]), as: UTF8.self)
+        let waits = [ScriptedTurnStep](
+            repeating: .toolCall(name: waitToolName, argumentsJSON: "{}"),
+            count: waitStepCount)
+        return [.toolCall(name: runCodeToolName, argumentsJSON: arguments)] + waits + [.endTurn]
     }
 
     // MARK: - Waits

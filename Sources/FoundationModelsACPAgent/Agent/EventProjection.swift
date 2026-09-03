@@ -92,6 +92,12 @@ struct EventProjection {
     /// convergence replace. The default finds no run.
     var shellSnapshot: ShellSnapshotProvider = { _ in nil }
 
+    /// The handler of a live elicitation request (plan.md §16), or `nil`
+    /// when no relay is wired — a synthetic projection drive. The
+    /// production wiring supplies ``ElicitationRelay/relay(_:on:turnState:)``
+    /// bound to the turn's session and owner.
+    var relayElicitation: ElicitationEventHandler?
+
     // MARK: - The turn's mutable state
 
     /// The one agent message id of the current message, made at the
@@ -206,12 +212,18 @@ struct EventProjection {
                 "session \(sessionIdValue, privacy: .public): tool call report for run \(report.correlationID, privacy: .public) with \(report.attachments.count, privacy: .public) attachments"
             )
         case .elicitationRequested(let operationEvent):
-            // No elicitation-capable tool mounts in this agent yet, so
-            // a suspended run can only be reported, never answered.
-            // The task `^9vjyddw` tracks the wire mapping.
-            turnLogger.notice(
-                "session \(sessionIdValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) requested an elicitation this agent cannot answer yet"
-            )
+            // The relay runs the round trip inline (plan.md §16): the
+            // asking tool is suspended in Router's mailbox until the
+            // answer is delivered, so holding this drive loop holds
+            // nothing the turn could otherwise do.
+            guard let relayElicitation else {
+                turnLogger.notice(
+                    "session \(sessionIdValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) requested an elicitation, but no relay is wired; the request is only reported"
+                )
+                return
+            }
+            sawOutput = true
+            await relayElicitation(operationEvent)
         case .turnEnded(let usage):
             // One event per inner generate call, not per turn: sum,
             // and never send `idle` from here (§8.1).

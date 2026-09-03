@@ -87,6 +87,12 @@ struct ActiveSession: Sendable {
     /// this reference.
     var activeTurn: TurnStateOwner?
 
+    /// The running turn's elicitation relay, or `nil` when no turn is in
+    /// flight (plan.md §16). `session/cancel` and `session/close` answer
+    /// every pending elicitation with `cancel` through this reference,
+    /// so the suspended tool resumes before the `idle` terminator.
+    var activeElicitationRelay: ElicitationRelay?
+
     /// The session's descendants — its forks and, later, its spawned
     /// sub-agents (plan.md §10.1). `session/close` closes each one, so no
     /// orphan holds a model gate after the parent goes. This iteration holds
@@ -358,6 +364,7 @@ extension RoutedACPAgent {
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
             activeTurn: nil,
+            activeElicitationRelay: nil,
             indexRecorded: indexRecorded)
 
         // The command set publishes after the response, and again on
