@@ -52,11 +52,35 @@ comments:
     - review: findings — 1 finding at SessionLifecycleTests.swift:13 (code-hygiene/idioms-swift redundantSwiftTestingSuite).
     - outcome: findings open; go to iteration 2.
   timestamp: 2026-09-03T03:14:35.788874+00:00
+- actor: claude-code
+  id: 01m1jm6q8z6enee39bhvgw23p5
+  text: |-
+    ### commit — changed
+    - evidence: c6f1b60 style(tests): drop the redundant @Suite attribute on SessionLifecycleTests
+    - next: REVIEW
+  timestamp: 2026-09-03T03:15:08.703024+00:00
+- actor: claude-code
+  id: 01m1jma3vc27ax94d9tnj6efbm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted; the prior redundantSwiftTestingSuite finding is fixed and confirmed clean.
+    - next: task moves to done.
+  timestamp: 2026-09-03T03:16:59.884590+00:00
+- actor: claude-code
+  id: 01m1jmabeehsbqathqkmecyx2a
+  text: |-
+    ### finish iteration 2 — done
+    - implement: changed — removed the redundant @Suite attribute in SessionLifecycleTests.swift (the struct with @Test methods is already a suite).
+    - test: green — swift test 332 tests / 37 suites, 0 failed, 1 expected known issue.
+    - commit: changed — c6f1b60.
+    - review: clean — review sha HEAD~1..HEAD, 0 findings.
+    - outcome: done. All acceptance criteria and the one review finding are satisfied; the task moves to done.
+  timestamp: 2026-09-03T03:17:07.662324+00:00
 depends_on:
 - 01KYSVA96FDQP14HPP38ZQ362W
 - 01KYSVB1ACAR7NDK06015S796H
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9d80
 title: 'session/close and session/delete: tree teardown and real removal'
 ---
 ## What
@@ -79,27 +103,27 @@ Plan.md §10. Work in `Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.s
 - An already-deleted or never-existent id gives silent success.
 - Do not claim in the docs or the response that committed git history is unrecoverable (§10.2).
 
-- [ ] Close calls `RoutedSession.close()` and does not rely on deinit
-- [ ] `idle(cancelled)` precedes the close response on an active turn
-- [ ] Descendants released
-- [ ] `MCPServerPool.shutdownAll()` after the session sweep; refresher stopped
-- [ ] Delete removes the directory and the index entry
-- [ ] Close-then-delete for an active session; silent success when absent
+- [x] Close calls `RoutedSession.close()` and does not rely on deinit
+- [x] `idle(cancelled)` precedes the close response on an active turn
+- [x] Descendants released
+- [x] `MCPServerPool.shutdownAll()` after the session sweep; refresher stopped
+- [x] Delete removes the directory and the index entry
+- [x] Close-then-delete for an active session; silent success when absent
 
 **Unknown-id policy (plan.md §10.1, decided 2026-09-01).** `session/close` with an unknown `sessionId` gives JSON-RPC invalid params (`-32602`) with the id in `data`. A known but already-closed session gives success `{}`; close is idempotent. `session/delete` keeps silent success for unknown and already-deleted ids.
 
 ## Acceptance Criteria
-- [ ] `session/close` on an unknown id gives `-32602` with the id in `data`; a second close of the same known session gives `{}`
-- [ ] Closing a session during a scripted turn makes the collector see `idle(cancelled)` before the close response resolves, and the transcript directory survives
-- [ ] After close, `session/resume` on that id still works
-- [ ] After close, a `streamSessionEvents()` subscription taken before the close finishes
-- [ ] After close, no spawned stdio server process remains
-- [ ] After delete, the directory and the index line are gone, and resume gives an error
-- [ ] Deleting an unknown sessionId succeeds
+- [x] `session/close` on an unknown id gives `-32602` with the id in `data`; a second close of the same known session gives `{}`
+- [x] Closing a session during a scripted turn makes the collector see `idle(cancelled)` before the close response resolves, and the transcript directory survives
+- [x] After close, `session/resume` on that id still works
+- [x] After close, a `streamSessionEvents()` subscription taken before the close finishes
+- [x] After close, no spawned stdio server process remains
+- [x] After delete, the directory and the index line are gone, and resume gives an error
+- [x] Deleting an unknown sessionId succeeds
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift` — harness, with filesystem-truth assertions on the transcript directory and the index, and a process check after close
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift` — harness, with filesystem-truth assertions on the transcript directory and the index, and a process check after close
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
@@ -108,4 +132,8 @@ Plan.md §10. Work in `Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.s
 
 > Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
 
-- [ ] `Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift:13` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift:13` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
+
+## Review Findings (2026-09-02 22:15)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only. 1 file reviewed. Zero findings.
