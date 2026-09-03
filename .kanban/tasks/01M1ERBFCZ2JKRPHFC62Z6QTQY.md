@@ -141,12 +141,27 @@ comments:
     - implement changed (relay built per the card, TDD, 12 new tests), test green (351/39, zero warnings), commit 2f444c1, review findings (2): ElicitationRelay.swift:139 invariant-propagation (clear outstandingURLElicitationIds in cancelPendingElicitations), ElicitationRelayTests.swift:14 idioms-swift redundantSwiftTestingSuite (remove the bare @Suite).
     - next: iteration 2 fixes both findings.
   timestamp: 2026-09-03T04:08:53.809700+00:00
+- actor: claude-code
+  id: 01m1jqf4ejwpnn1tt4n7znmcy0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (dc3212c) — 0 findings, 0 confirmed, 0 refuted; both prior findings fixed in dc3212c and checked. `swift test` after the fixes: 351 tests in 39 suites passed, 0 failures, 1 known issue (expected).
+    - next: move to done.
+  timestamp: 2026-09-03T04:12:10.066500+00:00
+- actor: claude-code
+  id: 01m1jqf7mvxrfyxswsx8xk6sh3
+  text: |-
+    ### finish iteration 2 — done
+    - implement changed (both review findings fixed: outstandingURLElicitationIds cleared in cancelPendingElicitations, bare @Suite removed; the cancel harness test now runs the URL-mode tool), test green (`swift test` — 351/39, 0 failures, 1 expected known issue, zero new warnings), commit dc3212c (local only, not pushed), review clean (0 findings on HEAD~1..HEAD).
+    - commits of this card: 2f444c1 (the relay + tests), dc3212c (the review fixes).
+    - outcome: all subtasks, acceptance criteria, and tests on the card are done; the card moves to done.
+  timestamp: 2026-09-03T04:12:13.339642+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
 - 01KYSV83KNKXPSMJMQX5TFSPGC
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9f80
 title: 'Elicitation relay: ACP elicitation/create and elicitation/complete over Router''s mailbox'
 ---
 ## What
@@ -194,5 +209,14 @@ Build, once unblocked:
 > 2 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 2 file(s)
 
-- [ ] `Sources/FoundationModelsACPAgent/Agent/ElicitationRelay.swift:139` `completeness/invariant-propagation` — The cleanup of pending elicitations in cancelPendingElicitations() removes pendingAnswers and answerTasks, but does not clear outstandingURLElicitationIds. URL elicitation IDs are added to this set at line 320 in beginURLFlowIfNeeded() and removed at line 333 in endURLFlowIfNeeded(). If relay() tasks are cancelled or encounter errors before reaching endURLFlowIfNeeded(), the URL IDs remain marked as outstanding. Without cleanup in cancelPendingElicitations(), these stranded IDs will persist and cause subsequent elicitations with the same ID to be incorrectly rejected as duplicates. Add `outstandingURLElicitationIds.removeAll()` at the end of cancelPendingElicitations() (after line 148), mirroring the cleanup of answerTasks and pendingAnswers. Alternatively, wrap the awaitingUser() call in relay() with a defer block to ensure endURLFlowIfNeeded() is always called, even if the task is cancelled.
-- [ ] `Tests/FoundationModelsACPAgentTests/ElicitationRelayTests.swift:14` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
+- [x] `Sources/FoundationModelsACPAgent/Agent/ElicitationRelay.swift:139` `completeness/invariant-propagation` — The cleanup of pending elicitations in cancelPendingElicitations() removes pendingAnswers and answerTasks, but does not clear outstandingURLElicitationIds. URL elicitation IDs are added to this set at line 320 in beginURLFlowIfNeeded() and removed at line 333 in endURLFlowIfNeeded(). If relay() tasks are cancelled or encounter errors before reaching endURLFlowIfNeeded(), the URL IDs remain marked as outstanding. Without cleanup in cancelPendingElicitations(), these stranded IDs will persist and cause subsequent elicitations with the same ID to be incorrectly rejected as duplicates. Add `outstandingURLElicitationIds.removeAll()` at the end of cancelPendingElicitations() (after line 148), mirroring the cleanup of answerTasks and pendingAnswers. Alternatively, wrap the awaitingUser() call in relay() with a defer block to ensure endURLFlowIfNeeded() is always called, even if the task is cancelled. — Fixed in dc3212c: cancelPendingElicitations() clears outstandingURLElicitationIds with the other per-round-trip state, and the cancel harness test now runs the URL-mode tool.
+- [x] `Tests/FoundationModelsACPAgentTests/ElicitationRelayTests.swift:14` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments. — Fixed in dc3212c: the bare @Suite attribute is removed.
+
+## Review Findings (2026-09-02 23:10)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+No findings.
