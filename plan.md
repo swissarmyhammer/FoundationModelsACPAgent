@@ -328,8 +328,10 @@ no instructions, silently.
 Additive instructions go in `AGENTS.md` (§3.2). The two lanes:
 **`Instructions.md` replaces, `AGENTS.md` adds.**
 
-**Discoverability obligations** (the cost of a compiled-in floor): DocC/README
-show the builtin text verbatim. The CLI can print the assembled prompt. The
+**Discoverability obligations** (the cost of a compiled-in floor): the README
+links to the source file that holds the builtin text, and a test asserts the
+link resolves. The README does not repeat the text — one copy only, because a
+second copy goes stale. The CLI can print the assembled prompt. The
 CLI can also **eject the builtin** to a layer-2/3 path
 (`<cli> instructions --eject`). This is the counterpart of `/config export`.
 Think about a `/instructions export home|project` builtin. It gives symmetry

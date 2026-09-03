@@ -3,26 +3,51 @@ import FoundationModelsACPAgent
 import Testing
 
 /// The discoverability obligation of the compiled-in floor (plan.md §3.1):
-/// the README shows the builtin instructions text verbatim, so the text on
-/// the page cannot drift from the text in the binary.
+/// the README points a reader at the one copy of the builtin instructions
+/// text. The README does not repeat the text — a second copy is a copy that
+/// goes stale — so what this suite protects is the link, not the prose.
 @Suite struct DocumentationSyncTests {
-    /// The repository's `README.md`, found relative to this source file.
-    static var readmeURL: URL {
+    /// The repository root, found relative to this source file.
+    static var repositoryRootURL: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // Tests/FoundationModelsACPAgentTests/
             .deletingLastPathComponent()  // Tests/
             .deletingLastPathComponent()  // the repository root
-            .appendingPathComponent("README.md")
     }
+
+    /// The repository's `README.md`.
+    static var readmeURL: URL {
+        repositoryRootURL.appendingPathComponent("README.md")
+    }
+
+    /// The repository-relative path of the one copy of the builtin
+    /// instructions text — the link target the README must carry.
+    static let builtinInstructionsPath =
+        "Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift"
 
     /// The heading of the README's tool roster section (plan.md §11.1,
     /// catalog contract step 3).
     static let toolsHeading = "## Tools"
 
-    @Test func readmeShowsTheBuiltinInstructionsVerbatim() throws {
+    /// The README links to the builtin instructions source, and that path
+    /// resolves. A moved or renamed file fails here, at the link, instead
+    /// of silently leaving the README pointing at nothing.
+    @Test func readmeLinksToTheBuiltinInstructionsSource() throws {
         let readme = try String(contentsOf: Self.readmeURL, encoding: .utf8)
 
-        #expect(readme.contains(BuiltinInstructions.text))
+        #expect(readme.contains(Self.builtinInstructionsPath))
+        #expect(
+            FileManager.default.fileExists(
+                atPath: Self.repositoryRootURL
+                    .appendingPathComponent(Self.builtinInstructionsPath).path))
+    }
+
+    /// The README does not repeat the builtin instructions text. One copy
+    /// only: the source file the link names.
+    @Test func readmeDoesNotRepeatTheBuiltinInstructionsText() throws {
+        let readme = try String(contentsOf: Self.readmeURL, encoding: .utf8)
+
+        #expect(!readme.contains(BuiltinInstructions.text))
     }
 
     /// Catalog contract step 3 (plan.md §11.1): the README's `## Tools`

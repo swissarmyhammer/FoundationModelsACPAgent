@@ -1,15 +1,69 @@
 # FoundationModelsACPAgent
 
-The composed ACP agent over the Router runtime: `AgentConfiguration` over the
-dotfolder stack, the tool roster, the slash-command registry, and
-`RoutedACPAgent`, the ACP `Agent` conformance over Router sessions.
+[![CI](https://github.com/swissarmyhammer/FoundationModelsACPAgent/actions/workflows/ci.yml/badge.svg)](https://github.com/swissarmyhammer/FoundationModelsACPAgent/actions/workflows/ci.yml)
+
+A complete [Agent Client Protocol](https://agentclientprotocol.com) coding
+agent over local models — one type to construct, one connection to serve.
+
+`RoutedACPAgent` composes the family: Router resolves the models, a layered
+dotfolder stack gives configuration, instructions and skills, and a code-mode
+tool surface gives the model files, shell and MCP behind one `runCode`
+function. A frontend chooses a dotfolder name. Everything else derives.
+
+```swift
+import Foundation
+import FoundationModelsACP
+import FoundationModelsACPAgent
+import FoundationModelsRouter
+import HuggingFace
+import MLXHuggingFace
+import MLXLMCommon
+import Tokenizers
+
+// The one choice a frontend makes. It roots ~/.config/acp-agent/ for the
+// user layer, <cwd>/.acp-agent/ for the project layer, and the transcripts.
+let name = try DotfolderName("acp-agent")
+let cwd = URL(
+    fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+let configuration = try ConfigurationLoader(name: name, workingDirectory: cwd)
+    .load().configuration
+
+// Real models: the configured weights download on first use and stay resident.
+let router = Router(
+    loader: LiveModelLoader(
+        downloader: #hubDownloader(),
+        tokenizerLoader: #huggingFaceTokenizerLoader()))
+
+let agent = try await RoutedACPAgent(
+    name: name, router: router, configuration: configuration)
+
+// Full duplex on one pipe: the read loop serves every request while a turn
+// streams session/update notifications. stdout carries ndJSON only; logs go
+// to stderr. A read-one-then-write-one loop deadlocks here.
+let connection = await AgentSideConnection(
+    stream: .stdio, logger: .standardError
+) { connection in
+    agent.bind(connection: connection)
+    return agent
+}
+while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+```
+
+The same composition, with its full commentary, is
+[`Examples/acp-agent/main.swift`](Examples/acp-agent/main.swift).
+
+## Install
+
+```swift
+.package(url: "https://github.com/swissarmyhammer/FoundationModelsACPAgent.git", branch: "main")
+```
 
 ## Tools
 
 The model-facing surface is three code-mode tools from
-`FoundationModelsMultitool` — `searchTools`, `runCode`, and `wait` — plus the
-standalone `skills` tool. The capability modules mount inside the Multitool
-registry, one row here per capability. Each capability is on by default; set
+`FoundationModelsMultitool` — `searchTools`, `runCode` and `wait` — plus the
+standalone `skills` tool. Capability modules mount inside the Multitool
+registry, one row here per capability. Each capability is on by default. Set
 its config section to `false` to turn it off.
 
 | Capability | What it gives the model | Config section |
@@ -19,55 +73,31 @@ its config section to `false` to turn it off.
 | `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack | `tools.skills` |
 
-### The sandbox limit
-
-The shell sandbox is the only gate on shell commands: there is no permission
-prompt, and the agent never sends `session/request_permission`. Know its limit.
+**Know the sandbox limit.** The sandbox is the only gate on shell commands:
+there is no permission prompt, and the agent never sends
+`session/request_permission`.
 The sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
 
-## Builtin instructions
+## Instructions
 
-The system prompt is one markdown file, `Instructions.md`, resolved through
-the dotfolder stack. The nearest layer wins, and it replaces the full file:
+The system prompt is one markdown file, `Instructions.md`, resolved through the
+dotfolder stack. The nearest layer wins, and it replaces the whole file:
+compiled in, then `~/.config/<name>/Instructions.md`, then
+`<project>/.<name>/Instructions.md`. Additive instructions go in `AGENTS.md`.
+`Instructions.md` replaces; `AGENTS.md` adds.
 
-1. Compiled in — the guaranteed floor below. It is never edited, only
-   shadowed.
-2. `~/.config/<name>/Instructions.md` — a machine-wide replacement.
-3. `<project>/.<name>/Instructions.md` — a per-repo replacement.
+The compiled-in floor is
+[`Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift`](Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift)
+— one copy of the text, never mirrored here. It is written for a small local
+model, and its doc comment states why each section reads the way it does.
 
-Additive instructions go in `AGENTS.md`; `Instructions.md` replaces,
-`AGENTS.md` adds.
+## Documentation
 
-The compiled-in floor is shown verbatim below. It is the text of
-`BuiltinInstructions.text`, and `DocumentationSyncTests` makes sure this
-section cannot drift from the code.
+[`plan.md`](plan.md) is the design record: the wire, the session lifecycle, the
+tool catalog, and the test tiers. `swift test` runs the hermetic suites;
+`swift test --package-path IntegrationTests` runs the tiers that spawn a built
+binary or load a real model.
 
-```markdown
-# Instructions
+## License
 
-You are a careful and experienced software engineer. You work in the
-user's project, through the tools of this session.
-
-## Work rules
-
-- Read the applicable code before you change it. Do not guess when
-  you can check.
-- Make the smallest change that completes the task fully.
-- Obey the patterns that already exist in the project. Do not invent
-  a new pattern without a clear reason.
-- Keep functions small, and give each symbol a clear name.
-- Do not change code that has no relation to the task.
-
-## Quality rules
-
-- Add or update tests for each change of behavior.
-- Build the project and run its tests before you report success.
-- Report each failure honestly. Do not hide an error, and do not
-  invent a result.
-
-## Communication rules
-
-- Be concise. Give the result first, and then the reason.
-- Show the paths of the files you changed.
-- If a requirement is not clear, ask the user before you continue.
-```
+No license file is currently published in this repository.
