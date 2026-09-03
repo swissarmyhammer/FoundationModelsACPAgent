@@ -13,11 +13,21 @@ import Testing
 /// real `MultiTool` with the files and shell capabilities, a real
 /// `RoutedACPAgent`, a real `session/new` on a temp directory, and a
 /// scripted model — the seven proofs, driven and asserted through
-/// `FoundationModelsACPClient`.
+/// `FoundationModelsACPClient`, and proof 8 beside them.
 ///
 /// The discipline is §20.1's: check the filesystem, never the
 /// transcript. A "file written" claim is proven by reading the file
 /// from disk.
+///
+/// **Where the denial coverage lives.** Two doors refuse a path outside
+/// the session root set, and this file drives both from the client end:
+/// proof 2 refuses a READ through Multitool's `PathGuard`, and proof 8
+/// refuses a shell WRITE through the seatbelt sandbox (plan.md §11.7).
+/// Two suites in this target prove the same rule below the wire, and a
+/// reader wanting the whole picture reads them beside the two proofs:
+/// `SandboxCompositionTests` — `aWriteOutsideTheRootSetNeverLands` and
+/// the empty-root-set, preflight and `/private` symlink regressions —
+/// and `MultiRootConfinementTests.aPathOutsideTheRootUnionIsStillRefused`.
 ///
 /// Two card notes, recorded on task `^qg1rfct`:
 ///
@@ -59,6 +69,11 @@ import Testing
 
     /// The SDK id of the second scripted tool call — the `wait` call.
     private static let waitCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "2"
+
+    /// The SDK id of the third scripted tool call — the second `wait`
+    /// play, which a turn whose snippet started a nested background shell
+    /// run needs, and under which that run's report reaches the wire.
+    private static let nestedRunWaitCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "3"
 
     /// The marker of the files capability's in-band out-of-root
     /// correction (Multitool's `PathGuard` wording).
@@ -135,10 +150,35 @@ import Testing
     /// pipe reads.
     private static let minimumStreamedChunkCount = 2
 
-    /// The `wait` plays of the streamed-shell turn: the first settles
-    /// the `runCode` run, and the second joins the nested background
-    /// shell run, so the run settles inside the turn.
-    private static let streamWaitStepCount = 2
+    /// The `wait` plays of a turn whose snippet starts a nested
+    /// background shell run: the first settles the `runCode` run, and the
+    /// second joins the shell run, so the run settles inside the turn.
+    private static let shellWaitStepCount = 2
+
+    /// What a proof waits for when it needs the shell run's exit report.
+    private static let terminalExitLabel = "the terminal exit report"
+
+    /// The file the sandbox proof asks a real sandboxed shell run to
+    /// write OUTSIDE the session root set. It must never reach the disk.
+    private static let escapedWriteFileName = "sandbox-escaped-write.txt"
+
+    /// The content the escaping write would have carried.
+    private static let escapedWriteContent = "tier two must never write outside the root set"
+
+    /// The text a denied write reaches the terminal stream as. The
+    /// seatbelt sandbox sends no message of its own: the kernel refuses
+    /// the `open` with `EPERM`, and this is `strerror(3)` of that code,
+    /// as `/bin/sh` prints it when a redirect fails.
+    private static let sandboxDenialMarker = "Operation not permitted"
+
+    /// The `status` a shell run report carries when the command ran to
+    /// its own end. A sandboxed write that the kernel refuses still
+    /// reports it: the command spawned and the redirect then failed.
+    private static let completedRunStatus = "completed"
+
+    /// The `exitCode` a shell command reports when it succeeded. The
+    /// escaping write must not report it.
+    private static let successExitCode = 0
 
     /// The verb paths of the two locally composed capabilities.
     private static let readVerbPath = "files.read"
@@ -461,6 +501,97 @@ import Testing
             else { return [] }
             return locations.map(\.path.rawValue)
         }
+    }
+
+    /// The exit status one notification carries, when it is a shell run's
+    /// exit report.
+    ///
+    /// - Parameter notification: The notification to read.
+    /// - Returns: The exit status, or `nil` when the notification is not
+    ///   an exit report.
+    private static func terminalExitStatus(
+        of notification: UpdateSessionNotification
+    ) -> TerminalExitStatus? {
+        guard case .terminalUpdate(let update) = notification.update,
+            case .value(let status) = update.exitStatus
+        else { return nil }
+        return status
+    }
+
+    /// Polls the collector until a shell run's exit report arrives.
+    ///
+    /// The exit report rides the terminal projection task, so it can land
+    /// after the turn's idle: a proof waits for it, never sleeps for it.
+    ///
+    /// - Parameter collector: The collector to poll.
+    /// - Returns: The collected sequence, the exit report in it.
+    /// - Throws: `CancellationError` when the test is cancelled.
+    private static func waitForTerminalExit(
+        of collector: UpdateCollector
+    ) async throws -> [UpdateSessionNotification] {
+        try await ScriptedTurnFixture.waitForUpdates(
+            of: collector, toReach: terminalExitLabel
+        ) { collected in
+            collected.contains { terminalExitStatus(of: $0) != nil }
+        }
+    }
+
+    /// Every `terminal_output_chunk` in the sequence, in arrival order.
+    ///
+    /// - Parameter updates: The collected sequence.
+    /// - Returns: The carried chunks.
+    private static func terminalChunks(
+        in updates: [UpdateSessionNotification]
+    ) -> [TerminalOutputChunk] {
+        updates.compactMap { notification in
+            guard case .terminalOutputChunk(let chunk) = notification.update else { return nil }
+            return chunk
+        }
+    }
+
+    /// The streamed bytes of a shell run, decoded as text: every
+    /// `terminal_output_chunk` of the sequence, concatenated in arrival
+    /// order.
+    ///
+    /// - Parameter updates: The collected sequence.
+    /// - Returns: The streamed text.
+    /// - Throws: When one chunk does not decode as base64.
+    private static func streamedTerminalText(
+        in updates: [UpdateSessionNotification]
+    ) throws -> String {
+        let decoded = try terminalChunks(in: updates).map { chunk in
+            try #require(Data(base64Encoded: chunk.data))
+        }
+        return String(decoding: Data(decoded.joined()), as: UTF8.self)
+    }
+
+    /// The `rawOutput` string one tool call carries.
+    ///
+    /// - Parameter update: The tool call to read.
+    /// - Returns: The carried string, or `nil` when the field carries
+    ///   none or carries something else.
+    private static func rawOutputString(of update: ToolCallUpdate) -> String? {
+        guard case .value(.string(let text)) = update.rawOutput else { return nil }
+        return text
+    }
+
+    /// The shell run report a collecting `wait` call answered.
+    ///
+    /// The `wait` answer is the array of the runs it collected, and each
+    /// entry's `detail` field holds the collected verb's own answer —
+    /// for `tools.shell.execute`, the run report object. Both are
+    /// decoded as JSON, so the proof reads the report's fields and never
+    /// matches a rendered string.
+    ///
+    /// - Parameter update: The accumulated `wait` tool call.
+    /// - Returns: The decoded run report.
+    /// - Throws: When the call carries no decodable run report.
+    private static func shellRunReport(of update: ToolCallUpdate) throws -> [String: Any] {
+        let collected = try #require(rawOutputString(of: update))
+        let runs = try JSONSerialization.jsonObject(with: Data(collected.utf8))
+        let detail = try #require((runs as? [[String: Any]])?.first?["detail"] as? String)
+        let report = try JSONSerialization.jsonObject(with: Data(detail.utf8))
+        return try #require(report as? [String: Any])
     }
 
     /// The JSON text of one encodable wire value, for a contains
@@ -1029,39 +1160,21 @@ import Testing
         let (fixture, _) = try await Self.runToolTurn(
             code: code,
             label: "TierTwoTests-stream",
-            waitStepCount: Self.streamWaitStepCount,
+            waitStepCount: Self.shellWaitStepCount,
             workingDirectory: cwd)
-        // The exit report rides the terminal projection task, so it can
-        // land after the turn's idle: wait for it, never sleep for it.
-        let updates = try await ScriptedTurnFixture.waitForUpdates(
-            of: fixture.collector, toReach: "the terminal exit report"
-        ) { collected in
-            collected.contains { notification in
-                guard case .terminalUpdate(let update) = notification.update,
-                    case .value = update.exitStatus
-                else { return false }
-                return true
-            }
-        }
+        let updates = try await Self.waitForTerminalExit(of: fixture.collector)
         await fixture.harness.flushPendingChunks()
 
         // The run's identity: every chunk carries one terminalId, which
         // is the run's toolCallId (plan.md §11.8).
-        let chunks = updates.compactMap { notification -> TerminalOutputChunk? in
-            guard case .terminalOutputChunk(let chunk) = notification.update else { return nil }
-            return chunk
-        }
+        let chunks = Self.terminalChunks(in: updates)
         #expect(chunks.count >= Self.minimumStreamedChunkCount)
         let terminalId = try #require(chunks.first?.terminalId)
         #expect(chunks.allSatisfy { $0.terminalId == terminalId })
 
         // The chunks concatenate, in arrival order, to the complete
         // output.
-        var streamed = Data()
-        for chunk in chunks {
-            streamed.append(try #require(Data(base64Encoded: chunk.data)))
-        }
-        #expect(String(decoding: streamed, as: UTF8.self) == expectedOutput)
+        #expect(try Self.streamedTerminalText(in: updates) == expectedOutput)
 
         // Order: the announcing tool_call_update precedes the first
         // chunk, and every chunk precedes the exit terminal_update.
@@ -1076,12 +1189,7 @@ import Testing
                 return true
             })
         let exitIndex = try #require(
-            updates.firstIndex { notification in
-                guard case .terminalUpdate(let update) = notification.update,
-                    case .value = update.exitStatus
-                else { return false }
-                return true
-            })
+            updates.firstIndex { Self.terminalExitStatus(of: $0) != nil })
         let lastChunkIndex = try #require(
             updates.lastIndex { notification in
                 guard case .terminalOutputChunk = notification.update else { return false }
@@ -1144,5 +1252,83 @@ import Testing
                 guard case .terminal(let terminal) = item else { return false }
                 return terminal.terminalId == terminalId
             })
+    }
+
+    // MARK: - Proof 8: the sandbox denies a shell write outside the root
+
+    /// A real sandboxed `tools.shell.execute` that redirects into a path
+    /// OUTSIDE the session root set never lands the file: the target path
+    /// holds nothing afterwards, read from disk.
+    ///
+    /// **The mechanism, named by measurement.** The gate is the seatbelt
+    /// sandbox `SandboxComposition` builds over the session root set,
+    /// which plan.md §11.7 states is the ONLY gate on the shell
+    /// capability. It is NOT Multitool's `PathGuard`: `PathGuard` bounds
+    /// the files verbs, and §11.7 bounds it to writing and deleting, so
+    /// proof 2 — which refuses a READ through `PathGuard` — and this
+    /// proof measure two different doors.
+    ///
+    /// **No named sandbox message reaches the wire, and this proof claims
+    /// none.** The sandbox is a kernel boundary, so the command RUNS: the
+    /// kernel refuses the `open` of the redirect with `EPERM`, and the
+    /// only refusal text anywhere on the wire is `/bin/sh`'s own —
+    /// ``sandboxDenialMarker``, measured on the terminal stream. The
+    /// claim is that the write did not land, and the disk is the proof of
+    /// it. The streamed message and the run report's non-zero `exitCode`
+    /// are the evidence that the kernel is what stopped it.
+    ///
+    /// The exit code is read from the run report the collecting `wait`
+    /// call answered, not from the ACP exit report: `TerminalStream`
+    /// sends an EMPTY `TerminalExitStatus`, whose presence marks the
+    /// terminal exited and which carries neither a code nor a signal.
+    ///
+    /// The composition-level coverage of the same rule stands beside this
+    /// proof, and a reader wanting the whole picture reads all three:
+    /// `SandboxCompositionTests.aWriteOutsideTheRootSetNeverLands` drives
+    /// this denial through a directly built registry, and
+    /// `MultiRootConfinementTests.aPathOutsideTheRootUnionIsStillRefused`
+    /// proves the files verbs refuse a path outside the root union. This
+    /// proof is the client-end projection of the same denial.
+    @Test(.timeLimit(.minutes(1)))
+    func aSandboxedShellWriteOutsideTheRootSetNeverLands() async throws {
+        let cwd = makeResolvedDirectory(label: "TierTwoTests-sandbox-repo")
+        let outside = makeResolvedDirectory(label: "TierTwoTests-sandbox-outside")
+        let escaped = outside.appendingPathComponent(Self.escapedWriteFileName)
+        let command = "printf '\(Self.escapedWriteContent)' > '\(escaped.path)'"
+        let code = """
+            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
+            """
+
+        let (fixture, turnUpdates) = try await Self.runToolTurn(
+            code: code,
+            label: "TierTwoTests-sandbox",
+            waitStepCount: Self.shellWaitStepCount,
+            workingDirectory: cwd)
+        let updates = try await Self.waitForTerminalExit(of: fixture.collector)
+        await fixture.harness.flushPendingChunks()
+        let streamed = try Self.streamedTerminalText(in: updates)
+        let report = try Self.shellRunReport(
+            of: try await Self.accumulatedToolCall(of: fixture, id: Self.nestedRunWaitCallId))
+        await fixture.close()
+
+        // The disk is the truth (plan.md §20.1): the redirect named a
+        // path outside the root set, and nothing is there.
+        #expect(!FileManager.default.fileExists(atPath: escaped.path))
+
+        // The refusal reaches the client in band on the terminal stream:
+        // the shell's own message names the refused path and carries the
+        // kernel's `EPERM`, which is the whole of the refusal text.
+        #expect(streamed.contains(Self.sandboxDenialMarker))
+        #expect(streamed.contains(escaped.path))
+
+        // The run report the collecting `wait` answered says the same
+        // thing in fields: the command RAN to its own end — the sandbox
+        // refuses at the kernel, not before the spawn — and it exited
+        // non-zero.
+        #expect(report["status"] as? String == Self.completedRunStatus)
+        #expect(try #require(report["exitCode"] as? Int) != Self.successExitCode)
+
+        // Nothing threw: the turn still ends `end_turn`.
+        #expect(ScriptedTurnFixture.idleStopReason(in: turnUpdates) == .endTurn)
     }
 }
