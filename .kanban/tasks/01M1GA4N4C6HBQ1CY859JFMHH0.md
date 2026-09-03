@@ -208,7 +208,14 @@ comments:
 
     Both halves are now present. The card is unblocked.
   timestamp: 2026-09-03T15:35:14.096676+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m1kzdrdxnk7dzdep61af5nvn
+  text: |-
+    ### finish iteration 1 — findings
+    - evidence: STEP 0 `swift package update` moved FoundationModelsMultitool 03e43bb → **05ad683** (Router bd8b6ff and Extras 8b4706d unchanged); no adaptation was necessary in this package. STEP 1 verified the Multitool half is PRESENT: `FileChangeJournal.commit(_:through:)` calls `context.attach(ToolCallAttachment(schemaName: FileChangeSet.operationEventDetailKey, contentJSON: envelope))` (Capabilities/Files/FileChangeJournal.swift:169-171). TDD: the extended tier-2 proof 3 failed first at TierTwoTests.swift:442 ("Expectation failed: Self.locationPaths(in: updates).contains(noteURL.path)"), and two new unit tests failed at EventProjectionTests.swift:505 and :524 with the `locations` fill removed. Implementation: `EventProjection.projectToolCallReport` now fills `locations` from the decoded `FileChangeSet`. `swift test` = 361 tests in 39 suites passed with 1 known issue (the intentional `withKnownIssue` in HarnessSmokeTests); the count grew from the 358 baseline by the three new unit tests. Commit dcaacea. Review of HEAD~1..HEAD returned 2 findings, both `swift/access-control`, both in Sources/FoundationModelsACPAgent/Agent/EventProjection.swift (:577 `projectedChange`, :608 `location`): each is called only inside its own type, so each must be `private static`.
+    - next: Make both functions `private static`, run the tests again, commit, and review again.
+  timestamp: 2026-09-03T15:50:28.029462+00:00
+position_column: review
 position_ordinal: '80'
 title: Fill tool_call_update locations from the structured per-call record
 ---
@@ -225,5 +232,15 @@ Plan.md §20.1 proof 3 asks for filled `locations` on a real tool call. The wire
 - Extend `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift` proof 3 to assert the filled `locations`.
 
 ## Acceptance Criteria
-- [ ] A real `tools.files.write` through the wire shows the written path in `locations`
-- [ ] The tier-2 proof 3 asserts `locations` and stays green
+- [x] A real `tools.files.write` through the wire shows the written path in `locations`
+- [x] The tier-2 proof 3 asserts `locations` and stays green
+
+## Review Findings (2026-09-03 10:45)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [ ] `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift:577` `swift/access-control` — `projectedChange` is declared as `static func` without `private`, making it `internal`, but it is only called within the same type (line 443, within `projectToolCallReport`). Per the access-control rule, functions called only within their own type should be marked `private static` to narrow the access level and signal intent. Change `static func projectedChange(` to `private static func projectedChange(`.
+- [ ] `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift:608` `swift/access-control` — `location` is declared as `static func` without `private`, making it `internal`, but it is only called within the same type (line 443, within `projectToolCallReport`). Per the access-control rule, functions called only within their own type should be marked `private static` to narrow the access level and signal intent. Change `static func location(for change:` to `private static func location(for change:`.

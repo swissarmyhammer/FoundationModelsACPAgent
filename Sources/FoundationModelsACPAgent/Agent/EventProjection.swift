@@ -574,7 +574,7 @@ struct EventProjection {
     ///
     /// - Parameter change: The recorded change.
     /// - Returns: The projected change, or `nil`.
-    static func projectedChange(
+    private static func projectedChange(
         for change: FoundationModelsMultitool.FileChange
     ) -> ProjectedFileChange? {
         guard let path = AbsolutePath(rawValue: change.path) else { return nil }
@@ -605,7 +605,7 @@ struct EventProjection {
     ///
     /// - Parameter change: The change to map.
     /// - Returns: The wire location.
-    static func location(for change: ProjectedFileChange) -> ToolCallLocation {
+    private static func location(for change: ProjectedFileChange) -> ToolCallLocation {
         switch change {
         case .add(let path), .delete(let path), .modify(let path):
             ToolCallLocation(path: path)
