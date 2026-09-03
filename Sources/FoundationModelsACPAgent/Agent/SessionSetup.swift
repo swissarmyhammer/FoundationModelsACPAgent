@@ -135,7 +135,9 @@ enum SessionSetup {
     }
 
     /// Converts the wire `additionalDirectories` path strings to
-    /// confinement root URLs, in wire order (plan.md §7.2).
+    /// confinement root URLs, in wire order (plan.md §7.2). Each entry
+    /// goes through the same ``validatedWorkingDirectory(path:)`` check
+    /// the `cwd` goes through.
     ///
     /// A non-absolute entry is skipped with a log and never refuses the
     /// session: the wire decode already drops one silently
@@ -147,13 +149,14 @@ enum SessionSetup {
     /// - Returns: The confinement root URLs, in the same order.
     static func additionalRoots(fromPaths paths: [String]) -> [URL] {
         paths.compactMap { path in
-            guard path.hasPrefix(absolutePathPrefix) else {
+            do {
+                return try validatedWorkingDirectory(path: path)
+            } catch {
                 setupLogger.warning(
                     "additionalDirectories entry \(path, privacy: .public) is not absolute; skipped"
                 )
                 return nil
             }
-            return URL(fileURLWithPath: path, isDirectory: true)
         }
     }
 

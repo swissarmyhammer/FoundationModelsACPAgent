@@ -112,7 +112,7 @@ private final class RawWireClient {
 
 /// The client-end proofs of plan.md §7.2: the additional roots extend
 /// confinement, and nothing else about the session moves.
-@Suite struct MultiRootConfinementTests {
+struct MultiRootConfinementTests {
     /// The content the read tests write under the additional root.
     private static let insideContent = "inside the additional root"
 

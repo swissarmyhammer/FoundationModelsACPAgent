@@ -37,6 +37,41 @@ comments:
     - evidence: `swift test` — 339 tests in 38 suites passed, 0 failures, 1 known issue (the pre-existing HarnessSmokeTests withKnownIssue). `swift build --build-tests` — 0 warnings, 0 errors. The tier-3 and tier-4 suites stay gated, as in the baseline.
     - next: commit, then review.
   timestamp: 2026-09-03T03:29:57.320431+00:00
+- actor: claude-code
+  id: 01m1jn2ajkxcs9y1nc9meakrcx
+  text: |-
+    ### commit — changed
+    - evidence: 217da8b feat(session): make multi-root confinement honest end to end (5 files, 415 insertions, 8 deletions; local commit only, not pushed)
+    - next: review 217da8b (HEAD~1..HEAD).
+  timestamp: 2026-09-03T03:30:13.203191+00:00
+- actor: claude-code
+  id: 01m1jna123rwf6ey14kfkbfwe6
+  text: |-
+    ### review — findings
+    - evidence: 2 findings — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:150 (reuse/reuse: the root converter duplicates the guard and URL creation of `validatedWorkingDirectory`; call it in a do-catch), Tests/FoundationModelsACPAgentTests/MultiRootConfinementTests.swift:115 (code-hygiene/idioms-swift: remove the redundant `@Suite` attribute with no arguments). Scope: `review sha HEAD~1..HEAD`.
+    - next: fix both findings in iteration 2, then test, commit, and review again.
+  timestamp: 2026-09-03T03:34:25.603831+00:00
+- actor: claude-code
+  id: 01m1jna7jydrrd99a4k4arteck
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — the skip-and-log converter in SessionSetup, the resume rewire, and the new MultiRootConfinementTests suite (7 tests, TDD red first).
+    - test: green — `swift test` 339 tests in 38 suites, 0 failures, 0 warnings, 1 pre-existing known issue.
+    - commit: changed — 217da8b feat(session): make multi-root confinement honest end to end.
+    - review: findings — 2 findings appended to the card (SessionSetup.swift:150 reuse/reuse; MultiRootConfinementTests.swift:115 code-hygiene/idioms-swift). Task stays in review.
+    - next: iteration 2 corrects both findings.
+  timestamp: 2026-09-03T03:34:32.286140+00:00
+- actor: claude-code
+  id: 01m1jnc0nasdnj388gkm58008j
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift (`additionalRoots(fromPaths:)` now calls `validatedWorkingDirectory(path:)` in a do-catch, so one function holds the absolute-path check and URL creation), Tests/FoundationModelsACPAgentTests/MultiRootConfinementTests.swift (the redundant `@Suite` attribute with no arguments is removed). Both review findings are marked done on the card.
+    - next: test, commit, review.
+
+    ### test — green
+    - evidence: `swift test` — 339 tests in 38 suites passed, 0 failures, 1 pre-existing known issue. `swift build --build-tests` — 0 warnings.
+    - next: commit iteration 2.
+  timestamp: 2026-09-03T03:35:30.730840+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
 - 01KYSVB1ACAR7NDK06015S796H
@@ -58,22 +93,32 @@ Plan.md §7.2. Extend confinement from a single root to the full root set.
 - On resume the list is authoritative and replaceable. The resume task enforces that; this task makes the multi-root half real.
 - `capabilities.session.additionalDirectories: {}` is already advertised at initialize. Verify it is honest now that this lands. Accepting and ignoring is worse than not advertising.
 
-- [ ] Root set reaches `withFiles(root:additionalRoots:)`
-- [ ] Invalid entries skipped and logged
-- [ ] Ordered list persisted and reported through session/list
-- [ ] Sandbox writable roots include the additional roots
+- [x] Root set reaches `withFiles(root:additionalRoots:)`
+- [x] Invalid entries skipped and logged
+- [x] Ordered list persisted and reported through session/list
+- [x] Sandbox writable roots include the additional roots
 
 ## Acceptance Criteria
-- [ ] With an additional root R, `tools.files.read` reads a file under R from the client end
-- [ ] A path outside the union of cwd and R is still refused
-- [ ] A relative or invalid entry in the array is skipped with a log, and the session still starts
-- [ ] A shell command writes into R and succeeds, proved by reading the file from disk
-- [ ] Transcripts stay under `<cwd>/.<name>/` even when R is supplied
-- [ ] `session/list` reports the ordered list from the most recent activation
+- [x] With an additional root R, `tools.files.read` reads a file under R from the client end
+- [x] A path outside the union of cwd and R is still refused
+- [x] A relative or invalid entry in the array is skipped with a log, and the session still starts
+- [x] A shell command writes into R and succeeds, proved by reading the file from disk
+- [x] Transcripts stay under `<cwd>/.<name>/` even when R is supplied
+- [x] `session/list` reports the ordered list from the most recent activation
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/MultiRootConfinementTests.swift` — harness, two temp roots
-- [ ] `swift test` → green
+- [x] `Tests/FoundationModelsACPAgentTests/MultiRootConfinementTests.swift` — harness, two temp roots
+- [x] `swift test` → green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 22:30)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:150` `reuse/reuse` — Path validation logic (checking if path is absolute, creating a URL) duplicates `validatedWorkingDirectory` rather than reusing it. Both perform the same guard and URL-creation steps. Refactor to call `validatedWorkingDirectory(path: path)` within a try-catch block: `do { return try validatedWorkingDirectory(path: path) } catch { setupLogger.warning(...); return nil }`.
+- [x] `Tests/FoundationModelsACPAgentTests/MultiRootConfinementTests.swift:115` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
