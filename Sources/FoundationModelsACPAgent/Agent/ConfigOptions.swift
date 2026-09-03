@@ -226,14 +226,13 @@ extension RoutedACPAgent {
         // The replacement keeps automatic compaction on: the same
         // `compaction:` section the session was composed from, against the
         // selected slot's resolved context (plan.md §2.4).
-        let handle = ConfigOptions.handle(for: slot, of: residentProfile)
-        let replacement = handle.makeSession(
-            instructions: entry.instructions,
-            workingDirectory: entry.workingDirectory,
-            recordingRoot: entry.transcriptDirectory,
-            tools: entry.surface.tools,
-            budget: entry.configuration.compaction.budget(for: handle),
-            compactionPrompt: .default)
+        let replacement = ConfigOptions.handle(for: slot, of: residentProfile)
+            .makeBudgetedSession(
+                instructions: entry.instructions,
+                workingDirectory: entry.workingDirectory,
+                recordingRoot: entry.transcriptDirectory,
+                tools: entry.surface.tools,
+                compaction: entry.configuration.compaction)
         sessions[sessionId]?.session = replacement
         sessions[sessionId]?.selectedSlot = slot
         if entry.availability == .idle {

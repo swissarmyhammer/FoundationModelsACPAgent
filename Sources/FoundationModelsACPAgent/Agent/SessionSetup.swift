@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
@@ -267,13 +268,12 @@ extension RoutedACPAgent {
         // `session/new`. The budget turns automatic compaction on: the
         // fractions come from the `compaction:` section and the limit
         // from the model's resolved context (plan.md §2.4).
-        let session = residentProfile.standard.makeSession(
+        let session = residentProfile.standard.makeBudgetedSession(
             instructions: composition.instructions,
             workingDirectory: workingDirectory,
             recordingRoot: composition.transcriptRoot,
             tools: composition.surface.tools,
-            budget: composition.configuration.compaction.budget(for: residentProfile.standard),
-            compactionPrompt: .default)
+            compaction: composition.configuration.compaction)
 
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt-turn task appends it at the first recorded activity,
@@ -533,23 +533,40 @@ extension RoutedACPAgent {
     }
 }
 
-extension CompactionConfiguration {
-    /// Builds the auto-compaction budget for a session vended from `model`
-    /// (plan.md §2.4): this section carries the fractions and the
-    /// tool-output cap, and the model carries the resolved working context
-    /// the fractions measure against. `session/new` and the model-slot
-    /// switch both derive through this one door, so the two paths cannot
-    /// drift.
+extension RoutedLLM {
+    /// Vends one session with the derived auto-compaction budget
+    /// (plan.md §2.4): `compaction` carries the fractions and the
+    /// tool-output cap, and this model carries the resolved working
+    /// context the fractions measure against. `session/new` and the
+    /// model-slot switch both vend through this one door, so the two
+    /// paths cannot drift.
     ///
-    /// - Parameter model: The resident model the session is vended from;
-    ///   its `contextTokens` is the budget's limit.
-    /// - Returns: The budget `makeSession(budget:)` receives.
-    func budget(for model: RoutedLLM) -> TokenBudget {
-        TokenBudget(
-            limit: model.contextTokens,
-            trigger: trigger,
-            target: target,
-            hardCeiling: hardCeiling,
-            toolOutputLimit: toolOutputLimit)
+    /// - Parameters:
+    ///   - instructions: The session's assembled instructions text.
+    ///   - workingDirectory: The session working directory.
+    ///   - recordingRoot: The per-session recording root.
+    ///   - tools: The tools the model can call.
+    ///   - compaction: The `compaction:` section the budget derives from.
+    /// - Returns: A new session over this model, with automatic
+    ///   compaction on.
+    func makeBudgetedSession(
+        instructions: String,
+        workingDirectory: URL,
+        recordingRoot: URL,
+        tools: [any FoundationModels.Tool],
+        compaction: CompactionConfiguration
+    ) -> any RoutedSession {
+        makeSession(
+            instructions: instructions,
+            workingDirectory: workingDirectory,
+            recordingRoot: recordingRoot,
+            tools: tools,
+            budget: TokenBudget(
+                limit: contextTokens,
+                trigger: compaction.trigger,
+                target: compaction.target,
+                hardCeiling: compaction.hardCeiling,
+                toolOutputLimit: compaction.toolOutputLimit),
+            compactionPrompt: .default)
     }
 }

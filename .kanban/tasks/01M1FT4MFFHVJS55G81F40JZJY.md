@@ -76,9 +76,37 @@ comments:
     - evidence: swift test — 352 tests in 39 suites passed (baseline 351 + 1 new), 1 known issue (the expected withKnownIssue in HarnessSmokeTests), 0 failures, 0 new warnings (swift build --build-tests emits none).
     - next: commit
   timestamp: 2026-09-03T04:20:27.337901+00:00
+- actor: claude-code
+  id: 01m1jqyvvdc4z7we1s27ny9kfg
+  text: |-
+    ### commit — changed
+    - evidence: 8847828 feat(agent): derive the compaction TokenBudget from config and the resolved context (^f40jzjy) — 5 files changed, 143 insertions(+), 10 deletions(-). Local only, not pushed.
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-03T04:20:45.549042+00:00
+- actor: claude-code
+  id: 01m1jr9czj72ak8pynnpvtnd0p
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 1 finding (confirmed 1, refuted 0): Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift:230 duplication/duplication — the makeSession call is a near-verbatim copy of the one in SessionSetup.swift:270-276; extract one shared helper. The engine also reported 1 of 7 review tasks failed, so results are incomplete; the next pass re-reviews the delta.
+    - next: implement the fix (shared session factory used by both sites), test, commit, review again
+
+    ### finish iteration 1 — findings
+    - evidence: commit 8847828; 352 tests in 39 suites green, 1 expected known issue; review found 1 duplication finding at ConfigOptions.swift:230.
+    - next: iteration 2 — extract the shared helper
+  timestamp: 2026-09-03T04:26:30.770236+00:00
+- actor: claude-code
+  id: 01m1jrccv08we2m3x15z25pde1
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift (new shared factory `RoutedLLM.makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:)`; the `CompactionConfiguration.budget(for:)` helper folded into it; `newSession` calls the factory), Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift (`applyModelSlot` calls the same factory). This answers the duplication finding: one shared function holds the makeSession-with-budget call, both sites pass only their inputs.
+
+    ### test — green
+    - evidence: swift test — 352 tests in 39 suites passed, 1 expected known issue, 0 failures, 0 new warnings.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-09-03T04:28:08.928759+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: Wire the compaction TokenBudget into session/new when Router shows the resolved context
 ---
@@ -88,11 +116,22 @@ title: Wire the compaction TokenBudget into session/new when Router shows the re
 Cause: `TokenBudget` requires a `limit` in tokens. Router does not show the resolved working context through its public API. `SlotResolution.contextTokens` and `RoutedModel.resolution` have `package` access. The config `compaction:` section carries only fractions (`trigger`, `target`, `hardCeiling`) and `toolOutputLimit` (plan.md §2.4: the context comes from the model).
 
 ## Steps
-- [ ] Add a public read of the resolved standard-slot context to FoundationModelsRouter (for example `RoutedModel.contextTokens`), or use an equivalent public door when one lands.
-- [ ] In `SessionSetup`, build `TokenBudget(limit: <resolved context>, trigger:, target:, hardCeiling:, toolOutputLimit:)` from `CompactionConfiguration` and pass it as `budget:`.
-- [ ] Remove the marked TODO in `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift`.
-- [ ] Test: a session made with a config `compaction:` section carries the derived budget (asserted through visible behavior or a recorded sidecar field).
+- [x] Add a public read of the resolved standard-slot context to FoundationModelsRouter (for example `RoutedModel.contextTokens`), or use an equivalent public door when one lands.
+- [x] In `SessionSetup`, build `TokenBudget(limit: <resolved context>, trigger:, target:, hardCeiling:, toolOutputLimit:)` from `CompactionConfiguration` and pass it as `budget:`.
+- [x] Remove the marked TODO in `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift`.
+- [x] Test: a session made with a config `compaction:` section carries the derived budget (asserted through visible behavior or a recorded sidecar field).
 
 ## Acceptance Criteria
-- [ ] `session/new` passes a non-nil `budget` derived from the compaction config and the model's resolved context.
-- [ ] `swift test` green.
+- [x] `session/new` passes a non-nil `budget` derived from the compaction config and the model's resolved context.
+- [x] `swift test` green.
+
+## Review Findings (2026-09-02 23:20)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> ⚠️ 1/7 review tasks failed — results are INCOMPLETE.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift:230` `duplication/duplication` — The newly added `makeSession` call (lines 230–236) is near-verbatim duplicated by existing code in SessionSetup.swift:270–276. Both blocks are structurally identical, differing only in variable names and sources — the pattern of 'one function with an argument' waiting to be extracted. Extract a shared helper function (e.g., `makeSessionWithBudget(model:instructions:workingDirectory:recordingRoot:tools:configuration:)`) parameterized by the differing inputs. Have `applyModelSlot` call this new helper in place of its inline code.
