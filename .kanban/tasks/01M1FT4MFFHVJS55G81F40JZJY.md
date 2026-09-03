@@ -104,10 +104,28 @@ comments:
     - evidence: swift test — 352 tests in 39 suites passed, 1 expected known issue, 0 failures, 0 new warnings.
     - next: commit, review HEAD~1..HEAD
   timestamp: 2026-09-03T04:28:08.928759+00:00
+- actor: claude-code
+  id: 01m1jrcn6r8hae0xshpq82smf8
+  text: |-
+    ### commit — changed
+    - evidence: 437e337 refactor(agent): vend budgeted sessions through one shared factory (^f40jzjy) — 4 files changed, 96 insertions(+), 35 deletions(-). Local only, not pushed.
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-03T04:28:17.496329+00:00
+- actor: claude-code
+  id: 01m1jrfy6y6647554m0cvc4xh9
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings (attempted 7, failed 0). The one prior finding (ConfigOptions.swift duplication) is fixed and checked.
+    - next: done
+
+    ### finish iteration 2 — clean
+    - evidence: commit 437e337; 352 tests in 39 suites green, 1 expected known issue; review clean. Card moves to done.
+    - next: none
+  timestamp: 2026-09-03T04:30:05.022243+00:00
 depends_on:
 - 01KYSV8M8HV7R9W51QG63BBYR8
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: a080
 title: Wire the compaction TokenBudget into session/new when Router shows the resolved context
 ---
 ## What
