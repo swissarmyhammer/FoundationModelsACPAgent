@@ -135,12 +135,16 @@ actor ElicitationRelay {
     ///
     /// The tasks that still wait on the client are cancelled too. An
     /// answer that arrives after this call finds no waiter and is
-    /// dropped.
+    /// dropped. The outstanding URL-mode ids are cleared with the other
+    /// per-round-trip state: a cancelled flow is no longer outstanding,
+    /// and a stranded id would make a later request with the same id
+    /// read as a duplicate.
     func cancelPendingElicitations() {
         for task in answerTasks.values {
             task.cancel()
         }
         answerTasks = [:]
+        outstandingURLElicitationIds = []
         let waiting = pendingAnswers
         pendingAnswers = [:]
         for continuation in waiting.values {

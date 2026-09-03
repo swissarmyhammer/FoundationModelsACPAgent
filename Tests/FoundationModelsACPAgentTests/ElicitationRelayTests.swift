@@ -11,7 +11,7 @@ import Testing
 /// The elicitation relay (plan.md §16): the wire mapping, the capability
 /// gate, and the round trip from `ToolContext.elicit` to the client and
 /// back through `RoutedSession.respond`.
-@Suite struct ElicitationRelayTests {
+struct ElicitationRelayTests {
     // MARK: - Constants
 
     /// The message of the mapped test requests.
@@ -417,10 +417,12 @@ import Testing
     /// `session/cancel` during a pending elicitation delivers `cancel` to
     /// the tool before `idle(cancelled)`: the round trip resolves — the
     /// post-answer `running` goes out — and only then the idle terminator.
+    /// The URL-mode tool is used here, so the cancel also releases an
+    /// outstanding URL elicitation id.
     @Test(.timeLimit(.minutes(1)))
     func sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle() async throws {
         let fixture = try await Self.makeLoopbackFixture(
-            code: Self.formSnippet, label: "ElicitationRelayTests-cancel")
+            code: Self.urlSnippet, label: "ElicitationRelayTests-cancel")
         try await Self.prompt(fixture)
         _ = try await Self.waitForPendingElicitation(in: fixture)
 

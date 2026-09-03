@@ -120,11 +120,32 @@ comments:
     - evidence: `swift test` — 351 tests in 39 suites passed, 0 failures, 0 skipped, 1 known issue (the expected `withKnownIssue` in HarnessSmokeTests); `swift build --build-tests` after a touch of all changed files — zero compiler warnings (the only build line is the pre-existing "missing creator for mutated node" build-system notice, present before this change).
     - next: commit, then review.
   timestamp: 2026-09-03T04:02:36.318732+00:00
+- actor: claude-code
+  id: 01m1jpy8cmwpwteesg76bcn8a6
+  text: |-
+    ### commit — changed
+    - evidence: 2f444c1 feat(agent): relay a tool's elicitation to the ACP client over Router's mailbox — 12 files changed, 1121 insertions(+), 35 deletions(-). Local only, not pushed.
+    - next: review 2f444c1 (HEAD~1..HEAD).
+  timestamp: 2026-09-03T04:02:57.044632+00:00
+- actor: claude-code
+  id: 01m1jq8cnd6r8smw2rzw86917d
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD — 2 findings, 2 confirmed, 0 refuted — Sources/FoundationModelsACPAgent/Agent/ElicitationRelay.swift:139 (completeness/invariant-propagation: cancelPendingElicitations must also clear outstandingURLElicitationIds), Tests/FoundationModelsACPAgentTests/ElicitationRelayTests.swift:14 (code-hygiene/idioms-swift redundantSwiftTestingSuite: remove the bare @Suite attribute).
+    - next: fix both findings, test, commit, review again.
+  timestamp: 2026-09-03T04:08:29.101150+00:00
+- actor: claude-code
+  id: 01m1jq94shmpemqxaj6pvxz63v
+  text: |-
+    ### finish iteration 1 — findings
+    - implement changed (relay built per the card, TDD, 12 new tests), test green (351/39, zero warnings), commit 2f444c1, review findings (2): ElicitationRelay.swift:139 invariant-propagation (clear outstandingURLElicitationIds in cancelPendingElicitations), ElicitationRelayTests.swift:14 idioms-swift redundantSwiftTestingSuite (remove the bare @Suite).
+    - next: iteration 2 fixes both findings.
+  timestamp: 2026-09-03T04:08:53.809700+00:00
 depends_on:
 - 01KYSV9HGFSB9VX7Z2R0SVZ8QF
 - 01KYSV83KNKXPSMJMQX5TFSPGC
 - 01KYSV93N6D4RWYQ7XMCHQ21GW
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: 'Elicitation relay: ACP elicitation/create and elicitation/complete over Router''s mailbox'
 ---
@@ -165,3 +186,13 @@ Build, once unblocked:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 23:03)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [ ] `Sources/FoundationModelsACPAgent/Agent/ElicitationRelay.swift:139` `completeness/invariant-propagation` — The cleanup of pending elicitations in cancelPendingElicitations() removes pendingAnswers and answerTasks, but does not clear outstandingURLElicitationIds. URL elicitation IDs are added to this set at line 320 in beginURLFlowIfNeeded() and removed at line 333 in endURLFlowIfNeeded(). If relay() tasks are cancelled or encounter errors before reaching endURLFlowIfNeeded(), the URL IDs remain marked as outstanding. Without cleanup in cancelPendingElicitations(), these stranded IDs will persist and cause subsequent elicitations with the same ID to be incorrectly rejected as duplicates. Add `outstandingURLElicitationIds.removeAll()` at the end of cancelPendingElicitations() (after line 148), mirroring the cleanup of answerTasks and pendingAnswers. Alternatively, wrap the awaitingUser() call in relay() with a defer block to ensure endURLFlowIfNeeded() is always called, even if the task is cancelled.
+- [ ] `Tests/FoundationModelsACPAgentTests/ElicitationRelayTests.swift:14` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
