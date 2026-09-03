@@ -90,8 +90,33 @@ comments:
     - evidence: `swift test` — 352 tests in 39 suites passed, 0 failures, 0 skipped, 1 known issue (the expected withKnownIssue in HarnessSmokeTests). `swift build --build-tests` shows no compiler warning in the changed files; the one "missing creator for mutated node" line is the pre-existing mlx-swift bundle build-system note, present before this change.
     - next: commit
   timestamp: 2026-09-03T04:37:35.052982+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1jry3xx2djnxqnd9eyryd5p
+  text: |-
+    ### commit — changed
+    - evidence: fc1544b test(tier-two): restore the completed-status assertion in the streamed-shell proof (^yx45q1q) — 4 files, 91 insertions, 12 deletions; local only, not pushed
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-03T04:37:49.629163+00:00
+- actor: claude-code
+  id: 01m1js18v9ypm5106001dg84dj
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 7 attempted, 0 failed; the two .kanban files were excluded by .reviewignore. No prior findings sections on the card. Task moved to done.
+    - next: finish ledger
+  timestamp: 2026-09-03T04:39:32.969624+00:00
+- actor: claude-code
+  id: 01m1js1fqjy3scfk59n0k3pbcz
+  text: |-
+    ### finish iteration 1 — done
+    - Verified: the upstream fix landed at Router ba55154 (commits cbe41e1 and 6ddc873, Ask 5 answered in UPSTREAM_ASKS.md). The mailbox forwards a settled run's terminal to the outbox journal, and `runSettled` fires under the run's own completionToken.
+    - implement — changed: proof 7 asserts `settledCall.status == .value(.completed)` behind the new bounded wait `ScriptedTurnFixture.waitForCompletedToolCall`. `EventProjection` needed no change; the test pins the behavior.
+    - test — green: swift test — 352 tests in 39 suites, 0 failures, 0 skipped, 1 expected known issue; no new warnings.
+    - commit — changed: fc1544b, local only.
+    - review — clean: 0 findings on HEAD~1..HEAD.
+    - Both acceptance boxes checked. Card in done.
+  timestamp: 2026-09-03T04:39:40.018036+00:00
+position_column: done
+position_ordinal: a180
 title: Forward a nested background run's settlement to the wire
 ---
 ## What
