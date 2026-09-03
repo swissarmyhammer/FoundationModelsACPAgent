@@ -64,8 +64,26 @@ comments:
     - evidence: swift test — 352 tests in 39 suites passed after 1.768 s with 1 known issue (the expected withKnownIssue in HarnessSmokeTests). Zero failures. Zero new warnings (the mlx-swift bundle build note existed before this change). The tier-3 and tier-4 environment-gated suites are the same skips as the baseline at commit 1fa0768.
     - next: commit, then review.
   timestamp: 2026-09-03T04:45:34.613615+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1jsgc3tdj5nzrstr6ksnbhp
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted; 3 files reviewed (the 2 .kanban files are excluded by .reviewignore). No prior findings section exists on the card.
+    - next: move the card to done and record the finish ledger.
+  timestamp: 2026-09-03T04:47:47.834292+00:00
+- actor: claude-code
+  id: 01m1jsgmhjjrsrwrzwsyz4x678
+  text: |-
+    ### finish iteration 1 — done
+    - seam: Multitool 03e43bb supplies withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:) (MultiToolBuilder.swift:239-243) and ShellCapability.init(...defaultWorkingDirectory:) (ShellCapability.swift:109); ShellRunner resolves request.workingDirectory ?? defaultWorkingDirectory (ShellRunner.swift:509).
+    - implement: changed — SandboxComposition.composeShell passes rootSet.first as the default working directory to withShell; proof 7 omits workingDirectory and proves the run lands in the session cwd through a trailing pwd -P line. TDD: the changed proof failed first (zero chunks, no exit report), then passed.
+    - test: green — swift test, 352 tests in 39 suites, 0 failures, 1 expected known issue, no new warnings.
+    - commit: 45f0e88 feat(shell): default the shell run working directory to the session root (^fzx2r16). Local only, not pushed.
+    - review: clean — review sha HEAD~1..HEAD, 0 findings.
+    - outcome: the card moves to done.
+  timestamp: 2026-09-03T04:47:56.466912+00:00
+position_column: done
+position_ordinal: a280
 title: Default the shell run working directory to the session root
 ---
 ## What
