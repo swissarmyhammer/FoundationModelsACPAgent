@@ -115,8 +115,27 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift (the `collectingToolCall` step) and Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift (the holding snippet, the one collecting play, the reader, the removed `nestedRunWaitCallId`). Root `swift test` → 351 tests in 34 suites passed, 0 failed, 0 skipped, 1 known issue (the pre-existing `withKnownIssue` in `HarnessSmokeTests`) — the baseline count, unchanged. `swift build --build-tests` and `swift build --build-tests --package-path IntegrationTests` both clean, zero warnings. The fixed proof ran 55 times in a row with no failure: 30 on an idle machine, and 25 more with 36 busy loops on 18 cores. Before the fix it ran 45 times with no failure too, so repetition is not what proves the fix — the probe is: a collecting play that names a run collected it after `markSettled` had reaped it, where the no-token play answered `nothingPending`.
     - next: ready for /review
   timestamp: 2026-09-03T20:52:47.384309+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1mkrk1ph2vqngg5fhky1pfy
+  text: |
+    ### review — clean
+    - evidence: `review sha c27ffdb~1..c27ffdb` — 0 findings, 0 confirmed, 0 refuted. 7 validators ran, 0 failed. 2 source files reviewed: `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift`, `Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift`. 2 board files under `.kanban/` were not reviewed, because an ignore rule excludes them.
+    - next: The task moves to done. No prior review findings were open.
+  timestamp: 2026-09-03T21:45:54.486293+00:00
+- actor: claude-code
+  id: 01m1mks7racpv70vwgztsw51pe
+  text: |-
+    ### finish iteration 2 — clean
+    - cause: The CI runner failed the proof, and this machine passed it. A `wait` call that names no completion token reads only the background runs that are not settled. `SessionMailbox.markSettled` removes a run at the moment it settles, thus a settled run is absent in the same way as a run that is not yet registered. An empty snapshot answers an object and not an array, thus the decode of the run report failed.
+    - implement: changed — 2 files, Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift and Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift. The snippet holds its own shell run, and the turn plays one collecting `wait` that names the run.
+    - test: green — root `swift test`, 351 tests in 34 suites passed, 1 pre-existing known issue. Both packages `build --build-tests` with zero warnings. The fixed proof passed 55 times in sequence, 25 of them with a load of two times the cores.
+    - commit: c27ffdb — 4 files. Pushed with the batch.
+    - review: clean — `review sha c27ffdb~1..c27ffdb`, 7 validators ran, 0 failed, 0 findings.
+    - CI: the unit job of run 33804894382 is green.
+    - next: The card is in `done`. No open finding stands.
+  timestamp: 2026-09-03T21:46:15.690778+00:00
+position_column: done
+position_ordinal: aa80
 title: Add a tier-2 proof that the seatbelt sandbox denies a shell write outside the root
 ---
 ## What
