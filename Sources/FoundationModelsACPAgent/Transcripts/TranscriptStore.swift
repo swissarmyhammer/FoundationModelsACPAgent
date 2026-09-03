@@ -48,11 +48,11 @@ public struct SessionPage: Equatable, Sendable {
 ///
 /// **The listability predicate (§9)**: a session lists when it has a
 /// persisted transcript — a zero-turn session never wrote one — and it is a
-/// root, which the public event stream expresses as `parentId == nil` on
-/// every event. An agent-spawned session should be excluded as well, but
-/// the pinned Router records the spawn fact only in the sidecar, whose
-/// stored properties are all internal, so the event stream cannot express
-/// it yet; the card `^nh9myws` records that gap, and a canary test pins it.
+/// root: `parentId == nil` on every event, and no event carries the
+/// `agentSpawn` fact the Router stamps on the `session` event of an
+/// agent-spawned session. Agent spawns do not occur in this iteration
+/// (plan.md §11.3), but the predicate already excludes them, because a
+/// later Multitool agents capability will make them.
 ///
 /// **The ownership boundary (§4.6)**: this store never records and never
 /// restores. The Router owns event writes, entry reconstruction, and
@@ -212,7 +212,7 @@ public struct TranscriptStore: Sendable {
         let groups = Dictionary(
             grouping: try mergedEvents(inProject: workingDirectory), by: \.sessionId)
         let listableIds = groups.filter { _, events in
-            events.allSatisfy { $0.parentId == nil }
+            events.allSatisfy { $0.parentId == nil && $0.agentSpawn == nil }
         }.keys
         let storedRecords = try SessionIndex(root: root).read().records
         let recordsBySessionId = Dictionary(

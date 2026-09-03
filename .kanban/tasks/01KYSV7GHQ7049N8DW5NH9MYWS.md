@@ -88,6 +88,33 @@ comments:
     - review: clean (0 findings)
     - The loop stops here on purpose: the spawn-exclusion half of the listability predicate is a true conflict between the card and the pinned Router's public API, verified by a live fixture. The task stays in `review`. A person must decide the upstream ask. All acceptance criteria on the card pass; only the spawn-fact subtask stays open.
   timestamp: 2026-09-01T23:05:19.097590+00:00
+- actor: claude-code
+  id: 01m1jf0jdz4b1rfcy6hz84zm4v
+  text: |-
+    ### Dependency update and spawn-fact verification (2026-09-02)
+
+    - `swift package update` pulled FoundationModelsRouter `ba55154` (was `87c660b`) and FoundationModelsMultitool `03e43bb`. Note: `Package.resolved` is in `.gitignore` on purpose (each family dependency tracks a branch), so no lock-file change can go into a commit.
+    - The spawn fact now exists on the public event surface. Evidence: `.build/checkouts/FoundationModelsRouter/Sources/FoundationModelsRouter/Recording/TranscriptEvent.swift:97` — `public let agentSpawn: SessionSidecar.AgentSpawn?`. The doc says: set only on the `Kind.session` event of a session made with an `agentSpawn`; `nil` for a root session, for a fork, on every other kind, and on a v1 recording.
+    - `swift build` completes, but the update adds two new `SessionEvent` cases (`toolCallReport`, `elicitationRequested`) that cause one exhaustiveness warning in `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift:146`. This adaptation is part of this checkpoint. Full projection of the two new events is new work for a new task.
+  timestamp: 2026-09-03T01:44:24.255965+00:00
+- actor: claude-code
+  id: 01m1jf7zna72aycn66pyykmg6f
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — `Sources/FoundationModelsACPAgent/Transcripts/TranscriptStore.swift` (the listability predicate now requires `agentSpawn == nil` on every event; the doc says why), `Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift` (the canary test became the real spawn-exclusion test; it drives the fixture through `makeSession(agentSpawn:)`, asserts the events carry the spawn fact with `parentId == nil`, and asserts the spawned session does not list). Plus the update adaptation: `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift` gained explicit arms for the two new `SessionEvent` cases (`toolCallReport`, `elicitationRequested`) to remove the exhaustiveness warning; both arms log only, and the new task `^9vjyddw` tracks the real wire projection.
+    - TDD: the rewritten test failed first at the ids assertion only ("Expectation failed: ids == [parent.description]"), which proves the fixture writes the spawn fact and the predicate did not read it; the one-line predicate change made it pass.
+    - All subtask and acceptance boxes on the card are now checked.
+    - next: `/test`.
+    task: ^nh9myws
+  timestamp: 2026-09-03T01:48:27.178416+00:00
+- actor: claude-code
+  id: 01m1jf854076s4eaadb53j95n4
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 301 tests in 34 suites passed, 0 failed, 0 skipped; the "1 known issue" is the pre-existing intentional `withKnownIssue` in `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift` (the reversed-pair order check), not a failure. `swift build --build-tests` — 0 warnings from this package's files.
+    - next: `/commit`.
+    task: ^nh9myws
+  timestamp: 2026-09-03T01:48:32.768301+00:00
 depends_on:
 - 01KYSV6QHJ631K7T7FRF4B8338
 position_column: review
@@ -118,11 +145,11 @@ Build these:
 **Know the `seq` limit.** `seq` is global across directories only WITHIN one recorder instance, and it restarts at 0 per run. That is why `ts` is the primary sort key in `merged(under:)`. Do not treat `seq` as globally unique across runs.
 
 - [x] Read path built on `merged(under:)`, grouped by `sessionId`
-- [ ] Parentage and the spawn fact both taken from `TranscriptEvent`, never the sidecar — BLOCKED for the spawn half: the pinned Router puts no spawn fact on `TranscriptEvent` (see the blocker comment of 2026-09-01); the parentage half is done and a canary test pins the gap
+- [x] Parentage and the spawn fact both taken from `TranscriptEvent`, never the sidecar — the Router update (revision `ba55154`) put the public `agentSpawn` field on `TranscriptEvent`, which unblocked the spawn half
 - [x] `sessions(inProject:)` with the record join
 - [x] Sort-key cursor pagination
 - [x] `allProjects()`
-- [x] Roots-only and has-transcript listability predicate — roots-only to the extent the events express it (`parentId == nil`); the spawn exclusion waits on the upstream fact
+- [x] Roots-only and has-transcript listability predicate — `parentId == nil` and `agentSpawn == nil` on every event
 
 ## Acceptance Criteria
 - [x] Sessions come back sorted updatedAt-descending, with a sessionId tiebreak, across page boundaries
@@ -131,6 +158,7 @@ Build these:
 - [x] A fork fixture is excluded because its `parentId` is set; a directory-less index entry is excluded
 - [x] A session with a recorded transcript but no index line still lists, from the scan
 - [x] Records from two separate recorder runs interleave correctly, which proves the sort does not rely on `seq` alone
+- [x] An agent-spawned session (made through `makeSession(agentSpawn:)`) is excluded from the listing through the `agentSpawn` fact on its `session` event
 
 ## Tests
 - [x] `Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift` — fixture transcript directories in a temp project, a pagination walk asserting order and stability, and the listability matrix. The fixtures must come from driving real recorded sessions: no shipped `TranscriptRecorder` is reachable, because `.jsonl`, `.inMemory` and `.none` are internal, and `TranscriptEvent` has no public init.

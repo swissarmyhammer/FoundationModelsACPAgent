@@ -38,7 +38,7 @@ enum ProjectedFileChange: Equatable, Sendable {
 /// (plan.md §8.4–§8.5, §11.6).
 ///
 /// One value projects one turn: `project(_:)` maps each of the
-/// thirteen `SessionEvent` cases, and `reportUsage()` closes the turn
+/// fifteen `SessionEvent` cases, and `reportUsage()` closes the turn
 /// with its one summed `usage_update`. The live shell bytes have no
 /// `SessionEvent` source, so their mapping rides ``TerminalStream``
 /// over the host-owned `ShellOutputChunkStream` (§11.8); this
@@ -129,7 +129,7 @@ struct EventProjection {
         !sawOutput && sawUsageReport && tokensOut == 0
     }
 
-    // MARK: - The thirteen cases (§8.4)
+    // MARK: - The fifteen cases (§8.4)
 
     /// Projects one event to the wire.
     ///
@@ -197,6 +197,21 @@ struct EventProjection {
         case .runSettled(let operationEvent):
             sawOutput = true
             await projectSettlement(of: operationEvent)
+        case .toolCallReport(let report):
+            // A correlation record only, like `toolInvocation`: the
+            // attachments already ride the answering `toolStatus`
+            // output segments, so no wire message goes out here. The
+            // task `^9vjyddw` tracks a richer projection.
+            turnLogger.debug(
+                "session \(sessionIdValue, privacy: .public): tool call report for run \(report.correlationID, privacy: .public) with \(report.attachments.count, privacy: .public) attachments"
+            )
+        case .elicitationRequested(let operationEvent):
+            // No elicitation-capable tool mounts in this agent yet, so
+            // a suspended run can only be reported, never answered.
+            // The task `^9vjyddw` tracks the wire mapping.
+            turnLogger.notice(
+                "session \(sessionIdValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) requested an elicitation this agent cannot answer yet"
+            )
         case .turnEnded(let usage):
             // One event per inner generate call, not per turn: sum,
             // and never send `idle` from here (§8.1).

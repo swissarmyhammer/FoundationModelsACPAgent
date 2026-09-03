@@ -284,16 +284,14 @@ import Testing
         #expect(ids == [real.description])
     }
 
-    /// Pins the upstream gap this card's blocker comment records: with the
-    /// pinned Router, `makeSession(agentSpawn:)` writes the spawn fact only
-    /// into `session.json`, whose stored properties are all internal, and
-    /// every recorded event of the spawned session carries `parentId == nil`.
-    /// The public event stream therefore cannot separate an agent-spawned
-    /// session from a plain root, and the spawned session still lists. The
-    /// day the Router publishes a spawn fact through the events, this test
-    /// fails — that is the signal to finish the exclusion in the predicate.
-    @Test("an agent-spawned session is not separable from a root through the public event stream")
-    func spawnedSessionStillListsBecauseEventsCarryNoSpawnFact() async throws {
+    /// The spawn half of the listability predicate: the Router stamps
+    /// `agentSpawn` on the `session` event of a session made with
+    /// `makeSession(agentSpawn:)`, and the predicate must exclude that
+    /// session from the listing. Its events still carry `parentId == nil`,
+    /// which proves the exclusion reads the spawn fact, not the parentage.
+    /// The transcript itself stays readable — only the listing excludes it.
+    @Test("an agent-spawned session is excluded from the listing through the spawn fact")
+    func spawnedSessionIsExcludedFromTheListing() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
         let parent = try await Self.makeRecordedSession(in: fixture)
@@ -309,7 +307,8 @@ import Testing
 
         #expect(!events.isEmpty)
         #expect(events.allSatisfy { $0.parentId == nil })
-        #expect(ids.contains(spawned.description))
+        #expect(events.contains { $0.agentSpawn != nil })
+        #expect(ids == [parent.description])
     }
 
     // MARK: - The cursor pagination
