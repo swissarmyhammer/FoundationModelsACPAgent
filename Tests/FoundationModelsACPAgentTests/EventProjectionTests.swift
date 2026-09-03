@@ -47,6 +47,18 @@ import Testing
     /// The document of the scripted note attachment.
     private static let noteJSON = #"{"note":"the run changed two files"}"#
 
+    /// The session root of the scripted change set.
+    private static let changeSetRoot = URL(fileURLWithPath: "/tmp/tier", isDirectory: true)
+
+    /// The absolute path of the file the scripted change set rewrote.
+    private static let modifiedPath = "/tmp/tier/notes.txt"
+
+    /// The absolute path of the file the scripted change set created.
+    private static let addedPath = "/tmp/tier/added.txt"
+
+    /// The absolute destination path of the scripted rename.
+    private static let renamedPath = "/tmp/tier/renamed.txt"
+
     /// The estimated transcript size before the scripted fold.
     private static let tokensBeforeFold = 900
 
@@ -110,6 +122,20 @@ import Testing
             attachments: attachments)
     }
 
+    /// Makes the `fileChanges` attachment of a change set — the
+    /// envelope a mutating files verb attaches at journal commit.
+    ///
+    /// - Parameter changes: The recorded changes.
+    /// - Returns: The attachment.
+    private static func makeFileChangeSetAttachment(
+        changes: [FileChange]
+    ) -> ToolCallAttachment {
+        ToolCallAttachment(
+            schemaName: FileChangeSet.operationEventDetailKey,
+            contentJSON: FileChangeSet(root: changeSetRoot, changes: changes)
+                .encodedOperationEventDetail())
+    }
+
     /// Drives one synthetic event stream through a sinked turn.
     ///
     /// - Parameters:
@@ -133,6 +159,18 @@ import Testing
             if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
             return nil
         }
+    }
+
+    /// The paths of a filled `locations` patch, or `nil` when the patch
+    /// leaves the field unchanged.
+    ///
+    /// - Parameter locations: The patch the update carries.
+    /// - Returns: The location paths, or `nil`.
+    private static func locationPaths(
+        of locations: PatchField<[ToolCallLocation]>
+    ) -> [String]? {
+        guard case .value(let value) = locations else { return nil }
+        return value.map(\.path.rawValue)
     }
 
     /// The fields of a JSON object value, or `nil` for another shape.
@@ -389,7 +427,8 @@ import Testing
     /// A tool call report sends one `tool_call_update` keyed by the
     /// run's completion token: each attached document rides as one
     /// content item in call order, the op rides as the title, and the
-    /// update claims no status and no locations.
+    /// update claims no status. Neither document is a change set, so
+    /// the update fills no locations either.
     @Test func aToolCallReportSendsOneUpdateKeyedByTheRunToken() async throws {
         let report = Self.makeToolCallReport(attachments: [
             ToolCallAttachment(
@@ -459,6 +498,54 @@ import Testing
 
         #expect(texts(in: call.content) == ["not json"])
         #expect(call.rawOutput == .unchanged)
+    }
+
+    /// A `FileChangeSet` attachment fills `locations`: one location per
+    /// recorded change, in call order, at the absolute path the
+    /// structured record carries.
+    @Test func aFileChangeSetAttachmentFillsTheLocations() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            Self.makeFileChangeSetAttachment(changes: [
+                FileChange(kind: .modify, path: Self.modifiedPath),
+                FileChange(kind: .add, path: Self.addedPath),
+            ])
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+        let paths = try #require(Self.locationPaths(of: call.locations))
+
+        #expect(paths == [Self.modifiedPath, Self.addedPath])
+    }
+
+    /// A recorded rename reports the destination: the location path is
+    /// post-operation, so a client never points at a name that is gone.
+    @Test func aRecordedRenameReportsTheDestinationPath() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            Self.makeFileChangeSetAttachment(changes: [
+                FileChange(
+                    kind: .move, path: Self.modifiedPath, destinationPath: Self.renamedPath)
+            ])
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+        let paths = try #require(Self.locationPaths(of: call.locations))
+
+        #expect(paths == [Self.renamedPath])
+    }
+
+    /// A document under the change-set schema name that is not a change
+    /// set leaves `locations` unchanged: the projection never invents a
+    /// path from text it cannot decode, and an empty replace would
+    /// erase the call's locations.
+    @Test func aDocumentThatIsNotAChangeSetLeavesTheLocationsUnchanged() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            ToolCallAttachment(
+                schemaName: FileChangeSet.operationEventDetailKey, contentJSON: Self.noteJSON)
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        #expect(call.locations == .unchanged)
     }
 
     /// A report with no attachments sends nothing: the "at least one

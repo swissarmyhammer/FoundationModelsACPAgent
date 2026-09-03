@@ -12,11 +12,13 @@ typealias ShellSnapshotProvider = @Sendable (_ commandID: String) -> ShellOutput
 
 /// One file change, in this package's own vocabulary (plan.md §11.6).
 ///
-/// Multitool keeps its `FileChange` internal, so the projection owns
-/// this mirror. A move and a copy carry both endpoints, which is what
-/// makes the §11.6 path-direction mapping total: ACP's `path` is
-/// post-operation, so the source becomes `oldPath` and the destination
-/// becomes `path` for those two kinds only.
+/// The projection owns this mirror of Multitool's `FileChange`, which
+/// `EventProjection.projectedChange(for:)` maps into. A move and a copy
+/// carry both endpoints, which is what makes the §11.6 path-direction
+/// mapping total: ACP's `path` is post-operation, so the source becomes
+/// `oldPath` and the destination becomes `path` for those two kinds
+/// only. Each endpoint is an `AbsolutePath`, so a record the wire
+/// cannot carry is refused at the mapping instead of on the wire.
 enum ProjectedFileChange: Equatable, Sendable {
     /// A file that did not exist was created at `path`.
     case add(path: AbsolutePath)
@@ -422,19 +424,35 @@ struct EventProjection {
     ///
     /// The update claims no status: the report records what the call
     /// attached, not how the call ended, and the terminal claim
-    /// belongs to `toolStatus` and `runSettled`. It fills no
-    /// `locations`: an attachment is an opaque document (`schemaName`
-    /// plus `contentJSON`) with no structured path contract, and a
-    /// location must never come from a rendered string (§11.6).
+    /// belongs to `toolStatus` and `runSettled`.
+    ///
+    /// It fills `locations` from the one attachment shape that carries
+    /// a path contract: the `FileChangeSet` envelope a mutating files
+    /// verb attaches (`schemaName` ``FoundationModelsMultitool/FileChangeSet/operationEventDetailKey``).
+    /// The paths come from the structured record, never from a rendered
+    /// string (§11.5), and replace the array as a whole (§11.6). Every
+    /// other attachment is an opaque document with no path contract, so
+    /// a report of such documents alone leaves `locations` unchanged
+    /// rather than erasing it.
     ///
     /// - Parameter report: The report of the call's attachments.
     private func projectToolCallReport(_ report: ToolCallReport) async {
         let documents = report.attachments.map(\.contentJSON)
+        let changes = Self.fileChanges(in: report.attachments)
+        let locations = changes.compactMap { change in
+            Self.projectedChange(for: change).map(Self.location(for:))
+        }
+        if locations.count < changes.count {
+            turnLogger.warning(
+                "session \(sessionId.rawValue, privacy: .public): run \(report.correlationID, privacy: .public) recorded a file change the wire cannot carry; it rides no location"
+            )
+        }
         await send(
             .toolCallUpdate(
                 ToolCallUpdate(
                     toolCallId: ToolCallId(rawValue: report.correlationID),
                     content: .value(documents.map(Self.textItem)),
+                    locations: locations.isEmpty ? .unchanged : .value(locations),
                     rawOutput: Self.rawOutputPatch(fromDocuments: documents),
                     title: .value(report.op))))
     }
@@ -522,7 +540,79 @@ struct EventProjection {
         raw.hasPrefix(extensionValuePrefix) ? raw : extensionValuePrefix + raw
     }
 
-    // MARK: - The diff path directions (§11.6)
+    // MARK: - The file-change path mappings (§11.6)
+
+    /// The recorded file changes an attachment report carries, in call
+    /// order.
+    ///
+    /// The one attachment shape with a path contract is the
+    /// `FileChangeSet` envelope a mutating files verb attaches. Every
+    /// other document contributes nothing: the schema name is matched
+    /// against the upstream constant, and the envelope decode returns
+    /// `nil` for text that is not a change set, so a document that only
+    /// looks like one is refused as well.
+    ///
+    /// - Parameter attachments: The records the report carries.
+    /// - Returns: The recorded changes.
+    private static func fileChanges(
+        in attachments: [ToolCallAttachment]
+    ) -> [FoundationModelsMultitool.FileChange] {
+        attachments.flatMap { attachment -> [FoundationModelsMultitool.FileChange] in
+            guard attachment.schemaName == FileChangeSet.operationEventDetailKey,
+                let set = FileChangeSet(operationEventDetail: attachment.contentJSON)
+            else { return [] }
+            return set.changes
+        }
+    }
+
+    /// Maps one recorded file change into this package's vocabulary.
+    ///
+    /// Returns `nil` for a record the vocabulary cannot carry: a path
+    /// the wire refuses because it is not absolute, or a move or a copy
+    /// with no destination. The projection reports what the record
+    /// says and never invents a path.
+    ///
+    /// - Parameter change: The recorded change.
+    /// - Returns: The projected change, or `nil`.
+    static func projectedChange(
+        for change: FoundationModelsMultitool.FileChange
+    ) -> ProjectedFileChange? {
+        guard let path = AbsolutePath(rawValue: change.path) else { return nil }
+        let destination = change.destinationPath.flatMap(AbsolutePath.init(rawValue:))
+        switch change.kind {
+        case .add:
+            return .add(path: path)
+        case .delete:
+            return .delete(path: path)
+        case .modify:
+            return .modify(path: path)
+        case .move:
+            guard let destination else { return nil }
+            return .move(source: path, destination: destination)
+        case .copy:
+            guard let destination else { return nil }
+            return .copy(source: path, destination: destination)
+        }
+    }
+
+    /// Maps one file change to the location the call touched.
+    ///
+    /// The path is post-operation, the direction `diffChange(for:)`
+    /// puts in the wire change's `path`: a move and a copy report the
+    /// destination, so a rename points at the name the file carries
+    /// now and never at one that is gone. Every other kind reports its
+    /// one path.
+    ///
+    /// - Parameter change: The change to map.
+    /// - Returns: The wire location.
+    static func location(for change: ProjectedFileChange) -> ToolCallLocation {
+        switch change {
+        case .add(let path), .delete(let path), .modify(let path):
+            ToolCallLocation(path: path)
+        case .move(_, let destination), .copy(_, let destination):
+            ToolCallLocation(path: destination)
+        }
+    }
 
     /// Maps one file change to ACP's diff vocabulary. For a move and a
     /// copy the source becomes `oldPath` and the destination becomes

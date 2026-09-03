@@ -27,10 +27,11 @@ import Testing
 ///   reference", and that landing shipped. The streamed-chunks proof
 ///   therefore reads `terminal_output_chunk` and `terminal_update`,
 ///   and the convergence proof reads `ACPSessionState.terminals`.
-/// - Proof 3 does not assert `locations`: no shipped event carries
-///   path data to the projection yet (plan.md §11.5 wants the
-///   structured per-call record for it). The follow-up task on the
-///   board carries that wiring.
+/// - Proof 3 asserts `locations` from the structured per-call record
+///   (plan.md §11.5, task `^9jfmhh0`): the note turn runs with
+///   `recordsChanges: true`, so the write attaches its `FileChangeSet`
+///   and the projection fills the paths from it, never from a
+///   rendered string.
 @Suite struct TierTwoTests {
     // MARK: - Constants
 
@@ -64,6 +65,18 @@ import Testing
 
     /// The exact content the projection proof writes to disk.
     private static let noteContent = "tier two wrote this line"
+
+    /// The project config of the note turn: change recording on.
+    ///
+    /// The flag makes each mutating verb call attach its structured
+    /// `FileChangeSet`, which is the only permitted source of
+    /// `locations` (plan.md §11.5, §11.6). The builder default is off,
+    /// so the proof asks for it the way a user does — in `config.yaml`.
+    private static let recordsChangesConfigYAML = """
+        tools:
+          files:
+            recordsChanges: true
+        """
 
     /// The name the client-declared MCP test server mounts under —
     /// the noun of every `tools.<serverName>.<verb>` path.
@@ -198,7 +211,8 @@ import Testing
         return (fixture, updates)
     }
 
-    /// Runs the shared write-then-read-back note turn.
+    /// Runs the shared write-then-read-back note turn, with change
+    /// recording on.
     ///
     /// - Parameter label: The directory label of the calling proof.
     /// - Returns: The fixture and the collected sequence at idle.
@@ -206,7 +220,8 @@ import Testing
     private static func runNoteTurn(
         label: String
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
-        try await runToolTurn(code: noteCode, label: label)
+        try await runToolTurn(
+            code: noteCode, label: label, projectConfigYAML: recordsChangesConfigYAML)
     }
 
     // MARK: - Readers
@@ -238,6 +253,20 @@ import Testing
         updates.compactMap { update in
             guard case .value(let status) = update.status else { return nil }
             return status
+        }
+    }
+
+    /// The paths of every filled `locations` array in the sequence, in
+    /// arrival order.
+    ///
+    /// - Parameter updates: The collected sequence.
+    /// - Returns: The reported location paths.
+    private static func locationPaths(in updates: [UpdateSessionNotification]) -> [String] {
+        updates.flatMap { notification -> [String] in
+            guard case .toolCallUpdate(let update) = notification.update,
+                case .value(let locations) = update.locations
+            else { return [] }
+            return locations.map(\.path.rawValue)
         }
     }
 
@@ -406,6 +435,11 @@ import Testing
 
         // The disk is the truth (plan.md §20.1).
         #expect(onDisk == Self.noteContent)
+
+        // The written path rides `locations`, read from the attached
+        // structured record and never from a rendered string
+        // (plan.md §11.5, §11.6).
+        #expect(Self.locationPaths(in: updates).contains(noteURL.path))
 
         // The first report creates the call: title and in_progress.
         let first = try #require(runCodeUpdates.first)
