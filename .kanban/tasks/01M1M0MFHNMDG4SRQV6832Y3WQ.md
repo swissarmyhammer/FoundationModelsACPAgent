@@ -47,8 +47,25 @@ comments:
     - evidence: 1 file — /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift. `swift test` → 350 tests in 34 suites passed, 0 failed, 0 skipped, 1 known issue (the pre-existing `withKnownIssue` in `HarnessSmokeTests`); the baseline was 349, so the new proof is the one added test. `swift build --build-tests` and `swift build --build-tests --package-path IntegrationTests` both clean, zero warnings. RED watched: with a pass-through sandbox composed in place of the seatbelt sandbox, the proof failed with 4 issues, the disk assertion among them.
     - next: ready for /review
   timestamp: 2026-09-03T18:22:08.512928+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1m8byjfb2p82tct6zmtekgd
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 6a0a72c). 7 validators ran, 0 failed. 0 findings, 0 confirmed, 0 refuted. 1 file reviewed: Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift. 2 files not reviewed — the `.kanban/` ignore rule excludes them.
+    - next: The task moves to `done`. No open finding is on the card.
+  timestamp: 2026-09-03T18:26:45.967815+00:00
+- actor: claude-code
+  id: 01m1m8cnfpk8azhv4cvxj4h7w9
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 1 file, Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift. Proof 8 `aSandboxedShellWriteOutsideTheRootSetNeverLands` added. RED watched first: with a pass-through sandbox in place of the seatbelt sandbox, the proof failed with 4 issues, the disk assertion among them.
+    - test: green — root `swift test`, 350 tests in 34 suites passed, 0 failed, 0 skipped, 1 pre-existing known issue. `swift build --build-tests` and `swift build --build-tests --package-path IntegrationTests` both clean, zero warnings.
+    - commit: 6a0a72c — 3 files, 280 insertions, 43 deletions. Local only.
+    - review: clean — `review sha HEAD~1..HEAD`, 7 validators attempted, 0 failed, 0 findings.
+    - next: The card is in `done`. No open finding stands.
+  timestamp: 2026-09-03T18:27:09.430695+00:00
+position_column: done
+position_ordinal: a880
 title: Add a tier-2 proof that the seatbelt sandbox denies a shell write outside the root
 ---
 ## What
