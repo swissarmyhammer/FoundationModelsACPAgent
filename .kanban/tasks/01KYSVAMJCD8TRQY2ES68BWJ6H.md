@@ -78,11 +78,32 @@ comments:
     - evidence: swift test — 309 tests in 35 suites, all pass, 0 failed, 0 skipped, 1 pre-existing known issue
     - next: commit
   timestamp: 2026-09-03T02:14:16.219209+00:00
+- actor: claude-code
+  id: 01m1jgr0tj9r2c4wxn4hxcebwb
+  text: |-
+    ### commit — changed
+    - evidence: 2b25302 style(tests): remove the redundant bare @Suite attribute from SessionListTests (3 files, +54/-3, includes the kanban state)
+    - next: review
+  timestamp: 2026-09-03T02:14:41.234761+00:00
+- actor: claude-code
+  id: 01m1jgszcyc3bcqpf37refdzm0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 refuted; the one prior finding is fixed and checked; task moved to done
+    - next: none
+
+    ### finish iteration 2 — done
+    - implement: changed — 1 file (SessionListTests.swift); removed the redundant bare @Suite attribute the review named
+    - test: green — swift test, 309 tests in 35 suites, 0 failed, 0 skipped, 1 pre-existing known issue
+    - commit: changed — 2b25302
+    - review: clean — 0 findings; prior finding checked; task moved to done
+    - commits for this task: 3b66db6, 2b25302
+  timestamp: 2026-09-03T02:15:45.310203+00:00
 depends_on:
 - 01KYSV7GHQ7049N8DW5NH9MYWS
 - 01KYSV8M8HV7R9W51QG63BBYR8
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9b80
 title: 'session/list: paged, updatedAt-sorted, roots only'
 ---
 ## What
