@@ -32,8 +32,32 @@ comments:
     - evidence: swift test — 358 passed in 39 suites, 0 failed, 0 skipped, 1 known issue (the expected withKnownIssue in HarnessSmokeTests); swift build — 0 compiler warnings (the mlx-swift bundle "missing creator" note is a pre-existing build-system artifact)
     - next: commit
   timestamp: 2026-09-03T05:09:44.692428+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1jts791129cs7qjfwq5ad09
+  text: |-
+    ### commit — changed
+    - evidence: 145e7b1 feat(agent): project toolCallReport attachments to the wire (7 files, 279 insertions, 20 deletions; the kanban state rode with it)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-03T05:10:06.369689+00:00
+- actor: claude-code
+  id: 01m1jtykdd5362z1r9r9s6cf4b
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted, 7 validator runs attempted, 0 failed; the .kanban files were excluded by .reviewignore
+    - next: done
+  timestamp: 2026-09-03T05:13:02.637047+00:00
+- actor: claude-code
+  id: 01m1jtyvxe3p2f054dbyqz7cxw
+  text: |-
+    ### finish iteration 1 — done
+    - implement: changed — the toolCallReport arm now sends the attachment tool_call_update; 3 files touched
+    - test: green — swift test, 358 passed in 39 suites, 0 failed, 0 warnings, 1 expected known issue
+    - commit: changed — 145e7b1
+    - review: clean — review sha HEAD~1..HEAD, 0 findings
+    - outcome: done. The elicitationRequested half was complete before this iteration (task ^2z6qtqy). No locations are filled from attachments: the payload is opaque (schemaName + contentJSON), and the locations-from-file-changes work stays with ^9jfmhh0.
+  timestamp: 2026-09-03T05:13:11.342482+00:00
+position_column: done
+position_ordinal: a380
 title: Project the new SessionEvent cases toolCallReport and elicitationRequested to the wire
 ---
 ## What
