@@ -180,10 +180,7 @@ public actor RoutedACPAgent: Agent {
 
     // `newSession` lives in `Agent/SessionSetup.swift` (plan.md §7.1).
 
-    /// Refuses until the session-list task lands.
-    public func listSessions(_ params: ListSessionsRequest) async throws -> ListSessionsResponse {
-        try refuseUnimplemented(ACPMethod.sessionList)
-    }
+    // `listSessions` lives in `Agent/SessionList.swift` (plan.md §9).
 
     /// Refuses until the session-resume task lands.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {

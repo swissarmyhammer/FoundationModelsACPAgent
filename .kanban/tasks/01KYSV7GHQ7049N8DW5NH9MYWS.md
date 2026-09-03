@@ -115,10 +115,38 @@ comments:
     - next: `/commit`.
     task: ^nh9myws
   timestamp: 2026-09-03T01:48:32.768301+00:00
+- actor: claude-code
+  id: 01m1jf9170d37hyjnfpmzfwy11
+  text: |-
+    ### commit — changed
+    - evidence: c72bcbd feat(transcripts): exclude agent-spawned sessions through the spawn fact on TranscriptEvent (7 files, 90 insertions, 21 deletions; local, not pushed)
+    - next: `/review sha HEAD~1..HEAD`.
+    task: ^nh9myws
+  timestamp: 2026-09-03T01:49:01.536914+00:00
+- actor: claude-code
+  id: 01m1jfe56vkkm4wnw0g7gb5e3c
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on c72bcbd — 0 findings; 3 files reviewed, 4 skipped by the `.kanban/` ignore rule. Every prior finding on the card is checked.
+    - The card is now complete: the spawn-exclusion requirement is implemented and tested against the updated Router, so the earlier upstream blocker is resolved.
+    - next: move to done.
+    task: ^nh9myws
+  timestamp: 2026-09-03T01:51:49.467717+00:00
+- actor: claude-code
+  id: 01m1jfeazz6hfnsx085wb61znb
+  text: |-
+    ### finish iteration 3 — done
+    - dependency update: FoundationModelsRouter `87c660b` -> `ba55154`, FoundationModelsMultitool -> `03e43bb`; the spawn fact verified at `TranscriptEvent.swift:97` (`public let agentSpawn: SessionSidecar.AgentSpawn?`).
+    - implement: changed (predicate requires `agentSpawn == nil`; canary became the real spawn-exclusion test; EventProjection absorbed the two new `SessionEvent` cases; the new task `^9vjyddw` tracks their wire projection)
+    - test: green (301 tests, 34 suites, 0 failed, 0 skipped, 0 warnings from this package; the 1 known issue is the pre-existing intentional one in HarnessSmokeTests)
+    - commit: c72bcbd (local, not pushed)
+    - review: clean (0 findings)
+    - The task moved to done. Every subtask, acceptance criterion, and finding on the card is checked.
+  timestamp: 2026-09-03T01:51:55.391331+00:00
 depends_on:
 - 01KYSV6QHJ631K7T7FRF4B8338
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9a80
 title: 'TranscriptStore: read side, cursor pagination, project browsing'
 ---
 ## What

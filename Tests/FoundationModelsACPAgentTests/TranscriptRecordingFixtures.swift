@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgent
 import FoundationModelsRouter
 
 // MARK: - Recorded-session fixtures for the transcript read side
@@ -113,4 +114,94 @@ func makeRecordingStubProfile(
         cacheDirectory: cacheDirectory,
         recordingsDirectory: recordingsDirectory,
         loader: StubModelLoader(makeLLMContainer: { _ in TranscriptStubContainer() }))
+}
+
+/// One recorded project for the transcript read side and the
+/// `session/list` wire tests: the working directory, the resolved
+/// recording root, a profile whose sessions record real events, and the
+/// root's `sessions.jsonl` index.
+struct RecordedProjectFixture {
+    /// The project working directory.
+    let workingDirectory: URL
+
+    /// The resolved recording root the sessions record under.
+    let root: URL
+
+    /// The resolved profile whose sessions record.
+    let profile: LanguageModelProfile
+
+    /// The `sessions.jsonl` index of the root.
+    let index: SessionIndex
+
+    /// Drives one recorded root session with one turn for each prompt
+    /// and returns its id.
+    ///
+    /// - Parameters:
+    ///   - prompts: The turns to drive, in order.
+    ///   - agentSpawn: The spawn context, or `nil` for a plain root.
+    /// - Returns: The session's ULID — the name of its directory.
+    /// - Throws: Whatever driving the session throws.
+    func makeRecordedSession(
+        prompts: [String] = ["one turn"],
+        agentSpawn: SessionSidecar.AgentSpawn? = nil
+    ) async throws -> ULID {
+        let session = profile.standard.makeSession(
+            workingDirectory: workingDirectory,
+            recordingRoot: root,
+            agentSpawn: agentSpawn)
+        for prompt in prompts {
+            _ = try await session.respond(to: prompt)
+        }
+        await session.close()
+        return session.id
+    }
+
+    /// Appends one index record that names `id`.
+    ///
+    /// - Parameters:
+    ///   - id: The session the record names.
+    ///   - title: The record's title.
+    ///   - updatedAt: The record's most-recent-activity instant.
+    ///   - additionalDirectories: The record's ordered directory list.
+    ///   - cwd: The record's working directory, or `nil` for the
+    ///     fixture's own. A shared-root test writes records that name
+    ///     two different projects into one index.
+    /// - Throws: Whatever the index append throws.
+    func appendRecord(
+        id: ULID,
+        title: String,
+        updatedAt: Date,
+        additionalDirectories: [String] = [],
+        cwd: URL? = nil
+    ) throws {
+        try index.append(
+            SessionIndexRecord(
+                sessionId: id.description,
+                cwd: (cwd ?? workingDirectory).standardizedFileURL.path,
+                title: title,
+                updatedAt: updatedAt,
+                additionalDirectories: additionalDirectories))
+    }
+}
+
+/// Makes a recorded-project fixture over the given directories.
+///
+/// - Parameters:
+///   - workingDirectory: The project working directory.
+///   - cacheDirectory: The router cache directory. A fresh temporary
+///     directory for each call keeps runs apart.
+///   - recordingRoot: The resolved recording root the sessions record
+///     under.
+/// - Returns: The fixture. It retains its profile, and the profile
+///   retains its router.
+/// - Throws: Whatever profile resolution throws.
+func makeRecordedProjectFixture(
+    workingDirectory: URL, cacheDirectory: URL, recordingRoot: URL
+) async throws -> RecordedProjectFixture {
+    RecordedProjectFixture(
+        workingDirectory: workingDirectory,
+        root: recordingRoot,
+        profile: try await makeRecordingStubProfile(
+            cacheDirectory: cacheDirectory, recordingsDirectory: recordingRoot),
+        index: SessionIndex(root: recordingRoot))
 }

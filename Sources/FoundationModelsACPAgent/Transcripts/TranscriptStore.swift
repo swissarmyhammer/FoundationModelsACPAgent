@@ -136,17 +136,45 @@ public struct TranscriptStore: Sendable {
     public func sessions(
         inProject workingDirectory: URL, limit: Int, cursor: String?
     ) throws -> SessionPage {
-        let key = try cursor.map(Self.decodedCursorKey)
-        let records = try sortedListableRecords(inProject: workingDirectory)
+        try Self.page(
+            of: sortedListableRecords(inProject: workingDirectory), limit: limit, cursor: cursor)
+    }
+
+    /// One page of an already-gathered record list, with the same cursor
+    /// tokens, sort order, and page-size bound as
+    /// ``sessions(inProject:limit:cursor:)``.
+    ///
+    /// `session/list` (§9) uses this for the unfiltered cross-project
+    /// listing: it merges the records of every registered project and
+    /// pages the merged list with one cursor implementation, so a token
+    /// from the filtered read and a token from the cross-project read
+    /// never diverge.
+    ///
+    /// - Parameters:
+    ///   - records: The records to page, in any order; the page sorts
+    ///     them into listing order first.
+    ///   - limit: The requested page size, bounded to
+    ///     `1...maximumPageSize`.
+    ///   - cursor: The previous page's `nextCursor`, or `nil` for the
+    ///     first page.
+    /// - Returns: The page and, when more records remain, the next
+    ///   page's token.
+    /// - Throws: ``TranscriptStoreError/invalidCursor(_:)`` for a token
+    ///   this store did not mint.
+    public static func page(
+        of records: [SessionIndexRecord], limit: Int, cursor: String?
+    ) throws -> SessionPage {
+        let key = try cursor.map(decodedCursorKey)
+        let sorted = records.sorted(by: sortsBefore)
         let remaining: [SessionIndexRecord]
         if let key {
-            remaining = Array(records.drop { !Self.sortsAfter($0, key) })
+            remaining = Array(sorted.drop { !sortsAfter($0, key) })
         } else {
-            remaining = records
+            remaining = sorted
         }
-        let size = Self.boundedPageSize(limit)
+        let size = boundedPageSize(limit)
         let page = Array(remaining.prefix(size))
-        let nextCursor = remaining.count > size ? page.last.map(Self.encodedCursor) : nil
+        let nextCursor = remaining.count > size ? page.last.map(encodedCursor) : nil
         return SessionPage(records: page, nextCursor: nextCursor)
     }
 
