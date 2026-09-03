@@ -28,6 +28,30 @@ comments:
     - delete closes an active session first, removes the transcript directory and the sessions.jsonl line; a non-ULID or absent id is silent success. Resume of a deleted session fails naturally.
     - next: TEST
   timestamp: 2026-09-03T03:08:57.305482+00:00
+- actor: claude-code
+  id: 01m1jkwnmm0g1mtzrdhxsgytcr
+  text: |-
+    ### commit — changed
+    - evidence: 7857a5a feat(agent): session/close and session/delete tree teardown and real removal
+    - next: REVIEW
+  timestamp: 2026-09-03T03:09:39.348347+00:00
+- actor: claude-code
+  id: 01m1jm5grxb82e1pjqnkemsh3d
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift:13 (code-hygiene/idioms-swift redundantSwiftTestingSuite: remove the redundant @Suite attribute with no arguments)
+    - next: fix the finding, then TEST, COMMIT, REVIEW again
+  timestamp: 2026-09-03T03:14:29.277449+00:00
+- actor: claude-code
+  id: 01m1jm5q4ccfga3722m87npskt
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 sources + 1 new test file (SessionLifecycle.swift, TurnState.waitForTurnEnd, ActiveSession.descendants, SessionIndex.removeRecords, SessionList.registryUserLayerRoot internal, RoutedACPAgent stubs removed).
+    - test: green — swift test 332 tests / 37 suites, 0 failed, 1 expected known issue; swift build --build-tests no code warnings.
+    - commit: changed — 7857a5a.
+    - review: findings — 1 finding at SessionLifecycleTests.swift:13 (code-hygiene/idioms-swift redundantSwiftTestingSuite).
+    - outcome: findings open; go to iteration 2.
+  timestamp: 2026-09-03T03:14:35.788874+00:00
 depends_on:
 - 01KYSVA96FDQP14HPP38ZQ362W
 - 01KYSVB1ACAR7NDK06015S796H
@@ -79,3 +103,9 @@ Plan.md §10. Work in `Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.s
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-02 22:09)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+- [ ] `Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift:13` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.

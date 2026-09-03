@@ -10,7 +10,7 @@ import Testing
 /// and keeps the transcript, and `session/delete` removes the transcript
 /// directory and the index line for real. The suite drives the wire, and
 /// checks the filesystem truth on disk and the spawned server process.
-@Suite struct SessionLifecycleTests {
+struct SessionLifecycleTests {
     // MARK: - Constants
 
     /// The prompt text of the active-turn cases.
