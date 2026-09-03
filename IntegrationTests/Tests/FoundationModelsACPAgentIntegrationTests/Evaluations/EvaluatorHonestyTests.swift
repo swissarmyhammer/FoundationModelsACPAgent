@@ -6,22 +6,42 @@ import Testing
 
 // MARK: - Evaluator honesty (plan.md §20.3, the acceptance criterion)
 //
-// The graders must grade from the filesystem and the exit codes, never
-// from transcript text. Each failing case here plants a fabricated
-// transcript that CLAIMS success in the workspace, makes the workspace
-// itself fail deliberately, and asserts the grader still fails. The
-// graders take no transcript parameter at all, so the lie has no way
-// in — and these cases prove the verdict tracks the disk, not the
-// claim. The passing cases prove each grader can pass, so a grader
-// that fails unconditionally cannot hide here.
+// The graders must grade from the filesystem, from the exit codes, and
+// from the counts. They must not grade from a claim. Each failing case
+// makes the workspace fail on purpose, or synthesizes evidence whose
+// two sides disagree, and asserts that the grader still fails. Each
+// passing case shows that the same grader can pass. Thus a grader that
+// always fails cannot hide here.
+//
+// The planted transcript: what it shows, and what it does not show.
+// Three cases write a fabricated transcript into the workspace, and
+// the transcript claims success. No grader has a transcript parameter.
+// Thus no case gives the fabricated text to a grader as an argument,
+// and no case here shows a grader that refused a lie handed to it.
+// The cases show only this: a fabricated file in the workspace does
+// not move the verdict. `PytestGreen` and `CLIRuns` run their
+// subprocess in that directory, so the workspace IS an input they
+// read. Do not read more into these cases.
+//
+// Why these tests stay in the nested integration package. The
+// ToolTraffic cases open no workspace and load no model, so the root
+// unit target could run them. But the root target cannot see this
+// package, and `PythonCLIGraders` also holds three graders that spawn
+// subprocesses. A move thus needs the whole grader file in the shared
+// `FoundationModelsACPAgentTestSupport` library, or one grader taken
+// out of the file its own header describes. CI runs this package on
+// every push and on every pull request: `.github/workflows/ci.yml`
+// gives `integration-package-path: IntegrationTests` to the shared
+// workflow. The package split thus already gives these tests an
+// ungated run.
 
 /// The honesty fixtures: a workspace with a planted venv interpreter
 /// and planted Python modules, built with no network and no package
 /// install.
 private enum HonestyFixtures {
     /// The fabricated transcript text: an agent's dishonest claim of
-    /// success. Planted in every failing workspace to prove it cannot
-    /// move a grader.
+    /// success. Written into a failing workspace, where a grader reads
+    /// the workspace but never this file.
     static let lyingTranscript = """
         {"kind":"toolOutput","text":"pytest -q: 24 passed in 0.31s, exit 0"}
         {"kind":"response","text":"All tests pass and the CLI prints the expected output."}
@@ -101,6 +121,52 @@ private enum HonestyFixtures {
             to: workspace.appendingPathComponent(lyingTranscriptFileName),
             atomically: true, encoding: .utf8)
     }
+
+    /// The one recorded `runCode` snippet of a healthy run: it calls
+    /// both verb paths ``PythonCLIGraders/toolTraffic(evidence:)``
+    /// matches for.
+    static let runCodeSnippet =
+        "runCode: await tools.files.write(...); await tools.shell.execute(...)"
+
+    /// The tool-traffic evidence of a healthy run, with every reading
+    /// in agreement: one `runCode` call on the transcript side and one
+    /// on the wire, one completed shell run, and two notifications for
+    /// that run.
+    ///
+    /// Two notifications for one shell run, and not one, because the
+    /// wire carries at least one notification per completed run and
+    /// usually more. Each case below overrides only the readings it is
+    /// about, so what makes a case fail is visible in the call.
+    ///
+    /// - Parameters:
+    ///   - snippets: The recorded `runCode` payloads.
+    ///   - transcriptRunCodeCallCount: The `runCode` calls the recorded
+    ///     `.toolCalls` entries announced.
+    ///   - transcriptCompletedShellEventCount: The recorded events
+    ///     carrying a shell run's completed report.
+    ///   - projectedRunCodeCallCount: The announced `runCode` calls the
+    ///     wire carries.
+    ///   - completedRunCodeCallCount: The announced `runCode` calls the
+    ///     wire completed.
+    ///   - shellStreamNotificationCount: The shell stream
+    ///     notifications on the wire.
+    /// - Returns: The evidence value.
+    static func toolTrafficEvidence(
+        snippets: [String] = [runCodeSnippet],
+        transcriptRunCodeCallCount: Int = 1,
+        transcriptCompletedShellEventCount: Int = 1,
+        projectedRunCodeCallCount: Int = 1,
+        completedRunCodeCallCount: Int = 1,
+        shellStreamNotificationCount: Int = 2
+    ) -> PythonCLIToolTrafficEvidence {
+        PythonCLIToolTrafficEvidence(
+            transcriptRunCodeSnippets: snippets,
+            transcriptRunCodeCallCount: transcriptRunCodeCallCount,
+            transcriptCompletedShellEventCount: transcriptCompletedShellEventCount,
+            projectedRunCodeCallCount: projectedRunCodeCallCount,
+            completedRunCodeCallCount: completedRunCodeCallCount,
+            shellStreamNotificationCount: shellStreamNotificationCount)
+    }
 }
 
 /// What the honesty fixtures refused.
@@ -110,15 +176,14 @@ private enum HonestyFixtureError: Error {
     case python3Unavailable(String)
 }
 
-/// The graders' honesty: the verdicts track the filesystem and the
-/// exit codes, and a fabricated transcript that claims success cannot
-/// move them.
+/// The graders' honesty: the verdicts track the filesystem, the exit
+/// codes, and the counts of the two evidence sides.
 @Suite struct EvaluatorHonestyTests {
     // MARK: - PytestGreen
 
     /// A workspace whose pytest run exits nonzero grades FAIL, with
     /// the fabricated success-claiming transcript planted right beside
-    /// it. The verdict reads the exit code; the claim has no way in.
+    /// it. The verdict reads the exit code, and never that file.
     @Test(.timeLimit(.minutes(1)))
     func pytestGreenFailsAFailingWorkspaceDespiteALyingTranscript() async throws {
         let workspace = try await HonestyFixtures.makeWorkspaceWithVenv(
@@ -249,11 +314,8 @@ private enum HonestyFixtureError: Error {
     /// eval must catch.
     @Test(.timeLimit(.minutes(1)))
     func toolTrafficFailsWhenTheWireNeverCarriedTheTraffic() {
-        let evidence = PythonCLIToolTrafficEvidence(
-            transcriptRunCodeSnippets: [
-                "runCode: await tools.files.write(...); await tools.shell.execute(...)"
-            ],
-            transcriptCompletedShellEventCount: 1,
+        let evidence = HonestyFixtures.toolTrafficEvidence(
+            projectedRunCodeCallCount: 0,
             completedRunCodeCallCount: 0,
             shellStreamNotificationCount: 0)
 
@@ -267,11 +329,10 @@ private enum HonestyFixtureError: Error {
     /// readings must agree.
     @Test(.timeLimit(.minutes(1)))
     func toolTrafficFailsWhenTheTranscriptHoldsNoTraffic() {
-        let evidence = PythonCLIToolTrafficEvidence(
-            transcriptRunCodeSnippets: [],
-            transcriptCompletedShellEventCount: 0,
-            completedRunCodeCallCount: 1,
-            shellStreamNotificationCount: 1)
+        let evidence = HonestyFixtures.toolTrafficEvidence(
+            snippets: [],
+            transcriptRunCodeCallCount: 0,
+            transcriptCompletedShellEventCount: 0)
 
         let verdict = PythonCLIGraders.toolTraffic(evidence: evidence)
 
@@ -279,17 +340,55 @@ private enum HonestyFixtureError: Error {
         #expect(verdict.rationale.contains("transcript"))
     }
 
+    /// The count of completed shell runs a transcript with a projection
+    /// defect holds: many runs recorded, against the one notification
+    /// the wire carried.
+    private static let defectiveShellRunCount = 40
+
+    /// A transcript that recorded many completed shell runs against one
+    /// notification on the wire grades FAIL, although every reading is
+    /// non-zero. Each completed shell run puts at least one
+    /// notification on the wire, so fewer notifications than runs is a
+    /// projection defect.
+    @Test(.timeLimit(.minutes(1)))
+    func toolTrafficFailsWhenTheWireCarriedFewerShellNotificationsThanRuns() {
+        let evidence = HonestyFixtures.toolTrafficEvidence(
+            transcriptCompletedShellEventCount: Self.defectiveShellRunCount,
+            shellStreamNotificationCount: 1)
+
+        let verdict = PythonCLIGraders.toolTraffic(evidence: evidence)
+
+        #expect(!verdict.passed)
+        #expect(verdict.rationale.contains("shell"))
+    }
+
+    /// The count of `runCode` calls a transcript with a projection
+    /// defect announced, against the one call the wire carried.
+    private static let defectiveRunCodeCallCount = 3
+
+    /// A transcript that announced more `runCode` calls than the wire
+    /// carried grades FAIL, although every reading is non-zero. Router
+    /// emits one `toolCall` session event per announced call, so the
+    /// wire holds one tool call for each of them.
+    @Test(.timeLimit(.minutes(1)))
+    func toolTrafficFailsWhenTheWireCarriedFewerRunCodeCallsThanTheTranscript() {
+        let evidence = HonestyFixtures.toolTrafficEvidence(
+            transcriptRunCodeCallCount: Self.defectiveRunCodeCallCount,
+            projectedRunCodeCallCount: 1)
+
+        let verdict = PythonCLIGraders.toolTraffic(evidence: evidence)
+
+        #expect(!verdict.passed)
+        #expect(verdict.rationale.contains("runCode"))
+    }
+
     /// Agreeing readings grade PASS, so the FAIL cases above are
-    /// judgments and not constants.
+    /// judgments and not constants. The shell readings agree with two
+    /// notifications for one completed run, because the wire promises
+    /// at least one notification per run and never an exact count.
     @Test(.timeLimit(.minutes(1)))
     func toolTrafficPassesWhenBothReadingsAgree() {
-        let evidence = PythonCLIToolTrafficEvidence(
-            transcriptRunCodeSnippets: [
-                "runCode: await tools.files.write(...); await tools.shell.execute(...)"
-            ],
-            transcriptCompletedShellEventCount: 1,
-            completedRunCodeCallCount: 1,
-            shellStreamNotificationCount: 1)
+        let evidence = HonestyFixtures.toolTrafficEvidence()
 
         let verdict = PythonCLIGraders.toolTraffic(evidence: evidence)
 

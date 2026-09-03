@@ -161,11 +161,19 @@ import Testing
 
         // The two tool-traffic readings agree on a real run, so the
         // grader passes real traffic and the honesty suite's failing
-        // evidence stays a judgment.
+        // evidence stays a judgment. The two count comparisons the
+        // grader makes are named here, so a projection change that
+        // breaks one of them fails on a driven run and not only on
+        // synthesized evidence.
         let evidence = run.toolTrafficEvidence
         #expect(evidence.completedRunCodeCallCount >= 1)
         #expect(evidence.shellStreamNotificationCount >= 1)
         #expect(evidence.transcriptCompletedShellEventCount >= 1)
+        #expect(evidence.transcriptRunCodeCallCount >= 1)
+        #expect(evidence.projectedRunCodeCallCount == evidence.transcriptRunCodeCallCount)
+        #expect(
+            evidence.shellStreamNotificationCount
+                >= evidence.transcriptCompletedShellEventCount)
         let snippets = evidence.transcriptRunCodeSnippets.joined(separator: "\n")
         #expect(snippets.contains(PythonCLIToolTrafficEvidence.filesVerbPathPrefix))
         #expect(snippets.contains(PythonCLIToolTrafficEvidence.shellExecuteVerbPath))

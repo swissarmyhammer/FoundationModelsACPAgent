@@ -8,11 +8,10 @@ import Synchronization
 // `CLIRuns` re-runs the built CLI against the sample's fixed input and
 // compares the bytes it printed. `FilesPresent` stats the disk.
 // `ToolTraffic` reads the recorded transcript AND the wire evidence,
-// and passes only when the two readings agree. The ungated
-// `EvaluatorHonestyTests` holds the first two against a fabricated
-// transcript that claims success over a workspace that fails: the
-// graders take no transcript text at all, so a lying transcript cannot
-// move them.
+// and passes only when the counts of the two sides agree. No grader
+// has a transcript parameter, so no grader can read an agent's claim
+// of success. `EvaluatorHonestyTests` proves that each verdict tracks
+// the disk, the exit code, and the counts.
 
 /// One finished subprocess of a grader: the exit code and the captured
 /// streams.
@@ -171,15 +170,37 @@ enum PythonCLIGraders {
 
     // MARK: - ToolTraffic
 
-    /// Checks that the transcript AND the wire both carry real code-mode
+    /// Checks that the transcript AND the wire carry the same code-mode
     /// tool traffic (the 2026-08-31 card correction).
     ///
     /// The model calls `runCode`, and the snippet calls `tools.files.*`
     /// and `tools.shell.execute`, so the check matches those paths and
-    /// never a top-level tool named `files` or `shell`. A sample passes
-    /// only when both readings agree: traffic the transcript holds but
-    /// the wire never carried is a projection defect, and the eval must
-    /// catch it.
+    /// never a top-level tool named `files` or `shell`.
+    ///
+    /// Traffic the transcript holds but the wire never carried is a
+    /// projection defect, and two readings compare a count against a
+    /// count to catch it. Each states the relation the projection
+    /// promises, and no more:
+    ///
+    /// - The wire carries a tool call for EACH `runCode` call the
+    ///   transcript announced, matched by TOOL-CALL ID. Router emits
+    ///   one `toolCall` session event per announced call, the agent
+    ///   sends one creating `tool_call_update` under that same id, and
+    ///   the client keys its tool calls by id. So the two counts are
+    ///   equal.
+    ///
+    ///   The match is by id and never by title. A driven scripted turn
+    ///   measured five wire tool calls for one announced `runCode`
+    ///   call, and TWO of them were titled `runCode`: the settlement
+    ///   projection puts one more on the wire under an operation's
+    ///   `correlationID`, because the code-mode host stamps every
+    ///   `OperationEvent` with the outer `runCode` tool. A count of the
+    ///   titles is thus above the announced count on a correct run.
+    /// - The wire holds AT LEAST ONE shell notification for EACH
+    ///   completed shell run the transcript recorded. Every run ends
+    ///   with one `terminal_update` that carries its exit status, and
+    ///   the output chunks before it are coalesced. So the wire count
+    ///   is never below the run count, and it is not equal to it.
     ///
     /// - Parameter evidence: The two readings, derived from the recorded
     ///   transcript and the wire by
@@ -188,28 +209,68 @@ enum PythonCLIGraders {
     static func toolTraffic(
         evidence: PythonCLIToolTrafficEvidence
     ) -> PythonCLIGradedVerdict {
-        let snippets = evidence.transcriptRunCodeSnippets.joined(separator: "\n")
-        let readings = [
-            ("the transcript holds a runCode snippet calling tools.files.*",
-             snippets.contains(PythonCLIToolTrafficEvidence.filesVerbPathPrefix)),
-            ("the transcript holds a runCode snippet calling tools.shell.execute",
-             snippets.contains(PythonCLIToolTrafficEvidence.shellExecuteVerbPath)),
-            ("the transcript holds the shell run's completed report",
-             evidence.transcriptCompletedShellEventCount > 0),
-            ("the wire holds a completed runCode tool call",
-             evidence.completedRunCodeCallCount > 0),
-            ("the wire holds the shell steps' streamed output",
-             evidence.shellStreamNotificationCount > 0),
-        ]
-        let failed = readings.filter { !$0.1 }.map(\.0)
+        let readings = toolTrafficReadings(of: evidence)
+        let failed = readings.filter { !$0.holds }.map(\.sentence)
         guard failed.isEmpty else {
             return PythonCLIGradedVerdict(
                 passed: false,
-                rationale: "missing readings: \(failed.joined(separator: "; "))")
+                rationale: "failed readings: \(failed.joined(separator: "; "))")
         }
         return PythonCLIGradedVerdict(
             passed: true,
             rationale: "all \(readings.count) transcript and wire readings agree")
+    }
+
+    /// The readings ``toolTraffic(evidence:)`` grades, each with the
+    /// sentence that names it in a rationale. A count comparison names
+    /// both counts, so a failure reports what disagreed.
+    ///
+    /// - Parameter evidence: The two readings to check.
+    /// - Returns: One named reading per check, in report order.
+    private static func toolTrafficReadings(
+        of evidence: PythonCLIToolTrafficEvidence
+    ) -> [(sentence: String, holds: Bool)] {
+        let snippets = evidence.transcriptRunCodeSnippets.joined(separator: "\n")
+        return [
+            (
+                "the transcript holds a runCode snippet calling tools.files.*",
+                snippets.contains(PythonCLIToolTrafficEvidence.filesVerbPathPrefix)
+            ),
+            (
+                "the transcript holds a runCode snippet calling tools.shell.execute",
+                snippets.contains(PythonCLIToolTrafficEvidence.shellExecuteVerbPath)
+            ),
+            (
+                "the transcript announced a runCode call",
+                evidence.transcriptRunCodeCallCount > 0
+            ),
+            (
+                "the transcript holds the shell run's completed report",
+                evidence.transcriptCompletedShellEventCount > 0
+            ),
+            (
+                "the wire completed an announced runCode tool call",
+                evidence.completedRunCodeCallCount > 0
+            ),
+            (
+                """
+                the wire carries a tool call for each runCode call the transcript \
+                announced (\(evidence.projectedRunCodeCallCount) against \
+                \(evidence.transcriptRunCodeCallCount))
+                """,
+                evidence.projectedRunCodeCallCount == evidence.transcriptRunCodeCallCount
+            ),
+            (
+                """
+                the wire holds at least one shell notification for each completed \
+                shell run the transcript recorded \
+                (\(evidence.shellStreamNotificationCount) against \
+                \(evidence.transcriptCompletedShellEventCount))
+                """,
+                evidence.shellStreamNotificationCount
+                    >= evidence.transcriptCompletedShellEventCount
+            ),
+        ]
     }
 
     // MARK: - The subprocess runner
@@ -356,16 +417,33 @@ struct PythonCLIToolTrafficEvidence: Sendable, Equatable {
     static let shellExecuteVerbPath = "tools.shell.execute"
 
     /// The `code` arguments of the recorded `runCode` tool calls, read
-    /// from the transcript's `.toolCalls` entries.
+    /// from the transcript's `.toolCalls` entries. One text per event,
+    /// because the reading is matched for the verb paths it holds and
+    /// never counted.
     let transcriptRunCodeSnippets: [String]
+
+    /// How many `runCode` calls the recorded `.toolCalls` entries
+    /// announced, counted per CALL. One entry can announce several
+    /// calls, so this is not the number of events
+    /// ``transcriptRunCodeSnippets`` holds.
+    let transcriptRunCodeCallCount: Int
 
     /// How many recorded events carry the shell run's completed
     /// report — the `"execute shell"` journal op with its completion
     /// state, in a recorded `.toolOutput` segment.
     let transcriptCompletedShellEventCount: Int
 
-    /// How many completed `runCode` tool calls the client container
-    /// accumulated (`ACPSessionState.toolCalls`).
+    /// How many of the announced `runCode` calls the client container
+    /// (`ACPSessionState.toolCalls`) carries, matched by tool-call id.
+    ///
+    /// The match is by id and never by title, because the wire also
+    /// carries calls titled `runCode` that the transcript never
+    /// announced: see ``PythonCLIGraders/toolTraffic(evidence:)``.
+    let projectedRunCodeCallCount: Int
+
+    /// How many of the announced `runCode` calls the client container
+    /// carries with a completed status, matched by the same id rule as
+    /// ``projectedRunCodeCallCount``.
     let completedRunCodeCallCount: Int
 
     /// How many notifications carried the shell steps' streamed output:

@@ -439,36 +439,83 @@ extension PythonCLITurnRun {
     /// to Router — and the shell run's completed report in the
     /// recorded `.toolOutput` segments (see
     /// ``completedShellEventCount(in:)`` for why the operation events
-    /// alone cannot name the shell). The wire side reads the
-    /// accumulated `runCode` calls and the streamed shell output
-    /// kinds.
+    /// alone cannot name the shell).
+    ///
+    /// The wire side counts the tool calls whose id the transcript
+    /// announced, and the streamed shell output kinds. The `runCode`
+    /// calls are matched by ID and never by title, because the
+    /// settlement projection also puts calls titled `runCode` on the
+    /// wire under an operation's `correlationID` — see
+    /// ``PythonCLIGraders/toolTraffic(evidence:)``.
     var toolTrafficEvidence: PythonCLIToolTrafficEvidence {
-        PythonCLIToolTrafficEvidence(
-            transcriptRunCodeSnippets: Self.runCodeSnippets(in: transcript),
+        let recorded = Self.recordedRunCodeTraffic(in: transcript)
+        let announcedIDs = Set(recorded.callIDs)
+        let projected = toolCalls.filter { announcedIDs.contains($0.toolCallId.rawValue) }
+        return PythonCLIToolTrafficEvidence(
+            transcriptRunCodeSnippets: recorded.snippets,
+            transcriptRunCodeCallCount: announcedIDs.count,
             transcriptCompletedShellEventCount: Self.completedShellEventCount(in: transcript),
-            completedRunCodeCallCount: toolCalls.count { call in
-                call.title == .value(Self.runCodeToolName) && call.status == .value(.completed)
-            },
+            projectedRunCodeCallCount: projected.count,
+            completedRunCodeCallCount: projected.count { $0.status == .value(.completed) },
             shellStreamNotificationCount: notifications.count { notification in
                 Self.shellStreamUpdateKinds.contains(notification.update.kind)
             })
     }
 
-    /// The encoded payloads of the recorded `runCode` `.toolCalls`
-    /// events.
+    /// The `runCode` tool calls one recorded `.toolCalls` entry
+    /// announced, decoded from the entry's own JSON form.
+    ///
+    /// `TranscriptEntryPayload.toolCalls` is internal to Router, so the
+    /// eval reads the durable shape on disk instead of the typed one.
+    private struct RecordedToolCallsEntry: Decodable {
+        /// One announced call.
+        struct Call: Decodable {
+            /// The call's own id. Router hands the same id to the
+            /// `toolCall` session event, so it is the id the wire
+            /// carries.
+            let id: String
+
+            /// The name of the tool the model called.
+            let toolName: String
+        }
+
+        /// The calls the entry announced, in request order. Absent on
+        /// every entry kind that announces no call.
+        let toolCalls: [Call]?
+    }
+
+    /// The recorded `runCode` traffic of the transcript: one encoded
+    /// payload per `.toolCalls` event that names `runCode`, and the id
+    /// of every `runCode` call those events announced.
+    ///
+    /// The ids are per CALL and not per event, because one `.toolCalls`
+    /// entry can announce several calls and Router emits one
+    /// `toolCall` session event for each of them.
     ///
     /// - Parameter transcript: The recorded events.
-    /// - Returns: One JSON text per `runCode` tool-calls event.
-    private static func runCodeSnippets(in transcript: [TranscriptEvent]) -> [String] {
+    /// - Returns: The snippets and the announced `runCode` call ids.
+    private static func recordedRunCodeTraffic(
+        in transcript: [TranscriptEvent]
+    ) -> (snippets: [String], callIDs: [String]) {
         let encoder = JSONEncoder()
-        return transcript.compactMap { event -> String? in
+        let decoder = JSONDecoder()
+        let entries = transcript.compactMap { event -> (text: String, data: Data)? in
             guard event.kind == .toolCalls, let entry = event.entry,
                 let encoded = try? encoder.encode(entry)
             else { return nil }
             let text = String(decoding: encoded, as: UTF8.self)
             guard text.contains(runCodeToolName) else { return nil }
-            return text
+            return (text, encoded)
         }
+        let callIDs =
+            entries
+            .flatMap { entry in
+                (try? decoder.decode(RecordedToolCallsEntry.self, from: entry.data))?.toolCalls
+                    ?? []
+            }
+            .filter { $0.toolName == runCodeToolName }
+            .map(\.id)
+        return (entries.map(\.text), callIDs)
     }
 
     /// The journal op of a shell run, Multitool's "verb noun" spelling.
