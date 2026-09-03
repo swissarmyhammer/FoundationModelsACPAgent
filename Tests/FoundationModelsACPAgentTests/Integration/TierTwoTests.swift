@@ -70,11 +70,6 @@ import Testing
     /// The SDK id of the second scripted tool call — the `wait` call.
     private static let waitCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "2"
 
-    /// The SDK id of the third scripted tool call — the second `wait`
-    /// play, which a turn whose snippet started a nested background shell
-    /// run needs, and under which that run's report reaches the wire.
-    private static let nestedRunWaitCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "3"
-
     /// The marker of the files capability's in-band out-of-root
     /// correction (Multitool's `PathGuard` wording).
     private static let confinementRefusalMarker = "outside workspace boundaries"
@@ -150,10 +145,25 @@ import Testing
     /// pipe reads.
     private static let minimumStreamedChunkCount = 2
 
-    /// The `wait` plays of a turn whose snippet starts a nested
-    /// background shell run: the first settles the `runCode` run, and the
-    /// second joins the shell run, so the run settles inside the turn.
+    /// The `wait` plays the streamed-shell proof runs: the first settles
+    /// the `runCode` run, and the second joins the nested shell run, so
+    /// the run settles inside the turn.
+    ///
+    /// The sandbox proof runs ONE collecting play instead, because a play
+    /// that names its run reads no snapshot — see that proof's own
+    /// comment.
     private static let shellWaitStepCount = 2
+
+    /// The bound, in seconds, the snippet's own `wait` global takes.
+    ///
+    /// The global demands a number, and this is the one number that is
+    /// not a guess: `ToolContext.deadlineSecondsCeiling` is the host's
+    /// own no-bound value. `SessionMailbox` caps every seconds-valued
+    /// deadline there, and `WaitTool` passes it for a call that names
+    /// none, so a wait under it ends when the run ends and never on a
+    /// clock of its own. The guard on a run that never ends is the
+    /// proof's own `.timeLimit`.
+    private static let snippetWaitSeconds = ToolContext.deadlineSecondsCeiling
 
     /// What a proof waits for when it needs the shell run's exit report.
     private static let terminalExitLabel = "the terminal exit report"
@@ -281,21 +291,28 @@ import Testing
     /// `waitStepCount` plays of `wait`, then the turn end.
     ///
     /// One `wait` settles the `runCode` run itself. A snippet that
-    /// starts a nested background run — `tools.shell.execute` — needs
-    /// a second `wait`: the nested run registers only when the snippet
-    /// resolves, after the first `wait` took its pending snapshot.
+    /// starts a nested background run — `tools.shell.execute` — and
+    /// leaves it running needs a second `wait`: the nested run registers
+    /// only when the snippet resolves, after the first `wait` took its
+    /// pending snapshot.
     ///
     /// - Parameters:
     ///   - code: The snippet the turn runs.
     ///   - waitStepCount: How many `wait` plays follow the snippet.
+    ///   - collectsRunByToken: Whether each `wait` play NAMES the run the
+    ///     step before it announced, instead of asking for whatever is
+    ///     still running. A named play collects a run that already
+    ///     settled as well, so it cannot race the run.
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
     private static func makeToolTurnScript(
-        code: String, waitStepCount: Int = 1
+        code: String, waitStepCount: Int = 1, collectsRunByToken: Bool = false
     ) throws -> [ScriptedTurnStep] {
-        let waits = [ScriptedTurnStep](
-            repeating: .toolCall(name: waitToolName, argumentsJSON: "{}"),
-            count: waitStepCount)
+        let play: ScriptedTurnStep =
+            collectsRunByToken
+            ? .collectingToolCall(name: waitToolName)
+            : .toolCall(name: waitToolName, argumentsJSON: "{}")
+        let waits = [ScriptedTurnStep](repeating: play, count: waitStepCount)
         return [
             .toolCall(name: runCodeToolName, argumentsJSON: try runCodeArgumentsJSON(code: code))
         ] + waits + [.endTurn]
@@ -390,6 +407,8 @@ import Testing
     ///   - code: The snippet the turn runs.
     ///   - label: The directory label of the calling proof.
     ///   - waitStepCount: How many `wait` plays follow the snippet.
+    ///   - collectsRunByToken: Whether each `wait` play names the run it
+    ///     collects — see ``makeToolTurnScript(code:waitStepCount:collectsRunByToken:)``.
     ///   - workingDirectory: The pre-made session working directory,
     ///     or `nil` to let the fixture make one.
     ///   - projectConfigYAML: The project `config.yaml`, or `nil`.
@@ -409,6 +428,7 @@ import Testing
         code: String,
         label: String,
         waitStepCount: Int = 1,
+        collectsRunByToken: Bool = false,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
         mcpServers: [FoundationModelsACP.MCPServer]? = nil,
@@ -416,7 +436,8 @@ import Testing
         flashContainer: (any LoadedLLMContainer)? = nil,
         tapsWire: Bool = false
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
-        let script = try makeToolTurnScript(code: code, waitStepCount: waitStepCount)
+        let script = try makeToolTurnScript(
+            code: code, waitStepCount: waitStepCount, collectsRunByToken: collectsRunByToken)
         var loader = makeScriptedModelLoader(script: script)
         if let flashContainer {
             let scriptedContainer = loader.makeLLMContainer
@@ -577,19 +598,20 @@ import Testing
 
     /// The shell run report a collecting `wait` call answered.
     ///
-    /// The `wait` answer is the array of the runs it collected, and each
-    /// entry's `detail` field holds the collected verb's own answer —
-    /// for `tools.shell.execute`, the run report object. Both are
-    /// decoded as JSON, so the proof reads the report's fields and never
-    /// matches a rendered string.
+    /// A `wait` play that NAMES its run answers that one run's report
+    /// object. Its `detail` field holds the collected run's own value,
+    /// and the sandbox proof's snippet returns the shell run's report as
+    /// the `runCode` run's value, so the field holds the report. Both
+    /// are decoded as JSON, so the proof reads the report's fields and
+    /// never matches a rendered string.
     ///
     /// - Parameter update: The accumulated `wait` tool call.
     /// - Returns: The decoded run report.
     /// - Throws: When the call carries no decodable run report.
     private static func shellRunReport(of update: ToolCallUpdate) throws -> [String: Any] {
         let collected = try #require(rawOutputString(of: update))
-        let runs = try JSONSerialization.jsonObject(with: Data(collected.utf8))
-        let detail = try #require((runs as? [[String: Any]])?.first?["detail"] as? String)
+        let run = try JSONSerialization.jsonObject(with: Data(collected.utf8))
+        let detail = try #require((run as? [String: Any])?["detail"] as? String)
         let report = try JSONSerialization.jsonObject(with: Data(detail.utf8))
         return try #require(report as? [String: Any])
     }
@@ -1282,6 +1304,25 @@ import Testing
     /// sends an EMPTY `TerminalExitStatus`, whose presence marks the
     /// terminal exited and which carries neither a code nor a signal.
     ///
+    /// **Why the snippet holds the shell run, and why the `wait` play
+    /// names it.** Two facts of the run plane decide the shape of this
+    /// turn. A `wait` call that names NO token reads a snapshot of the
+    /// runs that have not settled yet — `SessionMailbox.markSettled`
+    /// removes a run from `runsByToken` and from `trackingOrder` the
+    /// moment it settles — so such a play collects a run only while the
+    /// run is still going, and the report of a run that finished first
+    /// is gone from it for ever. This command finishes in about ten
+    /// milliseconds, which is how long an unnamed play would have had.
+    /// A `wait` call that NAMES its token reads `settledTerminalEvents`
+    /// FIRST, which retains the newest 128 settlements, so it collects
+    /// a settled run as readily as a running one.
+    ///
+    /// So the snippet holds the shell run itself, through the sandbox's
+    /// own `wait(completionToken, seconds)` global, and returns that
+    /// run's report as the `runCode` run's own value; and the turn plays
+    /// ONE `wait` that names the `runCode` run. Neither collection reads
+    /// a snapshot, so neither can lose the report to a slow machine.
+    ///
     /// The composition-level coverage of the same rule stands beside this
     /// proof, and a reader wanting the whole picture reads all three:
     /// `SandboxCompositionTests.aWriteOutsideTheRootSetNeverLands` drives
@@ -1296,19 +1337,22 @@ import Testing
         let escaped = outside.appendingPathComponent(Self.escapedWriteFileName)
         let command = "printf '\(Self.escapedWriteContent)' > '\(escaped.path)'"
         let code = """
-            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
+            const envelope = await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
+            const started = JSON.parse(envelope);
+            const finished = await wait(started.completionToken, \(Self.snippetWaitSeconds));
+            return JSON.parse(finished.detail);
             """
 
         let (fixture, turnUpdates) = try await Self.runToolTurn(
             code: code,
             label: "TierTwoTests-sandbox",
-            waitStepCount: Self.shellWaitStepCount,
+            collectsRunByToken: true,
             workingDirectory: cwd)
         let updates = try await Self.waitForTerminalExit(of: fixture.collector)
         await fixture.harness.flushPendingChunks()
         let streamed = try Self.streamedTerminalText(in: updates)
         let report = try Self.shellRunReport(
-            of: try await Self.accumulatedToolCall(of: fixture, id: Self.nestedRunWaitCallId))
+            of: try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId))
         await fixture.close()
 
         // The disk is the truth (plan.md §20.1): the redirect named a

@@ -26,6 +26,23 @@ public enum ScriptedTurnStep: Sendable, Equatable {
     /// `argumentsJSON`.
     case toolCall(name: String, argumentsJSON: String)
 
+    /// Invokes the handed tool named `name` with the completion token
+    /// the step before it answered — the `wait` play that names the run
+    /// it collects instead of asking for whatever is still running.
+    ///
+    /// **Why a scripted turn needs this step.** A `wait` call that names
+    /// no token reads a SNAPSHOT of the runs that have not settled yet,
+    /// and a run drops out of that snapshot the moment it settles. So a
+    /// no-token play collects a run only while the run is still going,
+    /// and a run that finished first is gone from it for ever. A play
+    /// that NAMES the token reads the mailbox's retained terminal as
+    /// well, so it collects the run whether the run is still going or
+    /// already finished, and the collection cannot race the run.
+    ///
+    /// The token is read from the previous step's own answer, because a
+    /// script is written before the session mints one.
+    case collectingToolCall(name: String)
+
     /// Throws the real SDK error `failure` names, so a stop-reason test
     /// drives the turn owner's error mapping (plan.md §8.2).
     case fail(ScriptedFailure)
@@ -97,6 +114,12 @@ public enum ScriptedModelError: Error, Equatable {
     /// A `toolCall` step named a tool the session was not handed. The
     /// turn fails loudly instead of passing while measuring nothing.
     case unknownTool(String)
+
+    /// A `collectingToolCall` step stood after a step whose answer
+    /// carried no completion token, so the play has no run to name. The
+    /// turn fails loudly instead of collecting whatever is still
+    /// running, which is the snapshot read the step exists to avoid.
+    case noRunToCollect
 }
 
 /// A session backend that plays a fixed script: text deltas, known
@@ -130,6 +153,12 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// declares. The value only satisfies the SDK initializer.
     private static let outputSchemaName = "ScriptedToolOutput"
 
+    /// The field a background run's pending envelope carries its
+    /// completion token under, and the field a `wait` call names the run
+    /// to collect under. One name serves both, because the envelope is
+    /// where the collecting play reads the token it passes back.
+    private static let completionTokenField = "completionToken"
+
     /// The synthesized transcript of one backend: the SDK entries the
     /// played tool calls appended, and how many tool calls played —
     /// the source of the deterministic scripted call ids.
@@ -139,6 +168,12 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
 
         /// The number of tool calls played so far.
         var playedToolCallCount = 0
+
+        /// The text the newest played tool call answered, or `nil`
+        /// before the first call answers. A
+        /// ``ScriptedTurnStep/collectingToolCall(name:)`` step reads the
+        /// completion token out of it.
+        var latestAnswer: String?
     }
 
     /// The synthesized transcript, guarded for the sync
@@ -217,7 +252,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///
     /// - Parameter yield: Receives each text delta, in order.
     /// - Throws: ``ScriptedModelError/unknownTool(_:)`` for a tool the
-    ///   session was not handed, or the invoked tool's own error.
+    ///   session was not handed, ``ScriptedModelError/noRunToCollect``
+    ///   for a collecting play with no token to name, or the invoked
+    ///   tool's own error.
     private func playScript(yield: (String) -> Void) async throws {
         for step in script {
             switch step {
@@ -225,6 +262,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 yield(text)
             case .toolCall(let name, let argumentsJSON):
                 try await invokeTool(named: name, argumentsJSON: argumentsJSON)
+            case .collectingToolCall(let name):
+                try await invokeCollectingTool(named: name)
             case .fail(let failure):
                 throw failure.error
             case .hold:
@@ -264,6 +303,42 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         let callId = appendToolCallsEntry(name: name, arguments: content)
         let output = try await ToolInvoker.invoke(tool, content: content)
         appendToolOutputEntry(callId: callId, name: name, output: output)
+        synthesized.withLock { $0.latestAnswer = output as? String }
+    }
+
+    /// Invokes the handed tool `name` with the completion token the
+    /// previous step answered, so the play names the run it collects.
+    ///
+    /// - Parameter name: The name of the tool to invoke.
+    /// - Throws: ``ScriptedModelError/noRunToCollect`` when the previous
+    ///   step's answer carries no completion token; otherwise whatever
+    ///   ``invokeTool(named:argumentsJSON:)`` throws.
+    private func invokeCollectingTool(named name: String) async throws {
+        guard let token = latestCompletionToken() else {
+            throw ScriptedModelError.noRunToCollect
+        }
+        try await invokeTool(
+            named: name, argumentsJSON: try Self.argumentsJSON(collecting: token))
+    }
+
+    /// The completion token the newest played call answered.
+    ///
+    /// - Returns: The token, or `nil` when no call has answered yet and
+    ///   when the newest answer is not an object carrying one.
+    private func latestCompletionToken() -> String? {
+        guard let answer = synthesized.withLock({ $0.latestAnswer }) else { return nil }
+        let decoded = try? JSONSerialization.jsonObject(with: Data(answer.utf8))
+        return (decoded as? [String: Any])?[Self.completionTokenField] as? String
+    }
+
+    /// The arguments of a collecting play: the one run to wait for.
+    ///
+    /// - Parameter token: The completion token to name.
+    /// - Returns: The arguments, as JSON.
+    /// - Throws: The encoding error.
+    private static func argumentsJSON(collecting token: String) throws -> String {
+        let encoded = try JSONEncoder().encode([completionTokenField: token])
+        return String(decoding: encoded, as: UTF8.self)
     }
 
     /// Appends the `.toolCalls` entry of one played call and mints the

@@ -64,8 +64,59 @@ comments:
     - review: clean — `review sha HEAD~1..HEAD`, 7 validators attempted, 0 failed, 0 findings.
     - next: The card is in `done`. No open finding stands.
   timestamp: 2026-09-03T18:27:09.430695+00:00
-position_column: done
-position_ordinal: a880
+- actor: claude-code
+  id: 01m1mg2gm5se8ase3yfadnqp4z
+  text: |-
+    Research, by measurement, of the CI failure in run 33801690872 (`TierTwoTests.swift:592`, the `#require` in `shellRunReport(of:)`).
+
+    **Local repetition: the proof NEVER failed here.** 25 runs of `swift test --filter aSandboxedShellWriteOutsideTheRootSetNeverLands` with an idle machine: 25 pass, 0 fail. 20 more runs with 36 busy loops on an 18-core machine (2x the core count): 20 pass, 0 fail. 45 consecutive local passes, so the race cannot be shown by repetition on this machine.
+
+    **What the `wait` verb does, read from the source.** `WaitTool.call` with no `completionToken` takes `context.backgroundRuns()`, which `SessionMailbox.backgroundRuns()` builds from `runsByToken`/`trackingOrder`. `markSettled` REMOVES a run from both the moment it settles. So the no-token `wait` reads a SNAPSHOT of the runs that have not settled yet:
+
+    - a run not yet registered: absent from the snapshot;
+    - a run registered and still going: in the snapshot, and the call blocks for it;
+    - a run that already settled: absent, exactly like a run that never existed.
+
+    With an empty snapshot the tool answers the OBJECT `{"result":"nothingPending","detail":"..."}` — not an array. That is the failure at that line: `runs as? [[String: Any]]` is `nil` for an object, so `.first?["detail"]` is `nil` and the `#require` fails. The reported message matches this shape exactly.
+
+    A TOKEN-named `wait` is a different answer: `SessionMailbox.wait(completionToken:seconds:)` reads `settledTerminalEvents` FIRST and returns `.settled` for a run that already finished. The retention is the newest 128 settlements, and the turn holds two runs, so a token-named collection cannot miss.
+
+    **The race, reproduced.** A probe turn that starts the shell run and then holds 300 ms in the snippet before returning made the collecting `wait` answer `{"result":"nothingPending",...}` — the exact CI symptom. The probe also measured the shapes: `tools.shell.execute` answers a JS STRING holding the pending envelope; the first `wait` play collects the `runCode` run; the second collects the shell run; and the shell run's own tool call in `ACPSessionState.toolCalls` carries the Terminal reference and NO `rawOutput`, so the exit code is reachable through a `wait` answer alone.
+
+    **So the mechanism is confirmed, and the direction is named.** The shell run reports `durationMs` of 10 or 11. The snippet resolves about 1 ms into that life, which is what releases the first `wait`. The collecting `wait` must therefore reach the mailbox inside the remaining ~10 ms, or the run has settled and been reaped and the answer is `nothingPending` for ever. A loaded runner takes longer than that between two plays.
+  timestamp: 2026-09-03T20:41:25.381632+00:00
+- actor: claude-code
+  id: 01m1mgq280xcsrpfn11s2yrptz
+  text: |-
+    The fix: the collecting play NAMES its run, and the snippet holds the shell run.
+
+    **Two changes, and each removes one snapshot read.**
+
+    1. `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift` gains `ScriptedTurnStep.collectingToolCall(name:)`. The step invokes the named tool with `{"completionToken": <the token the step before it answered>}`, read out of that answer, because a script is written before the session mints a token. A token-named `wait` reads `settledTerminalEvents` FIRST, so it collects a run that already settled as readily as one still going. `ScriptedModelError.noRunToCollect` makes a play with no token to name fail loudly instead of falling back to the snapshot read the step exists to avoid.
+
+    2. Proof 8's snippet now holds the shell run itself, through the sandbox's own `wait(completionToken, seconds)` global, and returns that run's report as the `runCode` run's own value. The turn then plays ONE collecting `wait` that names the `runCode` run. Neither collection reads a snapshot.
+
+    **The bound is not a guess.** The sandbox `wait` global demands a seconds number (`SandboxGlobalError.missingWaitDeadline` without one). The proof passes `ToolContext.deadlineSecondsCeiling`, which is the host's own no-bound value: `SessionMailbox.boundedNanoseconds` caps every seconds-valued deadline there, and `WaitTool.unboundedSeconds` passes the same value for a call that names none. So the wait ends when the run ends, never on a clock of its own, and the guard on a run that never ends stays the proof's `.timeLimit(.minutes(1))`.
+
+    **Measured, that the race is gone.** A probe played TWO collecting waits. The second ran after the `runCode` run had settled and `markSettled` had removed it from `runsByToken` and `trackingOrder`, and it still answered the whole run report (`exitCode` 1). The same second play under the old no-token shape answered `{"result":"nothingPending"}`. That is the property the fix stands on, measured rather than argued.
+
+    **Every claim of the proof stands, watched RED.** With `SandboxComposition.composeShell` handing the shell a pass-through `CommandSandbox` — `wrap` returns the shell path and arguments unchanged — the rewritten proof fails with the SAME four issues the first version failed with: the file LANDED on disk, the stream carried no `Operation not permitted`, the stream did not name the path, and the `exitCode` was `0`. The production file was reverted with `git checkout` and carries no probe code. The run report was still reachable in that RED run, so the collection is sound in both directions.
+
+    **What did not work, so the next agent does not repeat it.** The exit code is NOT reachable outside a `wait` answer. Measured: the nested shell run's own tool call in `ACPSessionState.toolCalls` carries the Terminal reference and no `rawOutput`; the `runCode` run's own tool call carries neither; and the `runCode` scripted call keeps the pending envelope. The ACP exit report carries an empty `TerminalExitStatus`. So reading the report from the session state instead of a `wait` answer is not an option.
+
+    Also rejected: a larger fixed `waitStepCount`. Extra plays cannot recover a settled run, because `markSettled` reaps it, so a later unnamed play answers `nothingPending` just as the earlier one did. It widens no window at all.
+
+    `nestedRunWaitCallId` is removed, because proof 8 was its one caller and the turn now plays two scripted calls.
+  timestamp: 2026-09-03T20:52:38.784568+00:00
+- actor: claude-code
+  id: 01m1mgqamradtray65tgzcks9g
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift (the `collectingToolCall` step) and Tests/FoundationModelsACPAgentTests/Integration/TierTwoTests.swift (the holding snippet, the one collecting play, the reader, the removed `nestedRunWaitCallId`). Root `swift test` → 351 tests in 34 suites passed, 0 failed, 0 skipped, 1 known issue (the pre-existing `withKnownIssue` in `HarnessSmokeTests`) — the baseline count, unchanged. `swift build --build-tests` and `swift build --build-tests --package-path IntegrationTests` both clean, zero warnings. The fixed proof ran 55 times in a row with no failure: 30 on an idle machine, and 25 more with 36 busy loops on 18 cores. Before the fix it ran 45 times with no failure too, so repetition is not what proves the fix — the probe is: a collecting play that names a run collected it after `markSettled` had reaped it, where the no-token play answered `nothingPending`.
+    - next: ready for /review
+  timestamp: 2026-09-03T20:52:47.384309+00:00
+position_column: doing
+position_ordinal: '80'
 title: Add a tier-2 proof that the seatbelt sandbox denies a shell write outside the root
 ---
 ## What
