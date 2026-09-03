@@ -264,17 +264,15 @@ extension RoutedACPAgent {
         // session, not a guided one — and `agentSpawn` stays nil: agents
         // arrive later as a Multitool code-mode background capability
         // (§11.3), spawned from inside a tool call, never from
-        // `session/new`.
-        // TODO(^f40jzjy): derive the TokenBudget from the `compaction:`
-        // section once Router publicly shows the resolved context;
-        // `SlotResolution.contextTokens` is package-internal today, so
-        // automatic compaction stays off.
+        // `session/new`. The budget turns automatic compaction on: the
+        // fractions come from the `compaction:` section and the limit
+        // from the model's resolved context (plan.md §2.4).
         let session = residentProfile.standard.makeSession(
             instructions: composition.instructions,
             workingDirectory: workingDirectory,
             recordingRoot: composition.transcriptRoot,
             tools: composition.surface.tools,
-            budget: nil,
+            budget: composition.configuration.compaction.budget(for: residentProfile.standard),
             compactionPrompt: .default)
 
         // The `sessions.jsonl` index record is NOT written here: the
@@ -532,5 +530,26 @@ extension RoutedACPAgent {
                     in: sessionId)
             }
         }
+    }
+}
+
+extension CompactionConfiguration {
+    /// Builds the auto-compaction budget for a session vended from `model`
+    /// (plan.md §2.4): this section carries the fractions and the
+    /// tool-output cap, and the model carries the resolved working context
+    /// the fractions measure against. `session/new` and the model-slot
+    /// switch both derive through this one door, so the two paths cannot
+    /// drift.
+    ///
+    /// - Parameter model: The resident model the session is vended from;
+    ///   its `contextTokens` is the budget's limit.
+    /// - Returns: The budget `makeSession(budget:)` receives.
+    func budget(for model: RoutedLLM) -> TokenBudget {
+        TokenBudget(
+            limit: model.contextTokens,
+            trigger: trigger,
+            target: target,
+            hardCeiling: hardCeiling,
+            toolOutputLimit: toolOutputLimit)
     }
 }
