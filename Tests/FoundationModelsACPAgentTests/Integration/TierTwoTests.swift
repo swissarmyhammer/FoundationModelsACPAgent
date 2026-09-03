@@ -33,6 +33,13 @@ import Testing
 ///   `recordsChanges: true`, so the write attaches its `FileChangeSet`
 ///   and the projection fills the paths from it, never from a
 ///   rendered string.
+/// - Proof 1 reads the surface NAMES from a direct
+///   `ToolCatalog.makeRegistry` call (task `^7dwcz2a`), because
+///   `journalOp` and `group` are `APISurface.Entry` properties and the
+///   sandbox's `help()` renders paths alone. Its three `CatalogContext`
+///   facts — the root set, the decoded config section, and the resolved
+///   profile — are driven and asserted through
+///   `FoundationModelsACPClient`, like the other six proofs.
 @Suite struct TierTwoTests {
     // MARK: - Constants
 
@@ -57,7 +64,12 @@ import Testing
     /// correction (Multitool's `PathGuard` wording).
     private static let confinementRefusalMarker = "outside workspace boundaries"
 
-    /// The secret the confinement proof plants outside the root set.
+    /// The whole opening of the out-of-root correction. The composition
+    /// proof matches the opening, so the outcome label in front of it
+    /// ties the correction to the read that answered it.
+    private static let confinementRefusalOpening = "Path is " + confinementRefusalMarker
+
+    /// The secret the confinement proofs plant outside the root set.
     /// It must never cross the wire.
     private static let outsideSecret = "TIER-TWO-OUTSIDE-SECRET-b2f4"
 
@@ -116,6 +128,68 @@ import Testing
 
     /// The `journalOp` of the execute verb.
     private static let executeJournalOp = "execute shell"
+
+    /// The file the composition proof plants under the session's
+    /// additional root. A read of it answers content only when the built
+    /// verbs took their root set from `cwd` plus `additionalDirectories`.
+    private static let additionalRootFileName = "in-the-additional-root.txt"
+
+    /// The exact content of the additional root's file.
+    private static let additionalRootContent = "tier two reached the additional root"
+
+    /// The file the composition proof asks the read-only session to
+    /// write. It must never reach the disk.
+    private static let refusedWriteFileName = "composition-refused-write.txt"
+
+    /// The content the refused write would have carried.
+    private static let refusedWriteContent = "tier two must never write this line"
+
+    /// The project config of the composition proof's session: the files
+    /// section is read-only, so every mutating verb refuses in band
+    /// while the reading verbs stand.
+    private static let readOnlyFilesConfigYAML = """
+        tools:
+          files:
+            readOnly: true
+        """
+
+    /// The marker of the files capability's in-band read-only
+    /// correction (Multitool's `Write` wording).
+    private static let readOnlyRefusalMarker =
+        "The session is read-only, so the `write` verb cannot change files."
+
+    /// The label of each outcome line the composition snippet reports
+    /// for the read under the additional root.
+    private static let insideReadLabel = "inside"
+
+    /// The outcome label of the read outside the root set.
+    private static let outsideReadLabel = "outside"
+
+    /// The outcome label of the write on the read-only session.
+    private static let refusedWriteLabel = "write"
+
+    /// The outcome label of the `searchTools` answer.
+    private static let searchLabel = "search"
+
+    /// How many characters of the `searchTools` answer the composition
+    /// snippet reports.
+    ///
+    /// The whole answer carries each selected entry's documentation
+    /// block, which overruns the tool-output cap and truncates the
+    /// outcome lines with it. The opening carries the header and the
+    /// first entry's verb path, which is the part the proof reads.
+    private static let searchAnswerReportLength = 200
+
+    /// The task the composition proof gives `searchTools`. The stub
+    /// librarian's recorded prompt must carry it, which is what ties the
+    /// recording to this call.
+    private static let librarianTask = "read one text file from the workspace"
+
+    /// The selection the stub librarian answers, in the shape
+    /// `SelectionTier` decodes. It names the shell execute verb, which
+    /// is not the verb ``librarianTask`` describes, so an answer that
+    /// reports that verb can only have come from the librarian slot.
+    private static let librarianSelectionJSON = #"{"ids":["\#(executeVerbPath)"]}"#
 
     // MARK: - Script builders
 
@@ -176,6 +250,47 @@ import Testing
         """
     }
 
+    /// The snippet of the composition proof: a read under the session's
+    /// additional root, a read outside the root set, a write on the
+    /// read-only session, and one `searchTools` call that runs on the
+    /// profile's flash slot.
+    ///
+    /// Each step reports its own outcome on a labeled line, so one
+    /// assertion reads one fact and a failure names the step it came
+    /// from.
+    ///
+    /// - Parameters:
+    ///   - insidePath: The file under the additional root to read.
+    ///   - outsidePath: The file outside the root set to read.
+    /// - Returns: The snippet.
+    /// - Throws: The path-quoting error.
+    private static func compositionCode(
+        insidePath: String, outsidePath: String
+    ) throws -> String {
+        """
+        const inside = await tools.files.read({ path: \(try jsonStringLiteral(text: insidePath)), format: "plain" });
+        const outside = await tools.files.read({ path: \(try jsonStringLiteral(text: outsidePath)), format: "plain" });
+        const written = await tools.files.write({ path: "\(refusedWriteFileName)", content: "\(refusedWriteContent)" });
+        const found = await tools.searchTools({ task: "\(librarianTask)" });
+        return [
+            "\(insideReadLabel)=" + (inside.correction ? inside.correction : inside.lines.join("")),
+            "\(outsideReadLabel)=" + (outside.correction ? outside.correction : "the read answered content"),
+            "\(refusedWriteLabel)=" + (written.correction ? written.correction : "the write changed the file"),
+            "\(searchLabel)=" + found.slice(0, \(searchAnswerReportLength))
+        ].join("\\n");
+        """
+    }
+
+    /// One labeled outcome line of ``compositionCode(insidePath:outsidePath:)``.
+    ///
+    /// - Parameters:
+    ///   - label: The step's outcome label.
+    ///   - value: The value the step is expected to report.
+    /// - Returns: The line the snippet emits for that step.
+    private static func outcomeLine(label: String, value: String) -> String {
+        "\(label)=\(value)"
+    }
+
     // MARK: - Turn driver
 
     /// Wires the fixture, prompts one scripted tool turn, waits for
@@ -189,6 +304,13 @@ import Testing
     ///     or `nil` to let the fixture make one.
     ///   - projectConfigYAML: The project `config.yaml`, or `nil`.
     ///   - mcpServers: The client's per-session MCP servers, or `nil`.
+    ///   - additionalDirectories: The `session/new` additional roots,
+    ///     or `nil` for none.
+    ///   - flashContainer: The resident model the flash slot loads, or
+    ///     `nil` to let every slot play the turn script. The
+    ///     composition proof passes a recording librarian here, because
+    ///     `ToolCatalog.sessionSurface` hands `profile.flash` to
+    ///     `searchTools`.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
     private static func runToolTurn(
@@ -197,14 +319,25 @@ import Testing
         waitStepCount: Int = 1,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
-        mcpServers: [FoundationModelsACP.MCPServer]? = nil
+        mcpServers: [FoundationModelsACP.MCPServer]? = nil,
+        additionalDirectories: [AbsolutePath]? = nil,
+        flashContainer: (any LoadedLLMContainer)? = nil
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
+        let script = try makeToolTurnScript(code: code, waitStepCount: waitStepCount)
+        var loader = makeScriptedModelLoader(script: script)
+        if let flashContainer {
+            let scriptedContainer = loader.makeLLMContainer
+            loader.makeLLMContainer = { slot in
+                slot == .flash ? flashContainer : scriptedContainer(slot)
+            }
+        }
         let fixture = try await ScriptedTurnFixture.make(
-            script: try makeToolTurnScript(code: code, waitStepCount: waitStepCount),
+            loader: loader,
             label: label,
             workingDirectory: workingDirectory,
             projectConfigYAML: projectConfigYAML,
-            mcpServers: mcpServers)
+            mcpServers: mcpServers,
+            additionalDirectories: additionalDirectories)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
@@ -325,12 +458,28 @@ import Testing
 
     // MARK: - Proof 1: composition
 
-    /// `ToolCatalog` composes the surface from the configuration the
-    /// loader read off disk: the files and shell verbs mount under
-    /// their nouns with the "verb noun" journal ops, and a configured
-    /// MCP server mounts under its own name — `tools.<serverName>.<verb>`,
-    /// with no `mcp` segment. Asserted through the built `APISurface`
-    /// entries, because the per-verb structs are internal.
+    /// `ToolCatalog` constructs each tool with the `CatalogContext` the
+    /// session was composed from (plan.md §20.1 proof 1).
+    ///
+    /// The NAMES come from the built `APISurface`: the files and shell
+    /// verbs mount under their nouns with the "verb noun" journal ops,
+    /// and a configured MCP server mounts under its own name —
+    /// `tools.<serverName>.<verb>`, with no `mcp` segment.
+    ///
+    /// The three context facts come from the client end, through one
+    /// scripted tool turn:
+    ///
+    /// - **The root set.** The session opens with an additional root. A
+    ///   read under that root answers the planted content, and a read
+    ///   outside the union of the cwd and that root refuses in band, so
+    ///   the built verbs confine to `cwd` plus `additionalDirectories`.
+    /// - **The decoded config section.** The project config sets
+    ///   `tools.files.readOnly`. The write refuses in band with the
+    ///   capability's read-only correction, and nothing lands on disk.
+    /// - **The resolved profile.** The flash slot loads a recording stub
+    ///   librarian that answers one selection. The turn's `searchTools`
+    ///   call records the selection prompt on that slot, and the answer
+    ///   reports the verb the librarian selected.
     @Test(.timeLimit(.minutes(1)))
     func theCatalogComposesTheSurfaceFromTheLoadedConfiguration() async throws {
         let cwd = makeResolvedDirectory(label: "TierTwoTests-composition-repo")
@@ -372,6 +521,65 @@ import Testing
             entries.first { $0.path == Self.executeVerbPath }?.journalOp
                 == Self.executeJournalOp)
         #expect(entries.first { $0.path == echoPath }?.group == Self.mcpServerName)
+
+        try await Self.assertTheContextReachedTheBuiltTools()
+    }
+
+    /// Drives the wire half of proof 1: one scripted tool turn on a
+    /// session that carries an additional root, a read-only `files`
+    /// section, and a recording librarian on the flash slot.
+    ///
+    /// The three `CatalogContext` facts are read from what the built
+    /// tools did, never from the surface names.
+    ///
+    /// - Throws: Whatever the wiring, the prompt or the waits throw.
+    private static func assertTheContextReachedTheBuiltTools() async throws {
+        let additionalRoot = makeResolvedDirectory(label: "TierTwoTests-composition-extra")
+        let insideFile = additionalRoot.appendingPathComponent(additionalRootFileName)
+        try additionalRootContent.write(to: insideFile, atomically: true, encoding: .utf8)
+        let outsideFile = makeResolvedDirectory(label: "TierTwoTests-composition-outside")
+            .appendingPathComponent("secret.txt")
+        try outsideSecret.write(to: outsideFile, atomically: true, encoding: .utf8)
+        let librarianRecorder = PromptRecorder()
+
+        let (fixture, updates) = try await runToolTurn(
+            code: try compositionCode(
+                insidePath: insideFile.path, outsidePath: outsideFile.path),
+            label: "TierTwoTests-composition-session",
+            projectConfigYAML: readOnlyFilesConfigYAML,
+            additionalDirectories: [try #require(AbsolutePath(rawValue: additionalRoot.path))],
+            flashContainer: ScriptedLLMContainer(
+                script: [.textDelta(librarianSelectionJSON), .endTurn],
+                recorder: librarianRecorder))
+        let waitText = try encodedText(of: toolCallUpdates(in: updates, for: waitCallId))
+        let librarianPrompts = await librarianRecorder.prompts
+        let refusedWrite = fixture.cwd.appendingPathComponent(refusedWriteFileName)
+        await fixture.close()
+
+        // The root set is the cwd plus `additionalDirectories`: the read
+        // under the additional root answers content, and the read
+        // outside the union answers the confinement correction.
+        #expect(
+            waitText.contains(
+                outcomeLine(label: insideReadLabel, value: additionalRootContent)))
+        #expect(
+            waitText.contains(
+                outcomeLine(label: outsideReadLabel, value: confinementRefusalOpening)))
+
+        // The decoded `files` section reached the built verbs: the write
+        // answers the read-only correction, and the disk is the truth
+        // that nothing was written (plan.md §20.1).
+        #expect(
+            waitText.contains(
+                outcomeLine(label: refusedWriteLabel, value: readOnlyRefusalMarker)))
+        #expect(!FileManager.default.fileExists(atPath: refusedWrite.path))
+
+        // The resolved profile reached the librarian slot: the flash
+        // slot's model answered the selection call for this task, and
+        // `searchTools` reports the verb that answer named.
+        #expect(librarianPrompts.contains { $0.contains(librarianTask) })
+        #expect(waitText.contains(executeVerbPath))
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     // MARK: - Proof 2: confinement through the protocol
