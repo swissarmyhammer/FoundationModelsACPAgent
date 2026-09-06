@@ -91,10 +91,34 @@ comments:
     - evidence: 4 files — Tests/FoundationModelsACPAgentTestSupport/ConfigFileFixture.swift (new), Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/TierThreeFixture.swift
     - next: test, then commit, then review
   timestamp: 2026-09-06T17:56:44.646693+00:00
+- actor: claude-code
+  id: 01m1w26kt4n4xmjyd9eqxja7m5
+  text: |-
+    ### test — green for this card, with one recorded exception
+    - evidence: `swift test` (root): 384 tests in 38 suites passed, 0 failed, 1 pre-existing known issue (`HarnessSmokeTests.swift:239`, a `withKnownIssue` block). `swift test --package-path IntegrationTests`: 28 tests in 7 suites, 1 failed after 4475.001 seconds. Six suites passed: `PythonCLIDatasetTests`, `PythonCLISubjectTests`, `EvaluatorHonestyTests`, `CLIProcessTests`, `StdioContractTests`, `ClientServerTests`. The only failure is the known live-model defect ^pez780d, outside this card, exact text: `Test "The composed agent builds Python CLIs end to end over ACP" recorded an issue at PythonCLIEvaluation.swift:335:13: Expectation failed: mean >= pythonCLIEvalMeanFloor` (4 times) / `Test "The composed agent builds Python CLIs end to end over ACP" failed after 4475.000 seconds with 4 issues.` / `Suite PythonCLIEvaluationTests failed after 4475.000 seconds with 4 issues.` / `Test run with 28 tests in 7 suites failed after 4475.001 seconds with 4 issues.` Treated as not red for this card, as the loop instruction says.
+    - next: commit, then review
+
+    ### commit — changed
+    - evidence: 36f684d refactor(tests): write a layer config.yaml in one place (6 files: 4 modified, 1 new, the two `.kanban/` records included; local only, not pushed)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-06T19:12:55.108557+00:00
+- actor: claude-code
+  id: 01m1w29qrz5bq9sn4e5a6xrzyt
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (36f684d) — 0 findings, 0 confirmed, 0 refuted, 7 attempted; 4 files reviewed, `.kanban/` (2 files) excluded by `.reviewignore`. The one item of the `## Review Findings (2026-09-06 12:48)` list is checked. Task moved doing -> review -> done.
+    - next: none
+
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files: Tests/FoundationModelsACPAgentTestSupport/ConfigFileFixture.swift (new, the one writer of a layer's `config.yaml` in a test tree), Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/TierThreeFixture.swift. The one item of the `## Review Findings (2026-09-06 12:48)` list is flipped to `- [x]`.
+    - test: green for this card, with one recorded exception — `swift test` (root): 384 tests in 38 suites passed, 0 failed, 1 pre-existing known issue (`HarnessSmokeTests.swift:239`, a `withKnownIssue` block). `swift test --package-path IntegrationTests`: 28 tests in 7 suites, 1 failed after 4475.001 seconds; `PythonCLIDatasetTests`, `PythonCLISubjectTests`, `EvaluatorHonestyTests`, `CLIProcessTests`, `StdioContractTests` and `ClientServerTests` passed. The only failure is the known live-model defect ^pez780d, outside this card, exact text: `Test "The composed agent builds Python CLIs end to end over ACP" recorded an issue at PythonCLIEvaluation.swift:335:13: Expectation failed: mean >= pythonCLIEvalMeanFloor` (4 times) / `Test "The composed agent builds Python CLIs end to end over ACP" failed after 4475.000 seconds with 4 issues.` / `Suite PythonCLIEvaluationTests failed after 4475.000 seconds with 4 issues.` / `Test run with 28 tests in 7 suites failed after 4475.001 seconds with 4 issues.` Treated as not red for this card, as the loop instruction says.
+    - commit: 36f684d — refactor(tests): write a layer config.yaml in one place (6 files)
+    - review: clean — 0 findings on HEAD~1..HEAD; no open item stays on the card. The task is in `done`.
+  timestamp: 2026-09-06T19:14:37.471142+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ac80
 title: 'config show and config path: make the invisible configuration visible'
 ---
 ## What
