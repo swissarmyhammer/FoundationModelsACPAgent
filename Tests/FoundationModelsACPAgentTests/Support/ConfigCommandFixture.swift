@@ -47,7 +47,7 @@ struct ConfigCommandFixture {
     /// - Parameter yaml: The file content.
     /// - Throws: The directory-creation or write error.
     func writeProjectConfig(_ yaml: String) throws {
-        try Self.writeConfig(yaml, in: projectDirectory)
+        try ConfigFileFixture.write(yaml, in: projectDirectory)
     }
 
     /// Writes `yaml` as the user layer's `config.yaml`.
@@ -55,14 +55,6 @@ struct ConfigCommandFixture {
     /// - Parameter yaml: The file content.
     /// - Throws: The directory-creation or write error.
     func writeUserConfig(_ yaml: String) throws {
-        try Self.writeConfig(yaml, in: userDirectory)
-    }
-
-    /// Writes `yaml` as `config.yaml` inside `directory`, creating it.
-    private static func writeConfig(_ yaml: String, in directory: URL) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try yaml.write(
-            to: directory.appendingPathComponent(ConfigurationLoader.configFileName),
-            atomically: true, encoding: .utf8)
+        try ConfigFileFixture.write(yaml, in: userDirectory)
     }
 }

@@ -157,12 +157,9 @@ struct ScriptedTurnFixture {
     ///   - cwd: The session working directory the dotfolder roots at.
     /// - Throws: The directory-creation or write error.
     static func writeProjectConfig(yaml: String, under cwd: URL) throws {
-        let dotfolder = cwd.appendingPathComponent(
-            ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)
-        try yaml.write(
-            to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
-            atomically: true, encoding: .utf8)
+        try ConfigFileFixture.write(
+            yaml,
+            in: cwd.appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true))
     }
 
     // MARK: - Script builders

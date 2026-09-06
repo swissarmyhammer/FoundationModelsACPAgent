@@ -53,6 +53,44 @@ comments:
     - a note: the process cases finished at 98 s, but the log showed them only later, because the test host buffers its output to the file. A `sample` of the host showed the eval's synchronous MLX generation on the cooperative threads, which is why nothing else is scheduled while it runs.
     - next: commit, then review
   timestamp: 2026-09-06T17:47:37.310669+00:00
+- actor: claude-code
+  id: 01m1vxbge40qafkv4px13e7m25
+  text: |-
+    ### commit — changed
+    - evidence: 9c51ba1 feat(cli): config show and config path report the layered configuration (16 files: 10 modified, 6 new, the two `.kanban/` records included; local only, not pushed)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-06T17:48:12.612573+00:00
+- actor: claude-code
+  id: 01m1vxpfstdwkf9pm4bf3ckxzs
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (9c51ba1) — 1 finding, 1 confirmed, 0 refuted, 7 attempted; 13 files reviewed, `.kanban/` (2 files) excluded by `.reviewignore`, `cli-plan.md` matched no validator: Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:62 (reuse/reuse — `writeConfig` reimplements the config file writing of `ScriptedTurnFixture.writeProjectConfig` and `TierThreeFixture.writeUserConfig`)
+    - next: implement works the one item in the `## Review Findings (2026-09-06 12:48)` list, then test, commit, review again
+  timestamp: 2026-09-06T17:54:12.410442+00:00
+- actor: claude-code
+  id: 01m1vxq21dqhy1z2z49wvn620q
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 14 files: Sources/FoundationModelsACPAgent/Configuration/{ConfigurationLoader,ConfigurationLayerName,ConfigurationYAML}.swift (`LoadedConfiguration.sources`, the nil-to-builtin map, the key-path aware public emitter), Sources/acp-agent/{ConfigCommand,RunCommand,AgentComposition,WorkingDirectoryOptions,CommandReport}.swift (`config show` with `--source`/`--json`, `config path`, the shared `--cwd` group, the one loader construction, the report value), Tests/FoundationModelsACPAgentTests/{ConfigurationLoaderTests,ConfigShowTests,ConfigPathTests}.swift, Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift, IntegrationTests/.../CLIProcessTests.swift, cli-plan.md §5.2. All 16 card items ticked.
+    - test: green for this card, with one recorded exception — `swift test`: 384 tests in 38 suites passed, 0 failed, 1 pre-existing known issue (`HarnessSmokeTests.swift:239`, a `withKnownIssue` block); the only build warning is the build system's `warning: missing creator for mutated node: ('.../.build/out/Products/Debug/mlx-swift_Cmlx.bundle/Contents/MacOS')`, not a source warning. `swift test --package-path IntegrationTests`: 28 tests in 7 suites, 1 failed; `PythonCLIDatasetTests`, `PythonCLISubjectTests`, `EvaluatorHonestyTests`, `CLIProcessTests`, `StdioContractTests`, `ClientServerTests` passed. The only failure is the known live-model defect ^pez780d, outside this card, exact text: `Test "The composed agent builds Python CLIs end to end over ACP" recorded an issue at PythonCLIEvaluation.swift:335:13: Expectation failed: mean >= pythonCLIEvalMeanFloor` (4 times) / `Test "The composed agent builds Python CLIs end to end over ACP" failed after 6224.515 seconds with 4 issues.` / `Suite PythonCLIEvaluationTests failed after 6224.515 seconds with 4 issues.` / `Test run with 28 tests in 7 suites failed after 6224.515 seconds with 4 issues.` Treated as not red for this card, as the loop instruction says.
+    - commit: 9c51ba1 — feat(cli): config show and config path report the layered configuration (16 files)
+    - review: findings — Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:62 (reuse/reuse: The writeConfig static function reimplements file-writing logic that already exists in ScriptedTurnFixture.writeProjectConfig and TierThreeFixture.writeUserConfig)
+  timestamp: 2026-09-06T17:54:31.085495+00:00
+- actor: claude-code
+  id: 01m1vxv4f62hc15p62j2j17cpq
+  text: |-
+    ### implement — the one review finding of 2026-09-06 12:48
+
+    - `Tests/FoundationModelsACPAgentTestSupport/ConfigFileFixture.swift` (new, public): `ConfigFileFixture.write(_:in:)` is the one writer of a layer's `config.yaml` in a test tree. It lives in the test-support target, which both the root test target and the nested `IntegrationTests` package reach as a product.
+    - `ConfigCommandFixture.swift`: the private `writeConfig` is gone; `writeProjectConfig` and `writeUserConfig` call the shared writer.
+    - `ScriptedTurnFixture.writeProjectConfig(yaml:under:)` and `TierThreeFixture.writeUserConfig(under:yaml:)`, the two counterparts the finding names, call the shared writer too, so the file I/O stands in one place. `TierThreeFixture` imported the library with `@testable` only for `ConfigurationLoader.configFileName`; that import is now the test-support import.
+    - The item is flipped to `- [x]` in the `## Review Findings (2026-09-06 12:48)` list.
+    - `swift build --build-tests` (root) and `swift build --build-tests --package-path IntegrationTests`: both complete, no source warning. `swift test --filter 'ConfigShowTests|ConfigPathTests|PromptTurnTests|CancellationTests|SessionSetupTests|ConfigOptionsTests'`: 57 tests in 6 suites passed.
+
+    ### implement — changed
+    - evidence: 4 files — Tests/FoundationModelsACPAgentTestSupport/ConfigFileFixture.swift (new), Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedTurnFixture.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/TierThreeFixture.swift
+    - next: test, then commit, then review
+  timestamp: 2026-09-06T17:56:44.646693+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
 position_column: doing
@@ -132,3 +170,15 @@ dependency on the Noora card.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-06 12:48)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 13 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `cli-plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:62` `reuse/reuse` — The writeConfig static function reimplements file-writing logic that already exists in ScriptedTurnFixture.writeProjectConfig and TierThreeFixture.writeUserConfig. Rather than duplicating this pattern, ConfigCommandFixture should call an existing fixture method or extract into a shared test utility. Extract the config file writing logic into a shared test utility function, or refactor ConfigCommandFixture to reuse the existing fixture methods from ScriptedTurnFixture or TierThreeFixture rather than reimplementing the same FileManager and file I/O pattern.

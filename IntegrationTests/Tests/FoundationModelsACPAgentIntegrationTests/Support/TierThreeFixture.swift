@@ -10,8 +10,7 @@
 // `swift test --package-path IntegrationTests` runs them.
 
 import Foundation
-
-@testable import FoundationModelsACPAgent
+import FoundationModelsACPAgentTestSupport
 
 /// The shared constants and fixtures of the tier-3 suites.
 enum TierThreeFixture {
@@ -50,10 +49,7 @@ enum TierThreeFixture {
     ///     resolves a real profile.
     /// - Throws: The directory-creation or write error.
     static func writeUserConfig(under configHome: URL, yaml: String = userConfigYAML) throws {
-        let dotfolder = configHome.appendingPathComponent(agentDotfolderName, isDirectory: true)
-        try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)
-        try yaml.write(
-            to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
-            atomically: true, encoding: .utf8)
+        try ConfigFileFixture.write(
+            yaml, in: configHome.appendingPathComponent(agentDotfolderName, isDirectory: true))
     }
 }
