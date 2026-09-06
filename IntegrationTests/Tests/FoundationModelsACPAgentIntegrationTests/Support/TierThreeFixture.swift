@@ -15,11 +15,16 @@ import Foundation
 
 /// The shared constants and fixtures of the tier-3 suites.
 enum TierThreeFixture {
-    /// The product name of the agent example executable the suites spawn.
+    /// The product name of the agent CLI executable the suites spawn.
     static let agentExecutableName = "acp-agent"
 
-    /// The dotfolder name the agent example chose (plan.md §20.2). The
-    /// user configuration layer is `$XDG_CONFIG_HOME/<name>/config.yaml`.
+    /// The subcommand that serves ACP over stdio (cli-plan.md §5.3). Bare
+    /// `acp-agent` is `run`, which treats a piped stdin as a prompt, so
+    /// every spawn of the wire names this one.
+    static let acpSubcommand = "acp"
+
+    /// The dotfolder name the agent CLI chose (plan.md §20.2). The user
+    /// configuration layer is `$XDG_CONFIG_HOME/<name>/config.yaml`.
     static let agentDotfolderName = "acp-agent"
 
     /// The environment variable that roots the user configuration layer.

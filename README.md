@@ -50,7 +50,8 @@ while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
 ```
 
 The same composition, with its full commentary, is
-[`Examples/acp-agent/main.swift`](Examples/acp-agent/main.swift).
+[`Sources/acp-agent/AgentComposition.swift`](Sources/acp-agent/AgentComposition.swift),
+the composition the `acp-agent` CLI builds every mode on.
 
 ## Install
 

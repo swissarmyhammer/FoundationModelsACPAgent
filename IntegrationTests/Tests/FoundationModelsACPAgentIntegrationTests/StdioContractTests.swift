@@ -264,18 +264,21 @@ struct StdioContractTests {
         let restoreConfigHome = Self.pointConfigHome(at: configHome)
         defer { restoreConfigHome() }
 
-        // Spawn the built example through the client package's process
-        // owner, with the absolute path it requires (plan.md §20.1).
+        // Spawn the built agent in `acp` mode through the client package's
+        // process owner, with the absolute path it requires (plan.md
+        // §20.1). Bare `acp-agent` is `run` (cli-plan.md §5.3), so the
+        // subcommand is named.
         let command = try BuiltProductLocator.executableURL(
             named: TierThreeFixture.agentExecutableName)
-        let agent = try AgentProcess(command: command.path)
+        let agent = try AgentProcess(
+            command: command.path, arguments: [TierThreeFixture.acpSubcommand])
         let tap = InboundTapTransport(wrapping: agent.transport)
         let client = await SwiftUIACPClient()
         let connection = await client.connect(over: tap)
 
-        // `swift run acp-agent` starts and answers `initialize` over
-        // stdio — asserted here, not by hand. The await also covers the
-        // example's construction-time profile resolution.
+        // `acp-agent acp` starts and answers `initialize` over stdio —
+        // asserted here, not by hand. The await also covers the agent's
+        // construction-time profile resolution.
         let initialized = try await connection.initialize(
             AgentClientHarness.makeInitializeRequest())
         #expect(initialized.info.name == RoutedACPAgent.implementation.name)

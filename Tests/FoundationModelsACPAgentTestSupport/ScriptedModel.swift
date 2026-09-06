@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgent
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import Synchronization
@@ -12,7 +13,7 @@ import Synchronization
 //
 // `FoundationModelsRouterTestSupport` vends no injectable backend — its
 // scripted backends are private to Router's own test target — so this
-// fixture extends the local `StubProfileFixtures.swift` pattern instead:
+// fixture extends the library's `EchoModel` pattern instead:
 //
 //   StubModelLoader (ModelLoader) -> ScriptedLLMContainer
 //     -> ScriptedSessionBackend (LanguageModelSessionBackend)

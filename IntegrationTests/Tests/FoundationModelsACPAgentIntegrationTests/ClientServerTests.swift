@@ -62,25 +62,10 @@ struct ClientServerTests {
 
     // MARK: - The subprocess driver
 
-    /// One finished `acp-print` run: its exit code and its captured
-    /// stdout and stderr text.
-    private struct CLIRun {
-        /// The process exit code.
-        let exitCode: Int32
-
-        /// The captured stdout text.
-        let standardOutput: String
-
-        /// The captured stderr text.
-        let standardError: String
-    }
-
     /// Runs the built `acp-print` with `arguments` and captures its exit
-    /// code, stdout, and stderr.
-    ///
-    /// The run gets `configHome` as `XDG_CONFIG_HOME`. The inner
-    /// `acp-agent` inherits the CLI's environment, so the injected
-    /// configuration reaches it too.
+    /// code, stdout, and stderr, through the shared `BuiltExecutableRun`
+    /// driver. The inner `acp-agent` inherits the CLI's environment, so
+    /// the injected `configHome` configuration reaches it too.
     ///
     /// - Parameters:
     ///   - arguments: The command-line arguments for `acp-print`.
@@ -90,40 +75,12 @@ struct ClientServerTests {
     /// - Throws: The locator or spawn error.
     private static func runPrintCLI(
         arguments: [String], workspace: URL, configHome: URL
-    ) async throws -> CLIRun {
-        let process = Process()
-        process.executableURL = try BuiltProductLocator.executableURL(named: printExecutableName)
-        process.arguments = arguments
-        process.currentDirectoryURL = workspace
-        var environment = ProcessInfo.processInfo.environment
-        environment[TierThreeFixture.configHomeVariable] = configHome.path
-        process.environment = environment
-
-        let standardOutputPipe = Pipe()
-        let standardErrorPipe = Pipe()
-        process.standardOutput = standardOutputPipe
-        process.standardError = standardErrorPipe
-
-        try process.run()
-        // Drain the two pipes on their own tasks. A full pipe buffer
-        // would block the child, so the reads run before the wait.
-        let standardOutputData = Task.detached {
-            try standardOutputPipe.fileHandleForReading.readToEnd() ?? Data()
-        }
-        let standardErrorData = Task.detached {
-            try standardErrorPipe.fileHandleForReading.readToEnd() ?? Data()
-        }
-        await withCheckedContinuation { continuation in
-            process.terminationHandler = { _ in continuation.resume() }
-            if !process.isRunning {
-                process.terminationHandler = nil
-                continuation.resume()
-            }
-        }
-        return CLIRun(
-            exitCode: process.terminationStatus,
-            standardOutput: String(decoding: try await standardOutputData.value, as: UTF8.self),
-            standardError: String(decoding: try await standardErrorData.value, as: UTF8.self))
+    ) async throws -> BuiltExecutableRun {
+        try await BuiltExecutableRun.run(
+            executableNamed: printExecutableName,
+            arguments: arguments,
+            workspace: workspace,
+            configHome: configHome)
     }
 
     // MARK: - The reap assertion

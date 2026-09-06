@@ -97,7 +97,7 @@ func streamAnswer(from updates: AsyncStream<SessionUpdate>) async -> StopReason?
 @MainActor
 func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
     do {
-        let agent = try AgentProcess(command: agentCommand)
+        let agent = try AgentProcess(command: agentCommand, arguments: ["acp"])
         defer { agent.shutdown() }
         let client = SwiftUIACPClient()
         let connection = await client.connect(over: agent.transport, logger: .standardError)

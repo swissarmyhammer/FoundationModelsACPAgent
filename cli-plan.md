@@ -481,7 +481,11 @@ records the question.
   version. See §5.2.
 - `Package.swift` declares `apple/swift-argument-parser` from 1.8.0. The
   version floor matches Extras, and the package is already resolved.
-- `Examples/acp-print/` does not move, and it does not change.
+- `Examples/acp-print/` does not move. It changes in one place: its
+  `AgentProcess` spawn passes the `acp` argument, so it spawns
+  `acp-agent acp`, as the §9 row says. Without that argument the spawn
+  is `acp-agent run`, which reads a piped stdin as a prompt (§5.3). Its
+  own flag surface does not change (§5.1).
 - The `acp-agent` executable product keeps its name, so `swift run
   acp-agent` and the tier-3 spawn still name one binary.
 

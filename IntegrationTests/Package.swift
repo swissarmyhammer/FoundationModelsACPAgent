@@ -15,10 +15,10 @@ private let integrationTargetName = "\(rootPackageName)IntegrationTests"
 /// links the same product, so the two sides cannot drift apart.
 private let testSupportProductName = "\(rootPackageName)TestSupport"
 
-/// The agent example executable of the root package (plan.md §20.2). It is
-/// a product dependency, so SwiftPM builds the binary into the products
+/// The agent CLI executable of the root package (cli-plan.md §2). It is a
+/// product dependency, so SwiftPM builds the binary into the products
 /// directory beside this test bundle, where `BuiltProductLocator` finds it
-/// and `StdioContractTests` spawns it.
+/// and `StdioContractTests` spawns it in `acp` mode.
 private let agentExecutableName = "acp-agent"
 
 /// The one-shot client CLI of the root package (plan.md §20.2), declared

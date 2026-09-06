@@ -99,20 +99,35 @@ private let liveLoaderProducts: [Target.Dependency] = [
     .product(name: "Tokenizers", package: transformersPackage),
 ]
 
-/// The name of the example executable (plan.md §20.2): the family
-/// convention example AND the tier-3 stdio fixture. The nested
-/// `IntegrationTests` package declares this product, so SwiftPM builds
-/// the binary into the products directory where `StdioContractTests`
-/// spawns it.
-private let exampleExecutableName = "acp-agent"
+/// The name of the agent CLI (cli-plan.md §2, §5): the product, AND the
+/// tier-3 stdio fixture — `acp-agent acp` serves ACP over stdio. The
+/// nested `IntegrationTests` package declares this product, so SwiftPM
+/// builds the binary into the products directory where
+/// `StdioContractTests` spawns it.
+private let agentExecutableName = "acp-agent"
 
 /// The one-shot client CLI example (plan.md §20.2): send one prompt,
 /// run the turn, print the answer, exit. It links ONLY the client
 /// package and the wire — never this package's library — so every byte
-/// crosses ACP into the spawned `exampleExecutableName` process. The
+/// crosses ACP into the spawned `agentExecutableName` process. The
 /// nested `IntegrationTests` package declares this product too, so
 /// `ClientServerTests` runs the built binary.
 private let printExecutableName = "acp-print"
+
+/// The command-line parser of the agent CLI (cli-plan.md §5.1). Extras
+/// already declares this package from the same floor, so it stands in
+/// `Package.resolved` and this declaration adds no checkout. The manifest
+/// names it directly because the CLI wants the parser alone, and not the
+/// `Operations` fusion machinery that re-exports it.
+private let argumentParserPackage = "swift-argument-parser"
+
+/// The version floor of `argumentParserPackage`, matching Extras.
+private let argumentParserVersionFloor: Version = "1.8.0"
+
+/// The one product of `argumentParserPackage` the agent CLI and its
+/// parse suite link.
+private let argumentParserProduct = Target.Dependency.product(
+    name: "ArgumentParser", package: argumentParserPackage)
 
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
@@ -181,9 +196,9 @@ let package = Package(
     ],
     products: [
         .library(name: packageName, targets: [packageName]),
-        // The runnable example, published so `swift run acp-agent` and
-        // the tier-3 spawn name one binary — see `exampleExecutableName`.
-        .executable(name: exampleExecutableName, targets: [exampleExecutableName]),
+        // The agent CLI, published so `swift run acp-agent` and the
+        // tier-3 spawn name one binary — see `agentExecutableName`.
+        .executable(name: agentExecutableName, targets: [agentExecutableName]),
         // The one-shot client CLI, published so `swift run acp-print` and
         // the tier-3 run name one binary — see `printExecutableName`.
         .executable(name: printExecutableName, targets: [printExecutableName]),
@@ -201,24 +216,35 @@ let package = Package(
         .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: mlxStableBranch),
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
+        // The parser of the agent CLI — see `argumentParserPackage`.
+        .package(
+            url: "https://github.com/apple/\(argumentParserPackage).git",
+            from: argumentParserVersionFloor),
     ],
     targets: [
         .target(
             name: packageName,
             dependencies: familyProducts + [mcpSDKProduct]
         ),
-        // The example executable (plan.md §20.2): the composition lesson
-        // and the tier-3 fixture in one small `main.swift`. It links the
-        // library, the wire and Router directly for what it imports, and
-        // the live-loader products for the real model path.
+        // The agent CLI (cli-plan.md §5, §8): the ArgumentParser subcommand
+        // tree over `AgentComposition`, and the tier-3 fixture. It links
+        // the library, the wire and Router directly for what it imports,
+        // the client package and the parser (cli-plan.md §8), and the
+        // live-loader products for the real model path. The deterministic
+        // path `ACP_AGENT_STUB_MODEL=1` selects is the library's own
+        // `EchoModel`, never the test support: that target links the
+        // `Testing` framework, and a product that carried it would not
+        // start outside a test host.
         .executableTarget(
-            name: exampleExecutableName,
+            name: agentExecutableName,
             dependencies: [
                 .target(name: packageName),
                 makeFamilyProduct(name: wireDependencyName),
                 makeFamilyProduct(name: routerDependencyName),
+                makeFamilyProduct(name: clientDependencyName),
+                argumentParserProduct,
             ] + liveLoaderProducts,
-            path: "Examples/\(exampleExecutableName)"
+            path: "Sources/\(agentExecutableName)"
         ),
         // The one-shot client CLI (plan.md §20.2). It links ONLY the
         // client package and the wire — see `printExecutableName` — so
@@ -247,20 +273,23 @@ let package = Package(
         // The unit suites. They link the shared test support — see
         // `testSupportTargetName` — the client driver — see
         // `clientDependencyName` — Multitool's test-support products —
-        // see `multitoolTestProducts` — and the MCP sdk, whose
-        // tool-result content types the passthrough-map tests construct
-        // (plan.md §12).
+        // see `multitoolTestProducts` — the MCP sdk, whose tool-result
+        // content types the passthrough-map tests construct (plan.md
+        // §12) — and the agent CLI target with its parser, so the parse
+        // and composition suites drive the command tree in process.
         //
-        // The example executables and the live-loader products are NOT
-        // here: the suites that spawn a built binary or load a real model
-        // live in the nested `IntegrationTests` package, which declares
-        // them itself.
+        // `acp-print` and the live-loader products are NOT here: the
+        // suites that spawn a built binary or load a real model live in
+        // the nested `IntegrationTests` package, which declares them
+        // itself.
         .testTarget(
             name: testTargetName,
             dependencies: [
                 .target(name: packageName),
                 .target(name: testSupportTargetName),
+                .target(name: agentExecutableName),
                 makeFamilyProduct(name: clientDependencyName),
+                argumentParserProduct,
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
         ),

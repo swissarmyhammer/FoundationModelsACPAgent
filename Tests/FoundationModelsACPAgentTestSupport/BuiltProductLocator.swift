@@ -4,7 +4,7 @@
 // `../FoundationModelsMultitool/Tests/FoundationModelsMultitoolTests/Support/TestServerLocator.swift`,
 // generalized to any executable product the test target depends on. The
 // test target declares the `mcp-test-server` product of Multitool and the
-// `acp-agent` example product of this package, so `swift test` builds both
+// `acp-agent` product of this package, so `swift test` builds both
 // binaries into the products directory beside this test bundle. This
 // locator finds them there, for each test that spawns one.
 
