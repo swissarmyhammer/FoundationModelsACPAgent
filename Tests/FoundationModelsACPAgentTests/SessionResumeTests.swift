@@ -176,6 +176,10 @@ struct SessionResumeTests {
     /// A `cwd` string that is not absolute, so the agent must refuse it.
     private static let relativeCwd = "relative/resume"
 
+    /// An `additionalDirectories` entry that is not absolute, so the
+    /// agent must refuse it too.
+    private static let relativeAdditionalDirectory = "relative/extra"
+
     // MARK: - The absolute-cwd rule (plan.md §7.1, §7.4)
 
     /// A relative `cwd` is refused before the session id is read, and the
@@ -191,6 +195,30 @@ struct SessionResumeTests {
                 ResumeSessionRequest(
                     cwd: AbsolutePath(rawValue: Self.relativeCwd),
                     sessionId: resume.fixture.sessionId))
+        }
+        await resume.fixture.close()
+    }
+
+    /// The mirror of the proof above: a relative `additionalDirectories`
+    /// entry refuses the resume too, and names its own field. Each
+    /// reconnect carries the complete new root set, so a dropped entry
+    /// would narrow the confinement and never say so.
+    @Test(.timeLimit(.minutes(1)))
+    func resumeWithARelativeAdditionalDirectoryAnswersInvalidParamsNamingTheField() async throws {
+        var resume = try await ResumeSessionFixture.make(
+            label: "SessionResumeTests-relative-extra")
+        try await resume.runTurn("one turn before the resume")
+        let root = try resume.recordingRoot
+        try await ResumeSessionFixture.waitForRecordedResponses(
+            under: root, sessionId: resume.fixture.sessionId, count: 1)
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        await SessionSetupTests.expectRelativePathRefusal(naming: .additionalDirectories) {
+            _ = try await resume.fixture.harness.connection.resumeSession(
+                resume.makeResumeRequest(
+                    additionalDirectories: [
+                        AbsolutePath(rawValue: Self.relativeAdditionalDirectory)
+                    ]))
         }
         await resume.fixture.close()
     }

@@ -23,7 +23,16 @@ comments:
     - `SessionSetup.PathField` names the field (`cwd`, `additionalDirectories`), and `RequestError.relativePath(field:)` builds the pinned `data` shape.
     - `MultiRootConfinementTests` holds two tests that assert the old skip rule. The card changes that contract, so both are rewritten to assert the refusal. `RawWireClient` in that file exists only because the typed API could not carry a relative entry; that reason is gone, so it goes with them.
   timestamp: 2026-09-06T19:22:18.698846+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m1wa8fan2xm8n52rpkq587tc
+  text: |
+    ### finish iteration 1 — findings
+    - implement: changed. Re-resolved both packages to `FoundationModelsACP` `3b0a4fd`. `SessionSetup` gained `PathField`, `isAbsolute`, `AbsolutePath.init?(absolute:)` and `RequestError.relativePath(field:)`. `validatedWorkingDirectory` takes the field; `additionalRoots` refuses a relative entry in place of the skip-and-log rule; `session/list` routes its filter through the validator; `SessionList` and `EventProjection` drop a non-absolute path through the new init. 25 files.
+    - test: green, with the two recorded exceptions. Root `swift test`: 389 tests in 38 suites passed, 1 known issue (`HarnessSmokeTests.swift:239`). Nested `swift test --package-path IntegrationTests`: 28 tests in 7 suites, 4 issues, all of them `PythonCLIEvaluationTests` `Expectation failed: mean >= pythonCLIEvalMeanFloor` — the live-model zero-token defect ^pez780d. No other failure and no warning.
+    - commit: changed. `3d64dda fix(agent): make the agent the only judge of a wire path, and name the field`.
+    - review: findings. 2 confirmed, 1 refuted, over `HEAD~1..HEAD`. Both are `completeness/invariant-propagation` and both ask for symmetric test coverage: `MultiRootConfinementTests.swift:148` wants the relative-`cwd` mirror of the relative-`additionalDirectories` proof, and `SessionResumeTests.swift:186` wants a relative-`additionalDirectories` proof beside the relative-`cwd` one.
+  timestamp: 2026-09-06T21:33:44.661746+00:00
+position_column: review
 position_ordinal: '80'
 title: 'The agent is the only judge of cwd: validate session/list too, and name the field in the error'
 ---
@@ -54,3 +63,13 @@ The `FoundationModelsACP` card "AbsolutePath: mirror the schema, and stop refusi
 ## Workflow
 
 - Use `/tdd`. Write the failing tests first.
+
+## Review Findings (2026-09-06 16:20)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 23 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [ ] `Tests/FoundationModelsACPAgentTests/MultiRootConfinementTests.swift:148` `completeness/invariant-propagation` — The test validates rejection of relative paths in `additionalDirectories` but uses an absolute `cwd`. No test shown for the inverse: relative `cwd` with absolute `additionalDirectories`. The commit message states both `cwd` and `additionalDirectories` should route through 'the same validator', but test coverage is asymmetric. Add a test for `NewSessionRequest` with a relative `cwd` (and valid `additionalDirectories`) to verify rejection mirrors the `additionalDirectories` case. Similarly, add tests for `ResumeSessionRequest` with relative `cwd` and `ListSessionsRequest` with relative `cwd` filter, to ensure all three request types validate paths symmetrically.
+- [ ] `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:186` `completeness/invariant-propagation` — The test added for `session/resume` validates that relative `cwd` is rejected, mirroring the test in SessionSetupTests. However, SessionSetupTests also validates that relative `additionalDirectories` entries are rejected (lines 201-210, 223-238), but SessionResumeTests lacks a corresponding test. Since `session/resume` accepts `additionalDirectories` (as shown in ResumeSessionRequest at line 320-326), the same invariant—that both `cwd` and `additionalDirectories` must be absolute—must be tested for this endpoint. Add a test in SessionResumeTests (similar to the pattern at line 186-196) that verifies `session/resume` with a relative `additionalDirectories` entry is rejected with an invalidParams error naming the `additionalDirectories` field.

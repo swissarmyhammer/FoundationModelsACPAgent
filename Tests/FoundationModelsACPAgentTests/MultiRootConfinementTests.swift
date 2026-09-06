@@ -24,6 +24,18 @@ struct MultiRootConfinementTests {
     /// The content the read tests write under the additional root.
     private static let insideContent = "inside the additional root"
 
+    /// A path string that is not absolute, so no field may carry it.
+    private static let relativePath = "relative/entry"
+
+    /// One wired agent and the client end that drives it.
+    private struct WiredAgent {
+        /// The agent under test.
+        let agent: RoutedACPAgent
+
+        /// The connected harness.
+        let harness: AgentClientHarness
+    }
+
     /// A throwaway directory under `/private/tmp`, labeled with this
     /// suite's name and the directory's role.
     ///
@@ -49,6 +61,45 @@ struct MultiRootConfinementTests {
             additionalDirectories: additionalRoots.map { root in
                 AbsolutePath(rawValue: root.path)
             })
+    }
+
+    /// Wires and initializes one agent over throwaway directories, so
+    /// the order rule passes before the request under test goes out.
+    ///
+    /// - Parameter label: The suffix that names the directories.
+    /// - Returns: The wired agent.
+    /// - Throws: Whatever the construction or the handshake throws.
+    private static func makeWiredAgent(label: String) async throws -> WiredAgent {
+        let agent = try await makeStubAgent(
+            name: AgentClientHarness.dotfolderName,
+            cacheDirectory: makeResolvedDirectory(named: "\(label)-cache"),
+            recordingsDirectory: makeResolvedDirectory(named: "\(label)-recordings"),
+            userDirectory: makeResolvedDirectory(named: "\(label)-user"))
+        let harness = await AgentClientHarness.makeRecording(agent: agent)
+        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        return WiredAgent(agent: agent, harness: harness)
+    }
+
+    /// Asserts that `session/new` with `request` answers the relative-path
+    /// refusal naming `field`, and opens no session.
+    ///
+    /// - Parameters:
+    ///   - request: The request under test.
+    ///   - field: The request field the refusal must name.
+    ///   - label: The suffix that names the throwaway directories.
+    /// - Throws: Whatever the construction or the handshake throws.
+    private static func expectNewSessionRefusal(
+        of request: NewSessionRequest,
+        naming field: SessionSetup.PathField,
+        label: String
+    ) async throws {
+        let wired = try await makeWiredAgent(label: label)
+
+        await SessionSetupTests.expectRelativePathRefusal(naming: field) {
+            _ = try await wired.harness.connection.newSession(request)
+        }
+        #expect(await wired.agent.sessions.isEmpty)
+        await wired.harness.close()
     }
 
     /// The table entry of the fixture's one session.
@@ -134,25 +185,31 @@ struct MultiRootConfinementTests {
     func aRelativeEntryRefusesTheWholeSessionRequest() async throws {
         let cwd = Self.makeResolvedDirectory(named: "raw-cwd")
         let additionalRoot = Self.makeResolvedDirectory(named: "raw-extra")
-        let agent = try await makeStubAgent(
-            name: AgentClientHarness.dotfolderName,
-            cacheDirectory: Self.makeResolvedDirectory(named: "raw-cache"),
-            recordingsDirectory: Self.makeResolvedDirectory(named: "raw-recordings"),
-            userDirectory: Self.makeResolvedDirectory(named: "raw-user"))
-        let harness = await AgentClientHarness.makeRecording(agent: agent)
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
 
-        await SessionSetupTests.expectRelativePathRefusal(naming: .additionalDirectories) {
-            _ = try await harness.connection.newSession(
-                NewSessionRequest(
-                    cwd: AbsolutePath(rawValue: cwd.path),
-                    additionalDirectories: [
-                        AbsolutePath(rawValue: "relative/entry"),
-                        AbsolutePath(rawValue: additionalRoot.path),
-                    ]))
-        }
-        #expect(await agent.sessions.isEmpty)
-        await harness.close()
+        try await Self.expectNewSessionRefusal(
+            of: NewSessionRequest(
+                cwd: AbsolutePath(rawValue: cwd.path),
+                additionalDirectories: [
+                    AbsolutePath(rawValue: Self.relativePath),
+                    AbsolutePath(rawValue: additionalRoot.path),
+                ]),
+            naming: .additionalDirectories,
+            label: "raw")
+    }
+
+    /// The mirror of the proof above: a relative `cwd` beside an absolute
+    /// `additionalDirectories` entry refuses the same request, and names
+    /// `cwd`. One validator serves both fields, so both fields show it.
+    @Test(.timeLimit(.minutes(1)))
+    func aRelativeCwdRefusesTheWholeSessionRequest() async throws {
+        let additionalRoot = Self.makeResolvedDirectory(named: "relative-cwd-extra")
+
+        try await Self.expectNewSessionRefusal(
+            of: NewSessionRequest(
+                cwd: AbsolutePath(rawValue: Self.relativePath),
+                additionalDirectories: [AbsolutePath(rawValue: additionalRoot.path)]),
+            naming: .cwd,
+            label: "relative-cwd")
     }
 
     // MARK: - The shell write into the additional root (plan.md §11.7)
