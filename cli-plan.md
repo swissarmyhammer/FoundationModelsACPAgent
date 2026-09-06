@@ -98,9 +98,10 @@ today, so this sets the family precedent, and the client CLI follows it.
 
 One rule keeps the choice reversible: **`TerminalRenderer.swift` is the
 only file that imports Noora.** It vends a spinner, a progress bar and a
-table, and nothing more. The download progress, `doctor` and `config
-path` all call that type. If Noora ever disappoints, the swap costs one
-file. A test pins the single import.
+table, and nothing more. The download progress and `doctor` call that
+type. `config path` does not: its report is data, so it is plain text on
+stdout (§5.6, §5.11), and the renderer is stderr-only. If Noora ever
+disappoints, the swap costs one file. A test pins the single import.
 
 The renderer obeys §5.6 and §5.7 without exception: it writes to
 **stderr** only, and it draws nothing at all when stderr is not a

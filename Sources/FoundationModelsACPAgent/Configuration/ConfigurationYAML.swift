@@ -1,25 +1,54 @@
 import Foundation
+import FoundationModelsExtras
 
 /// Emits an ``AgentConfiguration`` as commented block YAML (plan.md §14.1,
-/// §2.2). The `/config` builtin prints the text, and `/config export` writes
-/// it to a layer's `config.yaml` — the §2.2 eject counterpart. The text
-/// round-trips through ``ConfigurationLoader``: it names only schema keys, so
-/// the loader reads it back to the same configuration.
+/// §2.2, cli-plan.md §5.11). The `/config` builtin prints the text,
+/// `/config export` writes it to a layer's `config.yaml` — the §2.2 eject
+/// counterpart — and `config show` prints it, with the layer of each key
+/// under `--source`. The text round-trips through ``ConfigurationLoader``:
+/// it names only schema keys, so the loader reads it back to the same
+/// configuration.
 ///
 /// The value tree comes from the configuration's own `Codable` encoding, so
 /// the per-tool codecs (a disabled tool as `false`, the `mcp:` server list, a
 /// transcript location word) each serialize exactly as the loader decodes
 /// them. Every string scalar is emitted double-quoted, so a value that
 /// carries YAML punctuation stays one scalar.
-enum ConfigurationYAML {
+public enum ConfigurationYAML {
     /// A shape the emitter cannot serialize.
-    enum EmitError: Error, Equatable {
+    public enum EmitError: Error, Equatable {
         /// The encoded configuration was not a mapping of sections.
         case notAMapping
     }
 
+    /// What each key line carries after its value.
+    public enum KeyAnnotation: Equatable, Sendable {
+        /// Nothing: the plain document `/config` prints.
+        case none
+
+        /// A trailing comment that names the layer that set the key
+        /// (cli-plan.md §5.11), from the loader's per-key source map. A
+        /// key with no entry names `builtin`.
+        case sources([String: DotfolderStack.Source])
+    }
+
+    /// One emitted line: its text, and the dotted key path of the key it
+    /// declares. A comment, a sequence item, and a key inside a sequence
+    /// item declare no key path: a sequence replaces wholesale across
+    /// layers, so its own key carries the whole item.
+    private struct Line {
+        /// The line, indented, without a newline.
+        let text: String
+
+        /// The dotted key path, or `nil` when the line declares no key.
+        let keyPath: String?
+    }
+
     /// The number of spaces one indentation level adds.
     private static let indentWidth = 2
+
+    /// The text between a key line and its layer annotation.
+    private static let annotationPrefix = "  # "
 
     /// The Objective-C type encoding of a double-precision float.
     private static let objCDoubleType = "d"
@@ -46,77 +75,122 @@ enum ConfigurationYAML {
 
     /// Renders `configuration` as commented block YAML.
     ///
-    /// - Parameter configuration: The configuration to render.
+    /// - Parameters:
+    ///   - configuration: The configuration to render.
+    ///   - annotation: What each key line carries after its value.
     /// - Returns: The YAML document, newline-terminated.
     /// - Throws: ``EmitError/notAMapping`` when the encoded configuration is
     ///   not a mapping, or a `JSONEncoder`/`JSONSerialization` error.
-    static func documentText(for configuration: AgentConfiguration) throws -> String {
+    public static func documentText(
+        for configuration: AgentConfiguration, annotation: KeyAnnotation = .none
+    ) throws -> String {
+        try lines(of: configuration)
+            .map { annotated($0, with: annotation) }
+            .joined(separator: "\n") + "\n"
+    }
+
+    /// Every key path of `configuration`'s tree, dotted, in the order the
+    /// document emits them. A key inside a sequence item is not listed —
+    /// see ``Line``.
+    ///
+    /// - Parameter configuration: The configuration to walk.
+    /// - Returns: The dotted key paths.
+    /// - Throws: What ``documentText(for:annotation:)`` throws.
+    public static func keyPaths(of configuration: AgentConfiguration) throws -> [String] {
+        try lines(of: configuration).compactMap(\.keyPath)
+    }
+
+    /// The text of `line` with `annotation` applied: the layer comment
+    /// after a key line, and the text alone otherwise.
+    private static func annotated(_ line: Line, with annotation: KeyAnnotation) -> String {
+        switch annotation {
+        case .none:
+            return line.text
+        case .sources(let sources):
+            guard let keyPath = line.keyPath else {
+                return line.text
+            }
+            return line.text + annotationPrefix + ConfigurationLayerName(sources[keyPath]).rawValue
+        }
+    }
+
+    /// The lines of the document: the header, then each section under its
+    /// comment.
+    ///
+    /// - Parameter configuration: The configuration to render.
+    /// - Returns: The lines, in document order.
+    /// - Throws: ``EmitError/notAMapping`` when the encoded configuration is
+    ///   not a mapping, or a `JSONEncoder`/`JSONSerialization` error.
+    private static func lines(of configuration: AgentConfiguration) throws -> [Line] {
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
         guard let sections = encoded as? [String: Any] else {
             throw EmitError.notAMapping
         }
-        var lines = [headerComment]
-        for section in sectionOrder {
-            guard let value = sections[section] else { continue }
-            if let comment = sectionComments[section] {
-                lines.append("# \(comment)")
+        return [Line(text: headerComment, keyPath: nil)]
+            + sectionOrder.flatMap { section -> [Line] in
+                guard let value = sections[section] else {
+                    return []
+                }
+                let comment = sectionComments[section].map { [Line(text: "# \($0)", keyPath: nil)] } ?? []
+                return comment + entryLines(key: section, value: value, keyPath: [section], indent: 0)
             }
-            appendEntry(key: section, value: value, indent: 0, into: &lines)
-        }
-        return lines.joined(separator: "\n") + "\n"
     }
 
-    /// Appends `key: value` at `indent`, continuing a non-scalar value on the
+    /// `key: value` at `indent`, with a non-scalar value continued on the
     /// following lines.
     ///
     /// - Parameters:
     ///   - key: The mapping key.
     ///   - value: The `JSONSerialization` value to emit.
+    ///   - keyPath: The key path of `key`, or `nil` inside a sequence item.
     ///   - indent: The indentation level of the key.
-    ///   - lines: The line accumulator.
-    private static func appendEntry(key: String, value: Any, indent: Int, into lines: inout [String]) {
+    /// - Returns: The lines of the entry.
+    private static func entryLines(key: String, value: Any, keyPath: [String]?, indent: Int) -> [Line] {
         let pad = indentation(indent)
+        let dotted = keyPath?.joined(separator: LoadedConfiguration.keyPathSeparator)
         if let scalar = scalarText(value) {
-            lines.append("\(pad)\(key): \(scalar)")
-            return
+            return [Line(text: "\(pad)\(key): \(scalar)", keyPath: dotted)]
         }
-        lines.append("\(pad)\(key):")
-        appendChildren(of: value, indent: indent + 1, into: &lines)
+        return [Line(text: "\(pad)\(key):", keyPath: dotted)]
+            + childLines(of: value, keyPath: keyPath, indent: indent + 1)
     }
 
-    /// Appends the members of a non-empty mapping or sequence at `indent`.
+    /// The members of a non-empty mapping or sequence at `indent`.
     ///
     /// - Parameters:
     ///   - value: The mapping or sequence to emit.
+    ///   - keyPath: The key path of `value`, or `nil` inside a sequence
+    ///     item.
     ///   - indent: The indentation level of the members.
-    ///   - lines: The line accumulator.
-    private static func appendChildren(of value: Any, indent: Int, into lines: inout [String]) {
+    /// - Returns: The lines of the members; none for a scalar.
+    private static func childLines(of value: Any, keyPath: [String]?, indent: Int) -> [Line] {
         if let mapping = value as? [String: Any] {
-            for key in mapping.keys.sorted() {
-                appendEntry(key: key, value: mapping[key] ?? NSNull(), indent: indent, into: &lines)
-            }
-        } else if let sequence = value as? [Any] {
-            for element in sequence {
-                appendSequenceItem(element, indent: indent, into: &lines)
+            return mapping.keys.sorted().flatMap { key in
+                entryLines(
+                    key: key, value: mapping[key] ?? NSNull(), keyPath: keyPath.map { $0 + [key] },
+                    indent: indent)
             }
         }
+        if let sequence = value as? [Any] {
+            return sequence.flatMap { sequenceItemLines($0, indent: indent) }
+        }
+        return []
     }
 
-    /// Appends one block-sequence item at `indent`: a scalar rides the dash,
-    /// and a mapping or nested sequence hangs under a bare dash.
+    /// One block-sequence item at `indent`: a scalar rides the dash, and a
+    /// mapping or nested sequence hangs under a bare dash. No line of an
+    /// item declares a key path — see ``Line``.
     ///
     /// - Parameters:
     ///   - value: The item to emit.
     ///   - indent: The indentation level of the dash.
-    ///   - lines: The line accumulator.
-    private static func appendSequenceItem(_ value: Any, indent: Int, into lines: inout [String]) {
+    /// - Returns: The lines of the item.
+    private static func sequenceItemLines(_ value: Any, indent: Int) -> [Line] {
         let pad = indentation(indent)
         if let scalar = scalarText(value) {
-            lines.append("\(pad)- \(scalar)")
-            return
+            return [Line(text: "\(pad)- \(scalar)", keyPath: nil)]
         }
-        lines.append("\(pad)-")
-        appendChildren(of: value, indent: indent + 1, into: &lines)
+        return [Line(text: "\(pad)-", keyPath: nil)] + childLines(of: value, keyPath: nil, indent: indent + 1)
     }
 
     /// The inline text of a scalar or an empty collection, or `nil` when the

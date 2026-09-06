@@ -19,15 +19,15 @@ extension AcpAgentCommand {
             help: "The prompt of the one turn. `-` reads stdin, and so does no prompt on a piped stdin.")
         var prompt: String?
 
-        /// The working directory (§5.4, §5.10). It roots the dotfolder
-        /// stack and the session, so the CLI applies it before it loads
+        /// The `--cwd` option (§5.4, §5.10). It roots the dotfolder stack
+        /// and the session, so the CLI applies it before it loads
         /// `config.yaml`.
-        @Option(
-            name: .customLong("cwd"),
-            help:
-                "The working directory. It roots the dotfolder stack and the session. Default: the process working directory."
-        )
-        var workingDirectory: String?
+        @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
+
+        /// The `--cwd` value, or `nil` for the process working directory.
+        var workingDirectory: String? {
+            workingDirectoryOptions.workingDirectory
+        }
 
         /// The session to continue with `session/load` (§5.4).
         @Option(

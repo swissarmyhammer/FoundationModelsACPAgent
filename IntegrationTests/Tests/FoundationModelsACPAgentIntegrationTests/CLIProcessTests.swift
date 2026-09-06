@@ -39,6 +39,9 @@ struct CLIProcessTests {
     /// A subcommand whose body is a stub on this card.
     private static let stubSubcommand = "doctor"
 
+    /// The number of rows `config path` writes: builtin, user and project.
+    private static let layerRowCount = 3
+
     // MARK: - The subprocess driver
 
     /// Runs the built `acp-agent` with `arguments` in fresh directories.
@@ -97,5 +100,29 @@ struct CLIProcessTests {
         #expect(
             run.standardError.contains(Self.notImplementedMarker), "stderr: \(run.standardError)")
         #expect(run.standardOutput.isEmpty, "a stub wrote to stdout: \(run.standardOutput)")
+    }
+
+    // MARK: - The config reports (cli-plan.md §5.11)
+
+    /// `config show` writes the merged configuration to stdout, nothing
+    /// to stderr, and exits 0.
+    @Test func configShowWritesTheConfigurationToStdoutAndExitsZero() async throws {
+        let run = try await Self.runAgentCLI(arguments: ["config", "show"])
+
+        #expect(run.exitCode == 0, "stderr: \(run.standardError)")
+        #expect(run.standardOutput.contains("profile:"), "stdout: \(run.standardOutput)")
+        #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
+    }
+
+    /// `config path` writes the three layer rows to stdout, nothing to
+    /// stderr, and exits 0.
+    @Test func configPathWritesTheLayerRowsToStdoutAndExitsZero() async throws {
+        let run = try await Self.runAgentCLI(arguments: ["config", "path"])
+
+        #expect(run.exitCode == 0, "stderr: \(run.standardError)")
+        let rows = run.standardOutput.split(separator: "\n")
+        #expect(rows.count == Self.layerRowCount, "stdout: \(run.standardOutput)")
+        #expect(rows.first?.hasPrefix("builtin") == true, "stdout: \(run.standardOutput)")
+        #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
     }
 }

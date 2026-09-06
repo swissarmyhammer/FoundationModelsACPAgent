@@ -114,6 +114,45 @@ import Testing
         #expect(loaded.warnings.isEmpty)
     }
 
+    // MARK: - The per-key source map
+
+    /// The source map names the layer that set each key, by dotted key
+    /// path: the project layer wins the key both layers set, the user
+    /// layer keeps the key only it set, and a key no layer set is absent,
+    /// which is the builtin default (cli-plan.md §5.11).
+    @Test func sourceMapNamesTheLayerThatSetEachKey() throws {
+        let fixture = Fixture()
+        fixture.writeConfig(
+            """
+            recording:
+              level: off
+            transcripts:
+              location: home
+            """, in: fixture.userDirectory)
+        fixture.writeConfig(
+            """
+            recording:
+              level: full
+            """, in: fixture.projectDirectory)
+
+        let loaded = try fixture.makeLoader().load()
+
+        #expect(loaded.sources["recording.level"] == .project)
+        #expect(loaded.sources["transcripts.location"] == .user)
+        #expect(loaded.sources["compaction.trigger"] == nil)
+        #expect(loaded.sources["profile"] == nil)
+    }
+
+    /// With no file in any layer the source map is empty: every key is
+    /// builtin.
+    @Test func noFilesGiveAnEmptySourceMap() throws {
+        let fixture = Fixture()
+
+        let loaded = try fixture.makeLoader().load()
+
+        #expect(loaded.sources.isEmpty)
+    }
+
     /// Two loaders with different working directories resolve different
     /// project layers, so two sessions in two repos see their own config.
     @Test func differentWorkingDirectoriesSeeDifferentProjectLayers() throws {

@@ -112,17 +112,35 @@ enum AgentComposition {
     static func compose(
         workingDirectory: URL, environment: [String: String]
     ) async throws -> Composed {
-        let name = try DotfolderName(dotfolderName)
-        let configuration = try ConfigurationLoader(
-            name: name, workingDirectory: workingDirectory, environment: environment
-        ).load().configuration
+        let loader = try makeConfigurationLoader(
+            workingDirectory: workingDirectory, environment: environment)
+        let configuration = try loader.load().configuration
         let modelSource = modelSource(environment: environment)
         let agent = try await RoutedACPAgent(
-            name: name,
+            name: loader.name,
             router: try makeRouter(for: modelSource),
             configuration: configuration,
             environment: environment)
         return Composed(agent: agent, modelSource: modelSource)
+    }
+
+    /// Makes the loader of `workingDirectory`'s stack under
+    /// ``dotfolderName`` — the one construction the composition and the
+    /// `config` reports share (cli-plan.md §5.10, §5.11).
+    ///
+    /// - Parameters:
+    ///   - workingDirectory: The directory the project layer roots under.
+    ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
+    ///     from.
+    /// - Returns: The loader. Construction touches no file.
+    /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
+    static func makeConfigurationLoader(
+        workingDirectory: URL, environment: [String: String]
+    ) throws -> ConfigurationLoader {
+        ConfigurationLoader(
+            name: try DotfolderName(dotfolderName),
+            workingDirectory: workingDirectory,
+            environment: environment)
     }
 
     /// Makes the router of one model path.

@@ -62,14 +62,25 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     }
 }
 
-/// What one load gives: the decoded configuration and the warnings the
-/// loader logged on the way.
+/// What one load gives: the decoded configuration, the warnings the loader
+/// logged on the way, and the layer that set each key.
 public struct LoadedConfiguration: Equatable, Sendable {
+    /// The separator of a dotted key path, such as `recording.level`.
+    public static let keyPathSeparator = "."
+
     /// The merged and decoded configuration.
     public let configuration: AgentConfiguration
 
     /// Each warning the load logged, in document order.
     public let warnings: [ConfigurationWarning]
+
+    /// The layer that set each key a layer set, by dotted key path such as
+    /// `recording.level` (cli-plan.md §5.11). A section key names the
+    /// layer that introduced the section. A key with no entry was set by
+    /// no layer: its value is the builtin default. `DotfolderStack.Source`
+    /// has no builtin case, so a report maps the absent entry to
+    /// `ConfigurationLayerName.builtin`.
+    public let sources: [String: DotfolderStack.Source]
 }
 
 /// Loads `config.yaml` through the dotfolder stack (plan.md §2.2): the user
@@ -138,7 +149,44 @@ public struct ConfigurationLoader: Sendable {
             configurationLogger.warning("\(warning.description, privacy: .public)")
         }
         return LoadedConfiguration(
-            configuration: try Self.configuration(from: document.root), warnings: warnings)
+            configuration: try Self.configuration(from: document.root),
+            warnings: warnings,
+            sources: Self.sources(in: document))
+    }
+
+    /// The layer that set each key of `document`'s merged tree, by dotted
+    /// key path — the per-key provenance the document holds, copied out
+    /// before the document goes out of scope.
+    ///
+    /// - Parameter document: The merged document.
+    /// - Returns: One entry per key path the document has a source for. A
+    ///   key that holds the separator itself is not told apart from a
+    ///   nested path; the first entry wins.
+    private static func sources(in document: LayeredYAMLDocument) -> [String: DotfolderStack.Source] {
+        let entries = keyPaths(in: document.root, under: []).compactMap { keyPath in
+            document.source(of: keyPath).map {
+                (keyPath.joined(separator: LoadedConfiguration.keyPathSeparator), $0)
+            }
+        }
+        return Dictionary(entries, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Every key path of a mapping tree, depth first: each key of `value`
+    /// under `parent`, then each key of its mapping children. A scalar or
+    /// a list holds no key.
+    ///
+    /// - Parameters:
+    ///   - value: The tree to walk.
+    ///   - parent: The key path of `value` itself; empty at the root.
+    /// - Returns: The key paths, each as its components.
+    private static func keyPaths(in value: YAMLValue, under parent: [String]) -> [[String]] {
+        guard case .dictionary(let children) = value else {
+            return []
+        }
+        return children.flatMap { key, child in
+            let keyPath = parent + [key]
+            return [keyPath] + keyPaths(in: child, under: keyPath)
+        }
     }
 
     /// The decoded merged tree, or the builtin defaults when no layer
