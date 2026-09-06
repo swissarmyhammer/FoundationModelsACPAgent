@@ -113,8 +113,24 @@ comments:
     - evidence: 4 files — Sources/acp-agent/AcpAgentCommand.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift, Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift
     - next: test, then commit, then review
   timestamp: 2026-09-06T14:13:27.501438+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1vnza03yfh48hkxga0w25c7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (8453dc7) — 0 findings, 0 confirmed, 0 refuted, 7 attempted; 4 files reviewed, 2 `.kanban/` files excluded by `.reviewignore`. Every item of the `## Review Findings (2026-09-06 09:05)` list is checked.
+    - next: the card moves to done
+  timestamp: 2026-09-06T15:39:12.771056+00:00
+- actor: claude-code
+  id: 01m1vp039kyy9yj2576eee8f4s
+  text: |-
+    ### finish iteration 3 — done
+    - implement: changed — 4 files: Sources/acp-agent/AcpAgentCommand.swift (`exitAfterFailure` selects the stream from `ExitOutcome.writesToStandardError` and writes `fullMessage(for:)`, so the property is read), IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift, Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift (the `@Suite` attribute with no arguments removed). The four items of `## Review Findings (2026-09-06 09:05)` flipped to `- [x]`.
+    - test: green for this card, with the same recorded exception — `swift test`: 367 tests in 36 suites passed, 0 failed, 1 pre-existing known issue (`HarnessSmokeTests.swift:239`, a `withKnownIssue` block); the only build warning is the build system's `warning: missing creator for mutated node: ('.../.build/out/Products/Debug/mlx-swift_Cmlx.bundle/Contents/MacOS')`, not a source warning. `swift test --package-path IntegrationTests`: 26 tests in 7 suites, 1 failed; `PythonCLIDatasetTests`, `PythonCLISubjectTests`, `EvaluatorHonestyTests`, `CLIProcessTests`, `StdioContractTests`, `ClientServerTests` passed. The only failure is the known live-model defect ^pez780d, outside this card, exact text: `Test "The composed agent builds Python CLIs end to end over ACP" recorded an issue at PythonCLIEvaluation.swift:335:13: Expectation failed: mean >= pythonCLIEvalMeanFloor` (4 times) / `Suite PythonCLIEvaluationTests failed after 4926.775 seconds with 4 issues.` / `Test run with 26 tests in 7 suites failed after 4926.775 seconds with 4 issues.` Treated as not red for this card, as the card description and the loop instruction say.
+    - commit: 8453dc7 — fix(cli): select the exit stream from the outcome, and drop the bare @Suite attributes (6 files)
+    - review: clean — review sha HEAD~1..HEAD: 0 findings, 7 attempted; the card moved review -> done
+  timestamp: 2026-09-06T15:39:38.675440+00:00
+position_column: done
+position_ordinal: ab80
 title: Move acp-agent to Sources and give it an ArgumentParser subcommand tree
 ---
 ## What
