@@ -27,7 +27,7 @@ private let errorExitCode: Int32 = 1
 
 /// The process contract of `--help`, `--version`, a usage error and a
 /// stub subcommand.
-@Suite struct CLIProcessTests {
+struct CLIProcessTests {
     // MARK: - Constants
 
     /// The heading the help text carries.

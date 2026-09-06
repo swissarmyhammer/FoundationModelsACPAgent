@@ -62,9 +62,10 @@ struct AcpAgentCommand: AsyncParsableCommand {
     /// The program entry: parse, run, and exit by ``exitOutcome(for:)``.
     ///
     /// The library's own `main()` is not used because it exits a usage
-    /// error with `EX_USAGE`. Every other outcome still goes through the
-    /// library's `exit(withError:)`, so the help text, the version text
-    /// and the error rendering stay the library's.
+    /// error with `EX_USAGE`. The help text, the version text and the
+    /// error rendering stay the library's: ``exitAfterFailure(_:)`` writes
+    /// `fullMessage(for:)`, and only the stream and the code are this
+    /// type's.
     static func main() async {
         do {
             var command = try parseAsRoot()
@@ -78,17 +79,19 @@ struct AcpAgentCommand: AsyncParsableCommand {
         }
     }
 
-    /// Exits the process for `error`: a usage error with ``usageExitCode``
-    /// and the library's message on stderr; anything else through the
-    /// library's `exit(withError:)`.
+    /// Exits the process for `error` by its ``exitOutcome(for:)``: the
+    /// library's message on the stream the outcome names, then the
+    /// outcome's code. An empty message writes nothing, as the library's
+    /// `exit(withError:)` does.
     ///
     /// - Parameter error: The error `parseAsRoot` or `run()` threw.
     private static func exitAfterFailure(_ error: any Error) -> Never {
         let outcome = exitOutcome(for: error)
-        guard outcome.code == usageExitCode else {
-            exit(withError: error)
+        let message = fullMessage(for: error)
+        if !message.isEmpty {
+            let stream: FileHandle = outcome.writesToStandardError ? .standardError : .standardOutput
+            stream.write(Data((message + "\n").utf8))
         }
-        FileHandle.standardError.write(Data((fullMessage(for: error) + "\n").utf8))
         Darwin.exit(outcome.code)
     }
 }

@@ -10,7 +10,7 @@ import Testing
 /// switch selects the deterministic echo model in place of the live
 /// loader, the composition says so, and two runs of one prompt through
 /// it give byte-identical text.
-@Suite struct AgentCompositionTests {
+struct AgentCompositionTests {
     // MARK: - Constants
 
     /// The prompt of the two runs. The echo model answers with the prompt

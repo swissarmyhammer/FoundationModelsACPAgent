@@ -8,7 +8,7 @@ import Testing
 /// `AcpAgentCommand.parseAsRoot(_:)`: which subcommand each form selects,
 /// the §5.4 options of `run`, and the exit outcome of a usage error, of
 /// `--help` and of `--version` (§5.8).
-@Suite struct CLIParsingTests {
+struct CLIParsingTests {
     // MARK: - Constants
 
     /// The prompt of the bare form, and of the explicit `run` form.

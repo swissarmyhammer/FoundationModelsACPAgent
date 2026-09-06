@@ -83,6 +83,36 @@ comments:
     - evidence: 2 files this iteration — Examples/acp-print/main.swift, cli-plan.md; plus the 26 uncommitted entries of iteration 1
     - next: test, then commit, then review
   timestamp: 2026-09-06T12:43:55.763849+00:00
+- actor: claude-code
+  id: 01m1vgxhmtjft1e1ck61rdvj4z
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (d443159) — 4 findings, 4 confirmed, 1 refuted: IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift:30, Sources/acp-agent/AcpAgentCommand.swift:45, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift:13, Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift:11
+    - next: implement works the four items in the newest `## Review Findings` list, then test, commit, review again
+  timestamp: 2026-09-06T14:10:52.186570+00:00
+- actor: claude-code
+  id: 01m1vgy2qm5pbyzbhm13t5fwfx
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — option A applied: `Examples/acp-print/main.swift:100` passes `arguments: ["acp"]` (1 insertion, 1 deletion, the only change in that file); cli-plan.md §8 amended to say `acp-print` spawns `acp-agent acp`, in agreement with the §9 row; the 26 uncommitted entries of iteration 1 kept; all six work items, six acceptance criteria and four test items ticked on the card.
+    - test: green for this card, with one recorded exception — `swift test`: 367 tests in 36 suites passed, 0 failed, 1 pre-existing known issue (`HarnessSmokeTests.swift:239`, a `withKnownIssue` block); the only build warning is the build system's `warning: missing creator for mutated node: ('.../.build/out/Products/Debug/mlx-swift_Cmlx.bundle/Contents/MacOS')`, not a source warning. `swift test --package-path IntegrationTests`: 26 tests in 7 suites, 1 failed; `StdioContractTests`, `CLIProcessTests`, `ClientServerTests` (3 of 3), `PythonCLIDatasetTests`, `PythonCLISubjectTests`, `EvaluatorHonestyTests` passed. The only failure is the known live-model defect ^pez780d, outside this card, exact text: `Test "The composed agent builds Python CLIs end to end over ACP" failed after 4722.669 seconds with 4 issues.` / `Suite PythonCLIEvaluationTests failed after 4722.669 seconds with 4 issues.` / `Test run with 26 tests in 7 suites failed after 4722.670 seconds with 4 issues.` Treated as not red for this card, as the card description and the loop instruction say.
+    - commit: d443159 — feat(cli): move acp-agent to Sources with an ArgumentParser subcommand tree (30 files)
+    - review: findings — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift:30 (idioms-swift redundantSwiftTestingSuite), Sources/acp-agent/AcpAgentCommand.swift:45 (dead-code-swift var.instance `writesToStandardError` is assignOnlyProperty), Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift:13 (idioms-swift redundantSwiftTestingSuite), Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift:11 (idioms-swift redundantSwiftTestingSuite)
+  timestamp: 2026-09-06T14:11:09.684374+00:00
+- actor: claude-code
+  id: 01m1vh29ada399cq0mbjr1g79j
+  text: |-
+    ### implement — the four review findings of 2026-09-06 09:05
+
+    - `Sources/acp-agent/AcpAgentCommand.swift`: `ExitOutcome.writesToStandardError` was assigned and never read, because `exitAfterFailure` sent every non-usage error through the library's `exit(withError:)` and chose stderr itself for the usage error. The library's `exit(withError:)` writes `fullText` to stdout when the exit is clean and to stderr otherwise, then exits with the code; `fullMessage(for:)` is that same text. So `exitAfterFailure` now selects the stream from `outcome.writesToStandardError`, writes `fullMessage(for:)` when it is not empty, and exits with `outcome.code`. The rendering stays the library's; the property decides the stream. The `main()` doc comment says so.
+    - `CLIProcessTests.swift:30`, `AgentCompositionTests.swift:13`, `CLIParsingTests.swift:11`: the `@Suite` attribute with no arguments is removed; a type that holds `@Test` functions is a suite without it. Each file held one such attribute.
+    - `swift build --build-tests`: complete. `swift test --filter 'CLIParsingTests|AgentCompositionTests'`: 16 tests in 2 suites passed. `swift test --package-path IntegrationTests --filter CLIProcessTests`: 4 tests in 1 suite passed, so `--help` on stdout with exit 0, `--version` on stdout with exit 0, and a usage error on stderr with exit 2 hold across the process boundary on the new exit path.
+    - The four items are flipped to `- [x]` in the `## Review Findings (2026-09-06 09:05)` list.
+
+    ### implement — changed
+    - evidence: 4 files — Sources/acp-agent/AcpAgentCommand.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift, Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift
+    - next: test, then commit, then review
+  timestamp: 2026-09-06T14:13:27.501438+00:00
 position_column: doing
 position_ordinal: '80'
 title: Move acp-agent to Sources and give it an ArgumentParser subcommand tree
@@ -170,3 +200,34 @@ package is the gate, and the root `swift test` never sees those targets.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-06 09:05)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 24 file(s) reviewed, 6 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `cli-plan.md` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/disallowed-constructs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> disallowed-constructs-swift found no file at Examples/acp-agent/main.swift, so its constructs are unread
+
+> ⚠️ tool rule 'code-hygiene/function-length-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> function-length-swift found no file at Examples/acp-agent/main.swift, so its bodies are unread
+
+> ⚠️ tool rule 'code-hygiene/idioms-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> idioms-swift found no file at Examples/acp-agent/main.swift, so its declarations are unread
+
+> ⚠️ tool rule 'code-hygiene/magic-numbers-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> magic-numbers-swift found no file at Examples/acp-agent/main.swift, so its literals are unread
+
+> ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> missing-docs-swift found no file at Examples/acp-agent/main.swift, so its declarations are unread
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift:30` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
+- [x] `Sources/acp-agent/AcpAgentCommand.swift:45` `code-hygiene/dead-code-swift` — var.instance `writesToStandardError` is assignOnlyProperty.
+- [x] `Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift:13` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
+- [x] `Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift:11` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
