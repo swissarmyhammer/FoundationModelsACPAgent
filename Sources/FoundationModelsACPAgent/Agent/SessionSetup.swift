@@ -4,12 +4,6 @@ import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
 import FoundationModelsSkills
-import os
-
-/// The logger of the session composition surface: the confinement-root
-/// conversion's skip reports.
-private let setupLogger = Logger(
-    subsystem: RoutedACPAgent.implementation.name, category: "SessionSetup")
 
 /// Whether a session can accept a new prompt (plan.md §7.1). `idle` means
 /// "ready for a new prompt"; a `session/prompt` that arrives while the
@@ -125,45 +119,69 @@ enum SessionSetup {
     /// The prefix every absolute path starts with.
     private static let absolutePathPrefix = "/"
 
+    /// The request field one wire path came from (plan.md §7.1, §7.2).
+    /// A refusal names the field, so a person reads which part of the
+    /// request failed rather than guessing.
+    enum PathField: String {
+        /// The session working directory: the `cwd` of `session/new` and
+        /// `session/resume`, and the project filter of `session/list`.
+        case cwd
+
+        /// One entry of the ordered `additionalDirectories` list.
+        case additionalDirectories
+    }
+
+    /// Whether `path` is absolute.
+    ///
+    /// The ACP schema types a path as a plain string and states the
+    /// absolute rule in prose only, so no decoder enforces it. This agent
+    /// owns the file system, so this agent is the only judge, and this is
+    /// the one place the rule is written down.
+    ///
+    /// - Parameter path: The candidate path string.
+    /// - Returns: `true` when `path` begins with `/`.
+    fileprivate static func isAbsolute(_ path: String) -> Bool {
+        path.hasPrefix(absolutePathPrefix)
+    }
+
     /// Validates that `path` is absolute and returns it as a directory
     /// URL. `cwd` MUST be absolute (plan.md §7.1): it keys the config
     /// layer, the AGENTS.md walk, and the transcript directory, and a
     /// relative path would key them off the process cwd instead.
     ///
-    /// - Parameter path: The `cwd` string of the request.
+    /// - Parameters:
+    ///   - path: The path string of the request.
+    ///   - field: The request field `path` came from, named in the
+    ///     refusal so the client learns which one to fix.
     /// - Returns: The working directory URL.
-    /// - Throws: `RequestError.invalidParams` when `path` is relative —
-    ///   the same JSON-RPC error the wire decode of `AbsolutePath` gives.
-    static func validatedWorkingDirectory(path: String) throws(RequestError) -> URL {
-        guard path.hasPrefix(absolutePathPrefix) else {
-            throw .invalidParams
+    /// - Throws: ``RequestError/relativePath(field:)``
+    ///   when `path` is relative.
+    static func validatedWorkingDirectory(
+        path: String, field: PathField
+    ) throws(RequestError) -> URL {
+        guard isAbsolute(path) else {
+            throw .relativePath(field: field)
         }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
     /// Converts the wire `additionalDirectories` path strings to
     /// confinement root URLs, in wire order (plan.md §7.2). Each entry
-    /// goes through the same ``validatedWorkingDirectory(path:)`` check
-    /// the `cwd` goes through.
+    /// goes through the same ``validatedWorkingDirectory(path:field:)``
+    /// check the `cwd` goes through, under its own field name.
     ///
-    /// A non-absolute entry is skipped with a log and never refuses the
-    /// session: the wire decode already drops one silently
-    /// (`x-deserialize-skip-invalid-items`), and this guard keeps the
-    /// same rule for every caller, so the confinement boundary does not
-    /// rest on the care of the layer above.
+    /// A relative entry refuses the whole request. The wire decode
+    /// carries every entry as sent, so a skip here would drop a
+    /// confinement root the client asked for and never say so, and the
+    /// session would then run with a boundary neither side agreed on.
     ///
     /// - Parameter paths: The requested directory paths, in wire order.
     /// - Returns: The confinement root URLs, in the same order.
-    static func additionalRoots(fromPaths paths: [String]) -> [URL] {
-        paths.compactMap { path in
-            do {
-                return try validatedWorkingDirectory(path: path)
-            } catch {
-                setupLogger.warning(
-                    "additionalDirectories entry \(path, privacy: .public) is not absolute; skipped"
-                )
-                return nil
-            }
+    /// - Throws: ``RequestError/relativePath(field:)``
+    ///   for the first relative entry.
+    static func additionalRoots(fromPaths paths: [String]) throws(RequestError) -> [URL] {
+        try paths.map { path throws(RequestError) in
+            try validatedWorkingDirectory(path: path, field: .additionalDirectories)
         }
     }
 
@@ -178,6 +196,48 @@ enum SessionSetup {
             preconditionFailure("DotfolderStack always builds a user layer")
         }
         return userLayer.root
+    }
+}
+
+extension RequestError {
+    /// The `reason` a relative-path refusal reports in `data`.
+    private static let mustBeAbsoluteReason = "must be absolute"
+
+    /// The relative-path refusal (plan.md §7.1, §7.2): JSON-RPC invalid
+    /// params naming the field that failed and why. This is the `data`
+    /// shape `FoundationModelsACP` pins in
+    /// `RequestErrorTests.theWireFormRoundTrips`.
+    ///
+    /// - Parameter field: The request field the relative path came from.
+    /// - Returns: The typed invalid-params error.
+    static func relativePath(field: SessionSetup.PathField) -> RequestError {
+        RequestError(
+            code: .invalidParams,
+            message: RequestError.invalidParams.message,
+            data: .object([
+                "field": .string(field.rawValue),
+                "reason": .string(mustBeAbsoluteReason),
+            ]))
+    }
+}
+
+extension AbsolutePath {
+    /// The wire path for `rawValue`, or `nil` when `rawValue` is not
+    /// absolute.
+    ///
+    /// The wire type carries whatever string it was given, so this is the
+    /// one door for every projection that must DROP a path it cannot put
+    /// on the wire — a damaged stored record, or a tool report the agent
+    /// only relays. A path that arrives in a request is refused instead,
+    /// through ``SessionSetup/validatedWorkingDirectory(path:field:)``.
+    ///
+    /// - Parameter rawValue: The candidate path string.
+    /// - Returns: The path, or `nil` when it is relative.
+    init?(absolute rawValue: String) {
+        guard SessionSetup.isAbsolute(rawValue) else {
+            return nil
+        }
+        self.init(rawValue: rawValue)
     }
 }
 
@@ -251,8 +311,8 @@ extension RoutedACPAgent {
     public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
         try requireInitialized(before: ACPMethod.sessionNew)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
-            path: params.cwd.rawValue)
-        let additionalRoots = SessionSetup.additionalRoots(
+            path: params.cwd.rawValue, field: .cwd)
+        let additionalRoots = try SessionSetup.additionalRoots(
             fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
 
         let composition = try await composeSession(

@@ -194,7 +194,7 @@ struct SessionLifecycleTests {
         #expect(FileManager.default.fileExists(atPath: transcriptDirectory.path))
 
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
         #expect(
             await resume.fixture.harness.agent.sessions[resume.fixture.sessionId]?.availability
                 == .idle)
@@ -229,7 +229,7 @@ struct SessionLifecycleTests {
             })
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(
-                try resume.makeResumeRequest())
+                resume.makeResumeRequest())
             Issue.record("expected resume of a deleted session to fail")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)

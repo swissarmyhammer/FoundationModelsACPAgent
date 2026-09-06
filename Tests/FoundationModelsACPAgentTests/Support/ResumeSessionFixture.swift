@@ -313,14 +313,13 @@ struct ResumeSessionFixture {
     ///   - additionalDirectories: The complete new root set, or `nil`.
     ///   - replayFrom: The replay cursor, or `nil` for no replay.
     /// - Returns: The request.
-    /// - Throws: When a path does not form an `AbsolutePath`.
     func makeResumeRequest(
         cwd: URL? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
         replayFrom: ReplayFrom? = nil
-    ) throws -> ResumeSessionRequest {
+    ) -> ResumeSessionRequest {
         ResumeSessionRequest(
-            cwd: try #require(AbsolutePath(rawValue: (cwd ?? fixture.cwd).path)),
+            cwd: AbsolutePath(rawValue: (cwd ?? fixture.cwd).path),
             sessionId: fixture.sessionId,
             additionalDirectories: additionalDirectories,
             replayFrom: replayFrom)

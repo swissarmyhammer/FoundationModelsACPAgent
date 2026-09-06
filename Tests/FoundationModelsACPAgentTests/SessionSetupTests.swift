@@ -22,6 +22,19 @@ import Testing
     /// A cwd string that is not absolute, so the agent must refuse it.
     private static let relativeCwd = "relative/path"
 
+    /// An `additionalDirectories` entry that is not absolute, so the
+    /// agent must refuse it too.
+    private static let relativeAdditionalDirectory = "relative/extra"
+
+    /// The `reason` every relative-path refusal reports in `data`.
+    static let mustBeAbsoluteReason = "must be absolute"
+
+    /// The JSON-RPC version every wire frame declares.
+    private static let jsonrpcVersion = "2.0"
+
+    /// The request id the raw `session/new` frame carries.
+    private static let newSessionRequestId = 1.0
+
     // MARK: Harness
 
     /// Makes a stub agent that records durably under a throwaway
@@ -46,9 +59,8 @@ import Testing
     ///
     /// - Parameter cwd: The session working directory.
     /// - Returns: The request.
-    /// - Throws: When `cwd.path` is not an absolute path.
-    private static func makeNewSessionRequest(cwd: URL) throws -> NewSessionRequest {
-        NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: cwd.path)))
+    private static func makeNewSessionRequest(cwd: URL) -> NewSessionRequest {
+        NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path))
     }
 
     /// The project-local transcripts root of `cwd`, the default
@@ -95,23 +107,56 @@ import Testing
         #expect(!entry.instructions.isEmpty)
     }
 
-    // MARK: Absolute-cwd validation
+    // MARK: Absolute-path validation (§7.1, §7.2)
 
-    /// A relative cwd string is refused with the JSON-RPC invalid-params
-    /// error before any composition runs.
-    @Test func aRelativeCwdIsRefusedWithInvalidParams() {
+    /// The `data` object a relative-path refusal must carry for `field`.
+    ///
+    /// - Parameter field: The request field the refusal names.
+    /// - Returns: The expected `data` member.
+    static func expectedRefusalData(
+        naming field: SessionSetup.PathField
+    ) -> FoundationModelsACP.JSONValue {
+        .object([
+            "field": .string(field.rawValue),
+            "reason": .string(Self.mustBeAbsoluteReason),
+        ])
+    }
+
+    /// Asserts that `body` refuses with the relative-path invalid-params
+    /// error naming `field`. The ACP schema states the absolute-path rule
+    /// in prose and names no validator, so this agent is the only judge,
+    /// and the refusal must say which field failed and why.
+    ///
+    /// - Parameters:
+    ///   - field: The request field the refusal must name.
+    ///   - body: The call under test.
+    static func expectRelativePathRefusal(
+        naming field: SessionSetup.PathField, from body: () async throws -> Void
+    ) async {
         do {
-            _ = try SessionSetup.validatedWorkingDirectory(path: Self.relativeCwd)
-            Issue.record("expected an invalidParams error")
-        } catch {
+            try await body()
+            Issue.record("expected an invalidParams error naming \(field.rawValue)")
+        } catch let error as RequestError {
             #expect(error.code == .invalidParams)
+            #expect(error.data == Self.expectedRefusalData(naming: field))
+        } catch {
+            Issue.record("expected a RequestError, got \(error)")
         }
     }
 
-    /// Over the wire, `session/new` with a relative cwd answers the
-    /// JSON-RPC invalid-params error, never a session.
-    @Test(.timeLimit(.minutes(1)))
-    func aRelativeCwdOverTheWireAnswersInvalidParams() async throws {
+    /// Sends one raw `session/new` frame carrying `params` and answers
+    /// with the JSON-RPC error object the agent replied with. The frame is
+    /// raw so the assertion reads the wire form a real peer sees. The
+    /// session table is asserted empty, because a refused request opens no
+    /// session.
+    ///
+    /// - Parameter params: The `params` member of the request.
+    /// - Returns: The fields of the response's `error` member.
+    /// - Throws: Whatever the agent construction, the handshake, or the
+    ///   frame read throws.
+    private static func newSessionWireError(
+        params: FoundationModelsACP.JSONValue
+    ) async throws -> [String: FoundationModelsACP.JSONValue] {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agent = try await Self.makeInitializedAgent(
             userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
@@ -119,26 +164,77 @@ import Testing
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
 
         let request: FoundationModelsACP.JSONValue = .object([
-            "jsonrpc": .string("2.0"),
-            "id": .number(1),
-            "method": .string("session/new"),
-            "params": .object(["cwd": .string(Self.relativeCwd)]),
+            "jsonrpc": .string(Self.jsonrpcVersion),
+            "id": .number(Self.newSessionRequestId),
+            "method": .string(ACPMethod.sessionNew),
+            "params": params,
         ])
         try await clientEnd.write(NDJSONCodec.encode(request))
 
         var iterator = frames.makeAsyncIterator()
         let frame = try #require(try await iterator.next())
-        guard case .message(.object(let fields)) = frame,
-            case .object(let error) = fields["error"] ?? .null
-        else {
-            Issue.record("expected an error response, got \(frame)")
-            return
-        }
-        #expect(error["code"] == .number(Double(Self.invalidParamsWireValue)))
+        let errorFields: [String: FoundationModelsACP.JSONValue]? = {
+            guard case .message(.object(let fields)) = frame,
+                case .object(let error) = fields["error"] ?? .null
+            else {
+                return nil
+            }
+            return error
+        }()
         #expect(await agent.sessions.isEmpty)
 
         await agentConnection.close()
         clientEnd.close()
+        return try #require(errorFields, "expected an error response, got \(frame)")
+    }
+
+    /// A relative cwd string is refused with the JSON-RPC invalid-params
+    /// error before any composition runs, and the refusal names the field
+    /// that failed and why.
+    @Test func aRelativeCwdIsRefusedWithInvalidParams() async {
+        await Self.expectRelativePathRefusal(naming: .cwd) {
+            _ = try SessionSetup.validatedWorkingDirectory(
+                path: Self.relativeCwd, field: .cwd)
+        }
+    }
+
+    /// A relative `additionalDirectories` entry is refused the same way,
+    /// naming its own field. The wire decode carries every entry as sent,
+    /// so a skip here would drop a confinement root the client asked for
+    /// and never say so.
+    @Test func aRelativeAdditionalDirectoryIsRefusedWithInvalidParams() async {
+        await Self.expectRelativePathRefusal(naming: .additionalDirectories) {
+            _ = try SessionSetup.additionalRoots(
+                fromPaths: [Self.relativeAdditionalDirectory])
+        }
+    }
+
+    /// Over the wire, `session/new` with a relative cwd answers the
+    /// JSON-RPC invalid-params error naming `cwd`, never a session.
+    @Test(.timeLimit(.minutes(1)))
+    func aRelativeCwdOverTheWireAnswersInvalidParams() async throws {
+        let error = try await Self.newSessionWireError(
+            params: .object(["cwd": .string(Self.relativeCwd)]))
+
+        #expect(error["code"] == .number(Double(Self.invalidParamsWireValue)))
+        #expect(error["data"] == Self.expectedRefusalData(naming: .cwd))
+    }
+
+    /// Over the wire, a relative `additionalDirectories` entry beside an
+    /// absolute cwd answers the same refusal, naming its own field.
+    @Test(.timeLimit(.minutes(1)))
+    func aRelativeAdditionalDirectoryOverTheWireNamesItsOwnField() async throws {
+        let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
+        let error = try await Self.newSessionWireError(
+            params: .object([
+                "cwd": .string(cwd.path),
+                "additionalDirectories": .array([
+                    .string(Self.relativeAdditionalDirectory)
+                ]),
+            ]))
+
+        #expect(error["code"] == .number(Double(Self.invalidParamsWireValue)))
+        #expect(error["data"] == Self.expectedRefusalData(naming: .additionalDirectories))
     }
 
     // MARK: Concurrent sessions with per-cwd config (§2.2, §7.1)

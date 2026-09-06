@@ -258,7 +258,7 @@ extension RoutedACPAgent {
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
         try requireInitialized(before: ACPMethod.sessionResume)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
-            path: params.cwd.rawValue)
+            path: params.cwd.rawValue, field: .cwd)
         guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
             throw RequestError.unknownSession(id: params.sessionId)
         }
@@ -276,7 +276,7 @@ extension RoutedACPAgent {
 
         // A non-empty list is the complete new root set; omitted or empty
         // means no additional roots. Former roots are never inherited.
-        let additionalRoots = SessionSetup.additionalRoots(
+        let additionalRoots = try SessionSetup.additionalRoots(
             fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
         let composition = try await composeSession(
             from: context,

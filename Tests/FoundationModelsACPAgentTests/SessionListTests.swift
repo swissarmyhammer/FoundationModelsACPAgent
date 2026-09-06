@@ -36,6 +36,10 @@ struct SessionListTests {
     /// test from a loop that does not stop.
     private static let maximumWalkPages = 10
 
+    /// A `cwd` filter string that is not absolute, so the agent must
+    /// refuse it.
+    private static let relativeCwd = "relative/project"
+
     // MARK: - Harness
 
     /// One wire fixture: an initialized recording harness whose agent
@@ -109,13 +113,12 @@ struct SessionListTests {
     ///   - cwd: The project filter, or `nil` for the cross-project list.
     ///   - cursor: The raw cursor token, or `nil` for the first page.
     /// - Returns: The request.
-    /// - Throws: When `cwd` does not convert to an `AbsolutePath`.
     private static func listRequest(
         cwd: URL? = nil, cursor: String? = nil
-    ) throws -> ListSessionsRequest {
+    ) -> ListSessionsRequest {
         ListSessionsRequest(
             cursor: cursor.map(SessionListCursor.init(rawValue:)),
-            cwd: try cwd.map { try #require(AbsolutePath(rawValue: $0.path)) })
+            cwd: cwd.map { AbsolutePath(rawValue: $0.path) })
     }
 
     /// Walks the whole unfiltered paged listing from the client end.
@@ -194,13 +197,30 @@ struct SessionListTests {
             .invalidParams, wireValue: Self.invalidParamsWireValue
         ) {
             _ = try await fixture.connection.listSessions(
-                try Self.listRequest(cwd: project.workingDirectory, cursor: "not-a-cursor"))
+                Self.listRequest(cwd: project.workingDirectory, cursor: "not-a-cursor"))
         }
         await InitializationTests.expectRequestError(
             .invalidParams, wireValue: Self.invalidParamsWireValue
         ) {
             _ = try await fixture.connection.listSessions(
-                try Self.listRequest(cursor: "not-a-cursor"))
+                Self.listRequest(cursor: "not-a-cursor"))
+        }
+        await fixture.close()
+    }
+
+    // MARK: - The absolute-cwd filter (§7.1, §9)
+
+    /// A relative `cwd` filter is refused the same way `session/new` and
+    /// `session/resume` refuse one, naming the field that failed and why.
+    /// A relative filter would otherwise key the project read off the
+    /// process working directory.
+    @Test(.timeLimit(.minutes(1)))
+    func aRelativeCwdFilterGivesAnInvalidParamsErrorNamingTheField() async throws {
+        let fixture = try await Self.makeWireFixture()
+
+        await SessionSetupTests.expectRelativePathRefusal(naming: .cwd) {
+            _ = try await fixture.connection.listSessions(
+                ListSessionsRequest(cwd: AbsolutePath(rawValue: Self.relativeCwd)))
         }
         await fixture.close()
     }
@@ -280,7 +300,7 @@ struct SessionListTests {
         let fixture = try await Self.makeWireFixture()
         let workingDirectory = makeResolvedDirectory(label: "SessionListTests-zero-turn")
         _ = try await fixture.connection.newSession(
-            NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: workingDirectory.path))))
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workingDirectory.path)))
 
         let response = try await fixture.connection.listSessions(ListSessionsRequest())
         await fixture.close()

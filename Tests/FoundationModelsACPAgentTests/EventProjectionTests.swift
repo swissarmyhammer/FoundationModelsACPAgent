@@ -597,8 +597,8 @@ import Testing
     /// A move maps the source to `oldPath` and the destination to
     /// `path`: ACP's `path` is post-operation.
     @Test func aMoveMapsTheSourceToOldPathAndTheDestinationToPath() throws {
-        let source = try #require(AbsolutePath(rawValue: "/repo/old.txt"))
-        let destination = try #require(AbsolutePath(rawValue: "/repo/new.txt"))
+        let source = AbsolutePath(rawValue: "/repo/old.txt")
+        let destination = AbsolutePath(rawValue: "/repo/new.txt")
         let change = EventProjection.diffChange(
             for: .move(source: source, destination: destination))
 
@@ -612,8 +612,8 @@ import Testing
 
     /// A copy maps the two endpoints the same way as a move.
     @Test func aCopyMapsTheSourceToOldPathAndTheDestinationToPath() throws {
-        let source = try #require(AbsolutePath(rawValue: "/repo/a.txt"))
-        let destination = try #require(AbsolutePath(rawValue: "/repo/b.txt"))
+        let source = AbsolutePath(rawValue: "/repo/a.txt")
+        let destination = AbsolutePath(rawValue: "/repo/b.txt")
         let change = EventProjection.diffChange(
             for: .copy(source: source, destination: destination))
 
@@ -627,7 +627,7 @@ import Testing
 
     /// An add, a delete, and a modify map the one path without change.
     @Test func addDeleteAndModifyMapThePathWithoutChange() throws {
-        let path = try #require(AbsolutePath(rawValue: "/repo/file.txt"))
+        let path = AbsolutePath(rawValue: "/repo/file.txt")
 
         guard
             case .add(let added) = EventProjection.diffChange(for: .add(path: path)).operation,

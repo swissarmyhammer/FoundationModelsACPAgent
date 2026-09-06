@@ -85,7 +85,7 @@ struct AgentCompositionTests {
         let harness = await AgentClientHarness.makeRecording(agent: composed.agent)
         _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
         let session = try await harness.connection.newSession(
-            NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: workspace.path))))
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
         let collector = try #require(harness.collector)
         _ = try await harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))

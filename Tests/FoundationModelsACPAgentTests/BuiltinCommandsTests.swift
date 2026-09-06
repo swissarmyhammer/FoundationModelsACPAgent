@@ -89,7 +89,7 @@ struct BuiltinCommandsTests {
             let harness = await AgentClientHarness.makeRecording(agent: agent)
             _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
             let response = try await harness.connection.newSession(
-                NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: cwd.path))))
+                NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
             let collector = try #require(harness.collector)
             return Fixture(
                 harness: harness, collector: collector, sessionId: response.sessionId,

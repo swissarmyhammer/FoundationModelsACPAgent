@@ -16,100 +16,7 @@ import Testing
 // made with an additional root R reads under R, refuses a path outside
 // the union of cwd and R, lets a shell command write into R, keeps the
 // transcripts under the cwd dotfolder, reports the ordered list through
-// `session/list`, and skips a relative entry without a refusal of the
-// session.
-
-/// The refusal a raw-wire read throws when the agent's byte stream ends
-/// before the awaited response arrives.
-private struct WireClosedError: Error {}
-
-/// A minimal raw JSON-RPC client over one `InMemoryTransport` end.
-///
-/// The typed `ClientSideConnection` cannot carry a relative
-/// `additionalDirectories` entry, because `AbsolutePath` refuses one at
-/// construction. This client writes raw ndJSON frames, so a test drives
-/// the agent with the malformed wire input a real peer can send.
-private final class RawWireClient {
-    /// The transport end the frames go out on.
-    private let transport: InMemoryTransport
-
-    /// The iterator over the agent's outgoing byte stream.
-    private var bytes: AsyncThrowingStream<Data, any Error>.AsyncIterator
-
-    /// The framer that reassembles ndJSON lines from raw chunks.
-    private var framer = NDJSONFramer()
-
-    /// The reassembled lines a response wait did not consume yet.
-    private var bufferedLines: [Data] = []
-
-    /// The newline byte that terminates one ndJSON frame.
-    private static let newline: UInt8 = 0x0A
-
-    /// Makes a client over one transport end.
-    ///
-    /// - Parameter transport: The client end of the pair.
-    init(transport: InMemoryTransport) {
-        self.transport = transport
-        self.bytes = transport.bytes.makeAsyncIterator()
-    }
-
-    /// Sends one request frame and waits for its response.
-    ///
-    /// - Parameters:
-    ///   - id: The JSON-RPC request id.
-    ///   - method: The wire method name.
-    ///   - params: The request parameters, as a JSON object.
-    /// - Returns: The response's `result` object.
-    /// - Throws: ``WireClosedError`` when the stream ends first, or
-    ///   whatever the write or the JSON coding throws.
-    func call(id: Int, method: String, params: [String: Any]) async throws -> [String: Any] {
-        let frame: [String: Any] = [
-            "jsonrpc": "2.0", "id": id, "method": method, "params": params,
-        ]
-        var data = try JSONSerialization.data(withJSONObject: frame)
-        data.append(Self.newline)
-        try await transport.write(data)
-        return try await response(for: id)
-    }
-
-    /// Reads frames until the response for `id` arrives. Notifications
-    /// and unrelated frames are passed over. An error response is
-    /// recorded as a test failure.
-    ///
-    /// - Parameter id: The awaited request id.
-    /// - Returns: The response's `result` object.
-    /// - Throws: ``WireClosedError`` when the stream ends first.
-    private func response(for id: Int) async throws -> [String: Any] {
-        while true {
-            let line = try await nextLine()
-            guard
-                let object = try JSONSerialization.jsonObject(with: line) as? [String: Any],
-                object["id"] as? Int == id
-            else {
-                continue
-            }
-            if let error = object["error"] {
-                Issue.record("request \(id) failed: \(error)")
-                return [:]
-            }
-            return object["result"] as? [String: Any] ?? [:]
-        }
-    }
-
-    /// The next reassembled ndJSON line.
-    ///
-    /// - Returns: One line, without its newline.
-    /// - Throws: ``WireClosedError`` when the stream ends first.
-    private func nextLine() async throws -> Data {
-        while bufferedLines.isEmpty {
-            guard let chunk = try await bytes.next() else {
-                throw WireClosedError()
-            }
-            bufferedLines.append(contentsOf: framer.append(chunk))
-        }
-        return bufferedLines.removeFirst()
-    }
-}
+// `session/list`, and refuses a relative entry outright.
 
 /// The client-end proofs of plan.md §7.2: the additional roots extend
 /// confinement, and nothing else about the session moves.
@@ -140,7 +47,7 @@ struct MultiRootConfinementTests {
         try await ResumeSessionFixture.make(
             label: "MultiRootConfinementTests-\(label)",
             additionalDirectories: additionalRoots.map { root in
-                try #require(AbsolutePath(rawValue: root.path))
+                AbsolutePath(rawValue: root.path)
             })
     }
 
@@ -154,17 +61,6 @@ struct MultiRootConfinementTests {
     ) async throws -> ActiveSession {
         try #require(
             await fixture.fixture.harness.agent.sessions[fixture.fixture.sessionId])
-    }
-
-    /// The JSON object form of one encodable wire request.
-    ///
-    /// - Parameter request: The typed request to encode.
-    /// - Returns: The encoded object.
-    /// - Throws: Whatever the encode or the parse throws.
-    private static func rawParams(of request: some Encodable) throws -> [String: Any] {
-        let object = try JSONSerialization.jsonObject(
-            with: JSONEncoder().encode(request))
-        return try #require(object as? [String: Any])
     }
 
     // MARK: - The read verb over the union (plan.md §7.2, §11.4)
@@ -210,22 +106,32 @@ struct MultiRootConfinementTests {
         await fixture.fixture.close()
     }
 
-    // MARK: - The skip-and-log rule (plan.md §7.2)
+    // MARK: - The refusal rule (plan.md §7.2)
 
     /// The one converter from wire path strings to confinement roots
-    /// skips a relative entry and keeps the wire order of the rest.
-    @Test func aRelativePathStringIsSkippedFromTheAdditionalRoots() {
-        let roots = SessionSetup.additionalRoots(
-            fromPaths: ["relative/entry", "/extra/a", "/extra/b"])
+    /// refuses a relative entry, naming its own field. The wire decode
+    /// carries every entry as sent, so a skip here would drop a
+    /// confinement root the client asked for and never say so.
+    @Test func aRelativePathStringIsRefusedFromTheAdditionalRoots() async {
+        await SessionSetupTests.expectRelativePathRefusal(naming: .additionalDirectories) {
+            _ = try SessionSetup.additionalRoots(
+                fromPaths: ["relative/entry", "/extra/a", "/extra/b"])
+        }
+    }
+
+    /// An absolute entry list still converts in wire order, so the
+    /// refusal above reads one relative entry and not the whole list.
+    @Test func absolutePathStringsKeepTheirWireOrder() throws {
+        let roots = try SessionSetup.additionalRoots(fromPaths: ["/extra/a", "/extra/b"])
 
         #expect(roots.map(\.path) == ["/extra/a", "/extra/b"])
     }
 
-    /// A raw `session/new` frame that carries a relative entry beside an
-    /// absolute one still starts the session: the relative entry is
-    /// skipped on the way in, and the surviving root confines.
+    /// A `session/new` that carries a relative entry beside an absolute
+    /// one starts no session: the agent owns the file system, so the
+    /// agent answers invalid params and the client fixes its request.
     @Test(.timeLimit(.minutes(1)))
-    func aRelativeWireEntryIsSkippedAndTheSessionStillStarts() async throws {
+    func aRelativeEntryRefusesTheWholeSessionRequest() async throws {
         let cwd = Self.makeResolvedDirectory(named: "raw-cwd")
         let additionalRoot = Self.makeResolvedDirectory(named: "raw-extra")
         let agent = try await makeStubAgent(
@@ -233,31 +139,20 @@ struct MultiRootConfinementTests {
             cacheDirectory: Self.makeResolvedDirectory(named: "raw-cache"),
             recordingsDirectory: Self.makeResolvedDirectory(named: "raw-recordings"),
             userDirectory: Self.makeResolvedDirectory(named: "raw-user"))
-        let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
-            agent.bind(connection: connection)
-            return agent
+        let harness = await AgentClientHarness.makeRecording(agent: agent)
+        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+
+        await SessionSetupTests.expectRelativePathRefusal(naming: .additionalDirectories) {
+            _ = try await harness.connection.newSession(
+                NewSessionRequest(
+                    cwd: AbsolutePath(rawValue: cwd.path),
+                    additionalDirectories: [
+                        AbsolutePath(rawValue: "relative/entry"),
+                        AbsolutePath(rawValue: additionalRoot.path),
+                    ]))
         }
-        let wire = RawWireClient(transport: clientEnd)
-
-        _ = try await wire.call(
-            id: 1, method: "initialize",
-            params: Self.rawParams(of: AgentClientHarness.makeInitializeRequest()))
-        var params = try Self.rawParams(
-            of: NewSessionRequest(
-                cwd: try #require(AbsolutePath(rawValue: cwd.path)),
-                additionalDirectories: [try #require(AbsolutePath(rawValue: additionalRoot.path))]))
-        var directories = try #require(params["additionalDirectories"] as? [Any])
-        directories.insert("relative/entry", at: 0)
-        params["additionalDirectories"] = directories
-        let result = try await wire.call(
-            id: 2, method: ACPMethod.sessionNew, params: params)
-
-        let sessionId = try #require(result["sessionId"] as? String)
-        let entry = try #require(await agent.sessions[SessionId(rawValue: sessionId)])
-        #expect(entry.additionalRoots.map(\.path) == [additionalRoot.path])
-        clientEnd.close()
-        await agentConnection.close()
+        #expect(await agent.sessions.isEmpty)
+        await harness.close()
     }
 
     // MARK: - The shell write into the additional root (plan.md §11.7)
@@ -328,7 +223,7 @@ struct MultiRootConfinementTests {
             label: "list", additionalRoots: [firstRoot, secondRoot])
 
         try await fixture.runTurn("write the index record")
-        let cwd = try #require(AbsolutePath(rawValue: fixture.fixture.cwd.path))
+        let cwd = AbsolutePath(rawValue: fixture.fixture.cwd.path)
         let response = try await fixture.fixture.harness.connection.listSessions(
             ListSessionsRequest(cwd: cwd))
 

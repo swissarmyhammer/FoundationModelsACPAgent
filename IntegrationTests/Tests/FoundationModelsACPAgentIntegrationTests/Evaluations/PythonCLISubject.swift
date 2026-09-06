@@ -180,9 +180,7 @@ struct PythonCLISubjectHost {
     func runSample(
         prompt: String, workspace: URL, idleDeadline: Duration, maxTurns: Int = 1
     ) async throws -> PythonCLITurnRun {
-        guard let cwd = AbsolutePath(rawValue: workspace.path) else {
-            throw PythonCLISubjectError.invalidWorkspacePath(workspace.path)
-        }
+        let cwd = AbsolutePath(rawValue: workspace.path)
         let response = try await harness.connection.newSession(NewSessionRequest(cwd: cwd))
         let sessionId = response.sessionId
         let start = ContinuousClock.now
@@ -404,13 +402,6 @@ struct PythonCLISubjectHost {
         let (seconds, attoseconds) = duration.components
         return Double(seconds) + Double(attoseconds) / Self.attosecondsPerSecond
     }
-}
-
-/// What the subject wiring refused.
-enum PythonCLISubjectError: Error, Equatable {
-    /// The workspace path did not form an `AbsolutePath` for
-    /// `session/new`.
-    case invalidWorkspacePath(String)
 }
 
 // MARK: - The evidence readers

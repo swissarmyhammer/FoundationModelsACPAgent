@@ -173,6 +173,28 @@ struct SessionResumeTests {
             .filter { $0.kind == .divergence }
     }
 
+    /// A `cwd` string that is not absolute, so the agent must refuse it.
+    private static let relativeCwd = "relative/resume"
+
+    // MARK: - The absolute-cwd rule (plan.md §7.1, §7.4)
+
+    /// A relative `cwd` is refused before the session id is read, and the
+    /// refusal names the field that failed and why. `session/new`,
+    /// `session/list` and `session/resume` all answer the same way,
+    /// because one validator serves all three.
+    @Test(.timeLimit(.minutes(1)))
+    func resumeWithARelativeCwdAnswersInvalidParamsNamingTheField() async throws {
+        let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-relative")
+
+        await SessionSetupTests.expectRelativePathRefusal(naming: .cwd) {
+            _ = try await resume.fixture.harness.connection.resumeSession(
+                ResumeSessionRequest(
+                    cwd: AbsolutePath(rawValue: Self.relativeCwd),
+                    sessionId: resume.fixture.sessionId))
+        }
+        await resume.fixture.close()
+    }
+
     // MARK: - The unknown-id policy (plan.md §10.1)
 
     @Test(.timeLimit(.minutes(1)))
@@ -183,7 +205,7 @@ struct SessionResumeTests {
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(
                 ResumeSessionRequest(
-                    cwd: try #require(AbsolutePath(rawValue: resume.fixture.cwd.path)),
+                    cwd: AbsolutePath(rawValue: resume.fixture.cwd.path),
                     sessionId: unknownId))
             Issue.record("expected the unknown-id refusal")
         } catch let error as RequestError {
@@ -201,7 +223,7 @@ struct SessionResumeTests {
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(
                 ResumeSessionRequest(
-                    cwd: try #require(AbsolutePath(rawValue: resume.fixture.cwd.path)),
+                    cwd: AbsolutePath(rawValue: resume.fixture.cwd.path),
                     sessionId: malformedId))
             Issue.record("expected the unknown-id refusal")
         } catch let error as RequestError {
@@ -226,7 +248,7 @@ struct SessionResumeTests {
 
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(
-                try resume.makeResumeRequest())
+                resume.makeResumeRequest())
             Issue.record("expected the deleted-session refusal")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
@@ -257,7 +279,7 @@ struct SessionResumeTests {
 
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(
-                try resume.makeResumeRequest(cwd: otherCwd))
+                resume.makeResumeRequest(cwd: otherCwd))
             Issue.record("expected the cwd-mismatch refusal")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
@@ -293,7 +315,7 @@ struct SessionResumeTests {
 
         let countBefore = await resume.fixture.collector.updates.count
         let response = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
         // The replay went out before the response completed, so the
         // collector already holds every upsert.
         let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
@@ -306,7 +328,7 @@ struct SessionResumeTests {
         // under the §8.3 replace row.
         let countBetween = await resume.fixture.collector.updates.count
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
         let secondUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBetween))
             .map(\.update)
         #expect(Self.replayedMessages(in: secondUpdates) == expected)
@@ -324,7 +346,7 @@ struct SessionResumeTests {
 
         let countBefore = await resume.fixture.collector.updates.count
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
         let updates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
             .map(\.update)
         #expect(Self.replayedMessages(in: updates).isEmpty)
@@ -342,7 +364,7 @@ struct SessionResumeTests {
 
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(
-                try resume.makeResumeRequest(
+                resume.makeResumeRequest(
                     replayFrom: .unknown("bookmark", .object([:]))))
             Issue.record("expected the unknown-cursor refusal")
         } catch let error as RequestError {
@@ -364,7 +386,7 @@ struct SessionResumeTests {
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
 
         // The restored model received the earlier context: the transcript
         // handed to the backend carries the first turn.
@@ -406,7 +428,7 @@ struct SessionResumeTests {
         try "outside the resumed roots".write(to: outsideFile, atomically: true, encoding: .utf8)
         var resume = try await ResumeSessionFixture.make(
             label: "SessionResumeTests-roots",
-            additionalDirectories: [try #require(AbsolutePath(rawValue: outside.path))])
+            additionalDirectories: [AbsolutePath(rawValue: outside.path)])
         let insideFile = resume.fixture.cwd.appendingPathComponent("inside.txt")
         try "inside the cwd".write(to: insideFile, atomically: true, encoding: .utf8)
         try await resume.runTurn("one turn before the root change")
@@ -416,7 +438,7 @@ struct SessionResumeTests {
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
 
         // The confinement was rebuilt with the cwd only: a file outside
         // the cwd is now refused, and a file under it still reads.
@@ -462,7 +484,7 @@ struct SessionResumeTests {
             yaml: "tools:\n  shell: false\n", under: resume.fixture.cwd)
         let response = try await resume.fixture.harness.connection.resumeSession(
             ResumeSessionRequest(
-                cwd: try #require(AbsolutePath(rawValue: resume.fixture.cwd.path)),
+                cwd: AbsolutePath(rawValue: resume.fixture.cwd.path),
                 sessionId: recordedId))
 
         #expect(Self.missingToolNames(of: response).contains(ShellVerbSupport.executeVerbPath))
@@ -479,7 +501,7 @@ struct SessionResumeTests {
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         let response = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
 
         #expect(Self.missingToolNames(of: response).isEmpty)
         await resume.fixture.close()
@@ -502,7 +524,7 @@ struct SessionResumeTests {
                 InstructionsAssembler.agentsFileName),
             atomically: true, encoding: .utf8)
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
 
         // The MODEL sees the changed instructions: the transcript the
         // restored backend received opens with them.
@@ -529,7 +551,7 @@ struct SessionResumeTests {
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         _ = try await resume.fixture.harness.connection.resumeSession(
-            try resume.makeResumeRequest())
+            resume.makeResumeRequest())
 
         let divergences = try Self.divergenceEvents(
             under: root, sessionId: resume.fixture.sessionId)

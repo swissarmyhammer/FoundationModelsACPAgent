@@ -196,7 +196,7 @@ import Testing
         /// - Parameter connection: The client side of the wire.
         /// - Throws: The agent's error.
         func call(over connection: ClientSideConnection) async throws {
-            let cwd = try #require(AbsolutePath(rawValue: "/"))
+            let cwd = AbsolutePath(rawValue: "/")
             let sessionId = InitializationTests.unknownSessionId
             switch self {
             case .new:

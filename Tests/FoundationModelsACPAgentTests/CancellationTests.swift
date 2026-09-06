@@ -178,7 +178,7 @@ import Testing
             CancelSessionNotification(sessionId: fixture.sessionId))
 
         _ = try await fixture.harness.connection.newSession(
-            NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: fixture.cwd.path))))
+            NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
         #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }

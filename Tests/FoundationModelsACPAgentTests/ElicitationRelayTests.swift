@@ -228,7 +228,7 @@ struct ElicitationRelayTests {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         let server = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
-                command: try #require(AbsolutePath(rawValue: serverCommand)),
+                command: AbsolutePath(rawValue: serverCommand),
                 name: serverName,
                 args: [ServerMode.flagName, ServerMode.loopback.rawValue]))
         return try await ScriptedTurnFixture.make(

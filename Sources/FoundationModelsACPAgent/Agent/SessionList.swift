@@ -24,14 +24,15 @@ extension RoutedACPAgent {
     ///   descending with a descending `sessionId` tiebreak, and the next
     ///   page's cursor when more sessions remain.
     /// - Throws: The order rule's invalid-request error, an
-    ///   invalid-params error for a cursor this agent did not mint, or
-    ///   whatever the store read throws.
+    ///   invalid-params error for a relative `cwd` or for a cursor this
+    ///   agent did not mint, or whatever the store read throws.
     public func listSessions(_ params: ListSessionsRequest) async throws -> ListSessionsResponse {
         try requireInitialized(before: ACPMethod.sessionList)
         let records: [SessionIndexRecord]
         if let cwd = params.cwd {
             records = try listableRecords(
-                inProject: URL(fileURLWithPath: cwd.rawValue, isDirectory: true))
+                inProject: SessionSetup.validatedWorkingDirectory(
+                    path: cwd.rawValue, field: .cwd))
         } else {
             records = try allListableRecords()
         }
@@ -121,18 +122,20 @@ extension SessionInfo {
     /// package records one; a damaged record whose `cwd` is not absolute
     /// cannot go on the wire, so the projection gives `nil` and the
     /// listing drops that record. A directory entry that is not absolute
-    /// is dropped from the list for the same reason.
+    /// is dropped from the list for the same reason. A stored record is
+    /// not a request, so there is no client to answer: dropping is the
+    /// whole remedy.
     ///
     /// - Parameter record: The store's index record.
     init?(record: SessionIndexRecord) {
-        guard let cwd = AbsolutePath(rawValue: record.cwd) else {
+        guard let cwd = AbsolutePath(absolute: record.cwd) else {
             return nil
         }
         self.init(
             cwd: cwd,
             sessionId: SessionId(rawValue: record.sessionId),
             additionalDirectories: record.additionalDirectories.compactMap(
-                AbsolutePath.init(rawValue:)),
+                AbsolutePath.init(absolute:)),
             title: record.title,
             updatedAt: PromptTurn.rfc3339(record.updatedAt))
     }

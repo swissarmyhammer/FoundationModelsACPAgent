@@ -285,7 +285,7 @@ struct StdioContractTests {
         #expect(initialized.protocolVersion == RoutedACPAgent.latestProtocolVersion)
 
         let session = try await connection.newSession(
-            NewSessionRequest(cwd: try #require(AbsolutePath(rawValue: workspace.path))))
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
 
         // Subscribe before the prompt: updates with no subscriber are
         // dropped by the router.

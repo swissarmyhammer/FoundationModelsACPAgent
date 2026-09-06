@@ -577,8 +577,8 @@ struct EventProjection {
     private static func projectedChange(
         for change: FoundationModelsMultitool.FileChange
     ) -> ProjectedFileChange? {
-        guard let path = AbsolutePath(rawValue: change.path) else { return nil }
-        let destination = change.destinationPath.flatMap(AbsolutePath.init(rawValue:))
+        guard let path = AbsolutePath(absolute: change.path) else { return nil }
+        let destination = change.destinationPath.flatMap(AbsolutePath.init(absolute:))
         switch change.kind {
         case .add:
             return .add(path: path)

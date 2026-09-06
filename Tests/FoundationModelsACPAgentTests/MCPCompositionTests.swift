@@ -148,7 +148,7 @@ import Testing
     ) throws -> FoundationModelsACP.MCPServer {
         .stdio(
             MCPServerStdio(
-                command: try #require(AbsolutePath(rawValue: command)),
+                command: AbsolutePath(rawValue: command),
                 name: name,
                 args: [modeFlag, echoMode]))
     }
@@ -305,7 +305,7 @@ import Testing
     @Test func clientEnvEntriesNormalizeWithTheLastRepeatedNameWinning() async throws {
         let client = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
-                command: try #require(AbsolutePath(rawValue: Self.unusedCommand)),
+                command: AbsolutePath(rawValue: Self.unusedCommand),
                 name: Self.gammaName,
                 args: ["--flag"],
                 env: [

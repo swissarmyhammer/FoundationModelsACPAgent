@@ -108,10 +108,10 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
                 protocolVersion: ACPClient.supportedProtocolVersion,
                 capabilities: ACPClient.advertisedCapabilities))
 
-        guard let cwd = AbsolutePath(rawValue: FileManager.default.currentDirectoryPath) else {
-            logToStandardError("acp-print cannot express its working directory as an absolute path")
-            return EXIT_FAILURE
-        }
+        // The process working directory is always absolute, and the wire
+        // type carries the string as sent, so there is nothing to refuse
+        // here. The agent judges the path (plan.md §7.1).
+        let cwd = AbsolutePath(rawValue: FileManager.default.currentDirectoryPath)
         let session = try await connection.newSession(NewSessionRequest(cwd: cwd))
 
         // Subscribe before the prompt: an update with no subscriber is

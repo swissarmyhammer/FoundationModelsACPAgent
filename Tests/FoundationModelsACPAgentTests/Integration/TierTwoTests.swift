@@ -849,7 +849,7 @@ import Testing
                 insidePath: insideFile.path, outsidePath: outsideFile.path),
             label: "TierTwoTests-composition-session",
             projectConfigYAML: readOnlyFilesConfigYAML,
-            additionalDirectories: [try #require(AbsolutePath(rawValue: additionalRoot.path))],
+            additionalDirectories: [AbsolutePath(rawValue: additionalRoot.path)],
             flashContainer: ScriptedLLMContainer(
                 script: [.textDelta(librarianSelectionJSON), .endTurn],
                 recorder: librarianRecorder))
@@ -1110,7 +1110,7 @@ import Testing
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         let server = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
-                command: try #require(AbsolutePath(rawValue: serverCommand)),
+                command: AbsolutePath(rawValue: serverCommand),
                 name: Self.mcpServerName,
                 args: [ServerMode.flagName, ServerMode.echo.rawValue]))
         let echoPath = "\(Self.mcpServerName).\(ScriptedServer.echoToolName)"

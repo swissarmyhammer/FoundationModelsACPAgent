@@ -140,7 +140,7 @@ struct ScriptedTurnFixture {
             AgentClientHarness.makeInitializeRequest(capabilities: capabilities))
         let response = try await harness.connection.newSession(
             NewSessionRequest(
-                cwd: try #require(AbsolutePath(rawValue: cwd.path)),
+                cwd: AbsolutePath(rawValue: cwd.path),
                 additionalDirectories: additionalDirectories,
                 mcpServers: mcpServers))
         let collector = try #require(harness.collector)
