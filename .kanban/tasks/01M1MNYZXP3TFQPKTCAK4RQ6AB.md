@@ -214,6 +214,135 @@ comments:
     - the nested `IntegrationTests` suite was NOT run.
     - next: /review
   timestamp: 2026-09-07T19:49:59.353163+00:00
+- actor: claude-code
+  id: 01m1yq1kf52sbbtqkgdfndpp76
+  text: |
+    ### review — findings
+
+    - evidence: 1 finding — `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:171`. Scope `review sha HEAD~1..HEAD` (the commit `edd93d2`), the diffs only. The engine read 1 file, ran 7 validators, and gave 0 findings. The finding comes from the acceptance criteria of this card.
+    - round 2: the two items of round 1 are answered, and the two boxes are correctly checked. The override test writes and reads all three profile slots. The MTP check now reads the marker at the end of an id.
+    - the new item: the check needs a hyphen before the marker in each of its two shapes. Thus an id whose name starts with the marker, for example `mlx-community/MTP-Qwen3-30B-4bit`, goes through the check. This is the same cause as the item of round 1, in a shape that is still open.
+    - next: read `MTP` as a word of the id — a hyphen or the owner separator before the word, and a hyphen or the end of the id after it. Add a row to `multiTokenPredictionExamples` for an id whose name starts with the marker. Then run `/review ^k4rq6ab` again.
+  timestamp: 2026-09-07T19:55:39.877983+00:00
+- actor: claude-code
+  id: 01m1yq2ny1hgr7rnby6tfqjr79
+  text: |
+    ### finish iteration 2 — findings
+
+    - implement: changed — 1 file, `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`. No production file changed. The MTP marker is now `-MTP`, written one time, and the check `namesMultiTokenPredictionRepository` reads it in the middle of an id and at the end of it, without regard to case. A table-driven test runs it over seven ids. The new test `eachProfileSlotInTheProjectConfigWinsOverItsDefault` writes all three slots in the project `config.yaml` and reads all three back, and asserts for each slot that the value equals the configured id and differs from the default.
+    - falsification: six messages, one for each assertion of the override test, each measured by making the decoder bad for one slot and then putting it back. The MTP table needs no message: its four `true` rows fail against the old `-MTP-` marker, so it is a true regression test.
+    - test: `swift test` — 442 tests in 46 suites with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`, three runs identical. The baseline was 440. `swift build` gave no source warning.
+    - commit: `edd93d2` `test(config): read the MTP marker at the end of an id, and prove each profile slot`
+    - review: findings — `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:171`
+
+    Both items of round 1 are confirmed answered, and the engine gave 0 findings of its own from 7 validators.
+
+    The new finding is a third shape of the same cause. Round 1 named the marker in the middle only. Round 2 added the end of the id. Round 3 shows that an id whose name starts with the marker, such as `mlx-community/MTP-Qwen3-30B-4bit`, still goes through, because the character before the marker is the owner separator and not a hyphen. The correct fix reads `MTP` as a word of the id: a hyphen or the owner separator stands before the word, and a hyphen or the end of the id stands after it. That one rule covers each of the three shapes, so this iteration must remove the cause and not add a third special case.
+
+    One thing found on the way, and not caused by this card: `aFirstInterruptCancelsTheTurnAndKeepsTheTextThatArrived` at `InterruptTests.swift:140` failed in one full run of five. The cause is a race — the case scripts a text delta and then an interrupt, and nothing orders the delta first. Card `^srre854` carries it. This is the intermittent second issue that earlier runs recorded without a cause.
+  timestamp: 2026-09-07T19:56:15.169458+00:00
+- actor: claude-code
+  id: 01m1yqpe0t97v8canhjp84j97h
+  text: |-
+    ### Iteration 3 — one rule in place of the two shapes, and how each row was measured
+
+    One file changed: `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`.
+    `git diff -- Sources/` is empty; no production file changed.
+
+    **The cause is gone, and no third special case stands.** The two shapes,
+    and the constant `multiTokenPredictionInfixMarker` that carried a hyphen,
+    are deleted. The marker is now the bare word `MTP`, written one time. One
+    rule reads it: `MTP` is a word of the id. A word OPENS at the start of the
+    id, after a hyphen, or after the owner separator `/`; a word CLOSES at the
+    end of the id or before a hyphen. The match ignores case. The check calls
+    that rule at each holding of the letters, from the start of the id to its
+    end, thus no position is special.
+
+    **Each position the one rule covers.** I went through them:
+
+    | position | example | answer | why the one rule gives it |
+    |---|---|---|---|
+    | the start of the name | `mlx-community/MTP-Qwen3-30B-4bit` | `true` | the owner separator opens the word; a hyphen closes it |
+    | the middle of the name | `mlx-community/Qwen3-30B-A3B-MTP-4bit` | `true` | a hyphen opens the word; a hyphen closes it |
+    | the end of the id | `mlx-community/Qwen3.5-9B-MTP` | `true` | a hyphen opens the word; the end of the id closes it |
+    | the whole name | `mlx-community/MTP` | `true` | the owner separator opens the word; the end of the id closes it |
+    | an id with no owner separator | `MTP-Qwen3-4bit` | `true` | the start of the id opens the word; a hyphen closes it |
+
+    Each of the five is one reading of one rule, not five branches. The start
+    of the id opens a word for the same reason the end of the id closes one:
+    a boundary of the string is a boundary of a word. The owner separator
+    opens a word but does not close one, thus `mtp/Qwen3-4bit` — an owner
+    whose whole name is `mtp` — names a publisher and not a draft head.
+
+    **The accept side stays accept.** `Qwen3-mtprime-4bit` holds a bare `mtp`
+    inside a word, `mtprime-4bit` starts with those letters, and
+    `Qwen3-Xmtp-4bit` ends a word with them. All three get `false`.
+
+    **The regression proof.** Six `true` rows are new, and each one FAILS
+    against the check as it stood (the middle shape `-MTP-`, plus `-MTP` at
+    the end with `.anchored` and `.backwards`). The check was put back to that
+    shape on purpose, the messages were recorded, and the one rule was put
+    back after:
+
+    | new row | the message |
+    |---|---|
+    | `mlx-community/MTP-Qwen3-30B-4bit` | `theMTPCheckReadsTheMarkerAsAWordOfTheId(identifier:namesADraftHead:) recorded an issue with 2 arguments identifier → "mlx-community/MTP-Qwen3-30B-4bit", namesADraftHead → true at ConfigurationLoaderTests.swift:158:9: Expectation failed: Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead` |
+    | `mlx-community/mtp-Qwen3-30B-4bit` | the same message, `identifier → "mlx-community/mtp-Qwen3-30B-4bit"` |
+    | `mlx-community/MTP` | the same message, `identifier → "mlx-community/MTP"` |
+    | `mlx-community/mtp` | the same message, `identifier → "mlx-community/mtp"` |
+    | `MTP-Qwen3-4bit` | the same message, `identifier → "MTP-Qwen3-4bit"` |
+    | `mtprime/MTP-4bit` | the same message, `identifier → "mtprime/MTP-4bit"` |
+
+    **Each half of the one rule is necessary, and that is measured too.** A
+    rule with one half removed is still one rule, thus a table that no half
+    can break would prove nothing:
+
+    | what was made bad | the row that caught it |
+    |---|---|
+    | the rule does not open the word | `identifier → "mlx-community/Qwen3-Xmtp-4bit", namesADraftHead → false ... Expectation failed: Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead` |
+    | the rule does not close the word | the same message for `identifier → "mlx-community/Qwen3-mtprime-4bit"` AND for `identifier → "mlx-community/mtprime-4bit"` |
+    | the check stops at the first holding of the letters | the same message for `identifier → "mtprime/MTP-4bit", namesADraftHead → true` |
+
+    The last row is why `mtprime/MTP-4bit` is in the table: the letters stand
+    twice, and only the second holding is a word. A check that reads the first
+    holding alone answers `false` and fails.
+
+    **The table now holds 15 rows**, 10 that name a draft head and 5 that do
+    not, in upper case and in lower case.
+
+    **The rules the review engine enforces were read before the edit.** Two
+    Swift rules moved the name of the new helper: `fluent-usage` (a
+    preposition attaches to the argument label) and `naming-clarity` (a noun
+    precedes a weakly typed `String` parameter). The helper is thus
+    `isAWord(_:ofIdentifier:)`, and it reads as an assertion at the call site.
+    The `- Parameters:` entries name the internal parameter names, which
+    `doc-parameter-naming` requires. The static table stays a `let`, which
+    `immutability` requires.
+
+    **One run of 19 reported a target failure.** That run tailed only its last
+    line, thus the failing test was not captured. Eighteen runs after it, each
+    one filtered for any issue that is not the known one, all reported 442
+    tests in 46 suites with exactly 1 known issue. The shape matches the
+    intermittent `InterruptTests` race that card `^srre854` carries, but the
+    name was not measured, thus this note records what was seen and not more.
+  timestamp: 2026-09-07T20:07:02.426590+00:00
+- actor: claude-code
+  id: 01m1yqpvj0xqev93m7qy9dbs91
+  text: |-
+    ### implement — changed
+
+    - evidence: 1 file — `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`. `git diff -- Sources/` is empty: no production file changed. The round-3 checklist item is now `- [x]`, and the card stays in `doing`.
+    - the one rule: the two shapes and the hyphenated infix constant are DELETED, not kept beside a third case. The marker is the bare word `MTP`, stated one time. `namesMultiTokenPredictionRepository` reads each holding of the letters from the start of the id to its end, and `isAWord(_:ofIdentifier:)` answers whether that holding is a word: a word opens at the start of the id, after a hyphen, or after the owner separator `/`, and it closes at the end of the id or before a hyphen. The match ignores case.
+    - the positions the one rule covers: the start of the name (`mlx-community/MTP-Qwen3-30B-4bit`), the middle (`.../Qwen3-30B-A3B-MTP-4bit`), the end of the id (`.../Qwen3.5-9B-MTP`), the whole name (`mlx-community/MTP`), and an id with no owner separator (`MTP-Qwen3-4bit`). The full table with the reason for each stands in the comment above.
+    - the table: 15 rows, 10 `true` and 5 `false`, upper case and lower case. The accept rows are `Qwen3-mtprime-4bit` (a bare `mtp` inside a word), `mtprime-4bit` (a name that starts with those letters), and `Qwen3-Xmtp-4bit` (a word that ends with them), plus two builtin defaults.
+    - regression proof: all SIX new `true` rows fail against the check as it stood. The six messages are recorded in the comment above, each one measured by putting the two-shape check back and then putting the one rule back.
+    - the rule is not over-wide, and that is measured: a rule that does not open the word fails on `Qwen3-Xmtp-4bit`; a rule that does not close the word fails on `Qwen3-mtprime-4bit` and `mtprime-4bit`; a check that stops at the first holding fails on `mtprime/MTP-4bit`.
+    - `swift build`: Build complete, no source warning. The one line, `missing creator for mutated node: ... mlx-swift_Cmlx.bundle`, comes from the build system and stands at the baseline too.
+    - `swift test`: 442 tests in 46 suites, 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`. This equals the baseline the card names; a parameterized case adds table rows and not test counts.
+    - 19 full runs. 18 gave that result. 1 reported a target failure whose test name was not captured, because that run read only its last line. The shape matches the known `InterruptTests` race on card `^srre854`. Reported as an exception, not fixed here.
+    - the nested `IntegrationTests` suite was NOT run.
+    - next: /review
+  timestamp: 2026-09-07T20:07:16.288133+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'New default profile: Qwen3 models and a 32 GB memory floor'
@@ -312,3 +441,45 @@ here.
   on purpose: it is the pinned eval model, not a default.
 - The two doc comments in `PythonCLIEvaluation.swift` are now true. They
   tell that the 14B model was the default on that date.
+
+## Review Findings (2026-09-07 15:05)
+
+> Scope: `review sha HEAD~1..HEAD` (the commit `edd93d2`) — the diffs only.
+> The engine read 1 file and gave 0 findings. The item below comes from the
+> acceptance criteria of this card.
+
+- [x] `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:171` `review/acceptance-criteria` — `namesMultiTokenPredictionRepository` reads two shapes of the marker, and a hyphen stands before the marker in each shape. Thus an id whose name starts with the marker, for example `mlx-community/MTP-Qwen3-30B-4bit`, goes through the check: the character before the marker is the owner separator `/`, not a hyphen. The criterion "No default names an MTP repository" is thus not fully held. Round 1 named the end-of-id shape, and that shape is one example of this cause. Remove the cause: read `MTP` as a word of the id, where a hyphen or the owner separator stands before the word, and a hyphen or the end of the id stands after the word. Add a row to `multiTokenPredictionExamples` for an id whose name starts with the marker.
+
+### The two items of round 1 are answered
+
+- Item 1, the override test: answered. `eachProfileSlotInTheProjectConfigWinsOverItsDefault`
+  writes all three slots in the project `config.yaml` and reads all three
+  values back. Each slot gets two assertions: the value is equal to the
+  configured id, and the value is different from the default. The equality
+  is against a list of one item, thus the test also shows that the
+  configured list replaces the default list, and does not add to it. The
+  box is correctly checked.
+- Item 2, the marker at the end of an id: answered for the shape the item
+  named. The check now reads `-MTP` at the end of an id, with `.anchored`
+  and `.backwards`, which is the correct way to anchor a match at the end
+  of a string. The box is correctly checked. The new item above names a
+  different shape of the same cause.
+
+### What this pass agrees with
+
+- The widened check rejects no id it must accept. The middle shape needs
+  `-MTP-`, and the end shape needs the id to end with `-MTP`. A bare `mtp`
+  inside a word matches neither. `mlx-community/Qwen3-mtprime-4bit` is in
+  the table and gets `false`.
+- The table kills each branch of the check. Rows 1 and 2 pass only through
+  the middle branch, and rows 3 and 4 pass only through the end branch.
+  Thus a deletion of either branch makes the test fail. This is a stronger
+  proof than a falsification message.
+- The six falsification messages account for the six assertions of the
+  override test. The MTP table test needs no message: its four `true` rows
+  fail against the old `-MTP-` marker, thus the test is a true regression
+  test for the item of round 1.
+- The guard is in the right home. The card asks in writing for a test, and
+  the thing the guard reads is a compile-time constant. No code reads the
+  MTP shape at run time. A guard over a constant belongs in the suite,
+  which is where a later edit meets it.

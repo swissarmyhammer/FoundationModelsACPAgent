@@ -138,21 +138,21 @@ import Testing
     ///
     /// A Hugging Face repository id keeps its case, and the marker is usually
     /// upper case. But the case is the publisher's choice, not a rule, so the
-    /// match ignores case: a lower-case `-mtp` names the same draft head.
+    /// match ignores case: a lower-case `mtp` names the same draft head.
     @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
     func noDefaultModelNamesAnMTPRepository(reference: ModelRef) {
         #expect(!Self.namesMultiTokenPredictionRepository(reference.stringValue))
     }
 
-    /// The MTP check reads the marker in the middle of an id and at the end of
-    /// it, and it reads no bare `mtp` inside a word.
+    /// The MTP check reads the marker as a word of the id, wherever the word
+    /// stands, and it reads no bare `mtp` inside a word.
     ///
     /// The test above runs the check over the builtin defaults, and no default
     /// holds the marker. That test thus cannot show that the check finds a
     /// marker, or that the check accepts an id it must accept. This test shows
-    /// both answers.
+    /// both answers, over each position the marker word can take.
     @Test(arguments: ConfigurationLoaderTests.multiTokenPredictionExamples)
-    func theMTPCheckReadsTheMarkerInTheMiddleAndAtTheEnd(
+    func theMTPCheckReadsTheMarkerAsAWordOfTheId(
         identifier: String, namesADraftHead: Bool
     ) {
         #expect(Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead)
@@ -160,23 +160,58 @@ import Testing
 
     /// Tells if `identifier` names a multi-token-prediction repository.
     ///
-    /// The marker stands in the middle of an id, as in
-    /// `mlx-community/Qwen3-30B-A3B-MTP-4bit`, and it stands at the end of an
-    /// id, as in `mlx-community/Qwen3.5-9B-MTP`. A hyphen stands before the
-    /// marker in each shape, thus a bare `mtp` inside a word does not match and
-    /// the check accepts an id it must accept.
+    /// One rule reads the marker: `MTP` is a word of the id. A word opens at
+    /// the start of the id, after a hyphen, or after the owner separator; it
+    /// closes at the end of the id or before a hyphen. The rule holds wherever
+    /// the word stands — at the start of the name, in the middle, at the end,
+    /// as the whole name, and in an id that has no owner separator.
+    ///
+    /// The rule keeps the marker a word, thus a bare `mtp` inside a word, as in
+    /// `Qwen3-mtprime-4bit`, does not match, and the check accepts an id it
+    /// must accept. The owner separator opens a word but does not close one,
+    /// thus an owner whose whole name is `mtp` names a publisher, not a draft
+    /// head.
+    ///
+    /// The case is the publisher's choice, not a rule, thus the match ignores
+    /// case.
     ///
     /// - Parameter identifier: The model id to read.
     /// - Returns: `true` when the id names a draft head.
     private static func namesMultiTokenPredictionRepository(_ identifier: String) -> Bool {
-        let holdsTheMarkerInTheMiddle =
-            identifier.range(of: multiTokenPredictionInfixMarker, options: .caseInsensitive) != nil
-        let endsWithTheMarker =
-            identifier.range(
-                of: multiTokenPredictionMarker,
-                options: [.caseInsensitive, .anchored, .backwards]) != nil
+        var searchStart = identifier.startIndex
 
-        return holdsTheMarkerInTheMiddle || endsWithTheMarker
+        while let marker = identifier.range(
+            of: multiTokenPredictionMarker,
+            options: .caseInsensitive,
+            range: searchStart..<identifier.endIndex)
+        {
+            if isAWord(marker, ofIdentifier: identifier) { return true }
+            searchStart = identifier.index(after: marker.lowerBound)
+        }
+
+        return false
+    }
+
+    /// Tells if `range` covers a whole word of the model id `identifier`.
+    ///
+    /// - Parameters:
+    ///   - range: The part of the id to read.
+    ///   - identifier: The model id that holds `range`.
+    /// - Returns: `true` when a word opener or the start of the id stands
+    ///   before `range`, and a word separator or the end of the id stands
+    ///   after it.
+    private static func isAWord(
+        _ range: Range<String.Index>, ofIdentifier identifier: String
+    ) -> Bool {
+        let opensAWord =
+            range.lowerBound == identifier.startIndex
+            || modelIdentifierWordOpeners.contains(
+                identifier[identifier.index(before: range.lowerBound)])
+        let closesAWord =
+            range.upperBound == identifier.endIndex
+            || identifier[range.upperBound] == modelIdentifierWordSeparator
+
+        return opensAWord && closesAWord
     }
 
     /// Each default id has the shape `owner/name`: two parts, each one not
@@ -210,27 +245,38 @@ import Testing
         return profile.standard + profile.flash + profile.embedding
     }
 
-    /// The substring that marks a multi-token-prediction repository. This is
-    /// the shape the marker takes at the end of an id.
-    private static let multiTokenPredictionMarker = "-MTP"
-
-    /// The same marker in the middle of an id, where a hyphen follows it.
-    private static let multiTokenPredictionInfixMarker =
-        "\(multiTokenPredictionMarker)\(modelIdentifierWordSeparator)"
+    /// The word that marks a multi-token-prediction repository.
+    private static let multiTokenPredictionMarker = "MTP"
 
     /// Model ids the MTP check reads, and the answer each one must get.
     ///
-    /// The first four hold the marker: two in the middle of the id and two at
-    /// the end of it, in upper case and in lower case. The last three hold no
-    /// marker. `Qwen3-mtprime-4bit` holds a bare `mtp` inside a word, thus it
-    /// shows that the check does not reject an id it must accept, and the two
-    /// builtin defaults beside it are ids the check reads every run.
+    /// The first ten hold the marker as a word, and they cover each position
+    /// the word can take, in upper case and in lower case: in the middle of the
+    /// name, at the end of the id, at the start of the name, as the whole name,
+    /// and at the start of an id that has no owner separator. `mtprime/MTP-4bit`
+    /// holds the letters twice, and only the second holding is a word, thus it
+    /// shows that the check reads the id to its end.
+    ///
+    /// The last five hold no marker word, and each half of the rule is
+    /// necessary to keep them out. `Qwen3-mtprime-4bit` holds a bare `mtp`
+    /// inside a word and `mtprime-4bit` starts with those letters, thus a rule
+    /// that does not close the word admits them. `Qwen3-Xmtp-4bit` ends a word
+    /// with those letters, thus a rule that does not open the word admits it.
+    /// The two builtin defaults beside them are ids the check reads every run.
     private static let multiTokenPredictionExamples: [(String, Bool)] = [
         ("mlx-community/Qwen3-30B-A3B-MTP-4bit", true),
         ("mlx-community/Qwen3-30B-A3B-mtp-4bit", true),
         ("mlx-community/Qwen3.5-9B-MTP", true),
         ("mlx-community/Qwen3.5-9B-mtp", true),
+        ("mlx-community/MTP-Qwen3-30B-4bit", true),
+        ("mlx-community/mtp-Qwen3-30B-4bit", true),
+        ("mlx-community/MTP", true),
+        ("mlx-community/mtp", true),
+        ("MTP-Qwen3-4bit", true),
+        ("mtprime/MTP-4bit", true),
         ("mlx-community/Qwen3-mtprime-4bit", false),
+        ("mlx-community/mtprime-4bit", false),
+        ("mlx-community/Qwen3-Xmtp-4bit", false),
         (defaultStandardModel, false),
         (defaultEmbeddingModel, false),
     ]
@@ -240,6 +286,12 @@ import Testing
 
     /// The separator between the words of a model name.
     private static let modelIdentifierWordSeparator: Character = "-"
+
+    /// The characters that open a word of a model id. The owner separator opens
+    /// the name, thus the first word of the name stands after it.
+    private static let modelIdentifierWordOpeners: Set<Character> = [
+        modelIdentifierWordSeparator, modelOwnerSeparator,
+    ]
 
     /// The count of parts an `owner/name` model id has.
     private static let modelIdentifierPartCount = 2
