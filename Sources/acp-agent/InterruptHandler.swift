@@ -52,15 +52,21 @@ private final class InterruptState: Sendable {
 /// because a model whose generate loop never checks for cancellation
 /// runs to its end and a person must still be able to leave.
 ///
-/// **The watch stands for the turn, and only for the turn.**
-/// ``RunTurn`` arms it after the composition and disarms it when the
-/// turn settles. Outside that window `SIGINT` keeps its default
-/// disposition and ends the process, which is what a person expects
-/// during a model download: the resolution cannot be interrupted today
-/// — `Router.resolve(profile:reporting:)` honours no Task cancellation,
-/// and the wire is not even open yet — so a watch that swallowed the
-/// signal there would make the CLI look frozen. Card `^54ay5s0` carries
-/// that work, and this window widens when it lands.
+/// **The watch stands for two windows, one after the other.**
+/// ``InterruptibleComposition`` arms it for the composition — the
+/// configuration load, the model download and the model load — and
+/// disarms it once the composition is done. ``RunTurn`` then arms it
+/// again for the turn and disarms it when the turn settles. The two
+/// never overlap, so `SIGINT` has exactly one watcher at any moment.
+///
+/// The reaction differs, because the addressee does. During the turn
+/// the wire is open and a session exists, so the first signal sends
+/// `session/cancel`. During the composition neither exists, so the
+/// first signal cancels the composition task instead:
+/// `Router.resolve(profile:reporting:)` honours task cancellation
+/// (card `^54ay5s0`), stops the transfer, and leaves the part files in
+/// the Hugging Face cache. Outside both windows `SIGINT` keeps its
+/// default disposition and ends the process.
 enum InterruptHandler {
     /// How a turn gets its watch: a closure, so `run()` gives the real
     /// `SIGINT` watch and a test gives a scripted one. No suite arms a
@@ -85,6 +91,28 @@ enum InterruptHandler {
     /// The real watch: a `DispatchSourceSignal` for `SIGINT`.
     static var onSIGINT: Installer {
         { install() }
+    }
+
+    /// Reacts to each arrival of `arrivals`: the first one runs `stop`,
+    /// and every later one ends the process at once.
+    ///
+    /// Both windows of §5.9 read their arrivals through this loop, so the
+    /// ordinal contract stands in one place and cannot drift between them.
+    /// Only the stop differs: the turn sends `session/cancel`, and the
+    /// composition cancels its task.
+    ///
+    /// - Parameters:
+    ///   - arrivals: The ordinals of the watch.
+    ///   - stop: What the first arrival does.
+    static func react(
+        to arrivals: AsyncStream<Int>, stoppingWith stop: () async -> Void
+    ) async {
+        for await ordinal in arrivals {
+            guard ordinal == firstArrival else {
+                endAtOnce()
+            }
+            await stop()
+        }
     }
 
     /// Ends the process at once, for the second `Ctrl-C`.

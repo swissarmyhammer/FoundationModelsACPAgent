@@ -184,10 +184,7 @@ enum RunTurn {
         cancelling sessionId: SessionId,
         over connection: ClientSideConnection
     ) async {
-        for await ordinal in arrivals {
-            guard ordinal == InterruptHandler.firstArrival else {
-                InterruptHandler.endAtOnce()
-            }
+        await InterruptHandler.react(to: arrivals) {
             try? await connection.sessionCancel(CancelSessionNotification(sessionId: sessionId))
         }
     }

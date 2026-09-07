@@ -32,9 +32,21 @@ extension AcpAgentCommand {
             // before the wire opens, and its reason goes to stderr — never
             // to stdout. This is the first of the two loads of §5.10, and
             // the only one keyed by the process working directory.
-            let composed = try await AgentComposition.compose(
-                workingDirectory: AgentComposition.processWorkingDirectory,
-                environment: ProcessInfo.processInfo.environment)
+            // The download of §5.9 is interruptible here too: the first
+            // `Ctrl-C` cancels the composition and the process exits 4,
+            // leaving the partly downloaded model in the Hugging Face cache.
+            let composed: AgentComposition.Composed
+            do {
+                composed = try await InterruptibleComposition.run(
+                    interruptedBy: InterruptHandler.onSIGINT
+                ) {
+                    try await AgentComposition.compose(
+                        workingDirectory: AgentComposition.processWorkingDirectory,
+                        environment: ProcessInfo.processInfo.environment)
+                }
+            } catch is CompositionInterrupted {
+                throw ExitCode(InterruptHandler.cancelledExitCode)
+            }
             // The wrapper is what makes the stdin end observable; see
             // `InboundEndTransport`. Underneath it stands the same
             // `StdioTransport` `.stdio` vends, so the wire is unchanged.

@@ -246,16 +246,23 @@ with our usage error. See `doctor-plan.md` §5.
 for the `cancelled` stop reason, prints the text that arrived, and exits
 4. A second `Ctrl-C` ends the process at once.
 
-**The watch stands for the turn, and only for the turn.** Outside it
-`Ctrl-C` keeps its killing default disposition. During a model download
-that is the honest behaviour: `Router.resolve(profile:reporting:)`
-honours no Task cancellation, and the wire is not even open then, so a
-`session/cancel` would have no addressee and a watch that swallowed the
-signal would only make the CLI look frozen. Card `^54ay5s0` makes the
-resolve cancellable; the download paragraph — the first `Ctrl-C` stops
-the resolution, exits 4, and leaves the partly downloaded model in the
-Hugging Face cache so the next run continues — returns here when it
-lands.
+**The download.** The first `Ctrl-C` during a model download stops the
+resolution, exits 4, and leaves the partly downloaded model in the
+Hugging Face cache, so the next run continues that download instead of
+starting it again. `Router.resolve(profile:reporting:)` honours task
+cancellation, so the watch stands over the composition as well as over
+the turn (card `^54ay5s0`).
+
+**The watch stands for two windows, one after the other.** The first
+covers the composition — the configuration load, the download and the
+model load — and the second covers the turn. They never overlap, so
+`Ctrl-C` has exactly one watcher at any moment. Outside both, `Ctrl-C`
+keeps its killing default disposition.
+
+The reaction differs, because the addressee does. During the turn the
+wire is open and a session exists, so the first signal sends
+`session/cancel`. During the composition neither exists, so the first
+signal cancels the composition task instead.
 
 This matters most with `--out-of-process`, and in `acp-client`. A hard
 kill of the client leaves a model process that holds gigabytes.

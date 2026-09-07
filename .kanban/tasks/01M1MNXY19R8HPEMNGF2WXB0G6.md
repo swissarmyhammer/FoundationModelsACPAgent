@@ -1,10 +1,32 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1y1xe1m8pxd8frh3n4ncqqj
+  text: |
+    ### the partial work is in a git stash
+
+    A sub agent started this card and was stopped. It left three files in the working tree:
+
+    - `Package.swift` — the Noora dependency and the `nooraProduct` target dependency.
+    - `Tests/FoundationModelsACPAgentTests/Support/TerminalCapture.swift`
+    - `Tests/FoundationModelsACPAgentTests/TerminalRendererTests.swift`
+
+    `TerminalRendererTests.swift` tests `TerminalRenderer`, and that type was never written: `Sources/acp-agent/Terminal/` does not exist. Thus the test target does not compile, and no other card can run a test.
+
+    The three files are now in a git stash, so no line is lost:
+
+    ```
+    stash@{0}: On main: ^2wxb0g6 Noora WIP: TerminalRenderer never written, test target does not compile
+    ```
+
+    Get them back with `git stash pop` (or `git stash apply`) when this card starts again. Read `TerminalRendererTests.swift` first: it states the shape the renderer must have.
+  timestamp: 2026-09-07T13:46:23.156101+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
 position_column: todo
-position_ordinal: '8280'
+position_ordinal: 9c80
 title: Adopt Noora, and write the agent CLI's TerminalRenderer
 ---
 ### What

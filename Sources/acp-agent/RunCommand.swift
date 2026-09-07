@@ -109,9 +109,11 @@ extension AcpAgentCommand {
         ///     model switch from.
         ///   - writer: The writer the answer goes to. `run()` gives the
         ///     one over standard output; a test gives one over a pipe.
-        ///   - install: How the turn gets its `Ctrl-C` watch. `run()`
-        ///     gives the real `SIGINT` watch; the default watches
-        ///     nothing, so no suite arms a process-wide signal.
+        ///   - install: How the composition window and the turn get their
+        ///     `Ctrl-C` watch. `run()` gives the real `SIGINT` watch; the
+        ///     default watches nothing, so no suite arms a process-wide
+        ///     signal. The two windows are armed one after the other and
+        ///     never overlap.
         /// - Returns: The stop reason of the turn.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
         ///   table, and whatever the composition, the turn or the writer
@@ -121,8 +123,46 @@ extension AcpAgentCommand {
             into writer: AnswerWriter,
             interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
         ) async throws -> RunTurnResult {
+            try await perform(environment: environment, into: writer, interruptedBy: install) {
+                try await compose(environment: environment)
+            }
+        }
+
+        /// Runs the one turn over a supplied composition.
+        ///
+        /// The composition is a parameter for the same reason the watch is:
+        /// `run()` gives the real one, and a test gives one it can hold open
+        /// long enough for a scripted `Ctrl-C` to reach it.
+        ///
+        /// - Parameters:
+        ///   - environment: The environment the turn reads.
+        ///   - writer: The writer the answer goes to.
+        ///   - install: How the composition window and the turn get their
+        ///     `Ctrl-C` watch.
+        ///   - compose: The composition work to run under the first watch.
+        /// - Returns: The stop reason of the turn, or the `cancelled` stop
+        ///   reason when the first `Ctrl-C` stopped the composition.
+        /// - Throws: `ValidationError` for the terminal row of the §5.5
+        ///   table, and whatever the composition, the turn or the writer
+        ///   throws.
+        func perform(
+            environment: [String: String],
+            into writer: AnswerWriter,
+            interruptedBy install: InterruptHandler.Installer,
+            composedBy compose: @escaping @Sendable () async throws -> AgentComposition.Composed
+        ) async throws -> RunTurnResult {
             let text = try promptSource.text()
-            let composed = try await compose(environment: environment)
+            let composed: AgentComposition.Composed
+            do {
+                composed = try await InterruptibleComposition.run(
+                    interruptedBy: install, compose)
+            } catch is CompositionInterrupted {
+                // The wire never opened, so there is no `session/cancel` to
+                // send and no answer text to keep. The run reports the
+                // `cancelled` stop reason, and `run()` turns that into exit 4
+                // (§5.8, §5.9).
+                return RunTurnResult(stopReason: .cancelled)
+            }
             return try await RunTurn.answer(
                 of: composed, in: session, prompt: text, into: writer,
                 interruptedBy: install)

@@ -17,11 +17,9 @@ import Testing
 /// watch, and the spawned-binary suite of the nested package sends the
 /// real `SIGINT` to a real `acp-agent`.
 ///
-/// The scope of this card is the turn, and only the turn. A `Ctrl-C`
-/// during a model download is not here, because
-/// `Router.resolve(profile:reporting:)` does not honour Task
-/// cancellation and the wire is not even open then. That work is card
-/// `^54ay5s0`.
+/// The scope of this suite is the turn, and only the turn. The other
+/// window of §5.9 — a `Ctrl-C` during a model download, before the wire
+/// opens — is ``CompositionInterruptTests``.
 struct InterruptTests {
     // MARK: - Constants
 
