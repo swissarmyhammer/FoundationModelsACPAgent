@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import Testing
 
@@ -59,38 +58,13 @@ struct AgentCompositionTests {
         var environment = Self.stubEnvironment
         environment[Self.configHomeVariable] = configHome.path
 
-        let first = try await Self.answerText(environment: environment, workspace: workspace)
-        let second = try await Self.answerText(environment: environment, workspace: workspace)
+        let first = try await ComposedTurnFixture.answerText(
+            environment: environment, workspace: workspace, prompt: Self.promptText)
+        let second = try await ComposedTurnFixture.answerText(
+            environment: environment, workspace: workspace, prompt: Self.promptText)
 
         #expect(!first.isEmpty)
         #expect(first.contains(Self.promptText))
         #expect(first == second)
-    }
-
-    /// Composes the agent over `environment`, runs one turn of
-    /// ``promptText`` in `workspace` through the in-process harness, and
-    /// returns the agent text the turn streamed.
-    ///
-    /// - Parameters:
-    ///   - environment: The environment the composition reads.
-    ///   - workspace: The session working directory.
-    /// - Returns: The streamed agent text, chunks joined in arrival order.
-    /// - Throws: Whatever the composition, the handshake or the turn throws.
-    private static func answerText(
-        environment: [String: String], workspace: URL
-    ) async throws -> String {
-        let composed = try await AgentComposition.compose(
-            workingDirectory: workspace, environment: environment)
-        #expect(composed.modelSource == .stub)
-        let harness = await AgentClientHarness.makeRecording(agent: composed.agent)
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        let session = try await harness.connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-        let collector = try #require(harness.collector)
-        _ = try await harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))
-        let updates = try await ScriptedTurnFixture.waitForIdle(collector)
-        await harness.close()
-        return agentMessageText(in: updates)
     }
 }

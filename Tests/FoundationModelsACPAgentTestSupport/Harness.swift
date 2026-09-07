@@ -51,14 +51,19 @@ struct HoldingClock: Clock {
 }
 
 /// One in-process wiring of `RoutedACPAgent` and the shipped client
-/// driver (plan.md §20.1): `InMemoryTransport.pair()`, an
-/// `AgentSideConnection` around the agent, and a `SwiftUIACPClient` over
-/// an injected ``HoldingClock`` on the other end.
+/// driver (plan.md §20.1): a ``HarnessWire``, an `AgentSideConnection`
+/// around the agent, and a `SwiftUIACPClient` over an injected
+/// ``HoldingClock`` on the other end.
 ///
-/// ``make()`` wires the client itself through `connect(over:)`.
-/// ``makeRecording()`` wires a ``RecordingClient`` in front of it, so
-/// the raw notification order lands in an ``UpdateCollector`` while the
-/// observable state still lands in the client.
+/// The wire is `InMemoryTransport.pair()` by default, the transport the
+/// Mac app and `run` mode use. A suite that must prove the `acp` wire
+/// answers alike passes ``HarnessWire/makeStdioPipes()`` instead
+/// (cli-plan.md §4).
+///
+/// ``make(wire:)`` wires the client itself through `connect(over:)`.
+/// ``makeRecording(wire:)`` wires a ``RecordingClient`` in front of it,
+/// so the raw notification order lands in an ``UpdateCollector`` while
+/// the observable state still lands in the client.
 public struct AgentClientHarness: Sendable {
     /// The dotfolder name the harness constructs the agent with. The
     /// wire must never carry it (plan.md §5).
@@ -86,11 +91,11 @@ public struct AgentClientHarness: Sendable {
     public let agentConnection: AgentSideConnection
 
     /// The recorder of the raw update sequence, or `nil` when the
-    /// harness was wired without one (``make()``).
+    /// harness was wired without one (``make(wire:)``).
     public let collector: UpdateCollector?
 
     /// The recorder of the elicitation traffic, or `nil` when the
-    /// harness was wired without one (``make()``).
+    /// harness was wired without one (``make(wire:)``).
     public let elicitations: ElicitationWireRecorder?
 
     /// The tap on the client end of the wire, or `nil` when the harness
@@ -100,6 +105,10 @@ public struct AgentClientHarness: Sendable {
     /// needs it (plan.md §8.1), so it is off by default and every other
     /// suite runs the untapped wire.
     public let wireTap: WireTap?
+
+    /// The transport pair the two connections run over. ``close()``
+    /// ends it after both connections are down.
+    public let wire: HarnessWire
 
     /// Makes an agent for ``dotfolderName`` through the shared
     /// `makeStubAgent` factory, so the construction-time profile
@@ -145,14 +154,18 @@ public struct AgentClientHarness: Sendable {
         PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
     }
 
-    /// Wires a fresh agent and client over an in-memory transport pair,
-    /// with the client bound through `connect(over:)`.
+    /// Wires a fresh agent and client over a transport pair, with the
+    /// client bound through `connect(over:)`.
     ///
+    /// - Parameter wire: The transport pair to run over. The in-process
+    ///   pair by default.
     /// - Returns: The connected harness, with no collector.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
-    public static func make() async throws -> AgentClientHarness {
-        let parts = await makeParts(agent: try await makeAgent())
-        let connection = await parts.client.connect(over: parts.clientEnd)
+    public static func make(
+        wire: HarnessWire = .makeInMemory()
+    ) async throws -> AgentClientHarness {
+        let parts = await makeParts(agent: try await makeAgent(), wire: wire)
+        let connection = await parts.client.connect(over: wire.clientEnd)
         return AgentClientHarness(
             agent: parts.agent,
             client: parts.client,
@@ -160,17 +173,22 @@ public struct AgentClientHarness: Sendable {
             agentConnection: parts.agentConnection,
             collector: nil,
             elicitations: nil,
-            wireTap: nil)
+            wireTap: nil,
+            wire: wire)
     }
 
     /// Wires a fresh agent and client with a ``RecordingClient`` in
     /// front of the client, so a test can assert the raw notification
     /// order on the collector and the final state on the client.
     ///
+    /// - Parameter wire: The transport pair to run over. The in-process
+    ///   pair by default.
     /// - Returns: The connected harness, with a collector.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
-    public static func makeRecording() async throws -> AgentClientHarness {
-        try await makeRecording(agent: makeAgent())
+    public static func makeRecording(
+        wire: HarnessWire = .makeInMemory()
+    ) async throws -> AgentClientHarness {
+        try await makeRecording(agent: makeAgent(), wire: wire)
     }
 
     /// Wires the given agent — for example one whose model plays a
@@ -184,15 +202,17 @@ public struct AgentClientHarness: Sendable {
     ///   - tapsWire: Whether a ``WireTap`` stands on the client end, so
     ///     a proof can read the raw line order. Off by default, because
     ///     only the §8.1 order proof reads it.
+    ///   - wire: The transport pair to run over. The in-process pair by
+    ///     default; a §4 comparison passes the stdio pipes instead.
     /// - Returns: The connected harness, with a collector.
     public static func makeRecording(
-        agent: RoutedACPAgent, tapsWire: Bool = false
+        agent: RoutedACPAgent, tapsWire: Bool = false, wire: HarnessWire = .makeInMemory()
     ) async -> AgentClientHarness {
-        let parts = await makeParts(agent: agent)
+        let parts = await makeParts(agent: agent, wire: wire)
         let collector = UpdateCollector()
         let recorder = RecordingClient(forwardingTo: parts.client, collector: collector)
-        let wireTap = tapsWire ? WireTap(tapping: parts.clientEnd) : nil
-        let clientEnd: any ACPTransport = wireTap ?? parts.clientEnd
+        let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
+        let clientEnd: any ACPTransport = wireTap ?? wire.clientEnd
         let connection = await ClientSideConnection(stream: clientEnd) { _ in recorder }
         return AgentClientHarness(
             agent: parts.agent,
@@ -201,7 +221,8 @@ public struct AgentClientHarness: Sendable {
             agentConnection: parts.agentConnection,
             collector: collector,
             elicitations: recorder.elicitations,
-            wireTap: wireTap)
+            wireTap: wireTap,
+            wire: wire)
     }
 
     /// Flushes the coalescing buffer of every session, so a test
@@ -213,30 +234,36 @@ public struct AgentClientHarness: Sendable {
         }
     }
 
-    /// Closes both ends of the wire and ends the tap.
+    /// Closes both ends of the wire, ends the tap, and releases the
+    /// transport pair. A pipe wire holds descriptors, so the release is
+    /// what gives them back.
     public func close() async {
         await connection.close()
         await agentConnection.close()
         wireTap?.stop()
+        wire.close()
     }
 
-    /// The wiring every factory shares: the transport pair, the agent
-    /// with its connection, and the client over the holding clock. The
-    /// factory closure binds the connection into the agent, so a prompt
-    /// turn can notify through it (plan.md §8.1).
-    private static func makeParts(agent: RoutedACPAgent) async -> (
-        clientEnd: InMemoryTransport,
+    /// The wiring every factory shares: the agent with its connection
+    /// over the wire's agent end, and the client over the holding clock.
+    /// The factory closure binds the connection into the agent, so a
+    /// prompt turn can notify through it (plan.md §8.1).
+    ///
+    /// - Parameters:
+    ///   - agent: The agent under test.
+    ///   - wire: The transport pair the two connections run over.
+    /// - Returns: The agent with its connection, and the client.
+    private static func makeParts(agent: RoutedACPAgent, wire: HarnessWire) async -> (
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
         client: SwiftUIACPClient
     ) {
-        let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
+        let agentConnection = await AgentSideConnection(stream: wire.agentEnd) { connection in
             agent.bind(connection: connection)
             return agent
         }
         let client = await SwiftUIACPClient(
             coalescingCadence: coalescingCadence, clock: HoldingClock())
-        return (clientEnd, agent, agentConnection, client)
+        return (agent, agentConnection, client)
     }
 }

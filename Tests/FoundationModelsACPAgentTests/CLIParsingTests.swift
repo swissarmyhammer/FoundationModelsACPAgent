@@ -174,6 +174,23 @@ struct CLIParsingTests {
                     code: AcpAgentCommand.usageExitCode, writesToStandardError: true))
     }
 
+    // MARK: - `acp` declares no `--cwd` (§5.10)
+
+    /// `acp` takes no `--cwd`: the client gives the working directory
+    /// with each `session/new`, and a flag would fight the protocol. The
+    /// option is therefore unknown on that subcommand, which is a usage
+    /// error — exit 2, on stderr — and the parse never reaches the body.
+    @Test func cwdOnAcpIsAUsageError() async throws {
+        let error = try #require(
+            await Self.outcomeError(of: ["acp", "--cwd", Self.projectPath]))
+
+        #expect(
+            AcpAgentCommand.exitOutcome(for: error)
+                == AcpAgentCommand.ExitOutcome(
+                    code: AcpAgentCommand.usageExitCode, writesToStandardError: true))
+        #expect(!AcpAgentCommand.fullMessage(for: error).isEmpty)
+    }
+
     // MARK: - The exit outcomes (§5.8)
 
     /// An unknown option is a usage error: exit 2, with the message on
