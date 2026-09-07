@@ -57,10 +57,38 @@ comments:
       stub, so removing the `instructions eject` stub does not touch it.
     - next: commit.
   timestamp: 2026-09-07T04:16:27.780546+00:00
+- actor: claude-code
+  id: 01m1x1gsqbdpxnqcx4dsm0fkcy
+  text: |-
+    ### finish iteration 1 — done
+
+    - implement: changed. 3 files —
+      `Sources/acp-agent/LayerFileWriter.swift` (new: `LayerSelection`, the
+      overwrite guard, `LayerFileExistsError`, `LayerMissingError`),
+      `Sources/acp-agent/InstructionsCommand.swift` (the stub body replaced by
+      the real one),
+      `Tests/FoundationModelsACPAgentTests/InstructionsEjectTests.swift` (new: 9
+      tests). Written with `/tdd`: the tests came first, and the red run failed to
+      build with `cannot find 'LayerFileWriter' in scope`.
+    - test: green. `swift build --build-tests` clean, no warning. `swift test` —
+      404 tests in 40 suites passed, 1 known issue.
+      `swift test --package-path IntegrationTests` — 28 tests in 7 suites, 4
+      issues, `EXIT=1`. Two exceptions, both pre-existing and outside this card:
+      the `withKnownIssue` at `HarnessSmokeTests.swift:239`, and the 4 issues of
+      `PythonCLIEvaluationTests`, each `PythonCLIEvaluation.swift:335:13:
+      Expectation failed: mean >= pythonCLIEvalMeanFloor` with `tokens=0/0` — the
+      live-model zero-token defect ^pez780d — and the signal 11 that follows it.
+      Card ^81216m5 records both symptoms together.
+    - commit: changed. `d37de68 feat(cli): instructions eject writes the
+      compiled-in Instructions.md into a layer`.
+    - review: clean. `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0
+      refuted, 7 attempted, 0 failed. 3 files reviewed; the 2 `.kanban/` files are
+      excluded by `.reviewignore`. The card moved to `done`.
+  timestamp: 2026-09-07T04:20:14.699518+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b080
 title: 'instructions eject: write Instructions.md into a layer'
 ---
 ## What
