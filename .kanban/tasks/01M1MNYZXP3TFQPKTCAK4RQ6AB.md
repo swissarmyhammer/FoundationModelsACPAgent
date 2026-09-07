@@ -343,6 +343,149 @@ comments:
     - the nested `IntegrationTests` suite was NOT run.
     - next: /review
   timestamp: 2026-09-07T20:07:16.288133+00:00
+- actor: claude-code
+  id: 01m1yr1s1y0gncjhf494av6h79
+  text: |
+    ### review — findings
+    - scope: `review sha HEAD~1..HEAD` (the commit `9e8cd9a`), the diffs only. The engine read 1 file and gave 0 findings.
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:266
+    - The cause of round 2 is removed. One rule, `isAWord`, decides every position. The two position shapes and the constant that carried a hyphen are gone.
+    - No counterexample was found. A run over the 15 rows of the table, and over nine more ids, gives the correct answer each time.
+    - The owner half is right: `mtp/Qwen3-30B-4bit` gives `false`, and `mlx-community/MTP` gives `true`.
+    - The three items of the two earlier rounds are answered, and the three boxes stay checked.
+    - next: add a `false` row for `mtp/Qwen3-30B-4bit` to `multiTokenPredictionExamples`, then review again.
+  timestamp: 2026-09-07T20:13:14.174127+00:00
+- actor: claude-code
+  id: 01m1yr2tfj0ykrzam10nr2b345
+  text: |
+    ### finish iteration 3 — findings
+
+    - implement: changed — 1 file, `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`. `git diff -- Sources/` is empty. The two position shapes and the constant that carried a hyphen are deleted. One rule stands in their place: `MTP` is a word of the id, opened by the start of the id, a hyphen, or the owner separator, and closed by the end of the id or a hyphen. The match ignores case, and a loop applies the rule at each holding of the letters. The table grew to 15 rows, 10 true and 5 false.
+    - falsification: each of the six new true rows fails against the old check. Each half of the rule is measured as necessary: a rule with no opener fails on `Qwen3-Xmtp-4bit`; a rule with no closer fails on `Qwen3-mtprime-4bit` and `mtprime-4bit`; a check that stops at the first holding fails on `mtprime/MTP-4bit`.
+    - test: `swift test` — 442 tests in 46 suites with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`, in 18 of 19 runs. One run reported a target failure whose name the run did not capture; its shape matches the known `InterruptTests` race on card `^srre854`. `swift build` gave no source warning.
+    - commit: `9e8cd9a` `test(config): read the MTP marker as a word, not at a position`
+    - review: findings — `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:266`
+
+    The review confirmed that the cause is removed: one function decides every position, no branch reads a position, and the marker is written one time. It ran the rule over the 15 table rows and nine more ids, and it states that it can name no id the check gets wrong in either direction. The three earlier findings stay answered.
+
+    The new finding is small and it is not a fourth shape of the old cause. The rule is correct; the table does not prove one half of it. No row holds an id whose owner is exactly `mtp`, so a change that made the rule symmetrical would reject `mtp/Qwen3-30B-4bit`, which the check must accept, and all 15 rows would still pass.
+  timestamp: 2026-09-07T20:13:48.402186+00:00
+- actor: claude-code
+  id: 01m1yrxscyy00cqphfvwr4depv
+  text: |
+    ### Iteration 4 — the owner rows, and the measurement that earns them
+
+    One file changed:
+    `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`.
+    `git diff -- Sources/` is empty, and `git diff -- IntegrationTests/` is
+    empty. No production file changed, and no file of a family package changed.
+
+    **What the finding asked for, and what the table now holds.** The finding
+    says that no row proves the owner half of the rule. Two rows now prove it:
+
+    | new row | answer | why the rule gives it |
+    |---|---|---|
+    | `mtp/Qwen3-30B-4bit` | `false` | the start of the id opens the word, but the owner separator does not close it |
+    | `MTP/Qwen3-30B-4bit` | `false` | the same, in upper case |
+
+    The finding named the first row. The review named the second row in its
+    own text: "`mtp/Qwen3-30B-4bit` and `MTP/Qwen3-30B-4bit` give `false`".
+    The task added it for the same reason. The check ignores case, thus each
+    case of the owner must get the same answer, and one row alone measures
+    one case alone.
+
+    **The rule did not change.** The finding says in writing not to change
+    it, because the review ran it over 24 ids and confirmed it correct in
+    both directions. `namesMultiTokenPredictionRepository` and `isAWord` are
+    the same as before this iteration. The diff holds two rows and one doc
+    comment, and nothing else.
+
+    **The measurement that earns the two rows.** The owner separator went
+    into the closers, which makes the rule symmetrical:
+
+    ```
+            let closesAWord =
+                range.upperBound == identifier.endIndex
+                || modelIdentifierWordOpeners.contains(identifier[range.upperBound])
+    ```
+
+    That is the one-character change the finding describes. With it, the run
+    gave exactly two issues, and they are exactly the two new rows:
+
+    ```
+    Test theMTPCheckReadsTheMarkerAsAWordOfTheId(identifier:namesADraftHead:)
+    recorded an issue with 2 arguments identifier → "mtp/Qwen3-30B-4bit",
+    namesADraftHead → false at ConfigurationLoaderTests.swift:158:9:
+    Expectation failed:
+    Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead
+
+    Test theMTPCheckReadsTheMarkerAsAWordOfTheId(identifier:namesADraftHead:)
+    recorded an issue with 2 arguments identifier → "MTP/Qwen3-30B-4bit",
+    namesADraftHead → false at ConfigurationLoaderTests.swift:158:9:
+    Expectation failed:
+    Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead
+
+    Test theMTPCheckReadsTheMarkerAsAWordOfTheId(identifier:namesADraftHead:)
+    with 17 test cases failed after 0.001 seconds with 2 issues.
+    ```
+
+    Two issues from 17 rows. The other 15 rows passed, which is what the
+    finding said would happen. Thus each new row is necessary, and neither
+    one is a copy of a row that already stands. The rule then went back, and
+    the 17 rows passed again.
+
+    **The doc comment of the table is true again.** It said "The last five",
+    and the table now holds seven `false` rows. The new text tells why the
+    two owner rows stand, and it names the one-character change they catch.
+    The engine rule `case-sensitivity-coverage` holds ONE row as enough for a
+    case contract, thus the comment states in writing why two stand: the
+    check ignores case, thus each case must get the same answer.
+
+    **No other site reads the token.** The rule `invariant-propagation` asks
+    that each site which reads the same token gets the same treatment. A
+    search of every `.swift` file for `mtp`, without regard to case, gives
+    two files: this test file, and a doc comment in
+    `Sources/.../Configuration/AgentConfiguration.swift`. The check is the
+    one consumer of the token, and the table is the one data site. There is
+    no sibling site, thus there is nothing to propagate.
+
+    **The rules of the review engine were read before the edit.** The dump
+    gave 60 rules over 7 validators for a Swift file. The rules that bear on
+    the edit and their answers: the table stays a `private static let` with
+    its `[(String, Bool)]` annotation (`immutability`, `idioms`,
+    `access-control`); the comment is a `///` doc comment
+    (`no-commented-code`); the two string literals need no name, because
+    `no_magic_numbers` reads a numeric literal only and `data-driven` "never
+    reports a constant for want of a name"; the two rows are per-case data,
+    which the `reuse` carve-out protects word for word; and no rule of the
+    set states a count rule, a staleness rule, or a language rule for prose.
+
+    **Test results.** `swift build` gave Build complete and no source
+    warning. The one line, `missing creator for mutated node: ...
+    mlx-swift_Cmlx.bundle`, comes from the build system and stands at the
+    baseline too. `swift test` gave 442 tests in 46 suites with exactly 1
+    known issue, the `withKnownIssue` at `HarnessSmokeTests.swift:239`, in
+    four runs of four. This equals the baseline the card names: a
+    parameterised case adds a table row and not a test. The nested
+    `IntegrationTests` suite was NOT run. `InterruptTests` did not fail in
+    any of the four runs.
+  timestamp: 2026-09-07T20:28:32.030475+00:00
+- actor: claude-code
+  id: 01m1yry5q6bdrtk13cdfjkfg03
+  text: |
+    ### implement — changed
+
+    - evidence: 1 file — `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`. `git diff -- Sources/` and `git diff -- IntegrationTests/` are both empty: no production file changed, and no file of a family package changed. The round-4 checklist item is now `- [x]`, and the card stays in `doing`.
+    - rows added: `("mtp/Qwen3-30B-4bit", false)` and `("MTP/Qwen3-30B-4bit", false)`. The table now holds 17 rows, 10 `true` and 7 `false`.
+    - the rule did not change. `namesMultiTokenPredictionRepository` and `isAWord` are the same as before, which the finding asks for in writing.
+    - failure message, from the run with the owner separator put in the closers: `Test theMTPCheckReadsTheMarkerAsAWordOfTheId(identifier:namesADraftHead:) recorded an issue with 2 arguments identifier → "mtp/Qwen3-30B-4bit", namesADraftHead → false at ConfigurationLoaderTests.swift:158:9: Expectation failed: Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead`, and the same message for `identifier → "MTP/Qwen3-30B-4bit"`. The run ended `with 17 test cases failed after 0.001 seconds with 2 issues`.
+    - exactly 2 issues from 17 rows. The other 15 rows passed, thus each new row earns its place and neither one repeats a row that stands. The rule went back after the measurement, and the 17 rows passed again.
+    - doc comment: the count went from "The last five" to "The last seven", and the new text tells why the two owner rows stand and names the one-character change they catch.
+    - `swift build`: Build complete, no source warning. The one line, `missing creator for mutated node: ... mlx-swift_Cmlx.bundle`, comes from the build system and stands at the baseline too.
+    - `swift test`: 442 tests in 46 suites, 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`. Four runs of four give that result, which equals the baseline the card names. `InterruptTests` did not fail in any run.
+    - the nested `IntegrationTests` suite was NOT run. No network request was made.
+    - next: /review
+  timestamp: 2026-09-07T20:28:44.646596+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'New default profile: Qwen3 models and a 32 GB memory floor'
@@ -483,3 +626,54 @@ here.
   the thing the guard reads is a compile-time constant. No code reads the
   MTP shape at run time. A guard over a constant belongs in the suite,
   which is where a later edit meets it.
+
+## Review Findings (2026-09-07 15:20)
+
+> Scope: `review sha HEAD~1..HEAD` (the commit `9e8cd9a`) — the diffs only.
+> The engine read 1 file and gave 0 findings. The item below comes from the
+> acceptance criteria of this card.
+
+- [x] `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:266` `review/acceptance-criteria` — The five `false` rows of `multiTokenPredictionExamples` do not hold an id whose owner is exactly `mtp`, for example `mtp/Qwen3-30B-4bit`. The doc comment of `namesMultiTokenPredictionRepository` promises this answer in writing: "The owner separator opens a word but does not close one, thus an owner whose whole name is `mtp` names a publisher, not a draft head." No row of the table proves it. A run of the rule with the owner separator put in the closers, which makes the rule symmetrical, gives `true` for `mtp/Qwen3-30B-4bit` — the check then rejects a default it must accept — and all 15 rows still pass. Thus one character can break the promise, and the table stays green. Add a `false` row for `mtp/Qwen3-30B-4bit`.
+
+### The three items of the two earlier rounds are answered
+
+- Round 1, item 1, the override test: answered.
+  `eachProfileSlotInTheProjectConfigWinsOverItsDefault` is in the file at
+  line 545. It writes all three slots and reads all three values back. The
+  box is correctly checked.
+- Round 1, item 2, the marker at the end of an id: answered. The word rule
+  closes a word at the end of the id, thus the end position needs no
+  special case. The rows `mlx-community/Qwen3.5-9B-MTP` and
+  `mlx-community/Qwen3.5-9B-mtp` prove it. The box is correctly checked.
+- Round 2, the marker at the start of the name: answered. The owner
+  separator opens a word, thus `mlx-community/MTP-Qwen3-30B-4bit` gets
+  `true`. The rows at lines 271 and 272 prove it. The box is correctly
+  checked.
+
+### What this pass agrees with
+
+- The cause is removed, and this is a rule, not a third patch. One
+  function, `isAWord`, decides every position. The two position shapes and
+  the constant that carried a hyphen are gone. The marker is the bare word
+  `MTP`, written one time at line 249. A word opens at the start of the id
+  or after a character of `modelIdentifierWordOpeners`; a word closes at
+  the end of the id or before a hyphen. No branch reads a position. The
+  loop then applies the same rule at each holding of the letters, thus the
+  rule is not tied to the first holding either. `mtprime/MTP-4bit` proves
+  the loop: the first holding is not a word, and the second holding is.
+- No counterexample was found. A run over the 15 rows of the table, and
+  over nine more ids, gives the correct answer each time:
+  `mtp/Qwen3-30B-4bit` and `MTP/Qwen3-30B-4bit` give `false`;
+  `mtp/MTP-4bit`, `mtp`, `MTP` and `mlx-community/Qwen3-MTP` give `true`;
+  `mlx-community/MTPQwen3` gives `false`; the empty id gives `false` and
+  the loop always moves forward, thus it always stops.
+- The owner half is right. An owner named `mtp` does not make the check
+  fire, because the owner separator closes no word. A name that is exactly
+  `MTP` makes the check fire, because the owner separator opens a word and
+  the end of the id closes it. The rows at lines 273 and 274 prove the
+  second half. The item above asks for a row that proves the first half.
+- Each of the other four `false` rows is a right negative, and each kills
+  a half of the rule. `Qwen3-mtprime-4bit` and `mtprime-4bit` kill a rule
+  that does not close the word. `Qwen3-Xmtp-4bit` kills a rule that does
+  not open the word. The two builtin defaults are ids the check reads
+  every run.

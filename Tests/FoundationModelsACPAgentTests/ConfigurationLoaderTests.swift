@@ -257,11 +257,18 @@ import Testing
     /// holds the letters twice, and only the second holding is a word, thus it
     /// shows that the check reads the id to its end.
     ///
-    /// The last five hold no marker word, and each half of the rule is
+    /// The last seven hold no marker word, and each half of the rule is
     /// necessary to keep them out. `Qwen3-mtprime-4bit` holds a bare `mtp`
     /// inside a word and `mtprime-4bit` starts with those letters, thus a rule
     /// that does not close the word admits them. `Qwen3-Xmtp-4bit` ends a word
     /// with those letters, thus a rule that does not open the word admits it.
+    /// In `mtp/Qwen3-30B-4bit` and `MTP/Qwen3-30B-4bit` the whole owner is the
+    /// marker. The owner separator opens a word, but it does not close one,
+    /// thus these two ids name a publisher and not a draft head. A rule that
+    /// closes a word at the owner separator too is symmetrical, and it admits
+    /// them. That change is one character, and it makes the check reject a
+    /// publisher it must accept. Both cases of the owner stand here, because
+    /// the check ignores case, thus each case must get the same answer.
     /// The two builtin defaults beside them are ids the check reads every run.
     private static let multiTokenPredictionExamples: [(String, Bool)] = [
         ("mlx-community/Qwen3-30B-A3B-MTP-4bit", true),
@@ -277,6 +284,8 @@ import Testing
         ("mlx-community/Qwen3-mtprime-4bit", false),
         ("mlx-community/mtprime-4bit", false),
         ("mlx-community/Qwen3-Xmtp-4bit", false),
+        ("mtp/Qwen3-30B-4bit", false),
+        ("MTP/Qwen3-30B-4bit", false),
         (defaultStandardModel, false),
         (defaultEmbeddingModel, false),
     ]
