@@ -53,8 +53,32 @@ comments:
     - rule checks: `swiftlint` with `no_magic_numbers`, `missing_docs`, `function_body_length`, `closure_body_length` and the legacy and optional-binding rules gives 0 violations on the file. `swiftformat --lint` with the test and idiom rules says the file needs no format change.
     - next: `/review`.
   timestamp: 2026-09-07T18:32:54.617093+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1yjmxyrfbq1k5fhf2fjar4b
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (59262cf), 7 validators attempted, 0 findings, 0 confirmed, 0 refuted. 1 file reviewed, 4 `.kanban/` files excluded by `.reviewignore`.
+    - checked the three questions of the card:
+      1. The order argument holds. `MCPServer+Connection.swift` calls `emitCatalogSnapshot()` in `applyConnect(via:generation:)` after `transition(to: .ready)`, and `applyConnectResuming` resumes the caller only after `applyConnect` returns. So `reconnect()` returns after its snapshot is in the stream. `catalogUpdates` is made by `AsyncStream.makeStream()`, which buffers without a limit, so no snapshot is dropped. `SurfaceRefresher.follow(_:)` reads one server with one `for await` loop and awaits `apply(snapshot)` for each snapshot in turn. The two reconnects cannot change places.
+      2. The case proves the two halves. The poll ends on `recording.newestPaths.contains(reconnectExtraPath)`, which only the changed reconnect makes true — that is the first half. `RecordingStaging.stage` writes `count` and `newestPaths` under one lock, so when the new path is visible the count holds every earlier stage. `#expect(recording.count == 2)` at `MCPCompositionTests.swift:566` therefore proves the second half: a stage from the unchanged reconnect would make the count 3.
+      3. No wall-clock delay decides an expectation in the file. The only `Task.sleep` left is the poll step at `MCPCompositionTests.swift:170` inside `pollUntil`, which paces the poll and records an issue at the deadline. `noStageSettleDelay` is gone from the whole `Tests` tree.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-07T18:38:50.328075+00:00
+- actor: claude-code
+  id: 01m1yjnt66w4ykht792x0q31wt
+  text: |
+    ### finish iteration 1 — clean
+
+    - implement: changed — 1 file, `Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift`, 16 insertions and 9 deletions. The 300 ms `Task.sleep`, the `#expect(recording.count == 1)` that followed it, and the `noStageSettleDelay` constant are gone. The case waits for `recording.newestPaths.contains(Self.reconnectExtraPath)`, a fact the code makes true, and then expects `recording.count == 2`. The new constant `reconnectExtraPath` renders the path one time, the same shape as `boundaryExtraPath` in the neighbour case.
+    - test: three `swift test` runs in sequence, each 428 tests in 45 suites passed with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`, and no other issue. `swift test --filter 'MCPCompositionTests'` passed, 15 tests in 1 suite.
+    - falsification: a temporary line that made each connect publish a tool of its own failed the case with `MCPCompositionTests.swift:567:9: Expectation failed: recording.count == 2`, `recording.count -> 3`. The line was then removed.
+    - commit: `59262cf` `test(mcp): decide the no-stage case by order, not by a delay`
+    - review: clean — `review sha HEAD~1..HEAD`, 7 validators attempted, 0 findings.
+
+    The review confirmed the ordering argument against the code: `MCPServer+Connection.swift:434` emits the catalog snapshot inside `applyConnect`, so `reconnect()` returns after its snapshot is in the stream and the two reconnects cannot interleave; `MCPServer.swift:331` builds the stream with an unlimited buffer, so no snapshot is dropped; `SurfaceRefresher.swift:293` applies the snapshots of one server in emission order. It also confirmed that no wall-clock delay is left in the file that decides an expectation.
+  timestamp: 2026-09-07T18:39:19.238800+00:00
+position_column: done
+position_ordinal: b680
 title: Prove the no-stage negative by order, not by a 300 ms settle delay
 ---
 ### What

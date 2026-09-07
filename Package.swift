@@ -129,6 +129,25 @@ private let argumentParserVersionFloor: Version = "1.8.0"
 private let argumentParserProduct = Target.Dependency.product(
     name: "ArgumentParser", package: argumentParserPackage)
 
+/// The terminal design system of the agent CLI (cli-plan.md §5.2): one
+/// package in place of a spinner library, a progress library, a table
+/// library and a color library. `TerminalRenderer.swift` is the only
+/// file that imports it, so a later swap costs one file.
+private let nooraPackage = "Noora"
+
+/// The pinned version of `nooraPackage`.
+///
+/// An exact version, and not a range: the client package pins the same
+/// string, and two CLIs of one family must draw the same way. 0.57.0 is
+/// the newest release, and it builds here — its floor is macOS 13 with
+/// swift-tools-version 5.8.1, and its swift-argument-parser and
+/// swift-log requirements sit inside the ranges this graph already
+/// resolves.
+private let nooraVersion: Version = "0.57.0"
+
+/// The one product of `nooraPackage` the agent CLI links.
+private let nooraProduct = Target.Dependency.product(name: nooraPackage, package: nooraPackage)
+
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
 /// declares, because a second URL for the same package identity makes the
@@ -220,6 +239,9 @@ let package = Package(
         .package(
             url: "https://github.com/apple/\(argumentParserPackage).git",
             from: argumentParserVersionFloor),
+        // The terminal design system of the agent CLI — see
+        // `nooraPackage` and `nooraVersion`.
+        .package(url: "https://github.com/tuist/\(nooraPackage).git", exact: nooraVersion),
     ],
     targets: [
         .target(
@@ -243,6 +265,7 @@ let package = Package(
                 makeFamilyProduct(name: routerDependencyName),
                 makeFamilyProduct(name: clientDependencyName),
                 argumentParserProduct,
+                nooraProduct,
             ] + liveLoaderProducts,
             path: "Sources/\(agentExecutableName)"
         ),
