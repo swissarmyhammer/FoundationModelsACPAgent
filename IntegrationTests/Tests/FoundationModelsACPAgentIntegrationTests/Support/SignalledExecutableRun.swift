@@ -28,8 +28,11 @@ struct SignalledRunError: Error, CustomStringConvertible {
 
 /// One finished run of a built executable that this process interrupted.
 struct SignalledExecutableRun {
+    /// The number of milliseconds in ``pollInterval``.
+    private static let pollIntervalMilliseconds = 20
+
     /// The pause between two looks at the child.
-    private static let pollInterval: Swift.Duration = .milliseconds(20)
+    private static let pollInterval: Swift.Duration = .milliseconds(pollIntervalMilliseconds)
 
     /// The process exit code.
     let exitCode: Int32

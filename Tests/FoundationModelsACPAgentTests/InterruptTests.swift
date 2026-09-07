@@ -32,8 +32,11 @@ struct InterruptTests {
     /// The prompt of every turn here.
     private static let promptText = "write a haiku"
 
+    /// The number of milliseconds in ``arrivalInterval``.
+    private static let arrivalIntervalMilliseconds = 50
+
     /// The pause between two repeats of the scripted first arrival.
-    private static let arrivalInterval: Swift.Duration = .milliseconds(50)
+    private static let arrivalInterval: Swift.Duration = .milliseconds(arrivalIntervalMilliseconds)
 
     /// The wire method of the cancel notification, as
     /// `MethodTable.generated.swift` spells it.

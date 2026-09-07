@@ -45,15 +45,21 @@ struct InterruptTests {
     /// to reach.
     private static let signalGap: Swift.Duration = .zero
 
+    /// The number of seconds in ``firstOutputLimit``.
+    private static let firstOutputLimitSeconds = 60
+
     /// How long a child may take to write its first stdout byte. It
     /// covers the process start and the stub composition, which
     /// downloads nothing.
-    private static let firstOutputLimit: Swift.Duration = .seconds(60)
+    private static let firstOutputLimit: Swift.Duration = .seconds(firstOutputLimitSeconds)
+
+    /// The number of seconds in ``exitLimit``.
+    private static let exitLimitSeconds = 30
 
     /// How long a child may take to end after its last signal. A
     /// cancelled turn ends in milliseconds, and the whole uninterrupted
     /// turn lasts under two seconds, so this bound is generous for both.
-    private static let exitLimit: Swift.Duration = .seconds(30)
+    private static let exitLimit: Swift.Duration = .seconds(exitLimitSeconds)
 
     // MARK: - The subprocess driver
 
