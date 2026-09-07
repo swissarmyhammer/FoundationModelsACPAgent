@@ -15,10 +15,12 @@ import Testing
 /// refresher stages each catalog change for the next turn boundary.
 ///
 /// The roster cases run the pure composition step with no connection. The
-/// mounted cases spawn the `mcp-test-server` executable that Multitool ships,
-/// through the composition's own stdio path. The reconnect case scripts an
-/// in-process `ScriptedServer` from the `MCPTestServer` library behind a
-/// transport factory, so a reconnect serves a fresh in-memory pair.
+/// mount-order case spawns the `mcp-test-server` executable that Multitool
+/// ships, through the composition's own stdio path. The turn-boundary case
+/// and the reconnect case each script an in-process `ScriptedServer` from the
+/// `MCPTestServer` library behind a transport factory, so each one moves the
+/// catalog of its own server at the moment it chooses and no wall clock
+/// decides the result.
 @Suite struct MCPCompositionTests {
     /// The name of the first config-derived server.
     private static let alphaName = "alpha"
@@ -32,15 +34,16 @@ import Testing
     /// The name of a second client-supplied server.
     private static let deltaName = "delta"
 
-    /// The name of the dynamic-scenario server, and so the noun its verbs
-    /// render under.
-    private static let dynamicName = "dynamic"
+    /// The name of the server of the turn-boundary case, and so the noun its
+    /// verbs render under.
+    private static let boundaryName = "boundary"
 
     /// The name of the server of the reconnect case.
     private static let reconnectName = "reconnecting"
 
-    /// The name of the tool the reconnect case publishes between two
-    /// connects.
+    /// The name of the tool a case adds after the first connect — the
+    /// reconnect case between two connects, and the turn-boundary case on the
+    /// live connection.
     private static let extraToolName = "extra"
 
     /// The name of an http client server in the roster cases.
@@ -55,17 +58,13 @@ import Testing
     /// The mode that registers the echo tool alone.
     private static let echoMode = "echo"
 
-    /// The mode that adds, re-schemas and removes a tool on a timer.
-    private static let dynamicMode = "dynamic"
+    /// The rendered path of the tool the server of the turn-boundary case
+    /// serves from its first connect.
+    private static let boundaryEchoPath = "\(boundaryName).\(ScriptedServer.echoToolName)"
 
-    /// The rendered path of the tool the dynamic scenario starts with.
-    private static let counterPath =
-        "\(dynamicName).\(ScriptedServer.dynamicToolsetReschemadToolName)"
-
-    /// The rendered path of the tool the dynamic scenario adds on one timer
-    /// and removes on a later one.
-    private static let greeterPath =
-        "\(dynamicName).\(ScriptedServer.dynamicToolsetVanishingToolName)"
+    /// The rendered path of the tool the turn-boundary case adds to its
+    /// server after the first connect.
+    private static let boundaryExtraPath = "\(boundaryName).\(extraToolName)"
 
     /// The snippet that answers the mounted surface as a JSON array of
     /// paths.
@@ -183,9 +182,9 @@ import Testing
         return try JSONDecoder().decode([String].self, from: Data(rendered.utf8))
     }
 
-    /// A `RegistryStaging` that counts each staged registry, records its
-    /// surface paths, and passes it on to the staging the mounted session
-    /// vended.
+    /// A `RegistryStaging` that passes each staged registry on to the staging
+    /// the mounted session vended, and then counts it and records its surface
+    /// paths.
     private final class RecordingStaging: RegistryStaging, Sendable {
         /// What the lock guards: the stage count and the paths of the
         /// newest staged registry.
@@ -204,7 +203,7 @@ import Testing
         /// The guarded state.
         private let state = Mutex(State())
 
-        /// Creates a staging that records, and then passes on to `mounted`.
+        /// Creates a staging that passes on to `mounted`, and then records.
         ///
         /// - Parameter mounted: The staging the mounted session vended.
         init(passingTo mounted: any RegistryStaging) {
@@ -221,16 +220,58 @@ import Testing
             state.withLock { $0.newestPaths }
         }
 
-        /// Records `registry`, and then stages it on the mounted staging.
+        /// Stages `registry` on the mounted staging, and then records it.
+        ///
+        /// The mounted staging comes first so that a case which watches
+        /// ``count`` or ``newestPaths`` to learn that a rebuild was staged
+        /// knows the mounted staging already holds it. In the other order a
+        /// watcher can read the record in the window before that, and a turn
+        /// boundary taken in that window applies nothing.
         ///
         /// - Parameter registry: The registry to stage.
         func stage(_ registry: MultiTool.Registry) {
+            mounted.stage(registry)
             state.withLock {
                 $0.count += 1
                 $0.newestPaths = registry.surface.entries.map(\.path)
             }
-            mounted.stage(registry)
         }
+    }
+
+    /// The mounted surface of one connected server: the builder that owns the
+    /// pool, the tools the mounted session vended, and the staging that
+    /// records each rebuild the surface refresher stages.
+    private struct MountedSurface {
+        /// The builder, which owns the server pool the case shuts down.
+        let builder: MultiTool.Builder
+
+        /// The tools the mounted session vended, in mount order.
+        let tools: [any FoundationModels.Tool]
+
+        /// The staging that records each rebuild the refresher stages.
+        let recording: RecordingStaging
+    }
+
+    /// Mounts `server` behind a fresh registry and starts a surface refresher
+    /// over it, the way `ToolCatalog.sessionSurface(context:)` does for a
+    /// server the configuration named.
+    ///
+    /// - Parameter server: The connected, ready server to mount.
+    /// - Returns: The builder, the mounted tools and the recording staging.
+    /// - Throws: What the registry build or the session-tool construction
+    ///   throws.
+    private static func mountSurface(
+        of server: FoundationModelsMultitool.MCPServer
+    ) async throws -> MountedSurface {
+        let builder = MultiTool.Builder()
+        try await builder.withMCP(servers: [server])
+        let registry = try builder.buildRegistry()
+        let mounted = try registry.makeSessionToolsAndStaging(librarian: nil)
+        let recording = RecordingStaging(passingTo: mounted.staging)
+        await MCPComposition.startSurfaceRefresher(
+            source: builder.registrySource, staging: recording, servers: [server],
+            pool: builder.serverPool)
+        return MountedSurface(builder: builder, tools: mounted.tools, recording: recording)
     }
 
     // MARK: - The roster: two sources, config first
@@ -423,42 +464,57 @@ import Testing
     }
 
     @Test func aToolListChangeIsStagedAndAppliesOnlyAtTheNextTurnBoundary() async throws {
-        let command = try BuiltProductLocator.mcpTestServerURL().path
-        let context = try await Self.makeContext { configuration in
-            configuration.tools.mcp = .enabled(servers: [
-                Self.configServer(named: Self.dynamicName, command: command, mode: Self.dynamicMode)
-            ])
-        }
+        // The server runs in process behind a transport factory, so the case
+        // holds it and moves its catalog itself. No timer of the server, and
+        // so no wall clock, decides what this case reads.
+        let scripted = ScriptedServer(name: Self.boundaryName)
+        await scripted.addEchoTool()
+        let factory: TransportFactory = { try await scripted.startOnInMemoryPair() }
+        let server = FoundationModelsMultitool.MCPServer(name: Self.boundaryName)
+        try await server.connect(via: factory)
+        try await server.waitUntilReady()
 
-        let surface = try await ToolCatalog.sessionSurface(context: context)
+        let surface = try await Self.mountSurface(of: server)
+        let recording = surface.recording
+
         var thrown: (any Error)?
         do {
             let runCode = try #require(surface.tools.compactMap { $0 as? MultiTool }.first)
 
-            // The dynamic scenario adds the greeter on one timer and removes
-            // it on a later one, and it sends `tools/list_changed` for each
-            // change. The case makes no claim about which stage fired before
-            // this first read: it records the greeter's state, and then
-            // watches for the opposite state.
-            var mounted = try await Self.helpPaths(of: runCode)
-            #expect(mounted.contains(Self.counterPath))
-            let greeterWasMounted = mounted.contains(Self.greeterPath)
+            // The connect snapshot stages one rebuild of its own. Taking a
+            // turn boundary here brings that one in, so the next stage the
+            // case sees belongs to the change the case makes.
+            try await Self.pollUntil("the connect snapshot staged") { recording.count >= 1 }
+            await runCode.turnWillBegin()
+            let beforeTheChange = try await Self.helpPaths(of: runCode)
+            #expect(beforeTheChange.contains(Self.boundaryEchoPath))
+            #expect(!beforeTheChange.contains(Self.boundaryExtraPath))
 
-            // Between two turn boundaries the mounted surface holds still,
-            // whatever the server sends. A turn boundary is the only thing
-            // that brings a staged rebuild in.
-            try await Self.pollUntil("the greeter changes at a turn boundary") {
-                let betweenBoundaries = try await Self.helpPaths(of: runCode)
-                #expect(betweenBoundaries == mounted)
-                await runCode.turnWillBegin()
-                mounted = try await Self.helpPaths(of: runCode)
-                #expect(mounted.contains(Self.counterPath))
-                return mounted.contains(Self.greeterPath) != greeterWasMounted
+            // The catalog change the case drives: one more tool, and the
+            // notification that tells the client to re-list. The poll ends
+            // when the rebuilt registry holds the new tool, so the stage is a
+            // fact and not a guess.
+            await scripted.addEchoTool(named: Self.extraToolName)
+            try await scripted.emitToolListChanged()
+            try await Self.pollUntil("the tool-list change staged") {
+                recording.newestPaths.contains(Self.boundaryExtraPath)
             }
+
+            // Staged, and not applied: the mounted surface holds still.
+            let whileStaged = try await Self.helpPaths(of: runCode)
+            #expect(whileStaged == beforeTheChange)
+
+            // A turn boundary is the one thing that brings the change in.
+            await runCode.turnWillBegin()
+            let afterTheBoundary = try await Self.helpPaths(of: runCode)
+            #expect(afterTheBoundary.contains(Self.boundaryExtraPath))
         } catch {
             thrown = error
         }
-        await surface.serverPool.shutdownAll()
+        // The pool stops the attached refresher before it closes the server,
+        // so releasing everything trips no deinit assertion.
+        await surface.builder.serverPool.shutdownAll()
+        withExtendedLifetime(scripted) {}
         if let thrown {
             throw thrown
         }
@@ -485,14 +541,8 @@ import Testing
         try await server.connect(via: factory)
         try await server.waitUntilReady()
 
-        let builder = MultiTool.Builder()
-        try await builder.withMCP(servers: [server])
-        let registry = try builder.buildRegistry()
-        let mounted = try registry.makeSessionToolsAndStaging(librarian: nil)
-        let recording = RecordingStaging(passingTo: mounted.staging)
-        await MCPComposition.startSurfaceRefresher(
-            source: builder.registrySource, staging: recording, servers: [server],
-            pool: builder.serverPool)
+        let surface = try await Self.mountSurface(of: server)
+        let recording = surface.recording
 
         // The connect snapshot always rebuilds one time.
         try await Self.pollUntil("the connect snapshot staged") { recording.count >= 1 }
@@ -510,8 +560,8 @@ import Testing
 
         // The pool stops the attached refresher before it closes the
         // server, so releasing everything trips no deinit assertion.
-        await builder.serverPool.shutdownAll()
-        #expect(await builder.serverPool.isEmpty)
+        await surface.builder.serverPool.shutdownAll()
+        #expect(await surface.builder.serverPool.isEmpty)
         withExtendedLifetime(served) {}
     }
 
