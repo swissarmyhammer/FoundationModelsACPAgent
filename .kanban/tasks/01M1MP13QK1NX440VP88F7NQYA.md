@@ -47,6 +47,41 @@ comments:
 
     `ValidationError` is the direct way to drive the usage row. The ArgumentParser `MessageInfo.init(error:type:)` maps a bare `ValidationError` to `validationFailure`, a thrown `ExitCode` to itself with an empty message, and any other error to `failure`. So `ExitCodeTests` drives the 2 row with a real error and needs no parse.
   timestamp: 2026-09-07T22:33:49.746560+00:00
+- actor: claude-code
+  id: 01m1z0dydd0rppbdkqjpwt9w81
+  text: |
+    ### review — findings
+    - evidence: 1 finding, 1 confirmed, 0 refuted. Scope: `review sha HEAD~1..HEAD` (commit 8dde05d). File: Tests/FoundationModelsACPAgentTests/ExitCodeTests.swift:113
+    - next: Correct the parameter documentation name in the whole file, then do the review again.
+  timestamp: 2026-09-07T22:39:41.485962+00:00
+- actor: claude-code
+  id: 01m1z0e818bvhcr2nmg2fm1b19
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files, ExitCode.swift new, the two exit-code literals deleted
+    - test: green — swift test, 484 tests in 50 suites, one known issue (baseline 474 in 49)
+    - commit: 8dde05d
+    - review: findings — Tests/FoundationModelsACPAgentTests/ExitCodeTests.swift:113 (documentation/parameter-name)
+  timestamp: 2026-09-07T22:39:51.336301+00:00
+- actor: claude-code
+  id: 01m1z0gt3w9vw68y1w3nbhh65c
+  text: |
+    ### implement — changed
+
+    - evidence: 1 file — `Tests/FoundationModelsACPAgentTests/ExitCodeTests.swift`. `swift build` completes with no warning. `swift test` gives 484 tests in 50 suites, all passed, with the one known issue at `HarnessSmokeTests.swift:239`. That is the baseline.
+    - next: `/review`
+
+    The finding: the parameter documentation of `exitCode(ofTurnPlaying:label:interruptedAfter:)` named the external label `interruptedAfter` where the internal name `arrivedText` belongs. Swift-DocC and Xcode resolve a documentation entry against the internal name, so the entry pointed at no parameter.
+
+    To remove the cause from the whole file, I read every `- Parameter` and `- Parameters` entry in `ExitCodeTests.swift`. The file holds two documentation blocks with parameters, and four entries in total:
+
+    - `script` — the internal name of `ofTurnPlaying script:`. Correct.
+    - `label` — the label and the internal name are the same word. Correct.
+    - `arrivedText` — the internal name of `interruptedAfter arrivedText:`. This was the one entry that named the label, and it is now corrected.
+    - `source` — the internal name of `of source:` on `switchArms(of:)`. Correct.
+
+    So one entry changed. The paragraph that follows the entry is re-flowed to the wrap width the file holds, because the shorter first word left a short line.
+  timestamp: 2026-09-07T22:41:15.388074+00:00
 depends_on:
 - 01M1MP0MQ6VHRR004FQQEADS6C
 position_column: doing
@@ -124,3 +159,12 @@ would then be ambiguous.
 gives 1 where it gave 0 before. `nil` means the wire ended before an
 idle update arrived, so the turn has no outcome to report, and a script
 must not read that as a finished answer.
+
+## Review Findings (2026-09-07 17:35)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ExitCodeTests.swift:113` `swift/doc-parameter-naming` — Parameter documentation names the external argument label `interruptedAfter`, but should name the internal parameter name `arrivedText`. Documentation entries must use the internal (local) parameter name that Swift-DocC and Xcode resolve against. Change `///   - interruptedAfter:` on line 113 to `///   - arrivedText:` to match the internal parameter name.

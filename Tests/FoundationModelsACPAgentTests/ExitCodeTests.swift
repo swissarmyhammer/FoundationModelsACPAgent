@@ -110,10 +110,9 @@ struct ExitCodeTests {
     ///   - script: The steps the model plays.
     ///   - label: The directory label, so a leftover directory says where
     ///     it came from.
-    ///   - interruptedAfter: The text that, once it has reached the
-    ///     answer descriptor, offers one `Ctrl-C` to the turn. The
-    ///     default arms no watch, so a row that needs no interrupt gets
-    ///     none.
+    ///   - arrivedText: The text that, once it has reached the answer
+    ///     descriptor, offers one `Ctrl-C` to the turn. The default arms
+    ///     no watch, so a row that needs no interrupt gets none.
     /// - Returns: The exit code of the finished turn.
     /// - Throws: Whatever the composition or the turn throws.
     private static func exitCode(
