@@ -30,11 +30,9 @@ struct InterruptTests {
     /// The prompt of every turn here.
     private static let promptText = "write a haiku"
 
-    /// The number of milliseconds in ``arrivalInterval``.
-    private static let arrivalIntervalMilliseconds = 50
-
-    /// The pause between two repeats of the scripted first arrival.
-    private static let arrivalInterval: Swift.Duration = .milliseconds(arrivalIntervalMilliseconds)
+    /// The fact the first case waits for before it interrupts, named in
+    /// a timeout failure.
+    private static let arrivalOrderLabel = "the first delta reached the answer descriptor"
 
     /// The wire method of the cancel notification, as
     /// `MethodTable.generated.swift` spells it.
@@ -63,29 +61,33 @@ struct InterruptTests {
 
     // MARK: - Fixtures
 
-    /// A watch that repeats the first arrival until it is disarmed.
+    /// A watch whose first arrival is offered only once `fact` holds.
     ///
     /// A cancel that lands before the turn is running reaches an agent
-    /// with no active turn, and that agent ignores it (plan.md §8.6). So
-    /// the scripted watch keeps offering the first arrival, and no run of
-    /// this suite depends on the turn having started at a fixed moment.
-    /// A cancel of a turn that already ended is a no-op, so the repeat
-    /// costs nothing.
+    /// with no active turn, and that agent ignores it (plan.md §8.6).
+    /// And a cancel that overtakes the first delta gives a turn with no
+    /// text, which is not what the case reads back. One fact settles
+    /// both: the delta is on the answer descriptor. A turn that already
+    /// wrote a chunk is running, and the text the case asserts on is
+    /// already there. So the watch waits for that fact and then offers
+    /// the one arrival. Order decides the result, and no delay does.
     ///
-    /// - Returns: The installer of the repeating watch.
-    private static func repeatingFirstArrival() -> InterruptHandler.Installer {
+    /// - Parameter fact: What must hold before the arrival goes out.
+    /// - Returns: The installer of that watch.
+    private static func armed(
+        after fact: @escaping @Sendable () -> Bool
+    ) -> InterruptHandler.Installer {
         {
             let (arrivals, continuation) = AsyncStream<Int>.makeStream()
-            let ticker = Task {
-                while !Task.isCancelled {
-                    continuation.yield(InterruptHandler.firstArrival)
-                    try? await Task.sleep(for: Self.arrivalInterval)
-                }
+            let waiting = Task {
+                try await Poll.until(Self.arrivalOrderLabel) { fact() }
+                continuation.yield(InterruptHandler.firstArrival)
+                continuation.finish()
             }
             return InterruptWatch(
                 arrivals: arrivals,
                 disarm: {
-                    ticker.cancel()
+                    waiting.cancel()
                     continuation.finish()
                 })
         }
@@ -122,6 +124,11 @@ struct InterruptTests {
     ///
     /// The scripted model streams one delta and then holds, so the turn
     /// ends for one reason only: a `session/cancel` reached the agent.
+    ///
+    /// **The order the case depends on.** The delta reaches the answer
+    /// descriptor, and the interrupt follows it. The watch waits for
+    /// that fact, so the cancel can never overtake the text this case
+    /// reads back, whatever else the machine is doing.
     @Test(.timeLimit(.minutes(1)))
     func aFirstInterruptCancelsTheTurnAndKeepsTheTextThatArrived() async throws {
         let workspace = makeResolvedDirectory(label: "InterruptTests-first-repo")
@@ -134,7 +141,7 @@ struct InterruptTests {
             in: .new(workingDirectory: workspace),
             prompt: Self.promptText,
             into: capture.writer,
-            interruptedBy: Self.repeatingFirstArrival())
+            interruptedBy: Self.armed(after: capture.holds(Self.arrivedText)))
 
         #expect(result.stopReason == .cancelled)
         #expect(try capture.text() == Self.arrivedText)

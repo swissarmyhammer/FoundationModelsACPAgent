@@ -60,6 +60,30 @@ final class AnswerCapture {
     /// - Returns: The captured text.
     /// - Throws: The read error.
     func text() throws -> String {
-        String(decoding: try bytes(), as: UTF8.self)
+        try Self.text(at: url)
+    }
+
+    /// A test of whether the capture holds exactly `text` so far.
+    ///
+    /// The test holds the file location and not the capture, so another
+    /// task may read what already arrived while the turn still runs, and
+    /// the capture keeps its one owner. A case that must let a chunk
+    /// arrive before it acts waits on this fact, and never on a delay.
+    ///
+    /// - Parameter text: The text the capture must hold.
+    /// - Returns: The test. It reports `false` while the file holds
+    ///   anything else, and while the file cannot be read.
+    func holds(_ text: String) -> @Sendable () -> Bool {
+        let url = url
+        return { (try? Self.text(at: url)) == text }
+    }
+
+    /// The UTF-8 text of the capture file at `url`.
+    ///
+    /// - Parameter url: The capture file to read.
+    /// - Returns: The text.
+    /// - Throws: The read error.
+    private static func text(at url: URL) throws -> String {
+        String(decoding: try Data(contentsOf: url), as: UTF8.self)
     }
 }

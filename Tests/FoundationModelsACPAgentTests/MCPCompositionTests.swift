@@ -74,12 +74,6 @@ import Testing
     /// paths.
     private static let helpSnippet = "return help();"
 
-    /// How long a polled condition may take before its case fails.
-    private static let pollDeadline = Duration.seconds(30)
-
-    /// How long a poll sleeps between two reads.
-    private static let pollInterval = Duration.milliseconds(50)
-
     // MARK: - Harness
 
     /// Makes a fresh throwaway directory and returns its URL.
@@ -151,25 +145,6 @@ import Testing
                 command: AbsolutePath(rawValue: command),
                 name: name,
                 args: [modeFlag, echoMode]))
-    }
-
-    /// Polls `condition` until it holds, or fails the case at the deadline.
-    ///
-    /// - Parameters:
-    ///   - label: What the case waits for, for the failure message.
-    ///   - condition: The condition to poll.
-    /// - Throws: Whatever `condition` throws.
-    private static func pollUntil(
-        _ label: String, _ condition: () async throws -> Bool
-    ) async throws {
-        let deadline = ContinuousClock.now + pollDeadline
-        while ContinuousClock.now < deadline {
-            if try await condition() {
-                return
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        Issue.record("timed out while waiting until \(label)")
     }
 
     /// The paths `help()` lists in a snippet run on `runCode`.
@@ -484,7 +459,7 @@ import Testing
             // The connect snapshot stages one rebuild of its own. Taking a
             // turn boundary here brings that one in, so the next stage the
             // case sees belongs to the change the case makes.
-            try await Self.pollUntil("the connect snapshot staged") { recording.count >= 1 }
+            try await Poll.until("the connect snapshot staged") { recording.count >= 1 }
             await runCode.turnWillBegin()
             let beforeTheChange = try await Self.helpPaths(of: runCode)
             #expect(beforeTheChange.contains(Self.boundaryEchoPath))
@@ -496,7 +471,7 @@ import Testing
             // fact and not a guess.
             await scripted.addEchoTool(named: Self.extraToolName)
             try await scripted.emitToolListChanged()
-            try await Self.pollUntil("the tool-list change staged") {
+            try await Poll.until("the tool-list change staged") {
                 recording.newestPaths.contains(Self.boundaryExtraPath)
             }
 
@@ -545,7 +520,7 @@ import Testing
         let recording = surface.recording
 
         // The connect snapshot always rebuilds one time.
-        try await Self.pollUntil("the connect snapshot staged") { recording.count >= 1 }
+        try await Poll.until("the connect snapshot staged") { recording.count >= 1 }
 
         // A reconnect with the same catalog stages nothing more. The
         // reconnect that follows is what proves it, and no clock does.
@@ -560,7 +535,7 @@ import Testing
         // reconnect would make it three.
         publishExtraTool.withLock { $0 = true }
         try await server.reconnect()
-        try await Self.pollUntil("the changed reconnect staged") {
+        try await Poll.until("the changed reconnect staged") {
             recording.newestPaths.contains(Self.reconnectExtraPath)
         }
         #expect(recording.count == 2)

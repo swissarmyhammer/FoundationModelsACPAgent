@@ -486,8 +486,37 @@ comments:
     - the nested `IntegrationTests` suite was NOT run. No network request was made.
     - next: /review
   timestamp: 2026-09-07T20:28:44.646596+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1ys3y9fkqwmet38crachdm0
+  text: |-
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` (the commit `6adac38`) — the engine read 1 file, made 7 attempts, and gave 0 findings. The three round-4 checks hold. (1) The two rows stand at `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift:287` and `:288`, and each asserts `false`. (2) The doc comment at `:265` to `:271` tells why they stand: the owner separator opens a word but does not close one, thus an owner that is the whole marker names a publisher; a symmetrical rule that closes a word at the separator is one character away and it admits them. (3) The rule is unchanged. The commit touches no file in `Sources/`. In the test file the change is `10` added lines and `1` removed line, in two hunks — the doc comment, and the two rows. `namesMultiTokenPredictionRepository` at `:180`, `isAWord` at `:203` and `modelIdentifierWordOpeners` at `:301` stand outside both hunks.
+    - The four findings of rounds 1, 2 and 3 are marked done, and each stays answered: the override test, the marker at the end of an id, the marker at the start of the name, and the owner half of the rule.
+    - next: none. The card moves to `done`.
+  timestamp: 2026-09-07T20:31:53.647530+00:00
+- actor: claude-code
+  id: 01m1ys4zbxktmbxs3pmka5vbfd
+  text: |
+    ### finish iteration 4 — clean
+
+    - implement: changed — 1 file, `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift`. Two `false` rows went into `multiTokenPredictionExamples`: `("mtp/Qwen3-30B-4bit", false)` and `("MTP/Qwen3-30B-4bit", false)`. The rule is untouched, and the table's doc comment now says why the two rows stand.
+    - falsification: with the owner separator put into the closers, which makes the rule symmetrical, exactly those two rows fail of seventeen and the other fifteen pass. The rule was then put back and all seventeen pass. Thus each row kills a change that is one character away.
+    - test: `swift test` — 442 tests in 46 suites with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`, four runs of four. A parameterised row is not a test, so the count did not move. `swift build` gave no source warning. `InterruptTests` did not fail in any run.
+    - commit: `6adac38` `test(config): prove the owner half of the marker check`
+    - review: clean — 0 findings from 7 attempts. The rule at `:180`, `:203` and `:301` stands outside both diff hunks, and no file below `Sources/` changed.
+
+    The card is done. Four review rounds, four findings, each answered:
+
+    1. No test showed that a `flash` or `embedding` value in `config.yaml` wins over its default.
+    2. The MTP marker `-MTP-` carried a hyphen on each side, so an id that ends with `-MTP` went through.
+    3. An id whose name starts with the marker went through, because the character before it is the owner separator. That round removed the cause: the check reads `MTP` as a word of the id, and no branch reads a position.
+    4. No row proved the owner half of the rule.
+
+    The three model ids were checked against the registry before the change landed, with a control that gives 401, and each returns 200.
+  timestamp: 2026-09-07T20:32:27.517354+00:00
+position_column: done
+position_ordinal: b880
 title: 'New default profile: Qwen3 models and a 32 GB memory floor'
 ---
 ## What
