@@ -12,8 +12,8 @@ import Foundation
 ///
 /// The parser is swift-argument-parser (§5.1): it gives `--help`,
 /// `--version`, the tree and the usage errors. The one thing this type
-/// adds is the exit code of a usage error, which §5.8 fixes at 2 where
-/// the library would exit `EX_USAGE`.
+/// adds is the exit code of a usage error, which ``AgentExitCode/usage``
+/// fixes at 2 where the library would exit `EX_USAGE`.
 ///
 /// stdout is data (§5.6): `--help` and `--version` write there, a usage
 /// error writes to stderr, and each subcommand writes what its own
@@ -27,11 +27,6 @@ struct AcpAgentCommand: AsyncParsableCommand {
         subcommands: [Run.self, Acp.self, Config.self, Instructions.self, Doctor.self],
         defaultSubcommand: Run.self)
 
-    /// The exit code of a usage error (cli-plan.md §5.8): 2, the code a
-    /// script tests for. ArgumentParser's own `validationFailure` is
-    /// `EX_USAGE`, so ``exitOutcome(for:)`` maps it here.
-    static let usageExitCode: Int32 = 2
-
     /// How the process ends after `parseAsRoot` or `run()` throws: the
     /// exit code, and whether the message goes to stderr (a failure) or to
     /// stdout (`--help` and `--version`, which exit 0).
@@ -42,18 +37,42 @@ struct AcpAgentCommand: AsyncParsableCommand {
         /// `true` when the message is an error and belongs on stderr;
         /// `false` when the message is the requested output, on stdout.
         let writesToStandardError: Bool
+
+        /// The outcome of one row of the ``AgentExitCode`` table: its
+        /// code, and stderr for every row but 0.
+        ///
+        /// - Parameter code: The row of the table.
+        init(_ code: AgentExitCode) {
+            self.init(code: code.rawValue, writesToStandardError: code != .success)
+        }
+
+        /// The outcome of a code the ArgumentParser library chose.
+        ///
+        /// - Parameters:
+        ///   - code: The process exit code.
+        ///   - writesToStandardError: Whether the message is an error.
+        init(code: Int32, writesToStandardError: Bool) {
+            self.code = code
+            self.writesToStandardError = writesToStandardError
+        }
     }
 
     /// Maps a thrown error to its exit outcome (cli-plan.md §5.8).
     ///
+    /// Every code the CLI itself chooses is a row of ``AgentExitCode``,
+    /// and a subcommand hands one over as a thrown `ExitCode`, which the
+    /// library's `exitCode(for:)` gives back unchanged. The one code this
+    /// mapping has to correct is ArgumentParser's own usage failure.
+    ///
     /// - Parameter error: The error `parseAsRoot` or `run()` threw.
-    /// - Returns: A usage error exits ``usageExitCode`` with its message on
-    ///   stderr; a clean exit (`--help`, `--version`) exits 0 with its text
-    ///   on stdout; any other error keeps the library's code, on stderr.
+    /// - Returns: A usage error exits ``AgentExitCode/usage`` with its
+    ///   message on stderr; a clean exit (`--help`, `--version`) exits 0
+    ///   with its text on stdout; any other error keeps the library's
+    ///   code, on stderr.
     static func exitOutcome(for error: any Error) -> ExitOutcome {
         let code = exitCode(for: error)
         guard code != .validationFailure else {
-            return ExitOutcome(code: usageExitCode, writesToStandardError: true)
+            return ExitOutcome(.usage)
         }
         return ExitOutcome(code: code.rawValue, writesToStandardError: !code.isSuccess)
     }

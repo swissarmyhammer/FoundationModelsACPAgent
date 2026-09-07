@@ -85,32 +85,21 @@ extension AcpAgentCommand {
             EventLineWriter(destination: .standardError, verbosity: eventVerbosity)
         }
 
+        /// Runs the one turn, and ends the process on the row of the
+        /// §5.8 table the stop reason names (``AgentExitCode``).
+        ///
+        /// A `success` row returns instead of throwing, which is how
+        /// ArgumentParser ends a command with 0.
         mutating func run() async throws {
             let result = try await perform(
                 environment: ProcessInfo.processInfo.environment,
                 into: AnswerWriter(),
                 reporting: eventLineWriter,
                 interruptedBy: InterruptHandler.onSIGINT)
-            if let code = Self.exitCode(of: result) {
-                throw code
+            let code = AgentExitCode(turn: result)
+            guard code == .success else {
+                throw code.parserError
             }
-        }
-
-        /// The exit code of a finished turn, or `nil` when the turn ends
-        /// the process with 0.
-        ///
-        /// One row of the §5.8 table stands here: a `cancelled` turn
-        /// exits 4, which is what a `Ctrl-C` gives (§5.9). Every other
-        /// stop reason keeps exit 0 until the exit-code table card
-        /// lands.
-        ///
-        /// - Parameter result: The finished turn.
-        /// - Returns: The code to exit with, or `nil` for a plain end.
-        static func exitCode(of result: RunTurnResult) -> ExitCode? {
-            guard result.stopReason == .cancelled else {
-                return nil
-            }
-            return ExitCode(InterruptHandler.cancelledExitCode)
         }
 
         /// Runs the one turn: the prompt by the §5.5 table, and the

@@ -48,7 +48,7 @@ private final class InterruptState: Sendable {
 /// **`Ctrl-C` must not kill the process.** The first signal sends
 /// `session/cancel`, waits for the `cancelled` stop reason, leaves the
 /// text that already arrived on stdout, and exits
-/// ``cancelledExitCode``. The second signal ends the process at once,
+/// ``AgentExitCode/cancelled``. The second signal ends the process at once,
 /// because a model whose generate loop never checks for cancellation
 /// runs to its end and a person must still be able to leave.
 ///
@@ -72,9 +72,6 @@ enum InterruptHandler {
     /// `SIGINT` watch and a test gives a scripted one. No suite arms a
     /// process-wide signal.
     typealias Installer = @Sendable () -> InterruptWatch
-
-    /// The exit code of a cancelled run (cli-plan.md §5.8).
-    static let cancelledExitCode: Int32 = 4
 
     /// The ordinal of the first arrival — the one that cancels.
     static let firstArrival = 1
@@ -124,7 +121,7 @@ enum InterruptHandler {
     ///
     /// - Returns: Never; the process is gone.
     static func endAtOnce() -> Never {
-        Darwin._exit(cancelledExitCode)
+        Darwin._exit(AgentExitCode.cancelled.rawValue)
     }
 
     /// Arms the watch.

@@ -169,9 +169,7 @@ struct CLIParsingTests {
             ]))
 
         #expect(
-            AcpAgentCommand.exitOutcome(for: error)
-                == AcpAgentCommand.ExitOutcome(
-                    code: AcpAgentCommand.usageExitCode, writesToStandardError: true))
+            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.usage))
         #expect(!AcpAgentCommand.fullMessage(for: error).isEmpty)
     }
 
@@ -186,9 +184,7 @@ struct CLIParsingTests {
             await Self.outcomeError(of: ["acp", "--cwd", Self.projectPath]))
 
         #expect(
-            AcpAgentCommand.exitOutcome(for: error)
-                == AcpAgentCommand.ExitOutcome(
-                    code: AcpAgentCommand.usageExitCode, writesToStandardError: true))
+            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.usage))
         #expect(!AcpAgentCommand.fullMessage(for: error).isEmpty)
     }
 
@@ -200,17 +196,8 @@ struct CLIParsingTests {
         let error = try #require(await Self.outcomeError(of: ["--no-such-option"]))
 
         #expect(
-            AcpAgentCommand.exitOutcome(for: error)
-                == AcpAgentCommand.ExitOutcome(
-                    code: AcpAgentCommand.usageExitCode, writesToStandardError: true))
+            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.usage))
         #expect(!AcpAgentCommand.fullMessage(for: error).isEmpty)
-    }
-
-    /// The usage exit code is the §5.8 value, and not the library's
-    /// `EX_USAGE`.
-    @Test func theUsageExitCodeIsTwo() {
-        #expect(AcpAgentCommand.usageExitCode == 2)
-        #expect(ExitCode.validationFailure.rawValue != AcpAgentCommand.usageExitCode)
     }
 
     /// `--help` prints the usage to stdout, and exits 0.
@@ -218,8 +205,7 @@ struct CLIParsingTests {
         let error = try #require(await Self.outcomeError(of: ["--help"]))
 
         #expect(
-            AcpAgentCommand.exitOutcome(for: error)
-                == AcpAgentCommand.ExitOutcome(code: 0, writesToStandardError: false))
+            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.success))
         #expect(AcpAgentCommand.fullMessage(for: error).contains(Self.usageHeading))
     }
 
@@ -229,8 +215,7 @@ struct CLIParsingTests {
         let error = try #require(await Self.outcomeError(of: ["--version"]))
 
         #expect(
-            AcpAgentCommand.exitOutcome(for: error)
-                == AcpAgentCommand.ExitOutcome(code: 0, writesToStandardError: false))
+            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.success))
         #expect(AcpAgentCommand.fullMessage(for: error) == RoutedACPAgent.buildVersion)
         #expect(AcpAgentCommand.configuration.version == RoutedACPAgent.buildVersion)
     }
@@ -241,9 +226,7 @@ struct CLIParsingTests {
         let error = try #require(await Self.outcomeError(of: [Self.doctorPrompt]))
 
         #expect(
-            AcpAgentCommand.exitOutcome(for: error)
-                == AcpAgentCommand.ExitOutcome(
-                    code: ExitCode.failure.rawValue, writesToStandardError: true))
+            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.error))
         #expect(AcpAgentCommand.fullMessage(for: error).contains(Self.doctorPrompt))
         #expect(
             NotImplementedError(command: AcpAgentCommand.Config.Show.self).description.contains("show"))

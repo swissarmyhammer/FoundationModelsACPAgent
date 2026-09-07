@@ -61,38 +61,6 @@ struct InterruptTests {
 
     // MARK: - Fixtures
 
-    /// A watch whose first arrival is offered only once `fact` holds.
-    ///
-    /// A cancel that lands before the turn is running reaches an agent
-    /// with no active turn, and that agent ignores it (plan.md §8.6).
-    /// And a cancel that overtakes the first delta gives a turn with no
-    /// text, which is not what the case reads back. One fact settles
-    /// both: the delta is on the answer descriptor. A turn that already
-    /// wrote a chunk is running, and the text the case asserts on is
-    /// already there. So the watch waits for that fact and then offers
-    /// the one arrival. Order decides the result, and no delay does.
-    ///
-    /// - Parameter fact: What must hold before the arrival goes out.
-    /// - Returns: The installer of that watch.
-    private static func armed(
-        after fact: @escaping @Sendable () -> Bool
-    ) -> InterruptHandler.Installer {
-        {
-            let (arrivals, continuation) = AsyncStream<Int>.makeStream()
-            let waiting = Task {
-                try await Poll.until(Self.arrivalOrderLabel) { fact() }
-                continuation.yield(InterruptHandler.firstArrival)
-                continuation.finish()
-            }
-            return InterruptWatch(
-                arrivals: arrivals,
-                disarm: {
-                    waiting.cancel()
-                    continuation.finish()
-                })
-        }
-    }
-
     /// A stream of exactly one first arrival.
     ///
     /// - Returns: The stream, already finished after the one value.
@@ -125,10 +93,13 @@ struct InterruptTests {
     /// The scripted model streams one delta and then holds, so the turn
     /// ends for one reason only: a `session/cancel` reached the agent.
     ///
-    /// **The order the case depends on.** The delta reaches the answer
-    /// descriptor, and the interrupt follows it. The watch waits for
-    /// that fact, so the cancel can never overtake the text this case
-    /// reads back, whatever else the machine is doing.
+    /// **The order the case depends on.** A cancel that lands before the
+    /// turn is running reaches an agent with no active turn, and that
+    /// agent ignores it (plan.md §8.6). A cancel that overtakes the
+    /// first delta gives a turn with no text, which is not what the case
+    /// reads back. One fact settles both: the delta is on the answer
+    /// descriptor. The watch waits for that fact and then offers its one
+    /// arrival, so order decides the result and no delay does.
     @Test(.timeLimit(.minutes(1)))
     func aFirstInterruptCancelsTheTurnAndKeepsTheTextThatArrived() async throws {
         let workspace = makeResolvedDirectory(label: "InterruptTests-first-repo")
@@ -141,7 +112,8 @@ struct InterruptTests {
             in: .new(workingDirectory: workspace),
             prompt: Self.promptText,
             into: capture.writer,
-            interruptedBy: Self.armed(after: capture.holds(Self.arrivedText)))
+            interruptedBy: ScriptedInterruptWatch.armed(
+                waitingFor: Self.arrivalOrderLabel, after: capture.holds(Self.arrivedText)))
 
         #expect(result.stopReason == .cancelled)
         #expect(try capture.text() == Self.arrivedText)
@@ -185,16 +157,13 @@ struct InterruptTests {
 
     /// A cancelled turn exits 4.
     @Test func aCancelledTurnExitsFour() {
-        #expect(
-            AcpAgentCommand.Run.exitCode(of: RunTurnResult(stopReason: .cancelled))
-                == ExitCode(InterruptHandler.cancelledExitCode))
+        #expect(AgentExitCode(turn: RunTurnResult(stopReason: .cancelled)) == .cancelled)
     }
 
     /// A turn that ran to its end exits 0, so the interrupt code never
     /// leaks into an ordinary run.
     @Test func aFinishedTurnDoesNotExitFour() {
-        #expect(AcpAgentCommand.Run.exitCode(of: RunTurnResult(stopReason: .endTurn)) == nil)
-        #expect(AcpAgentCommand.Run.exitCode(of: RunTurnResult(stopReason: nil)) == nil)
+        #expect(AgentExitCode(turn: RunTurnResult(stopReason: .endTurn)) == .success)
     }
 
     // MARK: - The handler is async-signal-safe (cli-plan.md §5.9)

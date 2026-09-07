@@ -45,7 +45,7 @@ extension AcpAgentCommand {
                         environment: ProcessInfo.processInfo.environment)
                 }
             } catch is CompositionInterrupted {
-                throw ExitCode(InterruptHandler.cancelledExitCode)
+                throw AgentExitCode.cancelled.parserError
             }
             // The wrapper is what makes the stdin end observable; see
             // `InboundEndTransport`. Underneath it stands the same
