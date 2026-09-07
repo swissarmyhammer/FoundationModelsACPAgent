@@ -138,13 +138,45 @@ import Testing
     ///
     /// A Hugging Face repository id keeps its case, and the marker is usually
     /// upper case. But the case is the publisher's choice, not a rule, so the
-    /// match ignores case: a lower-case `-mtp-` names the same draft head.
+    /// match ignores case: a lower-case `-mtp` names the same draft head.
     @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
     func noDefaultModelNamesAnMTPRepository(reference: ModelRef) {
-        let marker = reference.stringValue.range(
-            of: Self.multiTokenPredictionMarker, options: .caseInsensitive)
+        #expect(!Self.namesMultiTokenPredictionRepository(reference.stringValue))
+    }
 
-        #expect(marker == nil)
+    /// The MTP check reads the marker in the middle of an id and at the end of
+    /// it, and it reads no bare `mtp` inside a word.
+    ///
+    /// The test above runs the check over the builtin defaults, and no default
+    /// holds the marker. That test thus cannot show that the check finds a
+    /// marker, or that the check accepts an id it must accept. This test shows
+    /// both answers.
+    @Test(arguments: ConfigurationLoaderTests.multiTokenPredictionExamples)
+    func theMTPCheckReadsTheMarkerInTheMiddleAndAtTheEnd(
+        identifier: String, namesADraftHead: Bool
+    ) {
+        #expect(Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead)
+    }
+
+    /// Tells if `identifier` names a multi-token-prediction repository.
+    ///
+    /// The marker stands in the middle of an id, as in
+    /// `mlx-community/Qwen3-30B-A3B-MTP-4bit`, and it stands at the end of an
+    /// id, as in `mlx-community/Qwen3.5-9B-MTP`. A hyphen stands before the
+    /// marker in each shape, thus a bare `mtp` inside a word does not match and
+    /// the check accepts an id it must accept.
+    ///
+    /// - Parameter identifier: The model id to read.
+    /// - Returns: `true` when the id names a draft head.
+    private static func namesMultiTokenPredictionRepository(_ identifier: String) -> Bool {
+        let holdsTheMarkerInTheMiddle =
+            identifier.range(of: multiTokenPredictionInfixMarker, options: .caseInsensitive) != nil
+        let endsWithTheMarker =
+            identifier.range(
+                of: multiTokenPredictionMarker,
+                options: [.caseInsensitive, .anchored, .backwards]) != nil
+
+        return holdsTheMarkerInTheMiddle || endsWithTheMarker
     }
 
     /// Each default id has the shape `owner/name`: two parts, each one not
@@ -178,11 +210,36 @@ import Testing
         return profile.standard + profile.flash + profile.embedding
     }
 
-    /// The substring that marks a multi-token-prediction repository.
-    private static let multiTokenPredictionMarker = "-MTP-"
+    /// The substring that marks a multi-token-prediction repository. This is
+    /// the shape the marker takes at the end of an id.
+    private static let multiTokenPredictionMarker = "-MTP"
+
+    /// The same marker in the middle of an id, where a hyphen follows it.
+    private static let multiTokenPredictionInfixMarker =
+        "\(multiTokenPredictionMarker)\(modelIdentifierWordSeparator)"
+
+    /// Model ids the MTP check reads, and the answer each one must get.
+    ///
+    /// The first four hold the marker: two in the middle of the id and two at
+    /// the end of it, in upper case and in lower case. The last three hold no
+    /// marker. `Qwen3-mtprime-4bit` holds a bare `mtp` inside a word, thus it
+    /// shows that the check does not reject an id it must accept, and the two
+    /// builtin defaults beside it are ids the check reads every run.
+    private static let multiTokenPredictionExamples: [(String, Bool)] = [
+        ("mlx-community/Qwen3-30B-A3B-MTP-4bit", true),
+        ("mlx-community/Qwen3-30B-A3B-mtp-4bit", true),
+        ("mlx-community/Qwen3.5-9B-MTP", true),
+        ("mlx-community/Qwen3.5-9B-mtp", true),
+        ("mlx-community/Qwen3-mtprime-4bit", false),
+        (defaultStandardModel, false),
+        (defaultEmbeddingModel, false),
+    ]
 
     /// The separator between the owner and the name of a model id.
     private static let modelOwnerSeparator: Character = "/"
+
+    /// The separator between the words of a model name.
+    private static let modelIdentifierWordSeparator: Character = "-"
 
     /// The count of parts an `owner/name` model id has.
     private static let modelIdentifierPartCount = 2
@@ -427,12 +484,52 @@ import Testing
         #expect(loaded.configuration.compaction.hardCeiling == nil)
     }
 
+    /// A project `config.yaml` that names a model for each of the three slots
+    /// wins over each builtin default (cli-plan.md §7).
+    ///
+    /// The section test above writes the `standard` slot alone, thus it shows
+    /// the override for one slot of three. This test writes all three slots and
+    /// reads all three values back, thus each default is shown to lose.
+    @Test func eachProfileSlotInTheProjectConfigWinsOverItsDefault() throws {
+        let fixture = Fixture()
+
+        let loaded = try fixture.loadProjectConfig(
+            """
+            profile:
+              standard:
+                - \(Self.configuredStandardModel)
+              flash:
+                - \(Self.configuredFlashModel)
+              embedding:
+                - \(Self.configuredEmbeddingModel)
+            """)
+
+        let profile = loaded.configuration.profile
+        let defaults = AgentConfiguration().profile
+        #expect(profile.standard.map(\.stringValue) == [Self.configuredStandardModel])
+        #expect(profile.flash.map(\.stringValue) == [Self.configuredFlashModel])
+        #expect(profile.embedding.map(\.stringValue) == [Self.configuredEmbeddingModel])
+        #expect(profile.standard != defaults.standard)
+        #expect(profile.flash != defaults.flash)
+        #expect(profile.embedding != defaults.embedding)
+    }
+
     /// The `compaction.trigger` the section test writes; it differs from the
     /// default so the decode is observable.
     private static let configuredTrigger = 0.7
 
     /// The `compaction.toolOutputLimit` the section test writes.
     private static let configuredToolOutputLimit = 4000
+
+    /// The `profile.standard` model the override test writes. It differs from
+    /// the default, thus the override is observable.
+    private static let configuredStandardModel = "org/standard-override"
+
+    /// The `profile.flash` model the override test writes.
+    private static let configuredFlashModel = "org/flash-override"
+
+    /// The `profile.embedding` model the override test writes.
+    private static let configuredEmbeddingModel = "org/embedding-override"
 
     // MARK: - Helpers
 
