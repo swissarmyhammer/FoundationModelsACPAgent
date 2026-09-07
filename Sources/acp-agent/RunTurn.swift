@@ -68,6 +68,9 @@ enum RunTurn {
     ///   - prompt: The text of the one turn.
     ///   - writer: The writer each `agent_message_chunk` goes to, as it
     ///     arrives (cli-plan.md §5.6).
+    ///   - events: The writer each session event goes to, one line each
+    ///     (cli-plan.md §5.7). The default writes nothing, so a caller
+    ///     that says nothing about the event lines writes none.
     ///   - install: How the turn gets its `Ctrl-C` watch. The default
     ///     watches nothing, so a caller that says nothing about
     ///     interrupts arms no signal.
@@ -81,6 +84,7 @@ enum RunTurn {
         in session: RunSession,
         prompt: String,
         into writer: AnswerWriter,
+        reporting events: EventLineWriter = .silent,
         interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
     ) async throws -> RunTurnResult {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
@@ -95,7 +99,7 @@ enum RunTurn {
             outcome = .success(
                 try await drive(
                     connection, in: session, prompt: prompt, into: writer,
-                    interruptedBy: install))
+                    reporting: events, interruptedBy: install))
         } catch {
             outcome = .failure(error)
         }
@@ -114,6 +118,7 @@ enum RunTurn {
     ///   - session: The session the turn runs in.
     ///   - prompt: The text of the one turn.
     ///   - writer: The writer each `agent_message_chunk` goes to.
+    ///   - events: The writer each session event goes to, one line each.
     ///   - install: How the turn gets its `Ctrl-C` watch.
     /// - Returns: The stop reason of the turn.
     /// - Throws: Whatever the handshake, the session call, the prompt or
@@ -123,6 +128,7 @@ enum RunTurn {
         in session: RunSession,
         prompt: String,
         into writer: AnswerWriter,
+        reporting events: EventLineWriter,
         interruptedBy install: InterruptHandler.Installer
     ) async throws -> RunTurnResult {
         _ = try await connection.initialize(
@@ -134,7 +140,9 @@ enum RunTurn {
         // Subscribe before the prompt: an update with no subscriber is
         // dropped by the connection's router.
         let updates = connection.updates(for: sessionId)
-        let collector = Task { try await collect(from: updates, into: writer) }
+        let collector = Task {
+            try await collect(from: updates, into: writer, reporting: events)
+        }
         // The watch is armed here, with a session open and the collector
         // reading: a `session/cancel` that reached the agent before the
         // turn ran would find no active turn and be ignored (§8.6).
@@ -248,17 +256,28 @@ enum RunTurn {
     /// agent message chunk as it arrives, and stops at the first idle
     /// state update.
     ///
+    /// One stream feeds two writers. The answer text goes to `writer`, on
+    /// stdout (§5.6), and the same update goes to `events`, which writes
+    /// one line on stderr when `--verbose` asked for it (§5.7). The event
+    /// line goes out first, so the update that ends the turn is reported
+    /// before the loop leaves.
+    ///
     /// - Parameters:
     ///   - updates: The session's update stream, subscribed before the
     ///     prompt.
     ///   - writer: The writer each chunk goes to.
+    ///   - events: The writer each session event goes to, one line each.
     /// - Returns: The stop reason, or `nil` when the stream ended before
     ///   an idle update arrived.
     /// - Throws: ``AnswerWriteError`` when a chunk cannot be written.
     private static func collect(
-        from updates: AsyncStream<SessionUpdate>, into writer: AnswerWriter
+        from updates: AsyncStream<SessionUpdate>,
+        into writer: AnswerWriter,
+        reporting events: EventLineWriter
     ) async throws -> StopReason? {
+        var events = events
         for await update in updates {
+            events.receive(update)
             switch update {
             case .agentMessageChunk(let chunk):
                 guard case .text(let content) = chunk.content else { break }

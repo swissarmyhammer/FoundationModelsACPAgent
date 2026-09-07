@@ -130,8 +130,41 @@ comments:
     - evidence: 4 files — Tests/FoundationModelsACPAgentTests/Support/Poll.swift (new), Tests/FoundationModelsACPAgentTests/Support/AnswerCapture.swift, Tests/FoundationModelsACPAgentTests/InterruptTests.swift, Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift. Falsification: "Expectation failed: try capture.text() == Self.arrivedText" at InterruptTests.swift:147:9, beside "timed out while waiting until the first delta reached the answer descriptor" at InterruptTests.swift:83:37. Full `swift test`: 41 runs, 0 failures, each 442 tests in 46 suites with exactly 1 known issue (20 of them after the two rule corrections). `swift build`: no source warning.
     - next: /review
   timestamp: 2026-09-07T20:54:28.518836+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1ytvrf30wfgbexdevtvn17q
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (955202a) — 0 findings, 0 confirmed, 2 refuted, 7 attempted, 0 failed. 4 files reviewed. The 6 `.kanban/` files are not reviewed, because an ignore rule holds them.
+    - judgement on the four questions the review had to answer:
+      - Order: `armed(after: capture.holds(Self.arrivedText))` gives the one arrival only after the capture file holds exactly `arrivedText`. Thus the cancel cannot go out before the text is on the descriptor, at any machine speed.
+      - The one arrival: the ticker is not necessary. The fact that arms the watch is proof that the turn runs, and thus the agent cannot ignore the cancel. The script holds the turn open after the delta, thus the turn cannot end before the arrival.
+      - Safety of `holds(_:)`: the closure holds the URL and not the capture, thus it is `@Sendable` and it shares no mutable state. The test is equality with the full text, thus a short read gives `false` and the poll reads again. A short read cannot give a wrong `true`.
+      - The moved loop: `Poll.until` keeps the 30 s deadline, the 50 ms interval and the same timeout message as the private copy that it replaces. It adds `try Task.checkCancellation()` and `#_sourceLocation`. The four call sites in `MCPCompositionTests` keep their conditions and their labels, thus `^04kf7ha` and `^vhmwars` keep what they prove.
+    - note: the card body writes `pollUntil`; the code gives `Poll.until` in `Tests/FoundationModelsACPAgentTests/Support/Poll.swift`. The code governs. This is not a finding.
+    - next: none. The card is in `done`.
+  timestamp: 2026-09-07T21:02:22.691762+00:00
+- actor: claude-code
+  id: 01m1ytwyqcxqq0vb1fb38w6cx2
+  text: |
+    ### finish iteration 1 — clean
+
+    - implement: changed — 4 test files, no production file. `Tests/FoundationModelsACPAgentTests/Support/Poll.swift` is new: `enum Poll` with `until(_:_:sourceLocation:)`, which calls `try Task.checkCancellation()` on each turn. `MCPCompositionTests` held a private copy of that loop; the copy is deleted and its four call sites use the shared one. `AnswerCapture` gained `holds(_:)`, a `@Sendable` test of what the capture holds, which copies the file location and not the capture. `InterruptTests` now arms the watch with `armed(after: capture.holds(...))`, the shape `CompositionInterruptTests` already uses, and the repeating ticker is gone.
+    - falsification: the `agentMessageChunk` arm of `RunTurn.collect(from:into:)` was made to drop the text. The case failed with `Expectation failed: try capture.text() == Self.arrivedText` at `InterruptTests.swift:147:9`. The production code was then put back, and `git status -- Sources/` reports nothing.
+    - test: 41 full `swift test` runs, 0 failures. Each run 442 tests in 46 suites with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`. The defect used to appear about one run in five, so 41 clean runs is the measure. `swift build` gave no source warning.
+    - commit: `955202a` `test(interrupt): order the first delta before the interrupt`
+    - review: clean — 0 findings, 2 refuted, 7 attempts.
+
+    The review answered four questions and found nothing wrong:
+
+    1. The cancel is not made until the delta is on the answer descriptor, so a slow machine makes the wait longer and does not change the order.
+    2. One arrival is enough. The ticker repeated because a cancel that reaches an agent with no active turn is ignored (plan.md §8.6), and nothing told the old case when the turn started. The new fact answers that directly: a turn that already wrote a chunk is a turn that runs.
+    3. `holds(_:)` is safe while the writer appends. It tests equality with the whole expected text and not a prefix, so a short read gives `false` and the poll reads again. A partial read cannot give a wrong `true`.
+    4. The moved poll loop keeps the 30 s deadline, the 50 ms interval and the same timeout message. The four call sites keep their conditions and labels word for word, so what `^04kf7ha` and `^vhmwars` proved is intact.
+
+    One mismatch to correct on a later pass: the card body above names the new file `Support/PollUntil.swift`, and the file on disk is `Support/Poll.swift`. The code governs.
+  timestamp: 2026-09-07T21:03:01.868899+00:00
+position_column: done
+position_ordinal: b980
 title: 'InterruptTests: order the first delta before the interrupt, so the text assertion cannot race'
 ---
 ## What

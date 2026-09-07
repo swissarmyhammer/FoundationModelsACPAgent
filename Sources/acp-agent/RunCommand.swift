@@ -14,8 +14,9 @@ extension AcpAgentCommand {
     /// drive.
     ///
     /// The options are the whole §5.4 surface, so the parse is final.
-    /// `--out-of-process`, `--verbose` and `--quiet` parse here and take
-    /// effect with their own cards; this body prints the answer plainly.
+    /// `--verbose` and `--quiet` select the verbosity of stderr (§5.7),
+    /// which ``EventLineWriter`` and the download bar each read.
+    /// `--out-of-process` parses here and takes effect with its own card.
     struct Run: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "run",
@@ -69,10 +70,26 @@ extension AcpAgentCommand {
             }
         }
 
+        /// The verbosity of this run's stderr (cli-plan.md §5.7), read off
+        /// the two flags of §5.4.
+        var eventVerbosity: EventVerbosity {
+            EventVerbosity(verbose: verbose, quiet: quiet)
+        }
+
+        /// The writer the session event lines go to: the process standard
+        /// error, at the verbosity the flags select.
+        ///
+        /// stderr, and never stdout: the answer of the turn owns file
+        /// descriptor 1 (§5.6), and an event line is decoration beside it.
+        var eventLineWriter: EventLineWriter {
+            EventLineWriter(destination: .standardError, verbosity: eventVerbosity)
+        }
+
         mutating func run() async throws {
             let result = try await perform(
                 environment: ProcessInfo.processInfo.environment,
                 into: AnswerWriter(),
+                reporting: eventLineWriter,
                 interruptedBy: InterruptHandler.onSIGINT)
             if let code = Self.exitCode(of: result) {
                 throw code
@@ -109,6 +126,9 @@ extension AcpAgentCommand {
         ///     model switch from.
         ///   - writer: The writer the answer goes to. `run()` gives the
         ///     one over standard output; a test gives one over a pipe.
+        ///   - events: The writer the session event lines go to (§5.7).
+        ///     `run()` gives the one over standard error, at the verbosity
+        ///     the flags select; the default writes nothing.
         ///   - install: How the composition window and the turn get their
         ///     `Ctrl-C` watch. `run()` gives the real `SIGINT` watch; the
         ///     default watches nothing, so no suite arms a process-wide
@@ -121,9 +141,13 @@ extension AcpAgentCommand {
         func perform(
             environment: [String: String],
             into writer: AnswerWriter,
+            reporting events: EventLineWriter = .silent,
             interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
         ) async throws -> RunTurnResult {
-            try await perform(environment: environment, into: writer, interruptedBy: install) {
+            try await perform(
+                environment: environment, into: writer, reporting: events,
+                interruptedBy: install
+            ) {
                 try await compose(environment: environment)
             }
         }
@@ -137,6 +161,7 @@ extension AcpAgentCommand {
         /// - Parameters:
         ///   - environment: The environment the turn reads.
         ///   - writer: The writer the answer goes to.
+        ///   - events: The writer the session event lines go to (§5.7).
         ///   - install: How the composition window and the turn get their
         ///     `Ctrl-C` watch.
         ///   - compose: The composition work to run under the first watch.
@@ -148,6 +173,7 @@ extension AcpAgentCommand {
         func perform(
             environment: [String: String],
             into writer: AnswerWriter,
+            reporting events: EventLineWriter = .silent,
             interruptedBy install: InterruptHandler.Installer,
             composedBy compose: @escaping @Sendable () async throws -> AgentComposition.Composed
         ) async throws -> RunTurnResult {
@@ -165,7 +191,7 @@ extension AcpAgentCommand {
             }
             return try await RunTurn.answer(
                 of: composed, in: session, prompt: text, into: writer,
-                interruptedBy: install)
+                reporting: events, interruptedBy: install)
         }
 
         /// Composes the agent of this run — the first of the two loads of
