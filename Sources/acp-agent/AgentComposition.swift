@@ -46,6 +46,21 @@ enum AgentComposition {
     /// other value, and an absent variable, select the live loader.
     static let stubModelEnabledValue = "1"
 
+    /// The environment variable that paces the stub model: the pause, in
+    /// milliseconds, between two chunks of the echoed prompt.
+    ///
+    /// It exists for one reason. ``stubModelVariable`` gives a spawned
+    /// binary a deterministic model, but that model answers in one chunk
+    /// and in microseconds, so a turn is over before a signal can reach
+    /// it. The interrupt of cli-plan.md §5.9 is a claim about a turn
+    /// that is still running, and this is what holds one open across a
+    /// process boundary.
+    ///
+    /// It is read only on the stub path. An absent value, a value that
+    /// is not a number, and a value that is not positive all pace
+    /// nothing, and the library's one-chunk echo answers as before.
+    static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
+
     /// The version the CLI reports. One binary and one version: `--version`
     /// prints this, and `initialize` reports the same value (plan.md §5).
     ///
@@ -130,6 +145,20 @@ enum AgentComposition {
         environment[stubModelVariable] == stubModelEnabledValue ? .stub : .live
     }
 
+    /// Reads ``stubChunkDelayVariable`` out of `environment`.
+    ///
+    /// - Parameter environment: The environment to read.
+    /// - Returns: The pause between two chunks of a stub answer, or
+    ///   `nil` when the variable is absent, unreadable, or not positive.
+    static func stubChunkDelay(environment: [String: String]) -> Swift.Duration? {
+        guard let raw = environment[stubChunkDelayVariable],
+            let milliseconds = Int(raw), milliseconds > 0
+        else {
+            return nil
+        }
+        return .milliseconds(milliseconds)
+    }
+
     /// Composes the agent: the configuration of `workingDirectory`'s
     /// stack, a router over the model path `environment` selects, and the
     /// `RoutedACPAgent` construction that resolves the profile.
@@ -160,7 +189,8 @@ enum AgentComposition {
         let modelSource = modelSource(environment: environment)
         let agent = try await RoutedACPAgent(
             name: loader.name,
-            router: try makeRouter(for: modelSource),
+            router: try makeRouter(
+                for: modelSource, pacedBy: stubChunkDelay(environment: environment)),
             configuration: configuration,
             environment: environment)
         return Composed(
@@ -188,12 +218,18 @@ enum AgentComposition {
 
     /// Makes the router of one model path.
     ///
-    /// - Parameter modelSource: The model path to build the router over.
+    /// - Parameters:
+    ///   - modelSource: The model path to build the router over.
+    ///   - chunkDelay: The pause a stub answer puts between two chunks,
+    ///     or `nil` for the library's one-chunk echo. The live path
+    ///     ignores it.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
     /// - Throws: The directory-creation error of the stub cache.
-    private static func makeRouter(for modelSource: ModelSource) throws -> Router {
+    private static func makeRouter(
+        for modelSource: ModelSource, pacedBy chunkDelay: Swift.Duration?
+    ) throws -> Router {
         switch modelSource {
         case .live:
             Router(
@@ -201,8 +237,22 @@ enum AgentComposition {
                     downloader: #hubDownloader(),
                     tokenizerLoader: #huggingFaceTokenizerLoader()))
         case .stub:
-            EchoModel.makeRouter(cacheDirectory: try makeStubCacheDirectory())
+            EchoModel.makeRouter(
+                cacheDirectory: try makeStubCacheDirectory(),
+                loader: makeStubLoader(pacedBy: chunkDelay))
         }
+    }
+
+    /// Makes the loader of the stub path.
+    ///
+    /// - Parameter chunkDelay: The pause between two chunks, or `nil`.
+    /// - Returns: The library's own stub loader when `chunkDelay` is
+    ///   `nil`, and one over ``PacedEchoLLMContainer`` otherwise.
+    private static func makeStubLoader(pacedBy chunkDelay: Swift.Duration?) -> StubModelLoader {
+        guard let chunkDelay else {
+            return StubModelLoader()
+        }
+        return StubModelLoader { _ in PacedEchoLLMContainer(pause: chunkDelay) }
     }
 
     /// Makes a fresh throwaway directory for a stub router's cache — see

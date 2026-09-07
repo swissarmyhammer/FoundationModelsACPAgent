@@ -106,6 +106,15 @@ public struct AgentClientHarness: Sendable {
     /// suite runs the untapped wire.
     public let wireTap: WireTap?
 
+    /// The tap on the agent end of the wire, or `nil` when the harness
+    /// was wired without one.
+    ///
+    /// Its lines are the ones the CLIENT sent, because a tap records the
+    /// incoming direction of the end it wraps. It is the only reading of
+    /// a client-to-agent notification: `session/cancel` carries no
+    /// response, so nothing else on the wire says it arrived.
+    public let agentWireTap: WireTap?
+
     /// The transport pair the two connections run over. ``close()``
     /// ends it after both connections are down.
     public let wire: HarnessWire
@@ -164,7 +173,8 @@ public struct AgentClientHarness: Sendable {
     public static func make(
         wire: HarnessWire = .makeInMemory()
     ) async throws -> AgentClientHarness {
-        let parts = await makeParts(agent: try await makeAgent(), wire: wire)
+        let parts = await makeParts(
+            agent: try await makeAgent(), agentEnd: wire.agentEnd)
         let connection = await parts.client.connect(over: wire.clientEnd)
         return AgentClientHarness(
             agent: parts.agent,
@@ -174,6 +184,7 @@ public struct AgentClientHarness: Sendable {
             collector: nil,
             elicitations: nil,
             wireTap: nil,
+            agentWireTap: nil,
             wire: wire)
     }
 
@@ -202,13 +213,21 @@ public struct AgentClientHarness: Sendable {
     ///   - tapsWire: Whether a ``WireTap`` stands on the client end, so
     ///     a proof can read the raw line order. Off by default, because
     ///     only the §8.1 order proof reads it.
+    ///   - tapsAgentWire: Whether a ``WireTap`` stands on the agent end,
+    ///     so a proof can read what the client sent. Off by default,
+    ///     because only the §5.9 cancel proof reads it.
     ///   - wire: The transport pair to run over. The in-process pair by
     ///     default; a §4 comparison passes the stdio pipes instead.
     /// - Returns: The connected harness, with a collector.
     public static func makeRecording(
-        agent: RoutedACPAgent, tapsWire: Bool = false, wire: HarnessWire = .makeInMemory()
+        agent: RoutedACPAgent,
+        tapsWire: Bool = false,
+        tapsAgentWire: Bool = false,
+        wire: HarnessWire = .makeInMemory()
     ) async -> AgentClientHarness {
-        let parts = await makeParts(agent: agent, wire: wire)
+        let agentWireTap = tapsAgentWire ? WireTap(tapping: wire.agentEnd) : nil
+        let parts = await makeParts(
+            agent: agent, agentEnd: agentWireTap ?? wire.agentEnd)
         let collector = UpdateCollector()
         let recorder = RecordingClient(forwardingTo: parts.client, collector: collector)
         let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
@@ -222,6 +241,7 @@ public struct AgentClientHarness: Sendable {
             collector: collector,
             elicitations: recorder.elicitations,
             wireTap: wireTap,
+            agentWireTap: agentWireTap,
             wire: wire)
     }
 
@@ -241,6 +261,7 @@ public struct AgentClientHarness: Sendable {
         await connection.close()
         await agentConnection.close()
         wireTap?.stop()
+        agentWireTap?.stop()
         wire.close()
     }
 
@@ -251,14 +272,17 @@ public struct AgentClientHarness: Sendable {
     ///
     /// - Parameters:
     ///   - agent: The agent under test.
-    ///   - wire: The transport pair the two connections run over.
+    ///   - agentEnd: The end the agent serves: the wire's own agent end,
+    ///     or a ``WireTap`` around it.
     /// - Returns: The agent with its connection, and the client.
-    private static func makeParts(agent: RoutedACPAgent, wire: HarnessWire) async -> (
+    private static func makeParts(
+        agent: RoutedACPAgent, agentEnd: any ACPTransport
+    ) async -> (
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
         client: SwiftUIACPClient
     ) {
-        let agentConnection = await AgentSideConnection(stream: wire.agentEnd) { connection in
+        let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
             agent.bind(connection: connection)
             return agent
         }

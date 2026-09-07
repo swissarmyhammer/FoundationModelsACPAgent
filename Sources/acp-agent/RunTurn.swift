@@ -68,6 +68,9 @@ enum RunTurn {
     ///   - prompt: The text of the one turn.
     ///   - writer: The writer each `agent_message_chunk` goes to, as it
     ///     arrives (cli-plan.md §5.6).
+    ///   - install: How the turn gets its `Ctrl-C` watch. The default
+    ///     watches nothing, so a caller that says nothing about
+    ///     interrupts arms no signal.
     /// - Returns: The stop reason of the turn.
     /// - Throws: ``UnknownResumedSessionError`` when a resumed id is in no
     ///   listing, ``AnswerWriteError`` when a chunk cannot be written,
@@ -77,7 +80,8 @@ enum RunTurn {
         of composed: AgentComposition.Composed,
         in session: RunSession,
         prompt: String,
-        into writer: AnswerWriter
+        into writer: AnswerWriter,
+        interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
     ) async throws -> RunTurnResult {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agentConnection = await composed.serve(over: agentEnd)
@@ -89,7 +93,9 @@ enum RunTurn {
         let outcome: Result<RunTurnResult, any Error>
         do {
             outcome = .success(
-                try await drive(connection, in: session, prompt: prompt, into: writer))
+                try await drive(
+                    connection, in: session, prompt: prompt, into: writer,
+                    interruptedBy: install))
         } catch {
             outcome = .failure(error)
         }
@@ -108,6 +114,7 @@ enum RunTurn {
     ///   - session: The session the turn runs in.
     ///   - prompt: The text of the one turn.
     ///   - writer: The writer each `agent_message_chunk` goes to.
+    ///   - install: How the turn gets its `Ctrl-C` watch.
     /// - Returns: The stop reason of the turn.
     /// - Throws: Whatever the handshake, the session call, the prompt or
     ///   the writer throws.
@@ -115,7 +122,8 @@ enum RunTurn {
         _ connection: ClientSideConnection,
         in session: RunSession,
         prompt: String,
-        into writer: AnswerWriter
+        into writer: AnswerWriter,
+        interruptedBy install: InterruptHandler.Installer
     ) async throws -> RunTurnResult {
         _ = try await connection.initialize(
             InitializeRequest(
@@ -127,17 +135,61 @@ enum RunTurn {
         // dropped by the connection's router.
         let updates = connection.updates(for: sessionId)
         let collector = Task { try await collect(from: updates, into: writer) }
+        // The watch is armed here, with a session open and the collector
+        // reading: a `session/cancel` that reached the agent before the
+        // turn ran would find no active turn and be ignored (§8.6).
+        let watch = install()
+        let watching = Task {
+            await react(to: watch.arrivals, cancelling: sessionId, over: connection)
+        }
+        let outcome: Result<StopReason?, any Error>
         do {
             _ = try await connection.prompt(
                 PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: sessionId))
+            outcome = .success(try await collector.value)
         } catch {
             collector.cancel()
             // The prompt failure is the one to report, so a write
             // failure the collector met on the way down goes with it.
             _ = try? await collector.value
-            throw error
+            outcome = .failure(error)
         }
-        return RunTurnResult(stopReason: try await collector.value)
+        watch.disarm()
+        watching.cancel()
+        return RunTurnResult(stopReason: try outcome.get())
+    }
+
+    /// Reacts to each `Ctrl-C` of `arrivals` (cli-plan.md §5.9).
+    ///
+    /// The first arrival sends `session/cancel`. Nothing is awaited for
+    /// it: the notification carries no response, and the `cancelled`
+    /// stop reason arrives on the update stream, where the collector
+    /// reads it and ends the turn. So the text that already arrived is
+    /// on the descriptor, and ``RunCommand`` exits 4.
+    ///
+    /// Every later arrival ends the process at once. A model whose
+    /// generate loop never checks for cancellation runs to its end, and
+    /// a person who pressed `Ctrl-C` twice is done waiting.
+    ///
+    /// A cancel that cannot be sent is dropped: the wire is already
+    /// down, so the turn is already ending, and a thrown error here
+    /// would replace the turn's own outcome with a teardown detail.
+    ///
+    /// - Parameters:
+    ///   - arrivals: The ordinals of the watch.
+    ///   - sessionId: The session to cancel.
+    ///   - connection: The client end of the pair.
+    static func react(
+        to arrivals: AsyncStream<Int>,
+        cancelling sessionId: SessionId,
+        over connection: ClientSideConnection
+    ) async {
+        for await ordinal in arrivals {
+            guard ordinal == InterruptHandler.firstArrival else {
+                InterruptHandler.endAtOnce()
+            }
+            try? await connection.sessionCancel(CancelSessionNotification(sessionId: sessionId))
+        }
     }
 
     /// Opens the session the turn runs in.

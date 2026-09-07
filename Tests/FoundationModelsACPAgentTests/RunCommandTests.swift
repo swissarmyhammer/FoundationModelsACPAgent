@@ -61,22 +61,6 @@ struct RunCommandTests {
 
     // MARK: - Fixtures
 
-    /// Composes over a model that plays `script`, so a turn gives a text
-    /// the test wrote (plan.md §20.1). Nothing downloads and nothing
-    /// loads.
-    ///
-    /// - Parameters:
-    ///   - script: The steps the model plays on every turn.
-    ///   - label: The directory label, so a leftover directory says where
-    ///     it came from.
-    /// - Returns: The composition, over the stub model path.
-    /// - Throws: Whatever the agent construction throws.
-    private static func scriptedComposition(
-        script: [ScriptedTurnStep], label: String
-    ) async throws -> AgentComposition.Composed {
-        try await composition(loader: makeScriptedModelLoader(script: script), label: label)
-    }
-
     /// Composes over the resume-shaped model: every generating call
     /// appends real prompt, reasoning and response transcript entries, so
     /// the session is on disk and `session/load` can restore it.
@@ -90,29 +74,7 @@ struct RunCommandTests {
     ) async throws -> AgentComposition.Composed {
         var loader = StubModelLoader()
         loader.makeLLMContainer = { _ in ResumeRecordingContainer() }
-        return try await composition(loader: loader, label: label)
-    }
-
-    /// Composes an agent over `loader` under the CLI's own dotfolder
-    /// name, with every root in a throwaway directory.
-    ///
-    /// - Parameters:
-    ///   - loader: The model loader the agent resolves against.
-    ///   - label: The directory label, so a leftover directory says where
-    ///     it came from.
-    /// - Returns: The composition, over the stub model path.
-    /// - Throws: Whatever the agent construction throws.
-    private static func composition(
-        loader: any ModelLoader, label: String
-    ) async throws -> AgentComposition.Composed {
-        let agent = try await makeStubAgent(
-            name: AgentComposition.dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
-            recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
-            userDirectory: makeResolvedDirectory(label: "\(label)-user"),
-            loader: loader)
-        return AgentComposition.Composed(
-            agent: agent, modelSource: .stub, configuration: AgentConfiguration())
+        return try await CLICompositionFixture.make(loader: loader, label: label)
     }
 
     /// Parses `acp-agent run --cwd <workspace> <prompt>` over `fixture`'s
@@ -161,7 +123,7 @@ struct RunCommandTests {
     @Test(.timeLimit(.minutes(1)))
     func aTurnOverTheInProcessPairGivesTheScriptedAnswer() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-turn-repo")
-        let composed = try await Self.scriptedComposition(
+        let composed = try await CLICompositionFixture.scripted(
             script: [.textDelta(Self.scriptedAnswer), .endTurn], label: "RunCommandTests-turn")
         let capture = try AnswerCapture(label: "RunCommandTests-turn-answer")
 
@@ -183,7 +145,7 @@ struct RunCommandTests {
     @Test(.timeLimit(.minutes(1)))
     func theTurnWritesTheScriptedChunksByteForByte() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-bytes-repo")
-        let composed = try await Self.scriptedComposition(
+        let composed = try await CLICompositionFixture.scripted(
             script: Self.scriptedChunks.map { .textDelta($0) } + [.endTurn],
             label: "RunCommandTests-bytes")
         let capture = try AnswerCapture(label: "RunCommandTests-bytes-answer")
@@ -245,7 +207,7 @@ struct RunCommandTests {
     /// name, and never degrades into a fresh session.
     @Test(.timeLimit(.minutes(1)))
     func resumeOfAnUnlistedSessionIsRefused() async throws {
-        let composed = try await Self.scriptedComposition(
+        let composed = try await CLICompositionFixture.scripted(
             script: [.textDelta(Self.scriptedAnswer), .endTurn],
             label: "RunCommandTests-unlisted")
         let unlisted = SessionId(rawValue: ULID().ulidString)

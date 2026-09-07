@@ -29,6 +29,21 @@ enum TierThreeFixture {
     /// The environment variable that roots the user configuration layer.
     static let configHomeVariable = "XDG_CONFIG_HOME"
 
+    /// The environment variable that selects the deterministic stub
+    /// model, and the value that selects it. `AgentComposition` in the
+    /// root package declares both; this package cannot import an
+    /// executable module, so the two names stand here as well.
+    static let stubModelVariable = "ACP_AGENT_STUB_MODEL"
+
+    /// The value of ``stubModelVariable`` that selects the stub model.
+    static let stubModelEnabledValue = "1"
+
+    /// The environment variable that paces the stub model: the pause, in
+    /// milliseconds, between two chunks of the echoed prompt. It is what
+    /// holds a turn open long enough for a signal to land inside it
+    /// (cli-plan.md §5.9).
+    static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
+
     /// The user-layer `config.yaml` the spawned agent resolves its
     /// profile from: the small real `mlx-community` models the family's
     /// own integration suites load (Router's examples and Multitool's

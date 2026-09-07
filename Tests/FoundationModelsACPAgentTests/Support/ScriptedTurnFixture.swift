@@ -67,6 +67,9 @@ struct ScriptedTurnFixture {
     ///     `session/new`, or `nil` for none.
     ///   - additionalDirectories: The `session/new` additional roots, or
     ///     `nil` for none.
+    ///   - tapsAgentWire: Whether the harness stands a `WireTap` on the
+    ///     agent end, so a proof can read what the client sent. Only the
+    ///     §5.9 cancel proof needs it.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -76,7 +79,8 @@ struct ScriptedTurnFixture {
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
         mcpServers: [MCPServer]? = nil,
-        additionalDirectories: [AbsolutePath]? = nil
+        additionalDirectories: [AbsolutePath]? = nil,
+        tapsAgentWire: Bool = false
     ) async throws -> ScriptedTurnFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
@@ -85,7 +89,8 @@ struct ScriptedTurnFixture {
             workingDirectory: workingDirectory,
             projectConfigYAML: projectConfigYAML,
             mcpServers: mcpServers,
-            additionalDirectories: additionalDirectories)
+            additionalDirectories: additionalDirectories,
+            tapsAgentWire: tapsAgentWire)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -112,6 +117,9 @@ struct ScriptedTurnFixture {
     ///   - tapsWire: Whether the harness stands a `WireTap` on the
     ///     client end, so a proof can read the raw line order. Only the
     ///     §8.1 order proof needs it.
+    ///   - tapsAgentWire: Whether the harness stands a `WireTap` on the
+    ///     agent end, so a proof can read what the client sent. Only the
+    ///     §5.9 cancel proof needs it.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -122,7 +130,8 @@ struct ScriptedTurnFixture {
         projectConfigYAML: String? = nil,
         mcpServers: [MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
-        tapsWire: Bool = false
+        tapsWire: Bool = false,
+        tapsAgentWire: Bool = false
     ) async throws -> ScriptedTurnFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -135,7 +144,8 @@ struct ScriptedTurnFixture {
             recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
             userDirectory: userDirectory,
             loader: loader)
-        let harness = await AgentClientHarness.makeRecording(agent: agent, tapsWire: tapsWire)
+        let harness = await AgentClientHarness.makeRecording(
+            agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
         _ = try await harness.connection.initialize(
             AgentClientHarness.makeInitializeRequest(capabilities: capabilities))
         let response = try await harness.connection.newSession(

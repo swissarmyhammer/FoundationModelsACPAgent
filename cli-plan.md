@@ -246,9 +246,16 @@ with our usage error. See `doctor-plan.md` §5.
 for the `cancelled` stop reason, prints the text that arrived, and exits
 4. A second `Ctrl-C` ends the process at once.
 
-During a download, the first `Ctrl-C` stops the resolution and exits 4.
-A partly downloaded model stays in the Hugging Face cache, so the next
-run continues rather than starting again.
+**The watch stands for the turn, and only for the turn.** Outside it
+`Ctrl-C` keeps its killing default disposition. During a model download
+that is the honest behaviour: `Router.resolve(profile:reporting:)`
+honours no Task cancellation, and the wire is not even open then, so a
+`session/cancel` would have no addressee and a watch that swallowed the
+signal would only make the CLI look frozen. Card `^54ay5s0` makes the
+resolve cancellable; the download paragraph — the first `Ctrl-C` stops
+the resolution, exits 4, and leaves the partly downloaded model in the
+Hugging Face cache so the next run continues — returns here when it
+lands.
 
 This matters most with `--out-of-process`, and in `acp-client`. A hard
 kill of the client leaves a model process that holds gigabytes.

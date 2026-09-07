@@ -70,8 +70,30 @@ extension AcpAgentCommand {
         }
 
         mutating func run() async throws {
-            _ = try await perform(
-                environment: ProcessInfo.processInfo.environment, into: AnswerWriter())
+            let result = try await perform(
+                environment: ProcessInfo.processInfo.environment,
+                into: AnswerWriter(),
+                interruptedBy: InterruptHandler.onSIGINT)
+            if let code = Self.exitCode(of: result) {
+                throw code
+            }
+        }
+
+        /// The exit code of a finished turn, or `nil` when the turn ends
+        /// the process with 0.
+        ///
+        /// One row of the §5.8 table stands here: a `cancelled` turn
+        /// exits 4, which is what a `Ctrl-C` gives (§5.9). Every other
+        /// stop reason keeps exit 0 until the exit-code table card
+        /// lands.
+        ///
+        /// - Parameter result: The finished turn.
+        /// - Returns: The code to exit with, or `nil` for a plain end.
+        static func exitCode(of result: RunTurnResult) -> ExitCode? {
+            guard result.stopReason == .cancelled else {
+                return nil
+            }
+            return ExitCode(InterruptHandler.cancelledExitCode)
         }
 
         /// Runs the one turn: the prompt by the §5.5 table, and the
@@ -87,17 +109,23 @@ extension AcpAgentCommand {
         ///     model switch from.
         ///   - writer: The writer the answer goes to. `run()` gives the
         ///     one over standard output; a test gives one over a pipe.
+        ///   - install: How the turn gets its `Ctrl-C` watch. `run()`
+        ///     gives the real `SIGINT` watch; the default watches
+        ///     nothing, so no suite arms a process-wide signal.
         /// - Returns: The stop reason of the turn.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
         ///   table, and whatever the composition, the turn or the writer
         ///   throws.
         func perform(
-            environment: [String: String], into writer: AnswerWriter
+            environment: [String: String],
+            into writer: AnswerWriter,
+            interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
         ) async throws -> RunTurnResult {
             let text = try promptSource.text()
             let composed = try await compose(environment: environment)
             return try await RunTurn.answer(
-                of: composed, in: session, prompt: text, into: writer)
+                of: composed, in: session, prompt: text, into: writer,
+                interruptedBy: install)
         }
 
         /// Composes the agent of this run — the first of the two loads of
