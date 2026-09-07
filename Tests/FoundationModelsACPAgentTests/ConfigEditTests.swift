@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -165,7 +166,7 @@ struct ConfigEditTests {
 
         #expect(plan.file == ConfigCommandFixture.configURL(in: fixture.projectDirectory))
         #expect(plan.report.standardErrorLines.isEmpty)
-        #expect(try ConfigCommandFixture.text(at: plan.file) == Self.projectYAML)
+        #expect(try textOnDisk(at: plan.file) == Self.projectYAML)
     }
 
     /// With a file in the user layer alone the plan opens that one, and
@@ -194,7 +195,7 @@ struct ConfigEditTests {
         let plan = try Self.plan(in: fixture, editor: editor)
         try EditorLauncher.open(plan.file, with: plan.editorCommand)
 
-        #expect(try ConfigCommandFixture.text(at: plan.file) == Self.editorOutput)
+        #expect(try textOnDisk(at: plan.file) == Self.editorOutput)
     }
 
     /// An editor that ends with a failure status is reported, and the

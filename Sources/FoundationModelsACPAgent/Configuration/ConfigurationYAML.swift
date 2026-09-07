@@ -92,7 +92,7 @@ public enum ConfigurationYAML {
         for configuration: AgentConfiguration, annotation: KeyAnnotation = .none
     ) throws -> String {
         try lines(of: configuration)
-            .map { annotated($0, with: annotation) }
+            .map { annotated(line: $0, with: annotation) }
             .joined(separator: "\n") + "\n"
     }
 
@@ -109,7 +109,12 @@ public enum ConfigurationYAML {
 
     /// The text of `line` with `annotation` applied: the layer comment
     /// after a key line, and the text alone otherwise.
-    private static func annotated(_ line: Line, with annotation: KeyAnnotation) -> String {
+    ///
+    /// - Parameters:
+    ///   - line: The line to annotate.
+    ///   - annotation: What the key line carries after its value.
+    /// - Returns: The annotated text.
+    private static func annotated(line: Line, with annotation: KeyAnnotation) -> String {
         switch annotation {
         case .none:
             return line.text
@@ -141,7 +146,7 @@ public enum ConfigurationYAML {
                 let comment = sectionComments[section].map { [Line(text: "# \($0)", keyPath: nil)] } ?? []
                 return comment
                     + entryLines(
-                        key: section, value: completed(value, forSection: section),
+                        key: section, value: completed(value: value, forSection: section),
                         keyPath: [section], indent: 0)
             }
     }
@@ -162,7 +167,7 @@ public enum ConfigurationYAML {
     /// - Returns: The body with a `null` for each key the encoding left
     ///   out; `value` unchanged for a body that is not a mapping and for
     ///   the open-ended `tools:` roster, whose own keys always encode.
-    private static func completed(_ value: Any, forSection section: String) -> Any {
+    private static func completed(value: Any, forSection section: String) -> Any {
         guard let mapping = value as? [String: Any],
             let schema = AgentConfiguration.sectionSchemas[section],
             case .checked(let knownKeys) = schema
@@ -182,7 +187,7 @@ public enum ConfigurationYAML {
     ///   - indent: The indentation level of the key.
     /// - Returns: The lines of the entry.
     private static func entryLines(key: String, value: Any, keyPath: [String]?, indent: Int) -> [Line] {
-        let pad = indentation(indent)
+        let pad = indentation(atLevel: indent)
         let dotted = keyPath?.joined(separator: LoadedConfiguration.keyPathSeparator)
         if let scalar = scalarText(value) {
             return [Line(text: "\(pad)\(key): \(scalar)", keyPath: dotted)]
@@ -208,7 +213,7 @@ public enum ConfigurationYAML {
             }
         }
         if let sequence = value as? [Any] {
-            return sequence.flatMap { sequenceItemLines($0, indent: indent) }
+            return sequence.flatMap { sequenceItemLines(of: $0, indent: indent) }
         }
         return []
     }
@@ -221,8 +226,8 @@ public enum ConfigurationYAML {
     ///   - value: The item to emit.
     ///   - indent: The indentation level of the dash.
     /// - Returns: The lines of the item.
-    private static func sequenceItemLines(_ value: Any, indent: Int) -> [Line] {
-        let pad = indentation(indent)
+    private static func sequenceItemLines(of value: Any, indent: Int) -> [Line] {
+        let pad = indentation(atLevel: indent)
         if let scalar = scalarText(value) {
             return [Line(text: "\(pad)- \(scalar)", keyPath: nil)]
         }
@@ -286,7 +291,7 @@ public enum ConfigurationYAML {
     ///
     /// - Parameter level: The indentation level.
     /// - Returns: The leading spaces.
-    private static func indentation(_ level: Int) -> String {
+    private static func indentation(atLevel level: Int) -> String {
         String(repeating: " ", count: level * indentWidth)
     }
 }

@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import Testing
 
@@ -166,7 +167,7 @@ struct ConfigInitTests {
         let fixture = ConfigCommandFixture(label: "ConfigInitTests-schema")
         try Self.initialize(in: fixture)
 
-        let text = try ConfigCommandFixture.text(
+        let text = try textOnDisk(
             at: ConfigCommandFixture.configURL(in: fixture.projectDirectory))
 
         for (section, schema) in AgentConfiguration.sectionSchemas {
@@ -183,7 +184,7 @@ struct ConfigInitTests {
         let fixture = ConfigCommandFixture(label: "ConfigInitTests-comments")
         try Self.initialize(in: fixture)
 
-        let lines = try ConfigCommandFixture.text(
+        let lines = try textOnDisk(
             at: ConfigCommandFixture.configURL(in: fixture.projectDirectory)
         ).split(separator: "\n").map(String.init)
 
@@ -248,7 +249,7 @@ struct ConfigInitTests {
             AcpAgentCommand.exitOutcome(for: error)
                 == AcpAgentCommand.ExitOutcome(
                     code: ExitCode.failure.rawValue, writesToStandardError: true))
-        #expect(try ConfigCommandFixture.text(at: written) == Self.editedText)
+        #expect(try textOnDisk(at: written) == Self.editedText)
     }
 
     /// `--force` overwrites the edited file with the defaults.
@@ -260,7 +261,7 @@ struct ConfigInitTests {
 
         let report = try Self.initialize(in: fixture, arguments: [Self.forceFlag])
 
-        #expect(try ConfigCommandFixture.text(at: written) != Self.editedText)
+        #expect(try textOnDisk(at: written) != Self.editedText)
         #expect(try Self.load(in: fixture).configuration == AgentConfiguration())
         #expect(report.standardOutput == written.path + "\n")
     }
@@ -279,9 +280,9 @@ struct ConfigInitTests {
         let file = ConfigCommandFixture.configURL(in: fixture.userDirectory)
 
         let report = try Self.initialize(in: fixture, arguments: ["--user"])
-        let initialized = try ConfigCommandFixture.text(at: file)
+        let initialized = try textOnDisk(at: file)
         try await Self.exportHome(in: fixture)
-        let exported = try ConfigCommandFixture.text(at: file)
+        let exported = try textOnDisk(at: file)
 
         #expect(report.standardOutput == file.path + "\n")
         #expect(initialized == exported)

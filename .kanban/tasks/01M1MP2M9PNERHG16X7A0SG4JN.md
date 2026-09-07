@@ -176,6 +176,97 @@ comments:
       in 47; this card adds 17 tests in 2 suites.
     - next: `/review`.
   timestamp: 2026-09-07T21:54:28.090547+00:00
+- actor: claude-code
+  id: 01m1yybx17q2cp9ap5fjv1t6ps
+  text: |-
+    ### review — findings
+    - evidence: 3 findings — Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift:165, Sources/acp-agent/ConfigCommand.swift:195, Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:71
+    - scope: review sha HEAD~1..HEAD (commit e1e85e5)
+    - next: correct the three findings. Remove the cause from the full file, not only the line. Then do the review again.
+  timestamp: 2026-09-07T22:03:37.383012+00:00
+- actor: claude-code
+  id: 01m1yyccp4p0f5et3jvs6ghrmz
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files
+    - test: green — swift test three times, 474 tests in 49 suites, one known issue
+    - commit: e1e85e5
+    - review: findings — Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift:165 (swift/fluent-usage), Sources/acp-agent/ConfigCommand.swift:195 (duplication/duplication), Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:71 (reuse/reuse)
+  timestamp: 2026-09-07T22:03:53.412942+00:00
+- actor: claude-code
+  id: 01m1yyr7c6ktm8tr5qpfehm8m3
+  text: |
+    ### The three findings, and the cause of each removed from the whole file
+
+    **1. `swift/fluent-usage` in `ConfigurationYAML.swift`.** The rule says
+    to omit the first argument label only for a value-preserving
+    conversion, and to label it in every other case. The cited function is
+    now `completed(value:forSection:)`. Three more functions in the same
+    file had the same cause, because each one makes a new value from its
+    input and does not only convert the type of it:
+
+    - `annotated(_ line:with:)` becomes `annotated(line:with:)`. It adds
+      the layer comment to the line.
+    - `sequenceItemLines(_ value:indent:)` becomes
+      `sequenceItemLines(of:indent:)`, which also matches its two siblings
+      `entryLines(key:value:keyPath:indent:)` and
+      `childLines(of:keyPath:indent:)`.
+    - `indentation(_ level:)` becomes `indentation(atLevel:)`. The spaces
+      are made from the level; they are not the level in another type.
+
+    `scalarText(_:)`, `numberText(_:)` and `quoted(_:)` keep the unlabelled
+    first parameter. Each one gives the text of the value it receives, so
+    each is a value-preserving conversion, which the rule permits.
+
+    **2. `duplication/duplication` in `ConfigCommand.swift`.** The three
+    lines that compose the loader and take its stack stood at three places,
+    not two: `Init.report()` and `Edit.plan()`, which the finding names,
+    and `Path.report()` as well. All three now call one new private helper,
+    `Config.makeStack(for:environment:)`. `Show.report()` composes the same
+    loader but reads it with `load()`, because it wants the merged values,
+    and its doc comment on the helper says so.
+
+    **3. `reuse/reuse` in `ConfigCommandFixture.swift`.**
+    `ConfigCommandFixture.text(at:)` is removed. Its six callers in
+    `ConfigInitTests` and `ConfigEditTests` now call `textOnDisk(at:)` from
+    `AssertionHelpers`, and each of the two suites imports
+    `FoundationModelsACPAgentTestSupport`. No other helper of the fixture
+    repeats a helper of `AssertionHelpers`: `configURL(in:)`,
+    `writeProjectConfig(_:)`, `writeUserConfig(_:)` and
+    `writeProjectCompactionTrigger(_:)` each say something the shared file
+    does not.
+
+    ### What was NOT changed, and why
+
+    `padded(_ text:to width:)` in `ConfigCommand.swift` has an unlabelled
+    first parameter too, but the fluent-usage finding names
+    `ConfigurationYAML.swift`, and that function belongs to the earlier
+    `config path` card. It is out of the scope of these three findings.
+
+    No behavior changed. Each edit is a rename of a label, a move of three
+    lines into one helper, or a change of a test to the shared helper.
+  timestamp: 2026-09-07T22:10:21.190098+00:00
+- actor: claude-code
+  id: 01m1yyrdm4tsgwppcnfz5a3e84
+  text: |
+    ### implement — changed
+    - evidence: 5 files —
+      `Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift`,
+      `Sources/acp-agent/ConfigCommand.swift`,
+      `Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift`,
+      `Tests/FoundationModelsACPAgentTests/ConfigInitTests.swift`,
+      `Tests/FoundationModelsACPAgentTests/ConfigEditTests.swift`.
+    - `swift build`: complete, no source warning. The build-system line
+      `missing creator for mutated node` for the mlx bundle is not a source
+      warning.
+    - `swift test` twice: 474 tests in 49 suites passed, each run with the
+      one known issue at
+      `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift`
+      (`orderedSubsequenceAssertionChecksOrderWithGaps`). That is the
+      baseline, unchanged.
+    - All three review findings are now `- [x]` on the card.
+    - next: `/review`.
+  timestamp: 2026-09-07T22:10:27.588099+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
 position_column: doing
@@ -245,3 +336,14 @@ stderr. With no `$EDITOR` it exits 1 and names the variable.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-07 16:58)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift:165` `swift/fluent-usage` — First parameter of non-value-preserving function should be labeled. The `completed` function augments input by inserting null values for missing schema keys, transforming rather than purely converting the value type. Change `private static func completed(_ value: Any, forSection section: String)` to `private static func completed(value: Any, forSection section: String)` to label the first parameter.
+- [x] `Sources/acp-agent/ConfigCommand.swift:195` `duplication/duplication` — The ConfigurationLoader stack initialization is duplicated identically at lines 195–197 and lines 406–408, creating a maintenance risk if one copy is updated without updating the other. Extract the duplicated lines to a shared private helper method in the Config class: `private func makeStack(environment: [String: String]) throws -> DotfolderStack { return try AgentComposition.makeConfigurationLoader(workingDirectory: workingDirectoryOptions.directoryURL, environment: environment).stack }`, then call it from both Init.report() and Edit.plan().
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:71` `reuse/reuse` — The `text(at:)` function reimplements the same capability as `textOnDisk()` in AssertionHelpers—both read UTF-8 text from a file URL and throw on error. Should call the existing shared test helper instead of duplicating it. Import and call `textOnDisk()` from AssertionHelpers instead of reimplementing.

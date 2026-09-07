@@ -63,15 +63,6 @@ struct ConfigCommandFixture {
         directory.appendingPathComponent(ConfigurationLoader.configFileName)
     }
 
-    /// The UTF-8 text of the file at `url`.
-    ///
-    /// - Parameter url: The file to read.
-    /// - Returns: The content as text.
-    /// - Throws: The read error, which a missing file also gives.
-    static func text(at url: URL) throws -> String {
-        try String(contentsOf: url, encoding: .utf8)
-    }
-
     /// Writes `yaml` as the project layer's `config.yaml`.
     ///
     /// - Parameter yaml: The file content.

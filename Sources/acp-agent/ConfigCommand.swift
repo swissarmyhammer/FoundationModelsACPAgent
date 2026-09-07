@@ -44,6 +44,29 @@ extension AcpAgentCommand {
                 into: selection, of: stack, overwrites: overwrites)
         }
 
+        /// The layer stack of the directory `--cwd` names.
+        ///
+        /// **One composition, three subcommands.** `init`, `path` and
+        /// `edit` each want the stack and nothing else, so they compose
+        /// it here, and the three cannot drift apart. `show` wants the
+        /// merged values, so it composes the same loader and reads it
+        /// with `load()`.
+        ///
+        /// - Parameters:
+        ///   - options: The `--cwd` option group of the subcommand.
+        ///   - environment: The environment the stack reads
+        ///     `XDG_CONFIG_HOME` from.
+        /// - Returns: The stack of layers.
+        /// - Throws: `DotfolderNameError` when the dotfolder name is
+        ///   refused.
+        private static func makeStack(
+            for options: WorkingDirectoryOptions, environment: [String: String]
+        ) throws -> DotfolderStack {
+            try AgentComposition.makeConfigurationLoader(
+                workingDirectory: options.directoryURL, environment: environment
+            ).stack
+        }
+
         /// `config show`: print the merged configuration, and where each
         /// value came from. The report goes to stdout (§5.6), and each
         /// configuration warning goes to stderr.
@@ -192,9 +215,8 @@ extension AcpAgentCommand {
             ///   ``Config/writeDefaultConfiguration(into:of:overwrites:)``
             ///   throws — above all the refusal to overwrite.
             func report(environment: [String: String]) throws -> CommandReport {
-                let stack = try AgentComposition.makeConfigurationLoader(
-                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
-                ).stack
+                let stack = try Config.makeStack(
+                    for: workingDirectoryOptions, environment: environment)
                 let url = try Config.writeDefaultConfiguration(
                     into: layer, of: stack, overwrites: overwrites)
                 return CommandReport(standardOutput: url.path + "\n", standardErrorLines: [])
@@ -270,9 +292,8 @@ extension AcpAgentCommand {
             /// - Throws: `DotfolderNameError` when the dotfolder name is
             ///   refused.
             func report(environment: [String: String]) throws -> CommandReport {
-                let stack = try AgentComposition.makeConfigurationLoader(
-                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
-                ).stack
+                let stack = try Config.makeStack(
+                    for: workingDirectoryOptions, environment: environment)
                 let rows = [Row(layer: .builtin, location: .code)] + stack.layers.map(Self.row(for:))
                 return CommandReport(standardOutput: Self.table(of: rows), standardErrorLines: [])
             }
@@ -403,9 +424,8 @@ extension AcpAgentCommand {
             ///   name is refused, or the write error of the defaults.
             func plan(environment: [String: String]) throws -> Plan {
                 let editorCommand = try EditorLauncher.command(in: environment)
-                let stack = try AgentComposition.makeConfigurationLoader(
-                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
-                ).stack
+                let stack = try Config.makeStack(
+                    for: workingDirectoryOptions, environment: environment)
                 if let file = stack.nearest(ConfigurationLoader.configFileName) {
                     return Plan(
                         file: file, editorCommand: editorCommand, report: Self.silentReport)
