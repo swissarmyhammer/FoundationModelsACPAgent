@@ -20,6 +20,17 @@ enum LayerSelection: String, EnumerableFlag {
     /// The project layer, `<cwd>/.<name>/`.
     case project
 
+    /// The word the `/config export` slash command spells the user layer
+    /// with (plan.md §14.1, cli-plan.md §5.11).
+    ///
+    /// The two front doors of one directory take two words: `config init`
+    /// takes `--user`, and `/config export` takes `home`. They are one
+    /// layer, not two: both write
+    /// `$XDG_CONFIG_HOME/<name>/config.yaml`. This is the one place that
+    /// says so, and the `--user` help text below quotes it, so a person
+    /// who reads `--help` is not left to guess either.
+    static let userLayerExportWord = "home"
+
     /// The stack source this selection names.
     var source: DotfolderStack.Source {
         switch self {
@@ -38,7 +49,10 @@ enum LayerSelection: String, EnumerableFlag {
     static func help(for value: LayerSelection) -> ArgumentHelp? {
         switch value {
         case .user:
-            return "Write into the user layer, $XDG_CONFIG_HOME/\(AgentComposition.dotfolderName)/."
+            return """
+                Write into the user layer, $XDG_CONFIG_HOME/\(AgentComposition.dotfolderName)/. \
+                The /config export slash command spells this same layer \(userLayerExportWord).
+                """
         case .project:
             return
                 "Write into the project layer, <cwd>/.\(AgentComposition.dotfolderName)/. This is the default."

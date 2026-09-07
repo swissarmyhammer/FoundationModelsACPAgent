@@ -5,14 +5,44 @@ import FoundationModelsExtras
 
 extension AcpAgentCommand {
     /// `acp-agent config`: nothing is on disk after an install, so the
-    /// configuration is invisible, and these subcommands make it visible
-    /// (cli-plan.md §5.11). `show` and `path` report; `init` and `edit`
-    /// are stubs until their card lands, and each exits 1.
+    /// configuration is invisible, and these four subcommands make it
+    /// visible and editable (cli-plan.md §5.11). `show` and `path`
+    /// report; `init` and `edit` write.
     struct Config: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "config",
             abstract: "Show, write, locate or edit the configuration.",
             subcommands: [Show.self, Init.self, Path.self, Edit.self])
+
+        /// Writes a `config.yaml` with every key at its default into one
+        /// layer — the body of `config init`, which `config edit` runs
+        /// too when no layer holds a file.
+        ///
+        /// **Nothing here is new.** The text comes from
+        /// ``ConfigurationYAML``, the one generator the `/config export`
+        /// slash command also writes through, so the two front doors
+        /// cannot drift (cli-plan.md §5.11). The file goes through
+        /// ``LayerFileWriter``, the one writer `instructions eject` also
+        /// writes through, so the overwrite guard is one guard.
+        ///
+        /// - Parameters:
+        ///   - selection: Which layer receives the file.
+        ///   - stack: The stack whose layer roots the file goes into.
+        ///   - overwrites: Whether a `config.yaml` that is already in the
+        ///     layer is replaced.
+        /// - Returns: The path the file was written to.
+        /// - Throws: What ``ConfigurationYAML/documentText(for:annotation:)``
+        ///   throws, or what
+        ///   ``LayerFileWriter/write(_:named:into:of:overwrites:)`` throws
+        ///   — above all the refusal to overwrite.
+        static func writeDefaultConfiguration(
+            into selection: LayerSelection, of stack: DotfolderStack, overwrites: Bool
+        ) throws -> URL {
+            try LayerFileWriter.write(
+                try ConfigurationYAML.documentText(for: AgentConfiguration()),
+                named: ConfigurationLoader.configFileName,
+                into: selection, of: stack, overwrites: overwrites)
+        }
 
         /// `config show`: print the merged configuration, and where each
         /// value came from. The report goes to stdout (§5.6), and each
@@ -115,14 +145,59 @@ extension AcpAgentCommand {
         }
 
         /// `config init`: write a `config.yaml` with every key at its
-        /// default.
+        /// default, each under the comment of its section.
+        ///
+        /// Nothing is on disk after an install, so this is how a person
+        /// gets a file to edit. The file the command writes reads back
+        /// through `ConfigurationLoader` to exactly the builtin
+        /// configuration, so a fresh `config.yaml` changes no behavior
+        /// until the person changes a value in it.
         struct Init: ParsableCommand {
             static let configuration = CommandConfiguration(
                 commandName: "init",
-                abstract: "Write a config.yaml with every key at its default.")
+                abstract: "Write a config.yaml with every key at its default.",
+                discussion: """
+                    The written path goes to stdout. The command refuses to \
+                    replace a config.yaml that is already in the layer, and it \
+                    names the flag that permits the replacement.
+                    """)
+
+            /// The `--cwd` option (§5.10).
+            @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
+
+            /// Which layer receives the file. The project layer is the
+            /// default, which matches `instructions eject`.
+            @Flag var layer: LayerSelection = .project
+
+            /// Whether a `config.yaml` that is already in the layer is
+            /// replaced.
+            @Flag(
+                name: .customLong(LayerFileWriter.forceFlagName),
+                help: "Replace a config.yaml that is already in the layer."
+            )
+            var overwrites = false
 
             mutating func run() throws {
-                throw NotImplementedError(command: Self.self)
+                try report(environment: ProcessInfo.processInfo.environment).write()
+            }
+
+            /// Writes the file and builds the report: the written path, and
+            /// nothing for stderr.
+            ///
+            /// - Parameter environment: The environment the stack reads
+            ///   `XDG_CONFIG_HOME` from.
+            /// - Returns: The report.
+            /// - Throws: `DotfolderNameError` when the dotfolder name is
+            ///   refused, or what
+            ///   ``Config/writeDefaultConfiguration(into:of:overwrites:)``
+            ///   throws — above all the refusal to overwrite.
+            func report(environment: [String: String]) throws -> CommandReport {
+                let stack = try AgentComposition.makeConfigurationLoader(
+                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
+                ).stack
+                let url = try Config.writeDefaultConfiguration(
+                    into: layer, of: stack, overwrites: overwrites)
+                return CommandReport(standardOutput: url.path + "\n", standardErrorLines: [])
             }
         }
 
@@ -253,13 +328,107 @@ extension AcpAgentCommand {
         }
 
         /// `config edit`: open the nearest `config.yaml` in `$EDITOR`.
+        ///
+        /// "Nearest" is the stack's own word: the highest-precedence
+        /// layer that holds the file wins, so a project `config.yaml`
+        /// beats a user one. With no file in any layer the command runs
+        /// the `config init` body first and says so on stderr, because a
+        /// person who asks to edit the configuration means to edit it,
+        /// not to be told there is nothing there.
+        ///
+        /// The editor owns the terminal while it runs, so this command
+        /// writes nothing to stdout: the notice is the whole report, and
+        /// it goes to stderr (§5.6).
         struct Edit: ParsableCommand {
             static let configuration = CommandConfiguration(
                 commandName: "edit",
-                abstract: "Open the nearest config.yaml in $EDITOR.")
+                abstract: "Open the nearest config.yaml in $EDITOR.",
+                discussion: """
+                    With no config.yaml in any layer the command writes the \
+                    defaults into the project layer first, and says so on \
+                    stderr. With no EDITOR it stops and names the variable, \
+                    and it changes no file.
+                    """)
+
+            /// What one `config edit` resolved before the editor opens.
+            struct Plan {
+                /// The `config.yaml` the editor opens.
+                let file: URL
+
+                /// The editor command, as the person spelled it in
+                /// `$EDITOR`.
+                let editorCommand: String
+
+                /// What to say before the editor opens: the notice that
+                /// this command had to write the file first, on stderr,
+                /// or nothing when a layer already held it.
+                let report: CommandReport
+            }
+
+            /// The layer a missing `config.yaml` is written into: the one
+            /// `config init` writes by default.
+            private static let layerForAMissingFile = LayerSelection.project
+
+            /// What this command writes to stdout: nothing at all. The
+            /// editor owns the terminal once it opens, so the whole
+            /// report is the stderr notice (§5.6).
+            private static let emptyStandardOutput = ""
+
+            /// The report of an edit that had nothing to say, because a
+            /// layer already held the file.
+            private static let silentReport = CommandReport(
+                standardOutput: emptyStandardOutput, standardErrorLines: [])
+
+            /// The `--cwd` option (§5.10).
+            @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
             mutating func run() throws {
-                throw NotImplementedError(command: Self.self)
+                let plan = try self.plan(environment: ProcessInfo.processInfo.environment)
+                plan.report.write()
+                try EditorLauncher.open(plan.file, with: plan.editorCommand)
+            }
+
+            /// Resolves the file to open and the editor to open it with,
+            /// and writes the defaults when no layer holds a file.
+            ///
+            /// **The editor is resolved first, on purpose.** A command
+            /// that cannot open an editor must change no file, so the
+            /// refusal comes before the write.
+            ///
+            /// - Parameter environment: The environment the editor and
+            ///   the stack are read from.
+            /// - Returns: The plan.
+            /// - Throws: ``EditorNotNamedError`` when the environment
+            ///   names no editor, `DotfolderNameError` when the dotfolder
+            ///   name is refused, or the write error of the defaults.
+            func plan(environment: [String: String]) throws -> Plan {
+                let editorCommand = try EditorLauncher.command(in: environment)
+                let stack = try AgentComposition.makeConfigurationLoader(
+                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
+                ).stack
+                if let file = stack.nearest(ConfigurationLoader.configFileName) {
+                    return Plan(
+                        file: file, editorCommand: editorCommand, report: Self.silentReport)
+                }
+                let written = try Config.writeDefaultConfiguration(
+                    into: Self.layerForAMissingFile, of: stack, overwrites: false)
+                return Plan(
+                    file: written, editorCommand: editorCommand,
+                    report: Self.noticeReport(forWritten: written))
+            }
+
+            /// The report of an edit that had to write the file first: the
+            /// notice on stderr, and nothing on stdout.
+            ///
+            /// - Parameter written: The path the defaults were written to.
+            /// - Returns: The report.
+            private static func noticeReport(forWritten written: URL) -> CommandReport {
+                CommandReport(
+                    standardOutput: emptyStandardOutput,
+                    standardErrorLines: [
+                        "no layer holds a \(ConfigurationLoader.configFileName); "
+                            + "wrote the defaults to \(written.path)"
+                    ])
             }
         }
     }

@@ -1,10 +1,185 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1ywj6gpa4spgtx7pvsz11ha
+  text: |-
+    ### Research — what is already there
+
+    Picked the card up and moved it to `doing`. The two writers the card
+    speaks about are both on disk already, so this card adds no third one:
+
+    - `Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift`
+      is the generator. `documentText(for:annotation:)` emits the commented
+      block YAML. `/config export` calls it
+      (`BuiltinCommands.exportConfiguration`), and `config show` calls it.
+      `config init` will call the same function with
+      `AgentConfiguration()`.
+    - `Sources/acp-agent/LayerFileWriter.swift` is the file writer. Its doc
+      comment already says it is "the one writer `instructions eject` and
+      `config init` share". It holds the `--force` guard, the
+      `LayerFileExistsError` that names the flag, and `LayerSelection` with
+      the `--user`/`--project` flags. `config init` calls it with
+      `ConfigurationLoader.configFileName`.
+
+    So `config init` is: build the stack, generate the text, hand it to
+    `LayerFileWriter`, print the path. No new type.
+
+    ### The layer-word mapping
+
+    `/config export` takes `home|project`
+    (`BuiltinCommands.configUsage`), and `config init` takes
+    `--user|--project`. `BuiltinCommands.ExportLayer.home` writes
+    `<userLayerRoot>/config.yaml`; `LayerSelection.user` maps to
+    `DotfolderStack.Source.user`, whose layer root is the same directory.
+    `ExportLayer` is internal to the library, so CLI production code cannot
+    name it. The plan is to state the mapping as a named constant in
+    `LayerSelection` and to quote that constant in the `--user` help text,
+    so the mapping is live code and the person reading `--help` gets the
+    answer too.
+
+    ### `config edit`
+
+    The `$EDITOR` value is a process fact, and every subcommand already
+    takes its process facts through an injected `environment` dictionary
+    (`report(environment:)`, `AgentComposition.modelSource(environment:)`).
+    So `config edit` reads `EDITOR` from that same injected dictionary, and
+    a test passes a small shell script that writes the file and exits. No
+    test opens a real editor and none can hang.
+
+    ### Baseline
+
+    `swift test` before any change: 457 tests, 47 suites, one known issue at
+    `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift`.
+  timestamp: 2026-09-07T21:32:06.550524+00:00
+- actor: claude-code
+  id: 01m1yxtfvyqmw8db2p8t581z24
+  text: |-
+    ### What landed
+
+    **`config init`** — `AcpAgentCommand.Config.Init` in
+    `Sources/acp-agent/ConfigCommand.swift`. It takes `--cwd`, the
+    `LayerSelection` flags (`--user`/`--project`, project by default) and
+    `--force`. Its body is three lines: build the stack, call
+    `Config.writeDefaultConfiguration(into:of:overwrites:)`, put the path
+    on stdout.
+
+    **One writer, and it is the one that was already there.**
+    `Config.writeDefaultConfiguration` is the shared body: it calls
+    `ConfigurationYAML.documentText(for: AgentConfiguration())` — the
+    generator `/config export` and `config show` already write through —
+    and hands the text to `LayerFileWriter.write`, the writer
+    `instructions eject` already writes through. The `--force` guard and
+    the `LayerFileExistsError` that names the flag are therefore one guard
+    for both commands. No new type, and no `ConfigurationWriter.swift`.
+
+    **`config edit`** — `AcpAgentCommand.Config.Edit`. `plan(environment:)`
+    resolves the editor first, then `stack.nearest("config.yaml")`. With no
+    file in any layer it runs the same `writeDefaultConfiguration` body
+    into the project layer and puts the notice on stderr. `run()` writes
+    the notice, then opens the editor.
+
+    **`Sources/acp-agent/EditorLauncher.swift`** — new. It reads `EDITOR`
+    out of an injected environment dictionary, and runs the command through
+    `/usr/bin/env` with the file path as the last argument, argv only and
+    no shell. `EditorNotNamedError` names the variable;
+    `EditorFailedError` names the command and the status. Both exit 1
+    through the existing `AcpAgentCommand.exitOutcome(for:)` path.
+
+    ### The layer-word mapping
+
+    `LayerSelection.userLayerExportWord = "home"` is the one place that
+    says `--user` and `/config export home` are one layer. The `--user`
+    help text quotes it, so `acp-agent config init --help` now reads:
+    "Write into the user layer, $XDG_CONFIG_HOME/acp-agent/. The /config
+    export slash command spells this same layer home." The byte-identical
+    test spells its `/config` arguments from the same constant.
+
+    ### One change to the shared generator, and why
+
+    The card asks for every key of the schema in the written file. The
+    `Codable` synthesis writes an optional property with `encodeIfPresent`,
+    so `profile.name`, `compaction.hardCeiling` and
+    `compaction.toolOutputLimit` never reached the document at all — a
+    person could not see or edit them.
+
+    `ConfigurationYAML.completed(_:forSection:)` now fills a checked
+    section's missing schema keys with `null` before the emit. It is one
+    change in the one generator, and all four callers get it: `/config`,
+    `/config export`, `config show` and `config init`. The round trip stays
+    exact, because `decodeIfPresent` reads an explicit `null` as the same
+    absence — `ConfigShowTests.jsonDecodesToTheSameValuesAsTheYAML` and
+    `BuiltinCommandsTests.configExportProjectRoundTripsThroughTheLoader`
+    both still pass, and both reload the emitted text through the loader.
+
+    This is a change to a user-facing output, and it is deliberate: it is
+    what "every key of the schema appears in the generated file" means.
+
+    ### How a test drives the editor
+
+    No test opens an interactive editor, and no test can hang.
+    `ConfigEditTests` injects `EDITOR` into the same environment dictionary
+    every subcommand already takes its process facts from. Three shapes:
+
+    - `editor: nil` and `editor: "   "` prove the refusal, and prove no
+      file was written.
+    - `failingEditorCommand = "/usr/bin/false"` for the cases that only
+      need a valid command; it ends at once and changes nothing.
+    - `makeEditorCommand(in:)` writes a two-line `/bin/sh` script into the
+      fixture workspace, `chmod 0755`, whose body is
+      `printf '%s' '<mark>' > "$1"`. The case runs
+      `EditorLauncher.open(plan.file, with: plan.editorCommand)` for real
+      and then reads the mark back out of the file. That is what proves the
+      launcher handed the chosen path to the editor.
+
+    No `Task.sleep` anywhere: `Process.waitUntilExit()` is a wait for a
+    fact.
+
+    ### Verified by hand as well as by test
+
+    Ran the built binary against a throwaway tree: `config init` printed
+    the path and exited 0; a second `config init` exited 1 with
+    "already exists; pass --force to overwrite it"; `config edit` with no
+    `EDITOR` exited 1 with "EDITOR is not set; ..."; `config edit` with
+    `EDITOR=/bin/cat` in an empty tree wrote the file, put the notice on
+    stderr and nothing of its own on stdout. The written file carries all
+    six sections, each under its comment, and now carries `name: null`,
+    `hardCeiling: null` and `toolOutputLimit: null` too.
+  timestamp: 2026-09-07T21:54:06.846818+00:00
+- actor: claude-code
+  id: 01m1yxv4kt0xfn7447w6g6q747
+  text: |-
+    ### implement — changed
+
+    - evidence: 7 files.
+      New: `Sources/acp-agent/EditorLauncher.swift`,
+      `Tests/FoundationModelsACPAgentTests/ConfigInitTests.swift`,
+      `Tests/FoundationModelsACPAgentTests/ConfigEditTests.swift`.
+      Changed: `Sources/acp-agent/ConfigCommand.swift`,
+      `Sources/acp-agent/LayerFileWriter.swift`,
+      `Sources/FoundationModelsACPAgent/Configuration/ConfigurationYAML.swift`,
+      `Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift`.
+    - editor in a test: `$EDITOR` is injected through the environment
+      dictionary the subcommand already takes. One case runs a two-line
+      `/bin/sh` script (mode 0755) that writes a mark into `$1` and ends;
+      the case reads the mark back, which proves the launcher passed the
+      path. Other cases pass `/usr/bin/false`, or no variable at all. No
+      test opens an interactive editor and no test can wait for a person.
+    - `swift build`: clean, no source warning. The build-system line
+      `missing creator for mutated node` for the mlx bundle is not a source
+      warning.
+    - `swift test` three times in sequence: 474 tests in 49 suites passed,
+      each run with the one known issue at
+      `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift`
+      (`orderedSubsequenceAssertionChecksOrderWithGaps`). Baseline was 457
+      in 47; this card adds 17 tests in 2 suites.
+    - next: `/review`.
+  timestamp: 2026-09-07T21:54:28.090547+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
-position_column: todo
-position_ordinal: 8b80
+position_column: doing
+position_ordinal: '80'
 title: config init and config edit, sharing one writer with /config export
 ---
 ## What
@@ -38,35 +213,35 @@ not left guessing whether they are two layers or one.
 file in any layer it runs the `config init` path first and says so on
 stderr. With no `$EDITOR` it exits 1 and names the variable.
 
-- [ ] `config init` over the existing `ConfigurationYAML`
-- [ ] `--user`, `--project`, `--force`, and the `home` mapping
-- [ ] `config edit`, with the missing-file and missing-`$EDITOR` paths
-- [ ] No new generator type
+- [x] `config init` over the existing `ConfigurationYAML`
+- [x] `--user`, `--project`, `--force`, and the `home` mapping
+- [x] `config edit`, with the missing-file and missing-`$EDITOR` paths
+- [x] No new generator type
 
 ## Acceptance Criteria
 
-- [ ] `config init` writes a file that `ConfigurationLoader` reads back
+- [x] `config init` writes a file that `ConfigurationLoader` reads back
       to exactly `AgentConfiguration()`.
-- [ ] Every top-level section and every key of the schema appears in the
+- [x] Every top-level section and every key of the schema appears in the
       generated file.
-- [ ] A second `config init` without `--force` exits 1 and changes no
+- [x] A second `config init` without `--force` exits 1 and changes no
       file.
-- [ ] `config edit` with no `$EDITOR` exits 1 and names the variable.
-- [ ] `config init --user` and `/config export home` write
+- [x] `config edit` with no `$EDITOR` exits 1 and names the variable.
+- [x] `config init --user` and `/config export home` write
       byte-identical files to the same path.
-- [ ] No file named `ConfigurationWriter.swift` is added.
+- [x] No file named `ConfigurationWriter.swift` is added.
 
 ## Tests
 
-- [ ] `ConfigInitTests`: write into a temporary stack, load it back, and
+- [x] `ConfigInitTests`: write into a temporary stack, load it back, and
       assert equality with `AgentConfiguration()`.
-- [ ] A test walks `AgentConfiguration.sectionSchemas` and asserts each
+- [x] A test walks `AgentConfiguration.sectionSchemas` and asserts each
       known key appears in the generated text. A new key with no comment
       fails the test.
-- [ ] The refuse-to-overwrite path, and the `--force` path.
-- [ ] A test asserts `config init --user` and `/config export home`
+- [x] The refuse-to-overwrite path, and the `--force` path.
+- [x] A test asserts `config init --user` and `/config export home`
       produce byte-identical output.
-- [ ] `swift test` passes.
+- [x] `swift test` passes.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

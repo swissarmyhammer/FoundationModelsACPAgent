@@ -51,6 +51,27 @@ struct ConfigCommandFixture {
         workspace.appendingPathComponent(".\(AgentComposition.dotfolderName)", isDirectory: true)
     }
 
+    /// The `config.yaml` path inside one layer root.
+    ///
+    /// The `config` subcommands and the `/config export` slash command
+    /// all write that one file name, so one helper names it for every
+    /// suite that reads what they wrote.
+    ///
+    /// - Parameter directory: The layer root.
+    /// - Returns: The file URL.
+    static func configURL(in directory: URL) -> URL {
+        directory.appendingPathComponent(ConfigurationLoader.configFileName)
+    }
+
+    /// The UTF-8 text of the file at `url`.
+    ///
+    /// - Parameter url: The file to read.
+    /// - Returns: The content as text.
+    /// - Throws: The read error, which a missing file also gives.
+    static func text(at url: URL) throws -> String {
+        try String(contentsOf: url, encoding: .utf8)
+    }
+
     /// Writes `yaml` as the project layer's `config.yaml`.
     ///
     /// - Parameter yaml: The file content.

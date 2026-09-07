@@ -2,12 +2,19 @@ import Foundation
 import FoundationModelsExtras
 
 /// Emits an ``AgentConfiguration`` as commented block YAML (plan.md §14.1,
-/// §2.2, cli-plan.md §5.11). The `/config` builtin prints the text,
-/// `/config export` writes it to a layer's `config.yaml` — the §2.2 eject
-/// counterpart — and `config show` prints it, with the layer of each key
-/// under `--source`. The text round-trips through ``ConfigurationLoader``:
-/// it names only schema keys, so the loader reads it back to the same
-/// configuration.
+/// §2.2, cli-plan.md §5.11).
+///
+/// **This is the one generator, and it has four callers.** The `/config`
+/// builtin prints the text; `/config export` writes it to a layer's
+/// `config.yaml` — the §2.2 eject counterpart; `config show` prints it,
+/// with the layer of each key under `--source`; and `config init` writes
+/// the defaults of a fresh `config.yaml` with it. Two front doors write
+/// the same file, so they must write the same bytes, and one generator is
+/// how they cannot drift.
+///
+/// The text round-trips through ``ConfigurationLoader``: it names only
+/// schema keys, and it names every one of them, so the loader reads it
+/// back to the same configuration.
 ///
 /// The value tree comes from the configuration's own `Codable` encoding, so
 /// the per-tool codecs (a disabled tool as `false`, the `mcp:` server list, a
@@ -132,8 +139,37 @@ public enum ConfigurationYAML {
                     return []
                 }
                 let comment = sectionComments[section].map { [Line(text: "# \($0)", keyPath: nil)] } ?? []
-                return comment + entryLines(key: section, value: value, keyPath: [section], indent: 0)
+                return comment
+                    + entryLines(
+                        key: section, value: completed(value, forSection: section),
+                        keyPath: [section], indent: 0)
             }
+    }
+
+    /// One section's body with every key of its schema present.
+    ///
+    /// The `Codable` synthesis leaves an optional property out of the
+    /// encoding when it is `nil`, so `compaction.hardCeiling` and its
+    /// kind would never reach the document. A person cannot edit a key
+    /// they cannot see, and `config init` promises every key of the
+    /// schema (cli-plan.md §5.11), so an absent key comes back here as
+    /// `null` — the value the loader reads as the same absence, which
+    /// keeps the round trip exact.
+    ///
+    /// - Parameters:
+    ///   - value: The encoded section body.
+    ///   - section: The section's YAML spelling.
+    /// - Returns: The body with a `null` for each key the encoding left
+    ///   out; `value` unchanged for a body that is not a mapping and for
+    ///   the open-ended `tools:` roster, whose own keys always encode.
+    private static func completed(_ value: Any, forSection section: String) -> Any {
+        guard let mapping = value as? [String: Any],
+            let schema = AgentConfiguration.sectionSchemas[section],
+            case .checked(let knownKeys) = schema
+        else {
+            return value
+        }
+        return mapping.merging(knownKeys.map { ($0, NSNull() as Any) }) { present, _ in present }
     }
 
     /// `key: value` at `indent`, with a non-scalar value continued on the
