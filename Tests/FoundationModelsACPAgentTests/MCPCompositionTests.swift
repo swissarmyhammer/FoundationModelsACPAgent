@@ -62,7 +62,8 @@ import Testing
     private static let counterPath =
         "\(dynamicName).\(ScriptedServer.dynamicToolsetReschemadToolName)"
 
-    /// The rendered path of the tool the dynamic scenario adds.
+    /// The rendered path of the tool the dynamic scenario adds on one timer
+    /// and removes on a later one.
     private static let greeterPath =
         "\(dynamicName).\(ScriptedServer.dynamicToolsetVanishingToolName)"
 
@@ -433,19 +434,26 @@ import Testing
         var thrown: (any Error)?
         do {
             let runCode = try #require(surface.tools.compactMap { $0 as? MultiTool }.first)
-            let initial = try await Self.helpPaths(of: runCode)
-            #expect(initial.contains(Self.counterPath))
-            #expect(!initial.contains(Self.greeterPath))
 
-            // The dynamic scenario adds the greeter and sends
-            // `tools/list_changed` on its own timer. Before each turn tick
-            // the mounted surface must not hold it; the tick that follows a
-            // staged rebuild brings it in.
-            try await Self.pollUntil("the greeter applies at a turn boundary") {
-                let beforeTick = try await Self.helpPaths(of: runCode)
-                #expect(!beforeTick.contains(Self.greeterPath))
+            // The dynamic scenario adds the greeter on one timer and removes
+            // it on a later one, and it sends `tools/list_changed` for each
+            // change. The case makes no claim about which stage fired before
+            // this first read: it records the greeter's state, and then
+            // watches for the opposite state.
+            var mounted = try await Self.helpPaths(of: runCode)
+            #expect(mounted.contains(Self.counterPath))
+            let greeterWasMounted = mounted.contains(Self.greeterPath)
+
+            // Between two turn boundaries the mounted surface holds still,
+            // whatever the server sends. A turn boundary is the only thing
+            // that brings a staged rebuild in.
+            try await Self.pollUntil("the greeter changes at a turn boundary") {
+                let betweenBoundaries = try await Self.helpPaths(of: runCode)
+                #expect(betweenBoundaries == mounted)
                 await runCode.turnWillBegin()
-                return try await Self.helpPaths(of: runCode).contains(Self.greeterPath)
+                mounted = try await Self.helpPaths(of: runCode)
+                #expect(mounted.contains(Self.counterPath))
+                return mounted.contains(Self.greeterPath) != greeterWasMounted
             }
         } catch {
             thrown = error

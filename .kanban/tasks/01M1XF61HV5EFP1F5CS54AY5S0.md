@@ -233,8 +233,29 @@ comments:
       at `7360e20`.
     - next: `/review`.
   timestamp: 2026-09-07T15:55:13.341613+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1y9k0xkd1bzen5d2g91dabc
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on the commit `477a3d0`. 7 files reviewed, 0 findings, 0 confirmed, 0 refuted, 0 failed. 4 kanban files and `cli-plan.md` were not reviewed: an ignore rule and no matching validator.
+    - next: none. The card moves to `done`.
+  timestamp: 2026-09-07T16:00:30.643283+00:00
+- actor: claude-code
+  id: 01m1y9kw22yyt053m20kz7j9w0
+  text: |
+    ### finish iteration 1 — clean
+
+    - implement: changed — 9 files. `Sources/acp-agent/InterruptibleComposition.swift` and `Tests/FoundationModelsACPAgentTests/CompositionInterruptTests.swift` are new. The ordinal contract now stands one time only, in `InterruptHandler.react(to:stoppingWith:)`, and the turn window and the composition window both call it. The four Router boxes are ticked, with the upstream commits `4ca1ad5` and `ab9f2de` named.
+    - test: root `swift test` — 428 tests in 45 suites passed with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift`. Nested `swift test --package-path IntegrationTests --no-parallel` — 30 tests in 8 suites with 4 issues, all four the known live-model zero-token defect at `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Evaluations/PythonCLIEvaluation.swift:335`, card `^pez780d`. Both are exceptions that this card names, and this change did not cause either one. `swiftlint` gives 0 violations in 7 files. `swiftformat --lint` gives 0 of 7 files that need a change.
+    - commit: `477a3d0` `feat(acp-agent): stop the model download with the first Ctrl-C`
+    - review: clean — `review sha HEAD~1..HEAD`, 7 files reviewed, 0 findings.
+
+    Necessary conditions before this iteration: the two Router cards `^h59152d` and `^dpq4yxk` became done and were pushed, and `swift package update` moved the pin to `main` at `7360e20`.
+
+    One fact to carry: `ProfileConfiguration.resolveResident` catches `any Error` and puts it in a `ProfileResolutionError`. Thus a `CancellationError` from `Router.resolve` does not reach the CLI as itself, and `InterruptibleComposition` reads the composition task's own `isCancelled` flag in its place.
+  timestamp: 2026-09-07T16:00:58.434953+00:00
+position_column: done
+position_ordinal: b480
 title: 'Router: make resolve honour Task cancellation, so Ctrl-C can stop a download'
 ---
 ### What
