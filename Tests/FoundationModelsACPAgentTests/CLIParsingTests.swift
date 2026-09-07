@@ -172,6 +172,7 @@ struct CLIParsingTests {
             AcpAgentCommand.exitOutcome(for: error)
                 == AcpAgentCommand.ExitOutcome(
                     code: AcpAgentCommand.usageExitCode, writesToStandardError: true))
+        #expect(!AcpAgentCommand.fullMessage(for: error).isEmpty)
     }
 
     // MARK: - `acp` declares no `--cwd` (§5.10)

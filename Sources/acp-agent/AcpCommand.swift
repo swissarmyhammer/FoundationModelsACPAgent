@@ -35,20 +35,12 @@ extension AcpAgentCommand {
             let composed = try await AgentComposition.compose(
                 workingDirectory: AgentComposition.processWorkingDirectory,
                 environment: ProcessInfo.processInfo.environment)
-            let agent = composed.agent
             // The wrapper is what makes the stdin end observable; see
             // `InboundEndTransport`. Underneath it stands the same
             // `StdioTransport` `.stdio` vends, so the wire is unchanged.
             let transport = InboundEndTransport(wrapping: StdioTransport())
-            // The factory closure binds the connection into the agent, so
-            // a prompt turn can notify through it (plan.md §8.1).
             // `.standardError` keeps every log line off the wire (§17).
-            let connection = await AgentSideConnection(
-                stream: transport, logger: .standardError
-            ) { connection in
-                agent.bind(connection: connection)
-                return agent
-            }
+            let connection = await composed.serve(over: transport, logger: .standardError)
             // The client owns the lifecycle (plan.md §17): it closes
             // stdin, and there is no teardown handshake to wait for. So
             // the process stands here for as long as the client speaks,

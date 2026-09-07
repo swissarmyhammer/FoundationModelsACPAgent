@@ -1,6 +1,5 @@
 import ArgumentParser
 import Foundation
-import FoundationModelsACPAgent
 
 /// # The `acp-agent` CLI: the subcommand tree over this package.
 ///
@@ -24,7 +23,7 @@ struct AcpAgentCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "acp-agent",
         abstract: "A headless coding agent over local models, and an ACP server.",
-        version: RoutedACPAgent.buildVersion,
+        version: AgentComposition.version,
         subcommands: [Run.self, Acp.self, Config.self, Instructions.self, Doctor.self],
         defaultSubcommand: Run.self)
 

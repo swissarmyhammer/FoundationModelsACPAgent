@@ -32,6 +32,15 @@ struct ConfigCommandFixture {
         [Self.configHomeVariable: configHome.path]
     }
 
+    /// The environment a composing subcommand reads: ``environment``, and
+    /// the switch that selects the stub model (cli-plan.md §9), so no
+    /// weights load and no network is touched.
+    var stubEnvironment: [String: String] {
+        var stub = environment
+        stub[AgentComposition.stubModelVariable] = AgentComposition.stubModelEnabledValue
+        return stub
+    }
+
     /// The user layer root, `<configHome>/<name>/`.
     var userDirectory: URL {
         configHome.appendingPathComponent(AgentComposition.dotfolderName, isDirectory: true)
@@ -56,5 +65,17 @@ struct ConfigCommandFixture {
     /// - Throws: The directory-creation or write error.
     func writeUserConfig(_ yaml: String) throws {
         try ConfigFileFixture.write(yaml, in: userDirectory)
+    }
+
+    /// Writes a project `config.yaml` that sets `compaction.trigger`.
+    ///
+    /// The key is inert: it changes no model and no tool, so a resolved
+    /// value names exactly one project layer and nothing else. A test
+    /// that must say WHICH stack a load read writes this key.
+    ///
+    /// - Parameter trigger: The value to write.
+    /// - Throws: The directory-creation or write error.
+    func writeProjectCompactionTrigger(_ trigger: Double) throws {
+        try writeProjectConfig("compaction:\n  trigger: \(trigger)\n")
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACP
 import FoundationModelsACPAgent
 import FoundationModelsRouter
 import HuggingFace
@@ -45,6 +46,13 @@ enum AgentComposition {
     /// other value, and an absent variable, select the live loader.
     static let stubModelEnabledValue = "1"
 
+    /// The version the CLI reports. One binary and one version: `--version`
+    /// prints this, and `initialize` reports the same value (plan.md §5).
+    ///
+    /// It stands here because the agent type is named in this file alone
+    /// (cli-plan.md §4).
+    static let version = RoutedACPAgent.buildVersion
+
     /// Which model path the router resolves the profile through.
     enum ModelSource: Equatable {
         /// `LiveModelLoader` over the Hub downloader and tokenizer macros:
@@ -64,14 +72,47 @@ enum AgentComposition {
     /// read the fake sizes back.
     private static let stubCacheDirectoryPrefix = "acp-agent-stub-cache-"
 
-    /// What one composition gives: the agent, and the model path it was
-    /// built over, so a caller can say which one it got.
+    /// What one composition gives: the agent, the model path it was built
+    /// over, so a caller can say which one it got, and the configuration
+    /// the start-up load resolved.
     struct Composed {
         /// The composed agent, with its profile resolved.
         let agent: RoutedACPAgent
 
         /// The model path ``agent`` resolves through.
         let modelSource: ModelSource
+
+        /// The configuration of the start-up load — the first of the two
+        /// loads of cli-plan.md §5.10, keyed by the directory this
+        /// composition was built for. Each session later loads its own
+        /// stack again, keyed by the session's `cwd`.
+        let configuration: AgentConfiguration
+
+        /// Binds ``agent`` to the agent side of `transport`, so a client
+        /// on the other end drives it over ACP.
+        ///
+        /// This is the one place the CLI hands the agent to a connection.
+        /// `run` gives one end of `InMemoryTransport.pair()`, and `acp`
+        /// gives stdin and stdout; nothing else about the two modes
+        /// differs (cli-plan.md §4).
+        ///
+        /// The factory closure binds the connection into the agent, so a
+        /// prompt turn can notify through it (plan.md §8.1).
+        ///
+        /// - Parameters:
+        ///   - transport: The wire end the agent serves on.
+        ///   - logger: The diagnostic sink of the connection. It writes
+        ///     to stderr or nowhere, never to stdout (§5.6).
+        /// - Returns: The bound connection.
+        func serve(
+            over transport: any ACPTransport, logger: ACPLogger = .disabled
+        ) async -> AgentSideConnection {
+            let agent = self.agent
+            return await AgentSideConnection(stream: transport, logger: logger) { connection in
+                agent.bind(connection: connection)
+                return agent
+            }
+        }
     }
 
     /// The process working directory, as a directory URL. It roots the
@@ -104,7 +145,8 @@ enum AgentComposition {
     ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
     ///     from, and ``modelSource(environment:)`` reads the model switch
     ///     from.
-    /// - Returns: The composed agent, and the model path it was built over.
+    /// - Returns: The composed agent, the model path it was built over, and
+    ///   the configuration the load resolved.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
     ///   the configuration load errors, the stub cache directory cannot be
     ///   created, or `ProfileResolutionError` when the profile does not
@@ -121,7 +163,8 @@ enum AgentComposition {
             router: try makeRouter(for: modelSource),
             configuration: configuration,
             environment: environment)
-        return Composed(agent: agent, modelSource: modelSource)
+        return Composed(
+            agent: agent, modelSource: modelSource, configuration: configuration)
     }
 
     /// Makes the loader of `workingDirectory`'s stack under
