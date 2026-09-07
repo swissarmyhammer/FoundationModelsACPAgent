@@ -114,6 +114,79 @@ import Testing
         #expect(loaded.warnings.isEmpty)
     }
 
+    // MARK: - The builtin default models
+
+    /// The empty stack — no `config.yaml` in any layer — gives the three
+    /// model references of cli-plan.md §7 exactly. This is what a person
+    /// gets on a first run with no configuration, so a wrong id here stops
+    /// that run.
+    @Test func theEmptyStackGivesTheThreeDefaultModels() throws {
+        let fixture = Fixture()
+
+        let profile = try fixture.makeLoader().load().configuration.profile
+
+        #expect(profile.standard.map(\.stringValue) == [Self.defaultStandardModel])
+        #expect(profile.flash.map(\.stringValue) == [Self.defaultFlashModel])
+        #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
+    }
+
+    /// No default names an MTP (multi-token prediction) repository
+    /// (cli-plan.md §7.1). Router calls the plain generate path and does not
+    /// read an MTP draft head, so an MTP repository downloads bytes that do
+    /// no work. This test keeps a later edit from making one a default by
+    /// accident.
+    ///
+    /// A Hugging Face repository id keeps its case, and the marker is usually
+    /// upper case. But the case is the publisher's choice, not a rule, so the
+    /// match ignores case: a lower-case `-mtp-` names the same draft head.
+    @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
+    func noDefaultModelNamesAnMTPRepository(reference: ModelRef) {
+        let marker = reference.stringValue.range(
+            of: Self.multiTokenPredictionMarker, options: .caseInsensitive)
+
+        #expect(marker == nil)
+    }
+
+    /// Each default id has the shape `owner/name`: two parts, each one not
+    /// empty, and no space in the id. This is the cheap half of the doctor's
+    /// model check, and it is available now.
+    @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
+    func everyDefaultModelIdHasTheOwnerNameShape(reference: ModelRef) {
+        let identifier = reference.stringValue
+
+        let parts = identifier.split(
+            separator: Self.modelOwnerSeparator, omittingEmptySubsequences: false)
+        let holdsWhitespace = identifier.contains(where: \.isWhitespace)
+
+        #expect(parts.count == Self.modelIdentifierPartCount)
+        #expect(parts.allSatisfy { !$0.isEmpty })
+        #expect(!holdsWhitespace)
+    }
+
+    /// The `standard` slot default of the builtin configuration.
+    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
+
+    /// The `flash` slot default of the builtin configuration.
+    private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"
+
+    /// The `embedding` slot default of the builtin configuration.
+    private static let defaultEmbeddingModel = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+
+    /// Every model reference the builtin defaults name, over the three slots.
+    private static var defaultModelReferences: [ModelRef] {
+        let profile = AgentConfiguration().profile
+        return profile.standard + profile.flash + profile.embedding
+    }
+
+    /// The substring that marks a multi-token-prediction repository.
+    private static let multiTokenPredictionMarker = "-MTP-"
+
+    /// The separator between the owner and the name of a model id.
+    private static let modelOwnerSeparator: Character = "/"
+
+    /// The count of parts an `owner/name` model id has.
+    private static let modelIdentifierPartCount = 2
+
     // MARK: - The per-key source map
 
     /// The source map names the layer that set each key, by dotted key

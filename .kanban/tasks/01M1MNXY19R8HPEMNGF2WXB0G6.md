@@ -86,10 +86,45 @@ comments:
     - evidence: 3 files — `Package.swift` (Noora pinned at `exact: "0.57.0"`), `Sources/acp-agent/Terminal/TerminalRenderer.swift` (new), and the two recovered test files `Tests/FoundationModelsACPAgentTests/TerminalRendererTests.swift` and `Tests/FoundationModelsACPAgentTests/Support/TerminalCapture.swift`. `swift test --filter TerminalRendererTests`: 9 tests, all pass. `swift test` three times in sequence: 437 tests in 46 suites, each run with exactly one known issue, the `withKnownIssue` at `HarnessSmokeTests.swift:239`. `swift build`: no source warning; the only line is the build-system `missing creator for mutated node` for the mlx bundle.
     - next: `/review`
   timestamp: 2026-09-07T18:58:40.664339+00:00
+- actor: claude-code
+  id: 01m1ym6hyedhtnptp4xvw55f7d
+  text: |
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` (commit `532bb32`). 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed. 4 files reviewed; the 4 `.kanban/` files are excluded by `.reviewignore`. No earlier `## Review Findings` section stands on this card.
+    - checks made on the four questions of the card:
+      - Acceptance criteria. `Package.swift:244` declares `https://github.com/tuist/Noora.git` at `exact: nooraVersion`, and `Package.swift:146` sets that version to `0.57.0`. `Package.resolved` holds version `0.57.0`, revision `b01663496be276c7e8b198486febedc4b3689c2f`. `import Noora` stands in one file only under `Sources/`: `Sources/acp-agent/Terminal/TerminalRenderer.swift:2`. `swift test --filter TerminalRendererTests`: 9 tests, all pass.
+      - The tests can fail. The three zero-byte tests are not empty proofs, because `theWorkRunsWhenTheDestinationIsNotATerminal` shows the work still runs and the three terminal-path tests show the same pipe takes a payload. A renderer that drew to the wrong stream fails `theSpinnerDrawsToATerminalDestination`, `theProgressBarDrawsToATerminalDestination` and `theTableDrawsToATerminalDestination`, because each reads the pipe and asserts the text. `aFullRenderLeavesDescriptorOneEmpty` points descriptor 1 at a file and asserts both that the file is empty and that the pipe is not.
+      - The `.none` signal behavior is necessary and correct. `.build/checkouts/Noora/cli/Sources/Noora/Utilities/Terminal.swift` shows `.restoreAndExit` puts a handler on each of SIGINT, SIGTERM, SIGQUIT and SIGHUP, and each handler calls `exit(0)` at line 114. `.restoreOnly` writes an escape sequence to stdout with `print`. `.none` breaks at line 130 and installs nothing. `InterruptHandler` is real in this repository (`Sources/acp-agent/InterruptHandler.swift:70`) and `RunCommand` and `AcpCommand` both install it. So `.none` keeps the interrupt AND keeps the handler away from descriptor 1.
+      - The exact pin is right. The card asks for an exact version so the client package pins the same string, and the version on the card and in the comment, `0.57.0`, is the version in `Package.swift`.
+      - The `progressBarStep` claim holds. `.build/checkouts/Noora/cli/Sources/Noora/Noora.swift:768` and `:1305` show a report of `(@escaping @Sendable (Double) -> Void)` and a message fixed at the call. The byte pair cannot ride it, so the step channel is correct.
+      - The three components the renderer calls do not hide the cursor. `withoutCursor`, which writes to stdout, is called only from `TextPrompt`, `PaginatedTable`, `UpdatingSelectableTable`, `UpdatingTable` and `SelectableTable`, and the renderer calls none of them.
+    - next: `/commit`, or the next card
+  timestamp: 2026-09-07T19:05:56.430961+00:00
+- actor: claude-code
+  id: 01m1ym7k6dc0qkeaea70w644ag
+  text: |
+    ### finish iteration 1 — clean
+
+    - implement: changed — `git stash pop` recovered the three staged files with no conflict. `Package.swift` declares Noora at `exact: "0.57.0"` (`nooraVersion` at `Package.swift:146`, the dependency at `:244`, the target dependency at `:268`). `Sources/acp-agent/Terminal/TerminalRenderer.swift` is new, 304 lines, and is the only file under `Sources/` that holds `import Noora`. The two test files came back from the stash unchanged.
+    - red before green: `swift build --build-tests` gave `cannot find 'TerminalRenderer' in scope` before the source existed.
+    - test: three `swift test` runs in sequence, each 437 tests in 46 suites with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`, and no other issue. The count rose from 428 because this card adds 9 tests. `swift test --filter 'TerminalRendererTests'` passed, 9 tests. `swift build` gave no source warning.
+    - commit: `532bb32` `feat(cli): use Noora, and add the agent CLI TerminalRenderer`
+    - review: clean — `review sha HEAD~1..HEAD`, 7 validator runs, 0 findings.
+
+    Two facts shaped the design, and the review confirmed both against the Noora checkout:
+
+    - Noora's `Terminal` puts a handler on SIGINT, SIGTERM, SIGQUIT and SIGHUP for `.restoreAndExit`, and each handler calls `exit(0)`. The renderer sends `signalBehavior: .none`, which installs nothing, so `InterruptHandler` keeps the interrupt. The review added a second reason: the `.restoreOnly` and `.restoreAndExit` handlers write an escape sequence to file descriptor 1 with `print`.
+    - Noora's `progressBarStep` takes `task: @escaping (@escaping @Sendable (Double) -> Void) async throws -> V` with the message fixed at the call, so it cannot carry the byte pair. The bar goes through the step channel in its place.
+
+    The review also confirmed that no path of the renderer reaches the stdout `print` in Noora's `hideCursor`: only `TextPrompt`, `PaginatedTable`, `UpdatingSelectableTable`, `UpdatingTable` and `SelectableTable` call `withoutCursor`, and the renderer calls none of them.
+
+    The stash is now empty. Card `^04kf7ha` recorded where this work was kept while the test target could not compile.
+  timestamp: 2026-09-07T19:06:30.477606+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b780
 title: Adopt Noora, and write the agent CLI's TerminalRenderer
 ---
 ### What

@@ -100,17 +100,25 @@ extension AgentConfiguration {
 
 /// The `profile:` section: the candidate models of each slot, in preference
 /// order, and the profile's name. The defaults are a coding profile that
-/// operates on a 16 GB machine (plan.md §2.2), the same profile Router's
-/// README documents.
+/// operates on a 32 GB machine (cli-plan.md §7). A 27B model at 4 bits is
+/// approximately 15 GB on its own, and Router's `JointFit` measures the three
+/// models together against the memory budget. Thus a 16 GB machine is too
+/// small, and `plan.md` §2.2, which gives that figure, is out of date.
+///
+/// No default names an MTP (multi-token prediction) repository
+/// (cli-plan.md §7.1). Router calls the plain generate path and does not read
+/// an MTP draft head, thus such a repository downloads bytes that do no work.
 public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// The default candidates of the `standard` slot.
-    public static let defaultStandard: [ModelRef] = ["mlx-community/Qwen2.5-14B-Instruct-4bit"]
+    public static let defaultStandard: [ModelRef] = ["mlx-community/Qwen3.8-27B-4bit"]
 
     /// The default candidates of the `flash` slot.
-    public static let defaultFlash: [ModelRef] = ["mlx-community/Qwen2.5-3B-Instruct-4bit"]
+    public static let defaultFlash: [ModelRef] = ["mlx-community/Qwen3-4B-4bit"]
 
     /// The default candidates of the `embedding` slot.
-    public static let defaultEmbedding: [ModelRef] = ["mlx-community/bge-small-en-v1.5-4bit"]
+    public static let defaultEmbedding: [ModelRef] = [
+        "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+    ]
 
     /// The default one-line description of the profile's intent.
     public static let defaultDescription = "Local coding assistant."

@@ -29,8 +29,8 @@ import Tokenizers
 /// The ceiling of ONE prompt turn, in seconds: the prompt to its
 /// idle terminator, covering a multi-step build with a venv creation
 /// and a network package install on a local model. The measured
-/// 2026-09-02 probe build on the default 14B model took about one
-/// minute end to end.
+/// 2026-09-02 probe build, on the 14B model that was then the
+/// default, took about one minute end to end.
 private let evalSampleIdleCeilingSeconds = 300
 
 /// The number of seconds in one minute, for the suite-ceiling
@@ -60,11 +60,12 @@ private let evalMaxTurnsPerSample = 4
 /// The standard-slot model the gated tier pins, in Router's own
 /// eval convention (`CompactionEvalRealModel`): a NAMED model, so a
 /// run's means are attributable and comparable across days. Neither
-/// this model nor the in-code default (Qwen2.5-14B-Instruct) cleared
-/// the bar on the 2026-09-02 evidence runs; the per-sample evidence
-/// lines name the two measured failure modes — malformed tool calls
-/// that end a turn with `_error`, and intermittent zero-token empty
-/// responses. The pin is for attribution, not a clearing claim.
+/// this model nor the in-code default of that date
+/// (Qwen2.5-14B-Instruct) cleared the bar on the 2026-09-02 evidence
+/// runs; the per-sample evidence lines name the two measured failure
+/// modes — malformed tool calls that end a turn with `_error`, and
+/// intermittent zero-token empty responses. The pin is for
+/// attribution, not a clearing claim.
 private let evalStandardModel = "mlx-community/Qwen2.5-Coder-32B-Instruct-4bit"
 
 /// The profile section the gated tier appends to the subject's user
