@@ -15,10 +15,11 @@ enum RunSession {
 }
 
 /// What one `run` turn gave back.
+///
+/// The answer itself is not here. It went to the ``AnswerWriter`` chunk
+/// by chunk while the turn ran (cli-plan.md §5.6), so the text has one
+/// path and no second copy.
 struct RunTurnResult {
-    /// The agent text of the turn, chunks joined in arrival order.
-    let answer: String
-
     /// The stop reason the turn ended on, or `nil` when the wire ended
     /// before an idle update arrived.
     let stopReason: StopReason?
@@ -55,17 +56,7 @@ enum RunTurn {
     /// stands on both ends of the pair, so the name is the binary's.
     private static let clientName = "acp-agent"
 
-    /// What one turn collected off the update stream.
-    private struct CollectedAnswer {
-        /// The agent text so far, chunks joined in arrival order.
-        var text = ""
-
-        /// The stop reason of the idle update, or `nil` until one
-        /// arrives.
-        var stopReason: StopReason?
-    }
-
-    /// Runs one turn against `composed`, and gives back what it said.
+    /// Runs one turn against `composed`, and writes what it said.
     ///
     /// The drive is the protocol's own: `initialize`, then `session/new`
     /// or `session/load`, then `session/prompt`, then the notifications
@@ -75,12 +66,18 @@ enum RunTurn {
     ///   - composed: The composition whose agent serves the agent end.
     ///   - session: The session the turn runs in.
     ///   - prompt: The text of the one turn.
-    /// - Returns: The answer text, and the stop reason of the turn.
+    ///   - writer: The writer each `agent_message_chunk` goes to, as it
+    ///     arrives (cli-plan.md §5.6).
+    /// - Returns: The stop reason of the turn.
     /// - Throws: ``UnknownResumedSessionError`` when a resumed id is in no
-    ///   listing, and whatever the handshake, the session call or the
-    ///   prompt throws.
+    ///   listing, ``AnswerWriteError`` when a chunk cannot be written,
+    ///   and whatever the handshake, the session call or the prompt
+    ///   throws.
     static func answer(
-        of composed: AgentComposition.Composed, in session: RunSession, prompt: String
+        of composed: AgentComposition.Composed,
+        in session: RunSession,
+        prompt: String,
+        into writer: AnswerWriter
     ) async throws -> RunTurnResult {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agentConnection = await composed.serve(over: agentEnd)
@@ -91,7 +88,8 @@ enum RunTurn {
         // rethrown after the teardown.
         let outcome: Result<RunTurnResult, any Error>
         do {
-            outcome = .success(try await drive(connection, in: session, prompt: prompt))
+            outcome = .success(
+                try await drive(connection, in: session, prompt: prompt, into: writer))
         } catch {
             outcome = .failure(error)
         }
@@ -109,11 +107,15 @@ enum RunTurn {
     ///   - connection: The client end of the pair.
     ///   - session: The session the turn runs in.
     ///   - prompt: The text of the one turn.
-    /// - Returns: The answer text, and the stop reason of the turn.
-    /// - Throws: Whatever the handshake, the session call or the prompt
-    ///   throws.
+    ///   - writer: The writer each `agent_message_chunk` goes to.
+    /// - Returns: The stop reason of the turn.
+    /// - Throws: Whatever the handshake, the session call, the prompt or
+    ///   the writer throws.
     private static func drive(
-        _ connection: ClientSideConnection, in session: RunSession, prompt: String
+        _ connection: ClientSideConnection,
+        in session: RunSession,
+        prompt: String,
+        into writer: AnswerWriter
     ) async throws -> RunTurnResult {
         _ = try await connection.initialize(
             InitializeRequest(
@@ -124,17 +126,18 @@ enum RunTurn {
         // Subscribe before the prompt: an update with no subscriber is
         // dropped by the connection's router.
         let updates = connection.updates(for: sessionId)
-        let collector = Task { await collect(from: updates) }
+        let collector = Task { try await collect(from: updates, into: writer) }
         do {
             _ = try await connection.prompt(
                 PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: sessionId))
         } catch {
             collector.cancel()
-            _ = await collector.value
+            // The prompt failure is the one to report, so a write
+            // failure the collector met on the way down goes with it.
+            _ = try? await collector.value
             throw error
         }
-        let collected = await collector.value
-        return RunTurnResult(answer: collected.text, stopReason: collected.stopReason)
+        return RunTurnResult(stopReason: try await collector.value)
     }
 
     /// Opens the session the turn runs in.
@@ -192,27 +195,31 @@ enum RunTurn {
         throw UnknownResumedSessionError(sessionId: sessionId.rawValue)
     }
 
-    /// Consumes the session's update stream: joins the text of each agent
-    /// message chunk, and stops at the first idle state update.
+    /// Consumes the session's update stream: writes the text of each
+    /// agent message chunk as it arrives, and stops at the first idle
+    /// state update.
     ///
-    /// - Parameter updates: The session's update stream, subscribed
-    ///   before the prompt.
-    /// - Returns: The text, and the stop reason, or no stop reason when
-    ///   the stream ended before an idle update arrived.
-    private static func collect(from updates: AsyncStream<SessionUpdate>) async -> CollectedAnswer {
-        var collected = CollectedAnswer()
+    /// - Parameters:
+    ///   - updates: The session's update stream, subscribed before the
+    ///     prompt.
+    ///   - writer: The writer each chunk goes to.
+    /// - Returns: The stop reason, or `nil` when the stream ended before
+    ///   an idle update arrived.
+    /// - Throws: ``AnswerWriteError`` when a chunk cannot be written.
+    private static func collect(
+        from updates: AsyncStream<SessionUpdate>, into writer: AnswerWriter
+    ) async throws -> StopReason? {
         for await update in updates {
             switch update {
             case .agentMessageChunk(let chunk):
                 guard case .text(let content) = chunk.content else { break }
-                collected.text += content.text
+                try writer.receive(content.text)
             case .stateUpdate(.idle(let idle)):
-                collected.stopReason = idle.stopReason
-                return collected
+                return idle.stopReason
             default:
                 break
             }
         }
-        return collected
+        return nil
     }
 }

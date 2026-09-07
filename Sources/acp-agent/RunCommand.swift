@@ -70,24 +70,34 @@ extension AcpAgentCommand {
         }
 
         mutating func run() async throws {
-            try await report(environment: ProcessInfo.processInfo.environment).write()
+            _ = try await perform(
+                environment: ProcessInfo.processInfo.environment, into: AnswerWriter())
         }
 
-        /// Runs the one turn and builds the report: the answer on stdout,
-        /// verbatim and with no trailing newline (§5.6), and nothing on
-        /// stderr.
+        /// Runs the one turn: the prompt by the §5.5 table, and the
+        /// answer to `writer` chunk by chunk as it arrives (§5.6).
         ///
-        /// - Parameter environment: The environment the stack reads
-        ///   `XDG_CONFIG_HOME` from, and the composition reads the model
-        ///   switch from.
-        /// - Returns: The report.
-        /// - Throws: `ValidationError` when no prompt argument is given,
-        ///   and whatever the composition or the turn throws.
-        func report(environment: [String: String]) async throws -> CommandReport {
-            let text = try promptText()
+        /// stdout carries the answer bytes and nothing else. Not a
+        /// session id, not a token count, not a stop reason: those are
+        /// stderr's, and they arrive with their own cards.
+        ///
+        /// - Parameters:
+        ///   - environment: The environment the stack reads
+        ///     `XDG_CONFIG_HOME` from, and the composition reads the
+        ///     model switch from.
+        ///   - writer: The writer the answer goes to. `run()` gives the
+        ///     one over standard output; a test gives one over a pipe.
+        /// - Returns: The stop reason of the turn.
+        /// - Throws: `ValidationError` for the terminal row of the §5.5
+        ///   table, and whatever the composition, the turn or the writer
+        ///   throws.
+        func perform(
+            environment: [String: String], into writer: AnswerWriter
+        ) async throws -> RunTurnResult {
+            let text = try promptSource.text()
             let composed = try await compose(environment: environment)
-            let result = try await RunTurn.answer(of: composed, in: session, prompt: text)
-            return CommandReport(standardOutput: result.answer, standardErrorLines: [])
+            return try await RunTurn.answer(
+                of: composed, in: session, prompt: text, into: writer)
         }
 
         /// Composes the agent of this run — the first of the two loads of
@@ -120,19 +130,10 @@ extension AcpAgentCommand {
             return .resumed(SessionId(rawValue: resumeSessionId))
         }
 
-        /// The text of the one turn: the prompt argument.
-        ///
-        /// The stdin rows of the §5.5 source table land with the
-        /// prompt-source card. Until then an absent argument is the
-        /// table's terminal row, which is a usage error.
-        ///
-        /// - Returns: The prompt text.
-        /// - Throws: `ValidationError` when no prompt argument is given.
-        private func promptText() throws -> String {
-            guard let prompt else {
-                throw ValidationError("a prompt is necessary: give it as the argument.")
-            }
-            return prompt
+        /// Where this run takes its prompt from: the §5.5 table, over the
+        /// process's own stdin.
+        var promptSource: PromptSource {
+            PromptSource(argument: prompt)
         }
     }
 }

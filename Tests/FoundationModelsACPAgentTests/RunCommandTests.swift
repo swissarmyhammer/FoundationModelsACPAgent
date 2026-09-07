@@ -33,6 +33,10 @@ struct RunCommandTests {
     /// The text the scripted model streams as its one delta.
     private static let scriptedAnswer = "an answer over the in-process pair"
 
+    /// The deltas of a scripted answer that arrives in parts, so the
+    /// byte-for-byte proof reads more than one chunk.
+    private static let scriptedChunks = ["an answer ", "in three ", "parts"]
+
     /// The `compaction.trigger` of the first repository. The key is
     /// inert — it changes no model and no tool — so a resolved value
     /// names exactly one project layer and nothing else.
@@ -159,26 +163,52 @@ struct RunCommandTests {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-turn-repo")
         let composed = try await Self.scriptedComposition(
             script: [.textDelta(Self.scriptedAnswer), .endTurn], label: "RunCommandTests-turn")
+        let capture = try AnswerCapture(label: "RunCommandTests-turn-answer")
 
         let result = try await RunTurn.answer(
-            of: composed, in: .new(workingDirectory: workspace), prompt: Self.promptText)
+            of: composed,
+            in: .new(workingDirectory: workspace),
+            prompt: Self.promptText,
+            into: capture.writer)
 
-        #expect(result.answer == Self.scriptedAnswer)
+        #expect(try capture.text() == Self.scriptedAnswer)
         #expect(result.stopReason == .endTurn)
     }
 
-    /// `acp-agent run "<prompt>"` runs the whole turn and reports the
-    /// answer on stdout, with nothing on stderr. The stub model answers
-    /// with the prompt it received, so the answer carries the prompt.
+    /// The bytes on the descriptor equal the scripted chunks joined,
+    /// with nothing added and nothing removed (cli-plan.md §5.6). The
+    /// model streams three deltas, so the proof reads a whole answer and
+    /// not one chunk. This is what `acp-agent run "hi" > out.txt` puts
+    /// in the file.
+    @Test(.timeLimit(.minutes(1)))
+    func theTurnWritesTheScriptedChunksByteForByte() async throws {
+        let workspace = makeResolvedDirectory(label: "RunCommandTests-bytes-repo")
+        let composed = try await Self.scriptedComposition(
+            script: Self.scriptedChunks.map { .textDelta($0) } + [.endTurn],
+            label: "RunCommandTests-bytes")
+        let capture = try AnswerCapture(label: "RunCommandTests-bytes-answer")
+
+        _ = try await RunTurn.answer(
+            of: composed,
+            in: .new(workingDirectory: workspace),
+            prompt: Self.promptText,
+            into: capture.writer)
+
+        #expect(try capture.bytes() == Data(Self.scriptedChunks.joined().utf8))
+    }
+
+    /// `acp-agent run "<prompt>"` runs the whole turn and writes the
+    /// answer to the descriptor. The stub model answers with the prompt
+    /// it received, so the bytes carry the prompt.
     @Test(.timeLimit(.minutes(2)))
-    func theRunReportCarriesTheAnswer() async throws {
+    func theRunWritesTheAnswerToTheDescriptor() async throws {
         let fixture = ConfigCommandFixture(label: "RunCommandTests-report")
+        let capture = try AnswerCapture(label: "RunCommandTests-report-answer")
 
-        let report = try await Self.parseRun(in: fixture)
-            .report(environment: fixture.stubEnvironment)
+        _ = try await Self.parseRun(in: fixture)
+            .perform(environment: fixture.stubEnvironment, into: capture.writer)
 
-        #expect(report.standardOutput.contains(Self.promptText))
-        #expect(report.standardErrorLines.isEmpty)
+        #expect(try capture.text().contains(Self.promptText))
     }
 
     // MARK: - `--resume` through `session/load` (cli-plan.md §5.4)
@@ -191,15 +221,23 @@ struct RunCommandTests {
     func resumeRunsTheSecondTurnInTheRecordedSession() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-resume-repo")
         let composed = try await Self.resumableComposition(label: "RunCommandTests-resume")
+        let first = try AnswerCapture(label: "RunCommandTests-resume-first")
         _ = try await RunTurn.answer(
-            of: composed, in: .new(workingDirectory: workspace), prompt: Self.promptText)
+            of: composed,
+            in: .new(workingDirectory: workspace),
+            prompt: Self.promptText,
+            into: first.writer)
         let opened = try await Self.oneSessionId(of: composed)
+        let capture = try AnswerCapture(label: "RunCommandTests-resume-second")
 
         let result = try await RunTurn.answer(
-            of: composed, in: .resumed(opened), prompt: Self.resumedPromptText)
+            of: composed,
+            in: .resumed(opened),
+            prompt: Self.resumedPromptText,
+            into: capture.writer)
 
         #expect(try await Self.oneSessionId(of: composed) == opened)
-        #expect(result.answer.contains(Self.resumedPromptText))
+        #expect(try capture.text().contains(Self.resumedPromptText))
         #expect(result.stopReason == .endTurn)
     }
 
@@ -211,10 +249,14 @@ struct RunCommandTests {
             script: [.textDelta(Self.scriptedAnswer), .endTurn],
             label: "RunCommandTests-unlisted")
         let unlisted = SessionId(rawValue: ULID().ulidString)
+        let capture = try AnswerCapture(label: "RunCommandTests-unlisted-answer")
 
         await #expect(throws: UnknownResumedSessionError.self) {
             _ = try await RunTurn.answer(
-                of: composed, in: .resumed(unlisted), prompt: Self.promptText)
+                of: composed,
+                in: .resumed(unlisted),
+                prompt: Self.promptText,
+                into: capture.writer)
         }
     }
 
