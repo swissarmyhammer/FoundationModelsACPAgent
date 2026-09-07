@@ -66,6 +66,10 @@ import Testing
     /// server after the first connect.
     private static let boundaryExtraPath = "\(boundaryName).\(extraToolName)"
 
+    /// The rendered path of the tool the reconnect case adds to the catalog
+    /// its changed reconnect comes back with.
+    private static let reconnectExtraPath = "\(reconnectName).\(extraToolName)"
+
     /// The snippet that answers the mounted surface as a JSON array of
     /// paths.
     private static let helpSnippet = "return help();"
@@ -75,10 +79,6 @@ import Testing
 
     /// How long a poll sleeps between two reads.
     private static let pollInterval = Duration.milliseconds(50)
-
-    /// How long a case waits, after the change it expects nothing from, to
-    /// show that no stage follows.
-    private static let noStageSettleDelay = Duration.milliseconds(300)
 
     // MARK: - Harness
 
@@ -547,16 +547,23 @@ import Testing
         // The connect snapshot always rebuilds one time.
         try await Self.pollUntil("the connect snapshot staged") { recording.count >= 1 }
 
-        // A reconnect with the same catalog stages nothing more.
+        // A reconnect with the same catalog stages nothing more. The
+        // reconnect that follows is what proves it, and no clock does.
         try await server.reconnect()
-        try await Task.sleep(for: Self.noStageSettleDelay)
-        #expect(recording.count == 1)
 
         // A reconnect that comes back with a moved catalog stages a rebuild.
+        // The refresher reads the snapshots of one server in order, so a
+        // stage of the unchanged reconnect above would already be recorded
+        // when this one is. The poll ends on a fact the rebuilt registry
+        // carries, and the count then tells the whole story: two stages, the
+        // connect snapshot and this reconnect. A stage from the unchanged
+        // reconnect would make it three.
         publishExtraTool.withLock { $0 = true }
         try await server.reconnect()
-        try await Self.pollUntil("the changed reconnect staged") { recording.count >= 2 }
-        #expect(recording.newestPaths.contains("\(Self.reconnectName).\(Self.extraToolName)"))
+        try await Self.pollUntil("the changed reconnect staged") {
+            recording.newestPaths.contains(Self.reconnectExtraPath)
+        }
+        #expect(recording.count == 2)
 
         // The pool stops the attached refresher before it closes the
         // server, so releasing everything trips no deinit assertion.
