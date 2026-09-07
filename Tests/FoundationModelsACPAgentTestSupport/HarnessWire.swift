@@ -12,12 +12,10 @@ import Synchronization
 /// real pipes in process cannot use it. ``HarnessWire/makeStdioPipes()``
 /// pairs two of these instead (cli-plan.md §9).
 ///
-/// Marked `@unchecked Sendable` because it stores `FileHandle` values,
-/// which are not `Sendable`. Every mutation is serialized: the outbound
-/// handle is reached only under ``output``'s lock, so two whole-frame
-/// writes never interleave, and the inbound handle is read only by the
-/// readability handler the initializer installs.
-public final class PipeTransport: ACPTransport, @unchecked Sendable {
+/// Every stored property is `Sendable`, so the conformance is plain: the
+/// outbound handle is reached only under ``output``'s lock, which is
+/// what keeps two whole-frame writes from interleaving.
+public final class PipeTransport: ACPTransport, Sendable {
     /// The inbound chunks, read until end of file.
     public let bytes: AsyncThrowingStream<Data, any Error>
 
