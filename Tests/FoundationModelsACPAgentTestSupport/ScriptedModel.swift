@@ -128,13 +128,24 @@ public enum ScriptedModelError: Error, Equatable {
 ///
 /// Every generating call plays the same script from the start.
 ///
-/// Each `toolCall` step also appends the SDK transcript entries a real
-/// model session would record — a `.toolCalls` entry before the
-/// invocation, and a `.toolOutput` entry after it — so Router's
-/// transcript diff derives the `toolCall` and `toolStatus` session
-/// events for the tier-2 projection proofs (plan.md §8.4, §20.1). The
-/// entries are SDK `Transcript` values with public initializers, never
-/// Router recording values.
+/// The synthesized transcript has the shape a real model session's has,
+/// so a recording over it is a recording of a real turn shape (task
+/// ^jz016kq):
+///
+/// - one leading `.instructions` entry, made once and never rewritten,
+///   carrying the session instructions and one `Transcript.ToolDefinition`
+///   per handed tool;
+/// - one `.prompt` entry per generating call, before the play;
+/// - a `.toolCalls` entry before each played invocation and a
+///   `.toolOutput` entry after it, so Router's transcript diff derives
+///   the `toolCall` and `toolStatus` session events for the tier-2
+///   projection proofs (plan.md §8.4, §20.1);
+/// - one `.response` entry after a play that reached the turn end. A
+///   failing or cancelled play appends none, as a real failed turn
+///   records none.
+///
+/// The entries are SDK `Transcript` values with public initializers,
+/// never Router recording values.
 ///
 /// A class, not a struct, because `LanguageModelSessionBackend`
 /// requires `AnyObject`. The one mutable member is guarded by a
@@ -187,6 +198,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// The tools the session was handed; `toolCall` steps invoke them.
     private let tools: [any Tool]
 
+    /// The session instructions the leading `.instructions` entry
+    /// carries, or `nil` when the session was made without any.
+    private let instructions: String?
+
     /// The recorder each received prompt goes to, or `nil` when the
     /// test does not observe the prompt.
     private let recorder: PromptRecorder?
@@ -196,19 +211,33 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// - Parameters:
     ///   - script: The steps to play, in order.
     ///   - tools: The tools `toolCall` steps invoke.
+    ///   - instructions: The session instructions the leading
+    ///     `.instructions` entry carries, or `nil` for none.
+    ///   - seededEntries: The transcript a restored session starts from,
+    ///     in place of a fresh leading `.instructions` entry. Empty for
+    ///     a fresh session.
     ///   - recorder: The recorder each received prompt goes to, or
     ///     `nil` to record nothing.
-    public init(script: [ScriptedTurnStep], tools: [any Tool], recorder: PromptRecorder? = nil) {
+    public init(
+        script: [ScriptedTurnStep],
+        tools: [any Tool],
+        instructions: String? = nil,
+        seededEntries: [Transcript.Entry] = [],
+        recorder: PromptRecorder? = nil
+    ) {
         self.script = script
         self.tools = tools
+        self.instructions = instructions
         self.recorder = recorder
+        let opening =
+            seededEntries.isEmpty
+            ? [Self.instructionsEntry(instructions: instructions, tools: tools)]
+            : seededEntries
+        synthesized.withLock { $0.entries = opening }
     }
 
     public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-        await recorder?.record(prompt: prompt)
-        var text = ""
-        try await playScript { text += $0 }
-        return text
+        try await playTurn(prompt: prompt) { _ in }
     }
 
     public func respond(
@@ -221,8 +250,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         AsyncThrowingStream { continuation in
             let playback = Task {
                 do {
-                    await recorder?.record(prompt: prompt)
-                    try await playScript { continuation.yield($0) }
+                    _ = try await playTurn(prompt: prompt) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -233,7 +261,12 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     public func makeFork() -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
+        ScriptedSessionBackend(
+            script: script,
+            tools: tools,
+            instructions: instructions,
+            seededEntries: transcriptEntries(),
+            recorder: recorder)
     }
 
     public func transcriptEntries() -> [Transcript.Entry] {
@@ -246,6 +279,69 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
 
     public func usageTokenCounts() -> (input: Int, output: Int)? {
         Self.scriptedUsage
+    }
+
+    /// Plays one whole turn: records the prompt, appends the turn's
+    /// `.prompt` entry, plays the script, and appends the turn's
+    /// `.response` entry.
+    ///
+    /// A play that throws appends no `.response` entry, because a real
+    /// model session records none for a turn that never answered.
+    ///
+    /// - Parameters:
+    ///   - prompt: The prompt the turn answers.
+    ///   - yield: Receives each text delta, in order.
+    /// - Returns: The answer text, the deltas joined in order.
+    /// - Throws: Whatever ``playScript(yield:)`` throws.
+    private func playTurn(prompt: String, yield: (String) -> Void) async throws -> String {
+        await recorder?.record(prompt: prompt)
+        appendPromptEntry(prompt: prompt)
+        var text = ""
+        try await playScript { delta in
+            text += delta
+            yield(delta)
+        }
+        appendResponseEntry(text: text)
+        return text
+    }
+
+    /// The leading `.instructions` entry of a fresh scripted session:
+    /// the instructions text, and one tool definition per handed tool.
+    ///
+    /// The entry is made once, in `init`, and never rewritten. Its
+    /// stability across turns is what task ^jz016kq proves.
+    ///
+    /// - Parameters:
+    ///   - instructions: The instructions text, or `nil` for none.
+    ///   - tools: The tools the session was handed.
+    /// - Returns: The entry.
+    private static func instructionsEntry(
+        instructions: String?, tools: [any Tool]
+    ) -> Transcript.Entry {
+        let segments: [Transcript.Segment] =
+            instructions.map { [.text(Transcript.TextSegment(content: $0))] } ?? []
+        return .instructions(
+            Transcript.Instructions(
+                segments: segments,
+                toolDefinitions: tools.map { Transcript.ToolDefinition(tool: $0) }))
+    }
+
+    /// Appends the `.prompt` entry of one turn.
+    ///
+    /// - Parameter prompt: The prompt the turn answers.
+    private func appendPromptEntry(prompt: String) {
+        let entry = Transcript.Entry.prompt(
+            Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: prompt))]))
+        synthesized.withLock { $0.entries.append(entry) }
+    }
+
+    /// Appends the `.response` entry that closes one turn.
+    ///
+    /// - Parameter text: The answer text the play produced.
+    private func appendResponseEntry(text: String) {
+        let entry = Transcript.Entry.response(
+            Transcript.Response(segments: [.text(Transcript.TextSegment(content: text))]))
+        synthesized.withLock { $0.entries.append(entry) }
     }
 
     /// Plays the script: yields each delta, invokes each scripted tool
@@ -418,23 +514,27 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     }
 
     public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: [], recorder: recorder)
+        ScriptedSessionBackend(
+            script: script, tools: [], instructions: instructions, recorder: recorder)
     }
 
     public func makeSession(
         instructions: String?, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
+        ScriptedSessionBackend(
+            script: script, tools: tools, instructions: instructions, recorder: recorder)
     }
 
     public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: [], recorder: recorder)
+        ScriptedSessionBackend(
+            script: script, tools: [], seededEntries: Array(transcript), recorder: recorder)
     }
 
     public func makeSession(
         transcript: Transcript, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(script: script, tools: tools, recorder: recorder)
+        ScriptedSessionBackend(
+            script: script, tools: tools, seededEntries: Array(transcript), recorder: recorder)
     }
 }
 

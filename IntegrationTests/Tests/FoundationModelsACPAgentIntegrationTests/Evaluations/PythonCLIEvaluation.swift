@@ -59,14 +59,21 @@ private let evalMaxTurnsPerSample = 4
 
 /// The standard-slot model the gated tier pins, in Router's own
 /// eval convention (`CompactionEvalRealModel`): a NAMED model, so a
-/// run's means are attributable and comparable across days. Neither
-/// this model nor the in-code default of that date
-/// (Qwen2.5-14B-Instruct) cleared the bar on the 2026-09-02 evidence
-/// runs; the per-sample evidence lines name the two measured failure
-/// modes — malformed tool calls that end a turn with `_error`, and
-/// intermittent zero-token empty responses. The pin is for
-/// attribution, not a clearing claim.
-private let evalStandardModel = "mlx-community/Qwen2.5-Coder-32B-Instruct-4bit"
+/// run's means are attributable and comparable across days.
+///
+/// This is the SHIPPED standard default,
+/// ``ProfileConfiguration/defaultStandard``. An evaluation of the agent
+/// must drive the model the agent ships, or it measures a product
+/// nobody uses.
+///
+/// It was `Qwen2.5-Coder-32B-Instruct-4bit` until 2026-09-08. That pin
+/// stayed after the defaults moved to Qwen3, so every recorded run
+/// measured a model this package does not ship. The 2026-09-07 run
+/// under the stale pin failed every sample, and each `runCode` snippet
+/// failed to parse with "Unexpected token '('" — a reading of that
+/// model, and not of this agent. Keep this constant equal to the
+/// shipped default.
+private let evalStandardModel = "mlx-community/Qwen3.8-27B-4bit"
 
 /// The profile section the gated tier appends to the subject's user
 /// config, pinning ``evalStandardModel`` for the standard slot. The
