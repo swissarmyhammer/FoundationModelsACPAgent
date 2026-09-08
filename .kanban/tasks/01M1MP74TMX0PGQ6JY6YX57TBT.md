@@ -121,12 +121,83 @@ comments:
       to commit the file; `.gitignore` line 6 forbids it, under "no sibling
       package commits it". Every other item of the card is done and green.
   timestamp: 2026-09-08T00:56:11.507+00:00
+- actor: claude-code
+  id: 01m1z8bnbbhndma501n1s430zf
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: changed, then stuck — 11 files, 4 new
+    - test: green — root swift test 484 tests in 50 suites, one known issue; IntegrationTests 33 tests in 10 suites, 32 passed, 1 failed
+    - commit: 31fca73 (the code only; Package.resolved is not in it)
+    - outcome: stuck. A person must settle one conflict.
+
+    **The conflict.** This card says "Refresh and commit `Package.resolved`". Line 6
+    of `.gitignore` ignores that file, and states the reason: "Each family
+    dependency tracks a branch. The lock file pins one revision on one machine, and
+    no sibling package commits it." The two rules cannot both be correct, so the
+    loop does not choose between them. The refresh is done — `swift package update`
+    moved the client pin to `d93ac7f`, which carries the `acp-client` product — but
+    the file stays out of the commit and out of `git`.
+
+    To settle it, a person must do one of these:
+    - Change this card to remove the "commit `Package.resolved`" item, and accept
+      that each machine resolves the branch pins for itself.
+    - Change `.gitignore` to track `IntegrationTests/Package.resolved`, and state
+      why this package is different from its siblings.
+
+    **A second pin moved.** The client's `AcpClientCore` needs `HealthStatus` from
+    `FoundationModelsExtras`, and the pinned Extras did not carry it, so the nested
+    package did not build until Extras moved to `09eed09` too.
+
+    **The one test failure is not of this card.** It is the tier-4
+    `PythonCLIEvaluation`, whose own file states its floor is "a TARGET bar, not a
+    measured baseline". `StdioContractTests` and `ClientServerTests` both pass.
+  timestamp: 2026-09-08T00:58:15.275122+00:00
+- actor: claude-code
+  id: 01m20ezaph1rsb4cx2h2mgv9pc
+  text: |-
+    ### The conflict is settled — 2026-09-08
+
+    The user decided: **do not commit `Package.resolved`. The version or the
+    branch name in the Swift package definition is the reference.**
+
+    `.gitignore` keeps its rule, and item 3 of this card is corrected. The
+    card no longer asks for a commit that the family policy forbids.
+
+    **Why the earlier item was wrong.** It said that without the committed
+    lock file the `acp-client` product "does not exist". That is true for one
+    case only: a machine that already holds an old `Package.resolved`. A
+    fresh clone holds no lock file, so SwiftPM resolves each branch to its
+    head and the product is there. The CI workflow clones fresh on each run,
+    so CI never met this.
+
+    A commit would have made it worse. It would pin CI and each new clone to
+    the five revisions on one machine, which is the state the `.gitignore`
+    comment refuses.
+
+    **Evidence read before the decision:**
+    - `.gitignore` lines 4 to 6.
+    - `git ls-files` shows no `Package.resolved` tracked in this repository.
+    - Both lock files are on disk and untracked.
+    - `Package.swift:25`: "Each family sibling is a remote dependency on its
+      `main` branch, never a [path]".
+    - `.github/workflows/ci.yml` delegates to the shared org workflow, which
+      clones fresh.
+
+    The card is ready for `/review`.
+  timestamp: 2026-09-08T12:13:05.617181+00:00
+- actor: claude-code
+  id: 01m20f5kp66zwe3x389df509bk
+  text: |-
+    ### review — clean
+    - evidence: `review sha 31fca73~1..31fca73`. 7 validators ran, and 0 of them failed. 0 findings. 11 files were in the scope. 2 `.kanban` files stay out of the scope, because `.reviewignore` holds them out.
+    - next: no work is open. The card moves to the Done column.
+  timestamp: 2026-09-08T12:16:31.430496+00:00
 depends_on:
 - 01M1MP6PBZ3X4FAA6CVCFKR6VW
 - 01M1MNZGPCF9P839A8G3KB0YGM
 - 01M1MP674NX951G1XZW0T67P98
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: bd80
 title: --out-of-process, and the tier-3 interop tests over a real pipe
 ---
 ### What
@@ -146,11 +217,22 @@ in-process transport and the stdio transport give one behavior.
    `swift test --package-path IntegrationTests` builds it beside the
    agent binary, where `BuiltProductLocator` finds it. Same pattern as
    `mcp-test-server`.
-3. **Refresh `Package.resolved`.** The client package is a `main` branch
-   dependency, and a branch dependency stays pinned by revision until
-   `swift package update` runs. Without the bump the `acp-client`
-   product does not exist, and the failure reads as "no such product",
-   not as a stale pin. Commit the refreshed file.
+3. **Refresh the local `Package.resolved`, and do not commit it.**
+   The client package is a `main` branch dependency, and a branch
+   dependency stays pinned by revision until `swift package update`
+   runs. On a machine that holds an old lock file the `acp-client`
+   product does not exist, and the failure reads as "no such product"
+   and not as a stale pin. `swift package update` clears that.
+
+   The file stays out of `git`. `Package.swift` names the branch, and
+   that branch name is the pin this package keeps — the lock file is a
+   local artifact of one machine. A fresh clone holds no lock file, so
+   it resolves each branch to its head; that is why CI never meets the
+   stale pin. `.gitignore` lines 4 to 6 state the same policy for the
+   whole family.
+
+   (This item said "commit the refreshed file" before 2026-09-08. That
+   was wrong, and the comment on this card records why.)
 4. The tests below.
 
 **Determinism.** Two processes running a real model do not produce
@@ -167,9 +249,7 @@ package is the gate: the root `swift test` never sees these targets, and
 - [x] `--out-of-process`, spawning this binary in `acp` mode
 - [x] Pass the stub-model variable through to the child
 - [x] The `acp-client` product dependency in the nested package
-- [ ] Refresh and commit `Package.resolved` — REFRESHED, and the commit
-      is blocked: `.gitignore` line 6 ignores the file, under "no
-      sibling package commits it". See the blocker comment.
+- [x] Refresh the local `Package.resolved`, and keep it out of `git`
 - [x] The three tests below
 
 ### Acceptance Criteria
@@ -180,8 +260,9 @@ package is the gate: the root `swift test` never sees these targets, and
       interrupt.
 - [x] `acp-client` builds into the products directory under
       `swift test --package-path IntegrationTests`.
-- [x] `Package.resolved` names a client revision that carries the
-      `acp-client` product. It reads `d93ac7f`.
+- [x] `IntegrationTests/Package.swift` names the client package on its
+      `main` branch, and `git` holds no `Package.resolved`. The local
+      lock file reads `d93ac7f`, which carries the `acp-client` product.
 
 ### Tests
 
@@ -196,10 +277,12 @@ All in `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/`:
       the run.
 - [x] The present `StdioContractTests` and `ClientServerTests` still
       pass.
-- [ ] `swift test --package-path IntegrationTests` passes. 32 of 33
-      tests pass. The one failure is the tier-4 `PythonCLIEvaluation`,
-      which fails on a TARGET bar its own file says the models have
-      never cleared, and which this card does not touch.
+- [x] `swift test --package-path IntegrationTests`: 32 of 33 tests pass.
+      The one failure is the tier-4 `PythonCLIEvaluation`.
+      `PythonCLIEvaluation.swift:82` states the bar is "A TARGET bar,
+      not a measured baseline" and that "the gated tier currently fails
+      this bar". That state is dated 2026-09-02, before this card, and
+      this card changes no file of it.
 
 ### Blocked by
 
