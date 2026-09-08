@@ -45,6 +45,31 @@ comments:
     says which. `^jz016kq` and the two Router cards are what make the source
     readable, whatever the answer.
   timestamp: 2026-09-08T13:50:33.062708+00:00
+- actor: claude-code
+  id: 01m21f2x1wbyww0c8h63232k44
+  text: |-
+    ### Correction — the premise of this card is no longer true
+
+    This card says "the agent runs a turn, calls tools many times, and writes no file", with 0 runs that reported `complete` over 387 `runCode` segments.
+
+    That measurement came from the 2026-09-07 run, which used a stale model pin (`Qwen2.5-Coder-32B-Instruct-4bit`). The "Unexpected token '('" failures were a reading of THAT model.
+
+    Measured on 2026-09-08, after the pin moved to `mlx-community/Qwen3.8-27B-mxfp4` (card `^s0bw5cv`) and the two ceilings were corrected (card `^ec8hn3z`), one tier-4 sample gives:
+
+    ```
+    stop=endTurn turns=1 toolCalls=38 tokens=146655/262144 elapsed=658s
+    model=mlx-community/Qwen3.8-27B-mxfp4
+    pytest=PASS cli=PASS files=PASS traffic=PASS
+    ```
+
+    One turn, 38 tool calls, the files on disk, pytest green. The end-to-end failure this card reports does not happen any more.
+
+    The card is not empty, but its work is now different. What stays true and is still of use:
+
+    - A snippet that does not parse must get back the failing line and the token, not only "Fix the snippet". Shape 2 (the unknown-tool message) recovers because it names the fix; shape 1 does not.
+
+    Re-write this card around that message quality, with a new measurement, before you start work on it. Do not use the 2026-09-07 numbers.
+  timestamp: 2026-09-08T21:34:17.148560+00:00
 depends_on:
 - 01M20G2K4P99H1MBE5TSG4T8CM
 position_column: todo

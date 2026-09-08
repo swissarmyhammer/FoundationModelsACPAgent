@@ -44,70 +44,14 @@ struct TranscriptFidelityTests {
     /// call. The scripted backend mints ids by ordinal.
     private static let runCodeCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "1"
 
-    /// The name of the `transcript.jsonl` file the recorder appends to.
-    private static let recordingFileName = "transcript.jsonl"
+    /// The `prompt` kind string.
+    private static let promptKind = "prompt"
 
-    // MARK: - The raw recorded line
+    /// The `response` kind string.
+    private static let responseKind = "response"
 
-    /// One recorded `transcript.jsonl` line, in the fields these proofs
-    /// read.
-    ///
-    /// The typed `TranscriptEvent` read cannot answer proof 2: Router
-    /// keeps `TranscriptEntryPayload.toolCalls` internal, so the
-    /// `argumentsJSON` of a recorded call is reachable only from the
-    /// file on disk. That is also the honest place to read it, because
-    /// the file is what a later session restores from.
-    private struct RecordedLine: Decodable {
-        /// One recorded tool call of a `toolCalls` entry.
-        struct ToolCall: Decodable {
-            /// The name of the called tool.
-            let toolName: String
-
-            /// The call's arguments, as the recorded JSON string.
-            let argumentsJSON: String
-        }
-
-        /// One recorded segment of an entry, in the `type` field alone.
-        /// The proofs count segments; they do not read their content.
-        struct Segment: Decodable {
-            /// The segment's case discriminator.
-            let type: String
-        }
-
-        /// One recorded tool definition of an `instructions` entry.
-        struct ToolDefinition: Decodable {
-            /// The declared tool's name.
-            let name: String
-
-            /// The tool's parameter schema, as the recorded JSON string.
-            /// These bytes are what the false divergence came from.
-            let parametersSchemaJSON: String
-        }
-
-        /// The recorded entry body of one event.
-        struct Entry: Decodable {
-            /// The tool calls a `toolCalls` entry requested.
-            let toolCalls: [ToolCall]?
-
-            /// The tool definitions an `instructions` entry declared.
-            let toolDefinitions: [ToolDefinition]?
-
-            /// The entry's segments, in order.
-            let segments: [Segment]?
-        }
-
-        /// The id of the session the event belongs to.
-        let sessionId: String
-
-        /// The event's kind, as the recorded string.
-        let kind: String
-
-        /// The event's flattened text, when it carries any.
-        let text: String?
-
-        /// The mirrored transcript entry, for an entry-kind event.
-        let entry: Entry?
-    }
+    /// The `instructions` kind string.
+    private static let instructionsKind = "instructions"
 
     // MARK: - One two-turn run
 
@@ -125,7 +69,7 @@ struct TranscriptFidelityTests {
 
         /// The session's recorded lines, read from disk after the
         /// second turn.
-        let recordedLines: [RecordedLine]
+        let recordedLines: [RecordedTranscriptLine]
     }
 
     /// Drives two scripted turns over one session and reads the
@@ -155,7 +99,8 @@ struct TranscriptFidelityTests {
             updates: updates,
             eventsAfterFirstTurn: afterFirst,
             eventsAfterSecondTurn: afterSecond,
-            recordedLines: try recordedLines(under: root, sessionId: fixture.sessionId))
+            recordedLines: try RecordedTranscriptFile.lines(
+                under: root, sessionId: fixture.sessionId))
     }
 
     /// Prompts one turn and waits until its response is recorded and
@@ -186,49 +131,6 @@ struct TranscriptFidelityTests {
         try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, sessionId)
     }
 
-    // MARK: - Readers
-
-    /// The recorded lines of one session, read from every
-    /// `transcript.jsonl` under `root`.
-    ///
-    /// - Parameters:
-    ///   - root: The recording root to read.
-    ///   - sessionId: The session whose lines to keep.
-    /// - Returns: The session's lines, in file order.
-    /// - Throws: The read or the decode error.
-    private static func recordedLines(
-        under root: URL, sessionId: SessionId
-    ) throws -> [RecordedLine] {
-        let decoder = JSONDecoder()
-        let lines = try recordingFileURLs(under: root).flatMap { url -> [RecordedLine] in
-            let text = try String(contentsOf: url, encoding: .utf8)
-            return try text.split(separator: "\n").map { line in
-                try decoder.decode(RecordedLine.self, from: Data(line.utf8))
-            }
-        }
-        return lines.filter { $0.sessionId == sessionId.rawValue }
-    }
-
-    /// Every `transcript.jsonl` file under `root`, at any depth.
-    ///
-    /// - Parameter root: The recording root to walk.
-    /// - Returns: The file URLs, in walk order.
-    private static func recordingFileURLs(under root: URL) -> [URL] {
-        let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
-        let contents = walker?.compactMap { $0 as? URL } ?? []
-        return contents.filter { $0.lastPathComponent == recordingFileName }
-    }
-
-    /// The lines of one recorded kind.
-    ///
-    /// - Parameters:
-    ///   - kind: The recorded kind string to keep.
-    ///   - lines: The session's recorded lines.
-    /// - Returns: The matching lines, in order.
-    private static func lines(ofKind kind: String, in lines: [RecordedLine]) -> [RecordedLine] {
-        lines.filter { $0.kind == kind }
-    }
-
     // MARK: - The proofs
 
     @Test("two turns record no divergence while the tool surface is unchanged", .timeLimit(.minutes(1)))
@@ -245,17 +147,20 @@ struct TranscriptFidelityTests {
     func oneTurnIsRecordedWhole() async throws {
         let run = try await Self.runTwoTurns(label: "TranscriptFidelityTests-whole")
 
-        let prompts = Self.lines(ofKind: "prompt", in: run.recordedLines)
+        let prompts = RecordedTranscriptFile.lines(ofKind: Self.promptKind, in: run.recordedLines)
         #expect(prompts.count == 2)
         #expect(prompts.first?.text == Self.promptText + "1")
 
-        let calls = Self.lines(ofKind: "toolCalls", in: run.recordedLines)
-            .flatMap { $0.entry?.toolCalls ?? [] }
+        let calls = RecordedTranscriptFile.lines(
+            ofKind: RecordedTranscriptFile.toolCallsKind, in: run.recordedLines
+        )
+        .flatMap { $0.entry?.toolCalls ?? [] }
         let runCodeCall = try #require(
             calls.first { $0.toolName == ScriptedTurnFixture.runCodeToolName })
         #expect(runCodeCall.argumentsJSON.contains(Self.snippetCode))
 
-        let responses = Self.lines(ofKind: "response", in: run.recordedLines)
+        let responses = RecordedTranscriptFile.lines(
+            ofKind: Self.responseKind, in: run.recordedLines)
         #expect(responses.count == 2)
         let response = try #require(responses.first)
         #expect(response.entry?.segments?.isEmpty == false)
@@ -335,9 +240,9 @@ struct TranscriptFidelityTests {
     /// - Throws: The read or the decode error.
     private static func toolDefinitions(
         under root: URL, sessionId: SessionId
-    ) throws -> [RecordedLine.ToolDefinition] {
-        let lines = try recordedLines(under: root, sessionId: sessionId)
-        return Self.lines(ofKind: "instructions", in: lines)
+    ) throws -> [RecordedTranscriptLine.ToolDefinition] {
+        let lines = try RecordedTranscriptFile.lines(under: root, sessionId: sessionId)
+        return RecordedTranscriptFile.lines(ofKind: Self.instructionsKind, in: lines)
             .flatMap { $0.entry?.toolDefinitions ?? [] }
     }
 }

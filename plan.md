@@ -607,6 +607,42 @@ user prompt, cut to a single line; a model-generated title is a follow-up),
 **complete ordered `additionalDirectories` list**. The list is an ordered
 list, not a set. Each `session/resume` *replaces* it.
 
+### 4.7 The `runCode` snippet source is kept, and a failed run reads back
+
+A snippet that fails names a line: "The snippet failed: Unexpected token ';'
+(line 25)". A reader who cannot see line 25 learns nothing. **So the transcript
+keeps the source of every `runCode` call beside the outcome of its run.**
+
+**Where the two halves live.** No single entry holds both, so a reader walks
+three hops. `RunCodeSourceTests` proves each of them:
+
+1. The **`toolCalls`** entry holds the call's id and its `argumentsJSON`. The
+   `code` field of those arguments is the snippet source, whole.
+2. The **`toolOutput`** entry whose entry id equals that call id answers the
+   call. `runCode` mounts in the background, so the answer is the pending
+   envelope, and the envelope carries the run's `completionToken`.
+3. The **operation event** whose `correlationID` equals that token, and whose
+   kind is `completed`, carries the outcome `detail` — the failure message.
+   Read these with `TranscriptEvent.operationEvents`, Router's public entry
+   point. Read them off EVERY event kind, never off `toolOutput` alone: a
+   `toolOutput` entry's own id is a fresh ULID by design, so the run's identity
+   lives in the `correlationID` and nowhere else.
+
+**The size rule.** Nothing bounds the recorded source today: a snippet of
+100,013 bytes records whole, as 102,025 bytes of escaped JSON. **If a bound is
+ever added, it keeps the HEAD of the snippet and states how many bytes went
+away, in a `droppedByteCount` field beside the kept `code`. It never keeps
+nothing.** A record that kept only a tail, or that dropped bytes in silence,
+tells a reader that line 25 exists and hides it — which is the defect this
+section answers.
+
+`argumentsJSON` and the entry id stay internal to Router, so a typed read of
+the source is possible only from `transcript.jsonl` itself. This package
+therefore does not build the join as an API: it states the rule here, and
+holds it with tests. A typed read would need Router to widen
+`TranscriptEntryPayload`, and §4.6's boundary forbids this package from
+reimplementing the format instead.
+
 ---
 
 # Part II — The protocol surface

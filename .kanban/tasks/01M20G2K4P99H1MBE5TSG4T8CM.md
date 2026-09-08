@@ -244,6 +244,117 @@ comments:
 
     This card stays in `doing` and waits.
   timestamp: 2026-09-08T13:39:09.288384+00:00
+- actor: claude-code
+  id: 01m21fcyctn2f36s102ewmvtbn
+  text: |
+    ### Re-measurement 2026-09-08, after `^jz016kq` landed
+
+    I re-measured before I trusted the card. The `{}` finding is GONE. The
+    `runCode` source is now in the transcript.
+
+    Method: a scripted `runCode` turn under `ScriptedTurnFixture`, then a
+    read of every `transcript.jsonl` line the session wrote. Two snippets:
+    one that fails to parse, and one of 100,013 bytes.
+
+    #### Fact 1 — the source is kept, and it is whole
+
+    ```
+    snippet "return (;"        source 9 bytes      toolCalls argumentsJSON 21 bytes, holds the source
+    long snippet             source 100,013 bytes  toolCalls argumentsJSON 102,025 bytes, holds the source
+    ```
+
+    The 102,025 bytes are the 100,013 source bytes plus the JSON escaping of
+    the newlines. Nothing is dropped. **No limit bounds the recorded
+    snippet source.** So the card's conditional — "if a limit is necessary"
+    — measures as: no limit is necessary today.
+
+    #### Fact 2 — the result is kept too, in three places
+
+    For the failing snippet:
+
+    ```
+    toolOutput <ulid>  segment FoundationModelsRouter.OperationEventSegment
+       {"correlationID":"<token>","kind":"running","op":"runCode",
+        "detail":"{\"pending\":true,\"completionToken\":\"<token>\",...}"}
+
+    toolOutput <ulid>  segment FoundationModelsRouter.OperationEventSegment
+       {"correlationID":"<token>","kind":"completed","op":"runCode",
+        "detail":"The snippet failed: Unexpected token ';' (line 25)\n\n
+                  Fix the snippet and call runCode again."}
+
+    toolCalls  id=scripted-call-1  name=runCode  argumentsJSON = the source
+    toolOutput entryId=scripted-call-1  segment = the pending envelope,
+       which carries the same "<token>"
+    ```
+
+    #### Fact 3 — the join that reads the source and the result together
+
+    There is one chain, and it has three hops:
+
+    1. the `toolCalls` entry gives the call id and the source;
+    2. the `toolOutput` entry whose `entryId` equals that call id gives the
+       pending envelope, which carries the `completionToken`;
+    3. the operation-event segment whose `correlationID` equals that token
+       gives the outcome detail — the failure message with its line number.
+
+    The chain is complete, and the file holds every hop. No entry holds
+    both ends, so a reader must make the join.
+
+    #### What is still open, and why it is small
+
+    - Nothing must change in `FoundationModelsRouter`. The write side is
+      correct.
+    - `TranscriptEntryPayload.toolCalls` and `.entryId` stay INTERNAL to
+      Router, so a typed read of the source is possible only from the file
+      on disk. `TranscriptFidelityTests` already states that, and this
+      card's proofs read the file the same way. A typed read-side join in
+      `Sources/.../Transcripts/` is NOT possible without a Router change,
+      and plan.md §4.6 forbids this package from reimplementing the
+      format. So the join is stated in the documentation and proved by
+      test, not built as a new API.
+
+    This matches what the 2026-09-08 correction comment predicted: "this
+    card may need only its tests once `^jz016kq` lands".
+  timestamp: 2026-09-08T21:39:46.202307+00:00
+- actor: claude-code
+  id: 01m21fvd8bpxpn0vsybeffbt85
+  text: |
+    ### implement — changed
+
+    - evidence: 4 files.
+      - `Tests/FoundationModelsACPAgentTests/RunCodeSourceTests.swift` (new)
+        — the card's three proofs.
+      - `Tests/FoundationModelsACPAgentTests/Support/RecordedTranscriptFile.swift`
+        (new) — the shared recorded-line reader and the envelope readers.
+      - `Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift` —
+        reads through the shared reader; the kind strings are now named.
+      - `plan.md` — new §4.7 states the rule, the join and the size rule.
+    - tests: `swift build` gives "Build complete!" with no warning. Root
+      `swift test` gives "Test run with 497 tests in 52 suites passed ...
+      with 1 known issue". The baseline was 494 tests in 51 suites with the
+      same one known issue, so this adds 3 proofs and one suite, and breaks
+      nothing.
+    - next: `/review`.
+
+    #### How each proof was made to fail first
+
+    - I renamed the `code` argument key to a name no record carries. All
+      three proofs failed at "the recorded runCode arguments carry no ...
+      field". That is exactly the card's defect, so each proof bites on it.
+    - I added one character to the correlation id of hop 3. The failure
+      proof alone failed with "the run <token> recorded no completion
+      event", and the other two still passed. So hop 3 really joins on the
+      token that hop 2 read, and the failure message is not found by luck.
+
+    #### One note for the reviewer
+
+    `TranscriptFidelityTests` held a private copy of the recorded-line
+    decoder and its three readers. A second copy in the new suite would be
+    duplication, so I lifted one copy into the Support folder and both
+    suites read through it. The change to the old suite is mechanical: the
+    same reads, through the shared type, with the kind strings named
+    instead of written inline.
+  timestamp: 2026-09-08T21:47:40.171854+00:00
 depends_on:
 - 01M20KWDKCNA3PS3T5KJZ016KQ
 position_column: doing
@@ -267,6 +378,13 @@ Measured on the tier-4 eval run of 2026-09-07, in
 
 This blocks the card that fixes the failures themselves.
 
+**2026-09-08 — re-measured. The write side is corrected upstream.**
+`^jz016kq` landed the Router changes `a3612d3` and `efcf8d7`. The
+`toolCalls` entry now carries `argumentsJSON`, and that holds the
+snippet source, whole. See the re-measurement comment for the numbers.
+So this card became what its own correction comment predicted: the
+proofs and the rule.
+
 ### What to do
 
 Keep the `runCode` source in the transcript beside its result.
@@ -279,26 +397,65 @@ Keep the `runCode` source in the transcript beside its result.
 - A snippet can be long. If a limit is necessary, keep the head and
   state how many bytes were dropped. Never keep nothing.
 
-- [ ] Find why the `response` entry decodes to `{}`
-- [ ] Keep the `runCode` source beside its result
-- [ ] State the rule in the transcript documentation
+- [x] Find why the `response` entry decodes to `{}`
+- [x] Keep the `runCode` source beside its result
+- [x] State the rule in the transcript documentation
 
 ### Acceptance Criteria
 
-- [ ] A recorded turn that calls `runCode` holds the snippet source.
-- [ ] The source and the result of one call can be read together.
-- [ ] A snippet that is too long keeps its head, and the record says how
+- [x] A recorded turn that calls `runCode` holds the snippet source.
+- [x] The source and the result of one call can be read together.
+- [x] A snippet that is too long keeps its head, and the record says how
       many bytes went away.
-- [ ] The present transcript tests still pass.
+- [x] The present transcript tests still pass.
 
 ### Tests
 
-- [ ] A test drives one scripted `runCode` call and reads the recorded
+`Tests/FoundationModelsACPAgentTests/RunCodeSourceTests.swift` holds the
+three proofs. The scripted backend drives the model, and the snippets
+run in the real code-mode sandbox, so proof 2 reads a real failure.
+
+- [x] A test drives one scripted `runCode` call and reads the recorded
       source back from the transcript.
-- [ ] A test drives a `runCode` call that FAILS, and reads back both the
+- [x] A test drives a `runCode` call that FAILS, and reads back both the
       source and the failure message.
-- [ ] A test with an over-long snippet reads back the head and the
+- [x] A test with an over-long snippet reads back the head and the
       dropped-bytes count.
+
+### The measured answers
+
+**Why the `response` entry decoded to `{}`.** The transcript differ
+called a lawful `instructions` entry a rewrite and discarded the whole
+turn, so `recordFailedTurn` appended a `.response` event with no entry.
+`^jz016kq` names the cause byte for byte and corrected it in Router.
+
+**How the source and the result read together.** No one entry holds
+both. The join has three hops, and each proof walks it:
+
+1. the `toolCalls` entry gives the call id and the `argumentsJSON`,
+   whose `code` field is the source;
+2. the `toolOutput` entry whose entry id equals that call id answers
+   the call with the pending envelope, which carries the
+   `completionToken`;
+3. the operation event whose `correlationID` equals that token, and
+   whose kind is `completed`, gives the failure detail.
+
+**The size rule.** Nothing bounds the recorded source: 100,013 bytes of
+snippet record whole. So there is no head and no dropped-byte count to
+read today. The rule stands for the day a bound is added — keep the
+head, state the count in a `droppedByteCount` field, never keep nothing
+— and proof 3 fails the moment a bound arrives without it.
+
+### Where the work landed
+
+- `Tests/FoundationModelsACPAgentTests/RunCodeSourceTests.swift` — the
+  three proofs.
+- `Tests/FoundationModelsACPAgentTests/Support/RecordedTranscriptFile.swift`
+  — the recorded-line reader, lifted out of `TranscriptFidelityTests` so
+  the two suites share one decoder instead of two copies.
+- `Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift` —
+  reads through the shared reader; its kind strings are named.
+- `plan.md` §4.7 — the rule, the join, and the size rule.
 
 ### Why this card is first
 
