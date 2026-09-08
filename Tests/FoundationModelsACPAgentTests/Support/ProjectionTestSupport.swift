@@ -16,6 +16,10 @@ import FoundationModelsRouter
 /// run a turn without a session table, so the value never resolves.
 let syntheticSessionIdValue = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
+/// The model reference a synthetic turn reports. No model stands behind
+/// a scripted event stream, and the name says so.
+let syntheticModelName = "synthetic-model"
+
 /// The agent text a collected turn streamed: the text of every
 /// `agent_message_chunk`, joined in arrival order.
 ///
@@ -62,6 +66,7 @@ func makeSinkedTurn(
         turnState: TurnStateOwner(send: send),
         send: send,
         firstActivity: nil,
+        modelName: syntheticModelName,
         shellSnapshot: shellSnapshot)
     return (turn, recorder)
 }

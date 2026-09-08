@@ -123,7 +123,11 @@ struct EventProjection {
     /// reasoning delta, a tool call or status, an invocation record,
     /// an attachment report, a relayed elicitation, or a run
     /// settlement (task ^pez780d).
-    private var sawOutput = false
+    ///
+    /// `PromptTurn.drive` reads it beside a stall report as well: a
+    /// turn that already produced something is not waiting on a model
+    /// that cannot generate (task ^s0bw5cv).
+    private(set) var sawOutput = false
 
     /// Whether at least one `turnEnded` usage report arrived
     /// (task ^pez780d).

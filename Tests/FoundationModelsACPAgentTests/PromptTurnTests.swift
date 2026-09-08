@@ -214,6 +214,10 @@ import Testing
             PromptTurn.stopReason(for: .noOutput)
                 == .unknown(PromptTurn.noOutputStopReasonValue))
         #expect(
+            PromptTurn.stopReason(
+                for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
+                == .unknown(PromptTurn.stalledStopReasonValue))
+        #expect(
             PromptTurn.stopReason(for: .failed(message: "boom"))
                 == .unknown(PromptTurn.unmappedStopReasonValue))
     }
@@ -444,6 +448,109 @@ import Testing
         #expect(
             ScriptedTurnFixture.idleStopReason(in: updates)
                 == .unknown(PromptTurn.noOutputStopReasonValue))
+    }
+
+    // MARK: - The stalled generation (§8.2, task ^s0bw5cv)
+
+    /// Makes one stall report of the shape Router emits on a streaming
+    /// turn.
+    ///
+    /// - Parameters:
+    ///   - withoutProgress: How long the generation has gone with no
+    ///     observable progress. It also stands as the time in flight,
+    ///     which no assertion reads.
+    ///   - fragments: How many fragments arrived before the stall.
+    /// - Returns: The report.
+    private static func makeStall(
+        withoutProgress: Duration, fragments: Int
+    ) -> GenerationStall {
+        GenerationStall(
+            timeWithoutProgress: withoutProgress,
+            timeInFlight: withoutProgress,
+            visibility: .fragments(observed: fragments))
+    }
+
+    /// A generation that has made no fragment for the whole bound ends
+    /// the turn with the honest `_stalled` extension stop reason.
+    ///
+    /// The stream never finishes, which is the shape of the defect: a
+    /// model the loader cannot drive reports a stall on each interval
+    /// and yields nothing else, so the guard is the only way out of the
+    /// drive loop. The time limit states the bound of the test, so a
+    /// hang fails it rather than running to the suite ceiling.
+    @Test(.timeLimit(.minutes(1)))
+    func aGenerationWithNoFragmentPastTheBoundEndsTheTurnAsStalled() async throws {
+        let stall = Self.makeStall(
+            withoutProgress: PromptTurn.stalledGenerationBound, fragments: 0)
+        let events = AsyncThrowingStream<SessionEvent, Error> { continuation in
+            continuation.yield(.generationStalled(stall))
+        }
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(events: events)
+        let updates = await recorder.updates
+
+        #expect(reason == .unknown(PromptTurn.stalledStopReasonValue))
+        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(
+            ScriptedTurnFixture.idleStopReason(in: updates)
+                == .unknown(PromptTurn.stalledStopReasonValue))
+    }
+
+    /// A stall shorter than the bound is a report and not a bound: the
+    /// generation continues, and the turn ends on its own events.
+    @Test(.timeLimit(.minutes(1)))
+    func aStallShorterThanTheBoundDoesNotEndTheTurn() async throws {
+        let stall = Self.makeStall(
+            withoutProgress: PromptTurn.stalledGenerationBound - .seconds(1), fragments: 0)
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .generationStalled(stall),
+                .textDelta("late, and real"),
+                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
+    /// A stall past the bound on a generation that already made a
+    /// fragment does not end the turn: a slow decode is not a model
+    /// that cannot generate.
+    @Test(.timeLimit(.minutes(1)))
+    func aStallPastTheBoundAfterAFragmentDoesNotEndTheTurn() async throws {
+        let stall = Self.makeStall(
+            withoutProgress: PromptTurn.stalledGenerationBound, fragments: 1)
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .textDelta("a first fragment"),
+                .generationStalled(stall),
+                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
+    /// A stall past the bound after the turn made a tool call does not
+    /// end the turn. Each model call opens its own watch, so a fresh
+    /// watch that counts no fragment while a tool runs reports a slow
+    /// tool, never a model that cannot generate.
+    @Test(.timeLimit(.minutes(1)))
+    func aStallPastTheBoundAfterAToolCallDoesNotEndTheTurn() async throws {
+        let stall = Self.makeStall(
+            withoutProgress: PromptTurn.stalledGenerationBound, fragments: 0)
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
+                .generationStalled(stall),
+                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
     }
 
     // MARK: - The requires_action pairing (§8.2)

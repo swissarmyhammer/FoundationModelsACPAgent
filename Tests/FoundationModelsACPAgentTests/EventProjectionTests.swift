@@ -665,7 +665,8 @@ import Testing
             promptBlocks: [],
             turnState: TurnStateOwner(send: send),
             send: send,
-            firstActivity: nil)
+            firstActivity: nil,
+            modelName: syntheticModelName)
 
         _ = await turn.drive(
             events: makeEventStream([

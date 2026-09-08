@@ -394,7 +394,7 @@ machine. This plan replaces that, because the old models are out of date:
 
 | Key | Old default | New default |
 |---|---|---|
-| `profile.standard` | `mlx-community/Qwen2.5-14B-Instruct-4bit` | `mlx-community/Qwen3.8-27B-4bit` |
+| `profile.standard` | `mlx-community/Qwen2.5-14B-Instruct-4bit` | `mlx-community/Qwen3.8-27B-mxfp4` |
 | `profile.flash` | `mlx-community/Qwen2.5-3B-Instruct-4bit` | `mlx-community/Qwen3-4B-4bit` |
 | `profile.embedding` | `mlx-community/bge-small-en-v1.5-4bit` | `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` |
 | The memory floor | 16 GB | **32 GB** |
@@ -607,9 +607,17 @@ Only if §11.1 shows a cost. The shape:
 
 ### 11.4 Two questions this plan records but does not answer
 
-- **The `standard` model id.** `mlx-community/Qwen3.8-27B-4bit` is not on
-  the development machine, and it was not verified against Hugging Face.
-  The `doctor` model check of §5.12 exists partly for this.
+- ~~**The `standard` model id.**~~ ANSWERED on 2026-09-08, and the answer
+  cost a day. `mlx-community/Qwen3.8-27B-4bit` was never driven, and it
+  does not generate: it makes no token and the turn never ends. Router's
+  stall watchdog recorded one generation in flight for 3120 seconds with
+  zero fragments. The default is now `mlx-community/Qwen3.8-27B-mxfp4`,
+  which the rest of the family already pins — `FoundationModelsMultitool`
+  at `MultitoolCLI/CLIRunner.swift`, and Router's `JointFitTests` and its
+  compaction eval tiers. Both builds are the same architecture, so the
+  quantisation is the difference. The `doctor` model check of §5.12 must
+  read this: a model that makes no token is refused with a named reason,
+  never a hang. See card `^s0bw5cv`.
 - **`tools.files.recordsChanges` defaults to `false`.** See §7. Should an
   editor see file-change locations without a `config.yaml`?
 

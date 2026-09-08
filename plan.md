@@ -863,6 +863,13 @@ needs a named owner for this state machine:
 exception and map it.** A Swift `CancellationError` that gets out as a
 JSON-RPC error, or as `refusal`, is the failure that the spec names.
 
+Two extension values stand beside the five. A turn that completed with no
+output and a zero-token usage report stops with `_no_output`, because a bare
+`end_turn` would hide it (task ^pez780d). A turn the agent ended because the
+generation made no fragment for the whole stall bound stops with `_stalled`
+(task ^s0bw5cv). Both map to exit code 1 through the §5.8 table of
+`cli-plan.md`, which gives every unknown stop reason that row.
+
 ### 8.3 The upsert algebra
 
 The replay decision stands on this. The agent-generated
@@ -901,13 +908,28 @@ arm. Write one.
 | `entryRecorded(id:kind:)` | nothing on the wire — a recording fact (§4) |
 | `compaction(CompactionResult)` | `usage_update` — the context meter drops; no message change (§8.5) |
 | `discoveryPrimingFailed(DiscoveryPrimingFailure)` | nothing on the wire — log it |
-| `generationStalled(GenerationStall)` | nothing on the wire — log it |
+| `generationStalled(GenerationStall)` | nothing on the wire — log it, and read it as the stalled-generation guard below |
 | `runSettled(OperationEvent)` | `tool_call_update` with the **terminal** status (see the mapping below) |
 | `turnEnded(TokenUsage)` | `usage_update` only (the `idle` `state_update` comes from the completion of our own turn task, never from this event — §8.1) |
 
 **`textReset` means "discard the text accumulated so far".** Therefore it
 cannot ride as a chunk. Send the whole-message form, which replaces
 everything accumulated (§8.3).
+
+**The stalled-generation guard** (task ^s0bw5cv). Router bounds no decode: a
+model the loader cannot drive reports a stall on each interval and never ends,
+so the turn would hold the session for as long as the process lives. The drive
+loop therefore reads each `generationStalled` report and ends the turn when
+two facts hold together: the report names a model call that has made no
+fragment at all for the whole `PromptTurn.stalledGenerationBound`, and the
+turn has made no observable output. The turn then leaves the event stream,
+which cancels Router's turn by that surface's own contract, and stops with
+`_stalled` (§8.2). The log line names the model and the report.
+
+The two facts together are what keeps the guard honest. A stall on a call that
+already streamed is a slow decode, and a stall on a fresh call raised while a
+tool runs is a slow tool. Neither is a model that cannot generate, and the
+report-only behaviour of the table row stands for both.
 
 **One wire update has no `SessionEvent` source: `tool_call_content_chunk`.**
 It appends one `ToolCallContent` item to a tool call's content, and a later

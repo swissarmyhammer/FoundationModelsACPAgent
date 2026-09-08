@@ -34,6 +34,14 @@ enum TurnStop: Equatable, Sendable {
     /// ^pez780d).
     case noOutput
 
+    /// The turn stopped waiting on a generation that made nothing: the
+    /// model call produced no fragment at all for the whole
+    /// ``PromptTurn/stalledGenerationBound``, so the turn ended it
+    /// rather than hang. The arm carries Router's own report, which
+    /// names the times, and maps to the `_stalled` extension value
+    /// (§8.2's `_` rule; task ^s0bw5cv).
+    case stalled(GenerationStall)
+
     /// The turn failed for a reason outside the mapped intents.
     case failed(message: String)
 }
@@ -64,6 +72,30 @@ struct PromptTurn: Sendable {
     /// with, under the same `_`-prefix extension rule (task ^pez780d).
     static let noOutputStopReasonValue = "_no_output"
 
+    /// The wire value a turn that ended a stalled generation stops with,
+    /// under the same `_`-prefix extension rule (task ^s0bw5cv).
+    static let stalledStopReasonValue = "_stalled"
+
+    /// The seconds ``stalledGenerationBound`` is built from.
+    private static let stalledGenerationBoundSeconds = 120
+
+    /// How long a generation may run with no fragment at all before the
+    /// turn stops waiting on it (task ^s0bw5cv).
+    ///
+    /// Router bounds no decode. A model the loader cannot drive reports
+    /// a stall on each interval and never ends, so without this bound
+    /// the turn holds the session for as long as the process lives.
+    /// Measured on 2026-09-08, one such generation stayed in flight
+    /// 3120 seconds and made zero fragments, and the person who asked
+    /// for the answer read nothing at all.
+    ///
+    /// Two minutes is four of Router's own 30-second report intervals.
+    /// A model that works streams its first fragment in seconds, and
+    /// the slowest honest wait is the prefill of a long prompt, so two
+    /// minutes with not one fragment reads as a model this loader
+    /// cannot drive rather than a slow one.
+    static let stalledGenerationBound: Duration = .seconds(stalledGenerationBoundSeconds)
+
     /// The id of the session this turn runs in.
     let sessionId: SessionId
 
@@ -78,6 +110,13 @@ struct PromptTurn: Sendable {
 
     /// The first-activity index write, or `nil` when the record exists.
     let firstActivity: FirstActivity?
+
+    /// The model reference the turn's session generates with.
+    ///
+    /// The stalled-generation report names it (task ^s0bw5cv), so a
+    /// person who reads the log learns which model made nothing. It is
+    /// the same string `/status` shows for the selected slot.
+    let modelName: String
 
     /// The expanded command text that replaces the blocks' text as the
     /// model prompt, or `nil` for a plain prompt (plan.md §14.3). The
@@ -130,6 +169,10 @@ struct PromptTurn: Sendable {
     /// on a `turnEnded` count (plan.md §8.1). A `CancellationError` is
     /// classified here; it never escapes (§8.2).
     ///
+    /// The loop also carries the stalled-generation guard of task
+    /// ^s0bw5cv. Leaving `events` cancels Router's turn, which is that
+    /// surface's own contract, so the guard needs no second call.
+    ///
     /// - Parameter events: The turn's event stream.
     /// - Returns: The stop reason the idle update carried.
     @discardableResult
@@ -146,6 +189,14 @@ struct PromptTurn: Sendable {
         do {
             for try await event in events {
                 await projection.project(event)
+                guard case .generationStalled(let stall) = event,
+                    Self.endsTurn(stall, sawOutput: projection.sawOutput)
+                else {
+                    continue
+                }
+                stop = .stalled(stall)
+                report(stall)
+                break
             }
         } catch {
             stop = Self.classify(error)
@@ -207,8 +258,58 @@ struct PromptTurn: Sendable {
         case .budgetExhausted: .maxTokens
         case .toolLoopCapped: .maxTurnRequests
         case .noOutput: .unknown(noOutputStopReasonValue)
+        case .stalled: .unknown(stalledStopReasonValue)
         case .failed: .unknown(unmappedStopReasonValue)
         }
+    }
+
+    // MARK: - The stalled-generation guard (task ^s0bw5cv)
+
+    /// Whether the turn stops waiting on the generation `stall` reports.
+    ///
+    /// Two facts must hold together. The report names a model call that
+    /// has made no fragment at all for the whole
+    /// ``stalledGenerationBound``, and the turn has made no observable
+    /// output either. A stall on a call that already streamed is a slow
+    /// decode, and a stall on a fresh call raised while a tool runs is
+    /// a slow tool; neither is a model this loader cannot drive, and
+    /// Router's report-only behaviour stands for both.
+    ///
+    /// A `wholeAnswer` visibility never ends the turn. Such a call
+    /// streams nothing by design, so a long one reads exactly like a
+    /// hung one, and the drive loop reads a fragment stream in any
+    /// case.
+    ///
+    /// - Parameters:
+    ///   - stall: The report Router made.
+    ///   - sawOutput: Whether the turn has made observable output.
+    /// - Returns: Whether the turn ends on this report.
+    static func endsTurn(_ stall: GenerationStall, sawOutput: Bool) -> Bool {
+        guard case .fragments(let observed) = stall.visibility, observed == 0 else {
+            return false
+        }
+        guard !sawOutput else { return false }
+        return stall.timeWithoutProgress >= stalledGenerationBound
+    }
+
+    /// Records the stall the turn stopped on, naming the model and the
+    /// reason.
+    ///
+    /// The wire carries the ``stalledStopReasonValue`` stop reason and
+    /// nothing else: plan.md §8.4 gives a stall report no wire message,
+    /// and the terminator of the turn is what a client reads.
+    ///
+    /// - Parameter stall: The report the turn stopped on.
+    private func report(_ stall: GenerationStall) {
+        // Copies for the log line: the logger's message is an escaping
+        // autoclosure, which must not capture the turn itself.
+        let sessionIdValue = sessionId.rawValue
+        let model = modelName
+        let reported = stall.description
+        let reason = Self.stalledStopReasonValue
+        turnLogger.error(
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the turn ends with \(reason, privacy: .public)"
+        )
     }
 
     /// Classifies a turn error by intent. Router's error enums are
@@ -441,6 +542,8 @@ extension RoutedACPAgent {
             turnState: owner,
             send: send,
             firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
+            modelName: ConfigOptions.handle(for: entry.selectedSlot, of: residentProfile)
+                .chosen.stringValue,
             modelPrompt: overridePrompt,
             shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
             contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb),

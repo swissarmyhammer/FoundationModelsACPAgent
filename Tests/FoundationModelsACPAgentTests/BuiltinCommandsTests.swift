@@ -18,7 +18,7 @@ struct BuiltinCommandsTests {
 
     /// The default `standard` slot candidate the stub profile resolves. The
     /// `/status` model line and the `/compact` summarizer line both name it.
-    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
+    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-mxfp4"
 
     // MARK: - Fixture
 

@@ -73,7 +73,11 @@ private let evalMaxTurnsPerSample = 4
 /// failed to parse with "Unexpected token '('" — a reading of that
 /// model, and not of this agent. Keep this constant equal to the
 /// shipped default.
-private let evalStandardModel = "mlx-community/Qwen3.8-27B-4bit"
+///
+/// It named the `4bit` build for part of 2026-09-08, and that build does
+/// not generate: every sample made no token and ended at the idle
+/// ceiling. The `mxfp4` build answers. See card `^s0bw5cv`.
+private let evalStandardModel = "mlx-community/Qwen3.8-27B-mxfp4"
 
 /// The profile section the gated tier appends to the subject's user
 /// config, pinning ``evalStandardModel`` for the standard slot. The

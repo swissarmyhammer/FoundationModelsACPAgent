@@ -110,7 +110,20 @@ extension AgentConfiguration {
 /// an MTP draft head, thus such a repository downloads bytes that do no work.
 public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// The default candidates of the `standard` slot.
-    public static let defaultStandard: [ModelRef] = ["mlx-community/Qwen3.8-27B-4bit"]
+    ///
+    /// The `mxfp4` build, and not the `4bit` build. The family pins this same
+    /// build: `FoundationModelsMultitool` at `MultitoolCLI/CLIRunner.swift`
+    /// (`generationModel`), and Router's `JointFitTests` and its compaction
+    /// eval tiers, which carry the measured numbers for it.
+    ///
+    /// The `4bit` build of this repository does not generate. Measured on
+    /// 2026-09-08: `acp-agent run "say hello"` made no token and did not end,
+    /// and Router's stall watchdog recorded one generation in flight for 3120
+    /// seconds with zero fragments. The `mxfp4` build answers the same prompt.
+    /// Both builds declare `Qwen3_5ForConditionalGeneration` and
+    /// `language_model_only: false`, so the quantisation is the difference and
+    /// the architecture is not. See card `^s0bw5cv`.
+    public static let defaultStandard: [ModelRef] = ["mlx-community/Qwen3.8-27B-mxfp4"]
 
     /// The default candidates of the `flash` slot.
     public static let defaultFlash: [ModelRef] = ["mlx-community/Qwen3-4B-4bit"]

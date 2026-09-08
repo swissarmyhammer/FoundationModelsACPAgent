@@ -231,7 +231,7 @@ import Testing
     }
 
     /// The `standard` slot default of the builtin configuration.
-    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
+    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-mxfp4"
 
     /// The `flash` slot default of the builtin configuration.
     private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"
