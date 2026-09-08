@@ -40,6 +40,13 @@ private let wireDependencyName = "FoundationModelsACP"
 /// The Client role (plan.md §20.1): the driver of every integration tier.
 private let clientDependencyName = "FoundationModelsACPClient"
 
+/// The one-shot client CLI of the client package (its cli-plan.md §6). It
+/// is a product dependency for the reason `agentExecutableName` is: SwiftPM
+/// builds the binary into the products directory beside this test bundle,
+/// where `BuiltProductLocator` finds it and `ClientInteropTests` runs it
+/// against the agent binary standing next to it.
+private let clientExecutableName = "acp-client"
+
 /// The runtime (plan.md §1). The eval reads Router's session types, and
 /// Router's test-support product carries `MetalLibraryTestBootstrap`.
 private let routerDependencyName = "FoundationModelsRouter"
@@ -101,6 +108,7 @@ let package = Package(
                 .product(name: printExecutableName, package: rootPackageName),
                 .product(name: wireDependencyName, package: wireDependencyName),
                 .product(name: clientDependencyName, package: clientDependencyName),
+                .product(name: clientExecutableName, package: clientDependencyName),
                 .product(name: routerDependencyName, package: routerDependencyName),
                 .product(
                     name: "\(routerDependencyName)TestSupport", package: routerDependencyName),

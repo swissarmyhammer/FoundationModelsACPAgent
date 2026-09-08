@@ -51,6 +51,12 @@ struct UnknownResumedSessionError: Error, CustomStringConvertible {
 /// This is the wiring the Mac app uses as well (plan.md §19): an
 /// `AgentSideConnection` on one end, a `ClientSideConnection` on the
 /// other, with no pipe and no subprocess.
+///
+/// The drive over the open wire is two steps, and each is its own entry
+/// point here because `--out-of-process` arms a `Ctrl-C` watch between
+/// them (``OutOfProcessTurn``). ``handshake(over:)`` is `initialize`, and
+/// ``turn(over:in:prompt:into:reporting:interruptedBy:)`` is everything
+/// after it. Both modes call the same two, so the two cannot drift apart.
 enum RunTurn {
     /// The client name `initialize` reports to the agent. One binary
     /// stands on both ends of the pair, so the name is the binary's.
@@ -96,9 +102,10 @@ enum RunTurn {
         // rethrown after the teardown.
         let outcome: Result<RunTurnResult, any Error>
         do {
+            try await handshake(over: connection)
             outcome = .success(
-                try await drive(
-                    connection, in: session, prompt: prompt, into: writer,
+                try await turn(
+                    over: connection, in: session, prompt: prompt, into: writer,
                     reporting: events, interruptedBy: install))
         } catch {
             outcome = .failure(error)
@@ -110,32 +117,46 @@ enum RunTurn {
         return try outcome.get()
     }
 
-    /// Drives the turn over `connection`: the handshake, the session, the
-    /// prompt, and the updates until the turn goes idle.
+    /// Sends `initialize` over `connection`, which is the first step of
+    /// every drive.
+    ///
+    /// Out of process this call is also the wait for the agent's own
+    /// construction: the spawned binary resolves its profile before it
+    /// answers, so a model download stands inside this one `await`. That
+    /// is why the handshake is a step of its own, and why
+    /// ``OutOfProcessTurn`` arms a watch around it.
+    ///
+    /// - Parameter connection: The client end of the wire.
+    /// - Throws: Whatever the handshake throws.
+    static func handshake(over connection: ClientSideConnection) async throws {
+        _ = try await connection.initialize(
+            InitializeRequest(
+                info: Implementation(name: clientName, version: AgentComposition.version),
+                protocolVersion: ACPClient.supportedProtocolVersion,
+                capabilities: ACPClient.advertisedCapabilities))
+    }
+
+    /// Drives the turn over an already handshaken `connection`: the
+    /// session, the prompt, and the updates until the turn goes idle.
     ///
     /// - Parameters:
-    ///   - connection: The client end of the pair.
+    ///   - connection: The client end of the wire.
     ///   - session: The session the turn runs in.
     ///   - prompt: The text of the one turn.
     ///   - writer: The writer each `agent_message_chunk` goes to.
     ///   - events: The writer each session event goes to, one line each.
     ///   - install: How the turn gets its `Ctrl-C` watch.
     /// - Returns: The stop reason of the turn.
-    /// - Throws: Whatever the handshake, the session call, the prompt or
-    ///   the writer throws.
-    private static func drive(
-        _ connection: ClientSideConnection,
+    /// - Throws: Whatever the session call, the prompt or the writer
+    ///   throws.
+    static func turn(
+        over connection: ClientSideConnection,
         in session: RunSession,
         prompt: String,
         into writer: AnswerWriter,
         reporting events: EventLineWriter,
         interruptedBy install: InterruptHandler.Installer
     ) async throws -> RunTurnResult {
-        _ = try await connection.initialize(
-            InitializeRequest(
-                info: Implementation(name: clientName, version: AgentComposition.version),
-                protocolVersion: ACPClient.supportedProtocolVersion,
-                capabilities: ACPClient.advertisedCapabilities))
         let sessionId = try await open(session, over: connection)
         // Subscribe before the prompt: an update with no subscriber is
         // dropped by the connection's router.

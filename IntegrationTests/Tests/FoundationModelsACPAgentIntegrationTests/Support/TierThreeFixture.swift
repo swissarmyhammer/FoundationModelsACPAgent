@@ -44,6 +44,25 @@ enum TierThreeFixture {
     /// (cli-plan.md §5.9).
     static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
 
+    /// The environment pairs that select the deterministic stub model.
+    ///
+    /// A spawned binary passes them on to every binary it spawns, so one
+    /// pair reaches an agent standing two process boundaries away.
+    static let stubModelEnvironment = [stubModelVariable: stubModelEnabledValue]
+
+    /// The environment pairs that select the stub model and pace it, so a
+    /// turn stays open long enough for this process to read what a live run
+    /// carries.
+    ///
+    /// - Parameter chunkDelayMilliseconds: The pause between two chunks of
+    ///   the echoed prompt.
+    /// - Returns: The pairs to give a spawned run.
+    static func pacedStubModelEnvironment(chunkDelayMilliseconds: Int) -> [String: String] {
+        stubModelEnvironment.merging(
+            [stubChunkDelayVariable: String(chunkDelayMilliseconds)]
+        ) { _, paced in paced }
+    }
+
     /// The user-layer `config.yaml` the spawned agent resolves its
     /// profile from: the small real `mlx-community` models the family's
     /// own integration suites load (Router's examples and Multitool's

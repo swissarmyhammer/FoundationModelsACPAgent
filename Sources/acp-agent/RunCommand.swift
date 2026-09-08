@@ -8,15 +8,17 @@ extension AcpAgentCommand {
     /// selects it; `run` written out is the script form, which no prompt
     /// word can surprise.
     ///
-    /// The turn runs in this process, over `InMemoryTransport.pair()`
-    /// (§4): the CLI reaches the agent through an ACP connection, and only
-    /// the transport changes between the modes. ``RunTurn`` holds that
-    /// drive.
+    /// The CLI reaches the agent through an ACP connection, and only the
+    /// transport changes between the modes (§4). By default the turn runs
+    /// in this process over `InMemoryTransport.pair()`, which ``RunTurn``
+    /// holds; with `--out-of-process` it runs over the stdio of a second
+    /// copy of this binary, which ``OutOfProcessTurn`` holds.
     ///
     /// The options are the whole §5.4 surface, so the parse is final.
     /// `--verbose` and `--quiet` select the verbosity of stderr (§5.7),
     /// which ``EventLineWriter`` and the download bar each read.
-    /// `--out-of-process` parses here and takes effect with its own card.
+    /// `--out-of-process` selects ``OutOfProcessTurn`` in place of
+    /// ``RunTurn``, which is the only difference the flag makes.
     struct Run: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "run",
@@ -133,12 +135,45 @@ extension AcpAgentCommand {
             reporting events: EventLineWriter = .silent,
             interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
         ) async throws -> RunTurnResult {
-            try await perform(
-                environment: environment, into: writer, reporting: events,
-                interruptedBy: install
-            ) {
-                try await compose(environment: environment)
+            guard outOfProcess else {
+                return try await perform(
+                    environment: environment, into: writer, reporting: events,
+                    interruptedBy: install
+                ) {
+                    try await compose(environment: environment)
+                }
             }
+            return try await performOutOfProcess(
+                into: writer, reporting: events, interruptedBy: install)
+        }
+
+        /// Runs the one turn over a second copy of this binary, started in
+        /// `acp` mode and spoken to over its stdio (§5.4).
+        ///
+        /// This process composes NO agent: the child composes its own, from
+        /// the environment and the working directory it inherits. So the
+        /// model is loaded one time and in one place, and the environment
+        /// this mode reads is the child's own.
+        ///
+        /// - Parameters:
+        ///   - writer: The writer the answer goes to.
+        ///   - events: The writer the session event lines go to (§5.7).
+        ///   - install: How the two windows of §5.9 get their `Ctrl-C`
+        ///     watch.
+        /// - Returns: The stop reason of the turn.
+        /// - Throws: `ValidationError` for the terminal row of the §5.5
+        ///   table, ``OwnExecutableUnknownError`` when this binary cannot be
+        ///   named, and whatever the spawn, the turn or the writer throws.
+        func performOutOfProcess(
+            into writer: AnswerWriter,
+            reporting events: EventLineWriter,
+            interruptedBy install: InterruptHandler.Installer
+        ) async throws -> RunTurnResult {
+            let text = try promptSource.text()
+            return try await OutOfProcessTurn.answer(
+                command: try OutOfProcessTurn.ownExecutablePath(),
+                in: session, prompt: text, into: writer,
+                reporting: events, interruptedBy: install)
         }
 
         /// Runs the one turn over a supplied composition.

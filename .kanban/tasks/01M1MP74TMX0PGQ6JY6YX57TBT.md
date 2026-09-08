@@ -1,12 +1,132 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1z1cbmp546hp8n2vh153d7v
+  text: |
+    ### Research
+
+    - The `acp-client` executable product IS on the client package `main`
+      (`d93ac7f`): `Package.swift` declares
+      `.executable(name: "acp-client", targets: ["acp-client"])`. The
+      IntegrationTests pin is `3f30444`, so `swift package update` must move
+      it. No blocker.
+    - `acp-client run "<prompt>" -- <agent> <args>` is the grammar. The agent
+      command follows `--` (`AgentInvocation`, `parsing: .postTerminator`) and
+      `AgentCommandResolver` accepts an absolute path.
+    - `AgentProcess(command:arguments:)` in the client package spawns the
+      child in its OWN process group, gives the child THIS process's
+      environment, and reaps the group on `shutdown()`. So
+      `ACP_AGENT_STUB_MODEL` reaches the child by inheritance, and the
+      byte-identical test is the proof of it.
+    - `RunTurn.answer(of:...)` pairs `InMemoryTransport` and then drives the
+      wire. The drive splits in two: the handshake, and the turn. Only the
+      handshake and the transport change between the two modes.
+    - `--out-of-process` parses today and does nothing, so an out-of-process
+      run gives the same stdout as an in-process run by accident. A test that
+      reads stdout alone therefore cannot fail first. The second test finds
+      the child's pid while the run is live, which no in-process run has.
+  timestamp: 2026-09-07T22:56:18.070753+00:00
+- actor: claude-code
+  id: 01m1z1e2vz2mxk3v9z1hgax7kb
+  text: |
+    ### Blocker on one card item: "Refresh and commit `Package.resolved`"
+
+    The refresh is done. `swift package update --package-path IntegrationTests
+    FoundationModelsACPClient` moved the client pin from `3f30444` to
+    `d93ac7f`, which is the `main` head that carries the `acp-client`
+    product. `IntegrationTests/Package.resolved` now reads that revision.
+
+    The COMMIT half cannot be done, and the reason is a written rule of this
+    repository. `.gitignore` line 6 ignores `Package.resolved`, under this
+    comment:
+
+        # Each family dependency tracks a branch. The lock file pins one
+        # revision on one machine, and no sibling package commits it.
+
+    So the card asks for a commit that the repository's own policy forbids.
+    This is a rule against a rule, and a person must say which one wins. The
+    card was written before that policy landed.
+
+    Nothing else on the card is blocked by this: the product resolves and the
+    nested package builds, because the pin moved on this machine.
+  timestamp: 2026-09-07T22:57:14.623536+00:00
+- actor: claude-code
+  id: 01m1z3y0729kjaazq6wt749m2e
+  text: |
+    ### The red step, and what it taught
+
+    `--out-of-process` parsed and did nothing before this card, so a test that
+    reads stdout alone PASSES against the old binary: an ignored flag gives
+    the same answer as the flag that works. The byte-identical case is
+    therefore true but not a proof on its own.
+
+    The proof is the second case. It reads the live process table while the
+    turn streams and names the `acp-agent acp` child the run started. Against
+    the old binary that reading is empty, so the case failed for the right
+    reason: "no `acp-agent acp` child was alive while the run streamed its
+    answer".
+
+    ### What did not work: counting every live agent
+
+    The first shape of the reap proof took two readings of the live
+    `acp-agent acp` processes, one before the run and one after, and asked
+    whether the difference was empty. It reported a FALSE failure on the
+    first green run: swift-testing runs the suites of one target beside each
+    other, `OutOfProcessTests` had a healthy child of its own alive, and
+    `ClientInteropTests` read that child as its own leak.
+
+    The reading that holds is the ORPHANS: `pgrep -P 1 -f "<agent path> acp"`.
+    An agent that outlived the run that started it has lost its parent, so
+    the system gave it to `launchd`; an agent a neighbour suite is running
+    still has its own live parent and stands in no such reading. That is also
+    a tighter statement of the claim than "no agent is alive".
+
+    ### The second reading: a child by its parent
+
+    `SignalledExecutableRun` now hands `atFirstOutput` the identifier of the
+    run it started, so the success row asks `pgrep -P <run> -f "<agent path>
+    acp"` and names ONE child exactly. After the run it asks whether that
+    child's whole process group is alive, which is the card's own wording.
+  timestamp: 2026-09-07T23:40:53.346273+00:00
+- actor: claude-code
+  id: 01m1z87wfjd1rqwd646jf39map
+  text: |
+    ### implement — stuck
+
+    - evidence: 11 files.
+      - New: `Sources/acp-agent/OutOfProcessTurn.swift`,
+        `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/OutOfProcessTests.swift`,
+        `.../ClientInteropTests.swift`, `.../Support/ProcessCensus.swift`.
+      - Changed: `Sources/acp-agent/RunCommand.swift`,
+        `Sources/acp-agent/RunTurn.swift`, `IntegrationTests/Package.swift`,
+        `.../ClientServerTests.swift`, `.../Support/BuiltExecutableRun.swift`,
+        `.../Support/SignalledExecutableRun.swift`,
+        `.../Support/TierThreeFixture.swift`.
+      - Pins moved on this machine: FoundationModelsACPClient to `d93ac7f`
+        (it carries the `acp-client` product) and FoundationModelsExtras to
+        `09eed09` (the client's `AcpClientCore` needs `HealthStatus`, which
+        the pinned Extras did not carry; without the second bump the nested
+        package does not compile).
+      - Root `swift test`: 484 tests in 50 suites passed, 1 known issue.
+        That is the baseline, unmoved.
+      - `swift test --package-path IntegrationTests`: 33 tests in 10 suites,
+        32 passed, 1 failed in 4083 s. The failure is the tier-4
+        `PythonCLIEvaluation`, on a TARGET bar its own file says the models
+        have never cleared. `OutOfProcessTests`, `ClientInteropTests`,
+        `StdioContractTests`, `ClientServerTests`, `InterruptTests` and
+        `CLIProcessTests` all passed.
+    - next: a person decides the `Package.resolved` conflict. The card asks
+      to commit the file; `.gitignore` line 6 forbids it, under "no sibling
+      package commits it". Every other item of the card is done and green.
+  timestamp: 2026-09-08T00:56:11.507+00:00
 depends_on:
 - 01M1MP6PBZ3X4FAA6CVCFKR6VW
 - 01M1MNZGPCF9P839A8G3KB0YGM
 - 01M1MP674NX951G1XZW0T67P98
-position_column: todo
-position_ordinal: '9380'
+position_column: doing
+position_ordinal: '80'
 title: --out-of-process, and the tier-3 interop tests over a real pipe
 ---
 ### What
@@ -44,42 +164,48 @@ package is the gate: the root `swift test` never sees these targets, and
 `swift test --package-path IntegrationTests` runs them. The directory is
 `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/`.
 
-- [ ] `--out-of-process`, spawning this binary in `acp` mode
-- [ ] Pass the stub-model variable through to the child
-- [ ] The `acp-client` product dependency in the nested package
-- [ ] Refresh and commit `Package.resolved`
-- [ ] The three tests below
+- [x] `--out-of-process`, spawning this binary in `acp` mode
+- [x] Pass the stub-model variable through to the child
+- [x] The `acp-client` product dependency in the nested package
+- [ ] Refresh and commit `Package.resolved` — REFRESHED, and the commit
+      is blocked: `.gitignore` line 6 ignores the file, under "no
+      sibling package commits it". See the blocker comment.
+- [x] The three tests below
 
 ### Acceptance Criteria
 
-- [ ] With `ACP_AGENT_STUB_MODEL=1`, `acp-agent run --out-of-process
+- [x] With `ACP_AGENT_STUB_MODEL=1`, `acp-agent run --out-of-process
       "hi"` gives stdout byte-identical to the in-process run.
-- [ ] No agent process outlives the run, in success, failure and
+- [x] No agent process outlives the run, in success, failure and
       interrupt.
-- [ ] `acp-client` builds into the products directory under
+- [x] `acp-client` builds into the products directory under
       `swift test --package-path IntegrationTests`.
-- [ ] `Package.resolved` names a client revision that carries the
-      `acp-client` product.
+- [x] `Package.resolved` names a client revision that carries the
+      `acp-client` product. It reads `d93ac7f`.
 
 ### Tests
 
 All in `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/`:
 
-- [ ] `OutOfProcessTests.swift`: with the stub model, the in-process and
+- [x] `OutOfProcessTests.swift`: with the stub model, the in-process and
       the out-of-process runs of one prompt give byte-identical stdout.
-- [ ] `OutOfProcessTests.swift`: after each of success, failure and
+- [x] `OutOfProcessTests.swift`: after each of success, failure and
       interrupt, no process in the child's process group is alive.
-- [ ] `ClientInteropTests.swift`: `acp-client run "…" -- acp-agent acp`
+- [x] `ClientInteropTests.swift`: `acp-client run "…" -- acp-agent acp`
       exits 0, its stdout holds only the answer, and no process outlives
       the run.
-- [ ] The present `StdioContractTests` and `ClientServerTests` still
+- [x] The present `StdioContractTests` and `ClientServerTests` still
       pass.
-- [ ] `swift test --package-path IntegrationTests` passes.
+- [ ] `swift test --package-path IntegrationTests` passes. 32 of 33
+      tests pass. The one failure is the tier-4 `PythonCLIEvaluation`,
+      which fails on a TARGET bar its own file says the models have
+      never cleared, and which this card does not touch.
 
 ### Blocked by
 
 The `acp-client` binary must be on the client repository's `main` — its
 N1+N2 card — before this package can declare the product dependency.
+It is there, at `d93ac7f`.
 
 ### Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

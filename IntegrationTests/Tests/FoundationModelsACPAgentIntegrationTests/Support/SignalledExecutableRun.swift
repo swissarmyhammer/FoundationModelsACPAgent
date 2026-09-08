@@ -86,6 +86,12 @@ struct SignalledExecutableRun {
     ///   - workspace: The working directory of the run.
     ///   - configHome: The injected `XDG_CONFIG_HOME` root.
     ///   - environment: The extra environment pairs.
+    ///   - atFirstOutput: What to do once the child has written its first
+    ///     stdout byte, and before the first signal goes out. It gets the
+    ///     child's own process identifier, so a caller can read a fact that
+    ///     holds only while the run is live — which processes this child
+    ///     started, for one. The default does nothing, so a caller that
+    ///     says nothing about the live run observes none of it.
     ///   - signalCount: How many `SIGINT`s to send.
     ///   - gap: The pause between two signals. A caller that wants both
     ///     of them to reach a child which ends on the first one gives
@@ -102,6 +108,7 @@ struct SignalledExecutableRun {
         workspace: URL,
         configHome: URL,
         environment: [String: String],
+        atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in },
         signalCount: Int,
         gap: Swift.Duration,
         firstOutputLimit: Swift.Duration,
@@ -135,6 +142,9 @@ struct SignalledExecutableRun {
         }
 
         try await waitForFirstOutput(of: store, within: firstOutputLimit, killing: process)
+        // The child has answered and has not been signalled, so this is the
+        // one moment a caller can read what a live run carries.
+        try await atFirstOutput(process.processIdentifier)
         var signalsSent = 0
         for index in 0..<signalCount {
             if index > 0 {

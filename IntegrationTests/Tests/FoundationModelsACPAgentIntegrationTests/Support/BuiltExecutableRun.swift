@@ -22,30 +22,38 @@ struct BuiltExecutableRun {
     /// Runs the built executable `executableName` with `arguments` and
     /// captures its exit code, stdout, and stderr.
     ///
-    /// The run gets `configHome` as `XDG_CONFIG_HOME` on top of this
-    /// process's environment. A child the executable spawns inherits that
-    /// environment, so the injected configuration reaches it too.
+    /// The run gets `configHome` as `XDG_CONFIG_HOME` and every pair of
+    /// `environment` on top of this process's environment. A child the
+    /// executable spawns inherits that environment, so the injected
+    /// configuration and the injected pairs reach it too.
     ///
     /// - Parameters:
     ///   - executableName: The product name of the executable to run.
     ///   - arguments: The command-line arguments for the executable.
     ///   - workspace: The working directory of the run.
     ///   - configHome: The injected `XDG_CONFIG_HOME` root.
+    ///   - environment: The extra environment pairs. The default injects
+    ///     none, so a caller that says nothing about the environment gets
+    ///     this process's own beside `configHome`.
     /// - Returns: The finished run.
     /// - Throws: The locator or spawn error.
     static func run(
         executableNamed executableName: String,
         arguments: [String],
         workspace: URL,
-        configHome: URL
+        configHome: URL,
+        environment: [String: String] = [:]
     ) async throws -> BuiltExecutableRun {
         let process = Process()
         process.executableURL = try BuiltProductLocator.executableURL(named: executableName)
         process.arguments = arguments
         process.currentDirectoryURL = workspace
-        var environment = ProcessInfo.processInfo.environment
-        environment[TierThreeFixture.configHomeVariable] = configHome.path
-        process.environment = environment
+        var childEnvironment = ProcessInfo.processInfo.environment
+        childEnvironment[TierThreeFixture.configHomeVariable] = configHome.path
+        for (key, value) in environment {
+            childEnvironment[key] = value
+        }
+        process.environment = childEnvironment
 
         let standardOutputPipe = Pipe()
         let standardErrorPipe = Pipe()

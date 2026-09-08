@@ -57,9 +57,6 @@ struct ClientServerTests {
           standard: [
         """
 
-    /// The exit status `pgrep` reports when no process matches.
-    private static let pgrepNoMatchStatus: Int32 = 1
-
     // MARK: - The subprocess driver
 
     /// Runs the built `acp-print` with `arguments` and captures its exit
@@ -81,27 +78,6 @@ struct ClientServerTests {
             arguments: arguments,
             workspace: workspace,
             configHome: configHome)
-    }
-
-    // MARK: - The reap assertion
-
-    /// Asserts that no `acp-agent` process remains after the run: the
-    /// client group-killed and reaped the agent it spawned.
-    ///
-    /// - Throws: The locator or spawn error.
-    private static func assertNoAgentProcessRemains() throws {
-        let agentPath = try BuiltProductLocator.executableURL(
-            named: TierThreeFixture.agentExecutableName
-        ).path
-        let pgrep = Process()
-        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        pgrep.arguments = ["-f", agentPath]
-        pgrep.standardOutput = Pipe()
-        try pgrep.run()
-        pgrep.waitUntilExit()
-        #expect(
-            pgrep.terminationStatus == pgrepNoMatchStatus,
-            "an acp-agent process remains after the run")
     }
 
     // MARK: - The contract
@@ -126,7 +102,7 @@ struct ClientServerTests {
         #expect(
             run.standardError.contains(Self.endTurnWireValue),
             "the stop reason is missing from stderr: \(run.standardError)")
-        try Self.assertNoAgentProcessRemains()
+        try ProcessCensus.expectNoAgentOutlivedItsRun()
     }
 
     /// The failure path: an agent that dies before the wire opens makes
@@ -147,7 +123,7 @@ struct ClientServerTests {
         #expect(
             run.standardOutput.isEmpty,
             "a failed turn wrote to stdout: \(run.standardOutput)")
-        try Self.assertNoAgentProcessRemains()
+        try ProcessCensus.expectNoAgentOutlivedItsRun()
     }
 
     /// The argument contract: the CLI takes exactly one positional
