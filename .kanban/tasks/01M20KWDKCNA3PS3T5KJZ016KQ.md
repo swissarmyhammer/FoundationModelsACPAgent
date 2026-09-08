@@ -256,8 +256,26 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift. swift build: complete, no error. swift test: 489 tests in 51 suites passed, 1 known issue (HarnessSmokeTests.swift:239). The counts are the same as the baseline.
     - next: review
   timestamp: 2026-09-08T18:40:50.248189+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m2159kpzchfpng3723tfh235
+  text: |
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` (commit ea2ac1c). 7 validators ran. 0 findings. The round-1 finding at `Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift:30` is closed: the bare `@Suite` attribute is removed, and the type is now a plain `struct TranscriptFidelityTests`.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-08T18:43:11.199345+00:00
+- actor: claude-code
+  id: 01m2159ycy0hd8nhk5f9xfm4c6
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file, the bare `@Suite` attribute removed. The suite is still found and its five proofs still pass.
+    - test: green — swift test 489 tests in 51 suites, one known issue
+    - commit: ea2ac1c
+    - review: clean — 7 validators, 0 findings; the round-1 finding verified closed
+    - the card is in done
+  timestamp: 2026-09-08T18:43:22.142105+00:00
+position_column: done
+position_ordinal: be80
 title: The instructions entry is rewritten every turn, and the differ discards the whole turn
 ---
 ### What

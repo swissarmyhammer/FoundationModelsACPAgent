@@ -77,7 +77,7 @@ struct PromptTurn: Sendable {
     static let stalledStopReasonValue = "_stalled"
 
     /// The seconds ``stalledGenerationBound`` is built from.
-    private static let stalledGenerationBoundSeconds = 120
+    private static let stalledGenerationBoundSeconds = 1800
 
     /// How long a generation may run with no fragment at all before the
     /// turn stops waiting on it (task ^s0bw5cv).
@@ -89,11 +89,27 @@ struct PromptTurn: Sendable {
     /// 3120 seconds and made zero fragments, and the person who asked
     /// for the answer read nothing at all.
     ///
-    /// Two minutes is four of Router's own 30-second report intervals.
-    /// A model that works streams its first fragment in seconds, and
-    /// the slowest honest wait is the prefill of a long prompt, so two
-    /// minutes with not one fragment reads as a model this loader
-    /// cannot drive rather than a slow one.
+    /// The bound is thirty minutes, and it was two minutes until task
+    /// ^ec8hn3z measured what two minutes costs. Two facts set it.
+    ///
+    /// A real build task reaches its first observable output long after
+    /// two minutes. Measured on 2026-09-08 with
+    /// `mlx-community/Qwen3.8-27B-mxfp4`, the tier-4 `greet` prompt made
+    /// its FIRST tool call 555 seconds after the prompt, and then wrote
+    /// the three files, ran pytest green and printed the expected line.
+    /// Under the two-minute bound the same prompt ended with `_stalled`
+    /// every time.
+    ///
+    /// A zero fragment count is no evidence that the model made nothing.
+    /// Through that whole successful turn Router kept reporting `0
+    /// fragments`, at 1780 seconds in flight, while `runCode` and shell
+    /// calls were completing. So ``endsTurn(_:sawOutput:)`` holds one
+    /// honest signal, `sawOutput`, and the bound must stand clear of the
+    /// window before the first output rather than measure the decode.
+    ///
+    /// Thirty minutes stands well past the measured 555 seconds and well
+    /// under the 3120 seconds of the model that made nothing, so the
+    /// guard still ends a generation this loader cannot drive.
     static let stalledGenerationBound: Duration = .seconds(stalledGenerationBoundSeconds)
 
     /// The id of the session this turn runs in.

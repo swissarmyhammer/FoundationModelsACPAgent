@@ -112,8 +112,38 @@ comments:
     - `swift build --package-path IntegrationTests --build-tests` is clean too, so the tier-4 target still compiles with the new `modelName` field.
     - next: review.
   timestamp: 2026-09-08T19:46:20.725870+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m219e4hbk3gedqc30dtymhjz
+  text: |
+    ### review — clean
+
+    - scope: `review sha HEAD~1..HEAD` (commit b80a57a), this repository only
+    - evidence: 14 validator runs on 9 files, 0 findings, 0 confirmed, 0 refuted, 0 failed
+    - not reviewed: `.kanban/` files by the ignore rule, `cli-plan.md` and `plan.md` because no validator matches a Markdown file
+    - no prior `## Review Findings` section is open on this card
+    - next: the card moves to Done. The one open acceptance item, the tier-4 eval samples, is the work of `^ec8hn3z` and not of this card.
+  timestamp: 2026-09-08T19:55:33.803568+00:00
+- actor: claude-code
+  id: 01m219ep5nn6w3m83bdvndn9xm
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — the default moved to `mxfp4` in five places, and the stall guard was built in `PromptTurn`. Router already emits `SessionEvent.generationStalled` on the stream the turn consumes, so no sibling change was necessary.
+    - test: green — swift build clean; root swift test 493 tests in 51 suites, one known issue (489 before, four new tests); the nested package builds clean
+    - commit: b80a57a — 15 files
+    - review: clean — 14 validator runs on 9 files, 0 findings
+    - the card is in done
+
+    The one unchecked item is the tier-4 eval criterion. `^ec8hn3z` holds it,
+    because the eval hangs for a separate reason: `mxfp4` answers through
+    `acp-agent run`, with the whole `searchTools` to `runCode` to `wait`
+    chain, and it makes no fragment under the eval harness.
+
+    A refusal at RESOLUTION time is still open, and it is Router's: this
+    package receives a profile that is already resident. That needs a card
+    on `FoundationModelsRouter`, discussed first.
+  timestamp: 2026-09-08T19:55:51.861332+00:00
+position_column: done
+position_ordinal: bf80
 title: The shipped standard default names the 4bit build, which does not generate
 ---
 ### What

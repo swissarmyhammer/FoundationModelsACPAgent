@@ -129,11 +129,39 @@ comments:
       suite. `swift build` is clean, with no source warning.
     - next: review.
   timestamp: 2026-09-07T21:20:29.258196+00:00
+- actor: claude-code
+  id: 01m1yw79h5p56yh3v4w145fpvw
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 62aa9aa), 7 validators, 0 findings, 0 confirmed, 0 refuted, 0 failed. 4 files reviewed. The 4 `.kanban/` files are out of scope by an ignore rule.
+    - the stdout contract: `EventLineWriter.write` writes only to `destination`. `RunCommand.eventLineWriter` gives `.standardError`, and the default `.silent` gives `.nullDevice`. No path gives file descriptor 1. `standardOutputIsIdenticalAcrossTheFourFlagCombinations` shows the same stdout bytes for the four flag pairs.
+    - both directions: `--verbose` shows what is added by an equality with the full line list, and what is not added by the empty capture for the answer chunk and the running state. `--quiet` shows what is removed by the empty capture and the bar that is off, and what stays by the error path assertion.
+    - the `--quiet` decision: correct. `AcpAgentCommand.exitAfterFailure` keeps the error path, so a quiet run writes nothing but the error, as the card asks. A second error writer would print each failure two times.
+    - the tool-name memory: bounded. `toolNames` is in a struct, and `RunTurn.collect` makes a local copy that ends with the turn. One `run` is one turn, so the map holds only the tool call ids of that turn.
+    - next: none. The card is done.
+  timestamp: 2026-09-07T21:26:09.189303+00:00
+- actor: claude-code
+  id: 01m1yw8asxbev1bt36bk3v1nzm
+  text: |
+    ### finish iteration 1 — clean
+
+    - implement: changed — 4 files. `Sources/acp-agent/EventLineWriter.swift` and `Tests/FoundationModelsACPAgentTests/EventLineWriterTests.swift` are new; `RunTurn.swift` and `RunCommand.swift` thread `reporting events: EventLineWriter` through, `.silent` by default, so every earlier call site keeps its silence. `EventVerbosity` is `quiet`, `normal`, `verbose`, and `--quiet` wins when both flags stand. The writer projects one line for a tool call update, a plan update and the idle state update, and nothing for any other update. The tests were written first: `swift build --build-tests` gave `cannot find 'EventLineWriter' in scope` before the production file existed.
+    - test: three `swift test` runs in sequence, each 457 tests in 47 suites with 1 known issue, the `withKnownIssue` at `Tests/FoundationModelsACPAgentTests/Support/HarnessSmokeTests.swift:239`. The baseline was 442 in 46 suites, so this card adds 15 cases and one suite. `swift build` gave no source warning.
+    - commit: `62aa9aa` `feat(cli): write one stderr line for each session event of a run`
+    - review: clean — 0 findings from 7 validators, 4 files reviewed.
+
+    The review answered four questions against the code:
+
+    1. No path gives an event line to file descriptor 1. `EventLineWriter` has one sink, and `destination` is a `let` set at construction. The two constructions are `.standardError` and `.nullDevice`. The failing path keeps the same destination, because `RunTurn` holds the outcome in a `Result` and tears the wire down before it rethrows. `standardOutputIsIdenticalAcrossTheFourFlagCombinations` shows the four stdout captures are equal to each other and to the scripted answer.
+    2. Both directions are proven for both flags. The `--verbose` case asserts equality on the full line list, so it also shows that nothing extra is written.
+    3. The `--quiet` reading is right. The flag stops the event lines and the progress bar, and `AcpAgentCommand.exitAfterFailure` keeps its own error path, which no `run` flag reaches. A second error writer would write each failure two times.
+    4. The tool-name map is bounded. `RunTurn.collect` takes a value copy, and a `run` is one turn per process, so the map holds at most the tool call ids of that one turn and dies with the call.
+  timestamp: 2026-09-07T21:26:43.261362+00:00
 depends_on:
 - 01M1MP01P7SV7C2S0S8QZ0A60T
 - 01M1MNXY19R8HPEMNGF2WXB0G6
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ba80
 title: '--verbose and --quiet: the session event lines on stderr'
 ---
 ### What

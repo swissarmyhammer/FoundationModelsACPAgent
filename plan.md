@@ -931,6 +931,16 @@ already streamed is a slow decode, and a stall on a fresh call raised while a
 tool runs is a slow tool. Neither is a model that cannot generate, and the
 report-only behaviour of the table row stands for both.
 
+Of those two facts, `sawOutput` is the only one the agent can trust, and the
+bound must therefore stand clear of the whole window before the first output
+(task ^ec8hn3z). Measured on 2026-09-08 with
+`mlx-community/Qwen3.8-27B-mxfp4`: a tier-4 build prompt reached its FIRST
+tool call 555 seconds after the prompt, and through that same successful turn
+Router kept reporting `0 fragments` at 1780 seconds in flight while `runCode`
+and shell calls were completing. So a fragment count of zero never proves that
+the model made nothing, and a bound of two minutes ended a healthy turn every
+time. `PromptTurn.stalledGenerationBound` is thirty minutes for that reason.
+
 **One wire update has no `SessionEvent` source: `tool_call_content_chunk`.**
 It appends one `ToolCallContent` item to a tool call's content, and a later
 `tool_call_update` with `content` replaces the whole array (the tool-call

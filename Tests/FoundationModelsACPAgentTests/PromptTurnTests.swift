@@ -553,6 +553,40 @@ import Testing
         #expect(reason == .endTurn)
     }
 
+    /// The seconds a real build task took to reach its FIRST observable
+    /// output, on the shipped standard model (task ^ec8hn3z).
+    ///
+    /// Measured on 2026-09-08 with `mlx-community/Qwen3.8-27B-mxfp4`:
+    /// the tier-4 `greet` prompt, sent through `acp-agent run`, made its
+    /// first tool call 555 seconds after the prompt, and then wrote the
+    /// three files, ran pytest green and printed the expected line. The
+    /// turn thus makes no observable output at all for the first nine
+    /// minutes.
+    private static let measuredSecondsToFirstOutput = 555
+
+    /// A generation that has made no fragment for as long as a real
+    /// build task takes to reach its first output does NOT end the turn.
+    ///
+    /// The stall reports of that measured run said `0 fragments` for the
+    /// whole turn, while `runCode` and shell calls were completing, so a
+    /// fragment count of zero never proves that the model made nothing.
+    /// A bound under the measured time therefore ends a healthy turn.
+    @Test(.timeLimit(.minutes(1)))
+    func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndTheTurn() async throws {
+        let stall = Self.makeStall(
+            withoutProgress: .seconds(Self.measuredSecondsToFirstOutput), fragments: 0)
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .generationStalled(stall),
+                .textDelta("the first output, nine minutes in"),
+                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+            ]))
+        _ = await recorder.updates
+
+        #expect(reason == .endTurn)
+    }
+
     // MARK: - The requires_action pairing (§8.2)
 
     /// Makes one composed Router session for the gate pairing tests.

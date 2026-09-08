@@ -28,10 +28,21 @@ import Tokenizers
 
 /// The ceiling of ONE prompt turn, in seconds: the prompt to its
 /// idle terminator, covering a multi-step build with a venv creation
-/// and a network package install on a local model. The measured
-/// 2026-09-02 probe build, on the 14B model that was then the
-/// default, took about one minute end to end.
-private let evalSampleIdleCeilingSeconds = 300
+/// and a network package install on a local model.
+///
+/// It was 300 seconds until task ^ec8hn3z measured one whole sample.
+/// Measured on 2026-09-08 with ``evalStandardModel``, the `greet`
+/// sample took 658 seconds through this suite — one turn, 38 tool
+/// calls, 146655 tokens, `end_turn`, and all four graders green. The
+/// same prompt through `acp-agent run` reached its FIRST tool call
+/// 555 seconds after the prompt and ran about 3100 seconds on a loaded
+/// machine. A 300-second ceiling cut every sample off before its first
+/// tool call, so every sample read as a hang.
+///
+/// One hour stands clear of both measurements. The ceiling is a hang
+/// guard, not a budget: a sample that answers takes the time it takes,
+/// and one that never answers still ends.
+private let evalSampleIdleCeilingSeconds = 3600
 
 /// The number of seconds in one minute, for the suite-ceiling
 /// arithmetic.
@@ -90,12 +101,15 @@ private let evalProfileYAML = """
 
 /// The mean pass-rate floor every metric is asserted against.
 ///
-/// A TARGET bar, not a measured baseline. The 2026-09-02 evidence
-/// runs measured 0 of 1 on the evidence sample for both the default
-/// and the pinned model, so the gated tier currently fails this bar
-/// and its per-sample evidence lines say why. The bar states that at
-/// least half the driven samples must pass each metric; re-base it to
-/// a measured floor once the models clear samples.
+/// A TARGET bar, not a measured baseline. The bar states that at least
+/// half the driven samples must pass each metric; re-base it to a
+/// measured floor once a whole-dataset run states one.
+///
+/// The first sample to clear it was measured on 2026-09-08, after task
+/// ^ec8hn3z lifted the two ceilings that ended a healthy turn: `greet`
+/// answered with `end_turn` in 658 seconds, over 38 tool calls and
+/// 146655 tokens, and all four graders passed. No whole-dataset run
+/// stands behind the bar yet.
 let pythonCLIEvalMeanFloor = 0.5
 
 // MARK: - The evaluation

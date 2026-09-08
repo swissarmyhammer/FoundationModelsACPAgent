@@ -82,10 +82,29 @@ comments:
 
     So one entry changed. The paragraph that follows the entry is re-flowed to the wrap width the file holds, because the shorter first word left a short line.
   timestamp: 2026-09-07T22:41:15.388074+00:00
+- actor: claude-code
+  id: 01m1z0np8dhq840hc81gjwq974
+  text: |
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` on commit b603b92. 7 validators ran. They gave 0 new findings. 1 file was in the scope. The 2 `.kanban/` files are out of the scope, because an ignore rule holds them out.
+    - round 1: the one finding is closed. `Tests/FoundationModelsACPAgentTests/ExitCodeTests.swift:113` now reads `///   - arrivedText:`. This name agrees with the internal parameter name on the function. The other doc comment in the same file names its internal parameter `source` correctly, thus the cause is gone from the full file.
+    - next: no work is open. The card moves to Done.
+  timestamp: 2026-09-07T22:43:55.277933+00:00
+- actor: claude-code
+  id: 01m1z0p81egf763jsd1es2bq8w
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file, the doc entry now names the internal parameter, and all four entries in the file are checked
+    - test: green — swift test, 484 tests in 50 suites, one known issue
+    - commit: b603b92
+    - review: clean — 7 validators, 0 findings; the round-1 finding verified closed in the code
+    - the card is in done
+  timestamp: 2026-09-07T22:44:13.486355+00:00
 depends_on:
 - 01M1MP0MQ6VHRR004FQQEADS6C
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: bc80
 title: 'Exit codes: one table for every stop reason and failure'
 ---
 ## What

@@ -267,10 +267,32 @@ comments:
     - All three review findings are now `- [x]` on the card.
     - next: `/review`.
   timestamp: 2026-09-07T22:10:27.588099+00:00
+- actor: claude-code
+  id: 01m1yyzx4bvwr8dfvxsgeax3q6
+  text: |-
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` (commit b62e1df). 7 validators ran. 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. The 2 `.kanban/` files are excluded by `.reviewignore`.
+    - round 2: the 3 findings of round 1 are closed. Each one is checked in the code:
+      - `ConfigurationYAML.swift` — the first parameter of `completed(value:forSection:)` now has a label. `annotated(line:with:)`, `sequenceItemLines(of:indent:)` and `indentation(atLevel:)` also have labels.
+      - `ConfigCommand.swift` — one shared `Config.makeStack(...)` method. Three call sites use it. No duplicate stack setup.
+      - `ConfigCommandFixture.swift` — the local `text(at:)` helper is removed. The tests call the shared `textOnDisk(at:)` helper.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-07T22:14:32.843084+00:00
+- actor: claude-code
+  id: 01m1yz0cjjzk1sj42xj3axgjn4
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files, the three findings corrected and the cause removed from each whole file
+    - test: green — swift test twice, 474 tests in 49 suites, one known issue
+    - commit: b62e1df
+    - review: clean — 7 validators, 0 findings; the three round-1 findings verified closed in the code
+    - the card is in done
+  timestamp: 2026-09-07T22:14:48.658620+00:00
 depends_on:
 - 01M1MNYFW81216M57PS9NDZKBE
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: bb80
 title: config init and config edit, sharing one writer with /config export
 ---
 ## What
