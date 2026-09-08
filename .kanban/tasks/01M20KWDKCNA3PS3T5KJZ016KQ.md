@@ -207,6 +207,55 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift, Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift. swift build: complete. swift test: 489 tests in 51 suites passed, 1 known issue (HarnessSmokeTests.swift:239). Baseline: 484 tests in 50 suites.
     - next: review
   timestamp: 2026-09-08T18:33:40.204155+00:00
+- actor: claude-code
+  id: 01m2151wws3rjtd2penmndwyw3
+  text: |-
+    ### review — findings
+    - evidence: 1 finding — Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift:30 (scope: review sha HEAD~1..HEAD, commit ee7a1c7)
+    - next: remove the empty @Suite attribute, then run the review again
+  timestamp: 2026-09-08T18:38:58.457986+00:00
+- actor: claude-code
+  id: 01m21527vyatwsh1yy4mwtx5fs
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 2 files. The card became the agent-side verification after the user fixed the cause in the Router. Five proofs, with a red first run and three falsification experiments.
+    - test: green — swift build complete; swift test 489 tests in 51 suites, one known issue (baseline 484 in 50)
+    - commit: ee7a1c7 (13 files: the proofs, the scripted backend, the Router pin at cc51793, the eval model pin, and the board)
+    - review: findings — Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift:30 (code-hygiene/idioms-swift, redundantSwiftTestingSuite)
+  timestamp: 2026-09-08T18:39:09.694499+00:00
+- actor: claude-code
+  id: 01m2155720j9qd8angybwzk4fj
+  text: |-
+    ### The redundant @Suite attribute is removed
+
+    The finding, word for word:
+
+    `Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift:30`
+    `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove
+    redundant @Suite attribute with no arguments.
+
+    I looked at every `@Suite` attribute in the file. There is one, and it
+    carries no arguments. The line is now:
+
+    ```
+    struct TranscriptFidelityTests {
+    ```
+
+    Swift Testing finds a type that holds `@Test` functions without the
+    attribute, so the suite is still found. The test run shows
+    `Suite TranscriptFidelityTests passed`, and the totals do not move:
+    489 tests in 51 suites, the same as the baseline. The one known issue
+    stays at `HarnessSmokeTests.swift:239`.
+
+    No other file changed.
+  timestamp: 2026-09-08T18:40:47.168943+00:00
+- actor: claude-code
+  id: 01m2155a28jn1nq6drwaxjxj93
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift. swift build: complete, no error. swift test: 489 tests in 51 suites passed, 1 known issue (HarnessSmokeTests.swift:239). The counts are the same as the baseline.
+    - next: review
+  timestamp: 2026-09-08T18:40:50.248189+00:00
 position_column: doing
 position_ordinal: '8180'
 title: The instructions entry is rewritten every turn, and the differ discards the whole turn
@@ -298,3 +347,12 @@ keeps its own history of a discarded turn is answered, and the answer is
 no loss: `liveSession` is a `let`, held once, and the recorder only
 observes its transcript. This defect HIDES the snippet failures; it does
 not cause them. Card `^95jyv07` holds that question.
+
+## Review Findings (2026-09-08 13:36)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift:30` `code-hygiene/idioms-swift` — redundantSwiftTestingSuite: Remove redundant @Suite attribute with no arguments.
