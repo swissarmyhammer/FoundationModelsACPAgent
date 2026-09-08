@@ -1,6 +1,16 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m21hz1fqcr1cxb00jr4c71pj
+  text: |-
+    ### The upstream card is made
+
+    `FoundationModelsACPClient` card **`^man82w6`** — "N6: --timeout, the interrupt, and the reaping proofs". It is in `todo` and carries the full specification of this card.
+
+    This card stays open until that one is done and merged to ACPClient `main`.
+  timestamp: 2026-09-08T22:24:36.343759+00:00
 depends_on:
 - 01M1MP6PBZ3X4FAA6CVCFKR6VW
 position_column: todo

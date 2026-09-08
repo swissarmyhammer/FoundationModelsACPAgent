@@ -1,6 +1,16 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m21hytvdtv7hwjq7tb8a3v7z
+  text: |-
+    ### The upstream card is made
+
+    `FoundationModelsRouter` card **`^5545bna`** — "Make the per-slot ResolutionProgress surface public". It is in `todo` and carries the full specification of this card, written from Router's own view.
+
+    This card stays open until that one is done and merged to Router `main`.
+  timestamp: 2026-09-08T22:24:29.549392+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Router: make the per-slot ResolutionProgress surface public'

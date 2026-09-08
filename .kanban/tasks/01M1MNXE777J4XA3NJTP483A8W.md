@@ -1,6 +1,16 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m21hywjhfs1c0pwm3kq9apve
+  text: |-
+    ### The upstream card is made
+
+    `FoundationModelsExtras` card **`^gpfa1sy`** — "Doctorable module: D1 to D3". It is in `todo` and carries the full specification of this card, written from the Extras view.
+
+    This card stays open until that one is done and merged to Extras `main`.
+  timestamp: 2026-09-08T22:24:31.313365+00:00
 position_column: todo
 position_ordinal: '8180'
 title: 'Extras: the Doctorable module, D1 to D3'

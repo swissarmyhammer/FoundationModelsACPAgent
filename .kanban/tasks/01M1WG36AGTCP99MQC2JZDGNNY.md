@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m21hz5k8qfewhcxe9deq08bm
+  text: |-
+    ### The upstream card is made
+
+    `FoundationModelsACPClient` card **`^vs86g2a`** — "cli-plan §5: reconcile "a progress bar and a table" with the one terminal file". It is in `todo` and carries the full specification of this card.
+
+    Note that the first subtask of that card asks for a DECISION with a person, between the two ways out. It is not work an agent can close on its own.
+
+    This card stays open until that one is done and merged to ACPClient `main`.
+  timestamp: 2026-09-08T22:24:40.552575+00:00
 position_column: todo
 position_ordinal: 9b80
 title: 'acp-client cli-plan §5: reconcile "a progress bar and a table" with the one terminal file'

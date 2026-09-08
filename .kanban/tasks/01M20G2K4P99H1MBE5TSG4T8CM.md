@@ -355,10 +355,27 @@ comments:
     same reads, through the shared type, with the kind strings named
     instead of written inline.
   timestamp: 2026-09-08T21:47:40.171854+00:00
+- actor: claude-code
+  id: 01m21g3nqewmkx4tkw1r6qhgat
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit f67ca45) — 0 findings, 0 confirmed, 0 refuted, 7 files attempted, 0 failed. 3 code files reviewed: `Tests/FoundationModelsACPAgentTests/RunCodeSourceTests.swift`, `Tests/FoundationModelsACPAgentTests/Support/RecordedTranscriptFile.swift`, `Tests/FoundationModelsACPAgentTests/TranscriptFidelityTests.swift`. The 6 `.kanban/` files are excluded by `.reviewignore`, and `plan.md` has no validator.
+    - next: the card has no open finding, and all its items are marked. The card moves to Done.
+  timestamp: 2026-09-08T21:52:10.990726+00:00
+- actor: claude-code
+  id: 01m21g44akxpxpgy1xfc4183q7
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — 4 files: RunCodeSourceTests.swift (new), Support/RecordedTranscriptFile.swift (new), TranscriptFidelityTests.swift, plan.md §4.7
+    - test: green — swift test, 497 tests in 52 suites, 1 known issue at HarnessSmokeTests.swift:239
+    - commit: f67ca45
+    - review: clean — 0 findings, review sha HEAD~1..HEAD
+    - result: the `{}` finding of the card is gone. Router's append-only recorder writes the `toolCalls` entry, and its `argumentsJSON` holds the snippet source whole — a 100,013-byte snippet records as 102,025 bytes, with nothing dropped. No Router change is necessary. The work that stayed was the join: no one entry holds both halves, so the three hops are now written down and proved.
+  timestamp: 2026-09-08T21:52:25.939268+00:00
 depends_on:
 - 01M20KWDKCNA3PS3T5KJZ016KQ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: c180
 title: Keep the runCode snippet source in the transcript, so a failed run can be read
 ---
 ### What
