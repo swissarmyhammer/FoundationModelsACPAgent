@@ -1,0 +1,6 @@
+# The results of a run. They are large, they are machine-local, and a new run
+# makes them again.
+preds*.jsonl
+*.log
+*.score.*.json
+logs/
