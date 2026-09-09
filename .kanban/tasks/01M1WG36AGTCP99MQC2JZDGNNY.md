@@ -162,8 +162,28 @@ comments:
       `../FoundationModelsACPClient` changed.
     - next: the card is ready for review. All rows are ticked.
   timestamp: 2026-09-09T11:56:27.448753+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m230jscejdhv22r2b0zjs9fz
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 040b4f5) — 0 findings, 0 confirmed, 0 refuted. The 4 changed files are all kanban card text under `.kanban/`, which `.reviewignore` excludes. No source file changed.
+    - record check: the decision row names the decision of the user of 2026-09-09 ("just a spinner") and says the tick rests on that decision, not on an assumption. The `swift test` row names its source, the ledger of upstream card ^vs86g2a, and says plainly that this board ran no suite in that repository. The card names upstream commit 1afd74a on FoundationModelsACPClient main as the place way 1 landed. No tick claims more than its stated source.
+    - scope note: the sibling repository was not opened. The review is limited to this repository.
+    - next: card moved to done. No open findings.
+  timestamp: 2026-09-09T11:59:17.902372+00:00
+- actor: claude-code
+  id: 01m230kah4pb75refk2eqk0zb9
+  text: |-
+    ### finish iteration 2 — clean
+    - the user decided on 2026-09-09: way 1, in their words "just a spinner". Section 5 names the spinner alone. Way 2 is not taken, so §8 and the `--json` row of §6.1 stay as they are, and no new card was made for it.
+    - implement: changed — card text only. This step read `cli-plan.md` §5 and `Sources/AcpClientCore/TerminalOutput.swift` on ACPClient `main` and confirmed both: the document names the spinner, and the file vends `withSpinner`, `event`, `frame`, `error` and the logger bridge, with no table type and no progress-bar type.
+    - commit: 040b4f5
+    - review: clean — 0 findings. The review checked the basis of each tick and found that none claims more than its stated source.
+    - the basis of each tick, kept in the record: the decision row rests on the user's decision of today, not on an assumption; the `swift test` row is ticked from the ledger of upstream card `^vs86g2a`, and this board ran no suite in that repository; the §5 row and the code row are satisfied by ACPClient commit 1afd74a.
+    - the upstream card `^vs86g2a` now carries the same correction, so its own record is true as it stands.
+  timestamp: 2026-09-09T11:59:35.460869+00:00
+position_column: done
+position_ordinal: cd80
 title: 'acp-client cli-plan §5: reconcile "a progress bar and a table" with the one terminal file'
 ---
 ### What
