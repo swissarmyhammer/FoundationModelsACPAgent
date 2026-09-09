@@ -101,10 +101,28 @@ comments:
     - evidence: card content only, 2 files — /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.kanban/tasks/01M1MR8849R5508HXGEBTRRZAV.md and its .jsonl. No source file of this repository changed, so the root `swift test` baseline of 497 tests in 52 suites is untouched. The tracked upstream work is on `FoundationModelsACPClient` `main` at commit `3051c5c`, and each acceptance row was read in the upstream source and tests before the box was ticked.
     - next: ready for `/review`.
   timestamp: 2026-09-09T01:34:35.096581+00:00
+- actor: claude-code
+  id: 01m21wze41bzex3c5qst536bc7
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 5a5063e). 0 findings, 0 confirmed, 0 refuted. The commit changes 4 files, and all 4 are in `.kanban/`, which the `.reviewignore` rule excludes. No source file and no dependency changed.
+    - next: the card moves to done. The upstream work is in FoundationModelsACPClient card ^man82w6, which is merged at commit 3051c5c.
+  timestamp: 2026-09-09T01:37:03.617219+00:00
+- actor: claude-code
+  id: 01m21x04aryycre0hf7skdhbzh
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — card text only. Verified upstream commit 3051c5c on FoundationModelsACPClient `main` (main equals origin/main at a11baae) by reading the code and the tests: exit 124 for `--timeout`; exit 4 for one SIGINT with `session/cancel` in the agent's own transcript before the exit and the partial answer on stdout by byte equality; a second SIGINT inside a named 2-second bound; and one reaping test per exit path (success, failure, timeout, interrupt) through `expectAgentGroupIsGone` with `kill(-pgid, 0)`. The `DispatchSourceSignal` handler body is one statement, held to that by `InterruptHandlerSourceTests`.
+    - test: green — swift test, 497 tests in 52 suites, 1 known issue at HarnessSmokeTests.swift:239
+    - commit: 5a5063e
+    - review: clean — 0 findings, review sha HEAD~1..HEAD
+    - result: the upstream card `^man82w6` is done, merged to ACPClient `main`, and pushed. No code change was necessary here.
+    - recorded honestly: the row "`swift test` in the ACPClient repository passes" is ticked from the upstream ledger of `^man82w6` (229 unit tests, 92 integration tests, 0 warnings), not from a run in that repository, because this card must change nothing there.
+  timestamp: 2026-09-09T01:37:26.360489+00:00
 depends_on:
 - 01M1MP6PBZ3X4FAA6CVCFKR6VW
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: c580
 title: 'acp-client N6: --timeout, the interrupt, and the reaping proofs'
 ---
 ### What
