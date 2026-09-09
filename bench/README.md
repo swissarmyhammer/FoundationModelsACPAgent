@@ -30,20 +30,25 @@ cd /path/to/FoundationModelsACPAgent
 swift build -c release
 
 # 1. Make the patches. Start with 3, and keep a record.
-uv run bench/swebench_run.py preds.jsonl --limit 3 | tee run.log
+uv run bench/swebench_run.py bench/preds.jsonl --limit 3 | tee bench/run.log
 
 # 2. Give the score. Docker must run.
-uv run bench/swebench_score.py preds.jsonl
+uv run bench/swebench_score.py bench/preds.jsonl
 ```
 
 `uv` gets the Python dependencies of each script, at the versions the script
 pins. There is nothing to install by hand.
 
+**Write the results into `bench/`.** The `.gitignore` of this directory keeps
+`preds*.jsonl`, `*.log`, the score reports and `logs/` out of git. A results
+file at the root of the package is not ignored, and it makes the working tree
+dirty.
+
 ### One problem only
 
 ```bash
-uv run bench/swebench_run.py preds.jsonl -i psf__requests-2317 --verbose
-uv run bench/swebench_score.py preds.jsonl
+uv run bench/swebench_run.py bench/preds.jsonl -i psf__requests-2317 --verbose
+uv run bench/swebench_score.py bench/preds.jsonl
 ```
 
 `psf__requests-2317` is a good first choice: the repository is small, so the
@@ -56,7 +61,7 @@ The scripts look for the release build, then the debug build, then the PATH.
 So a debug build works:
 
 ```bash
-uv run bench/swebench_run.py preds.jsonl --limit 3
+uv run bench/swebench_run.py bench/preds.jsonl --limit 3
 ```
 
 But a debug build is much slower than a release build for MLX inference. For
@@ -67,8 +72,8 @@ The first line of the output says which binary it found. Read it.
 ### The full split
 
 ```bash
-uv run bench/swebench_run.py preds.jsonl | tee run.log
-uv run bench/swebench_score.py preds.jsonl
+uv run bench/swebench_run.py bench/preds.jsonl | tee bench/run.log
+uv run bench/swebench_score.py bench/preds.jsonl
 ```
 
 Measure the time of 3 instances on your machine before you do this. The
