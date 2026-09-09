@@ -87,10 +87,29 @@ comments:
       failures and zero warnings; the timeout test takes 0.202 seconds.
     - next: `/review`.
   timestamp: 2026-09-09T03:20:08.285494+00:00
+- actor: claude-code
+  id: 01m224dyb00ya17secqvbtectv
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (c019caa). 0 findings, 0 confirmed, 0 refuted. 7 validators ran on 9 files. 4 kanban files were not read, because an ignore rule excludes them.
+    - next: none. The card is in the done column.
+  timestamp: 2026-09-09T03:47:19.008378+00:00
+- actor: claude-code
+  id: 01m224ej53qd13ydv7cgzx5ked
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — 13 files. `ToolsDoctor` is the third component, category `tools`: rows for the seatbelt sandbox, each `sandbox.extraWritePaths` entry, the shell, and each configured MCP server. `ToolsProber` is the injected seam and nothing throws; `SystemToolsProber` reuses `SeatbeltSandbox.preflight` and `MCPComposition.connectServers`. No unit test spawns a process. `WritableDirectoryCheck` holds the directory rule that `TranscriptsDoctor` and the shell-store check share.
+    - every prober call runs under a 5-second timeout that a test can override. `ProbeTimeout.run` races the probe against a timer in unstructured tasks, so a probe that ignores cancellation cannot hold the run.
+    - dead end worth keeping: the stub prober first modelled "never answers" with a never-resumed `withCheckedContinuation`, and the suite printed `SWIFT TASK CONTINUATION MISUSE`. The stub now waits and answers late, which is cancellable and leaves no suspended task.
+    - test-first: red with "cannot find type 'ToolsProber' in scope" and "cannot find type 'ProbeOutcome' in scope"
+    - test: green — swift test after a clean build, 536 tests in 58 suites, 1 known issue at HarnessSmokeTests.swift:239. It was 525 in 57 before. The ToolsDoctor suite ran eight times with no flakiness and no continuation misuse.
+    - commit: c019caa
+    - review: clean — 0 findings, 7 validators, 9 files. The concurrency of the unstructured-task race, the continuation discipline and the `Sendable` conformances were in scope and drew no defect.
+  timestamp: 2026-09-09T03:47:39.299418+00:00
 depends_on:
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ca80
 title: 'doctor checks: the sandbox, the tools and the MCP servers'
 ---
 ### What

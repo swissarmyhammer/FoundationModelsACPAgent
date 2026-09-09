@@ -335,6 +335,6 @@ public struct ToolsDoctor: Doctorable {
     private func probe(
         _ call: @escaping @Sendable () async -> ProbeOutcome
     ) async -> ProbeOutcome {
-        await ProbeTimeout.run(seconds: timeoutSeconds, probe: call)
+        await ProbeTimeout.run(seconds: timeoutSeconds, timedOut: .timedOut, probe: call)
     }
 }

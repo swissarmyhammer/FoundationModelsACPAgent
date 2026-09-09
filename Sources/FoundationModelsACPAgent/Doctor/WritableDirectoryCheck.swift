@@ -10,6 +10,9 @@ import FoundationModelsExtras
 /// directory above it can be written, so the code that owns it can create
 /// it — so the rule is written one time here and each component states only
 /// its own name, subject and fix.
+///
+/// ``MachineFigures`` reads the walk alone: a free-disk figure is measured
+/// at the nearest directory above a model cache that is not on disk yet.
 enum WritableDirectoryCheck {
     /// The finding of one directory.
     ///
@@ -70,7 +73,7 @@ enum WritableDirectoryCheck {
     /// - Parameter url: The path to walk up from.
     /// - Returns: The nearest existing directory. The walk ends at the file
     ///   system root, which always exists.
-    private static func nearestExistingDirectory(of url: URL) -> URL {
+    static func nearestExistingDirectory(of url: URL) -> URL {
         var candidate = url
         while !FileManager.default.fileExists(atPath: candidate.path) {
             let parent = candidate.deletingLastPathComponent().standardizedFileURL

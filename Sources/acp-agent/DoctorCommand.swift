@@ -78,10 +78,11 @@ extension AcpAgentCommand {
         /// — appends its own conformance here, and the command around it
         /// never changes again.
         ///
-        /// The configuration, the transcripts and the tools are registered.
-        /// All three read one load of `config.yaml`, which this function
-        /// makes once and hands to each of them, so a `doctor` run reads
-        /// the stack a single time.
+        /// The configuration, the profile, the transcripts and the tools
+        /// are registered, in the order cli-plan.md §5.12 lists them. All
+        /// four read one load of `config.yaml`, which this function makes
+        /// once and hands to each of them, so a `doctor` run reads the
+        /// stack a single time.
         ///
         /// A component reports a failure as a ``HealthCheck`` with the
         /// `error` status, and never by throwing: `doctor` runs every
@@ -101,10 +102,21 @@ extension AcpAgentCommand {
         ///     starts the real seatbelt canary and connects each real MCP
         ///     server; a test injects a stub, so no unit test spawns a
         ///     process.
+        ///   - resolver: How ``ProfileDoctor`` reaches Hugging Face and the
+        ///     model cache. The default asks the real Hub and reads the
+        ///     real cache; a test injects a stub, so no unit test asks the
+        ///     network.
+        ///   - memoryBytes: The memory of this machine. A test injects a
+        ///     figure, so no finding depends on the host.
+        ///   - freeDiskBytes: The free disk of the model cache. A test
+        ///     injects a figure, for the same reason.
         /// - Returns: The components, in the order the report lists them.
         static func components(
             workingDirectory: URL, environment: [String: String],
-            prober: any ToolsProber = SystemToolsProber()
+            prober: any ToolsProber = SystemToolsProber(),
+            resolver: (any ModelResolver)? = nil,
+            memoryBytes: Int64 = MachineFigures.physicalMemoryBytes,
+            freeDiskBytes: Int64? = nil
         ) -> [any Doctorable] {
             guard
                 let loader = try? AgentComposition.makeConfigurationLoader(
@@ -112,9 +124,15 @@ extension AcpAgentCommand {
             else {
                 return []
             }
+            let cache = SystemModelResolver.hubCacheDirectory(environment: environment)
             let outcome = ConfigurationLoadOutcome(of: loader)
             return [
                 ConfigurationDoctor(stack: loader.stack, outcome: outcome),
+                ProfileDoctor(
+                    configuration: outcome.configuration,
+                    resolver: resolver ?? SystemModelResolver(environment: environment),
+                    memoryBytes: memoryBytes,
+                    freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: cache)),
                 TranscriptsDoctor(
                     configuration: outcome.configuration, stack: loader.stack,
                     name: loader.name, workingDirectory: workingDirectory),

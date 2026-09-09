@@ -9,8 +9,10 @@ import Testing
 /// components registered so far, and the fix rule that holds over every
 /// finding they report.
 ///
-/// The registry takes an injected prober, so the tools component starts no
-/// confined command and no MCP server here.
+/// The registry takes an injected prober, an injected resolver and the two
+/// machine figures, so the tools component starts no confined command and
+/// no MCP server here, the profile component asks no network endpoint, and
+/// no finding depends on the machine the suite runs on.
 struct DoctorRegistryTests {
     // MARK: - Constants
 
@@ -19,7 +21,14 @@ struct DoctorRegistryTests {
     private static let unknownSectionName = "surprise"
 
     /// The number of components the registry states.
-    private static let registeredComponentCount = 3
+    private static let registeredComponentCount = 4
+
+    /// A memory figure far above the profile floor, so the profile
+    /// component does not report the machine this suite runs on.
+    private static let generousMemoryBytes: Int64 = 68_719_476_736
+
+    /// A free-disk figure far above any download, for the same reason.
+    private static let generousDiskBytes: Int64 = 1_099_511_627_776
 
     // MARK: - Helpers
 
@@ -30,14 +39,16 @@ struct DoctorRegistryTests {
     private static func components(in fixture: ConfigCommandFixture) -> [any Doctorable] {
         AcpAgentCommand.Doctor.components(
             workingDirectory: fixture.workspace, environment: fixture.environment,
-            prober: StubToolsProber())
+            prober: StubToolsProber(), resolver: StubModelResolver(),
+            memoryBytes: generousMemoryBytes, freeDiskBytes: generousDiskBytes)
     }
 
     // MARK: - The registry
 
-    /// The registry states the configuration component, the transcripts
-    /// component and the tools component, in that order.
-    @Test func theRegistryStatesTheConfigurationTranscriptsAndToolsComponents() {
+    /// The registry states the configuration component, the profile
+    /// component, the transcripts component and the tools component, in
+    /// that order.
+    @Test func theRegistryStatesTheFourComponentsInPlanOrder() {
         let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-registry")
 
         let components = Self.components(in: fixture)
@@ -45,7 +56,8 @@ struct DoctorRegistryTests {
         #expect(components.count == Self.registeredComponentCount)
         #expect(
             components.map(\.doctorCategory) == [
-                ConfigurationDoctor.category, TranscriptsDoctor.category, ToolsDoctor.category,
+                ConfigurationDoctor.category, ProfileDoctor.category,
+                TranscriptsDoctor.category, ToolsDoctor.category,
             ])
     }
 
