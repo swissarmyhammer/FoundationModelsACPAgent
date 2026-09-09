@@ -32,8 +32,15 @@ uv run bench/swebench_run.py preds.jsonl --limit 3
 uv run bench/swebench_score.py preds.jsonl
 ```
 
-`uv` gets the Python dependencies of each script. There is nothing to install
-by hand. Each script has `--help`.
+`uv` gets the Python dependencies of each script, at the versions the script
+pins. There is nothing to install by hand. Each script has `--help`.
+
+Each script writes its messages to standard output, and it makes no log file.
+To keep a record of a long run, send standard output where you want it:
+
+```bash
+uv run bench/swebench_run.py preds.jsonl --limit 3 | tee run.log
+```
 
 ## What the agent gets
 

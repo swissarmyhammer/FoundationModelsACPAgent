@@ -2,8 +2,8 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "datasets",
-#     "rich",
+#     "datasets==5.0.1",
+#     "rich==15.0.0",
 # ]
 # ///
 """
@@ -68,7 +68,6 @@ HOW TO USE IT
 import argparse
 import json
 import os
-import re
 import shutil
 import signal
 import subprocess
@@ -164,35 +163,25 @@ def find_agent(explicit):
 AGENT = find_agent(args.agent)
 
 # --- logging ----------------------------------------------------------------
+# Every message goes to standard output, and this script writes no log file.
+# To keep a record, send standard output where you want it:
+#
+#     uv run bench/swebench_run.py preds.jsonl | tee run.log
+#
+# rich finds that standard output is not a terminal, and it then writes plain
+# text with no color. The predictions file stays the durable result.
 console = Console()
-# The log is appended, so a continued run keeps the record of the run before
-# it. The predictions file is the durable result; the log is a readable copy.
-logfile = outpath.with_suffix(outpath.suffix + ".log").open(
-    "w" if args.force else "a"
-)
 
 
 def log(markup):
-    """Write one milestone line, with the time.
-
-    The line goes to the terminal in color, and to the log file as text.
-    """
+    """Write one milestone line, with the time."""
     ts = time.strftime("%H:%M:%S")
     console.print(f"[dim]{ts}[/] {markup}", highlight=False)
-    logfile.write(f"{ts} {_plain(markup)}\n")
-    logfile.flush()
 
 
 def echo(line):
     """Write one raw line of agent output. It is indented and dim."""
     console.print(f"    {line}", markup=False, highlight=False, style="dim")
-    logfile.write(f"        {line}\n")
-    logfile.flush()
-
-
-def _plain(markup):
-    """Remove the rich markup tags, so the log file is clean text."""
-    return re.sub(r"\[/?[a-z0-9 #]*\]", "", markup)
 
 
 def stream_agent(cmd, cwd, prompt, timeout):
@@ -325,7 +314,7 @@ if outpath.exists() and outpath.stat().st_size and not args.force:
 
 log(
     f"[green]{len(instances)} instances[/] ({len(instances) - len(done)} to do) "
-    f"-> [bold]{outpath}[/] -> log [bold]{logfile.name}[/]"
+    f"-> [bold]{outpath}[/]"
 )
 
 counts = {"patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0}
@@ -442,9 +431,7 @@ table.add_row("too slow", f"[red]{counts['timeouts']}[/]" if counts["timeouts"] 
 table.add_row("errors", f"[red]{counts['errors']}[/]" if counts["errors"] else "0")
 table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))
-table.add_row("log", logfile.name)
 table.add_row("next", f"uv run bench/swebench_score.py {outpath}")
 table.add_row("wall time", f"{total_dt / 60:.1f} min")
 console.print()
 console.print(table)
-logfile.close()

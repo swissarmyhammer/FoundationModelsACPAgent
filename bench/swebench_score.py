@@ -2,8 +2,8 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "swebench",
-#     "rich",
+#     "swebench==5.0.2",
+#     "rich==15.0.0",
 # ]
 # ///
 """
@@ -74,6 +74,7 @@ def log(msg):
 
 
 def parse_args():
+    """Read the command line, and return the parsed arguments."""
     p = argparse.ArgumentParser(
         description="Give a score to a SWE-bench predictions.jsonl (docker)."
     )
@@ -190,6 +191,12 @@ def run_once(instance_ids, workers, force_rebuild, run_id, pred_path):
 
 
 def main():
+    """Score the predictions file, and write the summary beside it.
+
+    This does one harness pass, then one more pass for each instance that did
+    not run. It writes the table to standard output, and the machine-readable
+    summary to a JSON file beside the predictions.
+    """
     args = parse_args()
     pred_path = args.predictions
     if not pred_path.exists():
