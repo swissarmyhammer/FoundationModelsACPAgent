@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import Testing
 
@@ -16,9 +17,6 @@ struct ConfigurationDoctorTests {
 
     /// The permissions of a layer directory that cannot be read.
     private static let unreadablePermissions = NSNumber(value: 0o000)
-
-    /// The permissions a test puts back, so the directory can be removed.
-    private static let ownerPermissions = NSNumber(value: 0o700)
 
     /// A top-level section no schema section is named after.
     private static let unknownSectionName = "surprise"
@@ -69,17 +67,6 @@ struct ConfigurationDoctorTests {
         _ status: HealthStatus, in checks: [HealthCheck]
     ) -> [HealthCheck] {
         checks.filter { $0.status == status }
-    }
-
-    /// Sets the permissions of one directory.
-    ///
-    /// - Parameters:
-    ///   - permissions: The POSIX permissions to set.
-    ///   - directory: The directory to set them on.
-    /// - Throws: The attribute-write error.
-    private static func setPermissions(_ permissions: NSNumber, of directory: URL) throws {
-        try FileManager.default.setAttributes(
-            [.posixPermissions: permissions], ofItemAtPath: directory.path)
     }
 
     // MARK: - The load
@@ -155,10 +142,10 @@ struct ConfigurationDoctorTests {
         let fixture = ConfigCommandFixture(label: "ConfigurationDoctorTests-unreadable")
         try FileManager.default.createDirectory(
             at: fixture.projectDirectory, withIntermediateDirectories: true)
-        try Self.setPermissions(Self.unreadablePermissions, of: fixture.projectDirectory)
+        try setPermissions(Self.unreadablePermissions, of: fixture.projectDirectory)
 
         let checks = try await Self.checks(in: fixture)
-        try Self.setPermissions(Self.ownerPermissions, of: fixture.projectDirectory)
+        try setPermissions(ownerOnlyPermissions, of: fixture.projectDirectory)
 
         let errors = Self.findings(.error, in: checks)
         let failure = try #require(errors.first)

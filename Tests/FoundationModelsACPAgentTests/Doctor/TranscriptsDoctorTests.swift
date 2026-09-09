@@ -19,9 +19,6 @@ struct TranscriptsDoctorTests {
     /// The permissions of a directory that can be read but not written.
     private static let readOnlyPermissions = NSNumber(value: 0o500)
 
-    /// The permissions a test puts back, so the directory can be removed.
-    private static let ownerPermissions = NSNumber(value: 0o700)
-
     /// The configuration key a transcripts fix names.
     private static let locationKey = "transcripts.location"
 
@@ -42,17 +39,6 @@ struct TranscriptsDoctorTests {
         return TranscriptsDoctor(
             configuration: ConfigurationLoadOutcome(of: loader).configuration,
             stack: loader.stack, name: loader.name, workingDirectory: fixture.workspace)
-    }
-
-    /// Sets the permissions of one directory.
-    ///
-    /// - Parameters:
-    ///   - permissions: The POSIX permissions to set.
-    ///   - directory: The directory to set them on.
-    /// - Throws: The attribute-write error.
-    private static func setPermissions(_ permissions: NSNumber, of directory: URL) throws {
-        try FileManager.default.setAttributes(
-            [.posixPermissions: permissions], ofItemAtPath: directory.path)
     }
 
     // MARK: - The recording root
@@ -78,11 +64,11 @@ struct TranscriptsDoctorTests {
         let root = parent.appendingPathComponent(
             TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
         try fixture.writeProjectConfig("transcripts:\n  location: \(root.path)\n")
-        try Self.setPermissions(Self.readOnlyPermissions, of: parent)
+        try setPermissions(Self.readOnlyPermissions, of: parent)
 
         let component = try Self.doctor(in: fixture)
         let checks = await component.runHealthChecks()
-        try Self.setPermissions(Self.ownerPermissions, of: parent)
+        try setPermissions(ownerOnlyPermissions, of: parent)
 
         let errors = checks.filter { $0.status == .error }
         let failure = try #require(errors.first)
