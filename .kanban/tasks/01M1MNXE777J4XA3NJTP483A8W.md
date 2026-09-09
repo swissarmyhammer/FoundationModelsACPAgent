@@ -110,8 +110,25 @@ comments:
     - evidence: no source file changed here. The card description is ticked: 4 subtasks, 7 acceptance criteria, 7 test items. Upstream Extras `main` is at `55d6b04`, and this repository now resolves it (`swift package update FoundationModelsExtras`, an ignored and untracked `Package.resolved`). `swift build` clean; root `swift test` 497 tests in 52 suites, 1 known issue at `HarnessSmokeTests.swift:239`; Extras `swift test` 264 tests in 24 suites.
     - next: review.
   timestamp: 2026-09-09T01:18:31.547812+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m21w5fhp7w4awnm413s5q889
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7f7be44) — 0 findings, 0 confirmed, 0 refuted. The commit changes only kanban card files, and .reviewignore keeps the 4 .kanban/ files out of the review.
+    - next: none. The card is in the terminal column.
+  timestamp: 2026-09-09T01:22:53.110939+00:00
+- actor: claude-code
+  id: 01m21w5xh79vz2fyk0er4j9vpy
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — card text only. Verified the upstream module at FoundationModelsExtras `main` 55d6b04 (commits b044d69, aae3b89, 939b317, e814610, f80146f) by reading the code and the tests. Also proved this repository can consume it: `swift package update FoundationModelsExtras` moved the pin from 8b4706d to 55d6b04, `swift build` is clean, and a type-check probe with a negative control resolved the new types through a plain import.
+    - test: green — swift test, 497 tests in 52 suites, 1 known issue at HarnessSmokeTests.swift:239, against the updated dependency
+    - commit: 7f7be44
+    - review: clean — 0 findings, review sha HEAD~1..HEAD
+    - result: the upstream card `^gpfa1sy` is done, merged to Extras `main`, and pushed. No code change was necessary in this repository. The local doctor cards are no longer blocked by this card.
+  timestamp: 2026-09-09T01:23:07.431083+00:00
+position_column: done
+position_ordinal: c380
 title: 'Extras: the Doctorable module, D1 to D3'
 ---
 ## What
