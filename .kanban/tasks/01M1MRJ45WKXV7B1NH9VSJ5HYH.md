@@ -171,6 +171,118 @@ comments:
     - evidence: 9 files. New: Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift, Sources/FoundationModelsACPAgent/Doctor/ReadableDirectoryState.swift, Sources/FoundationModelsACPAgent/Doctor/DisabledSectionCheck.swift, Tests/FoundationModelsACPAgentTests/Doctor/RuntimeDoctorTests.swift. Changed: Sources/FoundationModelsACPAgent/Doctor/ConfigurationDoctor.swift, Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift, Sources/acp-agent/DoctorCommand.swift, Tests/FoundationModelsACPAgentTests/Doctor/DoctorRegistryTests.swift, cli-plan.md. Red first: `cannot find 'RuntimeDoctor' in scope` at DoctorRegistryTests.swift:61:17. Green: `swift test` gives 555 tests in 60 suites, 1 known issue at HarnessSmokeTests.swift:239, zero failures and zero warnings. The baseline was 550 in 59; the new suite adds 5 tests.
     - next: /review
   timestamp: 2026-09-09T04:34:32.740405+00:00
+- actor: claude-code
+  id: 01m227p3jq0gz3ctg5kbwev1dv
+  text: |
+    ### review — findings
+    - evidence: 1 finding, 1 confirmed, 1 refuted, 7 attempted — `review sha HEAD~1..HEAD`; Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:118
+    - merit check 1, the extraction: behaviour is kept. `ReadableDirectoryState.of(_:)` does `fileExists(atPath:)` and then `isReadableFile(atPath:)`, in that order, as `ConfigurationDoctor.check(of:)` did. `readFix` is the same text `chmod u+rx`, and the messages and the fix line of the configuration layer row are unchanged. `DisabledSectionCheck.check(name:key:category:)` makes the same `.ok` row with the same sentence, and `ToolsDoctor` gives it the same category value. The unedited tests of both components are the guard, and the code agrees with them.
+    - merit check 2, the Metal row: the drop is correct. The card set the drop condition, and the source meets it. `default.metallib` is inside the SwiftPM resource bundle `mlx-swift_Cmlx.bundle`, `Bundle.main` of a plain executable roots at the directory of the executable, and nothing in this repository makes the library. A check of a sibling file would fail on every correct install. To strike the plan row and to write the reason under the table is the correct record, because the plan keeps the history of the decision. No finding.
+    - family rules: `RuntimeDoctor.runHealthChecks()` does not throw, and the one `.error` row carries a `fix`. No `.warning` row is made.
+    - next: remove the structural duplication between `RuntimeDoctor.check(ofSkillsLayer:)` and `ConfigurationDoctor.check(of:)`, then run the review again.
+  timestamp: 2026-09-09T04:44:12.247209+00:00
+- actor: claude-code
+  id: 01m227ptbtn9b6ya0v8r79x9r4
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 13 files, 4 new. `RuntimeDoctor` is the fifth and last component, category `runtime`: one row per skills-stack layer, missing is `.ok` because skills are optional, unreadable is an `.error` with a `chmod u+rx` fix, readable is `.ok`. A disabled `tools.skills` gives one passing row and reads no layer.
+    - the Metal check is DROPPED, and the review agreed: `default.metallib` ships inside `mlx-swift_Cmlx.bundle`, SwiftPM puts that bundle beside the executable, and `Bundle.main` of a plain executable roots at the executable directory, so mlx finds it with no sibling file. The `mlx.metallib` symlink exists only because a `.xctest` binary sits two levels below its own bundle resources, which belongs to Router. A sibling-file check would report an error on every correct install. `cli-plan.md` §5.12's Runtime row is struck through and marked SUPERSEDED with the reason under the table, which the review judged the right record.
+    - two helpers were extracted BEFORE anything was written twice, and the review confirmed the extraction keeps the behaviour: `ReadableDirectoryState` and `DisabledSectionCheck`. The tests of both existing components pass unedited.
+    - test-first: red with "cannot find 'RuntimeDoctor' in scope" at DoctorRegistryTests.swift:61
+    - test: green — swift test, 555 tests in 60 suites, 1 known issue at HarnessSmokeTests.swift:239. It was 550 in 59 before.
+    - commit: 6142bae
+    - review: findings — Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:118
+  timestamp: 2026-09-09T04:44:35.578624+00:00
+- actor: claude-code
+  id: 01m22865h7q6ayeqpdqfa2tkhv
+  text: |
+    ### The finding is answered: the three-case switch is written one time
+
+    The finding, word for word:
+
+    > `Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:118`
+    > `reuse/reuse` — The check(ofSkillsLayer:) method is 90% structurally
+    > similar to ConfigurationDoctor.check(of:), duplicating the pattern of
+    > building names, checking directory state, and returning domain-specific
+    > HealthCheck results. A parameterized shared function would eliminate
+    > this structural duplication. Extract a generalized helper function that
+    > accepts parameters for the context noun ('configuration' or 'skills'),
+    > the specific messages for each state, and a flag or closure for the
+    > optional writability check. Both ConfigurationDoctor and RuntimeDoctor
+    > can then call this shared function instead of maintaining parallel
+    > implementations.
+
+    New file `Doctor/DotfolderLayerCheck.swift`. It holds the whole shape one
+    time: the check name, the three-case switch, the `chmod u+rx` fix and the
+    write test. `DotfolderLayerCheck.Wording` carries the four words that
+    change from one component to the next — the context noun, the reason a
+    missing layer is no fault, what an unreadable layer costs, and what a
+    person does beyond the `chmod` command. The write test is the option the
+    finding asks for: `requiresWrite`.
+
+    Both components are now one call each:
+
+    - `ConfigurationDoctor.check(of:)` passes `requiresWrite: true`.
+    - `RuntimeDoctor.check(ofSkillsLayer:)` passes `requiresWrite: false`.
+
+    ### The messages come out byte-identical
+
+    Each sentence is composed from the same skeleton and the component's own
+    words, so every message and every fix is the same string as before:
+
+    - configuration, missing: `<path> is not on disk, and the stack needs no file`
+    - configuration, unreadable: `<path> cannot be read`, fix `chmod u+rx <path>`
+    - configuration, not writable: `<path> cannot be written`, fix `chmod u+w <path>`
+    - configuration, good: `<path> can be read and written`
+    - skills, missing: `<path> is not on disk, and skills are optional`
+    - skills, unreadable: `<path> cannot be read, so its skills are lost`, fix
+      `chmod u+rx <path>, or remove it`
+    - skills, good: `<path> can be read`
+
+    The check names are the same too: `the <layer> layer` with no noun, and
+    `the skills <layer> layer` with one. The noun is now
+    `ToolCatalog.skillsDotfolderName`, which is the string `skills`, so the
+    magic word is gone as well.
+
+    `ConfigurationDoctorTests` and `RuntimeDoctorTests` are untouched. They
+    are the guard, and both pass as they stand.
+
+    ### No other component repeats the shape
+
+    The whole `Doctor/` directory was read for the same three-case shape.
+    Only these two components had it: `grep` for `ReadableDirectoryState`
+    and `isReadableFile` over `Sources/` finds `ConfigurationDoctor`,
+    `RuntimeDoctor` and the shared `ReadableDirectoryState` alone.
+    `WritableDirectoryCheck` answers a different question — can the
+    directory, or the nearest one above it, be written — and
+    `TranscriptsDoctor` and `ToolsDoctor` already call the shared helpers.
+    So nothing more was folded in.
+
+    ### One design point, so the next agent does not undo it
+
+    `DotfolderLayerCheck.Wording` has `var` properties with defaults and no
+    `init` of its own. That is deliberate: the swiftformat gate rule
+    `redundantMemberwiseInit` refuses a hand-written memberwise `init`, and a
+    `let` property with a default value is left out of the synthesized
+    memberwise `init` altogether. `var` with a default is the one shape that
+    gives the caller default arguments and keeps the gate quiet.
+
+    ### The gates
+
+    - `swiftlint` with the gate's rule set and thresholds over the three
+      files: clean.
+    - `swiftformat --lint` with the roster and the gate's four options over
+      the three files: clean.
+    - `periphery scan` with the gate's retain flags: no finding on
+      `DotfolderLayerCheck`, `Wording`, `writeFix` or `layerWording`.
+  timestamp: 2026-09-09T04:52:58.535859+00:00
+- actor: claude-code
+  id: 01m22869q4fxsw6hrsrwm29yn2
+  text: |-
+    ### implement — changed
+    - evidence: 3 files. New: Sources/FoundationModelsACPAgent/Doctor/DotfolderLayerCheck.swift. Changed: Sources/FoundationModelsACPAgent/Doctor/ConfigurationDoctor.swift, Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift. No test file was edited: this is a refactor, and the two unedited doctor suites are the guard. `swift test` gives 555 tests in 60 suites, 1 known issue at HarnessSmokeTests.swift:239, which is the same count as before the change.
+    - next: /review
+  timestamp: 2026-09-09T04:53:02.820627+00:00
 depends_on:
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
 position_column: doing
@@ -242,3 +354,15 @@ asserts against an invented target is worse than no check.
 
 ### Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-08 23:39)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `cli-plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:118` `reuse/reuse` — The check(ofSkillsLayer:) method is 90% structurally similar to ConfigurationDoctor.check(of:), duplicating the pattern of building names, checking directory state, and returning domain-specific HealthCheck results. A parameterized shared function would eliminate this structural duplication. Extract a generalized helper function that accepts parameters for the context noun ('configuration' or 'skills'), the specific messages for each state, and a flag or closure for the optional writability check. Both ConfigurationDoctor and RuntimeDoctor can then call this shared function instead of maintaining parallel implementations.

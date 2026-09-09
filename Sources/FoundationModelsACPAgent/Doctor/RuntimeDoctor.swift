@@ -47,6 +47,17 @@ public struct RuntimeDoctor: Doctorable {
         + LoadedConfiguration.keyPathSeparator
         + ToolsConfiguration.CodingKeys.skills.stringValue
 
+    /// The words this component says about the layers of its own stack.
+    ///
+    /// A layer that is not on disk is no fault, because skills are
+    /// optional. An unreadable one loses every skill in it, and a person
+    /// either opens the directory or takes it away.
+    private static let layerWording = DotfolderLayerCheck.Wording(
+        missingReason: "skills are optional",
+        noun: ToolCatalog.skillsDotfolderName,
+        unreadableCost: ", so its skills are lost",
+        unreadableFixHint: ", or remove it")
+
     // MARK: - Stored state
 
     /// The resolved configuration, whose `tools.skills:` section says
@@ -116,20 +127,7 @@ public struct RuntimeDoctor: Doctorable {
     /// - Parameter layer: The layer to check.
     /// - Returns: The finding of that layer.
     private static func check(ofSkillsLayer layer: DotfolderStack.Layer) -> HealthCheck {
-        let name = "the skills \(ConfigurationLayerName(layer.source).rawValue) layer"
-        let path = layer.root.path
-        switch ReadableDirectoryState.of(layer.root) {
-        case .missing:
-            return .ok(
-                name: name, message: "\(path) is not on disk, and skills are optional",
-                category: category)
-        case .unreadable:
-            return .error(
-                name: name, message: "\(path) cannot be read, so its skills are lost",
-                fix: "\(ReadableDirectoryState.readFix) \(path), or remove it",
-                category: category)
-        case .readable:
-            return .ok(name: name, message: "\(path) can be read", category: category)
-        }
+        DotfolderLayerCheck.check(
+            of: layer, wording: layerWording, category: category, requiresWrite: false)
     }
 }

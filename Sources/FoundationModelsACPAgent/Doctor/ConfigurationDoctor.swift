@@ -31,8 +31,13 @@ public struct ConfigurationDoctor: Doctorable {
     /// The check that states one section the schema does not know.
     private static let sectionCheckName = "the configuration schema"
 
-    /// The command that makes a layer directory writable.
-    private static let writeFix = "chmod u+w"
+    /// The words this component says about the layers of its own stack.
+    ///
+    /// A layer that is not on disk is no fault, because the stack works
+    /// with no file at all. An unreadable one is reported with the `chmod`
+    /// command alone, which is the whole repair.
+    private static let layerWording = DotfolderLayerCheck.Wording(
+        missingReason: "the stack needs no file")
 
     // MARK: - Stored state
 
@@ -128,26 +133,7 @@ public struct ConfigurationDoctor: Doctorable {
     /// - Parameter layer: The layer to check.
     /// - Returns: The finding of that layer.
     private static func check(of layer: DotfolderStack.Layer) -> HealthCheck {
-        let name = "the \(ConfigurationLayerName(layer.source).rawValue) layer"
-        let path = layer.root.path
-        switch ReadableDirectoryState.of(layer.root) {
-        case .missing:
-            return .ok(
-                name: name, message: "\(path) is not on disk, and the stack needs no file",
-                category: category)
-        case .unreadable:
-            return .error(
-                name: name, message: "\(path) cannot be read",
-                fix: "\(ReadableDirectoryState.readFix) \(path)", category: category)
-        case .readable:
-            break
-        }
-        guard FileManager.default.isWritableFile(atPath: path) else {
-            return .warning(
-                name: name, message: "\(path) cannot be written",
-                fix: "\(writeFix) \(path)", category: category)
-        }
-        return .ok(
-            name: name, message: "\(path) can be read and written", category: category)
+        DotfolderLayerCheck.check(
+            of: layer, wording: layerWording, category: category, requiresWrite: true)
     }
 }
