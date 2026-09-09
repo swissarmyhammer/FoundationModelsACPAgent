@@ -22,6 +22,10 @@ public struct TranscriptsDoctor: Doctorable {
     /// The one check this component states.
     private static let checkName = "the transcripts directory"
 
+    /// What stands at the recording root, for the message of a path that a
+    /// file already blocks.
+    private static let directorySubject = "transcripts directory"
+
     /// The dotted key path of the location a fix names.
     private static let locationKey =
         AgentConfiguration.CodingKeys.transcripts.stringValue
@@ -105,29 +109,9 @@ public struct TranscriptsDoctor: Doctorable {
     /// - Returns: A pass, or the failure that says why the directory cannot
     ///   be used.
     private static func check(of root: URL) -> HealthCheck {
-        let target = root.standardizedFileURL
-        guard !isFile(target) else {
-            return .error(
-                name: checkName,
-                message: "\(target.path) is a file, so no transcripts directory can stand there",
-                fix: fix(naming: target), category: category)
-        }
-        let existing = nearestExistingDirectory(of: target)
-        guard FileManager.default.isWritableFile(atPath: existing.path) else {
-            return .error(
-                name: checkName,
-                message: "\(existing.path) cannot be written, so \(target.path) cannot be used",
-                fix: fix(naming: existing), category: category)
-        }
-        guard existing != target else {
-            return .ok(
-                name: checkName, message: "\(target.path) exists and can be written",
-                category: category)
-        }
-        return .ok(
-            name: checkName,
-            message: "\(target.path) is not on disk yet, and \(existing.path) can be written",
-            category: category)
+        WritableDirectoryCheck.check(
+            of: root, name: checkName, subject: directorySubject, category: category,
+            fix: fix(naming:))
     }
 
     /// The fix of a recording root that cannot be used: make the directory
@@ -138,34 +122,5 @@ public struct TranscriptsDoctor: Doctorable {
     private static func fix(naming directory: URL) -> String {
         "make \(directory.path) writable, or set \(locationKey) in "
             + "\(ConfigurationLoader.configFileName) to a directory that can be written"
-    }
-
-    /// Whether `url` names something on disk that is not a directory.
-    ///
-    /// - Parameter url: The path to test.
-    /// - Returns: `true` when something stands there and it is not a
-    ///   directory.
-    private static func isFile(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            && !isDirectory.boolValue
-    }
-
-    /// The nearest directory of `url`'s path that is on disk: `url` itself
-    /// when it exists, else the closest one above it.
-    ///
-    /// - Parameter url: The path to walk up from.
-    /// - Returns: The nearest existing directory. The walk ends at the file
-    ///   system root, which always exists.
-    private static func nearestExistingDirectory(of url: URL) -> URL {
-        var candidate = url
-        while !FileManager.default.fileExists(atPath: candidate.path) {
-            let parent = candidate.deletingLastPathComponent().standardizedFileURL
-            guard parent != candidate else {
-                return candidate
-            }
-            candidate = parent
-        }
-        return candidate
     }
 }

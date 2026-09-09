@@ -78,10 +78,10 @@ extension AcpAgentCommand {
         /// — appends its own conformance here, and the command around it
         /// never changes again.
         ///
-        /// The configuration and the transcripts are registered. Both read
-        /// one load of `config.yaml`, which this function makes once and
-        /// hands to each of them, so a `doctor` run reads the stack a
-        /// single time.
+        /// The configuration, the transcripts and the tools are registered.
+        /// All three read one load of `config.yaml`, which this function
+        /// makes once and hands to each of them, so a `doctor` run reads
+        /// the stack a single time.
         ///
         /// A component reports a failure as a ``HealthCheck`` with the
         /// `error` status, and never by throwing: `doctor` runs every
@@ -97,9 +97,14 @@ extension AcpAgentCommand {
         ///     the dotfolder stack the checks read.
         ///   - environment: The environment the checks read, above all
         ///     `XDG_CONFIG_HOME`.
+        ///   - prober: How ``ToolsDoctor`` reaches the world. The default
+        ///     starts the real seatbelt canary and connects each real MCP
+        ///     server; a test injects a stub, so no unit test spawns a
+        ///     process.
         /// - Returns: The components, in the order the report lists them.
         static func components(
-            workingDirectory: URL, environment: [String: String]
+            workingDirectory: URL, environment: [String: String],
+            prober: any ToolsProber = SystemToolsProber()
         ) -> [any Doctorable] {
             guard
                 let loader = try? AgentComposition.makeConfigurationLoader(
@@ -113,6 +118,9 @@ extension AcpAgentCommand {
                 TranscriptsDoctor(
                     configuration: outcome.configuration, stack: loader.stack,
                     name: loader.name, workingDirectory: workingDirectory),
+                ToolsDoctor(
+                    configuration: outcome.configuration, workingDirectory: workingDirectory,
+                    prober: prober),
             ]
         }
 

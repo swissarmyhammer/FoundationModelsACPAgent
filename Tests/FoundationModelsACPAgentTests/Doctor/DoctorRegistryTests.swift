@@ -6,8 +6,11 @@ import Testing
 @testable import acp_agent
 
 /// The doctor component registry of `acp-agent` (cli-plan.md §5.12): the
-/// two components this card writes, and the fix rule that holds over every
+/// components registered so far, and the fix rule that holds over every
 /// finding they report.
+///
+/// The registry takes an injected prober, so the tools component starts no
+/// confined command and no MCP server here.
 struct DoctorRegistryTests {
     // MARK: - Constants
 
@@ -15,8 +18,8 @@ struct DoctorRegistryTests {
     /// the configuration component warn.
     private static let unknownSectionName = "surprise"
 
-    /// The number of components this card registers.
-    private static let registeredComponentCount = 2
+    /// The number of components the registry states.
+    private static let registeredComponentCount = 3
 
     // MARK: - Helpers
 
@@ -26,14 +29,15 @@ struct DoctorRegistryTests {
     /// - Returns: The components, in registration order.
     private static func components(in fixture: ConfigCommandFixture) -> [any Doctorable] {
         AcpAgentCommand.Doctor.components(
-            workingDirectory: fixture.workspace, environment: fixture.environment)
+            workingDirectory: fixture.workspace, environment: fixture.environment,
+            prober: StubToolsProber())
     }
 
     // MARK: - The registry
 
-    /// The registry states the configuration component and the transcripts
-    /// component, in that order.
-    @Test func theRegistryStatesTheConfigurationAndTheTranscriptsComponents() {
+    /// The registry states the configuration component, the transcripts
+    /// component and the tools component, in that order.
+    @Test func theRegistryStatesTheConfigurationTranscriptsAndToolsComponents() {
         let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-registry")
 
         let components = Self.components(in: fixture)
@@ -41,7 +45,7 @@ struct DoctorRegistryTests {
         #expect(components.count == Self.registeredComponentCount)
         #expect(
             components.map(\.doctorCategory) == [
-                ConfigurationDoctor.category, TranscriptsDoctor.category,
+                ConfigurationDoctor.category, TranscriptsDoctor.category, ToolsDoctor.category,
             ])
     }
 

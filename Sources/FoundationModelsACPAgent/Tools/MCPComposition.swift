@@ -348,10 +348,14 @@ enum MCPComposition {
     /// Disconnects each server and shuts each subprocess down — the cleanup
     /// of a connect step that threw partway.
     ///
+    /// ``SystemToolsProber`` calls this too: its probe connects one entry
+    /// and then gives everything back, so a `doctor` run leaves no server
+    /// connected and no subprocess alive.
+    ///
     /// - Parameters:
     ///   - servers: The servers already connected.
     ///   - processes: The subprocesses already spawned.
-    private static func shutDown(
+    static func shutDown(
         servers: [FoundationModelsMultitool.MCPServer], processes: [StdioServerProcess]
     ) async {
         for server in servers {
