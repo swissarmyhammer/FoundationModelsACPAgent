@@ -19,28 +19,96 @@ The work is two scripts, because the two steps fail in different ways.
 The agent run is long. The docker run is short, but it can run out of memory.
 So the predictions stay on disk, and you can score them again at any time.
 
-## How to use it
+## The command line
+
+Do all of this from the root of the package, and not from this directory.
 
 ```bash
-# 0. Build the agent. The scripts find this binary without help.
+cd /path/to/FoundationModelsACPAgent
+
+# 0. Build the agent. The scripts find this binary with no help.
 swift build -c release
 
-# 1. Make the patches. Start with a few.
-uv run bench/swebench_run.py preds.jsonl --limit 3
+# 1. Make the patches. Start with 3, and keep a record.
+uv run bench/swebench_run.py preds.jsonl --limit 3 | tee run.log
 
 # 2. Give the score. Docker must run.
 uv run bench/swebench_score.py preds.jsonl
 ```
 
 `uv` gets the Python dependencies of each script, at the versions the script
-pins. There is nothing to install by hand. Each script has `--help`.
+pins. There is nothing to install by hand.
 
-Each script writes its messages to standard output, and it makes no log file.
-To keep a record of a long run, send standard output where you want it:
+### One problem only
 
 ```bash
-uv run bench/swebench_run.py preds.jsonl --limit 3 | tee run.log
+uv run bench/swebench_run.py preds.jsonl -i psf__requests-2317 --verbose
+uv run bench/swebench_score.py preds.jsonl
 ```
+
+`psf__requests-2317` is a good first choice: the repository is small, so the
+clone and the docker image are both quick. `--verbose` puts the session
+events of the agent on the console, so you can see what it does.
+
+### If you do not build
+
+The scripts look for the release build, then the debug build, then the PATH.
+So a debug build works:
+
+```bash
+uv run bench/swebench_run.py preds.jsonl --limit 3
+```
+
+But a debug build is much slower than a release build for MLX inference. For
+a true number, build the release.
+
+The first line of the output says which binary it found. Read it.
+
+### The full split
+
+```bash
+uv run bench/swebench_run.py preds.jsonl | tee run.log
+uv run bench/swebench_score.py preds.jsonl
+```
+
+Measure the time of 3 instances on your machine before you do this. The
+SWE-bench_Lite split is 300 instances.
+
+### The options
+
+Each script has `--help`. These are the options you will use:
+
+| Option | Script | What it does |
+|---|---|---|
+| `--limit N` | run | the first N instances only |
+| `-i ID ID` | run | these instance ids only |
+| `--force` | run | do every instance again, and write over the file |
+| `--agent PATH` | run | a different agent binary |
+| `--timeout SECONDS` | run | the limit of one instance (default 3600) |
+| `--verbose` | run | give `--verbose` to the agent |
+| `--instance-ids ID` | score | score these ids only |
+| `--max-workers N` | score | how many docker workers run together |
+
+## What to expect
+
+* **The limit of one instance is one hour** (`--timeout`). Three instances
+  can thus be three hours. An agent that goes past the limit is stopped, and
+  the harness records an empty patch: a half-written repository is not an
+  answer.
+* **The run continues.** The predictions file says which instances are done.
+  If you stop the run with `Ctrl-C`, start the same command again and it
+  continues. `--force` does them all again.
+* **Each instance starts a new process.** So the agent loads its models
+  again for each instance. This is minutes of each instance.
+* **The first score of a repository builds a docker image.** This is slow,
+  and it is emulated on Apple Silicon. Later instances of the same
+  repository use the image again.
+
+Each script writes its messages to standard output, and it makes no log
+file. `| tee run.log` keeps a record of a long run.
+
+The agent uses local models. Read the memory conditions in the
+[README of the package](../README.md) first.
 
 ## What the agent gets
 
@@ -57,22 +125,6 @@ in front of the problem statement, and then you can compare the two numbers.
 The prompt goes to the standard input of the agent. So no shell quote and no
 argument length can change the text of the problem.
 
-## What it costs
-
-The agent uses local models, and it is slow. Read the memory conditions in
-the [README of the package](../README.md) first.
-
-* **Each instance starts a new process.** So the agent loads its models
-  again for each instance. This is minutes of each instance.
-* **The limit of one instance is one hour** (`--timeout`). An agent that goes
-  past the limit is stopped, and the harness records an empty patch. A
-  half-written repository is not an answer.
-* **The first score of a repository builds a docker image.** This is slow.
-  Later instances of the same repository use the image again.
-
-Start with `--limit 3`, and measure the time on your machine before you run
-the full split.
-
 ## How the patch is made
 
 The patch is `git diff <base_commit>` in the cloned repository.
@@ -83,6 +135,18 @@ The patch is `git diff <base_commit>` in the cloned repository.
   writes, with its transcripts, is out of the patch. Never `git add -A`
   first: that puts the whole directory in the patch, and the harness then
   cannot apply it.
+
+## What the score means
+
+The score is **resolved / evaluated**, and not resolved / sent.
+
+An instance that did not run, because docker could not build its image, is
+reported alone. It is never part of the divisor. A memory failure is not an
+agent failure. The score script does each such instance one more time,
+alone, with a clean build, before it reports.
+
+Each score run writes `preds.jsonl.score.<run id>.json` beside the
+predictions, with the resolved, unresolved and errored ids.
 
 ## Files
 
