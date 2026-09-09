@@ -78,11 +78,11 @@ extension AcpAgentCommand {
         /// — appends its own conformance here, and the command around it
         /// never changes again.
         ///
-        /// The configuration, the profile, the transcripts and the tools
-        /// are registered, in the order cli-plan.md §5.12 lists them. All
-        /// four read one load of `config.yaml`, which this function makes
-        /// once and hands to each of them, so a `doctor` run reads the
-        /// stack a single time.
+        /// The configuration, the profile, the transcripts, the tools and
+        /// the runtime are registered, in the order cli-plan.md §5.12 lists
+        /// them. All five read one load of `config.yaml`, which this
+        /// function makes once and hands to each of them, so a `doctor` run
+        /// reads the stack a single time.
         ///
         /// A component reports a failure as a ``HealthCheck`` with the
         /// `error` status, and never by throwing: `doctor` runs every
@@ -139,6 +139,9 @@ extension AcpAgentCommand {
                 ToolsDoctor(
                     configuration: outcome.configuration, workingDirectory: workingDirectory,
                     prober: prober),
+                RuntimeDoctor(
+                    configuration: outcome.configuration, workingDirectory: workingDirectory,
+                    environment: environment),
             ]
         }
 

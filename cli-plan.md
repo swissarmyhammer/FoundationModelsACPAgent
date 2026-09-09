@@ -345,7 +345,22 @@ as `Doctorable` conformances:
 | Sandbox | The seatbelt sandbox starts. Each `extraWritePaths` entry exists. |
 | Tools | The shell store directory is writable. Each configured MCP server starts, or its URL answers. |
 | Skills | The skills stack is found. |
-| Runtime | The Metal shader library stands beside the binary. |
+| ~~Runtime~~ | ~~The Metal shader library stands beside the binary.~~ SUPERSEDED, see below. |
+
+**The Runtime row is superseded.** No `.metallib` stands beside an
+installed `acp-agent`. mlx-swift ships its shader library as
+`default.metallib` inside the SwiftPM resource bundle
+`mlx-swift_Cmlx.bundle`, and SwiftPM puts that bundle beside the built
+executable. `Bundle.main` of a plain executable roots at the directory
+that holds the executable, so mlx finds the bundle there without help.
+The one place a sibling `mlx.metallib` is needed is a `.xctest` binary,
+which sits two directory levels below its own bundle resources; Router's
+`MetalLibraryTestBootstrap` makes that symlink for its own test process.
+A check of a sibling file would fail on every correct install, and a
+check of the bundle would restate what SwiftPM guarantees and could name
+no configuration key to fix. The Skills row is checked by
+`RuntimeDoctor`, which carries the `runtime` category. See card
+`^vsj5hyh`.
 
 The first two rows earn the command on their own. A wrong model
 repository id and a profile that does not fit the machine are the two

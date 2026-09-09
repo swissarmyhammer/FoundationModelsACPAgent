@@ -31,9 +31,6 @@ public struct ConfigurationDoctor: Doctorable {
     /// The check that states one section the schema does not know.
     private static let sectionCheckName = "the configuration schema"
 
-    /// The command that makes a layer directory readable.
-    private static let readFix = "chmod u+rx"
-
     /// The command that makes a layer directory writable.
     private static let writeFix = "chmod u+w"
 
@@ -133,18 +130,19 @@ public struct ConfigurationDoctor: Doctorable {
     private static func check(of layer: DotfolderStack.Layer) -> HealthCheck {
         let name = "the \(ConfigurationLayerName(layer.source).rawValue) layer"
         let path = layer.root.path
-        let manager = FileManager.default
-        guard manager.fileExists(atPath: path) else {
+        switch ReadableDirectoryState.of(layer.root) {
+        case .missing:
             return .ok(
                 name: name, message: "\(path) is not on disk, and the stack needs no file",
                 category: category)
-        }
-        guard manager.isReadableFile(atPath: path) else {
+        case .unreadable:
             return .error(
                 name: name, message: "\(path) cannot be read",
-                fix: "\(readFix) \(path)", category: category)
+                fix: "\(ReadableDirectoryState.readFix) \(path)", category: category)
+        case .readable:
+            break
         }
-        guard manager.isWritableFile(atPath: path) else {
+        guard FileManager.default.isWritableFile(atPath: path) else {
             return .warning(
                 name: name, message: "\(path) cannot be written",
                 fix: "\(writeFix) \(path)", category: category)

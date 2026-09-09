@@ -21,7 +21,7 @@ struct DoctorRegistryTests {
     private static let unknownSectionName = "surprise"
 
     /// The number of components the registry states.
-    private static let registeredComponentCount = 4
+    private static let registeredComponentCount = 5
 
     /// A memory figure far above the profile floor, so the profile
     /// component does not report the machine this suite runs on.
@@ -46,9 +46,9 @@ struct DoctorRegistryTests {
     // MARK: - The registry
 
     /// The registry states the configuration component, the profile
-    /// component, the transcripts component and the tools component, in
-    /// that order.
-    @Test func theRegistryStatesTheFourComponentsInPlanOrder() {
+    /// component, the transcripts component, the tools component and the
+    /// runtime component, in that order.
+    @Test func theRegistryStatesTheComponentsInPlanOrder() {
         let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-registry")
 
         let components = Self.components(in: fixture)
@@ -58,6 +58,7 @@ struct DoctorRegistryTests {
             components.map(\.doctorCategory) == [
                 ConfigurationDoctor.category, ProfileDoctor.category,
                 TranscriptsDoctor.category, ToolsDoctor.category,
+                RuntimeDoctor.category,
             ])
     }
 

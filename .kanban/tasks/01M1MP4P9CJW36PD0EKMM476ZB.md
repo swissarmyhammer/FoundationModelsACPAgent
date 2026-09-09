@@ -75,10 +75,30 @@ comments:
     - evidence: 3 files — 1 new, `Sources/FoundationModelsACPAgent/Configuration/ModelReferenceFormat.swift`; 2 changed, `Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift` and `Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift`. `swift test` gives 550 tests in 59 suites passed, 1 known issue at HarnessSmokeTests.swift:239 — the same count as before, because this is a refactor and it adds no coverage. `swift build` reports no warning of this package. No IntegrationTests run. No commit.
     - next: `/review`.
   timestamp: 2026-09-09T04:19:47.616613+00:00
+- actor: claude-code
+  id: 01m226hk4aqnsjz9s28c05xg10
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (2fa0a51) — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed; 3 files reviewed, 2 excluded by `.reviewignore`.
+    - The finding of the round before is closed. `revisionSeparator` and `ownerSeparator` are now in one file, `Sources/FoundationModelsACPAgent/Configuration/ModelReferenceFormat.swift`, and both Doctor files read that copy. The two parse bodies are now the one function `ModelReferenceFormat.parts(of:)`, and it gives the same result as the code it replaced.
+    - next: no work is open on this card.
+  timestamp: 2026-09-09T04:24:15.754802+00:00
+- actor: claude-code
+  id: 01m226j6jsshf927a0j28w9bef
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files. The reference-format constants and the parse moved into the new `Sources/FoundationModelsACPAgent/Configuration/ModelReferenceFormat.swift`. Both `ModelResolver.swift` and `ProfileDoctor.swift` read the one copy.
+    - what was checked before the home was picked: Router's `ModelRef` owns the format, but it keeps `repo`, `revision` and its own separator private, so using it needs a Router change. Router was not touched. `ProfileConfiguration` and `AgentConfiguration` state no separator, so this repository had no existing home either.
+    - the same cause was removed from the whole change: `ownerSeparator` was a second duplicated separator, and the PARSE was duplicated as well. `cacheSeparator` stays in `ModelResolver`, because it names a cache directory and not a reference.
+    - test: green — swift test, 550 tests in 59 suites, 1 known issue at HarnessSmokeTests.swift:239. The count is unchanged, which is correct for a refactor. The malformed-reference behaviour holds: exactly one error, and it is still never looked up.
+    - commit: 2fa0a51
+    - review: clean — 0 findings. The review confirmed the moved parse keeps the same behaviour, and recorded no finding on the choice of home.
+    - separate work, not this card: `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift` declares its own owner separator. That file is not one this card added, so it was left alone.
+  timestamp: 2026-09-09T04:24:35.673164+00:00
 depends_on:
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: cb80
 title: 'doctor checks: the profile — model ids, memory fit, disk and MTP'
 ---
 ### What

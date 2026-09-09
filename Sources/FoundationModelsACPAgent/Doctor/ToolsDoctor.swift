@@ -61,10 +61,6 @@ public struct ToolsDoctor: Doctorable {
     /// The prefix of the check that states one configured MCP server.
     private static let mcpServerPrefix = "the mcp server"
 
-    /// The word a disabled section reports, so a person sees why the tool
-    /// is absent from the roster.
-    private static let disabledWord = "disabled"
-
     /// The store directory the shell capability makes when the config names
     /// none: `.shell` under the working directory.
     private static let defaultStoreDirectoryName = ".shell"
@@ -198,7 +194,8 @@ public struct ToolsDoctor: Doctorable {
     private func shellCheck() -> HealthCheck {
         switch configuration.tools.shell {
         case .disabled:
-            return Self.disabledCheck(name: Self.shellToolCheckName, key: Self.shellKey)
+            return DisabledSectionCheck.check(
+                name: Self.shellToolCheckName, key: Self.shellKey, category: Self.category)
         case .enabled(let options):
             return WritableDirectoryCheck.check(
                 of: options.storeDirectory ?? defaultStoreDirectory,
@@ -235,7 +232,10 @@ public struct ToolsDoctor: Doctorable {
     /// - Returns: The findings, in document order.
     private func mcpChecks() async -> [HealthCheck] {
         guard case .enabled(let servers) = configuration.tools.mcp else {
-            return [Self.disabledCheck(name: Self.mcpToolCheckName, key: Self.mcpKey)]
+            return [
+                DisabledSectionCheck.check(
+                    name: Self.mcpToolCheckName, key: Self.mcpKey, category: Self.category)
+            ]
         }
         return await withTaskGroup(of: (Int, HealthCheck).self) { group in
             for (position, entry) in servers.enumerated() {
@@ -313,19 +313,6 @@ public struct ToolsDoctor: Doctorable {
                 message: "\(subject) did not answer in \(timeoutSeconds) seconds",
                 fix: fix, category: Self.category)
         }
-    }
-
-    /// The finding of one tool section the config turned off, so a person
-    /// sees why the tool is absent from the roster.
-    ///
-    /// - Parameters:
-    ///   - name: What the finding is called in the report.
-    ///   - key: The dotted key path that turned the tool off.
-    /// - Returns: A pass that says disabled.
-    private static func disabledCheck(name: String, key: String) -> HealthCheck {
-        .ok(
-            name: name, message: "\(key) is \(disabledWord), so this tool is not mounted",
-            category: category)
     }
 
     /// Runs one prober call under ``timeoutSeconds``.
