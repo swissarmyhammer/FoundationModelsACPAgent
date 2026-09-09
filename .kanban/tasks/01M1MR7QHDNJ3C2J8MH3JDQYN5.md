@@ -121,11 +121,27 @@ comments:
     - evidence: 1 finding — .kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:159. The engine gave 0 findings for `review sha HEAD~1..HEAD` (commit `132410c`): `.reviewignore` holds `.kanban/`, so it excluded both files of the range. The three findings of 2026-09-09 09:30 are answered in the card body, and all three are ticked.
     - next: Correct the blanket basis sentence in the `### What` paragraph, so that it gives the exception for the `swift test` row and for the `Package.resolved` subtask. Then run the review again.
   timestamp: 2026-09-09T14:32:09.837129+00:00
+- actor: claude-code
+  id: 01m239ec43m2s3b07q4pbffmyt
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit `6e7dd9c`). 0 findings. The engine reviewed 0 of 2 files, because `.reviewignore` holds `.kanban/`. The record check found no claim that is stronger than its source: the `### What` paragraph names TWO exceptions, and the paragraph "The two exceptions" names the `swift test` row and the `Package.resolved` subtask, each on the upstream ledger of `^9vkmz1f` at commit `8cf79ba`. The other 15 ticks rest on a read of the named upstream files at the four commits. The finding of 2026-09-09 09:31 is answered and ticked, and all prior findings are ticked.
+    - next: none. The card moves to `done`.
+  timestamp: 2026-09-09T14:34:10.435171+00:00
+- actor: claude-code
+  id: 01m239et5v5navpyw3x2xrjykb
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — card text only. The `### What` paragraph now says the ticks come from a read of the upstream code and tests at the four commits "with TWO exceptions named below", and a new paragraph names both: the `swift test` row and the `Package.resolved` subtask rest on the upstream ledger of `^9vkmz1f` at commit 8cf79ba. A ledger is a record of a run, not a read.
+    - commit: 6e7dd9c
+    - review: clean — 0 findings. All four findings of the three rounds are ticked, and no claim in the card body is now stronger than its source.
+    - the three rounds each raised a DIFFERENT finding, so the card never hit the repeat guardrail. Round 1: the basis of the ticks lived only in the comments. Round 2: one sentence gave one basis for all 17 ticks, and two do not have it. Round 3: clean.
+  timestamp: 2026-09-09T14:34:24.827221+00:00
 depends_on:
 - 01M1MNXE777J4XA3NJTP483A8W
 - 01M1MR74AAC3HM74F26P39Z3BC
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: ce80
 title: 'acp-client N5: the doctor subcommand for a foreign agent'
 ---
 ### What
