@@ -114,10 +114,17 @@ comments:
     - evidence: card text only, in `/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md` and its `.jsonl`. The three review findings at `:83`, `:116` and `:142` are corrected and ticked. The card body now holds the basis of every tick: a new paragraph in `### What` names the upstream card `^9vkmz1f`, the four commits `7c3757a`, `277e670`, `8cf79ba` and `144b168`, and the upstream source and test files; a new paragraph below `### Tests` gives the ledger basis of the `swift test` row and says that this board ran no suite; and a third item in `### Amendments` gives the reason why the `Package.resolved` subtask lost the word "commit", with the introduction of the section corrected. No box was unticked and no claim was weakened. `git status` shows only these two files.
     - next: `/review`. The card stays in `doing`. Nothing is committed; the orchestrator commits.
   timestamp: 2026-09-09T14:29:03.840256+00:00
+- actor: claude-code
+  id: 01m239apbdwetngtvf6nrfa8y9
+  text: |
+    ### review — findings
+    - evidence: 1 finding — .kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:159. The engine gave 0 findings for `review sha HEAD~1..HEAD` (commit `132410c`): `.reviewignore` holds `.kanban/`, so it excluded both files of the range. The three findings of 2026-09-09 09:30 are answered in the card body, and all three are ticked.
+    - next: Correct the blanket basis sentence in the `### What` paragraph, so that it gives the exception for the `swift test` row and for the `Package.resolved` subtask. Then run the review again.
+  timestamp: 2026-09-09T14:32:09.837129+00:00
 depends_on:
 - 01M1MNXE777J4XA3NJTP483A8W
 - 01M1MR74AAC3HM74F26P39Z3BC
-position_column: doing
+position_column: review
 position_ordinal: '80'
 title: 'acp-client N5: the doctor subcommand for a foreign agent'
 ---
@@ -158,8 +165,8 @@ board wrote no source file and no test file for it. The work is in
 `../FoundationModelsACPClient`, on the upstream card `^9vkmz1f`, which
 is `done`. Each tick below comes from a read of the upstream code and
 the upstream tests at the four commits `7c3757a`, `277e670`, `8cf79ba`
-and `144b168`. All four are on ACPClient `main`, and `origin/main`
-points at `144b168`. The code is in
+and `144b168`, with TWO exceptions named below. All four commits are on
+ACPClient `main`, and `origin/main` points at `144b168`. The code is in
 `Sources/AcpClientCore/AgentCommandDoctor.swift`, which holds the one
 `Doctorable` with the seven rows in report order and the named limits
 `defaultTimeLimit` 10 s, `settleInterval` 500 ms and `teardownInterval`
@@ -171,6 +178,14 @@ the exit code; in `TerminalOutput.swift`, which holds
 `IntegrationTests/Tests/FoundationModelsACPClientIntegrationTests/`,
 with the stub agents in `IntegrationTests/.../Support/StubAgents.swift`.
 This board made no change in that repository.
+
+**The two exceptions.** Two ticks do NOT come from a read of the code
+and the tests. They come from the upstream ledger, which is a record of
+a run and not a read. The `swift test` row rests on the ledger of
+`^9vkmz1f` at commit `8cf79ba`; the paragraph below `### Tests` gives
+the counts. The `Package.resolved` subtask rests on the same ledger;
+amendment 3 gives the reason. This board ran no suite in either
+repository.
 
 - [x] The `Doctorable` conformance, with the seven checks
 - [x] The terminal and the plain rendering paths
@@ -259,3 +274,15 @@ subtask. The text above holds all three.
 - [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:83` `record/tick-basis` — The card has 17 ticks, and the card text gives a basis for none of them. The `### What` section says only that the work is upstream. It does not name the upstream card `^9vkmz1f`, and it does not name the commits `7c3757a`, `277e670`, `8cf79ba` and `144b168`. The basis is in a comment, and a comment is not the card. Add one line to the `### What` section. Say that this board wrote no source file, and that each tick comes from a read of the upstream code and the upstream tests at those four commits.
 - [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:116` `record/amendment-reason` — The subtask lost the word "commit", and the card gives no reason. The subtask first read "Refresh and commit `Package.resolved`". The `### Amendments` section does not hold this change, and it says that the text holds two decisions only. A reader thus sees a requirement that changed with no record. Add a third item to the `### Amendments` section. Say that `Package.resolved` is in `.gitignore` in the client repository, in the root package and in the integration package, so no commit can show the pin. Say that the tick covers the `swift package update` step alone.
 - [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:142` `record/tick-basis` — The row "`swift test` in `../FoundationModelsACPClient` passes" is ticked, and the card text does not say who ran the suite. This board ran no suite in that repository. The statement is in a comment only. Add the basis to the row, or to a line below it. Say that the tick comes from the upstream ledger of `^9vkmz1f` at commit `8cf79ba`, and that this board ran no suite in either repository.
+
+## Review Findings (2026-09-09 09:31)
+
+> Scope: `review sha HEAD~1..HEAD` (commit `132410c`). The engine reviewed
+> 0 of 2 files. `.reviewignore` holds `.kanban/`, so it excluded both files
+> in the range, and it gave 0 findings. The commit changed card text only.
+> The three findings of 2026-09-09 09:30 are answered in the card body, and
+> all three are ticked. The item below comes from the check of the record
+> that this review asked for: each tick must name its basis, and no claim
+> must be stronger than the source of the claim.
+
+- [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:159` `record/tick-basis` — The sentence "Each tick below comes from a read of the upstream code and the upstream tests at the four commits" gives one basis for all 17 ticks. Two ticks do not have that basis. The row "`swift test` in `../FoundationModelsACPClient` passes" comes from the upstream ledger at commit `8cf79ba`, as the paragraph below `### Tests` says. The subtask "Refresh `Package.resolved`" also comes from the upstream ledger, as amendment 3 says. A ledger record is not a read of the code and not a read of the tests. A reader of the `### What` paragraph alone thus gets a basis that is stronger than the source for those two ticks. Add the exception to that sentence. Say that the ticks come from a read of the upstream code and the upstream tests, but that the `swift test` row and the `Package.resolved` subtask come from the upstream ledger, and point to the paragraph below `### Tests` and to amendment 3.
