@@ -283,10 +283,30 @@ comments:
     - evidence: 3 files. New: Sources/FoundationModelsACPAgent/Doctor/DotfolderLayerCheck.swift. Changed: Sources/FoundationModelsACPAgent/Doctor/ConfigurationDoctor.swift, Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift. No test file was edited: this is a refactor, and the two unedited doctor suites are the guard. `swift test` gives 555 tests in 60 suites, 1 known issue at HarnessSmokeTests.swift:239, which is the same count as before the change.
     - next: /review
   timestamp: 2026-09-09T04:53:02.820627+00:00
+- actor: claude-code
+  id: 01m228se9vj12t50gp15z1t6m7
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (b7dd641), 3 files reviewed, 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. The 2026-09-08 23:39 finding on RuntimeDoctor.swift is answered and its item is ticked.
+    - verification: the extraction keeps the same behaviour. `ToolCatalog.skillsDotfolderName` is "skills", so the runtime name stays "the skills <source> layer"; the empty `noun` default keeps the configuration name "the <source> layer"; the empty `unreadableCost` and `unreadableFixHint` defaults build the configuration message and fix word for word as before. `requiresWrite: true` keeps the `chmod u+w` warning with ConfigurationDoctor, and `false` keeps it away from RuntimeDoctor.
+    - design note: `Wording` with `var` properties and defaults is accepted. It obeys the `redundantMemberwiseInit` gate rule, and it gives no finding.
+    - next: the card moves to done.
+  timestamp: 2026-09-09T05:03:30.107001+00:00
+- actor: claude-code
+  id: 01m228tb0rj01cg34bb5r51qjj
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files. The three-case missing/unreadable/readable switch now lives one time in the new `Doctor/DotfolderLayerCheck.swift`, with a `Wording` value for the four words that differ and the `requiresWrite` option the finding asked for. `ConfigurationDoctor` passes `true` and keeps its `chmod u+w` warning; `RuntimeDoctor` passes `false`.
+    - behaviour is preserved, and the review checked each string: the `noun` default keeps the configuration check name, and the empty `unreadableCost` and `unreadableFixHint` defaults build the same message and the same fix word for word.
+    - no test file was edited. `ConfigurationDoctorTests` and `RuntimeDoctorTests` are the guard and pass as they stand.
+    - test: green — swift test, 555 tests in 60 suites, 1 known issue at HarnessSmokeTests.swift:239. The count is unchanged, which is correct for a refactor.
+    - commit: b7dd641
+    - review: clean — 0 findings, 3 files, 7 validators. The `Wording` design (var properties with defaults and no hand-written init, to obey `redundantMemberwiseInit`) was accepted.
+  timestamp: 2026-09-09T05:03:59.512629+00:00
 depends_on:
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: cc80
 title: 'doctor checks: the skills stack, and the Metal runtime question'
 ---
 ### What
