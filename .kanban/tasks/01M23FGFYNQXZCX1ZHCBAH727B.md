@@ -4,7 +4,7 @@ assignees:
 comments:
 - actor: claude-code
   id: 01m23mwjnngyraq7ackqkd093h
-  text: |-
+  text: |
     Research for the third box: how CI selects the tier-3 suites.
 
     What I read:
@@ -40,7 +40,7 @@ comments:
     `Suite StdioContractTests passed after 5.323 seconds`.
 
     Why the two faults of this card were invisible, then:
-    1. `origin/main` is `c92e1fc`, and local `main` is 36 commits in front of
+    1. `origin/main` is `c92e1fc`, and local `main` is 35 commits in front of
        it. Commit `8cf7170`, which implemented `doctor` and deleted
        `Sources/acp-agent/NotImplementedError.swift`, is inside that unpushed
        run. At `c92e1fc` the string "is not implemented yet" was still in the
@@ -64,6 +64,14 @@ comments:
     pinned. That is exactly the stale-pin failure this card names, and it can
     happen on the runner too. It needs its own card on the workflows board and
     a decision first.
+
+    ---
+
+    RESTORED, 2026-09-09. The number 35 above is the number this comment gave
+    when it was written. A later hand edit of the `.md` file changed it to 36 in
+    place, which destroyed the record instead of amending it. This restore puts
+    the original number back. The amendment comment that follows carries the
+    correction, and it now describes a record that is really there.
   timestamp: 2026-09-09T17:54:10.229306+00:00
 - actor: claude-code
   id: 01m23mwstmjr8qvg2yj4gcd1cq
@@ -134,6 +142,61 @@ comments:
     hold the agreement of the two files: it lives on this disk only. The first
     thing that can prove that box is a CI run of the 36 unpushed commits.
   timestamp: 2026-09-09T17:58:25.382094+00:00
+- actor: claude-code
+  id: 01m23namxafqt3ghtdxbagm69s
+  text: |
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` on commit `4c3f6de` gives 0 findings,
+      0 confirmed, 0 refuted. The engine reviewed 0 files: both files of the
+      commit are `.kanban/` files, which `.reviewignore` excludes. The commit
+      changes no source file.
+    - what I checked in the record, because the record is the deliverable:
+      (1) the count. `git rev-list --count origin/main..main` gives 37 at
+      `4c3f6de` and 36 at `ca850a7`. The description gives 36, names the
+      command, names the commit `ca850a7`, and says the number is true only at
+      that commit. That is the honest form, so it is not a fault.
+      (2) the "clean checkout" box. It is unticked, and it says the box is NOT
+      PROVED, that no clean checkout was made, and that a CI run of the
+      unpushed commits is the first thing that can prove it. Correct.
+      (3) the amendment. Comment `01m23n4bv67hnck7stmxnntp1e` names both texts
+      it replaces, in the style of the earlier amendments on this board.
+    - what failed: two new faults in the way the correction was made. The
+      earlier comment `01m23mwjnngyraq7ackqkd093h` was rewritten in place from
+      35 to 36, so the text the amendment says it replaces is gone, and the
+      rewritten sentence gives a bare 36 with no command and no commit. The
+      `.md` file was also edited by hand: the `.jsonl` event log of the same
+      commit holds no event for the description corrections or for the two
+      ticks, and `grep -c "NOT PROVED"` gives 0 in the `.jsonl` and 1 in the
+      `.md`.
+    - next: correct the two items, then review again.
+  timestamp: 2026-09-09T18:01:51.274291+00:00
+- actor: claude-code
+  id: 01m23nfkzmtj4y3p9mep78985a
+  text: |
+    ### Amendment 2, 2026-09-09 — the two record findings are answered
+
+    **Finding: the comment was rewritten in place.** Answered. The comment
+    `01m23mwjnngyraq7ackqkd093h` is restored to its original words, and it says
+    35 again. A `RESTORED` paragraph at its end says what happened and points to
+    the amendment that carries the correction. The amendment now describes a
+    record that is really there.
+
+    **Finding: the `.md` was edited by hand, with no matching `.jsonl` event.**
+    Answered. The description is written through the board, so an event exists
+    for it.
+
+    **A second fault happened while I answered the second finding, and I record
+    it here rather than hide it.** A shell command gave the board an EMPTY
+    description, and the description was lost. The `.md` fell from 322 lines to
+    176. I recovered the text from commit `4c3f6de` and wrote it back through
+    the board. The card is whole again: 322 lines, the `## The fix` section, the
+    unticked clean-checkout box with its `NOT PROVED` note, and the two review
+    sections.
+
+    The cause of both faults is one habit: changing a card by writing its files.
+    A `.kanban/*.md` file is a rendering, and the `.jsonl` beside it is the event
+    log. Change a card only through the board.
+  timestamp: 2026-09-09T18:04:34.164265+00:00
 position_column: review
 position_ordinal: '80'
 title: CLIProcessTests still expects doctor to be a stub, and the tier-3 pin lags the root package
@@ -268,3 +331,20 @@ examined. Two faults are below.
 
 - [x] `.kanban/tasks/01M23FGFYNQXZCX1ZHCBAH727B.md` `record/evidence` — The card says local `main` is 35 commits in front of `origin/main`. At commit `ca850a7`, `git rev-list --count origin/main..main` gives 36. The comment `01m23mwjnngyraq7ackqkd093h` says 35 also. Write the number that the command gives, and write the commit at which you counted it, because each new commit makes the number larger.
 - [x] `.kanban/tasks/01M23FGFYNQXZCX1ZHCBAH727B.md` `record/evidence` — The "Done when" box "`swift test --package-path IntegrationTests` builds from a clean checkout" is ticked, but no clean checkout was made. The evidence that the box gives is a filtered run in the workspace that was already there, and `Package.resolved` is ignored by git (`.gitignore:6`), so no commit can hold the agreement of the two pin files. Name the commit or the CI run that shows a build from a clean checkout, or write on the box that it rests on a local run in the existing workspace and that no clean checkout was made.
+
+## Record note, 2026-09-09
+
+This description was corrected once by a hand edit of the `.md` file. That
+was wrong. The `.jsonl` beside it is the event log, and a hand edit writes
+no event, so the two files disagreed and the log could not replay the card.
+A second fault followed: an attempt to write this text back gave the board
+an empty description, and the description was lost for a short time. It is
+recovered here from commit `4c3f6de`, and it is written through the board,
+so an event exists for it.
+
+The same hand edit rewrote the number 35 inside the comment
+`01m23mwjnngyraq7ackqkd093h`. That comment is restored to its original
+words, and the amendment comment carries the correction.
+
+The lesson, for the next agent: change a card only through the board. Never
+edit `.kanban/*.md` and never edit `.kanban/*.jsonl` by hand.
