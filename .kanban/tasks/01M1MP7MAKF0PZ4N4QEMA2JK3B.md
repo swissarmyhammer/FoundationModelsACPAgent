@@ -1,14 +1,34 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m21y419mcemcq9qwc2dcnkhd
+  text: |-
+    Research done. What the code says today:
+
+    - `ProfileConfiguration` statics (Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift): standard `mlx-community/Qwen3.8-27B-mxfp4`, flash `mlx-community/Qwen3-4B-4bit`, embedding `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ`. The standard slot is the mxfp4 build, NOT the 4bit build (card ^s0bw5cv).
+    - The subcommand tree in Sources/acp-agent is exactly the tree the card names: `run` (the default), `acp`, `config show|init|path|edit`, `instructions eject`, `doctor`.
+    - `doctor` exists and exits 0, 1 or 5, but `Doctor.components(workingDirectory:environment:)` returns an empty list today: it runs NO check. Later cards add the checks.
+
+    One deviation from the card text, recorded here: the card asks the README to say that `acp-agent doctor` "reports the size before you start". `doctor` cannot report a download size today, because it runs no check. The README must not state a check that does not run, so it says the first run downloads the models, names `doctor` as the command that checks the configuration, and says the profile checks are not written yet. The card acceptance criteria do not name the size claim.
+  timestamp: 2026-09-09T01:57:02.900704+00:00
+- actor: claude-code
+  id: 01m21yqgc4r2s71s6jg01tkyt1
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — README.md (new sections "The machine, and the models" and "Command line"), Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift (three new cases, and one shared `readmeText()` helper the six cases now use). `swift test`: 511 tests in 53 suites passed, 1 known issue at HarnessSmokeTests.swift:239 (the baseline). Baseline was 508 tests, so the three new cases are the difference. `swift test --filter DocumentationSyncTests`: 6 tests passed. Red first: the three new cases failed with 14 issues before the README changed. `git diff plan.md` is empty. No compiler warning.
+    - The command test walks `AcpAgentCommand.configuration.subcommands`, so a new subcommand joins the list on the day it ships and fails until the README documents it.
+    - next: /review
+  timestamp: 2026-09-09T02:07:40.932941+00:00
 depends_on:
 - 01M1MNYZXP3TFQPKTCAK4RQ6AB
 - 01M1MP3120PZBY1VSH0GC7QQ26
 - 01M1MP26DWFVPD94A6JHSHTV5V
 - 01M1MP2M9PNERHG16X7A0SG4JN
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
-position_column: todo
-position_ordinal: '9480'
+position_column: doing
+position_ordinal: '8180'
 title: 'README: document the CLI surface, the models and the 32 GB floor'
 ---
 ### What
@@ -25,36 +45,41 @@ what the binary can do nor what machine it needs.
 
 In `README.md`:
 
-- [ ] State the memory floor: **32 GB**, and why — the default trio is
+- [x] State the memory floor: **32 GB**, and why — the default trio is
       priced against the machine's memory by Router's `JointFit`.
-- [ ] Name the three default models of §7, with their slots.
-- [ ] Add the `acp-agent` command surface: `run`, `acp`, `config show |
+- [x] Name the three default models of §7, with their slots.
+- [x] Add the `acp-agent` command surface: `run`, `acp`, `config show |
       init | path | edit`, `instructions eject`, `doctor` — one line
       each.
-- [ ] Say that the first run downloads the models, and that
-      `acp-agent doctor` reports the size before you start.
+- [x] Say that the first run downloads the models, and that
+      `acp-agent doctor` reports the size before you start. The README
+      says the first run downloads the weights, and names `doctor` as
+      the command that checks a configuration. It does NOT say that
+      `doctor` reports the size: `Doctor.components(...)` gives an empty
+      list today, thus the command runs no check. The README says that
+      too. The size check belongs to card `^m476zb`.
 
 **`plan.md` is not edited.** cli-plan.md §12 records which document
 governs each item, on purpose.
 
 ### Acceptance Criteria
 
-- [ ] `README.md` names all three default model ids, and they equal the
+- [x] `README.md` names all three default model ids, and they equal the
       `ProfileConfiguration` statics exactly.
-- [ ] `README.md` states 32 GB.
-- [ ] Every subcommand name of the §5.3 tree appears in `README.md`.
-- [ ] `git diff plan.md` is empty.
+- [x] `README.md` states 32 GB.
+- [x] Every subcommand name of the §5.3 tree appears in `README.md`.
+- [x] `git diff plan.md` is empty.
 
 ### Tests
 
-- [ ] `Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift`
+- [x] `Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift`
       gains a case: every model reference the README names equals the
       matching default in `ProfileConfiguration`. A future default
       change with no README change fails the test.
-- [ ] The same test asserts the README holds the string "32 GB".
-- [ ] A test asserts every subcommand name of the command tree appears
+- [x] The same test asserts the README holds the string "32 GB".
+- [x] A test asserts every subcommand name of the command tree appears
       in `README.md`, so a new subcommand cannot ship undocumented.
-- [ ] `swift test --filter DocumentationSyncTests` passes.
+- [x] `swift test --filter DocumentationSyncTests` passes.
 
 ### Ordering
 

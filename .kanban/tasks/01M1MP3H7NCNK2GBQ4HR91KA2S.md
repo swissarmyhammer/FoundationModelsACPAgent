@@ -54,13 +54,31 @@ comments:
     - evidence: 5 files — Sources/acp-agent/DoctorCommand.swift, Sources/acp-agent/ExitCode.swift, Sources/acp-agent/NotImplementedError.swift (deleted), Tests/FoundationModelsACPAgentTests/DoctorCommandTests.swift (new), Tests/FoundationModelsACPAgentTests/CLIParsingTests.swift, Tests/FoundationModelsACPAgentTests/ExitCodeTests.swift. `swift test`: 508 tests in 53 suites passed, 1 known issue at HarnessSmokeTests.swift:239, which is the baseline. Before: 497 tests in 52 suites.
     - next: /review
   timestamp: 2026-09-09T01:49:47.206322+00:00
+- actor: claude-code
+  id: 01m21xzkcazjwxtkga1fpje3qc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (8cf7170); 6 files reviewed; 0 findings, 0 confirmed, 0 refuted, 7 rules attempted, 0 failed. The 4 .kanban files are excluded by .reviewignore. Five code-hygiene rules declined the deleted file Sources/acp-agent/NotImplementedError.swift; a deleted file has no code to judge.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-09T01:54:37.578857+00:00
+- actor: claude-code
+  id: 01m21y07q869qpkq66py2q33fk
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — 6 files. `AcpAgentCommand.Doctor` (new `Sources/acp-agent/DoctorCommand.swift`) with `--cwd` and `--json`; `components(workingDirectory:environment:)` as the check registry, empty for now and never throwing, because a component reports its own failure as an `error` HealthCheck and `doctor` must run every check; `write(_:asJSON:renderer:standardOutput:)` with both destinations injectable; `AgentExitCode.init(doctor:)` mapping `worstStatus` through a switch with no `default`. `NotImplementedError.swift` deleted, because `doctor` was the last stub subcommand.
+    - test-first: the new tests refused to compile with 15 errors before the implementation, and no test was changed to make them pass.
+    - test: green — swift test, 508 tests in 53 suites, 1 known issue at HarnessSmokeTests.swift:239. It was 497 in 52 suites before this card.
+    - commit: 8cf7170
+    - review: clean — 0 findings, 7 rules attempted, 6 files reviewed
+    - note for the check cards that follow: the `workingDirectory:` and `environment:` parameters of `components(...)` are not read yet. They stand on purpose, so a later check card does not have to change the command signature. Do not delete them.
+  timestamp: 2026-09-09T01:54:58.408528+00:00
 depends_on:
 - 01M1MNXE777J4XA3NJTP483A8W
 - 01M1MNXY19R8HPEMNGF2WXB0G6
 - 01M1MNYFW81216M57PS9NDZKBE
 - 01M1MP13QK1NX440VP88F7NQYA
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: c680
 title: 'doctor subcommand: run the checks, render the report, exit 0, 1 or 5'
 ---
 ### What

@@ -59,6 +59,48 @@ the composition the `acp-agent` CLI builds every mode on.
 .package(url: "https://github.com/swissarmyhammer/FoundationModelsACPAgent.git", branch: "main")
 ```
 
+## The machine, and the models
+
+The agent needs a Mac with **32 GB** of memory. The default profile fills
+three model slots at one time, and Router's `JointFit` prices the three
+models together against the memory of the machine. A 27B model at 4 bits is
+approximately 15 GB alone, so a 16 GB machine is too small.
+
+| Slot | Default model |
+|---|---|
+| `standard` | `mlx-community/Qwen3.8-27B-mxfp4` |
+| `flash` | `mlx-community/Qwen3-4B-4bit` |
+| `embedding` | `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` |
+
+These three are the defaults of `ProfileConfiguration` in
+[`Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift`](Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift).
+The `profile:` section of a `config.yaml` replaces the candidates of any
+slot.
+
+The first run downloads the weights of each slot, which is many gigabytes.
+The weights stay in the Hugging Face cache, so a later run starts from
+disk. `acp-agent doctor` is the command that checks a configuration before
+the first run. Its checks are not written yet: today it runs no check and
+exits 0.
+
+## Command line
+
+`acp-agent` is one binary with one subcommand tree. `run` is the default
+subcommand, so `acp-agent "write a haiku"` runs a turn.
+
+| Command | What it does |
+|---|---|
+| `acp-agent run` | Run one turn, and print the answer. This is the default. |
+| `acp-agent acp` | Serve ACP on stdin and stdout. |
+| `acp-agent config show` | Print the merged configuration, and where each value came from. |
+| `acp-agent config init` | Write a `config.yaml` with every key at its default. |
+| `acp-agent config path` | Print each layer path, and say which ones exist. |
+| `acp-agent config edit` | Open the nearest `config.yaml` in `$EDITOR`. |
+| `acp-agent instructions eject` | Write `Instructions.md` into a layer. |
+| `acp-agent doctor` | Check that this configuration will actually work. |
+
+`acp-agent --help`, and `--help` on any command, gives the options.
+
 ## Tools
 
 The model-facing surface is three code-mode tools from
