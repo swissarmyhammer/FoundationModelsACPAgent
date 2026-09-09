@@ -40,7 +40,7 @@ comments:
     `Suite StdioContractTests passed after 5.323 seconds`.
 
     Why the two faults of this card were invisible, then:
-    1. `origin/main` is `c92e1fc`, and local `main` is 35 commits in front of
+    1. `origin/main` is `c92e1fc`, and local `main` is 36 commits in front of
        it. Commit `8cf7170`, which implemented `doctor` and deleted
        `Sources/acp-agent/NotImplementedError.swift`, is inside that unpushed
        run. At `c92e1fc` the string "is not implemented yet" was still in the
@@ -84,7 +84,57 @@ comments:
       from a new run. I ran no tier-4 suite and no whole-package run.
     - next: review.
   timestamp: 2026-09-09T17:54:17.556828+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m23n2qzx8d5jh6emhwb36ewy
+  text: |
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` on commit `ca850a7` gives 0 findings,
+      0 confirmed, 0 refuted. The engine reviewed 0 files: all 6 files of the
+      commit are `.kanban/` files, which `.reviewignore` excludes. The commit
+      changes no source file and no workflow file.
+    - what I examined in the record, because the record is the deliverable:
+      (1) each ticked box and the evidence it names; (2) each CI statement and
+      its source; (3) the count of the unpushed commits; (4) the new card
+      ^gwnczy6; (5) the `Package.resolved` hazard on the self-hosted runner.
+    - what passed: the first two boxes of "The fix" name commit `af356a8`.
+      The third box points to the section that names `.github/workflows/ci.yml`,
+      the shared workflow, and run `34226397374`. No statement says that a CI
+      run was made for this card; comment `01m23mwstmjr8qvg2yj4gcd1cq` says
+      "I ran no CI job" and names the two written sources. Card ^gwnczy6 gives
+      the failing tier-4 assertion `mean >= pythonCLIEvalMeanFloor` at
+      `PythonCLIEvaluation.swift:336:13` with 4 issues, and it proposes three
+      ways to decide instead of an unverified fix. Comment
+      `01m23mwjnngyraq7ackqkd093h` marks the `Package.resolved` hazard as found
+      and not acted on, and says the fix belongs to the sibling repository
+      `swissarmyhammer/workflows` and needs its own card there.
+    - what failed: two faults, in the "Review Findings (2026-09-09 12:55)"
+      section. The commit count is 36 at `ca850a7`, not 35. The "clean checkout"
+      box names no clean checkout and no commit or CI run.
+    - next: correct the two items, then review again.
+  timestamp: 2026-09-09T17:57:32.285450+00:00
+- actor: claude-code
+  id: 01m23n4bv67hnck7stmxnntp1e
+  text: |
+    ### Amendment, 2026-09-09
+
+    Two corrections to the record, each one answering a review finding.
+
+    **1. The unpushed commit count.** The card and the comment
+    `01m23mwjnngyraq7ackqkd093h` said 35. The number is **36**, measured with
+    `git rev-list --count origin/main..main` at commit `ca850a7`. The card now
+    gives the command and the commit, because each new commit makes the number
+    larger. This comment replaces the number 35 wherever the earlier comment
+    gives it.
+
+    **2. The "clean checkout" box is UNTICKED.** It said `swift test
+    --package-path IntegrationTests` builds from a clean checkout, and it gave
+    as evidence the agreement of the two pin files plus a filtered run. That is
+    not the same thing. No clean checkout was made. `.gitignore:6` ignores
+    `Package.resolved` and `IntegrationTests/Package.resolved`, so no commit can
+    hold the agreement of the two files: it lives on this disk only. The first
+    thing that can prove that box is a CI run of the 36 unpushed commits.
+  timestamp: 2026-09-09T17:58:25.382094+00:00
+position_column: review
 position_ordinal: '80'
 title: CLIProcessTests still expects doctor to be a stub, and the tier-3 pin lags the root package
 ---
@@ -171,7 +221,10 @@ There are two real reasons the two faults stayed invisible, and neither is
 the selection.
 
 1. **CI has not seen the code.** `origin/main` is `c92e1fc`. Local `main`
-   is 35 commits in front of it. Every commit that made the two faults —
+   is 36 commits in front of it, measured with
+   `git rev-list --count origin/main..main` at commit `ca850a7`. The
+   number gets larger with each new commit, so it is true only at the
+   commit named. Every commit that made the two faults —
    the doctor implementation `8cf7170`, which deleted
    `NotImplementedError.swift`, and the Router revision that added
    `SlotProgress` — is in that unpushed run. A suite cannot fail on code
@@ -186,10 +239,32 @@ the selection.
 
 ## Done when
 
-- [x] `swift test --package-path IntegrationTests` builds from a clean
+- [ ] `swift test --package-path IntegrationTests` builds from a clean
       checkout.
-      The two pin files now agree on FoundationModelsRouter `d469aa0a`,
-      and the filtered run below built and passed.
+      NOT PROVED, and it cannot be proved from this repository. The two
+      pin files agree on FoundationModelsRouter `d469aa0a` on this disk
+      only: `.gitignore:6` ignores `Package.resolved` and
+      `IntegrationTests/Package.resolved`, so no commit can hold that
+      agreement. The evidence below is a filtered run in the workspace
+      that was already there, and no clean checkout was made. A CI run
+      of the 36 unpushed commits is the first thing that can prove this
+      box.
 - [x] Every case of `CLIProcessTests` passes.
       `swift test --package-path IntegrationTests --filter CLIProcessTests`
       gives "Test run with 6 tests in 1 suite passed after 0.267 seconds".
+
+## Review Findings (2026-09-09 12:55)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 0 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> Every file in scope was excluded — 6 of 6 file(s) — so nothing was left to review. The exclusions above are deliberate: this is a clean review, not an empty scope, a failed run, or a size-cap skip.
+
+The engine found no code in the commit `ca850a7`. The commit changes only
+kanban cards. The record is the deliverable of this card, so the record was
+examined. Two faults are below.
+
+- [x] `.kanban/tasks/01M23FGFYNQXZCX1ZHCBAH727B.md` `record/evidence` — The card says local `main` is 35 commits in front of `origin/main`. At commit `ca850a7`, `git rev-list --count origin/main..main` gives 36. The comment `01m23mwjnngyraq7ackqkd093h` says 35 also. Write the number that the command gives, and write the commit at which you counted it, because each new commit makes the number larger.
+- [x] `.kanban/tasks/01M23FGFYNQXZCX1ZHCBAH727B.md` `record/evidence` — The "Done when" box "`swift test --package-path IntegrationTests` builds from a clean checkout" is ticked, but no clean checkout was made. The evidence that the box gives is a filtered run in the workspace that was already there, and `Package.resolved` is ignored by git (`.gitignore:6`), so no commit can hold the agreement of the two pin files. Name the commit or the CI run that shows a build from a clean checkout, or write on the box that it rests on a local run in the existing workspace and that no clean checkout was made.
