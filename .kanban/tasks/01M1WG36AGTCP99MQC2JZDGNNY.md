@@ -79,6 +79,17 @@ comments:
       `FoundationModelsACPClient` to give the table a caller and to change §8
       and the `--json` row of §6.1.
   timestamp: 2026-09-09T01:38:39.016683+00:00
+- actor: claude-code
+  id: 01m21x5dpykt7hv246ax6pgcg3
+  text: |-
+    ### finish iteration — stuck
+    - implement: stuck — verified what landed upstream at FoundationModelsACPClient `main` 1afd74a. `cli-plan.md` §5 now names the spinner alone; `TerminalOutput.swift` vends `withSpinner`, `event`, `frame`, `error` and the logger bridge, with NO table type and NO progress-bar type; `TerminalOutputTests` covers the spinner. §8 is unchanged. That is way 1.
+    - commit: 2696e7e
+    - review: not run. The card is not ready for the review gate.
+    - STUCK, and it must stay open: the row "Decide between the two ways out, with a person" is NOT ticked, because no person decided. The upstream card `^vs86g2a` ticked its own row under the recorded assumption of its finish step. The change is one paragraph and it is easy to reverse.
+    - Also unticked: the `swift test` row, because this step ran no suite in the ACPClient repository.
+    - What a person must do: choose way 1 (keep the narrowed sentence) or way 2 (give the table a caller, which also changes §8 and the `--json` row of §6.1). If way 2 wins, open a new card on the ACPClient board.
+  timestamp: 2026-09-09T01:40:19.806037+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'acp-client cli-plan §5: reconcile "a progress bar and a table" with the one terminal file'

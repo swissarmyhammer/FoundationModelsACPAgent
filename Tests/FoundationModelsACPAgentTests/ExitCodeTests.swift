@@ -20,9 +20,9 @@ import Testing
 /// build a `CommandReport` and throw nothing, and a subcommand whose
 /// `run()` returns exits 0.
 ///
-/// The `5` row belongs to `doctor`, whose body is a stub until its own
-/// card lands. The code is declared here so the card that writes the
-/// checks has one place to read it from.
+/// The `5` row belongs to `doctor`, and `DoctorCommandTests` drives it:
+/// that suite runs stub components through the Extras runner and asserts
+/// the code of each of the three health statuses.
 struct ExitCodeTests {
     // MARK: - Constants
 

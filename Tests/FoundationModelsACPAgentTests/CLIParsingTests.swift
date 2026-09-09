@@ -220,15 +220,13 @@ struct CLIParsingTests {
         #expect(AcpAgentCommand.configuration.version == RoutedACPAgent.buildVersion)
     }
 
-    /// A stub body exits 1 with its own name on stderr: `doctor` names
-    /// `doctor`, and a nested leaf names its leaf.
-    @Test func aStubBodyExitsOneWithItsNameOnStderr() async throws {
-        let error = try #require(await Self.outcomeError(of: [Self.doctorPrompt]))
+    /// Every subcommand of the tree has a body: no leaf is a stub any
+    /// more. `doctor` was the last one, and it now runs its registry —
+    /// which is empty until the check cards land — and exits 0.
+    @Test func noSubcommandOfTheTreeIsAStub() async {
+        let outcome = await Self.outcomeError(of: [Self.doctorPrompt])
+            .map(AcpAgentCommand.exitOutcome(for:))
 
-        #expect(
-            AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.error))
-        #expect(AcpAgentCommand.fullMessage(for: error).contains(Self.doctorPrompt))
-        #expect(
-            NotImplementedError(command: AcpAgentCommand.Config.Show.self).description.contains("show"))
+        #expect(outcome == nil)
     }
 }

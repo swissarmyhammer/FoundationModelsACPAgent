@@ -1,5 +1,6 @@
 import ArgumentParser
 import FoundationModelsACP
+import FoundationModelsExtras
 
 /// The exit code of `acp-agent` (cli-plan.md §5.8).
 ///
@@ -75,6 +76,27 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
         case .maxTokens: .error
         case .maxTurnRequests: .error
         case .unknown: .error
+        }
+    }
+
+    /// The exit code of a finished `doctor` run (§5.12).
+    ///
+    /// **The switch is total, and it declares no `default`.** The three
+    /// codes are one mapping of the three health statuses, so a status
+    /// Extras gains later stops the build here until somebody names its
+    /// code.
+    ///
+    /// The codes match `DoctorReport.exitCode`, which states the same
+    /// three numbers in Extras. This table is where every exit path of
+    /// this binary reads them from, and ``DoctorCommandTests`` holds the
+    /// two side by side so they cannot drift.
+    ///
+    /// - Parameter report: The report the doctor run built.
+    init(doctor report: DoctorReport) {
+        self = switch report.worstStatus {
+        case .ok: .success
+        case .error: .error
+        case .warning: .doctorWarnings
         }
     }
 
