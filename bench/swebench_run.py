@@ -77,8 +77,9 @@ import time
 from pathlib import Path
 
 from datasets import load_dataset
-from rich.console import Console
 from rich.table import Table
+
+from swebench_common import console, log
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -163,20 +164,9 @@ def find_agent(explicit):
 AGENT = find_agent(args.agent)
 
 # --- logging ----------------------------------------------------------------
-# Every message goes to standard output, and this script writes no log file.
-# To keep a record, send standard output where you want it:
-#
-#     uv run bench/swebench_run.py preds.jsonl | tee run.log
-#
-# rich finds that standard output is not a terminal, and it then writes plain
-# text with no color. The predictions file stays the durable result.
-console = Console()
-
-
-def log(markup):
-    """Write one milestone line, with the time."""
-    ts = time.strftime("%H:%M:%S")
-    console.print(f"[dim]{ts}[/] {markup}", highlight=False)
+# `console` and `log` come from swebench_common, so the score script and this
+# script write their lines the same way. The predictions file, and not the
+# output, is the durable result of a run.
 
 
 def echo(line):

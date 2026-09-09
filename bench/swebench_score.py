@@ -49,9 +49,10 @@ import subprocess
 import time
 from pathlib import Path
 
-from rich.console import Console
 from rich.table import Table
 from swebench.harness.run_evaluation import main as run_harness
+
+from swebench_common import console, log
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -64,13 +65,8 @@ LOCAL_DEFAULT_WORKERS = 1  # parallel emulated builds are the first cause of fai
 REMOTE_DEFAULT_WORKERS = 4
 # ----------------------------------------------------------------------------
 
-console = Console()
-
-
-def log(msg):
-    """Write one milestone line, with the time."""
-    ts = time.strftime("%H:%M:%S")
-    console.print(f"[dim]{ts}[/] {msg}", highlight=False)
+# `console` and `log` come from swebench_common, so the run script and this
+# script write their lines the same way.
 
 
 def parse_args():

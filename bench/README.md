@@ -89,6 +89,7 @@ The patch is `git diff <base_commit>` in the cloned repository.
 ```
 swebench_run.py     makes preds.jsonl with the agent — read it top to bottom
 swebench_score.py   gives the score of a preds.jsonl with docker
+swebench_common.py  the console and the log line the two scripts share
 .gitignore          keeps the run results out of git
 ```
 
