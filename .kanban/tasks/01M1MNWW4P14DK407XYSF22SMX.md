@@ -79,8 +79,27 @@ comments:
     - evidence: The upstream surface is on Router `main` (`e153630`, tip `d469aa0`), read directly in `Sources/FoundationModelsRouter/Resolution/ResolutionProgress.swift`. This repository moved its Router pin from `cc51793` to `d469aa0` with `swift package update FoundationModelsRouter`; `Package.resolved` is gitignored, so no file in the repository changed except this card. `swift build` is clean. The scratchpad probe with a plain `import FoundationModelsRouter`, `@MainActor`, went RED on the old pin (three access-level errors) and GREEN on the new pin (exit 0, no diagnostic). The negative control fails on all three of its reads, including the internal `refreshFraction()`, which proves the import is not `@testable`. Root `swift test`: 497 tests in 52 suites passed, 1 known issue at `HarnessSmokeTests.swift:239`, which is the baseline.
     - next: `/review`. The card stays in `doing`.
   timestamp: 2026-09-09T01:28:28.133058+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m21wnbt5v9s0rhv497xvqk8f
+  text: |-
+    ### review — clean
+    - scope: review sha HEAD~1..HEAD (commit 4972cb5)
+    - evidence: 0 findings, 0 confirmed, 0 refuted. The 4 files in the range are kanban card files, which the .reviewignore rule keeps out of the review. No source file changed in this commit.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-09T01:31:33.573970+00:00
+- actor: claude-code
+  id: 01m21wp1tnk1x52cmpebb9722r
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — card text only. Read the upstream surface at FoundationModelsRouter `main` (commit e153630, tip d469aa0): `slots` and `fraction` are `public internal(set)`; `SlotProgress` is public with `state`, `chosen`, `bytesDownloaded`, `bytesTotal` and `progressFraction`; `SlotProgress.State` is public; `SlotProgress.init` stays internal, so only the router writes. `ModelSlot` and `ModelRef` were already public.
+    - consumption proof: `swift package update FoundationModelsRouter` moved the pin from cc51793 to d469aa0. A `@MainActor` probe with a PLAIN import went red on the old pin ("'slots' is inaccessible due to 'internal' protection level") and green on the new. A negative control fails on the internal `refreshFraction()`, which proves the compile is a plain import and not `@testable`.
+    - test: green — swift test, 497 tests in 52 suites, 1 known issue at HarnessSmokeTests.swift:239, against the bumped Router
+    - commit: 4972cb5
+    - review: clean — 0 findings, review sha HEAD~1..HEAD
+    - result: the upstream card `^5545bna` is done, merged to Router `main`, and pushed. No code change was necessary here. The card "Download progress on stderr while the models resolve" is no longer blocked by this card.
+  timestamp: 2026-09-09T01:31:56.117696+00:00
+position_column: done
+position_ordinal: c480
 title: 'Router: make the per-slot ResolutionProgress surface public'
 ---
 ## What
