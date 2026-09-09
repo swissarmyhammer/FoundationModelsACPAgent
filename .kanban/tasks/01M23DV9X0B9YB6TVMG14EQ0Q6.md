@@ -58,8 +58,48 @@ comments:
     - evidence: 6 files — Sources/acp-agent/AgentComposition.swift, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift, Tests/FoundationModelsACPAgentTests/AcpCommandTests.swift, Tests/FoundationModelsACPAgentTests/Support/ComposedTurnFixture.swift, Tests/FoundationModelsACPAgentTests/Support/RecordedTranscriptFile.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TranscriptRecordingTests.swift (new). Red before the fix: 6 issues over 3 unit cases, 3 issues over 2 tier-3 cases. Green after: 558 unit tests pass with 1 pre-existing known issue, and the tier-3 suite passes.
     - next: /review
   timestamp: 2026-09-09T16:21:04.017171+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m23m6xpkh7hq3456fswnemba
+  text: |
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` — 1 finding, 1 confirmed, 0 refuted. Open: `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TranscriptRecordingTests.swift:155`
+    - next: Make `recordingRoot(of:)` call the shared helper `RecordedTranscriptFile.projectRecordingRoot(of:dotfolderName:)`. Remove the same duplication from the whole file. The card stays in Review.
+  timestamp: 2026-09-09T17:42:20.627884+00:00
+- actor: claude-code
+  id: 01m23m7d1skr6grg2e4c5q3hq4
+  text: |
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files; the new tests were red before the fix and green after it
+    - test: green — `swift test` 558 tests in 60 suites, 1 known issue; `swift test --package-path IntegrationTests --filter 'TranscriptRecordingTests|CLIProcessTests|StdioContractTests|OutOfProcessTests|ClientInteropTests|ClientServerTests|InterruptTests|PythonCLISubjectTests|EvaluatorHonestyTests'` 34 tests in 10 suites
+    - commit: af356a8
+    - review: findings — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TranscriptRecordingTests.swift:155
+
+    Note on the test step. The full `IntegrationTests` package was NOT run. It
+    holds the tier-4 live-model evaluation, which loads three MLX models. A
+    SWE-bench run was using the same machine, so the two competed for the GPU
+    and for the memory. The suites above are the ones this card changes, and
+    each one ran. The tier-4 evaluation is not run, and this note records it.
+  timestamp: 2026-09-09T17:42:36.345949+00:00
+- actor: claude-code
+  id: 01m23mkwttptm81mt20jkry1ae
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on commit `8482d76`; 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed, 6 files reviewed. The finding of the pass before is answered: `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TranscriptRecordingTests.swift:159` now calls the shared `projectRecordingRoot(of:dotfolderName:)`.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-09T17:49:25.722992+00:00
+- actor: claude-code
+  id: 01m23mmakmd486kpnxq4gw5kt0
+  text: |
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files; the one finding was in three places, and all three are corrected
+    - test: green — `swift test` 558 tests in 60 suites, 1 known issue; the nine tier-3 suites 34 tests in 10 suites
+    - commit: 8482d76
+    - review: clean — 0 findings, 7 validators attempted, 6 files reviewed; the prior finding is ticked
+
+    The card is in `done`.
+  timestamp: 2026-09-09T17:49:39.828766+00:00
+position_column: done
+position_ordinal: cf80
 title: 'acp-agent writes no transcript: AgentComposition gives Router no recordings directory'
 ---
 ## The defect
@@ -196,3 +236,20 @@ Three causes, and each one is necessary to the miss.
 - [x] `--resume` continues a session that a previous `run` recorded.
       — `TranscriptRecordingTests.resumeContinuesTheSessionTheFirstRunRecorded`.
 - [x] The new tests fail on the code before the fix, and pass after it.
+
+## Review Findings (2026-09-09 12:36)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TranscriptRecordingTests.swift:155` `reuse/reuse` — The `recordingRoot(of:)` function reimplements logic that is already available in the new shared helper `RecordedTranscriptFile.projectRecordingRoot(of:dotfolderName:)`. This function should call the shared helper instead of duplicating the path-construction logic. Replace the function body with: `RecordedTranscriptFile.projectRecordingRoot(of: workspace, dotfolderName: TierThreeFixture.agentDotfolderName)`.
+
+## Review Findings (2026-09-09 12:46)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 0 not reviewed.
+
+No finding. The commit `8482d76` answers the finding of the pass before:
+`TranscriptRecordingTests.recordingRoot(of:)` now calls the shared function
+`projectRecordingRoot(of:dotfolderName:)`, and it builds no path.
