@@ -197,8 +197,66 @@ comments:
     A `.kanban/*.md` file is a rendering, and the `.jsonl` beside it is the event
     log. Change a card only through the board.
   timestamp: 2026-09-09T18:04:34.164265+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m23nm99s3mxd5najbtcvsg7a
+  text: |
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` on commit `5a531d6` gives 0 findings,
+      0 confirmed, 0 refuted. The engine read 0 files: both files of the commit
+      are `.kanban/` files, which `.reviewignore` excludes. The commit changes
+      no source file.
+    - what I checked in the record, because the record is the deliverable:
+      1. The comment `01m23mwjnngyraq7ackqkd093h` gives 35 again, and a
+         `RESTORED, 2026-09-09` paragraph at its end says that the number is the
+         one the comment gave when it was written, and that the amendment
+         carries the correction. Event 12 of the `.jsonl` shows the change from
+         36 back to 35, so the restore is in the log.
+      2. The description is whole: 349 lines in the `.md`, with the sections
+         `## The defect`, `## The fix`, `## Why the suite did not catch these
+         two faults`, `## Done when`, `## Review Findings (2026-09-09 12:55)`
+         and `## Record note, 2026-09-09`. It is not blank and it is not cut
+         short.
+      3. The `.md` and the `.jsonl` agree. The `.jsonl` holds 15 events. The
+         strings `NOT PROVED`, `RESTORED, 2026-09-09`, `Record note,
+         2026-09-09` and `Amendment 2, 2026-09-09` are each in the `.jsonl` as
+         well as in the `.md`. Event 13 removes 155 lines of the description,
+         event 14 puts them back, and event 15 adds Amendment 2. The log can
+         replay the card.
+      4. Amendment 2 `01m23nfkzmtj4y3p9mep78985a` records the third fault
+         honestly: a shell command gave the board an empty description, the
+         `.md` fell from 322 lines to 176, and the text was recovered from
+         commit `4c3f6de` and written back through the board.
+    - the two findings of 2026-09-09 12:55 are answered. The description gives
+      36 unpushed commits with the command `git rev-list --count
+      origin/main..main` and the commit `ca850a7` at which it was counted. The
+      clean-checkout box in `## Done when` is unticked and says `NOT PROVED`,
+      and it names a CI run of the unpushed commits as the first proof.
+    - next: none. The card moves to done.
+  timestamp: 2026-09-09T18:07:07.065377+00:00
+- actor: claude-code
+  id: 01m23nn6jm45vj39414wajz49h
+  text: |
+    ### finish iteration 3 — clean
+    - implement: changed — the record repaired through the board; the comment restored, the description re-emitted, and the blanked description recovered from `4c3f6de`
+    - test: not run this iteration; the commit changes kanban files only
+    - commit: 5a531d6
+    - review: clean — 0 findings; both 2026-09-09 12:55 findings ticked; the `.jsonl` holds 15 events and replays the card
+
+    The card is in `done`. One `Done when` box stays unticked on purpose: a
+    clean-checkout build is NOT PROVED, and a CI run of the unpushed commits is
+    the first thing that can prove it.
+
+    Three iterations, and each review raised a different fault:
+    1. two faults in the content of the record,
+    2. two faults in HOW the content was corrected,
+    3. clean.
+
+    The single cause of iteration 2 was hand editing `.kanban/*.md`. Change a
+    card only through the board.
+  timestamp: 2026-09-09T18:07:37.044269+00:00
+position_column: done
+position_ordinal: d080
 title: CLIProcessTests still expects doctor to be a stub, and the tier-3 pin lags the root package
 ---
 ## The defect
