@@ -71,6 +71,49 @@ comments:
     - evidence: card text only, in `/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md` and `.jsonl`. All 4 subtasks, all 6 acceptance criteria and all 7 test items are ticked, 17 of 17. Verified by reading the upstream code and tests on ACPClient `main` at commits `7c3757a`, `277e670`, `8cf79ba` and `144b168`. No file in `../FoundationModelsACPClient` changed. No test ran; the `swift test` row is ticked from the upstream ledger, and the comment above says so.
     - next: `/review`. The card stays in `doing`. Nothing is committed; the orchestrator commits.
   timestamp: 2026-09-09T14:21:29.411607+00:00
+- actor: claude-code
+  id: 01m2391bd4z7a086c8baay8x52
+  text: |-
+    ### review — findings
+
+    - evidence: `review sha HEAD~1..HEAD` (commit `ecadedf`). The engine reviewed 0 of 4 files, because `.reviewignore` holds `.kanban/`; engine findings 0. The check of the record gives 3 findings: `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:83`, `:116`, `:142`. Each one is a tick, or a changed requirement, with no basis or no reason in the card text. The two amendments in the `### Amendments` section each carry a reason, and they are correct.
+    - next: put the basis of the ticks and the reason for the `Package.resolved` change into the card text. Then run `/review` again. The card stays in `review`.
+  timestamp: 2026-09-09T14:27:03.716944+00:00
+- actor: claude-code
+  id: 01m23922zxd8c13za5ggdnebyr
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — card text only. Verified the upstream work by reading the code and the tests on ACPClient `main` (commits 7c3757a, 277e670, 8cf79ba, 144b168): `AgentCommandDoctor.swift` holds the one `Doctorable` with the seven rows in a fixed order and never throws; the ndJSON row reads every whole line the tee copied, so a banner gives an `.error` that quotes the line; `initializeOutcome(of:)` races the handshake against a named limit and cancels it; `ExitCode.forDoctorStatus(_:)` maps ok/error/warning to 0/1/5 with one test each; the `--json` form decodes to the same checks the plain report draws; a report to a pipe holds no escape byte; and the fix rule is asserted over three doctors.
+    - two amendments were recorded, each naming the text it replaces: a silent agent gives `.error` and exit 1 rather than `.warning` and exit 5, on the owner decision of 2026-09-09 that changes the card and not the code; and the client's terminal layer is `TerminalOutput.swift` with `doctorReport(_:)`, not `TerminalRenderer`, which is this repository's file name.
+    - commit: ecadedf
+    - review: findings — .kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:83, :116, :142
+    - the three findings share one cause: the basis of the ticks lives in the comments of this card, and not in the card body. The review accepted the two amendments themselves, and said neither reads as a quiet rewrite.
+  timestamp: 2026-09-09T14:27:27.869125+00:00
+- actor: claude-code
+  id: 01m2394t5zzq13pj3aapych7av
+  text: |
+    ### The three findings are corrected in the card body
+
+    The three findings shared one cause: the basis of each tick was in a comment, and not in the card body. The body now carries the basis.
+
+    1. **`:83` `record/tick-basis`.** The `### What` section has a new paragraph, "The basis of every tick on this card." It says that this board wrote no source file and no test file, it names the upstream card `^9vkmz1f`, and it names the four commits `7c3757a`, `277e670`, `8cf79ba` and `144b168` on ACPClient `main`. It also names the four upstream source files, the named limits (`defaultTimeLimit` 10 s, `settleInterval` 500 ms, `teardownInterval` 2 s) and the two test directories, so a reader of the body alone knows what each tick rests on.
+    2. **`:116` `record/amendment-reason`.** The `### Amendments` section has a third item. It says that the subtask first read "Refresh and commit `Package.resolved`", that `Package.resolved` is in `.gitignore` in the client repository in both the root package and the integration package, that no commit can show the pin, and that the tick covers the `swift package update` step alone. The introduction of the section no longer says that the text holds two decisions only: it now says that items 1 and 2 are owner decisions and item 3 is a change this board made. A line below the subtask list points to amendment 3.
+    3. **`:142` `record/tick-basis`.** A paragraph below the `### Tests` list says that the `swift test` row is ticked from the upstream ledger of `^9vkmz1f` at commit `8cf79ba`, with the two counts, and that this board ran no suite in `../FoundationModelsACPClient` and no suite in this repository.
+
+    ### The check of the other ticks
+
+    I read the whole body again. The other 14 ticks have no separate basis of their own: they all rest on the read of the upstream code and tests at the four commits, and the new paragraph in `### What` states that basis for all of them and names the files. The paragraph below `### Tests` also says that the six test rows above the `swift test` row come from a read of the named test files, and not from a run of a suite on this board. No other tick has a basis that stays in a comment only.
+
+    No source file changed. Only the text of this card changed, in `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md` and its `.jsonl`. No file in `../FoundationModelsACPClient` changed, and `.gitignore`, `Package.resolved` and `IntegrationTests/Package.resolved` are untouched.
+  timestamp: 2026-09-09T14:28:57.151099+00:00
+- actor: claude-code
+  id: 01m23950q0r07qxyeeb80epc2y
+  text: |
+    ### implement — changed
+
+    - evidence: card text only, in `/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md` and its `.jsonl`. The three review findings at `:83`, `:116` and `:142` are corrected and ticked. The card body now holds the basis of every tick: a new paragraph in `### What` names the upstream card `^9vkmz1f`, the four commits `7c3757a`, `277e670`, `8cf79ba` and `144b168`, and the upstream source and test files; a new paragraph below `### Tests` gives the ledger basis of the `swift test` row and says that this board ran no suite; and a third item in `### Amendments` gives the reason why the `Package.resolved` subtask lost the word "commit", with the introduction of the section corrected. No box was unticked and no claim was weakened. `git status` shows only these two files.
+    - next: `/review`. The card stays in `doing`. Nothing is committed; the orchestrator commits.
+  timestamp: 2026-09-09T14:29:03.840256+00:00
 depends_on:
 - 01M1MNXE777J4XA3NJTP483A8W
 - 01M1MR74AAC3HM74F26P39Z3BC
@@ -110,12 +153,34 @@ stdout. Exit 0, 1 or 5.
 Every check carries a timeout. Name it in seconds. `doctor` must never
 hang.
 
+**The basis of every tick on this card.** This is a tracking card. This
+board wrote no source file and no test file for it. The work is in
+`../FoundationModelsACPClient`, on the upstream card `^9vkmz1f`, which
+is `done`. Each tick below comes from a read of the upstream code and
+the upstream tests at the four commits `7c3757a`, `277e670`, `8cf79ba`
+and `144b168`. All four are on ACPClient `main`, and `origin/main`
+points at `144b168`. The code is in
+`Sources/AcpClientCore/AgentCommandDoctor.swift`, which holds the one
+`Doctorable` with the seven rows in report order and the named limits
+`defaultTimeLimit` 10 s, `settleInterval` 500 ms and `teardownInterval`
+2 s; in `DoctorCommand.swift`, which holds the two output streams and
+the exit code; in `TerminalOutput.swift`, which holds
+`doctorReport(_:)`; and in `ExitCode.swift`, which holds
+`forDoctorStatus(_:)`. The tests are in
+`Tests/FoundationModelsACPClientTests/` and in
+`IntegrationTests/Tests/FoundationModelsACPClientIntegrationTests/`,
+with the stub agents in `IntegrationTests/.../Support/StubAgents.swift`.
+This board made no change in that repository.
+
 - [x] The `Doctorable` conformance, with the seven checks
 - [x] The terminal and the plain rendering paths
 - [x] `--json` to stdout, and the three exit codes
 - [x] Refresh `Package.resolved` so the new Extras `Doctorable` surface
       is visible: a `main` branch dependency stays pinned by revision
       until `swift package update` runs
+
+Amendment 3 below gives the reason why the last subtask no longer says
+"commit".
 
 ### Acceptance Criteria
 
@@ -141,10 +206,20 @@ writes a banner to stdout, and one that never answers.
 - [x] With a non-terminal destination the output holds no ANSI escape.
 - [x] `swift test` in `../FoundationModelsACPClient` passes.
 
+The last row is ticked from the upstream ledger of `^9vkmz1f` at commit
+`8cf79ba`. That ledger records `swift test` with 231 tests in 21 suites
+passed, and `swift test --package-path IntegrationTests` with 94 tests
+in 13 suites passed, each run with 0 failures, 0 warnings and 0 skipped.
+This board ran no suite in `../FoundationModelsACPClient`, and it ran no
+suite in this repository. The six rows above it are ticked from a read
+of the named upstream test files at the four commits, and not from a run
+of a suite on this board.
+
 ### Amendments
 
-This card is a tracking card. The upstream card `^9vkmz1f` records two
-owner decisions of 2026-09-09. The text above holds both.
+Items 1 and 2 record two owner decisions of 2026-09-09 that the upstream
+card `^9vkmz1f` holds. Item 3 records a change that this board made to a
+subtask. The text above holds all three.
 
 1. **A silent agent gives `.error`, not `.warning`.** The owner decided
    that this changes the card, and not the code. An agent that never
@@ -159,6 +234,28 @@ owner decisions of 2026-09-09. The text above holds both.
    report goes out through the new member `TerminalOutput.doctorReport(_:)`.
    The behavior is the one this card asked for: a table on a terminal,
    and the Extras plain text on a pipe or a file.
+3. **The `Package.resolved` subtask lost the word "commit".** That
+   subtask first read "Refresh and commit `Package.resolved`".
+   `Package.resolved` is in `.gitignore` in the client repository, in
+   the root package and in the integration package, so no commit can
+   show the pin. Thus the word "commit" is removed, and the tick covers
+   the `swift package update` step alone. The upstream ledger records
+   that `swift package update` ran in both packages, and that both
+   packages resolve `FoundationModelsExtras` at `main (55d6b04)`, which
+   is the revision that carries the `Doctorable` surface.
 
 ### Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-09 09:30)
+
+> Scope: `review sha HEAD~1..HEAD` (commit `ecadedf`). The engine reviewed
+> 0 of 4 files. `.reviewignore` holds `.kanban/`, so it excluded every file
+> in the range, and it gave 0 findings. The commit changed card text only.
+> The items below come from the check of the record that this review asked
+> for: each tick must name its basis, and each change to a requirement must
+> give its reason.
+
+- [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:83` `record/tick-basis` — The card has 17 ticks, and the card text gives a basis for none of them. The `### What` section says only that the work is upstream. It does not name the upstream card `^9vkmz1f`, and it does not name the commits `7c3757a`, `277e670`, `8cf79ba` and `144b168`. The basis is in a comment, and a comment is not the card. Add one line to the `### What` section. Say that this board wrote no source file, and that each tick comes from a read of the upstream code and the upstream tests at those four commits.
+- [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:116` `record/amendment-reason` — The subtask lost the word "commit", and the card gives no reason. The subtask first read "Refresh and commit `Package.resolved`". The `### Amendments` section does not hold this change, and it says that the text holds two decisions only. A reader thus sees a requirement that changed with no record. Add a third item to the `### Amendments` section. Say that `Package.resolved` is in `.gitignore` in the client repository, in the root package and in the integration package, so no commit can show the pin. Say that the tick covers the `swift package update` step alone.
+- [x] `.kanban/tasks/01M1MR7QHDNJ3C2J8MH3JDQYN5.md:142` `record/tick-basis` — The row "`swift test` in `../FoundationModelsACPClient` passes" is ticked, and the card text does not say who ran the suite. This board ran no suite in that repository. The statement is in a comment only. Add the basis to the row, or to a line below it. Say that the tick comes from the upstream ledger of `^9vkmz1f` at commit `8cf79ba`, and that this board ran no suite in either repository.
