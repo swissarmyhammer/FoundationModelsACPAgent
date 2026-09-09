@@ -174,6 +174,12 @@ enum AgentComposition {
     ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
     ///     from, and ``modelSource(environment:)`` reads the model switch
     ///     from.
+    ///   - progress: The progress object the resolution reports into, or
+    ///     `nil` for a fresh unobserved one. A caller that draws the
+    ///     download bar of cli-plan.md §5.7 makes the object first, hands
+    ///     it here, and observes the same object while this call runs: the
+    ///     whole resolution stands inside the agent's construction, so
+    ///     nothing can be observed after this returns.
     /// - Returns: The composed agent, the model path it was built over, and
     ///   the configuration the load resolved.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
@@ -181,7 +187,9 @@ enum AgentComposition {
     ///   created, or `ProfileResolutionError` when the profile does not
     ///   resolve. Each is fatal before the wire opens.
     static func compose(
-        workingDirectory: URL, environment: [String: String]
+        workingDirectory: URL,
+        environment: [String: String],
+        reporting progress: ResolutionProgress? = nil
     ) async throws -> Composed {
         let loader = try makeConfigurationLoader(
             workingDirectory: workingDirectory, environment: environment)
@@ -192,6 +200,7 @@ enum AgentComposition {
             router: try makeRouter(
                 for: modelSource, pacedBy: stubChunkDelay(environment: environment)),
             configuration: configuration,
+            reporting: progress,
             environment: environment)
         return Composed(
             agent: agent, modelSource: modelSource, configuration: configuration)

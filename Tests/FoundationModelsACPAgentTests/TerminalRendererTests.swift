@@ -74,7 +74,7 @@ import Testing
         let renderer = TerminalRenderer(destination: capture.destination, isTerminal: false)
 
         try await renderer.progressBar(message: Self.message) { report in
-            report(Self.fraction, Self.byteProgress)
+            report(Self.message, Self.fraction, Self.byteProgress)
         }
 
         #expect(capture.bytes().isEmpty)
@@ -100,7 +100,7 @@ import Testing
 
         let spun = try await renderer.spinner(message: Self.message) { "spun" }
         let reported = try await renderer.progressBar(message: Self.message) { report in
-            report(Self.fraction, Self.byteProgress)
+            report(Self.message, Self.fraction, Self.byteProgress)
             return "reported"
         }
 
@@ -130,7 +130,7 @@ import Testing
         let renderer = TerminalRenderer(destination: capture.destination, isTerminal: true)
 
         try await renderer.progressBar(message: Self.message) { report in
-            report(Self.fraction, Self.byteProgress)
+            report(Self.message, Self.fraction, Self.byteProgress)
         }
 
         let drawn = capture.text()
@@ -169,7 +169,7 @@ import Testing
         let onStandardOutput = try await Self.capturingStandardOutput {
             try await renderer.spinner(message: Self.message) {}
             try await renderer.progressBar(message: Self.message) { report in
-                report(Self.fraction, Self.byteProgress)
+                report(Self.message, Self.fraction, Self.byteProgress)
             }
             renderer.table(
                 statusHeader: Self.statusHeader, columnHeaders: Self.columnHeaders, rows: Self.rows)

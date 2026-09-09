@@ -153,26 +153,32 @@ struct TerminalRenderer: Sendable {
     /// the same place, so the bar grows where it is. A report that
     /// arrives when the destination is not a terminal does nothing.
     ///
+    /// Each report carries its own text as well, because the subject of a
+    /// bar changes while the bar runs: a model resolution moves from one
+    /// phase to the next, and from one slot to the next. `message` is what
+    /// the line says until the first report arrives.
+    ///
     /// The bar goes through Noora's step channel, and not through
     /// Noora's own bar component: the step channel draws again on each
     /// report and carries the byte pair, and the bar component draws only
     /// on a timer tick and carries the fraction alone.
     ///
     /// - Parameters:
-    ///   - message: The text beside the bar.
-    ///   - work: The work to run. It gets a function that takes the
-    ///     fraction that is complete, from 0 to 1, and the byte pair.
+    ///   - message: The text beside the bar until the first report.
+    ///   - work: The work to run. It gets a function that takes the text
+    ///     beside the bar, the fraction that is complete, from 0 to 1, and
+    ///     the byte pair.
     /// - Returns: What `work` gave back.
     /// - Throws: Whatever `work` throws.
     func progressBar<Value>(
         message: String,
-        work: @escaping (@escaping @Sendable (Double, ByteProgress) -> Void) async throws -> Value
+        work: @escaping (@escaping @Sendable (String, Double, ByteProgress) -> Void) async throws
+            -> Value
     ) async throws -> Value {
-        guard isTerminal else { return try await work { _, _ in } }
+        guard isTerminal else { return try await work { _, _, _ in } }
         return try await step(message: message, showSpinner: false) { report in
-            try await work { fraction, bytes in
-                report(
-                    Self.progressLine(message: message, fraction: fraction, bytes: bytes))
+            try await work { text, fraction, bytes in
+                report(Self.progressLine(message: text, fraction: fraction, bytes: bytes))
             }
         }
     }

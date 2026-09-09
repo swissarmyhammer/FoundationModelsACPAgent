@@ -21,14 +21,34 @@ comments:
     - The command test walks `AcpAgentCommand.configuration.subcommands`, so a new subcommand joins the list on the day it ships and fails until the README documents it.
     - next: /review
   timestamp: 2026-09-09T02:07:40.932941+00:00
+- actor: claude-code
+  id: 01m21z06p36breyr32bjj0j0px
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (ab87e9e). 0 findings, 0 confirmed, 0 refuted, 7 validator runs, 0 failed. The engine read the diff of Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift. README.md matched no validator, and the .kanban files are excluded by .reviewignore.
+    - deviation: the card asked the README to say that `acp-agent doctor` reports the download size. The README does not say it, because `Doctor.components(workingDirectory:environment:)` gives an empty list today. The reviewer accepts this deviation: a README that names a check which does not run would be incorrect. The size check stays with card ^mm476zb.
+    - note: the description writes the target card as `^m476zb`. The correct short id is `^mm476zb` (01M1MP4P9CJW36PD0EKMM476ZB).
+    - next: card moved to done.
+  timestamp: 2026-09-09T02:12:25.923934+00:00
+- actor: claude-code
+  id: 01m21z0snqdce6f3986rt1bdh9
+  text: |-
+    ### finish iteration — clean
+    - implement: changed — 2 files. README.md gained "The machine, and the models" (the 32 GB floor with its reason, and the three `ProfileConfiguration` slot defaults) and "Command line" (one row per command, each abstract from the command's own `CommandConfiguration`). `DocumentationSyncTests.swift` gained three cases that read the facts from the code, so a new subcommand or a changed default makes the test fail until the README agrees.
+    - test: green — swift test, 511 tests in 53 suites, 1 known issue at HarnessSmokeTests.swift:239. It was 508 before this card.
+    - commit: ab87e9e
+    - review: clean — 0 findings, 7 validator runs
+    - deviation, accepted by the review: the card asked the README to say `doctor` reports the download size before you start. The README does not say that, because `Doctor.components(...)` gives an empty list today and the command runs no check. A README that named the size report would state a check that does not run. The size check belongs to card `^mm476zb`.
+    - correction: an earlier note on this card wrote the follow-on card as `^m476zb`. The true short id is `^mm476zb`.
+  timestamp: 2026-09-09T02:12:45.367808+00:00
 depends_on:
 - 01M1MNYZXP3TFQPKTCAK4RQ6AB
 - 01M1MP3120PZBY1VSH0GC7QQ26
 - 01M1MP26DWFVPD94A6JHSHTV5V
 - 01M1MP2M9PNERHG16X7A0SG4JN
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: c780
 title: 'README: document the CLI surface, the models and the 32 GB floor'
 ---
 ### What

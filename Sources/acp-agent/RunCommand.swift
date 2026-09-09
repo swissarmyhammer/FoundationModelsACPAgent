@@ -1,6 +1,8 @@
 import ArgumentParser
+import Darwin
 import Foundation
 import FoundationModelsACP
+import FoundationModelsRouter
 
 extension AcpAgentCommand {
     /// `acp-agent run <prompt>`: run one turn, and print the answer
@@ -87,6 +89,20 @@ extension AcpAgentCommand {
             EventLineWriter(destination: .standardError, verbosity: eventVerbosity)
         }
 
+        /// The reporter the model resolution draws through: the process
+        /// standard error, at the verbosity the flags select (§5.7).
+        ///
+        /// The bar is drawn only when stderr is a terminal AND the
+        /// verbosity asks for it, which is the whole §5.7 table for the
+        /// bar: a pipe gets nothing, and `--quiet` gets nothing in a
+        /// terminal too.
+        var progressReporter: ProgressReporter {
+            ProgressReporter(
+                renderer: TerminalRenderer(
+                    destination: .standardError,
+                    isTerminal: isatty(STDERR_FILENO) == 1 && eventVerbosity.drawsProgress))
+        }
+
         /// Runs the one turn, and ends the process on the row of the
         /// §5.8 table the stop reason names (``AgentExitCode``).
         ///
@@ -97,6 +113,7 @@ extension AcpAgentCommand {
                 environment: ProcessInfo.processInfo.environment,
                 into: AnswerWriter(),
                 reporting: eventLineWriter,
+                drawing: progressReporter,
                 interruptedBy: InterruptHandler.onSIGINT)
             let code = AgentExitCode(turn: result)
             guard code == .success else {
@@ -125,6 +142,12 @@ extension AcpAgentCommand {
         ///     default watches nothing, so no suite arms a process-wide
         ///     signal. The two windows are armed one after the other and
         ///     never overlap.
+        ///   - progress: The reporter the download bar draws through
+        ///     (§5.7). `run()` gives the one over standard error; the
+        ///     default draws nothing, so no suite draws to the process
+        ///     standard error. The out-of-process mode ignores it: the
+        ///     child composes its own agent, and this process holds no
+        ///     progress object to read.
         /// - Returns: The stop reason of the turn.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
         ///   table, and whatever the composition, the turn or the writer
@@ -133,14 +156,24 @@ extension AcpAgentCommand {
             environment: [String: String],
             into writer: AnswerWriter,
             reporting events: EventLineWriter = .silent,
+            drawing progress: ProgressReporter = .silent,
             interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
         ) async throws -> RunTurnResult {
             guard outOfProcess else {
+                // The progress object is made HERE, before the composition:
+                // the whole resolution stands inside the construction of
+                // the agent, so nothing can observe it after the
+                // composition returns. The same object goes to the
+                // composition and to the reporter, and the reporter reads
+                // it while the composition awaits (§5.7).
+                let resolution = await ResolutionProgress()
                 return try await perform(
                     environment: environment, into: writer, reporting: events,
                     interruptedBy: install
                 ) {
-                    try await compose(environment: environment)
+                    try await progress.report(on: resolution) {
+                        try await compose(environment: environment, reporting: resolution)
+                    }
                 }
             }
             return try await performOutOfProcess(
@@ -227,16 +260,23 @@ extension AcpAgentCommand {
         /// working directory; the resumed session takes its own layer
         /// from the recorded directory, at `session/load`.
         ///
-        /// - Parameter environment: The environment the stack reads
-        ///   `XDG_CONFIG_HOME` from, and the composition reads the model
-        ///   switch from.
+        /// - Parameters:
+        ///   - environment: The environment the stack reads
+        ///     `XDG_CONFIG_HOME` from, and the composition reads the model
+        ///     switch from.
+        ///   - progress: The progress object the resolution reports into,
+        ///     or `nil` for a fresh unobserved one.
         /// - Returns: The composition.
-        /// - Throws: Whatever ``AgentComposition/compose(workingDirectory:environment:)``
+        /// - Throws: Whatever
+        ///   ``AgentComposition/compose(workingDirectory:environment:reporting:)``
         ///   throws.
-        func compose(environment: [String: String]) async throws -> AgentComposition.Composed {
+        func compose(
+            environment: [String: String], reporting progress: ResolutionProgress? = nil
+        ) async throws -> AgentComposition.Composed {
             try await AgentComposition.compose(
                 workingDirectory: workingDirectoryOptions.directoryURL,
-                environment: environment)
+                environment: environment,
+                reporting: progress)
         }
 
         /// The session the turn runs in: the recorded one when `--resume`

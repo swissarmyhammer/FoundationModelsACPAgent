@@ -345,6 +345,7 @@ struct EventLineWriterTests {
 
         try await renderer.progressBar(message: Self.progressMessage) { report in
             report(
+                Self.progressMessage,
                 Self.reportedFraction,
                 TerminalRenderer.ByteProgress(
                     completed: Self.completedBytes, total: Self.totalBytes))
@@ -363,6 +364,7 @@ struct EventLineWriterTests {
 
         try await renderer.progressBar(message: Self.progressMessage) { report in
             report(
+                Self.progressMessage,
                 Self.reportedFraction,
                 TerminalRenderer.ByteProgress(
                     completed: Self.completedBytes, total: Self.totalBytes))
