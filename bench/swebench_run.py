@@ -41,6 +41,11 @@ argument length can change it.
 The agent gets ONE turn. `acp-agent run` starts a new session, sends the
 prompt, and stops when the turn stops.
 
+The agent writes its session transcripts into the repository, and the
+repository is removed when the instance ends. So this script copies the
+transcripts out first, into `<preds stem>.transcripts/<instance_id>/` beside
+the predictions file. Read them to see what the model did in each round.
+
 ==============================================================================
 BEFORE YOU START
 ==============================================================================
@@ -93,6 +98,10 @@ DEFAULT_TIMEOUT_S = 3600
 # reports tracked files only, so these are already out of the patch. These
 # pathspecs are the second guard, for a run that COMMITS one of them.
 AGENT_EXCLUDES = [".acp-agent"]
+# Where the agent writes its session transcripts, below the repository. The
+# repository is removed when the instance ends, so the transcripts are copied
+# out first. They are the only record of what the model did in each round.
+AGENT_TRANSCRIPTS = Path(".acp-agent") / "transcripts"
 # Where to look for the agent binary, in this order, below the package root.
 AGENT_CANDIDATES = (".build/release/acp-agent", ".build/debug/acp-agent")
 # The package root: the parent of this `bench` directory.
@@ -254,6 +263,35 @@ def patch_stats(patch):
     return files, added, removed
 
 
+def transcripts_dir(outpath):
+    """The directory that keeps the agent transcripts of every instance.
+
+    It sits beside the predictions file, with the same stem:
+    `preds.jsonl` -> `preds.transcripts/<instance_id>/`. The `.gitignore` of
+    the bench directory keeps `*.transcripts/` out of git.
+    """
+    return outpath.parent / f"{outpath.stem}.transcripts"
+
+
+def keep_transcripts(repo, outpath, instance_id):
+    """Copy the agent transcripts of one instance out of the repository.
+
+    The repository is a temporary directory, and it is removed when the
+    instance ends. Without this copy, no record of the model rounds survives
+    the run. A copy replaces the copy of an earlier run of the same instance.
+
+    Returns the destination, or None when the agent wrote no transcripts.
+    """
+    source = Path(repo) / AGENT_TRANSCRIPTS
+    if not source.is_dir():
+        return None
+    destination = transcripts_dir(outpath) / instance_id
+    if destination.exists():
+        shutil.rmtree(destination, ignore_errors=True)
+    shutil.copytree(source, destination)
+    return destination
+
+
 def capture_patch(repo, base_commit):
     """The source diff of the agent, against the CLEAN base commit.
 
@@ -394,6 +432,14 @@ with outpath.open("w" if args.force else "a") as out:
             log(f"{prefix} [red]ERROR[/]: {exc}")
         finally:
             if work is not None:
+                # Keep the transcripts before the repository goes. This runs
+                # for a finished agent, a killed agent, and a failed step.
+                try:
+                    kept = keep_transcripts(work / "repo", outpath, instance_id)
+                    if kept is not None:
+                        log(f"{prefix} transcripts -> [bold]{kept}[/]")
+                except OSError as exc:
+                    log(f"{prefix} [yellow]transcripts not kept[/]: {exc}")
                 shutil.rmtree(work, ignore_errors=True)
 
 # --- the summary ------------------------------------------------------------

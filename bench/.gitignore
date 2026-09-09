@@ -3,4 +3,5 @@
 preds*.jsonl
 *.log
 *.score.*.json
+*.transcripts/
 logs/

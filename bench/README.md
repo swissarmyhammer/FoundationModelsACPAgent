@@ -40,9 +40,16 @@ uv run bench/swebench_score.py bench/preds.jsonl
 pins. There is nothing to install by hand.
 
 **Write the results into `bench/`.** The `.gitignore` of this directory keeps
-`preds*.jsonl`, `*.log`, the score reports and `logs/` out of git. A results
-file at the root of the package is not ignored, and it makes the working tree
-dirty.
+`preds*.jsonl`, `*.log`, the score reports, `*.transcripts/` and `logs/` out of
+git. A results file at the root of the package is not ignored, and it makes
+the working tree dirty.
+
+**Each instance keeps its agent transcripts.** The agent writes its session
+transcripts into the temporary repository, and the run removes that
+repository. So `swebench_run.py` copies them into
+`bench/preds.transcripts/<instance_id>/` before the repository goes. Read them
+to see each model round of an instance, for example to find why one round was
+slow.
 
 ### One problem only
 
