@@ -248,10 +248,8 @@ struct ResumeSessionFixture {
     /// - Returns: The resolved root.
     /// - Throws: When the harness dotfolder name is refused.
     static func projectRecordingRoot(of cwd: URL) throws -> URL {
-        TranscriptLocation.project.recordingRoot(
-            workingDirectory: cwd,
-            name: try DotfolderName(AgentClientHarness.dotfolderName),
-            userDirectory: cwd)
+        try FoundationModelsACPAgentTestSupport.projectRecordingRoot(
+            of: cwd, dotfolderName: AgentClientHarness.dotfolderName)
     }
 
     /// Drives one prompt turn over the wire and waits until the session

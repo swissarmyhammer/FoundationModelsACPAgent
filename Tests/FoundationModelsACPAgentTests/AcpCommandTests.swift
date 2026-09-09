@@ -191,7 +191,7 @@ struct AcpCommandTests {
             environment: environment, workspace: workspace, prompt: Self.promptText,
             wire: .makeStdioPipes())
 
-        let root = RecordedTranscriptFile.projectRecordingRoot(
+        let root = try projectRecordingRoot(
             of: workspace, dotfolderName: AgentComposition.dotfolderName)
         let file = RecordedTranscriptFile.fileURL(
             under: root, sessionId: turn.sessionId.rawValue)

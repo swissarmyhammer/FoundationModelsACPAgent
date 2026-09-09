@@ -127,19 +127,6 @@ enum RecordedTranscriptFile {
         return contents.filter { $0.lastPathComponent == fileName }
     }
 
-    /// The `project` recording root of `workspace`, the default location
-    /// (plan.md §4.1): `<workspace>/.<name>/transcripts/`.
-    ///
-    /// - Parameters:
-    ///   - workspace: The session working directory.
-    ///   - name: The dotfolder name the project layer roots under.
-    /// - Returns: The recording root.
-    static func projectRecordingRoot(of workspace: URL, dotfolderName name: String) -> URL {
-        workspace
-            .appendingPathComponent(".\(name)", isDirectory: true)
-            .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
-    }
-
     /// The file Router records one session to: `<root>/<sessionId>/`, and
     /// ``fileName`` inside it.
     ///

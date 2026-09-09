@@ -94,7 +94,7 @@ struct AgentCompositionTests {
         let turn = try await ComposedTurnFixture.run(
             environment: environment, workspace: workspace, prompt: Self.promptText)
 
-        let root = Self.recordingRoot(of: workspace)
+        let root = try Self.recordingRoot(of: workspace)
         let file = RecordedTranscriptFile.fileURL(
             under: root, sessionId: turn.sessionId.rawValue)
         #expect(
@@ -120,7 +120,7 @@ struct AgentCompositionTests {
         environment[Self.configHomeVariable] = configHome.path
         let composed = try await AgentComposition.compose(
             workingDirectory: workspace, environment: environment)
-        let root = Self.recordingRoot(of: workspace)
+        let root = try Self.recordingRoot(of: workspace)
 
         let session = composed.agent.residentProfile.standard.makeSession(
             workingDirectory: workspace, recordingRoot: root)
@@ -139,8 +139,8 @@ struct AgentCompositionTests {
     ///
     /// - Parameter workspace: The session working directory.
     /// - Returns: The recording root.
-    private static func recordingRoot(of workspace: URL) -> URL {
-        RecordedTranscriptFile.projectRecordingRoot(
+    private static func recordingRoot(of workspace: URL) throws -> URL {
+        try projectRecordingRoot(
             of: workspace, dotfolderName: AgentComposition.dotfolderName)
     }
 }

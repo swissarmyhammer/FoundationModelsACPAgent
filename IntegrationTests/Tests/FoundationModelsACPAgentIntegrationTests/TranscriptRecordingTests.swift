@@ -67,7 +67,7 @@ struct TranscriptRecordingTests {
 
         #expect(run.exitCode == 0, "stderr: \(run.standardError)")
         #expect(run.standardOutput.contains(Self.promptText), "stdout: \(run.standardOutput)")
-        let root = Self.recordingRoot(of: workspace)
+        let root = try Self.recordingRoot(of: workspace)
         let sessionDirectories = try Self.sessionDirectories(under: root)
         #expect(
             sessionDirectories.count == sessionsPerRun,
@@ -97,7 +97,7 @@ struct TranscriptRecordingTests {
             ],
             workspace: workspace,
             configHome: configHome)
-        let root = Self.recordingRoot(of: workspace)
+        let root = try Self.recordingRoot(of: workspace)
         let recordedDirectory = try #require(try Self.sessionDirectories(under: root).first)
         let file = recordedDirectory.appendingPathComponent(
             transcriptFileName, isDirectory: false)
@@ -150,14 +150,14 @@ struct TranscriptRecordingTests {
     /// The `project` recording root of `workspace`, the default location
     /// (plan.md §4.1): `<workspace>/.acp-agent/transcripts/`.
     ///
+    /// The shared helper builds the path, so this suite and the unit
+    /// suites cannot disagree about where a project records.
+    ///
     /// - Parameter workspace: The working directory of the run.
     /// - Returns: The recording root.
-    private static func recordingRoot(of workspace: URL) -> URL {
-        workspace
-            .appendingPathComponent(
-                ".\(TierThreeFixture.agentDotfolderName)", isDirectory: true)
-            .appendingPathComponent(
-                TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
+    private static func recordingRoot(of workspace: URL) throws -> URL {
+        try projectRecordingRoot(
+            of: workspace, dotfolderName: TierThreeFixture.agentDotfolderName)
     }
 
     /// The session directories under `root`: the entries that hold a
