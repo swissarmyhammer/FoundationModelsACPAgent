@@ -28,6 +28,53 @@ comments:
     - tests: `swift test` gives 550 tests in 59 suites passed, 1 known issue. The baseline was 536 in 58 with the same 1 known issue, so 14 tests entered and 1 suite entered. No warning, and no network in any of them.
     - next: `/review`.
   timestamp: 2026-09-09T04:02:54.536926+00:00
+- actor: claude-code
+  id: 01m225ws4scd20pmq4c1fhb7v7
+  text: |
+    ### review — findings
+    - evidence: 1 finding — Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift:81 (scope: review sha HEAD~1..HEAD; 1 confirmed, 3 refuted, 7 attempted)
+    - next: put the two separator constants in one shared place, then review the card again.
+  timestamp: 2026-09-09T04:12:53.785294+00:00
+- actor: claude-code
+  id: 01m225x95meh5nvz4rgjcgntf3
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 11 files, 6 new. `ProfileDoctor` is registered second. Per reference, in slot order: the shape row, then the resolve row, the cache-state row and an MTP row when the id holds `-MTP-`; then one memory row and one free-disk row. A malformed reference is never looked up.
+    - `ModelResolver.lookUp(_:)` is the injected seam. `ProbeTimeout` moved into its own file and is generic, so `ToolsDoctor` and `ProfileDoctor` share one copy.
+    - two deliberate limits, both accepted by the review: the memory row does NO `JointFit` pricing, because Router's `JointFit` needs per-candidate repository metadata this check does not read; it compares the machine with the measured 32 GB floor. The "smaller profile" a fix names is `ProfileConfiguration.defaultFlash`, so no new model string entered the code.
+    - test-first: 12 of 14 ProfileDoctorTests failed against a stub returning an empty list
+    - test: green — swift test, 550 tests in 59 suites, 1 known issue at HarnessSmokeTests.swift:239. It was 536 in 58 before. The suite ran ten times with no flakiness, and reaches no network, no real Hugging Face cache and no machine-dependent figure.
+    - commit: 637c41b
+    - review: findings — Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift:81. The review refuted three other candidates, and the `ProbeTimeout` move drew no finding.
+  timestamp: 2026-09-09T04:13:10.196338+00:00
+- actor: claude-code
+  id: 01m22698xbvwyvtje49055ksny
+  text: |
+    The one finding is answered. What I found first, and where the separators now stand.
+
+    **The format already has an owner, and the owner keeps it private.** Router's `ModelRef` (`FoundationModelsRouter/Sources/FoundationModelsRouter/Core/ModelRef.swift`) parses the same two separators and holds the two parts. But `repo` and `revision` are `internal`, and its own `revisionSeparator` is `private`, so no other package can read any of the three. To read them from here, Router must widen that access, and a Router change is not this card's — it needs its own card on that project, discussed first. Nothing in Router was touched.
+
+    **No existing type here declares them either.** `ProfileConfiguration` and `AgentConfiguration` hold `[ModelRef]` values, but they state no separator: they leave every reference to `ModelRef`. So this package had no home for the format, and the two new files each made one.
+
+    **The home I picked, inside this repository.** `Sources/FoundationModelsACPAgent/Configuration/ModelReferenceFormat.swift`, a small `internal enum`. It stands in `Configuration/`, beside the `profile:` section whose slots hold the references, because the format belongs to the model reference and not to `doctor`. It is `internal`, because both readers are in this module. It states:
+
+    - `ownerSeparator` — the `/` between the owner and the name.
+    - `revisionSeparator` — the `@` before a pinned revision.
+    - `parts(of:)` — the repository id and the revision of one reference.
+
+    **Both separators were written twice, not one.** The finding names `revisionSeparator`, and it says "the separators" in the plural. `ownerSeparator` was the other one: `"/"` as a `String` in `ModelResolver` and as a `Character` in `ProfileDoctor`. Both are gone from both files. The **parse** was written twice as well, which is the same cause one step further: `ModelResolver.parts(of:)` split the reference at `@`, and `ProfileDoctor.isWellFormed` took the same prefix by hand. One `ModelReferenceFormat.parts(of:)` now answers both, so a change to the format goes in one file.
+
+    No other reference-format constant is written twice across the files this card added. `mtpMark` (`-MTP-`) stands once, in `ProfileDoctor`. The slot keys already compose over the shared `LoadedConfiguration.keyPathSeparator`. `cacheSeparator` (`--`) stays in `ModelResolver`: it is the shape of a cache directory name, not of a reference, and it has one reader.
+
+    **One thing I saw and did not touch.** `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift` declares its own `modelOwnerSeparator: Character = "/"`. That file is not one this card added, and the duplication rule puts the fix in the changed code and not in the counterpart. It can now read `ModelReferenceFormat.ownerSeparator` through `@testable import`, which is a separate small piece of work.
+  timestamp: 2026-09-09T04:19:43.147140+00:00
+- actor: claude-code
+  id: 01m2269d90hye68r3jdcftwpsc
+  text: |
+    ### implement — changed
+    - evidence: 3 files — 1 new, `Sources/FoundationModelsACPAgent/Configuration/ModelReferenceFormat.swift`; 2 changed, `Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift` and `Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift`. `swift test` gives 550 tests in 59 suites passed, 1 known issue at HarnessSmokeTests.swift:239 — the same count as before, because this is a refactor and it adds no coverage. `swift build` reports no warning of this package. No IntegrationTests run. No commit.
+    - next: `/review`.
+  timestamp: 2026-09-09T04:19:47.616613+00:00
 depends_on:
 - 01M1MP3H7NCNK2GBQ4HR91KA2S
 position_column: doing
@@ -108,3 +155,12 @@ below asserts against that named value.
 
 ### Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-09-08 23:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift:81` `duplication/duplication` — The constant `revisionSeparator` is duplicated verbatim in ProfileDoctor.swift at line 60. Both use `"@"` to separate a model reference from its pinned revision. This is a changed-set duplicate — both are new and should be extracted to a shared location. See suggestion for ownerSeparator above — extract both separators to a shared location so a future change to the reference format need only touch one place.

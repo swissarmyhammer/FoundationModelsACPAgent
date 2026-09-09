@@ -69,16 +69,9 @@ public struct SystemModelResolver: ModelResolver {
     /// its cache directory.
     private static let cacheSeparator = "--"
 
-    /// The separator between the owner and the name of a repository id.
-    private static let ownerSeparator = "/"
-
     /// The subdirectory of a repository cache that holds one directory per
     /// revision.
     private static let snapshotsDirectoryName = "snapshots"
-
-    /// The separator between the repository id and the revision of a
-    /// reference, which the Hub API takes as two arguments.
-    private static let revisionSeparator: Character = "@"
 
     // MARK: - Stored state
 
@@ -153,7 +146,7 @@ public struct SystemModelResolver: ModelResolver {
     /// - Parameter reference: The reference to look up.
     /// - Returns: What the lookup gave.
     public func lookUp(_ reference: ModelRef) async -> ModelLookup {
-        let (repo, revision) = Self.parts(of: reference)
+        let (repo, revision) = ModelReferenceFormat.parts(of: reference)
         do {
             let raw = try await source.fetchRawMetadata(repo: repo, revision: revision)
             guard let entries = Self.entries(inTree: raw.treeJSON) else {
@@ -163,19 +156,6 @@ public struct SystemModelResolver: ModelResolver {
         } catch {
             return .unreachable(reason: String(describing: error))
         }
-    }
-
-    /// The repository id and the revision of one reference.
-    ///
-    /// - Parameter reference: The reference to split.
-    /// - Returns: The repository id, and the revision when the reference
-    ///   pins one.
-    private static func parts(of reference: ModelRef) -> (repo: String, revision: String?) {
-        let text = reference.stringValue
-        guard let separator = text.firstIndex(of: revisionSeparator) else {
-            return (text, nil)
-        }
-        return (String(text[..<separator]), String(text[text.index(after: separator)...]))
     }
 
     // MARK: - The tree
@@ -225,7 +205,8 @@ public struct SystemModelResolver: ModelResolver {
     private func snapshotDirectories(of repo: String) -> [URL] {
         let name =
             Self.repositoryPrefix
-            + repo.replacingOccurrences(of: Self.ownerSeparator, with: Self.cacheSeparator)
+            + repo.replacingOccurrences(
+                of: String(ModelReferenceFormat.ownerSeparator), with: Self.cacheSeparator)
         let snapshots = cacheDirectory
             .appendingPathComponent(name, isDirectory: true)
             .appendingPathComponent(Self.snapshotsDirectoryName, isDirectory: true)

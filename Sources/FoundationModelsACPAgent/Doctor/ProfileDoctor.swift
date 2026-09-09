@@ -51,14 +51,6 @@ public struct ProfileDoctor: Doctorable {
     /// How a figure in gigabytes is written.
     private static let gigabyteFormat = "%.1f GB"
 
-    /// The separator between the owner and the name of a well formed
-    /// reference.
-    private static let ownerSeparator: Character = "/"
-
-    /// The separator between a reference and the revision it pins, which
-    /// the shape check takes off before it reads the owner and the name.
-    private static let revisionSeparator: Character = "@"
-
     /// The number of parts a well formed reference has: the owner and the
     /// name.
     private static let wellFormedPartCount = 2
@@ -255,8 +247,9 @@ public struct ProfileDoctor: Doctorable {
         guard !text.contains(where: \.isWhitespace) else {
             return false
         }
-        let repo = text.prefix { $0 != revisionSeparator }
-        let parts = repo.split(separator: ownerSeparator, omittingEmptySubsequences: false)
+        let repo = ModelReferenceFormat.parts(of: reference).repo
+        let parts = repo.split(
+            separator: ModelReferenceFormat.ownerSeparator, omittingEmptySubsequences: false)
         return parts.count == wellFormedPartCount && parts.allSatisfy { !$0.isEmpty }
     }
 
