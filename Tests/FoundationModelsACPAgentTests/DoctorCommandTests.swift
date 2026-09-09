@@ -9,7 +9,7 @@ import Testing
 /// ``Doctorable`` components of this package through the Extras
 /// ``DoctorRunner``, renders the report, and exits 0, 1 or 5.
 ///
-/// The checks themselves are three later cards, so every component here is
+/// The checks themselves have their own suites, so every component here is
 /// a stub. What this suite proves is the plumbing: the exit code of each
 /// status, the two rendering paths, and which stream each one writes to.
 ///
@@ -121,18 +121,7 @@ struct DoctorCommandTests {
         }
     }
 
-    // MARK: - The registry
-
-    /// The registry states an empty component list: this card owns the
-    /// command, and each later card appends its own conformance, so the
-    /// command never changes again.
-    @Test func theRegistryStatesAnEmptyComponentList() {
-        let components = AcpAgentCommand.Doctor.components(
-            workingDirectory: URL(fileURLWithPath: Self.projectPath, isDirectory: true),
-            environment: [:])
-
-        #expect(components.isEmpty)
-    }
+    // MARK: - An empty report
 
     /// With no component the report holds no check, it exits 0, and the
     /// plain rendering of it is empty.

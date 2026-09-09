@@ -1,6 +1,7 @@
 import ArgumentParser
 import Darwin
 import Foundation
+import FoundationModelsACPAgent
 import FoundationModelsExtras
 
 extension AcpAgentCommand {
@@ -73,18 +74,23 @@ extension AcpAgentCommand {
         /// The ``Doctorable`` components this package checks.
         ///
         /// **This is the one place a later card touches.** Each card that
-        /// writes checks — the configuration, the profile, the sandbox,
-        /// the tools, the skills — appends its own conformance here, and
-        /// the command around it never changes again.
+        /// writes checks — the profile, the sandbox, the tools, the skills
+        /// — appends its own conformance here, and the command around it
+        /// never changes again.
         ///
-        /// The list is empty until those cards land, and an empty list is
-        /// a whole answer: the runner gives a report with no check, which
-        /// exits 0.
+        /// The configuration and the transcripts are registered. Both read
+        /// one load of `config.yaml`, which this function makes once and
+        /// hands to each of them, so a `doctor` run reads the stack a
+        /// single time.
         ///
         /// A component reports a failure as a ``HealthCheck`` with the
         /// `error` status, and never by throwing: `doctor` runs every
         /// check, so one broken component must not hide the rest. That is
-        /// why this function does not throw.
+        /// why this function does not throw. The one refusal it cannot
+        /// report that way is a dotfolder name the stack rejects, and
+        /// ``AgentComposition/dotfolderName`` is a compiled-in bare word,
+        /// so that branch stands for a name a future edit could break and
+        /// is unreachable today.
         ///
         /// - Parameters:
         ///   - workingDirectory: The directory `--cwd` names, which roots
@@ -95,7 +101,19 @@ extension AcpAgentCommand {
         static func components(
             workingDirectory: URL, environment: [String: String]
         ) -> [any Doctorable] {
-            []
+            guard
+                let loader = try? AgentComposition.makeConfigurationLoader(
+                    workingDirectory: workingDirectory, environment: environment)
+            else {
+                return []
+            }
+            let outcome = ConfigurationLoadOutcome(of: loader)
+            return [
+                ConfigurationDoctor(stack: loader.stack, outcome: outcome),
+                TranscriptsDoctor(
+                    configuration: outcome.configuration, stack: loader.stack,
+                    name: loader.name, workingDirectory: workingDirectory),
+            ]
         }
 
         // MARK: - Running
