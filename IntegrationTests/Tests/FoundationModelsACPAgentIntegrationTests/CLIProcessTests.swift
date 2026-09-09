@@ -21,23 +21,39 @@ import Testing
 /// The exit code of a usage error (cli-plan.md §5.8).
 private let usageExitCode: Int32 = 2
 
-/// The exit code of an error (cli-plan.md §5.8): a stub subcommand body
-/// exits with it until its card lands.
+/// The exit code of an error (cli-plan.md §5.8): `doctor` exits with it
+/// when any check fails.
 private let errorExitCode: Int32 = 1
 
-/// The process contract of `--help`, `--version`, a usage error and a
-/// stub subcommand.
+/// The process contract of `--help`, `--version`, a usage error and
+/// `doctor`.
 struct CLIProcessTests {
     // MARK: - Constants
 
     /// The heading the help text carries.
     private static let usageHeading = "USAGE"
 
-    /// The text every stub body writes to stderr.
-    private static let notImplementedMarker = "is not implemented yet"
+    /// The text `doctor` writes for a profile reference that is not
+    /// `owner/name` (cli-plan.md §5.12).
+    private static let malformedReferenceMarker = "is not a well formed owner/name reference"
 
-    /// A subcommand whose body is a stub on this card.
-    private static let stubSubcommand = "doctor"
+    /// The `doctor` subcommand (cli-plan.md §5.12).
+    private static let doctorSubcommand = "doctor"
+
+    /// A user-layer `config.yaml` with one malformed profile reference and
+    /// two empty slots.
+    ///
+    /// The malformed shape fails before any lookup starts — `ProfileDoctor`
+    /// looks up only a well formed reference — so this run makes no network
+    /// call, and the empty `flash` and `embedding` slots make none either.
+    /// That failure is deterministic and reachable with no model and no
+    /// network, so it is the one `doctor` exit this suite can assert.
+    private static let malformedProfileYAML = """
+        profile:
+          standard: ["not-well-formed"]
+          flash: []
+          embedding: []
+        """
 
     /// The number of rows `config path` writes: builtin, user and project.
     private static let layerRowCount = 3
@@ -46,15 +62,20 @@ struct CLIProcessTests {
 
     /// Runs the built `acp-agent` with `arguments` in fresh directories.
     ///
-    /// - Parameter arguments: The command-line arguments for `acp-agent`.
+    /// - Parameters:
+    ///   - arguments: The command-line arguments for `acp-agent`.
+    ///   - configHome: The injected `XDG_CONFIG_HOME` root. The default
+    ///     makes a fresh, empty directory.
     /// - Returns: The finished run.
     /// - Throws: The locator or spawn error.
-    private static func runAgentCLI(arguments: [String]) async throws -> BuiltExecutableRun {
+    private static func runAgentCLI(
+        arguments: [String], configHome: URL? = nil
+    ) async throws -> BuiltExecutableRun {
         try await BuiltExecutableRun.run(
             executableNamed: TierThreeFixture.agentExecutableName,
             arguments: arguments,
             workspace: makeResolvedDirectory(label: "CLIProcess-repo"),
-            configHome: makeResolvedDirectory(label: "CLIProcess-config"))
+            configHome: configHome ?? makeResolvedDirectory(label: "CLIProcess-config"))
     }
 
     // MARK: - The contract
@@ -91,15 +112,20 @@ struct CLIProcessTests {
         #expect(run.standardOutput.isEmpty, "a usage error wrote to stdout: \(run.standardOutput)")
     }
 
-    /// A stub subcommand exits 1 and says so on stderr, with nothing on
-    /// stdout.
-    @Test func aStubSubcommandExitsOneAndSaysSoOnStderr() async throws {
-        let run = try await Self.runAgentCLI(arguments: [Self.stubSubcommand])
+    /// `doctor` finds the malformed profile reference, exits 1, and states
+    /// the failure on stderr, with nothing on stdout (cli-plan.md §5.12).
+    @Test func aMalformedProfileReferenceMakesDoctorExitOneWithTheFailureOnStderr() async throws {
+        let configHome = makeResolvedDirectory(label: "CLIProcess-config")
+        try TierThreeFixture.writeUserConfig(under: configHome, yaml: Self.malformedProfileYAML)
+
+        let run = try await Self.runAgentCLI(
+            arguments: [Self.doctorSubcommand], configHome: configHome)
 
         #expect(run.exitCode == errorExitCode, "stderr: \(run.standardError)")
         #expect(
-            run.standardError.contains(Self.notImplementedMarker), "stderr: \(run.standardError)")
-        #expect(run.standardOutput.isEmpty, "a stub wrote to stdout: \(run.standardOutput)")
+            run.standardError.contains(Self.malformedReferenceMarker),
+            "stderr: \(run.standardError)")
+        #expect(run.standardOutput.isEmpty, "doctor wrote to stdout: \(run.standardOutput)")
     }
 
     // MARK: - The config reports (cli-plan.md §5.11)

@@ -9,12 +9,14 @@ import Testing
 /// The `acp` subcommand (cli-plan.md §4, §5.3, §5.10): the stdio server
 /// over the shared composition.
 ///
-/// Three claims stand here. The wire ends when stdin ends, because
+/// Four claims stand here. The wire ends when stdin ends, because
 /// plan.md §17 gives the agent no teardown handshake. Each session takes
 /// its project layer from its own `session/new(cwd)`, and never from the
 /// directory the process started in — the "two loads" rule of §5.10.
-/// And the answer does not depend on the transport, so `run` mode's
-/// in-process pair and the `acp` mode's stdio pipes give one text.
+/// The answer does not depend on the transport, so `run` mode's
+/// in-process pair and the `acp` mode's stdio pipes give one text. And a
+/// turn over the stdio wire records its transcript, because both modes
+/// compose one router (§4.1).
 struct AcpCommandTests {
     // MARK: - Constants
 
@@ -168,5 +170,34 @@ struct AcpCommandTests {
         #expect(!inProcess.isEmpty)
         #expect(inProcess.contains(Self.promptText))
         #expect(inProcess == overPipes)
+    }
+
+    // MARK: - The recording of the stdio wire (plan.md §4.1)
+
+    /// A turn over the stdio wire writes
+    /// `<recording root>/<sessionId>/transcript.jsonl`.
+    ///
+    /// `run` and `acp` compose one router, so the recorder cannot be on in
+    /// one mode and off in the other. The assertion reads the recorded
+    /// file, and never `sessions.jsonl`: that index is written on a path
+    /// that never touches the recorder.
+    @Test(.timeLimit(.minutes(2)))
+    func aTurnOverTheStdioWireRecordsTheSessionTranscript() async throws {
+        let configHome = makeResolvedDirectory(label: "AcpCommandTests-record-config")
+        let workspace = makeResolvedDirectory(label: "AcpCommandTests-record-repo")
+        let environment = Self.stubEnvironment(configHome: configHome)
+
+        let turn = try await ComposedTurnFixture.run(
+            environment: environment, workspace: workspace, prompt: Self.promptText,
+            wire: .makeStdioPipes())
+
+        let root = RecordedTranscriptFile.projectRecordingRoot(
+            of: workspace, dotfolderName: AgentComposition.dotfolderName)
+        let file = RecordedTranscriptFile.fileURL(
+            under: root, sessionId: turn.sessionId.rawValue)
+        #expect(
+            FileManager.default.fileExists(atPath: file.path),
+            "no transcript stands at \(file.path)")
+        #expect(!(try RecordedTranscriptFile.lines(under: root, sessionId: turn.sessionId)).isEmpty)
     }
 }

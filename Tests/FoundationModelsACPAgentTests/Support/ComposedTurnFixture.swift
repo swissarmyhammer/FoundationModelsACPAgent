@@ -14,12 +14,18 @@ import Testing
 /// and the `acp` suite drives one over each wire of §4, so the
 /// composition and the drive stand in one place and cannot drift.
 enum ComposedTurnFixture {
+    /// What one composed turn gave: the session it ran in, and the agent
+    /// text it streamed.
+    struct Turn {
+        /// The session the turn opened and ran in.
+        let sessionId: SessionId
+
+        /// The streamed agent text, chunks joined in arrival order.
+        let text: String
+    }
+
     /// Composes the agent over `environment`, runs one turn of `prompt`
     /// in `workspace`, and returns the agent text the turn streamed.
-    ///
-    /// `environment` must select the stub model: the fixture asserts the
-    /// composition took that path, so no weights load and no network is
-    /// touched.
     ///
     /// - Parameters:
     ///   - environment: The environment the composition reads.
@@ -36,6 +42,33 @@ enum ComposedTurnFixture {
         prompt: String,
         wire: HarnessWire = .makeInMemory()
     ) async throws -> String {
+        try await run(
+            environment: environment, workspace: workspace, prompt: prompt, wire: wire
+        ).text
+    }
+
+    /// Composes the agent over `environment` and runs one turn of `prompt`
+    /// in `workspace`.
+    ///
+    /// `environment` must select the stub model: the fixture asserts the
+    /// composition took that path, so no weights load and no network is
+    /// touched.
+    ///
+    /// - Parameters:
+    ///   - environment: The environment the composition reads.
+    ///   - workspace: The session working directory.
+    ///   - prompt: The text of the one turn.
+    ///   - wire: The transport pair the turn runs over. The in-process
+    ///     pair by default.
+    /// - Returns: The session the turn ran in, and the text it streamed.
+    /// - Throws: Whatever the composition, the handshake or the turn
+    ///   throws.
+    static func run(
+        environment: [String: String],
+        workspace: URL,
+        prompt: String,
+        wire: HarnessWire = .makeInMemory()
+    ) async throws -> Turn {
         let composed = try await AgentComposition.compose(
             workingDirectory: workspace, environment: environment)
         #expect(composed.modelSource == .stub)
@@ -48,6 +81,6 @@ enum ComposedTurnFixture {
             AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: prompt))
         let updates = try await ScriptedTurnFixture.waitForIdle(collector)
         await harness.close()
-        return agentMessageText(in: updates)
+        return Turn(sessionId: session.sessionId, text: agentMessageText(in: updates))
     }
 }

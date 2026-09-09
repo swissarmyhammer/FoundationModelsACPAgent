@@ -87,6 +87,10 @@ enum AgentComposition {
     /// read the fake sizes back.
     private static let stubCacheDirectoryPrefix = "acp-agent-stub-cache-"
 
+    /// The prefix of the throwaway directory the router's own recordings
+    /// root stands at — see ``makeRecordingsDirectory()``.
+    private static let recordingsDirectoryPrefix = "acp-agent-recordings-"
+
     /// What one composition gives: the agent, the model path it was built
     /// over, so a caller can say which one it got, and the configuration
     /// the start-up load resolved.
@@ -183,9 +187,9 @@ enum AgentComposition {
     /// - Returns: The composed agent, the model path it was built over, and
     ///   the configuration the load resolved.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
-    ///   the configuration load errors, the stub cache directory cannot be
-    ///   created, or `ProfileResolutionError` when the profile does not
-    ///   resolve. Each is fatal before the wire opens.
+    ///   the configuration load errors, a throwaway directory of the
+    ///   router cannot be created, or `ProfileResolutionError` when the
+    ///   profile does not resolve. Each is fatal before the wire opens.
     static func compose(
         workingDirectory: URL,
         environment: [String: String],
@@ -198,7 +202,9 @@ enum AgentComposition {
         let agent = try await RoutedACPAgent(
             name: loader.name,
             router: try makeRouter(
-                for: modelSource, pacedBy: stubChunkDelay(environment: environment)),
+                for: modelSource,
+                pacedBy: stubChunkDelay(environment: environment),
+                recordingInto: try makeRecordingsDirectory()),
             configuration: configuration,
             reporting: progress,
             environment: environment)
@@ -227,27 +233,39 @@ enum AgentComposition {
 
     /// Makes the router of one model path.
     ///
+    /// Both paths take the recordings directory, because that directory is
+    /// what turns the recorder on: a router built without one holds the
+    /// no-op sink, and every event of every session drops (plan.md §4.1).
+    /// Each session then names its own root, and Router records the
+    /// session to `<root>/<sessionId>/`.
+    ///
     /// - Parameters:
     ///   - modelSource: The model path to build the router over.
     ///   - chunkDelay: The pause a stub answer puts between two chunks,
     ///     or `nil` for the library's one-chunk echo. The live path
     ///     ignores it.
+    ///   - recordingsDirectory: The router's own recordings root — see
+    ///     ``makeRecordingsDirectory()``.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
     /// - Throws: The directory-creation error of the stub cache.
     private static func makeRouter(
-        for modelSource: ModelSource, pacedBy chunkDelay: Swift.Duration?
+        for modelSource: ModelSource,
+        pacedBy chunkDelay: Swift.Duration?,
+        recordingInto recordingsDirectory: URL
     ) throws -> Router {
         switch modelSource {
         case .live:
             Router(
+                recordingsDir: recordingsDirectory,
                 loader: LiveModelLoader(
                     downloader: #hubDownloader(),
                     tokenizerLoader: #huggingFaceTokenizerLoader()))
         case .stub:
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
+                recordingsDirectory: recordingsDirectory,
                 loader: makeStubLoader(pacedBy: chunkDelay))
         }
     }
@@ -270,8 +288,44 @@ enum AgentComposition {
     /// - Returns: The created directory, under the temporary directory.
     /// - Throws: The directory-creation error.
     private static func makeStubCacheDirectory() throws -> URL {
+        try makeThrowawayDirectory(prefix: stubCacheDirectoryPrefix)
+    }
+
+    /// Makes the router's own recordings root: a fresh throwaway
+    /// directory, one for each composition.
+    ///
+    /// The router root is the switch, and not a destination. Router writes
+    /// each session to the root that session was given — the project's
+    /// `transcripts.location` — so nothing a user reads is written here.
+    /// Three facts make a throwaway directory the correct switch:
+    ///
+    /// - `JSONLRecorder` locks its own root. Two agent processes in one
+    ///   project would then contend for one lock, and the process that
+    ///   loses records nothing. A root per process cannot contend.
+    /// - A session that names no root of its own records under the router
+    ///   root. The librarian sessions of the tool catalog are such
+    ///   sessions, and a project root would mix them into the project's
+    ///   own transcripts.
+    /// - An `acp` server opens sessions in directories other than the one
+    ///   it started in, so its start-up directory must not become a
+    ///   recording root.
+    ///
+    /// - Returns: The created directory, under the temporary directory.
+    /// - Throws: The directory-creation error.
+    private static func makeRecordingsDirectory() throws -> URL {
+        try makeThrowawayDirectory(prefix: recordingsDirectoryPrefix)
+    }
+
+    /// Makes a fresh directory under the temporary directory, named
+    /// `prefix` and a new UUID.
+    ///
+    /// - Parameter prefix: The name prefix, which says what the directory
+    ///   is for.
+    /// - Returns: The created directory.
+    /// - Throws: The directory-creation error.
+    private static func makeThrowawayDirectory(prefix: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(stubCacheDirectoryPrefix + UUID().uuidString, isDirectory: true)
+            .appendingPathComponent(prefix + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

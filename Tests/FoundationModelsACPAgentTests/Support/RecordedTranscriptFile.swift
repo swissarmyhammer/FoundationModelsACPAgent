@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgent
 import FoundationModelsRouter
 
 /// One recorded `transcript.jsonl` line, in the fields the transcript
@@ -124,6 +125,32 @@ enum RecordedTranscriptFile {
         let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
         let contents = walker?.compactMap { $0 as? URL } ?? []
         return contents.filter { $0.lastPathComponent == fileName }
+    }
+
+    /// The `project` recording root of `workspace`, the default location
+    /// (plan.md §4.1): `<workspace>/.<name>/transcripts/`.
+    ///
+    /// - Parameters:
+    ///   - workspace: The session working directory.
+    ///   - name: The dotfolder name the project layer roots under.
+    /// - Returns: The recording root.
+    static func projectRecordingRoot(of workspace: URL, dotfolderName name: String) -> URL {
+        workspace
+            .appendingPathComponent(".\(name)", isDirectory: true)
+            .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
+    }
+
+    /// The file Router records one session to: `<root>/<sessionId>/`, and
+    /// ``fileName`` inside it.
+    ///
+    /// - Parameters:
+    ///   - root: The recording root the session was given.
+    ///   - sessionId: The session's own id.
+    /// - Returns: The file URL, whether or not anything stands there.
+    static func fileURL(under root: URL, sessionId: String) -> URL {
+        root
+            .appendingPathComponent(sessionId, isDirectory: true)
+            .appendingPathComponent(fileName, isDirectory: false)
     }
 
     /// The lines of one recorded kind.
