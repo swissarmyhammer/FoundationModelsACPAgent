@@ -1,6 +1,20 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m230b3zmn0jb124xbw215qk9
+  text: |-
+    ### The upstream card is made
+
+    `FoundationModelsACPClient` card **`^9vkmz1f`** — "N5: the doctor subcommand for a foreign agent". It is in `todo` and carries the full specification of this card, written from the ACPClient view.
+
+    The card also carries two facts this session measured, so the upstream work does not have to find them again:
+    - The Extras `Doctorable` module is on Extras `main` at `55d6b04`, and a `main` branch dependency stays pinned by revision until `swift package update` runs.
+    - Do NOT model "never answers" with a never-resumed `withCheckedContinuation`. That prints `SWIFT TASK CONTINUATION MISUSE` and leaves a suspended task. A stub that waits and answers late is cancellable and leaves nothing behind.
+
+    This card stays open until that one is done and merged to ACPClient `main`.
+  timestamp: 2026-09-09T11:55:06.612486+00:00
 depends_on:
 - 01M1MNXE777J4XA3NJTP483A8W
 - 01M1MR74AAC3HM74F26P39Z3BC

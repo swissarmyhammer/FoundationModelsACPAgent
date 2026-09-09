@@ -90,6 +90,78 @@ comments:
     - Also unticked: the `swift test` row, because this step ran no suite in the ACPClient repository.
     - What a person must do: choose way 1 (keep the narrowed sentence) or way 2 (give the table a caller, which also changes §8 and the `--json` row of §6.1). If way 2 wins, open a new card on the ACPClient board.
   timestamp: 2026-09-09T01:40:19.806037+00:00
+- actor: claude-code
+  id: 01m230dc2h6yjbba1b8xxkjqfy
+  text: |
+    ### The user decided: way 1
+
+    On 2026-09-09 the user decided, in these words: **"just a spinner."**
+
+    That is way 1 — narrow the sentence. §5 of `cli-plan.md` names the
+    spinner alone, and a component reaches that layer when a caller needs it.
+
+    Way 2 is NOT taken. It needs no new card. §8 and the `--json` row of
+    §6.1 stay as they are.
+
+    The tick on "Decide between the two ways out, with a person" rests on
+    this decision of the user of today. It does NOT rest on an assumption of
+    an agent. The earlier comment on this card correctly refused to tick the
+    row, because at that time no person had decided.
+
+    **Verified before each tick, in `../FoundationModelsACPClient` at `main`,
+    read only:**
+
+    - `cli-plan.md` §5 says: `Sources/AcpClientCore/TerminalOutput.swift`
+      vends the spinner of §8, through `withSpinner(_:_:)`; a component
+      reaches this layer when a caller needs it, and not before; a table has
+      no caller, because §8 sends the `probe` report and the `doctor` report
+      to stdout, and this layer writes to stderr only; a progress bar has no
+      total to show.
+    - `Sources/AcpClientCore/TerminalOutput.swift` declares
+      `enum TerminalVerbosity`, `struct TerminalOutput` with `event(_:)`,
+      `frame(_:)`, `error(_:)`, `withSpinner(_:_:)` and the `logger` bridge,
+      and a private `SinkPipeline`. There is no table type and no
+      progress-bar type.
+    - `Tests/FoundationModelsACPClientTests/TerminalOutputTests.swift` covers
+      the spinner: it draws in a terminal, writes nothing outside one, writes
+      nothing at quiet, returns the body value, and rethrows the body error.
+      It also pins the single Noora import.
+
+    Both rows for the document and for the code are therefore satisfied by
+    ACPClient commit `1afd74a`, "docs(cli-plan): name the spinner in section
+    5, not a table". Nothing more was necessary upstream, and this step
+    changed no file there.
+
+    **The `swift test` row is ticked from a ledger, not from a run.** The
+    upstream card `^vs86g2a` recorded its own green run: `swift test` 229
+    tests in 21 suites, and `swift test --package-path IntegrationTests` 92
+    tests in 13 suites, with 0 failures and 0 warnings. This board ran no
+    suite in the ACPClient repository, in the same manner as card
+    `^btrrzav`. No run is claimed that was not made.
+
+    Only the card text changed in this repository. No source file changed.
+  timestamp: 2026-09-09T11:56:20.433259+00:00
+- actor: claude-code
+  id: 01m230djxr76zzzv6431t1ferb
+  text: |
+    ### implement — changed
+
+    - evidence: the user decided "just a spinner", which is way 1. Read
+      `cli-plan.md` §5 and `Sources/AcpClientCore/TerminalOutput.swift` in
+      `../FoundationModelsACPClient` at `main`, and confirmed both agree:
+      the file vends the spinner alone, and no table type or progress-bar
+      type stands. Ticked "Decide between the two ways out, with a person"
+      on the decision of the user of today. The two rows for the document
+      and for the code were already satisfied by ACPClient commit `1afd74a`.
+      Ticked the `swift test` row from the ledger of upstream card
+      `^vs86g2a` (229 tests in 21 suites, and 92 tests in 13 suites in
+      IntegrationTests, 0 failures, 0 warnings); this board ran no suite in
+      that repository. One file changed:
+      `/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.kanban/tasks/01M1WG36AGTCP99MQC2JZDGNNY.md`
+      (card text only). No source file changed, and no file in
+      `../FoundationModelsACPClient` changed.
+    - next: the card is ready for review. All rows are ticked.
+  timestamp: 2026-09-09T11:56:27.448753+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'acp-client cli-plan §5: reconcile "a progress bar and a table" with the one terminal file'
@@ -129,7 +201,7 @@ Two ways out, and the card asks for a decision between them:
 Found while finishing ^cfkr6vw. That card left the code as it stands and
 recorded this, rather than adding a type with no caller.
 
-- [ ] Decide between the two ways out, with a person
+- [x] Decide between the two ways out, with a person
 - [x] Change `cli-plan.md` §5, and §8 as well if way 2 wins
 - [x] Make the code match the decision
 
@@ -137,14 +209,32 @@ recorded this, rather than adding a type with no caller.
 
 - [x] `cli-plan.md` §5 and the terminal file agree on what the file vends.
 - [x] No type stands in `TerminalOutput.swift` that no caller uses.
-- [ ] `swift test` in `../FoundationModelsACPClient` passes, and
+- [x] `swift test` in `../FoundationModelsACPClient` passes, and
       `swift test --package-path IntegrationTests` passes with it.
 
 ### Tests
 
 - [x] `TerminalOutputTests` covers each component the decided §5 names.
 
-### Open
+### The decision
 
-The decision row stays open. Way 1 landed upstream, but an agent took it
-under a recorded assumption. A person did not decide. See the comments.
+**Way 1 wins.** The user decided on 2026-09-09, in these words:
+"just a spinner."
+
+The tick on the decision row rests on that decision of the user, and not
+on an assumption of an agent. §5 names the spinner alone, and a component
+reaches that layer when a caller needs it.
+
+Way 2 is NOT taken. No new card is necessary for it. §8 and the `--json`
+row of §6.1 stay as they are.
+
+Way 1 already landed upstream at `FoundationModelsACPClient` `main`,
+commit `1afd74a`, "docs(cli-plan): name the spinner in section 5, not a
+table". So the two subtask rows for the document and for the code are
+already satisfied by that commit.
+
+The `swift test` row is ticked from the ledger of the upstream card
+`^vs86g2a`, which recorded its own green run: `swift test` 229 tests in
+21 suites, and `swift test --package-path IntegrationTests` 92 tests in
+13 suites, with 0 failures and 0 warnings. This board ran no suite in
+that repository, in the same manner as card `^btrrzav`.
