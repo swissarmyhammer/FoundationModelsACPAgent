@@ -20,8 +20,8 @@ The agent run is long and expensive. The docker step is short but it can run
 out of memory. Keep the predictions on disk, and score them as many times as
 you must:
 
-    uv run bench/swebench_run.py   preds.jsonl   # this script: patches only
-    uv run bench/swebench_score.py preds.jsonl   # the score, with docker
+    uv run bench/swebench_run.py   bench/preds.jsonl   # this script: patches only
+    uv run bench/swebench_score.py bench/preds.jsonl   # the score, with docker
 
 This script APPENDS, so it can CONTINUE. If the predictions file has results
 already, this script does the other instances only. Use --force to do all the
@@ -59,11 +59,11 @@ runs a new process.
 ==============================================================================
 HOW TO USE IT
 ==============================================================================
-  uv run bench/swebench_run.py preds.jsonl                     # all instances
-  uv run bench/swebench_run.py preds.jsonl --limit 5           # the first 5
-  uv run bench/swebench_run.py preds.jsonl --force             # do them again
-  uv run bench/swebench_run.py preds.jsonl -i django__django-11099
-  uv run bench/swebench_score.py preds.jsonl                   # then the score
+  uv run bench/swebench_run.py bench/preds.jsonl               # all instances
+  uv run bench/swebench_run.py bench/preds.jsonl --limit 5     # the first 5
+  uv run bench/swebench_run.py bench/preds.jsonl --force       # do them again
+  uv run bench/swebench_run.py bench/preds.jsonl -i django__django-11099
+  uv run bench/swebench_score.py bench/preds.jsonl             # then the score
 """
 import argparse
 import json

@@ -13,8 +13,8 @@ The official SWE-bench harness gives the score, and it uses docker. This
 script is separate from `swebench_run.py`, so you can score a saved
 predictions file again without a new agent run:
 
-    uv run bench/swebench_run.py   preds.jsonl   # make the patches (no docker)
-    uv run bench/swebench_score.py preds.jsonl   # give the score  (docker)
+    uv run bench/swebench_run.py   bench/preds.jsonl   # make the patches (no docker)
+    uv run bench/swebench_score.py bench/preds.jsonl   # give the score  (docker)
 
 The predictions file says what to score. This script scores each instance in
 that file. Use --instance-ids to score fewer.
@@ -38,9 +38,9 @@ file name is swebench_score.py, and not swebench.py, so that `import swebench`
 finds the installed library and not this file.
 
 HOW TO USE IT:
-  uv run bench/swebench_score.py preds.jsonl
-  uv run bench/swebench_score.py preds.jsonl --max-workers 2 --run-id rescore
-  uv run bench/swebench_score.py preds.jsonl --instance-ids django__django-10914
+  uv run bench/swebench_score.py bench/preds.jsonl
+  uv run bench/swebench_score.py bench/preds.jsonl --max-workers 2 --run-id rescore
+  uv run bench/swebench_score.py bench/preds.jsonl --instance-ids django__django-10914
 """
 import argparse
 import json

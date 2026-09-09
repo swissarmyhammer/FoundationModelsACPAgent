@@ -24,7 +24,7 @@ from rich.console import Console
 # Everything goes to standard output, and no script writes a log file. To keep
 # a record, send standard output where you want it:
 #
-#     uv run bench/swebench_run.py preds.jsonl | tee run.log
+#     uv run bench/swebench_run.py bench/preds.jsonl | tee bench/run.log
 #
 # rich finds that standard output is not a terminal, and it then writes plain
 # text with no color.
