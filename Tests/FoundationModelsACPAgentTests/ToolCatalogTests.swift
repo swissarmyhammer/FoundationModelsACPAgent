@@ -38,6 +38,14 @@ import Testing
     /// The noun the shell capability owns on the surface.
     private static let shellNoun = "shell"
 
+    /// The task the embedder proof gives the mounted `searchTools`.
+    private static let embedderTask = "read one text file from the workspace"
+
+    /// The selection the scripted flash slot answers, in the shape
+    /// `SelectionTier` decodes, so the search completes and reaches the
+    /// query embed.
+    private static let flashSelectionJSON = #"{"ids":["\#(readVerbPath)"]}"#
+
     // MARK: Harness
 
     /// Makes a fresh throwaway directory and returns its URL.
@@ -57,6 +65,8 @@ import Testing
     ///
     /// - Parameters:
     ///   - additionalRoots: The session's additional roots, in order.
+    ///   - loader: The loader the stub profile resolves through. The
+    ///     default vends the echo containers.
     ///   - configure: The mutation that shapes the configuration under
     ///     test. The default keeps every section at its default.
     /// - Returns: The context under test.
@@ -64,6 +74,7 @@ import Testing
     ///   throws.
     private static func makeContext(
         additionalRoots: [URL] = [],
+        loader: StubModelLoader = StubModelLoader(),
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
@@ -73,7 +84,8 @@ import Testing
             additionalRoots: additionalRoots,
             configuration: configuration,
             profile: try await makeStubProfile(
-                cacheDirectory: try makeTemporaryDirectory(label: "cache")))
+                cacheDirectory: try makeTemporaryDirectory(label: "cache"),
+                loader: loader))
     }
 
     /// Invokes `tools.files.read` on `path` and decodes the wire result
@@ -109,6 +121,26 @@ import Testing
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
         #expect(surface.tools.map(\.name) == Self.multitoolOnlyNames)
+    }
+
+    // MARK: The profile embedder
+
+    /// The mount ranks with the profile's embedding handle: the first
+    /// `searchTools` call embeds every catalog block in one batch, then
+    /// the query. With no embedder on the mount, the profile's embedder
+    /// receives nothing and the search is keyword-only.
+    @Test func theSessionSurfaceHandsTheProfileEmbedderToSearchTools() async throws {
+        let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
+        var loader = makeScriptedModelLoader(script: [.textDelta(Self.flashSelectionJSON), .endTurn])
+        loader.makeEmbeddingContainer = { _ in embedder }
+        let context = try await Self.makeContext(loader: loader)
+        let catalogBlocks = try await ToolCatalog.makeRegistry(context: context).registry.surface.entries.map(\.block)
+
+        let surface = try await ToolCatalog.sessionSurface(context: context)
+        let searchTools = try #require(surface.tools.compactMap { $0 as? SearchToolsTool }.first)
+        _ = try await searchTools.call(arguments: SearchToolsArguments(task: Self.embedderTask))
+
+        #expect(embedder.batches == [catalogBlocks, [Self.embedderTask]])
     }
 
     // MARK: The built surface

@@ -100,9 +100,12 @@ public struct EchoLLMContainer: LoadedLLMContainer {
 }
 
 /// An embedding model that answers a constant vector.
-struct StubEmbeddingContainer: LoadedEmbeddingContainer {
+///
+/// Public, like ``EchoLLMContainer``, so the test support wraps it: a
+/// recording container forwards each embed here and keeps the texts.
+public struct StubEmbeddingContainer: LoadedEmbeddingContainer {
     /// Creates an embedding container that answers a constant vector.
-    init() {}
+    public init() {}
 
     /// The one dimension count every stub vector has.
     private static let stubDimension = 8
@@ -110,9 +113,9 @@ struct StubEmbeddingContainer: LoadedEmbeddingContainer {
     /// The one value every component of every stub vector has.
     private static let stubComponent: Float = 0.5
 
-    let dimension = StubEmbeddingContainer.stubDimension
+    public let dimension = StubEmbeddingContainer.stubDimension
 
-    func embed(texts: [String]) async throws -> [[Float]] {
+    public func embed(texts: [String]) async throws -> [[Float]] {
         texts.map { _ in
             [Float](repeating: Self.stubComponent, count: Self.stubDimension)
         }
@@ -131,21 +134,34 @@ public struct StubModelLoader: ModelLoader {
     /// accumulates transcript entries, and a config-options test injects
     /// per-slot containers so a turn's text names the slot that
     /// generated it.
-    public var makeLLMContainer: @Sendable (ModelSlot) -> any LoadedLLMContainer = { _ in
-        EchoLLMContainer()
-    }
+    public var makeLLMContainer: @Sendable (ModelSlot) -> any LoadedLLMContainer
 
-    /// Creates a loader over ``makeLLMContainer``.
+    /// The factory for the embedding container each embedder load vends,
+    /// given the slot being loaded. The default vends
+    /// ``StubEmbeddingContainer`` for every slot; a discovery test injects
+    /// a recording container, so it reads which texts the mounted
+    /// `searchTools` gave the profile's embedder.
+    public var makeEmbeddingContainer: @Sendable (ModelSlot) -> any LoadedEmbeddingContainer
+
+    /// Creates a loader over ``makeLLMContainer`` and
+    /// ``makeEmbeddingContainer``.
     ///
-    /// - Parameter makeLLMContainer: The container factory each LLM load
-    ///   vends through. The default vends ``EchoLLMContainer`` for every
-    ///   slot.
+    /// - Parameters:
+    ///   - makeLLMContainer: The container factory each LLM load vends
+    ///     through. The default vends ``EchoLLMContainer`` for every slot.
+    ///   - makeEmbeddingContainer: The container factory each embedder
+    ///     load vends through. The default vends ``StubEmbeddingContainer``
+    ///     for every slot.
     public init(
         makeLLMContainer: @escaping @Sendable (ModelSlot) -> any LoadedLLMContainer = { _ in
             EchoLLMContainer()
+        },
+        makeEmbeddingContainer: @escaping @Sendable (ModelSlot) -> any LoadedEmbeddingContainer = { _ in
+            StubEmbeddingContainer()
         }
     ) {
         self.makeLLMContainer = makeLLMContainer
+        self.makeEmbeddingContainer = makeEmbeddingContainer
     }
 
     public func loadLLM(
@@ -164,7 +180,7 @@ public struct StubModelLoader: ModelLoader {
         reporting: @escaping @Sendable (DownloadProgress) -> Void
     ) async throws -> any LoadedEmbeddingContainer {
         reporting(Self.completeProgress)
-        return StubEmbeddingContainer()
+        return makeEmbeddingContainer(slot)
     }
 
     public func preload(container: any LoadedModelContainer) async throws {}

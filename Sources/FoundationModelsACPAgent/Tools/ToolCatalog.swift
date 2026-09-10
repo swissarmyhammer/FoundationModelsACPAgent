@@ -115,6 +115,13 @@ public enum ToolCatalog {
     /// `tools/list_changed`, a reconnect, or a late catalog reaches the
     /// surface at the next turn boundary with no further host action.
     ///
+    /// The mount takes two slots of the resolved profile: `flash` is the
+    /// librarian every `searchTools` selection runs on, and `embedding`
+    /// is the handle the discovery and did-you-mean searchers rank with.
+    /// Without the embedder the registry reports `no embedder configured`
+    /// on every search and ranks by keywords alone. The catalog is
+    /// embedded at the first search, so the call still starts no task.
+    ///
     /// - Parameter context: What the builder calls need — the session
     ///   root set, the decoded configuration, the resolved profile, and
     ///   the client's per-session MCP servers.
@@ -124,7 +131,8 @@ public enum ToolCatalog {
     public static func sessionSurface(context: CatalogContext) async throws -> SessionSurface {
         let built = try await makeRegistry(context: context)
         let mounted = try built.registry.makeSessionToolsAndStaging(
-            librarian: context.profile.flash)
+            librarian: context.profile.flash,
+            embedder: context.profile.embedding)
         var tools = mounted.tools
         if let skillsTool = try await makeSkillsTool(context: context) {
             tools.append(skillsTool)
