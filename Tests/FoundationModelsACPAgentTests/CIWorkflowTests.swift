@@ -6,12 +6,20 @@ import Testing
 /// job, which delegates to the shared `swift-ci.yaml` and selects the
 /// integration suites by PACKAGE.
 ///
-/// This repository obeys the contract in the document's Shape 2. The root
-/// package holds the unit suites, and the nested `IntegrationTests`
-/// package holds every suite that spawns a built binary, loads a real
-/// model, or reaches the network. Thus `swift test` at the root runs the
-/// unit suites and only the unit suites, and no environment variable
-/// selects anything.
+/// This repository obeys the contract in the document's Shape 2, over
+/// three test levels, one package each. The root package holds the unit
+/// suites. The nested `IntegrationTests` package holds every suite that
+/// spawns a built binary or reaches the network. The nested
+/// `EvaluationTests` package holds the evaluations, which load a real
+/// model. Thus `swift test` at the root runs the unit suites and only the
+/// unit suites, and no environment variable selects anything.
+///
+/// CI runs the first two levels. It never runs the third, because the
+/// first two answer "is the code correct" and a failure there is a
+/// defect, while an evaluation scores a real model over hours and a low
+/// score can be a model question. Two cases below pin that separation
+/// from both sides: `evaluation.yml` triggers on a manual dispatch alone
+/// and drives its own package, and `ci.yml` names neither.
 ///
 /// The suite pins seven properties of that shape: the `uses:` line names
 /// the shared workflow at `@main`; exactly one job exists and it has no
@@ -84,10 +92,26 @@ struct CIWorkflowTests {
     ]
 
     /// The directories the removed-gate walk reads: this package's own
-    /// sources, its unit tests, its integration package, and its CI
-    /// definition. The kanban records under `.kanban/` are history, and
-    /// they keep the old names on purpose.
-    private static let scannedDirectories = ["Sources", "Tests", "IntegrationTests", ".github"]
+    /// sources, its unit tests, its integration package, its evaluation
+    /// package, and its CI definition. The kanban records under
+    /// `.kanban/` are history, and they keep the old names on purpose.
+    private static let scannedDirectories = [
+        "Sources", "Tests", "IntegrationTests", "EvaluationTests", ".github",
+    ]
+
+    /// The file name of the workflow that drives the third test level.
+    private static let evaluationWorkflowFileName = "evaluation.yml"
+
+    /// The package path the evaluation workflow must drive.
+    private static let evaluationPackagePath = "EvaluationTests"
+
+    /// The triggers `evaluation.yml` is allowed to declare.
+    ///
+    /// One, and only one: a person asks for it. A push trigger or a
+    /// pull-request trigger would put hours of real model turns back on
+    /// every commit, and would put a score that varies from run to run
+    /// back in front of a contract verdict.
+    private static let evaluationAllowedTriggers = ["workflow_dispatch:"]
 
     /// The directory name the removed-gate walk steps over. A build
     /// directory holds checkouts of every dependency, so a walk into one
@@ -343,6 +367,76 @@ struct CIWorkflowTests {
             \(concurrency)
             """
         )
+    }
+
+    @Test("the evaluations run on a manual dispatch and on nothing else")
+    func theEvaluationWorkflowRunsOnDispatchAlone() throws {
+        let lines = try Self.evaluationWorkflowLines()
+        let triggers = Self.block(under: "on:", in: lines)
+
+        // A trigger key is two-space-indented, e.g. "  push:". The deeper
+        // lines below one, such as an input name, are not triggers.
+        let triggerKeyPattern = try Regex(#"^  [a-zA-Z0-9_-]+:$"#)
+        let triggerKeys = triggers
+            .filter { $0.wholeMatch(of: triggerKeyPattern) != nil }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        #expect(
+            triggerKeys == Self.evaluationAllowedTriggers,
+            """
+            \(Self.evaluationWorkflowFileName) must declare \(Self.evaluationAllowedTriggers) and \
+            no other trigger. A push or a pull_request trigger puts hours of real model turns on \
+            every commit, and puts a score that varies from run to run in front of a contract \
+            verdict; found: \(triggerKeys)
+            """
+        )
+    }
+
+    @Test("the evaluations drive their own package, and CI drives neither it nor them")
+    func theEvaluationLevelStandsApartFromCI() throws {
+        let evaluation = try Self.evaluationWorkflowLines()
+        let drivesItsOwnPackage = evaluation.contains { line in
+            line.contains("--package-path \(Self.evaluationPackagePath)")
+        }
+        #expect(
+            drivesItsOwnPackage,
+            """
+            \(Self.evaluationWorkflowFileName) must run \
+            "swift test --package-path \(Self.evaluationPackagePath)". That package is the third \
+            test level, and this workflow is its only runner.
+            """
+        )
+
+        // The other half of the split: ci.yml must not reach the
+        // evaluation package or call its workflow. Either one puts the
+        // two verdicts back under one exit code.
+        let ci = try Self.workflowLines()
+        let ciReachesTheEvaluations = ci.contains { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.hasPrefix("#") else { return false }
+            return trimmed.contains(Self.evaluationPackagePath)
+                || trimmed.contains(Self.evaluationWorkflowFileName)
+        }
+        #expect(
+            !ciReachesTheEvaluations,
+            """
+            ci.yml must name neither \(Self.evaluationPackagePath) nor \
+            \(Self.evaluationWorkflowFileName) outside a comment. CI answers "is the code \
+            correct" and every suite it runs is deterministic; the evaluations score a real \
+            model over hours. One exit code for both is what made a contract regression \
+            invisible (cards ^gwnczy6 and ^bah727b).
+            """
+        )
+    }
+
+    /// Reads `.github/workflows/evaluation.yml` from the repository root.
+    ///
+    /// - Returns: Each line of the evaluation workflow.
+    /// - Throws: Whatever reading the file throws. A throw is the report
+    ///   that the third test level lost its only runner.
+    private static func evaluationWorkflowLines() throws -> [Substring] {
+        let workflow = try PackageRoot.directory()
+            .appendingPathComponent(".github/workflows/\(evaluationWorkflowFileName)")
+        return Self.lines(of: try String(contentsOf: workflow, encoding: .utf8))
     }
 
     /// Reads `.github/workflows/ci.yml` from the repository root.

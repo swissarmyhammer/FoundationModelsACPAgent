@@ -1,0 +1,73 @@
+name: Evaluation
+
+# The third test level: the evaluations (plan.md §20.3).
+#
+# This workflow is `workflow_dispatch` only. It runs on no push and on no
+# pull request, and `ci.yml` never calls it. That is the point.
+#
+# The unit level and the integration level answer "is the code correct".
+# They are fast, they are deterministic, and a failure is a defect, so CI
+# runs them on every commit. This level answers a different question:
+# "does a local model, driven end to end over ACP, choose to use the tools
+# and succeed". It loads a real 27 billion parameter model, one whole
+# drive of the dataset takes hours, and a score below the floor can be a
+# model question rather than a code defect.
+#
+# Those two questions must not share one exit code. When they did, one
+# low score marked the process-boundary contract broken, the job stayed
+# red, and a real contract regression had nowhere to show. Card ^bah727b
+# shows what that cost: two faults sat in the integration package and no
+# red mark named them.
+#
+# So this runs when a person asks for it, on the self-hosted macOS pool
+# that has the models and the graphics processor.
+#
+# Run it from the Actions tab, or with:
+#
+#     gh workflow run evaluation.yml
+#
+# The same run by hand, with no runner:
+#
+#     swift test --package-path EvaluationTests
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: >-
+          A `swift test --filter` pattern, to drive one suite instead of
+          every evaluation. Leave it empty for the whole level.
+        required: false
+        type: string
+
+concurrency:
+  # One evaluation at a time. Two drives on one machine compete for the
+  # graphics processor, and each then measures a machine under load
+  # rather than the agent.
+  group: evaluation
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Evaluation (on demand, real models)
+    runs-on: [self-hosted, macOS]
+    # One whole drive of the dataset is hours of real model turns. The
+    # ceiling stands clear of that, and clear of the six-hour default.
+    timeout-minutes: 600
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the evaluations
+        run: |
+          set -o pipefail
+          args=(test --package-path EvaluationTests --no-parallel)
+          if [ -n "${FILTER}" ]; then
+            args+=(--filter "${FILTER}")
+          fi
+          swift "${args[@]}"
+        env:
+          # Swift Testing starts a test's time limit BEFORE the test takes
+          # a turnstile, so a parallel drive spends the limit on queue
+          # time and a queued sample fails in the same way as a hang.
+          # `--no-parallel` above holds the live turns to one at a time.
+          FILTER: ${{ inputs.filter }}

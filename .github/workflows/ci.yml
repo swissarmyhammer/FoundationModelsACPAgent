@@ -10,16 +10,24 @@ name: CI
 #   time. Thus the unit job needs no selector, and neither `test-filter` nor
 #   `test-skip` is given.
 # - The nested `IntegrationTests` package holds the suites that do those
-#   things: the tier-3 stdio and client-server contracts, which spawn the
-#   built `acp-agent` and `acp-print` binaries, and the tier-4 coding eval,
-#   which loads the real configured models. `integration-package-path` alone
+#   things: the stdio and client-server contracts, which spawn the built
+#   `acp-agent` and `acp-print` binaries. `integration-package-path` alone
 #   starts the shared workflow's integration job on the `[self-hosted, macOS]`
 #   pool, and it also makes the unit job BUILD the nested package on every
 #   run, so those tests cannot break unseen.
+# - The evaluations are NOT here. They are the third test level, the
+#   `EvaluationTests` package, and `evaluation.yml` drives them on
+#   `workflow_dispatch` alone. CI answers "is the code correct", and every
+#   suite it runs is deterministic, so a red mark here is always a defect.
+#   The evaluations answer "does a real model choose to use the tools and
+#   succeed": hours long, and a low score can be a model question. The two
+#   must not share one exit code. When they did, one low score marked the
+#   process-boundary contract broken and a real contract regression had
+#   nowhere to show (cards ^gwnczy6 and ^bah727b).
 # - The package boundary is the whole selection. No suite reads an
 #   environment variable to decide whether it runs, and the root `swift test`
 #   never sees the slow targets.
-# - `integration-no-parallel` holds the live model turns to one at a time.
+# - `integration-no-parallel` holds the spawned binaries to one at a time.
 #   Swift Testing starts a test's time limit BEFORE the test takes a
 #   turnstile, so a parallel run spends the limit on queue time and a queued
 #   suite fails in the same way as a hang.
@@ -52,5 +60,5 @@ jobs:
       # Build and run the nested integration package. This input alone starts
       # the integration job.
       integration-package-path: IntegrationTests
-      # One live model turn at a time — see the header.
+      # One spawned binary at a time — see the header.
       integration-no-parallel: true

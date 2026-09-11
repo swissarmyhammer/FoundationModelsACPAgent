@@ -66,7 +66,7 @@ this package.
 
 **The test target and the `Examples/` executables also depend on the sibling
 `FoundationModelsACPClient`, the Client role.** It is the client driver for
-every integration tier (§20.1) and for `acp-print` (§20.2). The library
+every level above unit (§20.1) and for `acp-print` (§20.2). The library
 target never imports it. The client depends on the wire and Extras only, so
 no cycle is possible there either.
 
@@ -970,7 +970,7 @@ report-only behaviour of the table row stands for both.
 Of those two facts, `sawOutput` is the only one the agent can trust, and the
 bound must therefore stand clear of the whole window before the first output
 (task ^ec8hn3z). Measured on 2026-09-08 with
-`mlx-community/Qwen3.8-27B-mxfp4`: a tier-4 build prompt reached its FIRST
+`mlx-community/Qwen3.8-27B-mxfp4`: an evaluation build prompt reached its FIRST
 tool call 555 seconds after the prompt, and through that same successful turn
 Router kept reporting `0 fragments` at 1780 seconds in flight while `runCode`
 and shell calls were completing. So a fragment count of zero never proves that
@@ -2145,7 +2145,7 @@ it keeps the MCP built-in unblocked.
 **Framing** (these are protocol MUSTs, not house style): messages are UTF-8
 JSON-RPC. `\n` divides them. A message MUST NOT contain a newline. There is no
 content-length header. The agent **MUST NOT write non-ACP content to stdout**.
-The tier-3 integration test (§20.1) asserts this MUST. stderr is free
+The Integration level (§20.1) asserts this MUST. stderr is free
 for logs. The client can capture, forward, or ignore it.
 
 **Consumers**: external clients speak ndJSON over stdio (`<cli> acp`; the
@@ -2260,18 +2260,49 @@ ACP Client conformance = @Observable   SwiftUI binds this
 
 ## 20. Testing
 
-### 20.1 The test ladder — five tiers, only two need a model
+### 20.1 The three test levels — one package each, and only the last needs a model
 
-The organizing question: **"do the tools work" and "does the model use the
-tools" are different questions.** Only the second needs a model.
+The organizing question: **"is the code correct" and "does the model use
+the tools" are different questions.** Only the second needs a model, and
+only the second can answer differently on two runs of the same code.
 
-| Tier | Model | Client | Tools | Gated | Answers |
+Three levels, and each is one SwiftPM package, so the boundary is
+structural. No environment variable selects a test.
+
+| Level | Package | Runs on | Model | Answers | A failure means |
 |---|---|---|---|---|---|
-| 0 — unit | — | — | — | no | do the tools work in isolation *(done upstream: Multitool's capability suites — files, shell, mcp — and Router's 624 tests)* |
-| 1 — golden conformance | scripted | `SwiftUIACPClient`, in-process | fake | no | is the wire shape right — ordering, upserts, replay |
-| 2 — tool integration | scripted | `SwiftUIACPClient`, in-process | **real** | no | do real tools work through the real conformance |
-| 3 — stdio contract | scripted | `SwiftUIACPClient` over `AgentProcess` | real | yes | does framing survive a real process boundary |
-| 4 — eval | **real** | `SwiftUIACPClient`, in-process | real | yes | does a local model, driven over ACP end to end, *choose* to use tools, and succeed |
+| **Unit** | the root package | CI, every commit, seconds | scripted or none | is each part correct, and is the wire shape right — ordering, upserts, replay, and real tools through the real conformance | a defect |
+| **Integration** | `IntegrationTests` | CI, every commit, about 90 seconds | scripted | does the contract hold across a real process boundary — framing, spawned binaries, no stray children | a defect |
+| **Evaluation** | `EvaluationTests` | on demand only, hours | **real** | does a local model, driven over ACP end to end, *choose* to use the tools, and succeed | a score moved; maybe a defect, maybe the model |
+
+**Why Evaluation stands apart, and why CI never runs it.** The first two
+levels assert. They are fast, they are deterministic, and a red mark is
+always a defect, so they belong on every commit. The third scores. It
+drives 24 real model turns, it takes hours, and a mean below the floor
+can be a model question rather than a code defect.
+
+Those two verdicts must not share one exit code. They did, and the bill
+came in twice. One low score marked the process-boundary contract broken,
+the job stayed red for days, and two real faults sat in the integration
+package with no red mark to name them (cards `^gwnczy6` and `^bah727b`).
+A CI run also measured week-old code for a week, because a red job that
+nobody can read is a job nobody watches.
+
+So: `ci.yml` runs Unit and Integration. `evaluation.yml` runs Evaluation
+on `workflow_dispatch` alone, and `CIWorkflowTests` pins both halves of
+that separation. By hand it is
+`swift test --package-path EvaluationTests`.
+
+**The unit level covers what used to be three rungs.** An earlier draft
+numbered five tiers, 0 through 4. Tiers 0, 1 and 2 differed only in how
+much was faked, which is a note about the design of one test and not a
+category: all three are fast, deterministic, ungated, and in the same
+package, and a failure in any of them means the same thing. `TierTwoTests`
+keeps its name and sits in the root test target for that reason. The
+numbering also made tiers 3 and 4 look adjacent, one rung apart, which is
+what put them in one package under one exit code. They are not adjacent.
+That gap is the largest in the suite: 90 seconds against hours,
+deterministic against statistical, defect against measurement.
 
 **The client driver is the sibling `FoundationModelsACPClient`. Do not write
 a test client.** The package shipped: its board shows M0–M7 done, and its
@@ -2295,7 +2326,7 @@ let connection = await client.connect(over: clientEnd)
 // assert: client.session(for: id).turnState, .toolCalls, .entries — after flushPendingChunks()
 ```
 
-Each tier above tier 0 uses this same wiring. The rules:
+Every level above a plain unit test uses this same wiring. The rules:
 
 - **Inject the clock.** The client coalesces chunks on a cadence. A test that
   asserts text must call `flushPendingChunks()` or step the injected clock.
@@ -2386,21 +2417,22 @@ shipped `TranscriptRecorder` is reachable either** (`.jsonl`, `.inMemory` and
 fixture. Assert on the filesystem and on the wire, not on a constructed Router
 value.
 
-**Tiers 3 and 4 live in the nested `IntegrationTests` package, and stay
-small.** That package is the whole selection: `swift test` at the root never
-sees them, `swift test --package-path IntegrationTests` runs them, and the
-shared CI workflow's integration job runs them at each commit. No environment
-variable selects a test. Tier 3 exists for the one thing
-that tier 2 cannot see: real process boundaries. stdout carries only ndJSON
+**The Integration level lives in the nested `IntegrationTests` package, and
+stays small.** That package is the whole selection: `swift test` at the root
+never sees it, `swift test --package-path IntegrationTests` runs it, and the
+shared CI workflow's integration job runs it at each commit. No environment
+variable selects a test. The Evaluation level is a third package,
+`EvaluationTests`, and CI never runs it (§20.1). Integration exists for the
+one thing the unit level cannot see: real process boundaries. stdout carries only ndJSON
 while `shell` runs subprocesses that write to *their* stdout. And no message
 contains a newline. (Both are protocol MUSTs, §17.) Tier 4 is §20.3.
 
-### 20.2 Examples: `acp-agent` (the server + the tier-3 fixture) and `acp-print` (the client driver)
+### 20.2 Examples: `acp-agent` (the server + the integration fixture) and `acp-print` (the client driver)
 
 **One executable serves the two purposes, intentionally.** The family
 convention is an `Examples/` directory of runnable programs. The example that
 this package owes is "how do I build an ACP server CLI on top of this?". That
-is exactly what tier 3 must spawn. If we write it two times, the example
+is exactly what the Integration level must spawn. If we write it two times, the example
 decays while the fixture stays green.
 
 `Examples/acp-agent/main.swift`. Keep it small enough to read in one sitting.
@@ -2451,7 +2483,7 @@ headless-usable by design.) The rules:
   process-group and reaping obligations (client plan, "Transports"). The
   `acp-print` target links only `FoundationModelsACPClient` and the wire —
   never this package's library. A back-door import would break the proof.
-- An end-to-end test in the nested `IntegrationTests` package (beside tier 3)
+- An end-to-end test in the nested `IntegrationTests` package (beside the stdio contract)
   runs `acp-print` as a subprocess and asserts: exit code 0, stdout is only
   the answer text, and no agent process outlives the run.
 
@@ -2461,7 +2493,7 @@ spawns the agent in its own process group and vends `transport`;
 `SwiftUIACPClient.connect(over:)` returns the connection;
 `client.session(for:)` carries the streamed `entries`. Build `acp-agent`
 first, because `acp-print` spawns it. The same client package is the driver
-for every integration tier (§20.1), so `acp-print` and the tier-3 test share
+for every level above unit (§20.1), so `acp-print` and the stdio contract test share
 one spawn-and-connect path.
 
 ### 20.3 Evaluations — `PythonCLIEvaluation`
@@ -2470,7 +2502,8 @@ The end-to-end coding eval belongs to the layer that composes the roster.
 (Router keeps its compaction eval over sample tools.) The eval drives real
 `files` + `shell` through a real multi-turn build task, on Apple's Evaluations
 framework (swift-testing native). It needs Apple silicon + real models +
-network, so it lives in the nested `IntegrationTests` package:
+network, and it scores rather than asserts, so it lives in its own nested
+`EvaluationTests` package, which CI never runs (§20.1):
 
 1. **Subject**: `subject(from sample:)` makes a fresh temp workspace (the
    session's `workingDirectory` and the tools' confinement root). It wires
@@ -2481,7 +2514,7 @@ network, so it lives in the nested `IntegrationTests` package:
    `SwiftUIACPClient.connect(over:)` (§20.1), then `initialize` →
    `session/new(workspace)` → `session/prompt`, and it waits for
    `turnState == .idle`. It never calls the Router session directly.
-   "Working" means a Client can drive the Agent, so the one tier with a real
+   "Working" means a Client can drive the Agent, so the one level with a real
    local model proves the same path that the Mac app and an editor use. It
    returns the workspace path + the transcript + the `ACPSessionState` + the
    recorder's notification list + the run stats.
@@ -2524,7 +2557,7 @@ Delete the workspace after grading. (Keep the transcripts for failed runs.)
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor to `schema-v2.0.0-alpha.3` (elicitation stable), generated `elicitation/*` types, `ClientCapabilities.elicitation`, and the `createElicitation` / `elicitationComplete` entry points on both connections (§16) | **done** — verified 2026-09-01 |
 | — | FoundationModelsRouter | a **public live signal for a pending elicitation** (§16): a `SessionEvent` case on `streamSessionEvents()` that carries the `.elicitation` `OperationEvent`, or a public `RoutedSession.pendingElicitations()` read with a wakeup. Today the answer side is public and the request side is not: `SessionMailbox.pendingElicitationIds()` and `SessionOutbox.pending()` are internal, and `TranscriptEvent.operationEvents` is a recorded read | **open** — to file; the relay (board `2z6qtqy`) waits on it, and the interim declines with a reason |
 | `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **closed without code** — verified 2026-09-01: `mcp/connect`, `mcp/message` and `mcp/disconnect` are still only routing names in `acp-v2.meta.unstable.json`, the published v2 pages name only `stdio` and `http`, and the wire task was closed by decision. Re-file when upstream stabilizes `mcp/*`. Our stance is unchanged: do not build the tunnel |
-| — | FoundationModelsACPClient | the Client-role container (`SwiftUIACPClient`, `ACPSessionState`) plus the stdio transport with agent-process ownership (`AgentProcess`) — the client driver for every integration tier (§20.1) and for `Examples/acp-print` (§20.2) | **shipped** — M0–M7 done on its board, verified 2026-09-01; our test target depends on it, the library never does |
+| — | FoundationModelsACPClient | the Client-role container (`SwiftUIACPClient`, `ACPSessionState`) plus the stdio transport with agent-process ownership (`AgentProcess`) — the client driver for every level above unit (§20.1) and for `Examples/acp-print` (§20.2) | **shipped** — M0–M7 done on its board, verified 2026-09-01; our test target depends on it, the library never does |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
 | — | FoundationModelsRouter | turn cancellation that reaches the model call: `cancelCurrentTurn()`, `cancelPrompt(id:)`, `ToolContext.cancel(completionToken:)` (§8.6) | **landed** — an in-flight MCP call still cannot be forced to stop |
