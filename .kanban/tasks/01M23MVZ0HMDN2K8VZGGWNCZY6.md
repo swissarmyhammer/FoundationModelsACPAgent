@@ -222,8 +222,76 @@ comments:
     - evidence: `swift test --package-path IntegrationTests --filter PythonCLIEvaluationTests` passed in 12414 s over 24 samples. `pytestGreen` 0.9167, `cliRuns` 0.9583, `filesPresent` 0.9583, `toolTraffic` 0.9583, all above the floor 0.5.
     - next: a person picks Way 1 or Way 2. Way 3 is answered: the quality floor is reachable, but the CI job fails in 12.9 s before it drives a sample, so more model quality cannot make CI green.
   timestamp: 2026-09-11T06:32:26.049720+00:00
-position_column: todo
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m28xtw9sq3h08dasgj7eg2jv
+  text: |
+    ### The decision — a fourth way: three test levels, one package each
+
+    The owner did not pick Way 1, Way 2 or Way 3. The owner named a better
+    way, and this card records it.
+
+    **The three ways all kept two verdicts in one job.** Way 1 put two runs
+    in one job. Way 2 held the evaluation out with a filter. Way 3 kept one
+    run and raised the quality. Each of them argued about the selector. The
+    fault is not the selector. The fault is that an evaluation is not a kind
+    of integration test, so it must not sit behind the integration exit code.
+
+    **What is done.** Commit `5fa5a2f`. Three test levels, one SwiftPM
+    package each, so the boundary is structural and no environment variable
+    selects a test.
+
+    | Level | Package | Runs | Time |
+    |---|---|---|---|
+    | Unit | the root package | CI, every commit | 561 tests, 3.7 s |
+    | Integration | `IntegrationTests` | CI, every commit | 17 tests, 86 s |
+    | Evaluation | `EvaluationTests` | on demand only | 24 samples, about 3.5 h |
+
+    - The seven evaluation files moved to a new `EvaluationTests` package.
+    - `.github/workflows/evaluation.yml` drives that package on
+      `workflow_dispatch` alone. It takes an optional filter, it holds one
+      run at a time, and its ceiling is 600 minutes.
+    - `ci.yml` names neither the package nor the workflow.
+    - `IntegrationTests` lost the model stack it no longer uses: mlx-swift-lm,
+      swift-huggingface, swift-transformers, and Router with its test
+      support. No suite that stays behind references any of them.
+    - The package name is `EvaluationTests`, not `Evaluations`, because
+      Apple's evaluation framework already gives a module that name and the
+      sources import it.
+    - `plan.md` §20.1 is rewritten. The five tiers are gone. Tiers 0, 1 and 2
+      differed only in how much was faked, which is a note about one test and
+      not a category. The numbering also made tiers 3 and 4 look one rung
+      apart, and that is what put them in one package under one exit code.
+
+    **Two new cases in `CIWorkflowTests` hold the split from both sides.**
+    One fails if `evaluation.yml` grows a push or a pull-request trigger, or
+    stops driving its own package. The other fails if `ci.yml` names the
+    evaluation package or its workflow outside a comment.
+
+    ### A correction to the record above
+
+    The comment of 2026-09-11 06:31 says the CI job "never drove a sample"
+    and that the cause was probably the environment. Both statements are
+    wrong, and the cause is simpler.
+
+    `origin/main` was 43 commits behind the local branch. CI measured
+    week-old code for a week. The run that failed in 12.875 seconds was on
+    commit `c92e1fc`, and at that commit the evaluation pinned
+    `mlx-community/Qwen2.5-Coder-32B-Instruct-4bit`, the stale model this
+    package does not ship. The mean of -1.0 in that log is the sentinel for
+    "no value recorded", not a score of zero: 12.875 s over 24 samples is
+    about 0.54 s each, so every sample threw before it could be graded.
+
+    The runner is also not the problem. The log shows
+    `/Users/service/actions-runner/`, which is the self-hosted macOS pool,
+    not a GitHub-hosted machine with no graphics processor.
+
+    The evaluation framework swallows the per-sample error and the job
+    uploads no artifact, so the error text never reaches the log. That gap is
+    worth its own card: it turned a five-minute diagnosis into a card that
+    sat stuck for two days.
+  timestamp: 2026-09-11T19:06:43.897931+00:00
+position_column: done
+position_ordinal: d280
 title: The CI integration job is red on every run, so a tier-3 failure has nowhere to show
 ---
 ## The defect
@@ -243,51 +311,44 @@ ci / Integration (opt-in, real dependencies) FAILED in 4m16s
     Test run with 33 tests in 10 suites failed
 ```
 
-The unit job is green. The tier-3 suites in the integration job are green.
-The tier-4 `PythonCLIEvaluationTests` is the only failure, and it fails on
-the quality floor of the model answers, not on a contract.
+The unit job is green. The integration suites in the integration job are
+green. The evaluation is the only failure, and it fails on the quality
+floor of the model answers, not on a contract.
 
-One `swift test --package-path IntegrationTests` run carries both tiers, so
-one tier-4 score below the floor makes the whole job red. The job then
-stays red for every later run, and a person who looks at the red mark
-learns nothing new from it. A tier-3 regression that lands next lands
-inside a job that already fails, so nobody sees it. Card ^bah727b shows
-what that costs: two faults sat in the tier-3 package and no red mark named
+One `swift test --package-path IntegrationTests` run carried both, so one
+score below the floor made the whole job red. The job then stayed red for
+every later run, and a person who looked at the red mark learned nothing
+new from it. A contract regression that landed next landed inside a job
+that already failed, so nobody saw it. Card ^bah727b shows what that
+cost: two faults sat in the integration package and no red mark named
 them.
 
-## What to decide
+## The answer
 
-The two tiers answer different questions and they must not share one
-verdict.
+Three test levels, one SwiftPM package each. The boundary is structural,
+and no environment variable selects a test.
 
-- Tier 3 measures a contract. It is fast, it is deterministic, and a
-  failure is a defect.
-- Tier 4 measures the quality of a real model's answers. It is slow, it
-  varies from run to run, and a failure below the floor may be a model
-  question, not a code defect.
+| Level | Package | Runs | Time |
+|---|---|---|---|
+| Unit | the root package | CI, every commit | 561 tests, 3.7 s |
+| Integration | `IntegrationTests` | CI, every commit | 17 tests, 86 s |
+| Evaluation | `EvaluationTests` | on demand only | 24 samples, about 3.5 h |
 
-Pick one way and write down why.
+The first two levels assert. They are fast, they are deterministic, and a
+red mark is a defect, so CI runs them on every commit. The third scores a
+real model over hours, and a mean below the floor can be a model question
+rather than a code defect, so a person asks for it.
 
-1. **Two runs in one job.** The shared workflow gives
-   `integration-filter` and `integration-skip`, and both apply to the
-   nested package run. Only one such run happens per job today, so this
-   way needs an input the shared workflow does not have yet.
-2. **Hold the tier-4 evaluation out of CI**, with
-   `integration-skip: PythonCLIEvaluationTests`, and run it by hand or on
-   a schedule. CI then measures the contract only.
-3. **Raise the model quality until the floor holds**, and keep one run.
-   Card ^15sywcv and card ^181jx7j both touched the model quality, so the
-   floor may already be reachable.
-
-Way 1 needs a change in `swissarmyhammer/workflows`. That is a family
-sibling package, so it needs its own card there and a decision first.
+The card offered three ways, and each kept the two verdicts in one job.
+The owner named a fourth way, which is the one above: an evaluation is
+not a kind of integration test, so it does not sit behind the integration
+exit code. See the comments for the work and for a correction to the
+first diagnosis.
 
 ## Done when
 
-- [ ] The tier-3 suites report a verdict that a tier-4 score cannot make
-      red.
-- [ ] `.github/workflows/ci.yml` states the chosen way in its header, and
-      `CIWorkflowTests` pins whatever new input the way needs.
-- [ ] One CI run on `main` is green, or the red mark names only the
-      tier-4 quality floor and the card says that is accepted.
-#stuck
+- [x] The integration suites report a verdict that an evaluation score
+      cannot make red.
+- [x] `.github/workflows/ci.yml` states the chosen way in its header, and
+      `CIWorkflowTests` pins it from both sides.
+- [x] One CI run on `main` is green.
