@@ -42,8 +42,7 @@ import Testing
     private static let embedderTask = "read one text file from the workspace"
 
     /// The selection the scripted flash slot answers, in the shape
-    /// `SelectionTier` decodes, so the search completes and reaches the
-    /// query embed.
+    /// `SelectionTier` decodes, so the search completes.
     private static let flashSelectionJSON = #"{"ids":["\#(readVerbPath)"]}"#
 
     // MARK: Harness
@@ -126,9 +125,15 @@ import Testing
     // MARK: The profile embedder
 
     /// The mount ranks with the profile's embedding handle: the first
-    /// `searchTools` call embeds every catalog block in one batch, then
-    /// the query. With no embedder on the mount, the profile's embedder
-    /// receives nothing and the search is keyword-only.
+    /// `searchTools` call embeds every catalog block in one batch. With
+    /// no embedder on the mount, the profile's embedder receives nothing
+    /// and the search is keyword-only.
+    ///
+    /// The catalog batch is the only batch. The mount also gives a
+    /// librarian, thus the searcher runs in `.auto` mode with a selection
+    /// tier, and `MetadataSearcher.search(intent:limit:)` sends the query
+    /// to that tier. Only the retrieval tier embeds a query, and this
+    /// mount does not reach it.
     @Test func theSessionSurfaceHandsTheProfileEmbedderToSearchTools() async throws {
         let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
         var loader = makeScriptedModelLoader(script: [.textDelta(Self.flashSelectionJSON), .endTurn])
@@ -140,7 +145,7 @@ import Testing
         let searchTools = try #require(surface.tools.compactMap { $0 as? SearchToolsTool }.first)
         _ = try await searchTools.call(arguments: SearchToolsArguments(task: Self.embedderTask))
 
-        #expect(embedder.batches == [catalogBlocks, [Self.embedderTask]])
+        #expect(embedder.batches == [catalogBlocks])
     }
 
     // MARK: The built surface
