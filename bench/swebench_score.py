@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#     "swebench==5.0.2",
+#     "swebench==4.1.0",
 #     "rich==15.0.0",
 # ]
 # ///

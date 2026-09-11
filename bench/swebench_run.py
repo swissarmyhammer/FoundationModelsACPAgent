@@ -4,15 +4,16 @@
 # dependencies = [
 #     "datasets==5.0.1",
 #     "rich==15.0.0",
+#     "swebench==4.1.0",
 # ]
 # ///
 """
 swebench_run.py -- make the SWE-bench predictions of the `acp-agent` binary.
 
-For each task this script does four steps. It clones the buggy repository, it
-sets the repository to the commit before the fix, it runs `acp-agent run` in
-that repository, and it writes the source diff the agent made into a
-predictions file.
+For each task this script does five steps. It clones the buggy repository, it
+sets the repository to the commit before the fix, it builds the Python
+environment of the task, it runs `acp-agent run` in that repository, and it
+writes the source diff the agent made into a predictions file.
 
 This script does NOT give a score. `swebench_score.py` gives the score, and it
 needs docker. The two steps are separate because they fail in different ways.
@@ -33,10 +34,11 @@ swebench.py in this directory hides the installed `swebench` package.
 ==============================================================================
 WHAT THE AGENT GETS
 ==============================================================================
-The agent gets the problem statement of the instance, and nothing more. There
-is no skill and no workflow, because this package has no skills yet. The
-prompt goes to the standard input of the agent, so no shell quotes and no
-argument length can change it.
+The agent gets the problem statement of the instance, and a short note about
+the environment. There is no skill and no workflow, because this package has
+no skills yet. The prompt goes to the standard input of the agent, so no
+shell quotes and no argument length can change it. Use --bare-prompt to send
+the problem statement alone.
 
 The agent gets ONE turn. `acp-agent run` starts a new session, sends the
 prompt, and stops when the turn stops.
@@ -47,6 +49,25 @@ transcripts out first, into `<preds stem>.transcripts/<instance_id>/` beside
 the predictions file. Read them to see what the model did in each round.
 
 ==============================================================================
+THE ENVIRONMENT OF THE AGENT
+==============================================================================
+`swebench_env.py` builds the environment of each instance before the agent
+starts: a virtual environment with the Python version of the task, the pinned
+packages, and the repository installed. The `python` of that environment is
+first on the PATH of the agent, so the model can import the package and read
+a true traceback in its first minute.
+
+This step is not a nicety. Without it the model finds a source tree it cannot
+import, because the compiled extensions are absent. In the run of
+astropy__astropy-12907 the model used 56 of its 60 minutes on build errors,
+and it made no patch.
+
+The build is NOT part of the limit of the agent, and the clock of the agent
+starts after it. An instance whose environment cannot be built gets no
+prediction row, so a later run does it again. Use --no-env to leave the
+environment out.
+
+==============================================================================
 BEFORE YOU START
 ==============================================================================
 Build the agent first:
@@ -54,8 +75,12 @@ Build the agent first:
     swift build -c release
 
 These programs must be on the PATH:
-    uv    -- runs this script, and gets its dependencies
+    uv    -- runs this script, gets its dependencies, and builds each
+             environment
     git   -- clones the repository of each task
+
+A compiler is necessary too, because some repositories have C extensions. On
+macOS the command line tools of Xcode are enough.
 
 The machine must have the memory the agent needs. Read the README of the
 package. The agent loads its models on each instance, because each instance
@@ -68,6 +93,7 @@ HOW TO USE IT
   uv run bench/swebench_run.py bench/preds.jsonl --limit 5     # the first 5
   uv run bench/swebench_run.py bench/preds.jsonl --force       # do them again
   uv run bench/swebench_run.py bench/preds.jsonl -i django__django-11099
+  uv run bench/swebench_run.py bench/preds.jsonl --no-env      # no environment
   uv run bench/swebench_score.py bench/preds.jsonl             # then the score
 """
 import argparse
@@ -84,11 +110,31 @@ from pathlib import Path
 from datasets import load_dataset
 from rich.table import Table
 
+import swebench_env
 from swebench_common import console, log
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
 SPLIT = "test"
+# The note that goes after the problem statement. The model reads it with the
+# task, and it says what the environment is and what the answer is. Without
+# this note a model builds and installs, and that work is a loss: the score
+# step runs the tests in its own container, and it uses the diff alone.
+PROMPT_NOTE = """
+
+# The environment of this task
+
+The repository is installed already, and `python` on your PATH is the Python
+of that install. Import the package and reproduce the problem in your first
+step.
+
+Do NOT make a virtual environment. Do NOT install a package, and do NOT
+change the version of one. Do NOT build the package or its extensions. That
+work is done.
+
+The tests are run for you, on another machine, after you stop. Your answer is
+the change you make in the source files, and nothing else.
+"""
 # The name that goes in each prediction row. The score report file uses it.
 MODEL_NAME = "acp-agent"
 # The wall-clock limit of one instance. The agent is a local model, and it is
@@ -139,6 +185,23 @@ parser.add_argument(
     "--verbose", action="store_true",
     help="give --verbose to the agent, so it writes its session events",
 )
+parser.add_argument(
+    "--no-env", action="store_true",
+    help="do not build the environment of the instance (default: build it, "
+         "so the agent can import the package and run the code)",
+)
+parser.add_argument(
+    "--env-timeout", type=int, default=swebench_env.DEFAULT_ENV_TIMEOUT_S,
+    metavar="SECONDS",
+    help="the wall-clock limit of one environment build (default: "
+         f"{swebench_env.DEFAULT_ENV_TIMEOUT_S}). It is not part of the limit "
+         "of the agent.",
+)
+parser.add_argument(
+    "--bare-prompt", action="store_true",
+    help="send the problem statement alone, with no note about the "
+         "environment",
+)
 args = parser.parse_args()
 outpath = args.outpath
 LIMIT = args.limit  # None => all of the split
@@ -183,7 +246,7 @@ def echo(line):
     console.print(f"    {line}", markup=False, highlight=False, style="dim")
 
 
-def stream_agent(cmd, cwd, prompt, timeout):
+def stream_agent(cmd, cwd, prompt, timeout, env=None):
     """Run the agent, and write its output line by line as it comes.
 
     The prompt goes to the standard input of the agent, and a thread writes
@@ -191,6 +254,10 @@ def stream_agent(cmd, cwd, prompt, timeout):
     fills the pipe, and a write from this thread would then stop until the
     agent reads. The agent writes its answer at the same time, so both sides
     would wait for each other.
+
+    `env` is the environment of the agent process, and the shell of the agent
+    gets it too. The environment of the instance goes in there, so that
+    `python` is the Python of the task.
 
     The agent runs in its OWN process group. A watchdog sends SIGTERM to the
     whole group at `timeout`, waits a short time, and then sends SIGKILL. The
@@ -208,6 +275,7 @@ def stream_agent(cmd, cwd, prompt, timeout):
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=env,
         start_new_session=True,  # a new process group, so we can signal the tree
     )
     pgid = proc.pid  # with start_new_session the leader pid is the pgid
@@ -345,7 +413,10 @@ log(
     f"-> [bold]{outpath}[/]"
 )
 
-counts = {"patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0}
+counts = {
+    "patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0,
+    "setup": 0,
+}
 t_all = time.monotonic()
 
 # The file is appended, and not written over, unless --force. The predictions
@@ -386,18 +457,41 @@ with outpath.open("w" if args.force else "a") as out:
                 check=True, capture_output=True,
             )
 
-            # 2. RUN THE AGENT in that repository. The prompt is the problem
-            #    statement, and nothing more. `-` makes the agent read the
-            #    prompt from its standard input, so no quote and no argument
-            #    length can change the text.
+            # 2. BUILD THE ENVIRONMENT of the task, before the agent starts.
+            #    The clock of the agent starts after this, so a long build
+            #    takes nothing from the model. An instance that cannot be
+            #    built gets NO row, and a later run does it again.
+            agent_env = None
+            if not args.no_env:
+                log(f"{prefix} building the environment (limit {args.env_timeout}s)...")
+                t_env = time.monotonic()
+                try:
+                    venv = swebench_env.prepare(
+                        work, repo, inst, timeout=args.env_timeout,
+                    )
+                except swebench_env.SetupFailed as exc:
+                    counts["setup"] += 1
+                    log(f"{prefix} [red]NO ENVIRONMENT[/] -- no row is written: {exc}")
+                    continue
+                agent_env = swebench_env.agent_environment(venv)
+                log(f"{prefix} environment ready -- {time.monotonic() - t_env:.0f}s")
+
+            # 3. RUN THE AGENT in that repository. The prompt is the problem
+            #    statement, and the note about the environment. `-` makes the
+            #    agent read the prompt from its standard input, so no quote
+            #    and no argument length can change the text.
             problem = inst["problem_statement"]
+            if agent_env is not None and not args.bare_prompt:
+                problem += PROMPT_NOTE
             log(f"{prefix} running the agent (limit {args.timeout}s)...")
             cmd = [str(AGENT), "run", "-", "--cwd", str(repo)]
             if args.verbose:
                 cmd.append("--verbose")
-            _, timed_out = stream_agent(cmd, str(repo), problem, args.timeout)
+            _, timed_out = stream_agent(
+                cmd, str(repo), problem, args.timeout, env=agent_env,
+            )
 
-            # 3. GET the source diff, against the clean base commit. An agent
+            # 4. GET the source diff, against the clean base commit. An agent
             #    that the watchdog killed did not finish, and its half-written
             #    tree is not an answer. Record an empty patch for it.
             patch = capture_patch(str(repo), inst["base_commit"])
@@ -449,6 +543,7 @@ log(
     f"[green]{counts['patches']} patches[/], "
     f"[yellow]{counts['empty']} empty[/], "
     f"[red]{counts['timeouts']} too slow[/], "
+    f"[red]{counts['setup']} with no environment[/], "
     f"[red]{counts['errors']} errors[/], "
     f"[dim]{counts['skipped']} not done again[/] in {total_dt / 60:.1f} min"
 )
@@ -464,6 +559,9 @@ table.add_row("instances", str(len(instances)))
 table.add_row("patches made", f"[green]{counts['patches']}[/]")
 table.add_row("empty patches", f"[yellow]{counts['empty']}[/]")
 table.add_row("too slow", f"[red]{counts['timeouts']}[/]" if counts["timeouts"] else "0")
+table.add_row(
+    "no environment", f"[red]{counts['setup']}[/]" if counts["setup"] else "0"
+)
 table.add_row("errors", f"[red]{counts['errors']}[/]" if counts["errors"] else "0")
 table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))

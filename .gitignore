@@ -10,3 +10,8 @@ Package.resolved
 
 # kanban MCP server scratch logs
 .kanban/*.log
+
+# The score step of the bench writes these into the working directory. They
+# are the result of one run on one machine, and a new run makes them again.
+logs/
+*.score_*.json
