@@ -43,6 +43,30 @@ An instance that does not build is recorded, and the agent does not start.
 A failed environment is not a failure of the agent, and it must not be part of
 the score.
 
+THE THREE FORMS OF `packages`
+
+`pip_packages` is a list of names, and pip installs each of them. `packages`
+is one string, and it takes three forms:
+
+| The value | What the build does | Instances of Lite |
+|---|---|---|
+| `requirements.txt` | pip reads the file that `MAP_REPO_TO_REQS_PATHS` names | 125 |
+| `environment.yml` | nothing: pip cannot read a conda file | 27 |
+| a word list, such as `mpmath flake8` | pip installs each name | 105 |
+
+The word list is the group with the test tools. sympy has 76 of those
+instances, scikit-learn 23, requests 6 and astropy 2, and NONE of them names
+pytest in its `pip_packages`. Each of them has a test command, so an
+environment without that list can import the package and cannot run one test.
+
+A conda name is not always a name of PyPI. Each name of the Lite split is on
+PyPI, but the table is published data, so pip can refuse a name of a later
+split. pip gives an exit code then, and the build stops at that command, as
+it stops at every command that fails: the record row of the instance holds
+the status `failed`, the exit code, the reason with the whole command in it,
+and the last lines of what pip wrote. The agent does not start, and no quiet
+environment goes to it with no test runner in it.
+
 EACH PATH OF THE PUBLISHED TABLE STANDS IN THE CLONE
 
 `MAP_REPO_TO_REQS_PATHS` says where the requirements file of a repository
@@ -63,6 +87,7 @@ of a module that the script imports. It needs the standard library and
 `swebench_run.py` pins.
 """
 import os
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass
@@ -101,6 +126,10 @@ PYTHON_WITH_NO_BUILD = ("3.6", "3.7")
 # `MAP_REPO_TO_REQS_PATHS` for the path, and django keeps its file at
 # `tests/requirements/py3.txt`.
 REQUIREMENTS_PACKAGES = "requirements.txt"
+# The value of `packages` that names a conda environment file. pip cannot read
+# one, so the build passes over it: those 27 instances of the Lite split get
+# their `pip_packages` and their install command, and nothing more.
+CONDA_PACKAGES = "environment.yml"
 # Where to look when that table names no path for a repository.
 DEFAULT_REQUIREMENTS_PATHS = ("requirements.txt",)
 # How long one build command may take, in seconds. A pip that waits for a
@@ -344,6 +373,30 @@ def pip_command(clone, arguments):
     return [str(venv_python(clone)), *PIP_MODULE, *arguments]
 
 
+def packages_word_list(spec):
+    """The names of `packages` that pip installs, for one spec.
+
+    - spec: the spec of the instance.
+
+    `packages` takes three forms. `requirements.txt` names a file, and
+    `environment.yml` names a conda file: pip installs neither of them here,
+    and this gives an empty list for each. Every other value is a word list of
+    conda package names, and pip installs those names.
+
+    `shlex.split` reads the words, because the `packages` of four scikit-learn
+    instances quotes each name: `'numpy==1.19.2' 'scipy==1.5.2'`. A reader
+    that breaks the value at each space would give `'numpy==1.19.2'` with its
+    quotation marks, and pip has no package of that name.
+
+    Returns the names, or an empty list when the spec names a file or names
+    no package.
+    """
+    packages = spec.get("packages")
+    if not packages or packages in (REQUIREMENTS_PACKAGES, CONDA_PACKAGES):
+        return []
+    return shlex.split(packages)
+
+
 def build_commands(clone, spec, python, requirements):
     """Every command that builds the environment of one instance, in order.
 
@@ -357,9 +410,12 @@ def build_commands(clone, spec, python, requirements):
     installs the package of the instance itself.
     """
     commands = [[*VENV_COMMAND, python, VENV_DIRECTORY]]
-    packages = spec.get("pip_packages")
-    if packages:
-        commands.append(pip_command(clone, packages))
+    pip_packages = spec.get("pip_packages")
+    if pip_packages:
+        commands.append(pip_command(clone, pip_packages))
+    word_list = packages_word_list(spec)
+    if word_list:
+        commands.append(pip_command(clone, word_list))
     if requirements is not None:
         commands.append(pip_command(clone, [REQUIREMENTS_OPTION, str(requirements)]))
     install = spec.get("install")

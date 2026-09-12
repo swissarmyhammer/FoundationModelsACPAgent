@@ -296,6 +296,12 @@ So `swebench_venv.py` does it now. For each instance it:
   spec>`;
 * installs the `pip_packages` of the spec with the Python of that
   environment;
+* installs the `packages` of the spec when that value is a word list of conda
+  names, such as `mpmath flake8` for sympy or `pytest` for requests. 105
+  instances of the Lite split have such a list, and NONE of them names pytest
+  in its `pip_packages`, so the list is where their test tools come from. The
+  value is read with `shlex.split`, because four scikit-learn instances quote
+  each name: `'numpy==1.19.2' 'scipy==1.5.2'`;
 * installs the requirements file of the repository, when the spec names one.
   The file is NOT `requirements.txt` at the root: `MAP_REPO_TO_REQS_PATHS`
   says where it stands, and django keeps its file at
@@ -307,6 +313,28 @@ So `swebench_venv.py` does it now. For each instance it:
 
 Django builds in 12 seconds this way, and `./tests/runtests.py` then runs in
 the clone with no more work.
+
+**The word list is where 105 instances get pytest.** Measured on this machine
+on 2026-09-12, with a real build of `psf__requests-2317`, whose `packages` is
+the word list `pytest` and whose `pip_packages` names nothing:
+
+```
+status built python 3.9 seconds 3.9
+import requests -> ok
+python -m pytest --version -> pytest 8.4.2
+```
+
+Before that list was installed the same build gave `No module named pytest`,
+so the environment imported the package and could run no test of the
+instance.
+
+**A conda name is not always a name of PyPI.** Each name of the Lite split is
+on PyPI, but the table is published data, so pip can refuse a name of a later
+split. The build then stops at that command, as it stops at every command
+that fails: the record row of the instance holds `env_status` `failed`, the
+exit code, a reason with the whole pip command in it, and the last lines of
+what pip wrote. `environment.yml` is the one value the build passes over, for
+the 27 instances that name it, because pip cannot read a conda file.
 
 **The clone of every instance stands at the same path.** The run makes ONE
 working root, and the clone is always `<root>/repo`. So `<root>/repo/.venv/bin`

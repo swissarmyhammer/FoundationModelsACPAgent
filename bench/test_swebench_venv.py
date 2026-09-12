@@ -41,6 +41,7 @@ from pathlib import Path
 from swebench_venv import (
     BUILD_SECONDS,
     BUILT,
+    CONDA_PACKAGES,
     ClonePathError,
     FAILED,
     REQUIREMENTS_PACKAGES,
@@ -54,13 +55,19 @@ from swebench_venv import (
     instance_path,
     instance_python,
     instance_spec,
+    packages_word_list,
     prepare_environment,
     requirements_file,
     unsupported_reason,
     venv_bin,
     venv_python,
 )
-from test_fixtures import COMMAND_FAILED, a_failing_runner, a_runner
+from test_fixtures import (
+    COMMAND_FAILED,
+    a_failing_runner,
+    a_refusing_runner,
+    a_runner,
+)
 
 # The names below are the names of a test, and not the names of this machine.
 # A test that reads this machine gives a different answer on each machine.
@@ -89,9 +96,22 @@ A_SPEC_WITH_A_REQUIREMENTS_FILE = {
     "packages": REQUIREMENTS_PACKAGES,
     "install": "python -m pip install -e .",
 }
-# The spec of matplotlib names a conda file, and pip cannot read one. 27
-# instances of the Lite split name it.
-A_CONDA_FILE = "environment.yml"
+# The spec of an instance whose `packages` is a word list of conda names. 105
+# instances of the Lite split have one: sympy 76, scikit-learn 23, requests 6
+# and astropy 2. None of them gets pytest from `pip_packages`, and each of them
+# has a test command, so the word list is where its test tools come from.
+A_REPO_WITH_A_WORD_LIST = "psf/requests"
+A_WORD_LIST_OF_NAMES = ["pytest", "mpmath"]
+A_SPEC_WITH_A_WORD_LIST = {
+    "python": A_PYTHON,
+    "packages": " ".join(A_WORD_LIST_OF_NAMES),
+    "install": "python -m pip install .",
+    "test_cmd": "pytest -rA",
+}
+# The `packages` of four scikit-learn instances quotes each name, so a reader
+# of the words must read the quotation marks too.
+A_QUOTED_WORD_LIST = "'numpy==1.19.2' 'scipy==1.5.2'"
+A_QUOTED_WORD_LIST_OF_NAMES = ["numpy==1.19.2", "scipy==1.5.2"]
 # The spec of an instance that this machine cannot build. `pre_install` holds
 # `apt-get`, which is of linux, and `sed -i 's/x/y/' file`, which the `sed` of
 # macOS does not accept. 44 instances of the Lite split have one.
@@ -111,6 +131,7 @@ A_SPEC_WITH_AN_OLD_PYTHON = {
 A_SPEC_TABLE = {
     A_REPO: {A_VERSION: A_SPEC},
     A_REPO_WITH_A_REQUIREMENTS_FILE: {A_VERSION: A_SPEC_WITH_A_REQUIREMENTS_FILE},
+    A_REPO_WITH_A_WORD_LIST: {A_VERSION: A_SPEC_WITH_A_WORD_LIST},
 }
 A_REQUIREMENTS_TABLE = {A_REPO_WITH_A_REQUIREMENTS_FILE: [A_REQUIREMENTS_PATH]}
 # The path of the finding: it reads a file outside the clone.
@@ -128,6 +149,12 @@ BAD_REQUIREMENTS_PATHS = (
 # the exit code it gave, and `test_fixtures.py` holds that code and the
 # stand-in for `subprocess.run` that each test here gives the module.
 AN_ERROR_MESSAGE = "ERROR: Could not find a version that satisfies numpy==1.25.2"
+# The name of the word list that pip refuses in the tests of that list, and
+# what pip writes then. A conda name is not always a name of PyPI.
+A_REFUSED_NAME = A_WORD_LIST_OF_NAMES[-1]
+A_REFUSED_NAME_MESSAGE = (
+    f"ERROR: No matching distribution found for {A_REFUSED_NAME}"
+)
 # The number of the command that fails, in the tests that make one fail. The
 # first command makes the virtual environment, and every command after it
 # needs that environment.
@@ -360,6 +387,21 @@ class TheCommandsOfTheBuild(unittest.TestCase):
         command = self.commands_of(A_SPEC)[1]
         self.assertIn("pip", command)
         self.assertEqual(command[-len(A_SPEC["pip_packages"]):], A_SPEC["pip_packages"])
+
+    def test_it_installs_the_packages_word_list_of_the_spec(self):
+        """105 instances get their test tools from that word list alone."""
+        command = self.commands_of(A_SPEC_WITH_A_WORD_LIST)[1]
+        self.assertEqual(
+            command[-len(A_WORD_LIST_OF_NAMES):], A_WORD_LIST_OF_NAMES
+        )
+
+    def test_it_installs_the_word_list_after_the_pip_packages(self):
+        """A spec can name both, and the environment needs each of them."""
+        commands = self.commands_of(dict(A_SPEC, packages=A_QUOTED_WORD_LIST))
+        self.assertEqual(
+            commands[2][-len(A_QUOTED_WORD_LIST_OF_NAMES):],
+            A_QUOTED_WORD_LIST_OF_NAMES,
+        )
 
     def test_it_installs_with_the_python_of_that_environment(self):
         """A bare `python` would be the Python of this machine.
@@ -621,7 +663,7 @@ class TheRequirementsFileThatIsAbsent(unittest.TestCase):
         Those instances get their `pip_packages` and their install command,
         and the build does not stop.
         """
-        spec = dict(A_SPEC, packages=A_CONDA_FILE)
+        spec = dict(A_SPEC, packages=CONDA_PACKAGES)
         with tempfile.TemporaryDirectory() as directory:
             clone = a_clone(directory)
             report = prepare_environment(
@@ -633,6 +675,109 @@ class TheRequirementsFileThatIsAbsent(unittest.TestCase):
                 run=a_runner(),
             )
         self.assertEqual(report.status, BUILT)
+
+
+class ThePackagesThatPipInstalls(unittest.TestCase):
+    """Which `packages` values become the names of a pip command.
+
+    `packages` takes three forms. `requirements.txt` names a file that
+    `MAP_REPO_TO_REQS_PATHS` finds, `environment.yml` names a conda file, and
+    every other value is a word list of conda package names.
+    """
+
+    def test_a_word_list_gives_each_name(self):
+        """These names are the test tools of 105 instances of the Lite split."""
+        self.assertEqual(
+            packages_word_list(A_SPEC_WITH_A_WORD_LIST), A_WORD_LIST_OF_NAMES
+        )
+
+    def test_a_quoted_name_is_one_name(self):
+        """Four scikit-learn instances write `'numpy==1.19.2' 'scipy==1.5.2'`.
+
+        A reader that breaks the value at each space gives `'numpy==1.19.2'`
+        with its quotation marks, and pip has no package of that name.
+        """
+        self.assertEqual(
+            packages_word_list(dict(A_SPEC, packages=A_QUOTED_WORD_LIST)),
+            A_QUOTED_WORD_LIST_OF_NAMES,
+        )
+
+    def test_a_requirements_file_gives_no_name(self):
+        """That value names a file, and pip reads a file with `-r`."""
+        self.assertEqual(packages_word_list(A_SPEC_WITH_A_REQUIREMENTS_FILE), [])
+
+    def test_a_conda_file_gives_no_name(self):
+        """pip cannot read `environment.yml`, and 27 instances name it."""
+        self.assertEqual(
+            packages_word_list(dict(A_SPEC, packages=CONDA_PACKAGES)), []
+        )
+
+    def test_a_spec_without_packages_gives_no_name(self):
+        """Many specs name no `packages` at all."""
+        self.assertEqual(packages_word_list(A_SPEC), [])
+
+
+class TheWordListInABuild(unittest.TestCase):
+    """What a run does with a `packages` that is a word list of conda names.
+
+    A conda name is not always a name of PyPI. Each name of the Lite split is
+    on PyPI, but the table is published data, so pip can refuse a name. It
+    gives an exit code then, and the build stops at that command, as it stops
+    at every other command that fails: the record row of the instance names
+    the command, it holds the exit code, and it holds what pip wrote. The
+    agent does not start with an environment that has no test runner.
+    """
+
+    def word_list_build(self, directory, run):
+        """Build the instance whose `packages` is a word list.
+
+        - directory: a temporary directory of the test.
+        - run: the stand-in runner.
+        """
+        return a_build(a_clone(directory), repo=A_REPO_WITH_A_WORD_LIST, run=run)
+
+    def refused_build(self, directory):
+        """The same build, with a pip that refuses the names of the list.
+
+        - directory: a temporary directory of the test.
+        """
+        return self.word_list_build(
+            directory,
+            a_refusing_runner(A_REFUSED_NAME, stderr=A_REFUSED_NAME_MESSAGE),
+        )
+
+    def test_the_build_installs_the_names(self):
+        """`prepare_environment` is the door that a run goes through.
+
+        A command that only `build_commands` gives is a command no run makes.
+        """
+        run = a_runner()
+        with tempfile.TemporaryDirectory() as directory:
+            self.word_list_build(directory, run)
+        command = run.calls[1][0]
+        self.assertEqual(
+            command[-len(A_WORD_LIST_OF_NAMES):], A_WORD_LIST_OF_NAMES
+        )
+
+    def test_a_name_that_pip_refuses_stops_the_build(self):
+        """An environment with no pytest cannot run one test of the instance."""
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.refused_build(directory)
+        self.assertEqual(report.status, FAILED)
+
+    def test_the_reason_names_each_package_it_tried(self):
+        """A person finds the bad name only if the reason holds the names."""
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.refused_build(directory)
+        for name in A_WORD_LIST_OF_NAMES:
+            with self.subTest(name=name):
+                self.assertIn(name, report.reason)
+
+    def test_it_keeps_what_pip_wrote(self):
+        """The message of pip says WHICH name of the list it refused."""
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.refused_build(directory)
+        self.assertIn(A_REFUSED_NAME_MESSAGE, report.output)
 
 
 if __name__ == "__main__":
