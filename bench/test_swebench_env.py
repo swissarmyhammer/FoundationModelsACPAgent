@@ -28,7 +28,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swebench_env import agent_environment, agent_path, environment_summary
+from swebench_env import (
+    NO_PYTHON,
+    PATH_VARIABLE,
+    PYTHON_COMMAND,
+    agent_environment,
+    agent_path,
+    environment_fields,
+)
 
 # The names below are the names of a test, and not the names of this machine.
 # A test that reads this machine gives a different answer on each machine.
@@ -157,22 +164,29 @@ class TheAgentPath(unittest.TestCase):
         self.assertEqual(entries, ["/usr/bin", "/bin", "/usr/sbin", "/sbin"])
 
 
-class TheSummary(unittest.TestCase):
-    """The line that tells a reader of a run which Python the agent gets."""
+class TheFieldsOfTheEnvironment(unittest.TestCase):
+    """The fields that tell a reader of a run which Python the agent gets."""
 
     def test_it_names_the_python_on_the_path(self):
         """The question a run must answer is which Python the agent finds."""
         with tempfile.TemporaryDirectory() as directory:
-            python = Path(directory) / "python3"
+            python = Path(directory) / PYTHON_COMMAND
             python.write_text("")
             python.chmod(EXECUTABLE_MODE)
-            summary = environment_summary({"PATH": directory})
-            self.assertIn(str(python), summary)
+            fields = environment_fields({PATH_VARIABLE: directory})
+            self.assertEqual(fields[PYTHON_COMMAND], str(python))
 
     def test_it_says_none_when_the_path_holds_no_python(self):
         """An absent Python is a condition of the machine, and not an error."""
         with tempfile.TemporaryDirectory() as directory:
-            self.assertIn("none", environment_summary({"PATH": directory}))
+            fields = environment_fields({PATH_VARIABLE: directory})
+            self.assertEqual(fields[PYTHON_COMMAND], NO_PYTHON)
+
+    def test_it_names_the_path_of_the_agent(self):
+        """A Python that is absent is one fact, and the PATH says why."""
+        with tempfile.TemporaryDirectory() as directory:
+            fields = environment_fields({PATH_VARIABLE: directory})
+            self.assertEqual(fields[PATH_VARIABLE], directory)
 
 
 if __name__ == "__main__":

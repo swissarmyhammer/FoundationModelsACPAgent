@@ -161,8 +161,26 @@ comments:
     - evidence: 4 files — bench/swebench_report.py (RunIdError, RUN_ID_SHAPE, RUN_ID_REFUSED, checked_run_id; report_path and score_report call the gate), bench/test_swebench_report.py (BAD_RUN_IDS and the class TheRunIdOfAReport, and the write_report test of a run id that is not a name), bench/swebench_score.py (chosen_run_id at the command line, so `tally` is safe too; exit code 2 now also means a run id that is not a name), bench/README.md (the section "The run id is a name", and the exit code table). The one open finding, bench/swebench_report.py:51 code-security/injection, is `- [x]`. The tests failed first (17 subtest failures), and they pass now: 74 tests, 0 failures, 0 warnings.
     - next: /review
   timestamp: 2026-09-12T13:28:51.692624+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2ax8wqy5eycepgmn5ca99n1
+  text: |-
+    ### review — clean
+    - evidence: 0 findings (0 confirmed, 0 refuted), 8 validator runs, scope `review sha HEAD~1..HEAD` (commit dccb00e). 3 files reviewed: bench/swebench_report.py, bench/swebench_score.py, bench/test_swebench_report.py. bench/README.md has no validator, and the .kanban files are out by an ignore rule.
+    - the one finding of iteration 1, bench/swebench_report.py:51 `code-security/injection`, is repaired. `checked_run_id` is the gate, `RUN_ID_SHAPE` is `[A-Za-z0-9][A-Za-z0-9._-]*`, and the test is a `fullmatch`. So a run id cannot hold a separator, cannot be `.` or `..`, cannot be empty, and cannot be absolute. Three doors call the gate: `report_path`, `score_report` (the run id that `write_report` reads back for the path), and `chosen_run_id` in bench/swebench_score.py, which stops the step with exit code 2 before the harness starts and thus makes `tally` safe also.
+    - next: the task is in `done`.
+  timestamp: 2026-09-12T13:35:23.390756+00:00
+- actor: claude-code
+  id: 01m2ax9n0q6h8r5rhz5xsdx6h9
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files: bench/swebench_report.py, bench/test_swebench_report.py, bench/swebench_score.py, bench/README.md. One gate, `checked_run_id`, with the shape `[A-Za-z0-9][A-Za-z0-9._-]*`. Three doors call it: `report_path`, `score_report` and `chosen_run_id`.
+    - test: green — 74 Python tests passed, 561 Swift tests passed, 0 failed, 0 skipped. ruff check bench/ all checks passed.
+    - commit: dccb00e — 6 files, 320 insertions, 15 deletions, local only, not pushed
+    - review: clean — 0 findings, 8 validator runs, 3 files, scope HEAD~1..HEAD. The item of iteration 1 is repaired at the cause, and not at the one line alone.
+    - next: none, the task is in done
+  timestamp: 2026-09-12T13:35:48.247855+00:00
+position_column: done
+position_ordinal: d680
 title: 'bench: stop the score step when docker does not run'
 ---
 ## The problem

@@ -43,6 +43,15 @@ An instance that does not build is recorded, and the agent does not start.
 A failed environment is not a failure of the agent, and it must not be part of
 the score.
 
+EACH PATH OF THE PUBLISHED TABLE STANDS IN THE CLONE
+
+`MAP_REPO_TO_REQS_PATHS` says where the requirements file of a repository
+stands, and this module joins that path to the clone. A path with a `..` part,
+or an absolute path, would thus name a file OUTSIDE the clone. So
+`checked_clone_path` is the one gate, and each function that makes a path from
+that table calls it. A path that leaves the clone raises a `ClonePathError`,
+and the driver then records that instance as an error of its own.
+
 Each function takes the runner as an argument, and the default is
 `subprocess.run`. A test thus gives a stand-in, and it needs no `uv` and no
 network.
@@ -110,6 +119,48 @@ COMMAND_IS_ABSENT_EXIT_CODE = 127
 # How many lines of a command that failed the report keeps. A pip that fails
 # writes hundreds of lines, and the last ones hold the cause.
 OUTPUT_LINES = 40
+# What a person reads when a path of the published table leaves the clone.
+CLONE_PATH_REFUSED = (
+    "the path {path!r} of the published table does not stand in the clone "
+    "{clone}. A path of that table names a file OF the repository, so it is "
+    "relative to the clone and it holds no `..` part."
+)
+
+
+class ClonePathError(ValueError):
+    """A path that does not stand in the clone of an instance.
+
+    This error has a name of its own, so that a caller can catch this
+    condition alone and say what a person must do. It is a `ValueError`,
+    because a path that leaves the clone is a bad VALUE of an argument, and a
+    caller that knows only the errors of the standard library still works.
+    """
+
+
+def checked_clone_path(clone, path):
+    """The path in the clone, when it stands in the clone.
+
+    - clone: the directory of the cloned repository.
+    - path: a path of the published table, for example
+      `tests/requirements/py3.txt`.
+
+    This is the one gate of the module. `MAP_REPO_TO_REQS_PATHS` comes from
+    the `swebench` package, and each path of it becomes a path of this
+    machine. A path with a `..` part, or an absolute path, thus names a file
+    OUTSIDE the clone, and the clone is the one directory of an instance.
+
+    The gate resolves the two paths and it compares them, so a symbolic link
+    that leaves the clone is refused too. It gives the RESOLVED path, because
+    a command must get the path that the gate read, and not another one.
+
+    Each function of this module that makes a path from a value of that table
+    calls this one, because a gate that one door of two holds is not a gate.
+    """
+    root = Path(clone).resolve()
+    inside = (root / path).resolve()
+    if inside.is_relative_to(root):
+        return inside
+    raise ClonePathError(CLONE_PATH_REFUSED.format(path=path, clone=root))
 
 
 @dataclass(frozen=True)
@@ -272,10 +323,13 @@ def requirements_file(clone, repo, paths=None):
     Returns the first path of the table that the clone holds, or None. The
     official harness gets this file from the network. The clone already holds
     it at the commit of the instance, so this reads the disk.
+
+    Each path of the table goes through `checked_clone_path`, because the
+    table is published data and a path of it must not leave the clone.
     """
     table = published_requirements_paths() if paths is None else paths
     for path in table.get(repo, DEFAULT_REQUIREMENTS_PATHS):
-        found = Path(clone) / path
+        found = checked_clone_path(clone, path)
         if found.is_file():
             return found
     return None

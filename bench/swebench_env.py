@@ -48,6 +48,11 @@ UV_CACHE_LEAF = "uv"
 # The program that the log line of a run reports. It answers the question
 # "which Python does the agent get".
 PYTHON_COMMAND = "python3"
+# What that line says when the PATH of the agent holds no Python at all.
+NO_PYTHON = "none"
+# The name of the field that holds the PATH of the agent, and the name of the
+# variable itself.
+PATH_VARIABLE = "PATH"
 
 
 def uv_cache(parent):
@@ -139,14 +144,19 @@ def agent_environment(parent=None):
     return environment
 
 
-def environment_summary(environment):
-    """One line that says which Python the agent gets, and on which PATH.
+def environment_fields(environment):
+    """The names and values that say which Python the agent gets, and where.
 
     - environment: the environment that `agent_environment` made.
 
-    A run writes this line for each instance. Without it, nothing in the
+    A run writes these fields for each instance. Without them, nothing in the
     output of a run says which Python the agent found.
+
+    They are a dict, and not a sentence, because a line of a run is a message
+    and its fields. `swebench_event.py` says why.
     """
-    path = environment.get("PATH", "")
-    python = shutil.which(PYTHON_COMMAND, path=path) or "none"
-    return f"{PYTHON_COMMAND}: {python} . PATH: {path}"
+    path = environment.get(PATH_VARIABLE, "")
+    return {
+        PYTHON_COMMAND: shutil.which(PYTHON_COMMAND, path=path) or NO_PYTHON,
+        PATH_VARIABLE: path,
+    }

@@ -7,7 +7,8 @@ name: Bench
 # `bench/swebench_prediction.py` makes the prediction row of an instance,
 # `bench/swebench_record.py` makes the record row of an instance,
 # `bench/swebench_venv.py` builds the Python environment of an instance,
-# `bench/swebench_docker.py` asks the docker daemon whether it answers, and
+# `bench/swebench_docker.py` asks the docker daemon whether it answers,
+# `bench/swebench_event.py` makes the line of one milestone, and
 # `bench/swebench_report.py` makes the report of a score run. A defect
 # there costs a whole drive of the dataset, and no Swift target reads that
 # code. So the tests of the harness have a job of their own here. A test

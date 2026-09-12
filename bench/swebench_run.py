@@ -130,11 +130,10 @@ import time
 from pathlib import Path
 
 from datasets import load_dataset
-from rich.markup import escape
 from rich.table import Table
 
 from swebench_common import console, log
-from swebench_env import environment_summary
+from swebench_env import environment_fields
 from swebench_prediction import prediction_row
 from swebench_record import append_row, patch_file_count, run_record, runs_path
 from swebench_venv import (
@@ -166,6 +165,14 @@ AGENT_TRANSCRIPTS = Path(".acp-agent") / "transcripts"
 AGENT_CANDIDATES = (".build/release/acp-agent", ".build/debug/acp-agent")
 # The package root: the parent of this `bench` directory.
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+# How many letters of a commit the line of an instance holds. A name of this
+# length says which commit it is, and `git` itself reads one.
+SHORT_COMMIT = 10
+# How many minutes are in an hour, and how many seconds are in a minute. The
+# summary of a run gives its wall time in minutes.
+SECONDS_OF_A_MINUTE = 60
+# How many numbers after the point the wall time of a run holds.
+MINUTE_PLACES = 1
 # ----------------------------------------------------------------------------
 
 parser = argparse.ArgumentParser(
@@ -395,7 +402,7 @@ def capture_patch(repo, base_commit):
 
 # --- load the dataset, and continue -----------------------------------------
 console.rule(f"SWE-bench predictions . {MODEL_NAME} . {DATASET}")
-log(f"agent binary: [bold]{AGENT}[/]")
+log("agent binary", agent=AGENT)
 log("loading the dataset from huggingface...")
 dataset = load_dataset(DATASET, split=SPLIT)
 all_instances = list(dataset)
@@ -418,16 +425,20 @@ if outpath.exists() and outpath.stat().st_size and not args.force:
             pass
     if done:
         log(
-            f"[yellow]continuing[/]: {len(done)} instance(s) are in {outpath} "
-            f"already, and this run does not do them again "
-            f"(use [bold]--force[/] to do all of them again)"
+            "[yellow]continuing[/]: these instances are in the predictions "
+            "file already, and this run does not do them again "
+            "([bold]--force[/] does all of them again)",
+            done=len(done),
+            predictions=outpath,
         )
 
 log(
-    f"[green]{len(instances)} instances[/] ({len(instances) - len(done)} to do) "
-    f"-> [bold]{outpath}[/]"
+    "[green]the instances of this run[/]",
+    instances=len(instances),
+    to_do=len(instances) - len(done),
+    predictions=outpath,
 )
-log(f"the record of each instance -> [bold]{runs_path(outpath)}[/]")
+log("the record of each instance", record=runs_path(outpath))
 
 counts = {
     "patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0,
@@ -444,10 +455,13 @@ with outpath.open("w" if args.force else "a") as out, \
     for n, inst in enumerate(instances, 1):
         instance_id = inst["instance_id"]
         repo_name = inst["repo"]
-        prefix = f"[cyan][{n}/{len(instances)}][/] [bold]{instance_id}[/]"
+        # The fields that say which instance a line is about. Each line of
+        # this instance carries them, so `grep instance=<id> run.log` gives
+        # the whole story of one instance.
+        about = {"instance": instance_id, "number": n, "of": len(instances)}
         if instance_id in done:
             counts["skipped"] += 1
-            log(f"{prefix} [dim]done already, and not done again[/]")
+            log("[dim]done already, and not done again[/]", **about)
             continue
         work = None
         # What the record of this instance holds. Each name keeps the value
@@ -464,7 +478,7 @@ with outpath.open("w" if args.force else "a") as out, \
         try:
             # 1. SET UP the buggy repository, at the commit before the fix.
             t_clone = time.monotonic()
-            log(f"{prefix} cloning {repo_name}")
+            log("cloning", **about, repo=repo_name)
             # resolve(): on macOS mkdtemp gives a path below /var/folders,
             # and /var is a symbolic link to /private/var. The agent puts a
             # sandbox around its shell, and a sandbox compares real paths. So
@@ -476,7 +490,7 @@ with outpath.open("w" if args.force else "a") as out, \
                  f"https://github.com/{repo_name}.git", str(repo)],
                 check=True, capture_output=True,
             )
-            log(f"{prefix} checkout {inst['base_commit'][:10]}")
+            log("checkout", **about, commit=inst["base_commit"][:SHORT_COMMIT])
             subprocess.run(
                 ["git", "-C", str(repo), "checkout", "--quiet", "--force",
                  inst["base_commit"]],
@@ -494,7 +508,7 @@ with outpath.open("w" if args.force else "a") as out, \
             #    pip. An instance that does not build here gets no prediction
             #    row: a failed environment is not a failure of the agent, and
             #    it must not be part of the score.
-            log(f"{prefix} building the environment...")
+            log("building the environment...", **about)
             built = prepare_environment(
                 repo,
                 repo_name,
@@ -503,20 +517,19 @@ with outpath.open("w" if args.force else "a") as out, \
             )
             if built.status == UNSUPPORTED:
                 counts["unsupported"] += 1
-                log(f"{prefix} [dim]not supported here[/] -- {escape(built.reason)}")
+                log("[dim]not supported here[/]", **about, reason=built.reason)
                 continue
             if built.status != BUILT:
                 counts["env_failed"] += 1
-                log(
-                    f"{prefix} [yellow]NO ENVIRONMENT[/] -- "
-                    f"{escape(built.reason)}"
-                )
+                log("[yellow]NO ENVIRONMENT[/]", **about, reason=built.reason)
                 if built.output:
                     echo(built.output)
                 continue
             log(
-                f"{prefix} the environment is ready -- python {built.python} . "
-                f"{built.seconds:.0f}s"
+                "the environment is ready",
+                **about,
+                python=built.python,
+                seconds=round(built.seconds),
             )
 
             # 3. RUN THE AGENT in that repository. The prompt is the problem
@@ -525,8 +538,12 @@ with outpath.open("w" if args.force else "a") as out, \
             #    length can change the text.
             problem = inst["problem_statement"]
             environment = instance_environment(repo)
-            log(f"the environment of the agent -- {environment_summary(environment)}")
-            log(f"{prefix} running the agent (limit {args.timeout}s)...")
+            log(
+                "the environment of the agent",
+                **about,
+                **environment_fields(environment),
+            )
+            log("running the agent...", **about, limit_seconds=args.timeout)
             cmd = [str(AGENT), "run", "-", "--cwd", str(repo)]
             if args.verbose:
                 cmd.append("--verbose")
@@ -550,24 +567,32 @@ with outpath.open("w" if args.force else "a") as out, \
                 ),
             )
 
-            dt = time.monotonic() - t0
             files, added, removed = patch_stats(patch)
-            shape = f"{files} file(s) [green]+{added}[/]/[red]-{removed}[/]"
+            # What the agent made, and what it cost. These fields stand
+            # beside the fields of the instance on the line of the result.
+            shape = {
+                "files": files,
+                "added": added,
+                "removed": removed,
+                "seconds": round(time.monotonic() - t0),
+            }
             if timed_out:
                 counts["timeouts"] += 1
                 log(
-                    f"{prefix} [red]TOO SLOW[/] -> the patch is kept, and the "
-                    f"row says truncated -- {shape} . {dt:.0f}s"
+                    "[red]TOO SLOW[/] -- the patch is kept, and the row says "
+                    "truncated",
+                    **about,
+                    **shape,
                 )
             elif patch.strip():
                 counts["patches"] += 1
-                log(f"{prefix} [green]done[/] -- {shape} . {dt:.0f}s")
+                log("[green]done[/]", **about, **shape)
             else:
                 counts["empty"] += 1
-                log(f"{prefix} [yellow]EMPTY patch[/] -- {dt:.0f}s")
+                log("[yellow]EMPTY patch[/]", **about, **shape)
         except Exception as exc:  # one bad instance must not stop the batch
             counts["errors"] += 1
-            log(f"{prefix} [red]ERROR[/]: {exc}")
+            log("[red]ERROR[/]", **about, error=exc)
         finally:
             if work is not None:
                 # Keep the transcripts before the repository goes. This runs
@@ -575,9 +600,9 @@ with outpath.open("w" if args.force else "a") as out, \
                 try:
                     kept = keep_transcripts(work / "repo", outpath, instance_id)
                     if kept is not None:
-                        log(f"{prefix} transcripts -> [bold]{kept}[/]")
+                        log("transcripts", **about, path=kept)
                 except OSError as exc:
-                    log(f"{prefix} [yellow]transcripts not kept[/]: {exc}")
+                    log("[yellow]transcripts not kept[/]", **about, error=exc)
                 shutil.rmtree(work, ignore_errors=True)
             # The record of the instance goes last, so that it can name the
             # transcripts. This runs for a finished agent, a stopped agent
@@ -605,17 +630,22 @@ with outpath.open("w" if args.force else "a") as out, \
 
 # --- the summary ------------------------------------------------------------
 total_dt = time.monotonic() - t_all
+total_minutes = round(total_dt / SECONDS_OF_A_MINUTE, MINUTE_PLACES)
 log(
-    f"[bold]complete[/] -- "
-    f"[green]{counts['patches']} patches[/], "
-    f"[yellow]{counts['empty']} empty[/], "
-    f"[red]{counts['timeouts']} too slow[/], "
-    f"[yellow]{counts['env_failed']} no environment[/], "
-    f"[dim]{counts['unsupported']} not supported[/], "
-    f"[red]{counts['errors']} errors[/], "
-    f"[dim]{counts['skipped']} not done again[/] in {total_dt / 60:.1f} min"
+    "[bold]complete[/]",
+    patches=counts["patches"],
+    empty=counts["empty"],
+    too_slow=counts["timeouts"],
+    no_environment=counts["env_failed"],
+    not_supported=counts["unsupported"],
+    errors=counts["errors"],
+    not_done_again=counts["skipped"],
+    minutes=total_minutes,
 )
-log(f"get the score with: [bold]uv run bench/swebench_score.py {outpath}[/]")
+log(
+    "get the score with [bold]uv run bench/swebench_score.py[/]",
+    predictions=outpath,
+)
 
 table = Table(
     title=f"predictions complete . {MODEL_NAME}", show_header=False,
@@ -637,6 +667,6 @@ table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))
 table.add_row("record", str(runs_path(outpath)))
 table.add_row("next", f"uv run bench/swebench_score.py {outpath}")
-table.add_row("wall time", f"{total_dt / 60:.1f} min")
+table.add_row("wall time", f"{total_minutes} min")
 console.print()
 console.print(table)

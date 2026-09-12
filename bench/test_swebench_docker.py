@@ -17,9 +17,9 @@ These tests hold the new behaviour. The score step asks the DAEMON with
 `docker info`, and not the context. A daemon that does not answer stops the
 step with a message that names the endpoint.
 
-No test here starts docker. Each test gives the module a stand-in for
-`subprocess.run`, so the answer is the same on a machine with docker and on a
-machine without it.
+No test here starts docker. Each test gives the module the stand-in for
+`subprocess.run` of `test_fixtures.py`, so the answer is the same on a machine
+with docker and on a machine without it.
 
 This test needs the standard library only, so both commands run it:
 
@@ -32,7 +32,6 @@ import unittest
 from pathlib import Path
 
 from swebench_docker import (
-    COMMAND_DID_ITS_WORK,
     CONTEXT_COMMAND,
     DEFAULT_SOCKET_HOST,
     HOST_VARIABLE,
@@ -43,37 +42,17 @@ from swebench_docker import (
     ensure_host,
     missing_daemon_message,
 )
+from test_fixtures import COMMAND_FAILED, a_runner
 
 # The names below are the names of a test, and not the names of this machine.
 # A test that reads this machine gives a different answer on each machine.
 A_CONTEXT_HOST = "unix:///Users/tester/.docker/run/docker.sock"
 A_NAMED_HOST = "tcp://192.168.1.10:2375"
-# The exit code that `docker info` gives when the daemon does not answer. This
-# machine gave this code, with `/var/run/docker.sock` absent and the context
-# still naming an endpoint.
-COMMAND_FAILED = 1
-
-
-def a_runner(*, returncode=COMMAND_DID_ITS_WORK, stdout="", raises=None):
-    """A stand-in for `subprocess.run` that answers as a docker command.
-
-    - returncode: the exit code of the command.
-    - stdout: what the command writes to standard output.
-    - raises: the error to raise in place of an answer, or None.
-
-    The stand-in keeps each call in `calls`, as a pair of the command and the
-    keywords, so a test can read what the module asked docker.
-    """
-    calls = []
-
-    def run(command, **keywords):
-        calls.append((list(command), keywords))
-        if raises is not None:
-            raise raises
-        return subprocess.CompletedProcess(list(command), returncode, stdout, "")
-
-    run.calls = calls
-    return run
+# `COMMAND_FAILED` is the exit code that `docker info` gives when the daemon
+# does not answer. This machine gave that code, with `/var/run/docker.sock`
+# absent and the context still naming an endpoint. `test_fixtures.py` holds it,
+# and it holds the stand-in for `subprocess.run` that each test here gives the
+# module.
 
 
 def an_absent_socket():

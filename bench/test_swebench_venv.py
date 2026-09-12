@@ -23,8 +23,9 @@ instance that this machine cannot build is recorded, and the agent does not
 start.
 
 No test here makes a virtual environment, and no test here installs a package.
-Each test gives the module a stand-in for `subprocess.run`, as
-`test_swebench_docker.py` does, so the answer is the same on each machine.
+Each test gives the module the stand-in for `subprocess.run` of
+`test_fixtures.py`, as `test_swebench_docker.py` does, so the answer is the
+same on each machine.
 
 This test needs the standard library only, so both commands run it:
 
@@ -40,7 +41,7 @@ from pathlib import Path
 from swebench_venv import (
     BUILD_SECONDS,
     BUILT,
-    COMMAND_DID_ITS_WORK,
+    ClonePathError,
     FAILED,
     REQUIREMENTS_PACKAGES,
     SHELL_COMMAND,
@@ -59,6 +60,7 @@ from swebench_venv import (
     venv_bin,
     venv_python,
 )
+from test_fixtures import COMMAND_FAILED, a_failing_runner, a_runner
 
 # The names below are the names of a test, and not the names of this machine.
 # A test that reads this machine gives a different answer on each machine.
@@ -111,45 +113,26 @@ A_SPEC_TABLE = {
     A_REPO_WITH_A_REQUIREMENTS_FILE: {A_VERSION: A_SPEC_WITH_A_REQUIREMENTS_FILE},
 }
 A_REQUIREMENTS_TABLE = {A_REPO_WITH_A_REQUIREMENTS_FILE: [A_REQUIREMENTS_PATH]}
-# The exit code of a command that did not do its work.
-COMMAND_FAILED = 1
-# What a command that failed wrote to its standard error.
+# The path of the finding: it reads a file outside the clone.
+A_CLIMB = "../../etc/hostname"
+# Paths that the table of a repository must never be able to give. Each one
+# names a file OUTSIDE the clone, and the clone is the one directory of the
+# instance.
+BAD_REQUIREMENTS_PATHS = (
+    A_CLIMB,                      # the climb: it leaves the clone
+    "..",                         # a climb by itself
+    "tests/../../../etc/passwd",  # a climb in the middle of a path
+    "/etc/hostname",              # an absolute path
+)
+# What a command that failed wrote to its standard error. `COMMAND_FAILED` is
+# the exit code it gave, and `test_fixtures.py` holds that code and the
+# stand-in for `subprocess.run` that each test here gives the module.
 AN_ERROR_MESSAGE = "ERROR: Could not find a version that satisfies numpy==1.25.2"
 # The number of the command that fails, in the tests that make one fail. The
 # first command makes the virtual environment, and every command after it
 # needs that environment.
 THE_FIRST_COMMAND = 1
 THE_SECOND_COMMAND = 2
-
-
-def a_runner(*, fails_at=None, exit_code=COMMAND_FAILED, raises=None):
-    """A stand-in for `subprocess.run` that answers as each build command.
-
-    - fails_at: the number of the command that fails, counted from 1, or None
-      when every command does its work.
-    - exit_code: the exit code of the command that fails.
-    - raises: the error to raise in place of that answer, or None.
-
-    The stand-in keeps each call in `calls`, as a pair of the command and the
-    keywords, so a test can read what the module ran, in which order, and with
-    which environment.
-    """
-    calls = []
-
-    def run(command, **keywords):
-        calls.append((list(command), keywords))
-        if fails_at is not None and len(calls) == fails_at:
-            if raises is not None:
-                raise raises
-            return subprocess.CompletedProcess(
-                list(command), exit_code, "", AN_ERROR_MESSAGE
-            )
-        return subprocess.CompletedProcess(
-            list(command), COMMAND_DID_ITS_WORK, "", ""
-        )
-
-    run.calls = calls
-    return run
 
 
 def a_clone(directory):
@@ -272,7 +255,11 @@ class TheRequirementsFileOfAnInstance(unittest.TestCase):
     """
 
     def test_it_finds_the_file_at_the_path_of_the_table(self):
-        """The clone already holds the file, so this asks for no network."""
+        """The clone already holds the file, so this asks for no network.
+
+        The answer is the RESOLVED path, because the gate reads that path and
+        a command must get the one the gate read.
+        """
         with tempfile.TemporaryDirectory() as directory:
             clone = a_clone(directory)
             wanted = clone / A_REQUIREMENTS_PATH
@@ -281,7 +268,7 @@ class TheRequirementsFileOfAnInstance(unittest.TestCase):
             found = requirements_file(
                 clone, A_REPO_WITH_A_REQUIREMENTS_FILE, A_REQUIREMENTS_TABLE
             )
-        self.assertEqual(found, wanted)
+            self.assertEqual(found, wanted.resolve())
 
     def test_it_finds_no_file_when_the_clone_does_not_hold_one(self):
         """A path of the table that the commit of the instance does not have."""
@@ -292,6 +279,62 @@ class TheRequirementsFileOfAnInstance(unittest.TestCase):
                 A_REQUIREMENTS_TABLE,
             )
         self.assertIsNone(found)
+
+
+class TheRequirementsPathThatLeavesTheClone(unittest.TestCase):
+    """Which paths of the published table can become a path of this machine.
+
+    `MAP_REPO_TO_REQS_PATHS` comes from the `swebench` package, and the driver
+    joins each path of it to the clone. A path such as `../../etc/hostname`
+    would thus read a file OUTSIDE the clone. So each path must stand inside
+    the clone, and `checked_clone_path` is the one gate that says so.
+    """
+
+    def bad_table(self, path):
+        """The table of paths of a repository, with one bad path in it.
+
+        - path: the path that leaves the clone.
+        """
+        return {A_REPO_WITH_A_REQUIREMENTS_FILE: [path]}
+
+    def test_it_refuses_a_path_that_leaves_the_clone(self):
+        """The clone is the one directory of an instance."""
+        for path in BAD_REQUIREMENTS_PATHS:
+            with self.subTest(path=path):
+                with tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaises(ClonePathError):
+                        requirements_file(
+                            a_clone(directory),
+                            A_REPO_WITH_A_REQUIREMENTS_FILE,
+                            self.bad_table(path),
+                        )
+
+    def test_the_refusal_names_the_path(self):
+        """A person corrects the condition only if the message names it."""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ClonePathError) as refusal:
+                requirements_file(
+                    a_clone(directory),
+                    A_REPO_WITH_A_REQUIREMENTS_FILE,
+                    self.bad_table(A_CLIMB),
+                )
+        self.assertIn(A_CLIMB, str(refusal.exception))
+
+    def test_the_build_refuses_it_too(self):
+        """`prepare_environment` is the door that a run goes through.
+
+        A gate that the run does not reach is not a gate.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ClonePathError):
+                prepare_environment(
+                    a_clone(directory),
+                    A_REPO_WITH_A_REQUIREMENTS_FILE,
+                    A_VERSION,
+                    specs=A_SPEC_TABLE,
+                    requirements_paths=self.bad_table(A_CLIMB),
+                    run=a_runner(),
+                )
 
 
 class TheCommandsOfTheBuild(unittest.TestCase):
@@ -436,7 +479,7 @@ class TheBuildOfAnEnvironment(unittest.TestCase):
         """A failed environment is not a failure of the agent."""
         with tempfile.TemporaryDirectory() as directory:
             report = a_build(
-                a_clone(directory), run=a_runner(fails_at=THE_SECOND_COMMAND)
+                a_clone(directory), run=a_failing_runner(THE_SECOND_COMMAND)
             )
         self.assertEqual(report.status, FAILED)
 
@@ -444,13 +487,13 @@ class TheBuildOfAnEnvironment(unittest.TestCase):
         """The record of the instance holds this code."""
         with tempfile.TemporaryDirectory() as directory:
             report = a_build(
-                a_clone(directory), run=a_runner(fails_at=THE_FIRST_COMMAND)
+                a_clone(directory), run=a_failing_runner(THE_FIRST_COMMAND)
             )
         self.assertEqual(report.exit_code, COMMAND_FAILED)
 
     def test_it_runs_no_command_after_the_one_that_failed(self):
         """Each command needs the environment that the command before made."""
-        run = a_runner(fails_at=THE_FIRST_COMMAND)
+        run = a_failing_runner(THE_FIRST_COMMAND)
         with tempfile.TemporaryDirectory() as directory:
             a_build(a_clone(directory), run=run)
         self.assertEqual(len(run.calls), 1)
@@ -459,7 +502,10 @@ class TheBuildOfAnEnvironment(unittest.TestCase):
         """Without it a person cannot tell one failed build from another."""
         with tempfile.TemporaryDirectory() as directory:
             report = a_build(
-                a_clone(directory), run=a_runner(fails_at=THE_FIRST_COMMAND)
+                a_clone(directory),
+                run=a_failing_runner(
+                    THE_FIRST_COMMAND, stderr=AN_ERROR_MESSAGE
+                ),
             )
         self.assertIn(AN_ERROR_MESSAGE, report.output)
 
@@ -468,16 +514,16 @@ class TheBuildOfAnEnvironment(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = a_build(
                 a_clone(directory),
-                run=a_runner(
-                    fails_at=THE_FIRST_COMMAND, raises=FileNotFoundError("uv")
+                run=a_failing_runner(
+                    THE_FIRST_COMMAND, raises=FileNotFoundError("uv")
                 ),
             )
         self.assertEqual(report.status, FAILED)
 
     def test_a_command_that_is_too_slow_is_a_failure(self):
         """The limit of time must end the build, and not the run."""
-        slow = a_runner(
-            fails_at=THE_FIRST_COMMAND,
+        slow = a_failing_runner(
+            THE_FIRST_COMMAND,
             raises=subprocess.TimeoutExpired(VENV_COMMAND, BUILD_SECONDS),
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -488,7 +534,7 @@ class TheBuildOfAnEnvironment(unittest.TestCase):
         """A reason without the command tells a reader nothing."""
         with tempfile.TemporaryDirectory() as directory:
             report = a_build(
-                a_clone(directory), run=a_runner(fails_at=THE_FIRST_COMMAND)
+                a_clone(directory), run=a_failing_runner(THE_FIRST_COMMAND)
             )
         self.assertIn(VENV_COMMAND[0], report.reason)
 

@@ -127,6 +127,17 @@ Each script has `--help`. These are the options you will use:
 Each script writes its messages to standard output, and it makes no log
 file. `| tee run.log` keeps a record of a long run.
 
+**A line is a message and its fields.** The message says what happened, and
+each value stands after a name of its own:
+
+```
+09:12:31 done instance=django__django-11099 number=3 of=5 files=2 added=14 removed=3 seconds=812
+```
+
+A person reads that line, and a machine reads it too:
+`grep instance=django__django-11099 run.log` gives the whole story of one
+instance.
+
 The agent uses local models. Read the memory conditions in the
 [README of the package](../README.md) first.
 
@@ -167,7 +178,7 @@ So `swebench_env.py` makes the environment of the agent:
 Each instance writes a log line with the Python that the agent gets:
 
 ```
-09:12:31 the environment of the agent -- python3: /usr/bin/python3 . PATH: ...
+09:12:31 the environment of the agent instance=django__django-11099 number=3 of=5 python3=/usr/bin/python3 PATH=...
 ```
 
 ## The environment of the instance
@@ -207,6 +218,19 @@ So `swebench_venv.py` does it now. For each instance it:
 
 Django builds in 12 seconds this way, and `./tests/runtests.py` then runs in
 the clone with no more work.
+
+**Each path of the published table stands in the clone.**
+`MAP_REPO_TO_REQS_PATHS` comes from the `swebench` package, and each path of it
+becomes a path of this machine. So `swebench_venv.py` has one gate,
+`checked_clone_path`, and every path goes through it. A path with a `..` part,
+or an absolute path, would name a file OUTSIDE the clone, and the step refuses
+it:
+
+```
+the path '../../etc/hostname' of the published table does not stand in the
+clone /var/folders/.../repo. A path of that table names a file OF the
+repository, so it is relative to the clone and it holds no `..` part.
+```
 
 ### What this machine cannot build
 
@@ -248,7 +272,8 @@ environment, and they read what the process can see. The tests of the
 prediction and of the record read the two rows that a run writes for each
 instance. The tests of docker and of the environment of an instance give the module a
 stand-in for `subprocess.run`, so they start no daemon, they make no virtual
-environment, and they give the same answer on each machine. All of them need the standard library only, so `python3` runs
+environment, and they give the same answer on each machine. That stand-in
+stands in `test_fixtures.py`, so there is one copy of it. All of them need the standard library only, so `python3` runs
 them with no help. The `bench` job of CI runs
 the discovery command on each push, so it finds a new `test_*.py` file with
 no change to the workflow.
@@ -417,6 +442,7 @@ only, because it becomes part of the path of the report.
 swebench_run.py              makes preds.jsonl with the agent — read it top to bottom
 swebench_score.py            gives the score of a preds.jsonl with docker
 swebench_common.py           the console and the log line the two scripts share
+swebench_event.py            the shape of one line: a message and its fields
 swebench_env.py              the clean environment that the process of the agent gets
 swebench_prediction.py       the prediction row that a run makes for one instance
 swebench_record.py           the record row that a run makes for one instance
@@ -429,6 +455,8 @@ test_swebench_record.py      the tests of that record row
 test_swebench_venv.py        the tests of that environment
 test_swebench_docker.py      the tests of that question to docker
 test_swebench_report.py      the tests of that report
+test_swebench_event.py       the tests of that line
+test_fixtures.py             the stand-in for subprocess.run that the tests share
 .gitignore                   keeps the run results out of git
 ```
 
