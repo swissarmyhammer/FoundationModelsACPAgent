@@ -83,12 +83,22 @@ class LeftOut:
     reason: str
 
 
-@dataclass(frozen=True)
+@dataclass
 class Selection:
     """The instances of a run, and the instances it left out.
 
     - instances: the rows the run does, in the order of the split.
     - left_out: one `LeftOut` for each instance the choice removed.
+
+    This record is not frozen, and `LeftOut` above is. A frozen record with
+    `__eq__` also gets a hash, and a hash must read every field and must stay
+    the same for the life of the record. The two fields here are lists, and
+    the rows in `instances` are dictionaries of the dataset, so no hash of
+    them can stand: a caller who puts a `Selection` in a set gets a
+    TypeError, although the type told the caller it could. Without `frozen`,
+    Python sets `__hash__` to None, the type gives the caller the true
+    answer, and `==` still compares the two lists. `LeftOut` holds two
+    strings, so it stays frozen and it keeps its hash.
     """
 
     instances: list

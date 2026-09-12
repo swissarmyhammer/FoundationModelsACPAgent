@@ -29,6 +29,7 @@ This test needs the standard library only, so both commands run it:
     python3 bench/test_swebench_select.py
 """
 import unittest
+from collections.abc import Hashable
 
 from swebench_select import (
     choose_instances,
@@ -141,6 +142,26 @@ def repositories_of(instances):
     for instance in instances:
         counts[instance["repo"]] = counts.get(instance["repo"], 0) + 1
     return counts
+
+
+class RecordTests(unittest.TestCase):
+    """The two records of the module, and what a caller can do with them."""
+
+    def test_a_selection_does_not_say_a_caller_can_hash_it(self):
+        """A `Selection` holds two lists, so it has no hash.
+
+        A caller asks a type whether it can hash a value, and it then puts the
+        value in a set or in a key. A record that answers yes, and then stops
+        the caller with a TypeError, gives a wrong answer to that question.
+        The lists hold rows of the dataset, and a person can change a list
+        after the record is made, so no hash of a `Selection` could stay the
+        same for the life of the record.
+        """
+        instances = [an_instance(A_REPOSITORY, A_VERSION_THAT_BUILDS, "a-1")]
+
+        selection = feasible_instances(instances, specs=SPECS)
+
+        self.assertNotIsInstance(selection, Hashable)
 
 
 class FeasibleTests(unittest.TestCase):
