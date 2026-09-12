@@ -182,8 +182,10 @@ python3 bench/test_swebench_prediction.py
 The tests of the environment start a real child process with that
 environment, and they read what the process can see. The tests of the
 prediction and of the record read the two rows that a run writes for each
-instance. All of them need the standard library only, so `python3` runs them
-with no help. The `bench` job of CI runs
+instance. The tests of docker give the module a stand-in for
+`subprocess.run`, so they start no daemon and they give the same answer on
+each machine. All of them need the standard library only, so `python3` runs
+them with no help. The `bench` job of CI runs
 the discovery command on each push, so it finds a new `test_*.py` file with
 no change to the workflow.
 
@@ -284,6 +286,46 @@ alone, with a clean build, before it reports.
 Each score run writes `preds.jsonl.score.<run id>.json` beside the
 predictions, with the resolved, unresolved and errored ids.
 
+### Docker must run, and the step proves it first
+
+**The score step asks the daemon before it does any other work.** A daemon
+that does not answer stops the step at once:
+
+```
+08:08:42 DOCKER_HOST -> unix:///Users/you/.docker/run/docker.sock
+docker does not answer. The score step needs a docker daemon that runs,
+because the SWE-bench harness builds an image for each instance.
+the endpoint it tried: unix:///Users/you/.docker/run/docker.sock
+start docker, and then give this command again.
+```
+
+The message names the endpoint, because that is the fact a person needs: a
+daemon that is stopped and an endpoint that is wrong read the same way
+without it.
+
+The question is `docker info`, and not `docker context inspect`. The context
+reads the configuration of docker, and it answers with a path although no
+daemon runs. The score run of 2026-09-11 asked the context, pointed at a
+socket that was not there, and wrote this:
+
+```json
+"submitted": 16, "evaluated": 0, "resolved": 0, "errored": [ ... all 16 ... ]
+```
+
+That report reads like a failure of the agent. Docker was the cause.
+
+**A run that evaluated no instance writes no report.** No file is better than
+a file that says `"resolved": 0` when the agent was never asked.
+
+### The exit codes of the score step
+
+| Code | What it means |
+|---|---|
+| 0 | a score was made, and the report is beside the predictions |
+| 2 | the predictions file is absent, or it holds no instance to score |
+| 3 | the docker daemon does not answer |
+| 4 | docker ran, and no instance was evaluated. There is no score |
+
 ## Files
 
 ```
@@ -293,9 +335,13 @@ swebench_common.py           the console and the log line the two scripts share
 swebench_env.py              the clean environment that the process of the agent gets
 swebench_prediction.py       the prediction row that a run makes for one instance
 swebench_record.py           the record row that a run makes for one instance
+swebench_docker.py           the question that the score step asks docker first
+swebench_report.py           the report that a score run writes, and when it does not
 test_swebench_env.py         the tests of that environment
 test_swebench_prediction.py  the tests of that prediction row
 test_swebench_record.py      the tests of that record row
+test_swebench_docker.py      the tests of that question to docker
+test_swebench_report.py      the tests of that report
 .gitignore                   keeps the run results out of git
 ```
 

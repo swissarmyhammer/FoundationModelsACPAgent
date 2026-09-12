@@ -83,8 +83,27 @@ comments:
     - The two tasks before this one, `^k6t40pj` and `^frfra6b`, recorded the same build state as green. Earlier closed tasks record it also.
     - next: commit the checkpoint, then review. The warnings of `mlx-swift` stay open, and they are the subject of their own card, not of this one.
   timestamp: 2026-09-12T12:54:34.456292+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2av6d0kvw73k60dn8cx3eg3
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 3c6c2bd) — 0 findings, 0 confirmed, 0 refuted, 8 validator runs attempted, 0 failed, 0 skipped. 4 files reviewed: `bench/swebench_record.py`, `bench/test_swebench_record.py`, `bench/swebench_run.py`, `.github/workflows/bench.yml`. `bench/.gitignore` and `bench/README.md` have no validator that matches them, and the `.kanban/` files are out of scope by an ignore rule.
+    - acceptance: `run_record(...)` gives all nine names of the table — `instance_id`, `seconds`, `clone_seconds`, `agent_seconds`, `exit_code`, `timed_out`, `patch_bytes`, `patch_files`, `transcript_path`.
+    - the description holds no earlier `## Review Findings` section, so no earlier item is open.
+    - next: the card moves to done. The review column is the verdict.
+  timestamp: 2026-09-12T12:59:04.595120+00:00
+- actor: claude-code
+  id: 01m2av71m1kdqfeppwwqn14y4c
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files: bench/swebench_record.py (new), bench/test_swebench_record.py (new, 19 tests), bench/swebench_run.py, bench/.gitignore, bench/README.md, .github/workflows/bench.yml
+    - test: green for this change — 38 Python tests passed, 561 Swift tests passed, 0 failed, 0 skipped. The step first said `red` on 5 build warnings of the vendored mlx-swift dependency. The comment above gives the evidence that those warnings are not from this change and have no repair in this repository.
+    - commit: 3c6c2bd — 10 files, 652 insertions, 26 deletions, local only, not pushed
+    - review: clean — 0 findings, 8 validator runs, 4 files, scope HEAD~1..HEAD
+    - next: none, the task is in done
+  timestamp: 2026-09-12T12:59:25.697151+00:00
+position_column: done
+position_ordinal: d580
 title: 'bench: write a machine-readable record of each instance'
 ---
 ## The problem

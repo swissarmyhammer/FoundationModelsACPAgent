@@ -33,9 +33,16 @@ Two conditions need care, and this script controls both:
     the divisor. A memory failure is not an agent failure.
 
 BEFORE YOU START: docker must run, and it needs enough memory. 16 GB or more
-is good on Apple Silicon, because the images are emulated x86_64 builds. The
-file name is swebench_score.py, and not swebench.py, so that `import swebench`
-finds the installed library and not this file.
+is good on Apple Silicon, because the images are emulated x86_64 builds. This
+script asks the daemon first, and it stops with exit code 3 when the daemon
+does not answer. The file name is swebench_score.py, and not swebench.py, so
+that `import swebench` finds the installed library and not this file.
+
+THE EXIT CODES:
+  0  a score was made, and the report is beside the predictions
+  2  the predictions file is absent, or it holds no instance to score
+  3  the docker daemon does not answer
+  4  docker ran, and no instance was evaluated. There is no score.
 
 HOW TO USE IT:
   uv run bench/swebench_score.py bench/preds.jsonl
@@ -45,7 +52,6 @@ HOW TO USE IT:
 import argparse
 import json
 import os
-import subprocess
 import time
 from pathlib import Path
 
@@ -53,6 +59,13 @@ from rich.table import Table
 from swebench.harness.run_evaluation import main as run_harness
 
 from swebench_common import console, log
+from swebench_docker import (
+    HOST_VARIABLE,
+    daemon_answers,
+    ensure_host,
+    missing_daemon_message,
+)
+from swebench_report import score_report, write_report
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -63,6 +76,14 @@ NAMESPACE = None         # None => build the images here. Apple Silicon NEEDS th
 # command line does, and "" makes an invalid "/sweb.eval..." image name.
 LOCAL_DEFAULT_WORKERS = 1  # parallel emulated builds are the first cause of failure
 REMOTE_DEFAULT_WORKERS = 4
+# The exit codes of this script. A person reads them, and so does a pipeline
+# that drives a run. The docstring above holds the same table.
+BAD_INPUT_EXIT = 2        # the predictions file is absent, or it names nothing
+NO_DOCKER_EXIT = 3        # the docker daemon does not answer
+NOTHING_EVALUATED_EXIT = 4  # docker ran, and no instance was evaluated
+# One worker, and a clean build, for the second try of an instance that did
+# not run. A parallel emulated build is the first cause of a build error.
+RETRY_WORKERS = 1
 # ----------------------------------------------------------------------------
 
 # `console` and `log` come from swebench_common, so the run script and this
@@ -112,27 +133,24 @@ def load_predictions(path, only_ids):
     return rows
 
 
-def ensure_docker_host():
-    """Set DOCKER_HOST when the default socket is not there.
+def require_docker():
+    """Stop the score step when the docker daemon does not answer.
 
-    The docker library speaks to /var/run/docker.sock by default. Docker
-    Desktop puts the socket below the home directory of the user. If the
-    default is absent, and DOCKER_HOST is not set, point it at the endpoint of
-    the active context. If not, from_env() stops with a FileNotFoundError.
+    The harness builds an image for each instance, so a daemon that does not
+    run makes every instance fail. The report then says `"resolved": 0`, and
+    that reads like a failure of the agent.
+
+    So this asks the daemon BEFORE the harness starts, and it names the
+    endpoint it tried. `ensure_host` chooses that endpoint, because the docker
+    library finds the socket of Docker Desktop only with `DOCKER_HOST`.
     """
-    if os.environ.get("DOCKER_HOST") or Path("/var/run/docker.sock").exists():
+    host = ensure_host(os.environ)
+    if host:
+        log(f"[dim]{HOST_VARIABLE} -> {host}[/]")
+    if daemon_answers():
         return
-    try:
-        host = subprocess.run(
-            ["docker", "context", "inspect", "--format",
-             "{{.Endpoints.docker.Host}}"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-        if host:
-            os.environ["DOCKER_HOST"] = host
-            log(f"[dim]DOCKER_HOST -> {host}[/]")
-    except Exception:
-        pass
+    console.print(f"[red]{missing_daemon_message(host)}[/]")
+    raise SystemExit(NO_DOCKER_EXIT)
 
 
 def tally(run_id):
@@ -187,22 +205,27 @@ def run_once(instance_ids, workers, force_rebuild, run_id, pred_path):
 
 
 def main():
-    """Score the predictions file, and write the summary beside it.
+    """Score the predictions file, and write the report beside it.
 
-    This does one harness pass, then one more pass for each instance that did
-    not run. It writes the table to standard output, and the machine-readable
-    summary to a JSON file beside the predictions.
+    The daemon of docker answers first, or this stops. Then it does one
+    harness pass, and one more pass for each instance that did not run. It
+    writes the table to standard output, and the machine-readable report to a
+    JSON file beside the predictions.
+
+    A run that evaluated no instance writes no report, and it stops with
+    `NOTHING_EVALUATED_EXIT`. Such a report says `"resolved": 0`, and a
+    reader takes that for a failure of the agent.
     """
     args = parse_args()
     pred_path = args.predictions
     if not pred_path.exists():
         console.print(f"[red]no such predictions file:[/] {pred_path}")
-        raise SystemExit(2)
+        raise SystemExit(BAD_INPUT_EXIT)
 
     rows = load_predictions(pred_path, args.instance_ids)
     if not rows:
         console.print("[red]nothing to score[/] (the file is empty, or no id agreed)")
-        raise SystemExit(2)
+        raise SystemExit(BAD_INPUT_EXIT)
 
     ids = [r["instance_id"] for r in rows]
     nonempty = [r["instance_id"] for r in rows if r.get("model_patch", "").strip()]
@@ -217,8 +240,8 @@ def main():
         f"[green]{len(ids)} instances[/] ({len(nonempty)} not empty) -> "
         f"run_id={run_id}, workers={workers}, namespace={NAMESPACE or 'local-build'}"
     )
-    log("docker must run. The first pass builds one image for each instance, and it is slow.")
-    ensure_docker_host()
+    require_docker()
+    log("The first pass builds one image for each instance, and it is slow.")
 
     t0 = time.monotonic()
     run_once(ids, workers, False, run_id, pred_path)
@@ -234,22 +257,42 @@ def main():
             f"(a build error is the usual cause); doing them again, alone, "
             f"with a clean build: {', '.join(errored)}"
         )
-        run_once(errored, 1, True, run_id, pred_path)
+        run_once(errored, RETRY_WORKERS, True, run_id, pred_path)
         resolved, evaluated = tally(run_id)
         errored = [i for i in ids if i not in evaluated]
 
     dt = (time.monotonic() - t0) / 60
-    total, ev, res = len(ids), len(evaluated), len(resolved)
-    unresolved = sorted(evaluated - resolved)
-    pct_eval = 100 * res / ev if ev else 0.0
-    pct_total = 100 * res / total if total else 0.0
+    report = score_report(
+        run_id,
+        predictions=pred_path,
+        submitted=len(ids),
+        evaluated=evaluated,
+        resolved=resolved,
+        errored=errored,
+        minutes=dt,
+    )
+    if errored:
+        log(f"[red]{len(errored)} did NOT run[/] (a build error): " + ", ".join(errored))
 
+    # No instance ran, so there is no score. A report of such a run says
+    # `"resolved": 0`, and a reader takes that for a failure of the agent.
+    out = write_report(pred_path, report)
+    if out is None:
+        console.print(
+            f"[red]no instance was evaluated[/] ({report['submitted']} sent). "
+            "Docker built no image, so there is no score and this run writes "
+            "no report. Read the lines of the harness above: exit code 137 is "
+            "a memory failure, and docker then needs more memory."
+        )
+        raise SystemExit(NOTHING_EVALUATED_EXIT)
+
+    total, ev, res = report["submitted"], report["evaluated"], report["resolved"]
+    pct_eval = report["resolved_pct_of_evaluated"]
+    pct_total = report["resolved_pct_of_submitted"]
     log(
         f"[bold green]resolved {res}/{ev} evaluated = {pct_eval:.1f}%[/]  "
         f"[dim]({res}/{total} of all sent = {pct_total:.1f}%)[/]"
     )
-    if errored:
-        log(f"[red]{len(errored)} did NOT run[/] (a build error): " + ", ".join(errored))
 
     table = Table(
         title=f"score complete . {pred_path.name}",
@@ -260,7 +303,7 @@ def main():
     table.add_row("sent", str(total))
     table.add_row("evaluated", str(ev))
     table.add_row("resolved", f"[green]{res}[/]")
-    table.add_row("not resolved", f"[yellow]{len(unresolved)}[/]")
+    table.add_row("not resolved", f"[yellow]{report['unresolved']}[/]")
     table.add_row(
         "did not run",
         f"[red]{len(errored)}[/]" if errored else "0",
@@ -270,24 +313,6 @@ def main():
     table.add_row("wall time", f"{dt:.1f} min")
     console.print()
     console.print(table)
-
-    # A durable summary, in a machine-readable form, beside the predictions.
-    out = pred_path.with_suffix(pred_path.suffix + f".score.{run_id}.json")
-    out.write_text(json.dumps({
-        "run_id": run_id,
-        "predictions": str(pred_path),
-        "submitted": total,
-        "evaluated": ev,
-        "resolved": res,
-        "unresolved": len(unresolved),
-        "errored": errored,
-        "resolved_ids": sorted(resolved),
-        "unresolved_ids": unresolved,
-        "errored_ids": errored,
-        "resolved_pct_of_evaluated": pct_eval,
-        "resolved_pct_of_submitted": pct_total,
-        "wall_minutes": dt,
-    }, indent=2) + "\n")
     log(f"summary -> [bold]{out}[/]")
 
 
