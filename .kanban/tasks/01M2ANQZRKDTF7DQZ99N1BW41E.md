@@ -1,8 +1,90 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+comments:
+- actor: claude-code
+  id: 01m2asg7e2h7mdh2ctwem04tjv
+  text: |-
+    Picked up. Research of the tree before the work:
+
+    - `bench/swebench_run.py` writes the prediction row with `prediction_row(...)` from `bench/swebench_prediction.py`, and it flushes after each row. The duration, the exit code and the shape of the patch go to the output alone.
+    - The loop keeps `t0 = time.monotonic()` for the whole instance, but it times no step. The clone step and the agent step need their own clocks.
+    - `stream_agent(...)` gives `(returncode, timed_out)`. The loop drops the return code today: it writes `_, timed_out = ...`.
+    - `keep_transcripts(...)` gives the destination of the transcripts, or None. It runs in the `finally` block, AFTER the prediction row is written. The record of an instance must therefore be written in the `finally` block, so that it can name the transcripts and so that an instance that raised also gets a row.
+    - `patch_stats(...)` in `swebench_run.py` already counts the files of a diff, for the log line. The new module must not make a second copy of that count.
+    - The `.gitignore` of `bench/` holds `preds*.jsonl`, which covers `preds.runs.jsonl` but not the runs file of another stem. The new name needs its own entry.
+    - The sibling modules `swebench_env.py` and `swebench_prediction.py` give the shape to follow: no PEP 723 block, the standard library only, a module docstring that says why the module is there, and a `bench/test_*.py` beside it that runs under both `uv run` and `python3`.
+  timestamp: 2026-09-12T12:29:29.410322+00:00
+- actor: claude-code
+  id: 01m2at7kpytx7rcyecnyqzfeem
+  text: |-
+    The work landed. TDD: the test file came first, and it failed with `ModuleNotFoundError: No module named 'swebench_record'`. The module then made the 19 tests green.
+
+    What the change holds:
+
+    - `bench/swebench_record.py` is new. `run_record(...)` makes the row with the nine names of the table, `runs_path(...)` names the file beside the predictions, `patch_file_count(...)` counts the files of a diff, `seconds_of(...)` rounds one duration to milliseconds, and `append_row(...)` writes one JSON line and flushes it.
+    - `bench/test_swebench_record.py` is new, with 19 tests. The flush test reads the file while the stream is still OPEN, which is the real proof that a run that stops in the middle keeps the rows of the instances that are complete.
+    - `bench/swebench_run.py` times the clone step and the agent step with their own clocks, and it keeps the exit code that `stream_agent` gives. It dropped that code before: the line read `_, timed_out = ...`.
+    - The record of an instance is written in the `finally` block, AFTER `keep_transcripts`. That is what lets the row name the transcripts, and it is what gives a row to an instance that raised.
+    - The prediction row now goes through `append_row` too. The two writes were the same three lines, and one function now owns them.
+    - `patch_stats(...)` calls `patch_file_count(...)`, so there is one count of the files of a diff and not two.
+    - `*.runs.jsonl` is in the `.gitignore` of `bench/`. `preds*.jsonl` covered the default stem alone.
+    - The README of `bench/`, the docstring of `swebench_run.py` and the comment of `.github/workflows/bench.yml` name the new file and the new module.
+
+    Decisions a later reader must know:
+
+    - **Each row carries all nine names, in all conditions.** A step that did not run gives `null`. The prediction row adds `truncated` only when it is true, because an old row of the predictions file must keep its shape for the official harness. The record file has no such reader, so a fixed shape is better there: `[]` works on each row.
+    - **`patch_bytes` counts UTF-8 bytes**, and not characters. The predictions file is JSON, and JSON is UTF-8.
+    - **The match of the file header of a diff reads the case.** `git diff` writes `diff --git` in lower case in all conditions, so the word in upper case is content of the patch. A match without case would count it, and the count of files would then be too high. One test holds this.
+    - **`--force` writes over both files.** It does every instance again, so a record file of the earlier run would not agree with the predictions.
+
+    Evidence of a REAL run, with a stub agent that sleeps 2 seconds and exits 3, over two instances of `psf/requests`:
+
+    ```
+    {"instance_id": "psf__requests-2317", "seconds": 4.185, "clone_seconds": 2.121,
+     "agent_seconds": 2.025, "exit_code": 3, "timed_out": false, "patch_bytes": 0,
+     "patch_files": 0, "transcript_path": null}
+    {"instance_id": "psf__requests-1963", "seconds": 4.236, "clone_seconds": 2.102,
+     "agent_seconds": 2.041, "exit_code": 3, "timed_out": false, "patch_bytes": 0,
+     "patch_files": 0, "transcript_path": null}
+    ```
+
+    Two instances, two rows. `agent_seconds` agrees with the `sleep 2` of the stub, and `clone_seconds` agrees with the real clone.
+
+    The same run at `--timeout 1`, so that the watchdog stops the agent:
+
+    ```
+    {"instance_id": "psf__requests-2317", "seconds": 2.484, "clone_seconds": 1.428,
+     "agent_seconds": 1.015, "exit_code": -15, "timed_out": true, "patch_bytes": 0,
+     "patch_files": 0, "transcript_path": null}
+    ```
+
+    `-15` is SIGTERM, which is what the watchdog sends.
+
+    `git check-ignore -v` answers `bench/.gitignore:4:*.runs.jsonl` for `bench/preds.runs.jsonl` and for `bench/other.runs.jsonl`, so a record file of any stem stays out of git.
+
+    Tests: `python3 -m unittest discover --start-directory bench --pattern 'test_*.py'` gives 38 tests, 0 failures, 0 warnings. The count was 19 before this change.
+  timestamp: 2026-09-12T12:42:15.646760+00:00
+- actor: claude-code
+  id: 01m2at7q9zfhdcepysm2f35xc1
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — bench/swebench_record.py (new), bench/test_swebench_record.py (new, 19 tests), bench/swebench_run.py, bench/.gitignore, bench/README.md, .github/workflows/bench.yml. Tests: 38 pass, 0 failures, 0 warnings. A real run of two instances wrote two rows with the correct durations.
+    - next: /review
+  timestamp: 2026-09-12T12:42:19.327600+00:00
+- actor: claude-code
+  id: 01m2aty56rysgwfthqje8m5pep
+  text: |-
+    ### test — green for this change, with one qualification
+    - evidence: python3 -m unittest discover --start-directory bench — 38 passed, 0 failed, 0 skipped, 0 warnings. swift test — 561 passed in 60 suites, 0 failed, 0 skipped.
+    - the test step first reported `red`. The cause was 5 build warnings: 4 `constexpr if is a C++17 extension` in `.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/`, and 1 `missing creator for mutated node` for `mlx-swift_Cmlx.bundle`.
+    - I checked this against the tree. `git status --porcelain` shows no `.swift` file, no `Package.swift` and no `Package.resolved` in the change. The change touches `bench/*.py`, `bench/.gitignore`, `bench/README.md` and `.github/workflows/bench.yml` only. A Swift build warning thus cannot come from this change.
+    - The 5 warnings are in `.build/checkouts/mlx-swift`, which is third-party code that this repository does not hold. The test step looked for a repair: `mlx-swift` is at 0.31.6, which is the most recent version, and `Package.swift` cannot change the build settings of a target in a dependency. There is no repair in this repository.
+    - The two tasks before this one, `^k6t40pj` and `^frfra6b`, recorded the same build state as green. Earlier closed tasks record it also.
+    - next: commit the checkpoint, then review. The warnings of `mlx-swift` stay open, and they are the subject of their own card, not of this one.
+  timestamp: 2026-09-12T12:54:34.456292+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'bench: write a machine-readable record of each instance'
 ---
 ## The problem

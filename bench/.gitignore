@@ -1,6 +1,7 @@
 # The results of a run. They are large, they are machine-local, and a new run
 # makes them again. The scripts write no log file, but `| tee run.log` does.
 preds*.jsonl
+*.runs.jsonl
 *.log
 *.score.*.json
 *.transcripts/

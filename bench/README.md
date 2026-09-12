@@ -40,9 +40,13 @@ uv run bench/swebench_score.py bench/preds.jsonl
 pins. There is nothing to install by hand.
 
 **Write the results into `bench/`.** The `.gitignore` of this directory keeps
-`preds*.jsonl`, `*.log`, the score reports, `*.transcripts/` and `logs/` out of
-git. A results file at the root of the package is not ignored, and it makes
-the working tree dirty.
+`preds*.jsonl`, `*.runs.jsonl`, `*.log`, the score reports, `*.transcripts/`
+and `logs/` out of git. A results file at the root of the package is not
+ignored, and it makes the working tree dirty.
+
+**Each run records what each instance cost.** Beside the predictions, the run
+writes `bench/preds.runs.jsonl` with one row for each instance. Read
+[The record of a run](#the-record-of-a-run).
 
 **Each instance keeps its agent transcripts.** The agent writes its session
 transcripts into the temporary repository, and the run removes that
@@ -177,8 +181,9 @@ python3 bench/test_swebench_prediction.py
 
 The tests of the environment start a real child process with that
 environment, and they read what the process can see. The tests of the
-prediction read the row that a run records. All of them need the standard
-library only, so `python3` runs them with no help. The `bench` job of CI runs
+prediction and of the record read the two rows that a run writes for each
+instance. All of them need the standard library only, so `python3` runs them
+with no help. The `bench` job of CI runs
 the discovery command on each push, so it finds a new `test_*.py` file with
 no change to the workflow.
 
@@ -227,6 +232,46 @@ Two notes for a reader of the file:
 * The summary of a run still counts the instances that went past the limit.
   The count is the `too slow` line of the table.
 
+## The record of a run
+
+A run writes `bench/preds.runs.jsonl` beside the predictions, with one row for
+each instance it did. The predictions file says WHAT the agent made. This file
+says what the instance COST.
+
+```json
+{"instance_id": "astropy__astropy-14182", "seconds": 3612.4, "clone_seconds": 24.1,
+ "agent_seconds": 3584.2, "exit_code": -9, "timed_out": true, "patch_bytes": 1842,
+ "patch_files": 2, "transcript_path": "bench/preds.transcripts/astropy__astropy-14182"}
+```
+
+| Field | What it is |
+|---|---|
+| `instance_id` | the instance |
+| `seconds` | the wall time of the instance |
+| `clone_seconds` | the time of the clone and the checkout |
+| `agent_seconds` | the time of the agent process |
+| `exit_code` | the exit code of the agent |
+| `timed_out` | whether the watchdog stopped it |
+| `patch_bytes` | the size of the patch |
+| `patch_files` | the count of files in the patch |
+| `transcript_path` | where the transcripts are |
+
+Three notes for a reader of the file:
+
+* **Each row carries all nine names.** A step that did not run gives `null`.
+  An instance that failed in the clone thus has `null` for `clone_seconds`,
+  `agent_seconds` and `exit_code`, and its row still has the same shape as
+  every other row.
+* **A row goes to disk when its instance ends.** A run of many hours can stop
+  at any instance, and the rows of the instances that are complete stay.
+* **An instance that failed also gets a row.** The count of the instances in
+  this file is thus the count of the instances the run did.
+
+Before this file, the durations went to standard output alone, and a run kept
+them only if you added `| tee`. The run of 2026-09-11 kept no log, and to find
+why the instances were slow all of the time data had to be built again from
+the transcripts.
+
 ## What the score means
 
 The score is **resolved / evaluated**, and not resolved / sent.
@@ -246,9 +291,11 @@ swebench_run.py              makes preds.jsonl with the agent — read it top to
 swebench_score.py            gives the score of a preds.jsonl with docker
 swebench_common.py           the console and the log line the two scripts share
 swebench_env.py              the clean environment that the process of the agent gets
-swebench_prediction.py       the row that a run records for one instance
+swebench_prediction.py       the prediction row that a run makes for one instance
+swebench_record.py           the record row that a run makes for one instance
 test_swebench_env.py         the tests of that environment
-test_swebench_prediction.py  the tests of that row
+test_swebench_prediction.py  the tests of that prediction row
+test_swebench_record.py      the tests of that record row
 .gitignore                   keeps the run results out of git
 ```
 

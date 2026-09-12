@@ -99,8 +99,25 @@ comments:
     - evidence: 5 files — bench/swebench_prediction.py (new), bench/test_swebench_prediction.py (new), bench/swebench_run.py, bench/README.md, .github/workflows/bench.yml. `python3 -m unittest discover --start-directory bench --pattern 'test_*.py'` gives 19 tests, 0 failures, 0 warnings.
     - next: /review
   timestamp: 2026-09-12T12:18:27.274599+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2asbwd7evvctn56aj3q4j72
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit d3228b5). 8 validator runs, 0 failed, 0 skipped. 0 findings, 0 confirmed, 0 refuted. 4 files reviewed. `bench/README.md` had no validator that matches it, and the 4 `.kanban/` files are excluded by `.reviewignore`. The description holds no earlier `## Review Findings` section, so no earlier item is open.
+    - next: the task moves to `done`. The column is the verdict.
+  timestamp: 2026-09-12T12:27:07.047792+00:00
+- actor: claude-code
+  id: 01m2ascexcrh9k0pwrdx7wq82c
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files: bench/swebench_prediction.py (new), bench/test_swebench_prediction.py (new), bench/swebench_run.py, bench/README.md, .github/workflows/bench.yml
+    - test: green — swift test 561 passed in 60 suites, 0 failed, 0 skipped; python3 -m unittest discover --start-directory bench 19 passed
+    - commit: d3228b5 — 9 files, local only, not pushed
+    - review: clean — 0 findings, 8 validator runs, 4 files, scope HEAD~1..HEAD
+    - next: none, the task is in done
+  timestamp: 2026-09-12T12:27:25.996756+00:00
+position_column: done
+position_ordinal: d480
 title: 'bench: keep the patch when the watchdog stops an instance'
 ---
 ## The problem

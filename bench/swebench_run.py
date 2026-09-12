@@ -59,6 +59,12 @@ repository is removed when the instance ends. So this script copies the
 transcripts out first, into `<preds stem>.transcripts/<instance_id>/` beside
 the predictions file. Read them to see what the model did in each round.
 
+Each instance also gets one row in `<preds stem>.runs.jsonl`, beside the
+predictions. That row says how long the instance took, how long the clone and
+the agent each took, how the agent stopped, and how large the patch is. The
+run of 2026-09-11 kept no log, and all of that data had to be built again from
+the transcripts. `swebench_record.py` makes the row, and it says why.
+
 ==============================================================================
 BEFORE YOU START
 ==============================================================================
@@ -100,6 +106,7 @@ from rich.table import Table
 from swebench_common import console, log
 from swebench_env import agent_environment, environment_summary
 from swebench_prediction import prediction_row
+from swebench_record import append_row, patch_file_count, run_record, runs_path
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -279,9 +286,13 @@ def stream_agent(cmd, cwd, prompt, timeout):
 
 
 def patch_stats(patch):
-    """(files, added, removed) of a unified diff, for the log line."""
+    """(files, added, removed) of a unified diff, for the log line.
+
+    `swebench_record.py` counts the files, because the record of an instance
+    carries that count too. One count answers both, so the two cannot drift.
+    """
     lines = patch.splitlines()
-    files = sum(1 for ln in lines if ln.startswith("diff --git "))
+    files = patch_file_count(patch)
     added = sum(1 for ln in lines if ln.startswith("+") and not ln.startswith("+++"))
     removed = sum(1 for ln in lines if ln.startswith("-") and not ln.startswith("---"))
     return files, added, removed
@@ -368,13 +379,17 @@ log(
     f"[green]{len(instances)} instances[/] ({len(instances) - len(done)} to do) "
     f"-> [bold]{outpath}[/]"
 )
+log(f"the record of each instance -> [bold]{runs_path(outpath)}[/]")
 
 counts = {"patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0}
 t_all = time.monotonic()
 
-# The file is appended, and not written over, unless --force. The predictions
-# file is what says which instances are done.
-with outpath.open("w" if args.force else "a") as out:
+# Both files are appended, and not written over, unless --force. The
+# predictions file is what says which instances are done, and the record file
+# says what each instance cost. `--force` does every instance again, so both
+# files start again with it.
+with outpath.open("w" if args.force else "a") as out, \
+        runs_path(outpath).open("w" if args.force else "a") as runs:
     for n, inst in enumerate(instances, 1):
         instance_id = inst["instance_id"]
         repo_name = inst["repo"]
@@ -384,9 +399,19 @@ with outpath.open("w" if args.force else "a") as out:
             log(f"{prefix} [dim]done already, and not done again[/]")
             continue
         work = None
+        # What the record of this instance holds. Each name keeps the value
+        # of a step that did NOT run, so an instance that fails in the clone
+        # still writes a whole row.
+        kept = None
+        clone_seconds = None
+        agent_seconds = None
+        exit_code = None
+        timed_out = False
+        patch = ""
         t0 = time.monotonic()
         try:
             # 1. SET UP the buggy repository, at the commit before the fix.
+            t_clone = time.monotonic()
             log(f"{prefix} cloning {repo_name}")
             # resolve(): on macOS mkdtemp gives a path below /var/folders,
             # and /var is a symbolic link to /private/var. The agent puts a
@@ -409,6 +434,7 @@ with outpath.open("w" if args.force else "a") as out:
                 ["git", "-C", str(repo), "clean", "-fdx", "--quiet"],
                 check=True, capture_output=True,
             )
+            clone_seconds = time.monotonic() - t_clone
 
             # 2. RUN THE AGENT in that repository. The prompt is the problem
             #    statement, and nothing more. `-` makes the agent read the
@@ -419,7 +445,11 @@ with outpath.open("w" if args.force else "a") as out:
             cmd = [str(AGENT), "run", "-", "--cwd", str(repo)]
             if args.verbose:
                 cmd.append("--verbose")
-            _, timed_out = stream_agent(cmd, str(repo), problem, args.timeout)
+            t_agent = time.monotonic()
+            exit_code, timed_out = stream_agent(
+                cmd, str(repo), problem, args.timeout
+            )
+            agent_seconds = time.monotonic() - t_agent
 
             # 3. GET the source diff, against the clean base commit. The row
             #    KEEPS that diff in all conditions. An agent that the watchdog
@@ -428,14 +458,12 @@ with outpath.open("w" if args.force else "a") as out:
             #    durable record of the run. `swebench_prediction.py` says why.
             patch = capture_patch(str(repo), inst["base_commit"])
 
-            out.write(
-                json.dumps(
-                    prediction_row(
-                        instance_id, MODEL_NAME, patch, truncated=timed_out
-                    )
-                ) + "\n"
+            append_row(
+                out,
+                prediction_row(
+                    instance_id, MODEL_NAME, patch, truncated=timed_out
+                ),
             )
-            out.flush()
 
             dt = time.monotonic() - t0
             files, added, removed = patch_stats(patch)
@@ -466,6 +494,24 @@ with outpath.open("w" if args.force else "a") as out:
                 except OSError as exc:
                     log(f"{prefix} [yellow]transcripts not kept[/]: {exc}")
                 shutil.rmtree(work, ignore_errors=True)
+            # The record of the instance goes last, so that it can name the
+            # transcripts. This runs for a finished agent, a stopped agent
+            # and a failed step alike, and `append_row` flushes it. A run
+            # that stops here thus keeps the record of every instance that
+            # is complete.
+            append_row(
+                runs,
+                run_record(
+                    instance_id,
+                    seconds=time.monotonic() - t0,
+                    clone_seconds=clone_seconds,
+                    agent_seconds=agent_seconds,
+                    exit_code=exit_code,
+                    timed_out=timed_out,
+                    patch=patch,
+                    transcript_path=kept,
+                ),
+            )
 
 # --- the summary ------------------------------------------------------------
 total_dt = time.monotonic() - t_all
@@ -492,6 +538,7 @@ table.add_row("too slow", f"[red]{counts['timeouts']}[/]" if counts["timeouts"] 
 table.add_row("errors", f"[red]{counts['errors']}[/]" if counts["errors"] else "0")
 table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))
+table.add_row("record", str(runs_path(outpath)))
 table.add_row("next", f"uv run bench/swebench_score.py {outpath}")
 table.add_row("wall time", f"{total_dt / 60:.1f} min")
 console.print()

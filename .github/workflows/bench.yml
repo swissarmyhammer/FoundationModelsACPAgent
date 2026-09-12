@@ -3,8 +3,9 @@ name: Bench
 # The tests of the Python harness below `bench/`.
 #
 # `bench/swebench_run.py` drives SWE-bench, `bench/swebench_env.py` makes the
-# environment that the process of the agent gets, and
-# `bench/swebench_prediction.py` makes the row that a run records. A defect
+# environment that the process of the agent gets,
+# `bench/swebench_prediction.py` makes the prediction row of an instance, and
+# `bench/swebench_record.py` makes the record row of an instance. A defect
 # there costs a whole drive of the dataset, and no Swift target reads that
 # code. So the tests of the harness have a job of their own here. A test
 # target that no CI task runs gives no protection.
