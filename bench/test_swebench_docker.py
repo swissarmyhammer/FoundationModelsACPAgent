@@ -11,7 +11,9 @@ the score step started, every instance failed, and the report said:
 
     "submitted": 16, "evaluated": 0, "resolved": 0, "errored": [ ... all 16 ... ]
 
-That report reads like a failure of the agent, and docker was the cause.
+That report reads like a failure of the agent, and docker was the cause. That
+file also shows the older shape of the report: it holds the ids at `errored`.
+`swebench_report.py` writes a count there now.
 
 These tests hold the new behaviour. The score step asks the DAEMON with
 `docker info`, and not the context. A daemon that does not answer stops the

@@ -493,7 +493,44 @@ agent failure. The score script does each such instance one more time,
 alone, with a clean build, before it reports.
 
 Each score run writes `preds.jsonl.score.<run id>.json` beside the
-predictions, with the resolved, unresolved and errored ids.
+predictions.
+
+### What a score report holds
+
+```json
+{"run_id": "score_20260912_090000", "predictions": "bench/preds.jsonl",
+ "submitted": 3, "evaluated": 2, "resolved": 1, "unresolved": 1, "errored": 1,
+ "resolved_ids": ["django__django-10914"],
+ "unresolved_ids": ["psf__requests-2317"],
+ "errored_ids": ["astropy__astropy-14182"],
+ "resolved_pct_of_evaluated": 50.0, "resolved_pct_of_submitted": 33.3,
+ "wall_minutes": 12.5}
+```
+
+| Field | What it is |
+|---|---|
+| `run_id` | the run id of the harness |
+| `predictions` | the predictions file that the run scored |
+| `submitted` | how many instances the run sent to the harness |
+| `evaluated` | how many instances ran |
+| `resolved` | how many instances passed their tests |
+| `unresolved` | how many instances ran and did not pass |
+| `errored` | how many instances did not run |
+| `resolved_ids` | the ids of the instances that passed |
+| `unresolved_ids` | the ids of the instances that ran and did not pass |
+| `errored_ids` | the ids of the instances that did not run |
+| `resolved_pct_of_evaluated` | the score: resolved of evaluated |
+| `resolved_pct_of_submitted` | resolved of sent |
+| `wall_minutes` | the wall time of the run |
+
+**Each group gives a count, and the ids of a group stand in the `_ids` name
+of that group.** A reader thus reads the four groups the same way.
+
+**A report of a run before 2026-09-12 holds a LIST at `errored`.** Those
+reports gave the ids there, and the same ids again at `errored_ids`, so a
+reader who took `errored` for a count got a list. If you hold such a file,
+read `errored_ids` for the ids, and count them for the number. No step of
+this harness reads `errored`, so no other name of an older report changed.
 
 ### Docker must run, and the step proves it first
 
@@ -522,6 +559,9 @@ socket that was not there, and wrote this:
 ```
 
 That report reads like a failure of the agent. Docker was the cause.
+
+That file also shows the older shape: `errored` holds the ids in it. A run of
+today writes a count there, and the ids at `errored_ids`.
 
 **A run that evaluated no instance writes no report.** No file is better than
 a file that says `"resolved": 0` when the agent was never asked.

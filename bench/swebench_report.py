@@ -5,7 +5,7 @@ swebench_report.py -- the report that a score run writes beside the patches.
 writes this report to a file. The table is for a person, and the report is the
 durable record: a person quotes the number in it weeks later.
 
-So the report follows three rules.
+So the report follows four rules.
 
   * **The score is resolved / EVALUATED.** An instance that did not run,
     because docker could not build its image, stays out of the divisor. A
@@ -21,6 +21,13 @@ So the report follows three rules.
     file. A run id such as `../../etc/hostname` would put that file outside
     the directory of the predictions. So `checked_run_id` refuses a run id
     that is not a NAME, and each function that takes a run id calls it.
+  * **Each group gives a count, and the ids stand in the `_ids` names.** The
+    report gave a LIST at `errored` before 2026-09-12, and a count at each of
+    the three groups beside it. A reader who took `errored` for a count, as
+    `unresolved` beside it is a count, got a list. So `errored` is the count
+    of the instances that did not run, and `errored_ids` holds their ids
+    alone. A report of an older run still holds a list at `errored`, and
+    `bench/README.md` says so.
 
 This module has no PEP 723 block, for the reason `swebench_common.py` gives:
 `uv run --script` reads the block of the script it starts, and not the block
@@ -126,9 +133,11 @@ def score_report(run_id, *, predictions, submitted, evaluated, resolved,
     - errored: the ids of the instances that did not run.
     - minutes: the wall time of the run.
 
-    The report holds the counts and the ids of each group, so that a reader
-    can find the instances again. The first percentage is the honest score:
-    an instance that did not run is not in its divisor.
+    Each group gives a COUNT at its own name -- `evaluated`, `resolved`,
+    `unresolved`, `errored` -- and the ids of a group stand in the `_ids`
+    name of that group. A reader thus reads each group the same way, and
+    can still find the instances again. The first percentage is the honest
+    score: an instance that did not run is not in its divisor.
 
     A run id that is not a name is refused here too, because `write_report`
     reads the run id back out of the report to make the path of the file.
@@ -143,7 +152,7 @@ def score_report(run_id, *, predictions, submitted, evaluated, resolved,
         "evaluated": len(set(evaluated)),
         "resolved": len(resolved_ids),
         "unresolved": len(unresolved_ids),
-        "errored": errored_ids,
+        "errored": len(errored_ids),
         "resolved_ids": resolved_ids,
         "unresolved_ids": unresolved_ids,
         "errored_ids": errored_ids,

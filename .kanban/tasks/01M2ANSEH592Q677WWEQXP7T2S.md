@@ -103,10 +103,44 @@ comments:
     - evidence: 2 files — bench/swebench_select.py (`Selection` is `@dataclass` now, not `@dataclass(frozen=True)`, and its docstring says why it differs from `LeftOut`), bench/test_swebench_select.py (the new class `RecordTests` with `test_a_selection_does_not_say_a_caller_can_hash_it`, and the import of `collections.abc.Hashable`). The test FAILED against the code before the repair. `python3 -m unittest discover --start-directory bench --pattern 'test_*.py'`: 179 tests, 0 failures. `ruff check bench`: all checks passed. The one finding of the card is `- [x]`.
     - next: /review
   timestamp: 2026-09-12T15:46:18.820414+00:00
+- actor: claude-code
+  id: 01m2b50ja3rkbcxwggxm104yan
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD`, 0 findings, 0 confirmed, 0 refuted, 8 validator runs, 0 failed. The one finding of iteration 1 is `- [x]`. The card moves to `done`.
+    - next: none
+
+    The repair of `bench/swebench_select.py` satisfies the rule
+    `python/hashing-and-equality`. `Selection` is `@dataclass` now. With `eq` true
+    and `frozen` false, Python sets `__hash__` to None, so the type tells a caller
+    the truth and no call raises TypeError at run time. The two reasons the
+    implementer gave for the other two repairs are correct:
+
+    - `dataclass()` has the arguments `eq`, `frozen` and `unsafe_hash`, and no
+      argument `hash`. The first repair is thus not possible.
+    - The `instances` field holds rows of the dataset, and a row is a dictionary.
+      A tuple of dictionaries has no hash, so the second repair does not make the
+      record hashable.
+
+    `LeftOut` keeps `frozen=True`, and this is correct: its two fields are
+    strings, so its hash is stable. The new docstring of `Selection` tells the
+    next reader why the two records differ.
+  timestamp: 2026-09-12T15:50:39.171915+00:00
+- actor: claude-code
+  id: 01m2b51sj7bav2zwy6xyxkrqzn
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files: bench/swebench_select.py (`Selection` is a plain dataclass now), bench/test_swebench_select.py (one new test, watched red first)
+    - test: green — 179 Python tests passed, 561 Swift tests passed, 0 failed, 0 skipped. ruff check bench clean.
+    - commit: e820f954 — 4 files, local only, not pushed
+    - review: clean — 0 findings, 8 validator runs, 2 files, scope HEAD~1..HEAD
+    - the review confirms the repair and the two reasons to refuse the other repairs the rule named: `dataclass()` takes no `hash` argument, and a tuple of dataset rows is still a tuple of dictionaries, which no hash can read.
+    - next: none, the task is in done
+  timestamp: 2026-09-12T15:51:19.367313+00:00
 depends_on:
 - 01M2ANS2RQV9D4E4MPXM3FDCVH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d980
 title: 'bench: choose the instances that can run, and choose them fairly'
 ---
 ## The problem

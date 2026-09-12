@@ -13,7 +13,9 @@ failed, and the report said:
 
     "submitted": 16, "evaluated": 0, "resolved": 0, "errored": [ ... all 16 ... ]
 
-That report reads like a failure of the agent. Docker was the cause.
+That report reads like a failure of the agent. Docker was the cause. That
+file also shows the older shape of the report: it holds the ids at `errored`.
+`swebench_report.py` writes a count there now.
 
 So this module asks the DAEMON. `docker info` speaks to the daemon, and its
 exit code is the answer. On the machine of that run, with the daemon stopped,

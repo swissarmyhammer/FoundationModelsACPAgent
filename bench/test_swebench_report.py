@@ -8,7 +8,7 @@ test_swebench_report.py -- the proof that the score report says the truth.
 The report of a score run is the number that a person quotes. So it must say
 what the agent did, and it must not say anything else.
 
-Three rules hold that, and these tests hold the three rules:
+Four rules hold that, and these tests hold the four rules:
 
   * The score is resolved / EVALUATED. An instance that did not run, because
     docker could not build its image, stays out of the divisor. A memory
@@ -19,6 +19,10 @@ Three rules hold that, and these tests hold the three rules:
   * The report stands beside the predictions, and NOWHERE else. The run id
     comes from the command line and it becomes part of the path of the
     report, so a run id that is not a name is refused.
+  * Each group gives a COUNT, and the ids of a group stand in the `_ids` name
+    of that group. The report gave a list at `errored` before 2026-09-12, and
+    a count at each of the three groups beside it, so a reader who took
+    `errored` for a count got a list.
 
 This test needs the standard library only, so both commands run it:
 
@@ -65,6 +69,9 @@ UNRESOLVED_ID = "psf__requests-2317"
 ERRORED_ID = "astropy__astropy-14182"
 # The wall time of a score run, in minutes.
 A_WALL_TIME = 12.5
+# The groups of instances that a report counts. A reader must be able to read
+# each one the same way, so each one gives a count.
+GROUPS = ("evaluated", "resolved", "unresolved", "errored")
 
 
 def a_report(run_id=A_RUN_ID, **changes):
@@ -175,6 +182,27 @@ class TheScoreOfARun(unittest.TestCase):
     def test_it_counts_the_instances_that_ran_and_did_not_resolve(self):
         """An instance that ran and failed is a failure of the agent."""
         self.assertEqual(a_report()["unresolved"], 1)
+
+    def test_it_counts_the_instances_that_did_not_run(self):
+        """A build error of docker is a count, as a failed test is a count.
+
+        This name gave the LIST of the ids before 2026-09-12. A reader who
+        took it for a count, as `unresolved` beside it is a count, got a
+        list.
+        """
+        self.assertEqual(a_report()["errored"], 1)
+
+    def test_each_group_gives_a_count(self):
+        """One name that gives a list makes a reader read the harness.
+
+        A person who reads a report must be able to read each group the same
+        way. So no group gives a list here, and the ids of a group stand in
+        the `_ids` name of that group alone.
+        """
+        report = a_report()
+        for group in GROUPS:
+            with self.subTest(group=group):
+                self.assertIsInstance(report[group], int)
 
     def test_it_names_the_ids_of_each_group(self):
         """A person who reads the report must find the instances again."""
