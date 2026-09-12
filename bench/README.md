@@ -104,9 +104,9 @@ Each script has `--help`. These are the options you will use:
 ## What to expect
 
 * **The limit of one instance is one hour** (`--timeout`). Three instances
-  can thus be three hours. An agent that goes past the limit is stopped, and
-  the harness records an empty patch: a half-written repository is not an
-  answer.
+  can thus be three hours. An agent that goes past the limit is stopped, but
+  the run KEEPS the patch of that instance. Read
+  [A patch that the watchdog stopped](#a-patch-that-the-watchdog-stopped).
 * **The run continues.** The predictions file says which instances are done.
   If you stop the run with `Ctrl-C`, start the same command again and it
   continues. `--force` does them all again.
@@ -162,16 +162,25 @@ Each instance writes a log line with the Python that the agent gets:
 09:12:31 the environment of the agent -- python3: /usr/bin/python3 . PATH: ...
 ```
 
-### The tests of the environment
+### The tests of the harness
+
+```bash
+python3 -m unittest discover --start-directory bench --pattern 'test_*.py'
+```
+
+That command runs every test of this directory. One file runs alone too:
 
 ```bash
 uv run bench/test_swebench_env.py
+python3 bench/test_swebench_prediction.py
 ```
 
-The tests start a real child process with that environment, and they read
-what the process can see. They need the standard library only, so
-`python3 bench/test_swebench_env.py` runs them too. The `bench` job of CI
-runs them on each push.
+The tests of the environment start a real child process with that
+environment, and they read what the process can see. The tests of the
+prediction read the row that a run records. All of them need the standard
+library only, so `python3` runs them with no help. The `bench` job of CI runs
+the discovery command on each push, so it finds a new `test_*.py` file with
+no change to the workflow.
 
 ## How the patch is made
 
@@ -183,6 +192,40 @@ The patch is `git diff <base_commit>` in the cloned repository.
   writes, with its transcripts, is out of the patch. Never `git add -A`
   first: that puts the whole directory in the patch, and the harness then
   cannot apply it.
+
+### A patch that the watchdog stopped
+
+**The run keeps the patch in all conditions.** An agent that goes past the
+time limit is stopped, and the row of that instance keeps the diff that the
+tree held at that moment. The row carries one name more:
+
+```json
+{"instance_id": "...", "model_name_or_path": "...", "model_patch": "...", "truncated": true}
+```
+
+The predictions file is the durable record of a run. A row that holds the work
+is better than a row that holds nothing, because you can score it again later.
+So the run step keeps the work, and **the score step decides what to do with
+it**: score the truncated rows with the others, or leave them out with
+`--instance-ids`. Nothing is decided for you, and nothing is thrown away.
+
+A stopped tree can hold the correct answer. In the run of 2026-09-11 the
+watchdog stopped `astropy__astropy-14182` at the limit of one hour, and the
+tree held the two correct files for that issue:
+
+```
+ M astropy/io/ascii/rst.py
+ M astropy/io/ascii/tests/test_rst.py
+```
+
+The harness of that day recorded an empty patch, and the work was lost.
+
+Two notes for a reader of the file:
+
+* A row with no `truncated` name is a row of an agent that finished, or a row
+  of a run before this change. So read the name with `get`, and not with `[]`.
+* The summary of a run still counts the instances that went past the limit.
+  The count is the `too slow` line of the table.
 
 ## What the score means
 
@@ -199,12 +242,14 @@ predictions, with the resolved, unresolved and errored ids.
 ## Files
 
 ```
-swebench_run.py       makes preds.jsonl with the agent — read it top to bottom
-swebench_score.py     gives the score of a preds.jsonl with docker
-swebench_common.py    the console and the log line the two scripts share
-swebench_env.py       the clean environment that the process of the agent gets
-test_swebench_env.py  the tests of that environment
-.gitignore            keeps the run results out of git
+swebench_run.py              makes preds.jsonl with the agent — read it top to bottom
+swebench_score.py            gives the score of a preds.jsonl with docker
+swebench_common.py           the console and the log line the two scripts share
+swebench_env.py              the clean environment that the process of the agent gets
+swebench_prediction.py       the row that a run records for one instance
+test_swebench_env.py         the tests of that environment
+test_swebench_prediction.py  the tests of that row
+.gitignore                   keeps the run results out of git
 ```
 
 ## Where it came from

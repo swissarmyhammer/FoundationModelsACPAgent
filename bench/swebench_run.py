@@ -27,6 +27,12 @@ This script APPENDS, so it can CONTINUE. If the predictions file has results
 already, this script does the other instances only. Use --force to do all the
 instances again. If a run stops, start it again to continue.
 
+The predictions file KEEPS the patch of an instance, in all conditions. An
+agent that goes past the time limit is stopped, and the row of that instance
+carries `truncated` as well. The tree of a stopped agent can hold the correct
+answer, so this step keeps the work and the score step decides what to do with
+it. `swebench_prediction.py` makes the row, and it says why.
+
 The file name is swebench_run.py, and not swebench.py. A file with the name
 swebench.py in this directory hides the installed `swebench` package.
 
@@ -93,6 +99,7 @@ from rich.table import Table
 
 from swebench_common import console, log
 from swebench_env import agent_environment, environment_summary
+from swebench_prediction import prediction_row
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -414,33 +421,34 @@ with outpath.open("w" if args.force else "a") as out:
                 cmd.append("--verbose")
             _, timed_out = stream_agent(cmd, str(repo), problem, args.timeout)
 
-            # 3. GET the source diff, against the clean base commit. An agent
-            #    that the watchdog killed did not finish, and its half-written
-            #    tree is not an answer. Record an empty patch for it.
+            # 3. GET the source diff, against the clean base commit. The row
+            #    KEEPS that diff in all conditions. An agent that the watchdog
+            #    stopped gets `truncated` in its row, and nothing more: its
+            #    tree can hold the correct answer, and this file is the
+            #    durable record of the run. `swebench_prediction.py` says why.
             patch = capture_patch(str(repo), inst["base_commit"])
-            if timed_out:
-                patch = ""
 
             out.write(
-                json.dumps({
-                    "instance_id": instance_id,
-                    "model_name_or_path": MODEL_NAME,
-                    "model_patch": patch,
-                }) + "\n"
+                json.dumps(
+                    prediction_row(
+                        instance_id, MODEL_NAME, patch, truncated=timed_out
+                    )
+                ) + "\n"
             )
             out.flush()
 
             dt = time.monotonic() - t0
+            files, added, removed = patch_stats(patch)
+            shape = f"{files} file(s) [green]+{added}[/]/[red]-{removed}[/]"
             if timed_out:
                 counts["timeouts"] += 1
-                log(f"{prefix} [red]TOO SLOW[/] -> an empty patch -- {dt:.0f}s")
+                log(
+                    f"{prefix} [red]TOO SLOW[/] -> the patch is kept, and the "
+                    f"row says truncated -- {shape} . {dt:.0f}s"
+                )
             elif patch.strip():
                 counts["patches"] += 1
-                files, added, removed = patch_stats(patch)
-                log(
-                    f"{prefix} [green]done[/] -- "
-                    f"{files} file(s) [green]+{added}[/]/[red]-{removed}[/] . {dt:.0f}s"
-                )
+                log(f"{prefix} [green]done[/] -- {shape} . {dt:.0f}s")
             else:
                 counts["empty"] += 1
                 log(f"{prefix} [yellow]EMPTY patch[/] -- {dt:.0f}s")
