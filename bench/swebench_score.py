@@ -80,6 +80,7 @@ HARNESS_TIMEOUT = 1800   # the test limit of one instance in the container, in s
 NAMESPACE = None         # None => build the images here. Apple Silicon NEEDS this.
 # The Python API wants None, and not "". main() does not correct "" like the
 # command line does, and "" makes an invalid "/sweb.eval..." image name.
+LOCAL_BUILD = "local-build"  # what the namespace field of a line says for None
 LOCAL_DEFAULT_WORKERS = 1  # parallel emulated builds are the first cause of failure
 REMOTE_DEFAULT_WORKERS = 4
 # The exit codes of this script. A person reads them, and so does a pipeline
@@ -91,10 +92,25 @@ NOTHING_EVALUATED_EXIT = 4  # docker ran, and no instance was evaluated
 # One worker, and a clean build, for the second try of an instance that did
 # not run. A parallel emulated build is the first cause of a build error.
 RETRY_WORKERS = 1
+# What stands between two ids in ONE field. No space stands there, because a
+# space ends a field and `grep ids=` must find the whole list.
+ID_SEPARATOR = ","
+# How many places of a percentage a line holds. A score of 66.7 is enough for
+# a person, and the report beside the predictions holds the full number.
+PERCENT_PLACES = 1
 # ----------------------------------------------------------------------------
 
 # `console` and `log` come from swebench_common, so the run script and this
 # script write their lines the same way.
+#
+# A MILESTONE of the run goes to `log`: a constant message, and then each value
+# after a name of its own. `swebench_event.py` says why.
+#
+# An ERROR MESSAGE goes to `console.print`, and it stays a sentence. Such a
+# message is the LAST thing this script writes: it names the cause, it says
+# what a person must do, and the script then stops with an exit code of its
+# own. The exit code is what a machine reads there, and a name and a value
+# would only make that sentence hard to read.
 
 
 def parse_args():
@@ -140,6 +156,17 @@ def load_predictions(path, only_ids):
     return rows
 
 
+def joined_ids(instance_ids):
+    """The ids of a group, as ONE field of a line.
+
+    - instance_ids: the ids to name.
+
+    A field ends at a space, so the ids stand beside `ID_SEPARATOR` and not
+    beside a comma and a space. `grep ids=` thus gives the whole group.
+    """
+    return ID_SEPARATOR.join(instance_ids)
+
+
 def require_docker():
     """Stop the score step when the docker daemon does not answer.
 
@@ -153,7 +180,11 @@ def require_docker():
     """
     host = ensure_host(os.environ)
     if host:
-        log(f"[dim]{HOST_VARIABLE} -> {host}[/]")
+        log(
+            "[dim]the docker endpoint[/]",
+            variable=HOST_VARIABLE,
+            endpoint=host,
+        )
     if daemon_answers():
         return
     console.print(f"[red]{missing_daemon_message(host)}[/]")
@@ -228,7 +259,10 @@ def run_once(instance_ids, workers, force_rebuild, run_id, pred_path):
             modal=False,
         )
     except Exception as exc:
-        log(f"[yellow]the harness raised an error (the tally continues):[/] {exc}")
+        log(
+            "[yellow]the harness raised an error, and the tally goes on[/]",
+            error=exc,
+        )
 
 
 def main():
@@ -264,8 +298,12 @@ def main():
 
     console.rule(f"SWE-bench score . {pred_path.name}")
     log(
-        f"[green]{len(ids)} instances[/] ({len(nonempty)} not empty) -> "
-        f"run_id={run_id}, workers={workers}, namespace={NAMESPACE or 'local-build'}"
+        "[green]the instances of this score run[/]",
+        instances=len(ids),
+        not_empty=len(nonempty),
+        run_id=run_id,
+        workers=workers,
+        namespace=NAMESPACE or LOCAL_BUILD,
     )
     require_docker()
     log("The first pass builds one image for each instance, and it is slow.")
@@ -280,9 +318,10 @@ def main():
     # the number shows the patches, and not the memory of docker.
     if errored and args.retry_errors:
         log(
-            f"[yellow]{len(errored)} instance(s) did not run[/] "
-            f"(a build error is the usual cause); doing them again, alone, "
-            f"with a clean build: {', '.join(errored)}"
+            "[yellow]these instances did not run, and a build error is the "
+            "usual cause; doing them again, alone, with a clean build[/]",
+            instances=len(errored),
+            ids=joined_ids(errored),
         )
         run_once(errored, RETRY_WORKERS, True, run_id, pred_path)
         resolved, evaluated = tally(run_id)
@@ -299,7 +338,12 @@ def main():
         minutes=dt,
     )
     if errored:
-        log(f"[red]{len(errored)} did NOT run[/] (a build error): " + ", ".join(errored))
+        log(
+            "[red]these instances did NOT run, and the cause is a build "
+            "error[/]",
+            instances=len(errored),
+            ids=joined_ids(errored),
+        )
 
     # No instance ran, so there is no score. A report of such a run says
     # `"resolved": 0`, and a reader takes that for a failure of the agent.
@@ -317,8 +361,12 @@ def main():
     pct_eval = report["resolved_pct_of_evaluated"]
     pct_total = report["resolved_pct_of_submitted"]
     log(
-        f"[bold green]resolved {res}/{ev} evaluated = {pct_eval:.1f}%[/]  "
-        f"[dim]({res}/{total} of all sent = {pct_total:.1f}%)[/]"
+        "[bold green]the score: resolved of evaluated[/]",
+        resolved=res,
+        evaluated=ev,
+        percent_of_evaluated=round(pct_eval, PERCENT_PLACES),
+        submitted=total,
+        percent_of_submitted=round(pct_total, PERCENT_PLACES),
     )
 
     table = Table(
@@ -340,7 +388,7 @@ def main():
     table.add_row("wall time", f"{dt:.1f} min")
     console.print()
     console.print(table)
-    log(f"summary -> [bold]{out}[/]")
+    log("the report of this score run", report=out)
 
 
 if __name__ == "__main__":

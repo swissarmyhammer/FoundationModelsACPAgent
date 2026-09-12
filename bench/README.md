@@ -148,6 +148,17 @@ A person reads that line, and a machine reads it too:
 `grep instance=django__django-11099 run.log` gives the whole story of one
 instance.
 
+**The score step writes the same shape**, so the two scripts of one run read
+the same way:
+
+```
+09:44:02 the score: resolved of evaluated resolved=2 evaluated=3 percent_of_evaluated=66.7 submitted=5 percent_of_submitted=40.0
+09:44:02 these instances did NOT run, and the cause is a build error instances=1 ids=astropy__astropy-14182
+```
+
+A group of ids stands in ONE field. A comma and no space separates two ids
+there, because a space ends a field and `grep ids=` must find the whole group.
+
 The agent uses local models. Read the memory conditions in the
 [README of the package](../README.md) first.
 
@@ -566,7 +577,7 @@ this harness reads `errored`, so no other name of an older report changed.
 that does not answer stops the step at once:
 
 ```
-08:08:42 DOCKER_HOST -> unix:///Users/you/.docker/run/docker.sock
+08:08:42 the docker endpoint variable=DOCKER_HOST endpoint=unix:///Users/you/.docker/run/docker.sock
 docker does not answer. The score step needs a docker daemon that runs,
 because the SWE-bench harness builds an image for each instance.
 the endpoint it tried: unix:///Users/you/.docker/run/docker.sock
@@ -641,6 +652,7 @@ test_swebench_select.py      the tests of that choice and that sample
 test_swebench_docker.py      the tests of that question to docker
 test_swebench_report.py      the tests of that report
 test_swebench_event.py       the tests of that line
+test_swebench_log_lines.py   the proof that no log call of a script holds an f-string
 test_fixtures.py             the stand-in for subprocess.run that the tests share
 .gitignore                   keeps the run results out of git
 ```
