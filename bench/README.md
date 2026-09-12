@@ -102,7 +102,7 @@ Each script has `--help`. These are the options you will use:
 | `--agent PATH` | run | a different agent binary |
 | `--timeout SECONDS` | run | the limit of one instance (default 3600) |
 | `--oldest-python VERSION` | run | the Python to try for the instances that want 3.6 |
-| `--verbose` | run | give `--verbose` to the agent |
+| `--verbose` | run | write one line for each session event of the agent |
 | `--instance-ids ID` | score | score these ids only |
 | `--max-workers N` | score | how many docker workers run together |
 
@@ -118,8 +118,9 @@ Each script has `--help`. These are the options you will use:
 * **The run continues.** The predictions file says which instances are done.
   If you stop the run with `Ctrl-C`, start the same command again and it
   continues. `--force` does them all again.
-* **Each instance starts a new process.** So the agent loads its models
-  again for each instance. This is minutes of each instance.
+* **One agent process serves the whole run.** The models load one time, when
+  the first instance starts. Read
+  [One agent, and one session for each instance](#one-agent-and-one-session-for-each-instance).
 * **The first score of a repository builds a docker image.** This is slow,
   and it is emulated on Apple Silicon. Later instances of the same
   repository use the image again.
@@ -141,20 +142,50 @@ instance.
 The agent uses local models. Read the memory conditions in the
 [README of the package](../README.md) first.
 
-## What the agent gets
+## One agent, and one session for each instance
 
-The agent gets the problem statement of the instance, and nothing more.
+The run started `acp-agent run` for each instance. The agent resolves its
+profile and loads its local models when it starts, so a run of 179 instances
+loaded them 179 times. That is minutes of each instance, and hours of a run.
+
+So the harness is the CLIENT of `acp-agent acp` now. It starts ONE process
+for the whole run, and it drives the wire itself:
 
 ```
-acp-agent run - --cwd <the cloned repository>
+start `acp-agent acp`  ---------->  load the models (ONE time)
+initialize             ---------->
+for each instance:
+  session/new(cwd)     ---------->  a session in the clone of the instance
+  session/prompt       ---------->  {} at once
+                       <----------  session/update ... (the whole turn)
+                       <----------  session/update: idle, stopReason
+  session/close        ---------->  free the tree of that instance
 ```
 
-There is no skill, and there is no workflow, because this package has no
-skills yet. This is the simple test. When skills come, a skill prompt can go
-in front of the problem statement, and then you can compare the two numbers.
+`swebench_acp.py` speaks that wire, and its module comment says how.
 
-The prompt goes to the standard input of the agent. So no shell quote and no
-argument length can change the text of the problem.
+**The wire gives the STOP REASON of each turn.** `end_turn`, `max_tokens`,
+`max_turn_requests`, `refusal`, `cancelled`, and the `_error`, `_no_output`
+and `_stalled` of this agent. The one-shot `run` command gave the harness an
+exit code and nothing more. The record of the instance keeps the reason.
+
+**A turn past the limit gets `session/cancel`,** and not a signal. The agent
+answers with the `cancelled` stop reason, and the run goes on with the same
+process. A process that does not answer is stopped, and the instance after it
+gets a new one.
+
+**`--verbose` reads those session events HERE.** `acp-agent acp` takes no
+option of its own, because it writes the events of a session to its client.
+
+### What the agent gets
+
+The agent gets the problem statement of the instance, and nothing more. There
+is no skill, and there is no workflow, because this package has no skills
+yet. This is the simple test. When skills come, a skill prompt can go in
+front of the problem statement, and then you can compare the two numbers.
+
+The prompt goes over the wire as one text content block. So no shell quote
+and no argument length can change the text of the problem.
 
 ### A clean environment
 
@@ -219,6 +250,22 @@ So `swebench_venv.py` does it now. For each instance it:
 Django builds in 12 seconds this way, and `./tests/runtests.py` then runs in
 the clone with no more work.
 
+**The clone of every instance stands at the same path.** The run makes ONE
+working root, and the clone is always `<root>/repo`. So `<root>/repo/.venv/bin`
+is a constant entry of the PATH, and the one agent process gets it when it
+starts.
+
+That is necessary, and not a convenience. The agent gives each shell child
+the whole environment of its own PROCESS, with the arguments of the tool call
+on top. There is no environment for each session, and the agent reads no
+`.venv` below a session directory. So a PATH that changed with the instance
+could not reach the tests of the instance.
+
+Each instance removes the clone and clones again into the same path. Nothing
+of one instance reaches the next one: the agent builds the configuration, the
+instructions, the `AGENTS.md` assembly, the tool catalog and the sandbox
+again at every `session/new`, from the directory of THAT session.
+
 **Each path of the published table stands in the clone.**
 `MAP_REPO_TO_REQS_PATHS` comes from the `swebench` package, and each path of it
 becomes a path of this machine. So `swebench_venv.py` has one gate,
@@ -273,7 +320,9 @@ prediction and of the record read the two rows that a run writes for each
 instance. The tests of docker and of the environment of an instance give the module a
 stand-in for `subprocess.run`, so they start no daemon, they make no virtual
 environment, and they give the same answer on each machine. That stand-in
-stands in `test_fixtures.py`, so there is one copy of it. All of them need the standard library only, so `python3` runs
+stands in `test_fixtures.py`, so there is one copy of it. The tests of the
+long-lived agent give the client a stand-in wire with a script of answers, so
+they start no agent, they load no model and they open no pipe. All of them need the standard library only, so `python3` runs
 them with no help. The `bench` job of CI runs
 the discovery command on each push, so it finds a new `test_*.py` file with
 no change to the workflow.
@@ -331,7 +380,8 @@ says what the instance COST.
 
 ```json
 {"instance_id": "astropy__astropy-14182", "seconds": 3612.4, "clone_seconds": 24.1,
- "agent_seconds": 3584.2, "exit_code": -9, "timed_out": true, "patch_bytes": 1842,
+ "agent_seconds": 3584.2, "exit_code": null, "stop_reason": "cancelled",
+ "timed_out": true, "patch_bytes": 1842,
  "patch_files": 2, "transcript_path": "bench/preds.transcripts/astropy__astropy-14182",
  "env_status": "built", "env_python": "3.9", "env_seconds": 61.5,
  "env_exit_code": null, "env_reason": null}
@@ -342,8 +392,9 @@ says what the instance COST.
 | `instance_id` | the instance |
 | `seconds` | the wall time of the instance |
 | `clone_seconds` | the time of the clone and the checkout |
-| `agent_seconds` | the time of the agent process |
-| `exit_code` | the exit code of the agent |
+| `agent_seconds` | the time of the turn of the agent |
+| `exit_code` | the exit code of an agent process that ENDED in this instance |
+| `stop_reason` | why the agent stopped the turn |
 | `timed_out` | whether the watchdog stopped it |
 | `patch_bytes` | the size of the patch |
 | `patch_files` | the count of files in the patch |
@@ -356,10 +407,14 @@ says what the instance COST.
 
 Three notes for a reader of the file:
 
-* **Each row carries all fourteen names.** A step that did not run gives
+* **Each row carries all fifteen names.** A step that did not run gives
   `null`. An instance that failed in the clone thus has `null` for
-  `clone_seconds`, `agent_seconds` and `exit_code`, and its row still has the
-  same shape as every other row.
+  `clone_seconds`, `agent_seconds` and `stop_reason`, and its row still has
+  the same shape as every other row.
+* **`exit_code` is `null` for almost every row.** One process serves the
+  whole run, so an instance that ended with the agent alive has no exit code
+  of its own. The name holds the code of a process that DIED in that
+  instance.
 * **A row goes to disk when its instance ends.** A run of many hours can stop
   at any instance, and the rows of the instances that are complete stay.
 * **An instance that failed also gets a row.** The count of the instances in
@@ -443,12 +498,14 @@ swebench_run.py              makes preds.jsonl with the agent — read it top to
 swebench_score.py            gives the score of a preds.jsonl with docker
 swebench_common.py           the console and the log line the two scripts share
 swebench_event.py            the shape of one line: a message and its fields
+swebench_acp.py              the one long-lived agent of a run, over ACP
 swebench_env.py              the clean environment that the process of the agent gets
 swebench_prediction.py       the prediction row that a run makes for one instance
 swebench_record.py           the record row that a run makes for one instance
 swebench_venv.py             the Python environment that a run builds for one instance
 swebench_docker.py           the question that the score step asks docker first
 swebench_report.py           the report that a score run writes, and when it does not
+test_swebench_acp.py         the tests of that agent and that wire
 test_swebench_env.py         the tests of that environment
 test_swebench_prediction.py  the tests of that prediction row
 test_swebench_record.py      the tests of that record row

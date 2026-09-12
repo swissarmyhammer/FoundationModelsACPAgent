@@ -2,7 +2,9 @@ name: Bench
 
 # The tests of the Python harness below `bench/`.
 #
-# `bench/swebench_run.py` drives SWE-bench, `bench/swebench_env.py` makes the
+# `bench/swebench_run.py` drives SWE-bench, `bench/swebench_acp.py` speaks
+# ACP to the one long-lived agent of a run,
+# `bench/swebench_env.py` makes the
 # environment that the process of the agent gets,
 # `bench/swebench_prediction.py` makes the prediction row of an instance,
 # `bench/swebench_record.py` makes the record row of an instance,

@@ -18,8 +18,9 @@ one row for each instance:
 | `instance_id` | the instance |
 | `seconds` | the wall time of the instance |
 | `clone_seconds` | the time of the clone and the checkout |
-| `agent_seconds` | the time of the agent process |
-| `exit_code` | the exit code of the agent |
+| `agent_seconds` | the time of the turn of the agent |
+| `exit_code` | the exit code of an agent process that ENDED in this instance |
+| `stop_reason` | why the agent stopped the turn |
 | `timed_out` | whether the watchdog stopped it |
 | `patch_bytes` | the size of the patch |
 | `patch_files` | the count of files in the patch |
@@ -36,7 +37,16 @@ decides whether the agent starts at all. A run that leaves 121 instances of
 the Lite split out must say why it left each one out, and `env_reason` is
 where it says so.
 
-Each row carries all fourteen names, in all conditions. A step that did not run
+`stop_reason` and `exit_code` are a pair, and the long-lived agent of
+`swebench_acp.py` is the reason they are two names. ONE agent process serves
+the whole run, so an instance that ended with that process alive has no exit
+code of its own: `exit_code` holds the code of a process that ENDED in this
+instance, and `null` in every other condition. `stop_reason` is the word of
+the protocol for how the turn ended -- `end_turn`, `max_tokens`,
+`max_turn_requests`, `refusal`, `cancelled`, or an extension that begins with
+`_`. It is a free string, and the record keeps whatever the agent said.
+
+Each row carries all fifteen names, in all conditions. A step that did not run
 gives `null`, and not a name that is absent, so a reader of the file can use
 `[]` on each row. `append_row` flushes each row, so a run that stops in the
 middle keeps the rows of the instances that are complete.
@@ -106,6 +116,7 @@ def run_record(
     clone_seconds,
     agent_seconds,
     exit_code,
+    stop_reason,
     timed_out,
     patch,
     transcript_path,
@@ -120,8 +131,12 @@ def run_record(
     - instance_id: the id of the SWE-bench instance.
     - seconds: the wall time of the whole instance.
     - clone_seconds: the time of the clone and the checkout, or None.
-    - agent_seconds: the time of the agent process, or None.
-    - exit_code: the exit code of the agent, or None when it did not run.
+    - agent_seconds: the time of the turn of the agent, or None.
+    - exit_code: the exit code of an agent process that ENDED in this
+      instance, or None. One process serves the whole run, so an instance
+      that ended with the agent alive has no exit code of its own.
+    - stop_reason: why the agent stopped the turn, or None when the turn
+      never reached an idle update.
     - timed_out: True when the watchdog stopped the agent at the time limit.
     - patch: the diff of the agent. The record measures it, and keeps the
       diff itself out: the prediction row holds that.
@@ -132,7 +147,7 @@ def run_record(
     - env_exit_code: the exit code of the build command that failed, or None.
     - env_reason: why the instance did not run, or None when it ran.
 
-    The record carries all fourteen names in all conditions, so that a reader
+    The record carries all fifteen names in all conditions, so that a reader
     can use `[]` on each row of the file.
     """
     return {
@@ -141,6 +156,7 @@ def run_record(
         "clone_seconds": seconds_of(clone_seconds),
         "agent_seconds": seconds_of(agent_seconds),
         "exit_code": exit_code,
+        "stop_reason": stop_reason,
         "timed_out": timed_out,
         "patch_bytes": len(patch.encode(PATCH_ENCODING)),
         "patch_files": patch_file_count(patch),

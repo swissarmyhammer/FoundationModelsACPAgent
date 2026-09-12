@@ -12,8 +12,9 @@ swebench_run.py -- make the SWE-bench predictions of the `acp-agent` binary.
 
 For each task this script does five steps. It clones the buggy repository, it
 sets the repository to the commit before the fix, it builds the Python
-environment of that instance, it runs `acp-agent run` in that repository, and
-it writes the source diff the agent made into a predictions file.
+environment of that instance, it gives the problem to ONE long-lived agent
+over ACP, and it writes the source diff the agent made into a predictions
+file.
 
 The `swebench` pin is 4.0.5, and not the 5.0.2 of `swebench_score.py`. This
 script reads `MAP_REPO_VERSION_TO_SPECS` for the environment of each instance,
@@ -42,26 +43,47 @@ The file name is swebench_run.py, and not swebench.py. A file with the name
 swebench.py in this directory hides the installed `swebench` package.
 
 ==============================================================================
-WHAT THE AGENT GETS
+ONE AGENT PROCESS, AND ONE SESSION FOR EACH INSTANCE
 ==============================================================================
-The agent gets the problem statement of the instance, and nothing more. There
-is no skill and no workflow, because this package has no skills yet. The
-prompt goes to the standard input of the agent, so no shell quotes and no
-argument length can change it.
+This script started `acp-agent run` for each instance. The agent resolves its
+profile and loads its local models when it starts, so a run of 179 instances
+loaded them 179 times. That is minutes of each instance, and hours of a run.
 
-The agent gets ONE turn. `acp-agent run` starts a new session, sends the
-prompt, and stops when the turn stops.
+So the harness is the CLIENT of `acp-agent acp` now. It starts ONE process
+for the whole run, and it opens one ACP session for each instance, with the
+clone as the working directory of that session. The models load one time.
+`swebench_acp.py` speaks that wire, and it says how.
 
+The wire also gives the harness the STOP REASON of each turn -- `end_turn`,
+`refusal`, `cancelled`, `_stalled` and the rest -- which the one-shot `run`
+command never gave it. The record of the instance keeps it.
+
+`--verbose` reads the session events of the agent HERE. `acp-agent acp` takes
+no option of its own, because it writes those events to its client.
+
+==============================================================================
+THE ENVIRONMENT OF THE INSTANCE, AND THE ONE WORKING ROOT
+==============================================================================
 The agent gets a CLEAN environment, and not the environment of this script.
 `uv run --script` makes an ephemeral environment for this script, and a child
 that gets it finds the Python of the HARNESS. The agent then does work that
 is not the task: it looks in the cache of `uv`, and it tries to install
 packages there. `swebench_env.py` says what the agent keeps and what it
-loses, and each instance writes a log line with the Python the agent gets.
+loses, and the run writes one log line with the Python the agent gets.
 
-==============================================================================
-THE ENVIRONMENT OF THE INSTANCE
-==============================================================================
+That environment is now computed ONE time, because the process is started one
+time. The agent gives each shell child the whole environment of its own
+process, and there is no environment for each session. So a PATH that changed
+with the instance could not reach the tests of the instance.
+
+The answer is ONE working root for the run. The clone of every instance
+stands at the same path, `<root>/repo`, so `<root>/repo/.venv/bin` is a
+constant entry of the PATH and the agent gets it when it starts. Each
+instance removes that clone and clones again into it. The agent reads the
+configuration, the instructions and the skills of a session at `session/new`,
+from the directory of THAT session, so no file of one instance reaches the
+next one.
+
 A SWE-bench repository does not import from a source checkout, so the agent
 cannot run one test of the instance until something builds the environment.
 
@@ -105,8 +127,7 @@ These programs must be on the PATH:
     git   -- clones the repository of each task
 
 The machine must have the memory the agent needs. Read the README of the
-package. The agent loads its models on each instance, because each instance
-runs a new process.
+package. One process holds those models for the whole run.
 
 ==============================================================================
 HOW TO USE IT
@@ -119,19 +140,18 @@ HOW TO USE IT
   uv run bench/swebench_score.py bench/preds.jsonl             # then the score
 """
 import argparse
+import atexit
 import json
-import os
 import shutil
-import signal
 import subprocess
 import tempfile
-import threading
 import time
 from pathlib import Path
 
 from datasets import load_dataset
 from rich.table import Table
 
+from swebench_acp import AgentServer, is_chunk
 from swebench_common import console, log
 from swebench_env import environment_fields
 from swebench_prediction import prediction_row
@@ -209,7 +229,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--verbose", action="store_true",
-    help="give --verbose to the agent, so it writes its session events",
+    help="write one line for each session event of the agent",
 )
 args = parser.parse_args()
 outpath = args.outpath
@@ -255,89 +275,36 @@ def echo(line):
     console.print(f"    {line}", markup=False, highlight=False, style="dim")
 
 
-def stream_agent(cmd, cwd, prompt, timeout, environment):
-    """Run the agent, and write its output line by line as it comes.
+# The fields of the instance that is running now. A session event of the
+# agent carries no instance, and the agent knows of none, so the reader of
+# the events reads them here. The loop replaces them when an instance starts,
+# and every line of a run thus carries `instance=<id>`.
+current = {}
+# The name of the field that carries the kind of a session update, and the
+# name of the field that carries the state of a state update.
+UPDATE_KIND = "update"
+UPDATE_STATE = "state"
 
-    The prompt goes to the standard input of the agent, and a thread writes
-    it. A thread is necessary: a prompt that is larger than the pipe buffer
-    fills the pipe, and a write from this thread would then stop until the
-    agent reads. The agent writes its answer at the same time, so both sides
-    would wait for each other.
 
-    The agent runs in its OWN process group. A watchdog sends SIGTERM to the
-    whole group at `timeout`, waits a short time, and then sends SIGKILL. The
-    group is killed at the end in all conditions. This stops the model process
-    and its children. If they stay alive they hold the temporary repository
-    open, and they use the memory the docker score step needs.
+def report_update(update):
+    """Write one line for one session event of the agent.
 
-    The agent gets the environment of the INSTANCE, and not the environment
-    of this harness. `uv run --script` makes an ephemeral environment for this
-    script, and a child that gets that environment finds the Python of the
-    harness. `swebench_env.py` says what the agent keeps and what it loses,
-    and `swebench_venv.py` puts the environment of the instance first on that
-    PATH. The caller makes it, and it logs which Python the agent gets.
+    - update: the body of one `session/update` notification.
 
-    - cmd: the command of the agent.
-    - cwd: the directory the agent runs in.
-    - prompt: the problem statement of the instance.
-    - timeout: the wall-clock limit of the instance, in seconds.
-    - environment: the environment of the process of the agent.
+    `acp-agent acp` takes no `--verbose` option of its own, because it writes
+    the events of a session to its CLIENT. The harness is that client, so
+    `--verbose` reads them here.
 
-    Returns (returncode, timed_out).
+    A piece of a message gets no line. A turn of one hour streams thousands
+    of them, and the whole message arrives as an update of its own.
     """
-    proc = subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        env=environment,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        start_new_session=True,  # a new process group, so we can signal the tree
-    )
-    pgid = proc.pid  # with start_new_session the leader pid is the pgid
-    timed_out = {"v": False}
-
-    def _write_prompt():
-        try:
-            proc.stdin.write(prompt)
-            proc.stdin.close()
-        except (BrokenPipeError, ValueError):
-            pass  # the agent stopped first; the exit code tells the story
-
-    def _kill():
-        timed_out["v"] = True
-        try:
-            os.killpg(pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
-        for _ in range(20):  # about 10s, to let the agent write its files
-            if proc.poll() is not None:
-                break
-            time.sleep(0.5)
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-
-    writer = threading.Thread(target=_write_prompt, daemon=True)
-    writer.start()
-    timer = threading.Timer(timeout, _kill)
-    timer.start()
-    try:
-        for line in proc.stdout:
-            line = line.rstrip("\n")
-            if line.strip():
-                echo(line)
-        proc.wait()
-    finally:
-        timer.cancel()
-        try:  # kill the children that stay alive
-            os.killpg(pgid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-    return proc.returncode, timed_out["v"]
+    if is_chunk(update):
+        return
+    fields = {UPDATE_KIND: update.get("sessionUpdate")}
+    state = update.get(UPDATE_STATE)
+    if state is not None:
+        fields[UPDATE_STATE] = state
+    log("session event", **current, **fields)
 
 
 def patch_stats(patch):
@@ -446,6 +413,43 @@ counts = {
 }
 t_all = time.monotonic()
 
+# ONE working root for the run, and the clone of EVERY instance stands in it
+# at the same path. `<root>/repo/.venv/bin` is thus a constant entry of the
+# PATH, and the agent -- which is started one time and keeps the environment
+# it started with -- gets the tools of the instance that is running now.
+#
+# resolve(): on macOS `mkdtemp` gives a path below `/var/folders`, and `/var`
+# is a symbolic link to `/private/var`. The agent puts a sandbox around its
+# shell, and a sandbox compares real paths. So give the agent the real path,
+# and not the link.
+work_root = Path(tempfile.mkdtemp()).resolve()
+repo = work_root / "repo"
+environment = instance_environment(repo)
+log("the environment of the agent", **environment_fields(environment))
+# The agent process stands IN the working root, and not in the package: it
+# resolves its profile from the configuration of its own directory, and it
+# writes its shell output store below that directory. Both belong to the run.
+server = AgentServer(
+    str(AGENT),
+    work_root,
+    environment,
+    on_update=report_update if args.verbose else None,
+)
+
+
+def end_the_run():
+    """Stop the agent, and remove the working root of the run.
+
+    This runs when the script ends in any way, `Ctrl-C` included. An agent
+    that stays alive holds the models in memory, and the docker score step
+    needs that memory.
+    """
+    server.stop()
+    shutil.rmtree(work_root, ignore_errors=True)
+
+
+atexit.register(end_the_run)
+
 # Both files are appended, and not written over, unless --force. The
 # predictions file is what says which instances are done, and the record file
 # says what each instance cost. `--force` does every instance again, so both
@@ -463,7 +467,10 @@ with outpath.open("w" if args.force else "a") as out, \
             counts["skipped"] += 1
             log("[dim]done already, and not done again[/]", **about)
             continue
-        work = None
+        # The reader of the session events of the agent needs to know which
+        # instance is running, and the agent knows of none.
+        current.clear()
+        current.update(about)
         # What the record of this instance holds. Each name keeps the value
         # of a step that did NOT run, so an instance that fails in the clone
         # still writes a whole row.
@@ -471,20 +478,25 @@ with outpath.open("w" if args.force else "a") as out, \
         clone_seconds = None
         agent_seconds = None
         exit_code = None
+        stop_reason = None
         timed_out = False
         patch = ""
         built = None
+        # How many agent processes had ended before this instance. A count
+        # that moves says the agent died HERE, and the row then keeps its
+        # exit code.
+        stops_before = server.stops
+        # Whether the models were loaded before this instance. The instance
+        # that loads them waits for them, and it says how long that took.
+        was_loaded = server.load_seconds is not None
         t0 = time.monotonic()
         try:
             # 1. SET UP the buggy repository, at the commit before the fix.
+            #    The clone always stands at the same path, so the PATH of the
+            #    one agent process reaches the environment of this instance.
             t_clone = time.monotonic()
             log("cloning", **about, repo=repo_name)
-            # resolve(): on macOS mkdtemp gives a path below /var/folders,
-            # and /var is a symbolic link to /private/var. The agent puts a
-            # sandbox around its shell, and a sandbox compares real paths. So
-            # give the agent the real path, and not the link.
-            work = Path(tempfile.mkdtemp()).resolve()
-            repo = work / "repo"
+            shutil.rmtree(repo, ignore_errors=True)
             subprocess.run(
                 ["git", "clone", "--quiet",
                  f"https://github.com/{repo_name}.git", str(repo)],
@@ -532,26 +544,25 @@ with outpath.open("w" if args.force else "a") as out, \
                 seconds=round(built.seconds),
             )
 
-            # 3. RUN THE AGENT in that repository. The prompt is the problem
-            #    statement, and nothing more. `-` makes the agent read the
-            #    prompt from its standard input, so no quote and no argument
-            #    length can change the text.
-            problem = inst["problem_statement"]
-            environment = instance_environment(repo)
-            log(
-                "the environment of the agent",
-                **about,
-                **environment_fields(environment),
-            )
+            # 3. GIVE THE PROBLEM TO THE AGENT, in one session of the one
+            #    process. The prompt is the problem statement, and nothing
+            #    more. It goes over the wire as one text content block, so no
+            #    quote and no length of an argument can change the text. The
+            #    FIRST instance of a run waits here for the model load.
             log("running the agent...", **about, limit_seconds=args.timeout)
-            cmd = [str(AGENT), "run", "-", "--cwd", str(repo)]
-            if args.verbose:
-                cmd.append("--verbose")
             t_agent = time.monotonic()
-            exit_code, timed_out = stream_agent(
-                cmd, str(repo), problem, args.timeout, environment
+            report = server.turn(
+                repo, inst["problem_statement"], args.timeout
             )
             agent_seconds = time.monotonic() - t_agent
+            stop_reason = report.stop_reason
+            timed_out = report.timed_out
+            if not was_loaded and server.load_seconds is not None:
+                log(
+                    "the models are loaded, and they stay loaded",
+                    **about,
+                    seconds=round(server.load_seconds),
+                )
 
             # 4. GET the source diff, against the clean base commit. The row
             #    KEEPS that diff in all conditions. An agent that the watchdog
@@ -594,16 +605,20 @@ with outpath.open("w" if args.force else "a") as out, \
             counts["errors"] += 1
             log("[red]ERROR[/]", **about, error=exc)
         finally:
-            if work is not None:
-                # Keep the transcripts before the repository goes. This runs
-                # for a finished agent, a killed agent, and a failed step.
-                try:
-                    kept = keep_transcripts(work / "repo", outpath, instance_id)
-                    if kept is not None:
-                        log("transcripts", **about, path=kept)
-                except OSError as exc:
-                    log("[yellow]transcripts not kept[/]", **about, error=exc)
-                shutil.rmtree(work, ignore_errors=True)
+            # An agent process that ended in THIS instance gives the row its
+            # exit code. A process that is still alive gives none, because it
+            # belongs to no one instance.
+            if server.stops != stops_before:
+                exit_code = server.exit_code
+            # Keep the transcripts before the clone goes. This runs for a
+            # finished agent, a stopped agent, and a failed step.
+            try:
+                kept = keep_transcripts(repo, outpath, instance_id)
+                if kept is not None:
+                    log("transcripts", **about, path=kept)
+            except OSError as exc:
+                log("[yellow]transcripts not kept[/]", **about, error=exc)
+            shutil.rmtree(repo, ignore_errors=True)
             # The record of the instance goes last, so that it can name the
             # transcripts. This runs for a finished agent, a stopped agent
             # and a failed step alike, and `append_row` flushes it. A run
@@ -617,6 +632,7 @@ with outpath.open("w" if args.force else "a") as out, \
                     clone_seconds=clone_seconds,
                     agent_seconds=agent_seconds,
                     exit_code=exit_code,
+                    stop_reason=stop_reason,
                     timed_out=timed_out,
                     patch=patch,
                     transcript_path=kept,
@@ -642,6 +658,15 @@ log(
     not_done_again=counts["skipped"],
     minutes=total_minutes,
 )
+# The measurement of the long-lived agent: the models loaded one time, and
+# each instance after the first one thus saved this many seconds.
+if server.load_seconds is not None:
+    log(
+        "the models loaded one time, and each instance after the first "
+        "one saved that time",
+        agent_starts=server.stops + 1,
+        load_seconds=round(server.load_seconds),
+    )
 log(
     "get the score with [bold]uv run bench/swebench_score.py[/]",
     predictions=outpath,
@@ -667,6 +692,8 @@ table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))
 table.add_row("record", str(runs_path(outpath)))
 table.add_row("next", f"uv run bench/swebench_score.py {outpath}")
+if server.load_seconds is not None:
+    table.add_row("model load", f"{round(server.load_seconds)} s, one time")
 table.add_row("wall time", f"{total_minutes} min")
 console.print()
 console.print(table)

@@ -58,7 +58,10 @@ AN_ENVIRONMENT_STATUS = "built"
 AN_ENVIRONMENT_PYTHON = "3.9"
 # Why an instance of the old Python group does not run on this machine.
 AN_ENVIRONMENT_REASON = "the spec wants Python 3.6, and `uv` has no build of it"
-# The fourteen names that the record of an instance carries. A reader of the
+# Why the agent stopped the turn of an instance. The wire of `acp-agent acp`
+# gives this, and the one-shot `run` command never did.
+A_STOP_REASON = "end_turn"
+# The fifteen names that the record of an instance carries. A reader of the
 # file expects all of them in every row.
 RECORD_KEYS = {
     "instance_id",
@@ -66,6 +69,7 @@ RECORD_KEYS = {
     "clone_seconds",
     "agent_seconds",
     "exit_code",
+    "stop_reason",
     "timed_out",
     "patch_bytes",
     "patch_files",
@@ -87,7 +91,8 @@ def a_record(**changes):
         "seconds": 1837.5,
         "clone_seconds": 12.25,
         "agent_seconds": 1820.0,
-        "exit_code": 0,
+        "exit_code": None,
+        "stop_reason": A_STOP_REASON,
         "timed_out": False,
         "patch": A_PATCH,
         "transcript_path": A_TRANSCRIPT_PATH,
@@ -149,9 +154,33 @@ class TheRecordOfAnInstance(unittest.TestCase):
         self.assertEqual(record["seconds"], 12.346)
         self.assertEqual(record["clone_seconds"], 0.0)
 
-    def test_it_holds_the_exit_code_of_the_agent(self):
-        """An agent that stopped with an error must be easy to find."""
+    def test_it_holds_the_exit_code_of_an_agent_process_that_ended(self):
+        """One process now serves the whole run, so an instance that ended
+        with the process alive has NO exit code of its own.
+
+        The name thus holds the exit code of a process that ended DURING this
+        instance. An agent that died must still be easy to find.
+        """
         self.assertEqual(a_record(exit_code=2)["exit_code"], 2)
+        self.assertIsNone(a_record()["exit_code"])
+
+    def test_it_holds_the_stop_reason_of_the_turn(self):
+        """`acp-agent run` gave an exit code and nothing more.
+
+        The wire of `acp-agent acp` gives the stop reason of each turn, so a
+        reader can tell an agent that finished from one that refused, one
+        that reached its token limit, and one that stalled.
+        """
+        self.assertEqual(a_record()["stop_reason"], A_STOP_REASON)
+
+    def test_it_keeps_a_stop_reason_it_does_not_know(self):
+        """A stop reason is a free string on the wire.
+
+        This agent adds `_error`, `_no_output` and `_stalled` to the reasons
+        of the protocol, and a later version can add more. The record keeps
+        whatever the agent said.
+        """
+        self.assertEqual(a_record(stop_reason="_stalled")["stop_reason"], "_stalled")
 
     def test_it_says_when_the_watchdog_stopped_the_instance(self):
         """The score step reads this to tell a stopped run from a whole one."""
@@ -171,7 +200,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
         record = a_record(transcript_path=Path(A_TRANSCRIPT_PATH))
         self.assertEqual(record["transcript_path"], A_TRANSCRIPT_PATH)
 
-    def test_it_holds_the_fourteen_names_when_the_clone_failed(self):
+    def test_it_holds_the_fifteen_names_when_the_clone_failed(self):
         """A step that did not run gives no number, but the row keeps shape.
 
         An instance that failed in the clone has no environment, no agent and
@@ -184,6 +213,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
             clone_seconds=None,
             agent_seconds=None,
             exit_code=None,
+            stop_reason=None,
             timed_out=False,
             patch="",
             transcript_path=None,
@@ -200,7 +230,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
         self.assertIsNone(record["transcript_path"])
         self.assertIsNone(record["env_status"])
 
-    def test_it_holds_the_fourteen_names_when_the_instance_finished(self):
+    def test_it_holds_the_fifteen_names_when_the_instance_finished(self):
         """The rows of one file must all have the same shape."""
         self.assertEqual(set(a_record()), RECORD_KEYS)
 
@@ -337,7 +367,8 @@ class TheRowsOnDisk(unittest.TestCase):
             seconds=60.0,
             clone_seconds=5.0,
             agent_seconds=55.0,
-            exit_code=0,
+            exit_code=None,
+            stop_reason=A_STOP_REASON,
             timed_out=False,
             patch="",
             transcript_path=None,

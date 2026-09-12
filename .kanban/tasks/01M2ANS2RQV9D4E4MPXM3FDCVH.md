@@ -201,10 +201,33 @@ comments:
     - the five findings are all corrected, and each checklist item of the card is `[x]`.
     - next: /test, then /review
   timestamp: 2026-09-12T14:30:28.060808+00:00
+- actor: claude-code
+  id: 01m2b0xjb2vxmcx31z7z4bkm64
+  text: |-
+    ### review — clean
+    - evidence: 0 findings (0 confirmed, 0 refuted, 8 attempted) — scope `review sha HEAD~1..HEAD` (5007dc3), 11 files reviewed, the diffs of this iteration only
+    - the five findings of iteration 1 are all repaired, and I read each repair:
+      - `bench/swebench_venv.py` — `ClonePathError`, the message `CLONE_PATH_REFUSED`, and the gate `checked_clone_path`, which resolves both paths and asks `is_relative_to`. `requirements_file` calls the gate for each path of the published table. The tests refuse four bad paths through the door and through `prepare_environment`.
+      - `bench/swebench_run.py` — no `log` call holds an f-string. Each of the 22 calls gives a constant message and fields, for example `log("cloning", **about, repo=repo_name)`. `bench/swebench_event.py` makes the line, and `escape` left the run script.
+      - `bench/test_swebench_venv.py` — `a_runner` and `a_failing_runner` stand in `bench/test_fixtures.py` only. Both `test_swebench_venv.py` and `test_swebench_docker.py` import them, and neither file holds a stand-in of its own.
+    - the card moves to done: zero new findings, and each checklist item of the Review Findings section is `[x]`.
+    - next: none for this card. The two cards it blocks can start.
+  timestamp: 2026-09-12T14:39:06.594005+00:00
+- actor: claude-code
+  id: 01m2b0ybcx41f3ecbps15sshj3
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 12 files. bench/swebench_event.py (new), bench/test_swebench_event.py (new), bench/test_fixtures.py (new), and the repairs in bench/swebench_venv.py, bench/test_swebench_venv.py, bench/swebench_common.py, bench/swebench_env.py, bench/test_swebench_env.py, bench/swebench_run.py, bench/test_swebench_docker.py, bench/README.md, .github/workflows/bench.yml
+    - test: green — 134 Python tests passed, 561 Swift tests passed, 0 failed, 0 skipped. `uv run bench/swebench_run.py --help` exits 0.
+    - commit: 5007dc3 — 18 files, 769 insertions, 144 deletions, local only, not pushed
+    - review: clean — 0 findings, 8 validator runs, 11 files, scope HEAD~1..HEAD
+    - the five items of iteration 1 are repaired at the cause. The gate `checked_clone_path` refuses a `..` part, an absolute path and a symbolic link that leaves the clone. All 22 log calls of the run script take a constant message and fields, and not the three named lines alone. `test_fixtures.py` holds the one stand-in that two test files import.
+    - next: none, the task is in done
+  timestamp: 2026-09-12T14:39:32.253424+00:00
 depends_on:
 - 01M2ANQH644SDC0AJ9HK6T40PJ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: d780
 title: 'bench: prepare the instance environment in the driver'
 ---
 ## The problem

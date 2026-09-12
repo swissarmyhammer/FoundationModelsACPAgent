@@ -1,8 +1,75 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8480'
+comments:
+- actor: claude-code
+  id: 01m2b13xg3e1abggd3yhhjgz8h
+  text: |-
+    Picked up the card. Research of the tree before any edit.
+
+    What is there now:
+    - `bench/swebench_run.py` starts `acp-agent run - --cwd <clone>` for each instance, through `stream_agent`, with a watchdog that group-kills the process at `--timeout`.
+    - `bench/swebench_env.py` makes the clean environment, and `bench/swebench_venv.py` `instance_environment(clone)` puts `<clone>/.venv/bin` FIRST on the PATH of that process and sets `VIRTUAL_ENV`.
+    - `bench/swebench_record.py` writes the row of each instance. It has no name for a stop reason yet.
+    - `bench/test_fixtures.py` holds the shared stand-in for `subprocess.run`.
+    - `bench/swebench_common.log(message, **fields)` writes one constant message and its fields.
+
+    The agent side: `acp-agent acp` serves ACP on stdin and stdout, full duplex. `Sources/acp-agent/RunTurn.swift` shows the drive the harness must copy: `initialize`, `session/new(cwd)`, `session/prompt`, then `session/update` notifications until the first idle state update, whose `stopReason` ends the turn.
+
+    The one open question of the design: the environment of the agent process is fixed when the process starts, and today it is PER INSTANCE, because `instance_environment` puts the venv of the clone first on the PATH. One long-lived process cannot get a new PATH for each instance. Two agents are reading the tree now: one for the exact wire JSON, and one for how the shell capability of the agent builds the environment of a child. The answer decides the design.
+  timestamp: 2026-09-12T14:42:34.627392+00:00
+- actor: claude-code
+  id: 01m2b1h6pnk16epec1jkx7mdqp
+  text: |-
+    Research answer 1 of 2, and the design decision it forces.
+
+    How the agent gives a shell child its environment (`FoundationModelsMultitool/Sources/FoundationModelsMultitool/Capabilities/Shell/ShellRunner.swift`, the `environment(overriding:)` function): the child gets `Environment.inherit` -- the WHOLE environment of the agent process -- with the `environment` argument of the tool call on top. There is no filter, there is no PATH work, and there is no `.venv` of any kind: a search of `venv`, `VIRTUAL_ENV`, `pyvenv` and `PATH` over the four packages gives nothing in `Sources/`. The child is `/bin/sh -c`, which reads no profile file. Its working directory is the session root.
+
+    So the PATH of the agent PROCESS is the only PATH the tests of an instance can get, and one long-lived process has one PATH for the whole run. `instance_environment(clone)` cannot be called again for each instance.
+
+    The design that answers it: ONE working root for the run. The clone always stands at `<root>/repo`, so `<root>/repo/.venv/bin` is a CONSTANT entry of the PATH, and the long-lived agent gets it when it starts. Each instance removes the clone and clones again into the same path. The environment of the run is thus computed one time, exactly as the models are loaded one time.
+
+    Research answer 2 says that is safe. Nothing of a session is kept between sessions by path: the configuration loader, the dotfolder stack, `Instructions.md`, the `AGENTS.md` walk, the tool catalog, the skills registry and the sandbox are each built again at every `session/new`, from the cwd of that session. A second session over the same path with different files reads the new files. The one thing that IS resolved one time is the model profile, from the working directory of the PROCESS -- which is the whole point of this card.
+
+    Two more facts of that answer that the design must respect:
+    - The shell output store of the agent stands at `<process working directory>/.shell`. So the run starts the agent IN the working root it owns, and that directory goes with the root.
+    - The profile is resolved from the working directory of the process, so the run must not start the agent in the package root, where the project layer of THIS package would be read.
+  timestamp: 2026-09-12T14:49:50.037300+00:00
+- actor: claude-code
+  id: 01m2b2scxf62faz7wvynzmy9j6
+  text: |-
+    The work landed. Each of the six steps of the card, and where it stands.
+
+    1. ONE process for the run -- `bench/swebench_acp.py`, `AgentServer`. It starts `acp-agent acp` when the FIRST instance needs it, so a run whose instances are all done already loads no model.
+    2. ACP JSON-RPC from the harness -- `Connection`, on ndJSON frames. Every read goes through ONE loop that serves each frame by its shape: the answer it waits for, a notification, or a request of the agent. A client of the shape "write one frame, then read one frame" stops for ever on the first notification, because `session/prompt` answers `{}` at once and the turn follows as notifications.
+    3. One session for each instance, with the cwd of the clone -- `session/new(cwd)`, and `session/close` when the instance ends so the agent frees the tree of 179 instances one at a time.
+    4. The problem statement, and the wait -- one text content block, and then the frames until the idle state update OF THAT SESSION. An idle update of another session does not end the turn.
+    5. The stop reason in the record -- `swebench_record.run_record` takes `stop_reason`, so the row now carries fifteen names. A reason is a free string, so `_error`, `_no_output` and `_stalled` reach the file unchanged.
+    6. Start the process again if it stops -- the instance that met the end of the wire is an error, and the instance after it gets a new process.
+
+    THREE decisions the card did not name, and why each one is necessary.
+
+    ONE WORKING ROOT. The agent gives each shell child the whole environment of its own PROCESS, so the PATH of the one process is the only PATH the tests of an instance can get. The clone therefore always stands at `<root>/repo`, and `<root>/repo/.venv/bin` is a constant entry of that PATH. Each instance removes the clone and clones again into the same path. Nothing of a session survives into the next one, because the agent builds the configuration, the instructions, the `AGENTS.md` assembly, the tool catalog and the sandbox again at every `session/new`.
+
+    THE WATCHDOG IS A CANCEL, AND NOT A SIGNAL. A turn past the limit gets `session/cancel`, the agent answers with the `cancelled` stop reason, and the run goes on with the SAME process. An agent that does not answer the cancel inside `CANCEL_SECONDS` leaves the wire closed, and the instance after it gets a new process. A signal would have killed the models of the whole run.
+
+    `exit_code` CHANGED MEANING. One process serves the run, so an instance that ended with the agent alive has no exit code of its own. The name now holds the code of a process that DIED in that instance, and `null` in every other condition. `AgentServer.stops` is what lets the run attribute a death to the right instance.
+
+    WHAT `--verbose` IS NOW. `acp-agent acp` takes no option of its own, because it writes the events of a session to its CLIENT. The harness is that client, so `--verbose` writes one line for each `session/update` it reads. A piece of a message gets no line: a turn of one hour streams thousands of them, and the whole message arrives as an update of its own.
+
+    Proof. 158 tests pass, 23 of them new in `bench/test_swebench_acp.py`. No test starts the agent, loads a model or opens a pipe: each one gives the client a stand-in wire with a script of answers. Beside them I drove the REAL `ProcessWire` over a real pipe against two stand-in agent processes in the scratchpad, and that is not committed: three turns on one process gave `end_turn` three times with one start, and a quiet agent with a limit of 2 seconds gave `TurnReport(stop_reason='cancelled', timed_out=True)` after 2.0 seconds and a clean exit code 0.
+
+    ONE CONDITION OF THE CARD IS NOT MET HERE. "A measurement shows the time each instance saves." The harness MAKES that measurement now: `AgentServer.load_seconds` is the wait for `initialize`, which the agent answers after it resolves its profile and loads its models. A run writes it as a line -- `the models loaded one time, and each instance after the first one saved that time agent_starts=1 load_seconds=<N>` -- and as a `model load` row of the summary table. The NUMBER is not in this card, because a real number needs a release build and hours of the machine, and `^m3wh2s52wx` (bench: measure the instance limit again) is the card that takes that measurement.
+  timestamp: 2026-09-12T15:11:47.119555+00:00
+- actor: claude-code
+  id: 01m2b2sj2r9z3mskf3v4g7mv3y
+  text: |-
+    ### implement — changed
+    - evidence: 7 files. New: bench/swebench_acp.py, bench/test_swebench_acp.py. Changed: bench/swebench_run.py, bench/swebench_record.py, bench/test_swebench_record.py, bench/README.md, .github/workflows/bench.yml. 158 tests pass with `python3 -m unittest discover --start-directory bench --pattern 'test_*.py'`, and `ruff --isolated --select F,E9,D1,PLR0915,PLR2004` is clean on each changed file.
+    - next: /review. The card stays in `doing`.
+  timestamp: 2026-09-12T15:11:52.408878+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'bench: drive the long-lived acp server, to load the models one time'
 ---
 ## The problem
