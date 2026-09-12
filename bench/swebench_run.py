@@ -116,6 +116,28 @@ run of 2026-09-11 kept no log, and all of that data had to be built again from
 the transcripts. `swebench_record.py` makes the row, and it says why.
 
 ==============================================================================
+WHICH INSTANCES A RUN DOES
+==============================================================================
+This script chose with `all_instances[:LIMIT]`. The dataset is in alphabetical
+order, so `--limit N` always gave the same first N instances, and they start
+with astropy. The run of 2026-09-11 did 16 instances that way, and this machine
+can build none of the 16: 12 want Python 3.6, and 4 need `apt-get`. A first run
+thus got the worst instances of the split, and its numbers said nothing about
+the agent.
+
+So `swebench_select.py` chooses now, in three steps:
+
+1. `--feasible`, which is the DEFAULT, keeps the instances this machine can
+   build. It leaves 121 of the 300 instances of the Lite split out, and it
+   writes one log line for each reason, with the count of its instances.
+   `--all` turns the filter off.
+2. `--sample N` takes a random sample of N of the instances that are left, and
+   it gives each repository the places its size earns. `--seed S` names the
+   seed, and the run writes it in the log, so the same N instances can be done
+   again.
+3. `--limit N` takes the first N of that answer.
+
+==============================================================================
 BEFORE YOU START
 ==============================================================================
 Build the agent first:
@@ -132,7 +154,10 @@ package. One process holds those models for the whole run.
 ==============================================================================
 HOW TO USE IT
 ==============================================================================
-  uv run bench/swebench_run.py bench/preds.jsonl               # all instances
+  uv run bench/swebench_run.py bench/preds.jsonl               # the 179 that run
+  uv run bench/swebench_run.py bench/preds.jsonl --sample 10   # a fair 10
+  uv run bench/swebench_run.py bench/preds.jsonl --sample 10 --seed 7
+  uv run bench/swebench_run.py bench/preds.jsonl --all         # all 300
   uv run bench/swebench_run.py bench/preds.jsonl --limit 5     # the first 5
   uv run bench/swebench_run.py bench/preds.jsonl --force       # do them again
   uv run bench/swebench_run.py bench/preds.jsonl -i django__django-11099
@@ -156,6 +181,7 @@ from swebench_common import console, log
 from swebench_env import environment_fields
 from swebench_prediction import prediction_row
 from swebench_record import append_row, patch_file_count, run_record, runs_path
+from swebench_select import DEFAULT_SEED, choose_instances, reason_counts
 from swebench_venv import (
     BUILT,
     UNSUPPORTED,
@@ -201,7 +227,32 @@ parser = argparse.ArgumentParser(
 parser.add_argument("outpath", type=Path, help="where to write predictions.jsonl")
 parser.add_argument(
     "-n", "--limit", type=int, default=None, metavar="N",
-    help="the first N instances only (default: all of the split)",
+    help="the first N of the instances that are left, after the choice "
+         "(default: all of them)",
+)
+# `--feasible` and `--all` write the same name, and a run gives one of the
+# two. The default is `--feasible`, because a run of the instances this
+# machine cannot build measures nothing.
+choice = parser.add_mutually_exclusive_group()
+choice.add_argument(
+    "--feasible", dest="feasible", action="store_true", default=True,
+    help="do the instances this machine can build only (the default). It "
+         "leaves 121 of the 300 instances of the Lite split out",
+)
+choice.add_argument(
+    "--all", dest="feasible", action="store_false",
+    help="do every instance of the split, and let the environment step "
+         "record the ones that do not build",
+)
+parser.add_argument(
+    "--sample", type=int, default=None, metavar="N",
+    help="a random sample of N instances, with each repository in the ratio "
+         "of the split (default: all of them, in alphabetical order)",
+)
+parser.add_argument(
+    "--seed", type=int, default=DEFAULT_SEED, metavar="S",
+    help=f"the seed of that sample (default: {DEFAULT_SEED}). The same seed "
+         "gives the same instances, so a run can be done again",
 )
 parser.add_argument(
     "--force", action="store_true",
@@ -379,9 +430,36 @@ if args.instance_ids:
     missing = [w for w in want if w not in by_id]
     if missing:
         raise SystemExit(f"unknown instance id(s): {', '.join(missing)}")
-    instances = [by_id[w] for w in want]
+    wanted = [by_id[w] for w in want]
 else:
-    instances = all_instances[:LIMIT] if LIMIT else all_instances
+    wanted = all_instances
+
+# WHICH INSTANCES THIS RUN DOES. The dataset is in alphabetical order, so
+# `all_instances[:16]` was 16 astropy and django instances, and this machine
+# can build none of them. The choice leaves out each instance it cannot build,
+# `--sample N` then takes a fair sample of the instances that are left, and
+# `--limit N` takes the first N of that answer. `swebench_select.py` makes the
+# choice, and it says why.
+selection = choose_instances(
+    wanted,
+    keep_feasible=args.feasible,
+    sample=args.sample,
+    seed=args.seed,
+    oldest_python=args.oldest_python,
+)
+for reason, left_out in reason_counts(selection.left_out).items():
+    log(
+        "[dim]left out: this machine cannot build these instances[/]",
+        instances=left_out,
+        reason=reason,
+    )
+if args.sample is not None:
+    log(
+        "a random sample, with each repository in the ratio of the split",
+        sample=len(selection.instances),
+        seed=args.seed,
+    )
+instances = selection.instances[:LIMIT] if LIMIT else selection.instances
 
 done = set()
 if outpath.exists() and outpath.stat().st_size and not args.force:
@@ -679,6 +757,7 @@ table = Table(
 table.add_column(style="bold")
 table.add_column()
 table.add_row("instances", str(len(instances)))
+table.add_row("left out", str(len(selection.left_out)))
 table.add_row("patches made", f"[green]{counts['patches']}[/]")
 table.add_row("empty patches", f"[yellow]{counts['empty']}[/]")
 table.add_row("too slow", f"[red]{counts['timeouts']}[/]" if counts["timeouts"] else "0")

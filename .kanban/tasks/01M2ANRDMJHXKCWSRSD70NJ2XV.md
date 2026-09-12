@@ -68,8 +68,26 @@ comments:
     - evidence: 7 files. New: bench/swebench_acp.py, bench/test_swebench_acp.py. Changed: bench/swebench_run.py, bench/swebench_record.py, bench/test_swebench_record.py, bench/README.md, .github/workflows/bench.yml. 158 tests pass with `python3 -m unittest discover --start-directory bench --pattern 'test_*.py'`, and `ruff --isolated --select F,E9,D1,PLR0915,PLR2004` is clean on each changed file.
     - next: /review. The card stays in `doing`.
   timestamp: 2026-09-12T15:11:52.408878+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2b3e7vd00j4nbtw34qhxe1q
+  text: |-
+    ### review — clean
+    - evidence: 0 findings, 0 confirmed, 0 refuted. 16 validators ran on `review sha HEAD~1..HEAD`. The engine read 6 files of the 11 in the commit. No validator matches `bench/README.md`. An ignore rule holds the 4 `.kanban` files.
+    - next: none. The card goes to `done`. The card condition "a measurement shows the time each instance saves" stays open on card ^m3wh2s52wx.
+  timestamp: 2026-09-12T15:23:10.061639+00:00
+- actor: claude-code
+  id: 01m2b3ewmdxrd4ea3m9snts2m7
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files: bench/swebench_acp.py (new), bench/test_swebench_acp.py (new, 23 tests), bench/swebench_run.py, bench/swebench_record.py, bench/test_swebench_record.py, bench/README.md, .github/workflows/bench.yml
+    - test: green — 158 Python tests passed, 561 Swift tests passed, 0 failed, 0 skipped. ruff check bench clean. `uv run bench/swebench_run.py --help` exits 0. No test starts a real agent, a model or a pipe.
+    - commit: 67263ee — 11 files, local only, not pushed
+    - review: clean — 0 findings, 16 validator runs, 6 files, scope HEAD~1..HEAD
+    - one condition of this card stays open: "A measurement shows the time each instance saves." The harness now makes that measurement, and it reports `load_seconds` and a `model load` row. The number itself needs a release build and hours of machine time, which is the work of [[bench-measure-the-instance-limit-again]].
+    - next: none, the task is in done
+  timestamp: 2026-09-12T15:23:31.341104+00:00
+position_column: done
+position_ordinal: d880
 title: 'bench: drive the long-lived acp server, to load the models one time'
 ---
 ## The problem

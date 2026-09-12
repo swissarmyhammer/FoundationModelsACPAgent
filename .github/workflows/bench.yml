@@ -9,6 +9,7 @@ name: Bench
 # `bench/swebench_prediction.py` makes the prediction row of an instance,
 # `bench/swebench_record.py` makes the record row of an instance,
 # `bench/swebench_venv.py` builds the Python environment of an instance,
+# `bench/swebench_select.py` chooses which instances a run does,
 # `bench/swebench_docker.py` asks the docker daemon whether it answers,
 # `bench/swebench_event.py` makes the line of one milestone, and
 # `bench/swebench_report.py` makes the report of a score run. A defect

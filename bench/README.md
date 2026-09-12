@@ -30,7 +30,7 @@ cd /path/to/FoundationModelsACPAgent
 swift build -c release
 
 # 1. Make the patches. Start with 3, and keep a record.
-uv run bench/swebench_run.py bench/preds.jsonl --limit 3 | tee bench/run.log
+uv run bench/swebench_run.py bench/preds.jsonl --sample 3 | tee bench/run.log
 
 # 2. Give the score. Docker must run.
 uv run bench/swebench_score.py bench/preds.jsonl
@@ -66,6 +66,9 @@ uv run bench/swebench_score.py bench/preds.jsonl
 clone and the docker image are both quick. `--verbose` puts the session
 events of the agent on the console, so you can see what it does.
 
+The choice reads `-i` too. An id of the 121 instances that this machine cannot
+build is left out, and the run says why. Add `--all` to do that instance.
+
 ### If you do not build
 
 The scripts look for the release build, then the debug build, then the PATH.
@@ -96,7 +99,10 @@ Each script has `--help`. These are the options you will use:
 
 | Option | Script | What it does |
 |---|---|---|
-| `--limit N` | run | the first N instances only |
+| `--sample N` | run | a random sample of N instances, in the ratio of the split |
+| `--seed S` | run | the seed of that sample (default 0), so a run can be done again |
+| `--all` | run | do every instance, and not the 179 that run here |
+| `--limit N` | run | the first N of the instances that are left |
 | `-i ID ID` | run | these instance ids only |
 | `--force` | run | do every instance again, and write over the file |
 | `--agent PATH` | run | a different agent binary |
@@ -108,9 +114,12 @@ Each script has `--help`. These are the options you will use:
 
 ## What to expect
 
-* **121 of the 300 instances do not run on this machine.** Read
-  [The environment of the instance](#the-environment-of-the-instance). Each
-  one gets a record row that says why, and no prediction row.
+* **A run does 179 of the 300 instances.** This machine cannot build the
+  other 121, so the run leaves them out before it starts and it says why.
+  Read [Which instances a run does](#which-instances-a-run-does).
+* **A short run is a fair sample.** `--sample 10` gives ten instances, with
+  each repository in the ratio of the split. `--limit 10` gives the first ten
+  of the split, which are astropy instances.
 * **The limit of one instance is one hour** (`--timeout`). Three instances
   can thus be three hours. An agent that goes past the limit is stopped, but
   the run KEEPS the patch of that instance. Read
@@ -141,6 +150,55 @@ instance.
 
 The agent uses local models. Read the memory conditions in the
 [README of the package](../README.md) first.
+
+## Which instances a run does
+
+**A run does the instances this machine can build, and it leaves the others
+out before it starts.** The dataset is in alphabetical order, so the old
+`--limit 16` always gave the same 16 astropy and django instances. This
+machine can build none of those 16: 12 want Python 3.6, and 4 need `apt-get`.
+That run made no patch, and its numbers said nothing about the agent.
+
+| Condition | Instances |
+|---|---|
+| The spec wants Python 3.6, and `uv` has no 3.6 and no 3.7 build for arm64 | 77 |
+| The spec has a `pre_install`, which is written for linux | 44 |
+| **The instances that run on this mac** | **179** |
+
+The two groups do not intersect. Read
+[What this machine cannot build](#what-this-machine-cannot-build) for the
+reason of each group.
+
+The run writes one line for each reason, with the count of its instances:
+
+```
+09:12:31 left out: this machine cannot build these instances instances=44 reason=the spec has a `pre_install`, and those commands are written for linux: `apt-get`, or a `sed -i` in the form of GNU
+```
+
+`--all` turns the choice off, and the run then does all 300 instances. Each
+instance that does not build then gets a record row with `env_status` and
+`env_reason`, and no prediction row.
+
+### A fair sample
+
+`--sample N` takes a random sample of N of the instances that are left, and it
+gives each repository the places its size earns. django holds 114 of the 300
+instances of the split, so it holds about 38 places of each 100 of a sample.
+
+```bash
+uv run bench/swebench_run.py bench/preds.jsonl --sample 10           # seed 0
+uv run bench/swebench_run.py bench/preds.jsonl --sample 10 --seed 7
+```
+
+The seed is the whole state of the choice. The same seed gives the same
+instances, so a run can be done again, and each run writes its seed in the
+log. The default seed is 0.
+
+The sample stays in the order of the split, so the log of a run reads in that
+order. `--limit N` then takes the first N of the answer.
+
+`swebench_select.py` makes the choice, and `test_swebench_select.py` holds the
+proofs.
 
 ## One agent, and one session for each instance
 
@@ -282,15 +340,13 @@ repository, so it is relative to the clone and it holds no `..` part.
 ### What this machine cannot build
 
 The agent uses local models, so it runs on the mac and not in a linux
-container. Two groups of the Lite split do not build here:
+container. Two groups of the Lite split do not build here: 77 instances want
+Python 3.6, which `uv` does not build for arm64, and 44 instances have a
+`pre_install`, which is written for linux. The table of the counts stands in
+[Which instances a run does](#which-instances-a-run-does), and a run leaves
+both groups out before it starts.
 
-| Condition | Instances |
-|---|---|
-| The spec wants Python 3.6, and `uv` has no 3.6 and no 3.7 build for arm64 | 77 |
-| The spec has a `pre_install`, which is written for linux | 44 |
-
-The two groups do not intersect, so **179 of the 300 instances run here**. A
-`pre_install` holds `apt-get`, or a `sed -i 's/x/y/' file` in the form of GNU
+A `pre_install` holds `apt-get`, or a `sed -i 's/x/y/' file` in the form of GNU
 that the `sed` of macOS does not accept, so no option answers that group.
 `--oldest-python 3.8` gives the first group a Python to try, and the record of
 each instance then says which Python it got.
@@ -321,6 +377,8 @@ instance. The tests of docker and of the environment of an instance give the mod
 stand-in for `subprocess.run`, so they start no daemon, they make no virtual
 environment, and they give the same answer on each machine. That stand-in
 stands in `test_fixtures.py`, so there is one copy of it. The tests of the
+choice give the module a table of specs of their own, so they read no dataset
+and no published table. The tests of the
 long-lived agent give the client a stand-in wire with a script of answers, so
 they start no agent, they load no model and they open no pipe. All of them need the standard library only, so `python3` runs
 them with no help. The `bench` job of CI runs
@@ -503,6 +561,7 @@ swebench_env.py              the clean environment that the process of the agent
 swebench_prediction.py       the prediction row that a run makes for one instance
 swebench_record.py           the record row that a run makes for one instance
 swebench_venv.py             the Python environment that a run builds for one instance
+swebench_select.py           which instances a run does, and the fair sample
 swebench_docker.py           the question that the score step asks docker first
 swebench_report.py           the report that a score run writes, and when it does not
 test_swebench_acp.py         the tests of that agent and that wire
@@ -510,6 +569,7 @@ test_swebench_env.py         the tests of that environment
 test_swebench_prediction.py  the tests of that prediction row
 test_swebench_record.py      the tests of that record row
 test_swebench_venv.py        the tests of that environment
+test_swebench_select.py      the tests of that choice and that sample
 test_swebench_docker.py      the tests of that question to docker
 test_swebench_report.py      the tests of that report
 test_swebench_event.py       the tests of that line
