@@ -41,6 +41,13 @@ argument length can change it.
 The agent gets ONE turn. `acp-agent run` starts a new session, sends the
 prompt, and stops when the turn stops.
 
+The agent gets a CLEAN environment, and not the environment of this script.
+`uv run --script` makes an ephemeral environment for this script, and a child
+that gets it finds the Python of the HARNESS. The agent then does work that
+is not the task: it looks in the cache of `uv`, and it tries to install
+packages there. `swebench_env.py` says what the agent keeps and what it
+loses, and each instance writes a log line with the Python the agent gets.
+
 The agent writes its session transcripts into the repository, and the
 repository is removed when the instance ends. So this script copies the
 transcripts out first, into `<preds stem>.transcripts/<instance_id>/` beside
@@ -85,6 +92,7 @@ from datasets import load_dataset
 from rich.table import Table
 
 from swebench_common import console, log
+from swebench_env import agent_environment, environment_summary
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -198,11 +206,20 @@ def stream_agent(cmd, cwd, prompt, timeout):
     and its children. If they stay alive they hold the temporary repository
     open, and they use the memory the docker score step needs.
 
+    The agent gets a CLEAN environment, and not the environment of this
+    harness. `uv run --script` makes an ephemeral environment for this
+    script, and a child that gets that environment finds the Python of the
+    harness. `swebench_env.py` says what the agent keeps and what it loses.
+    The log line below names the Python that the agent gets.
+
     Returns (returncode, timed_out).
     """
+    environment = agent_environment()
+    log(f"the environment of the agent -- {environment_summary(environment)}")
     proc = subprocess.Popen(
         cmd,
         cwd=cwd,
+        env=environment,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

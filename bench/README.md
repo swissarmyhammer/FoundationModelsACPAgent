@@ -137,6 +137,42 @@ in front of the problem statement, and then you can compare the two numbers.
 The prompt goes to the standard input of the agent. So no shell quote and no
 argument length can change the text of the problem.
 
+### A clean environment
+
+The agent gets a clean environment, and not the environment of the harness.
+
+`uv run` makes an ephemeral environment for `swebench_run.py`, and it sets
+`VIRTUAL_ENV` and the first entries of `PATH` to that environment. A child
+process that gets the same environment finds the Python of the HARNESS. In
+the run of 2026-09-11 the agent found it, and it then tried to install
+packages in the cache of `uv`. That work is not the task of the instance.
+
+So `swebench_env.py` makes the environment of the agent:
+
+* it removes `VIRTUAL_ENV`, every `UV_*` variable, `PYTHONPATH` and
+  `PYTHONHOME`;
+* it removes each `PATH` entry below the environment of the harness, and
+  below the cache of `uv`;
+* it keeps `HOME`, `USER`, `TMPDIR`, `LANG` and the directories of the
+  system.
+
+Each instance writes a log line with the Python that the agent gets:
+
+```
+09:12:31 the environment of the agent -- python3: /usr/bin/python3 . PATH: ...
+```
+
+### The tests of the environment
+
+```bash
+uv run bench/test_swebench_env.py
+```
+
+The tests start a real child process with that environment, and they read
+what the process can see. They need the standard library only, so
+`python3 bench/test_swebench_env.py` runs them too. The `bench` job of CI
+runs them on each push.
+
 ## How the patch is made
 
 The patch is `git diff <base_commit>` in the cloned repository.
@@ -163,10 +199,12 @@ predictions, with the resolved, unresolved and errored ids.
 ## Files
 
 ```
-swebench_run.py     makes preds.jsonl with the agent — read it top to bottom
-swebench_score.py   gives the score of a preds.jsonl with docker
-swebench_common.py  the console and the log line the two scripts share
-.gitignore          keeps the run results out of git
+swebench_run.py       makes preds.jsonl with the agent — read it top to bottom
+swebench_score.py     gives the score of a preds.jsonl with docker
+swebench_common.py    the console and the log line the two scripts share
+swebench_env.py       the clean environment that the process of the agent gets
+test_swebench_env.py  the tests of that environment
+.gitignore            keeps the run results out of git
 ```
 
 ## Where it came from

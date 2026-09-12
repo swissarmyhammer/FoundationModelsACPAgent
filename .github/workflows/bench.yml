@@ -1,0 +1,37 @@
+name: Bench
+
+# The tests of the Python harness below `bench/`.
+#
+# `bench/swebench_run.py` drives SWE-bench, and `bench/swebench_env.py` makes
+# the environment that the process of the agent gets. A defect there costs a
+# whole drive of the dataset, and no Swift target reads that code. So the
+# tests of the harness have a job of their own here. A test target that no CI
+# task runs gives no protection.
+#
+# This job runs the unit tests of the harness alone. It starts no agent, it
+# clones no repository of an instance, and it loads no model, so it is quick
+# and it is deterministic. The tests need the standard library of Python
+# only, and the runner has that, so the job installs nothing.
+#
+# `ci.yml` stays as it is: it delegates to the shared Swift workflow, and
+# `CIWorkflowTests` pins that delegation.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: Bench harness tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the environment that the agent gets
+        run: python3 bench/test_swebench_env.py

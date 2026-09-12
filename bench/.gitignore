@@ -5,3 +5,7 @@ preds*.jsonl
 *.score.*.json
 *.transcripts/
 logs/
+
+# The byte code that Python writes when a script imports a module of this
+# directory. The tests and `swebench_run.py` both make it.
+__pycache__/
