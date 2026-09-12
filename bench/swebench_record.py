@@ -24,8 +24,19 @@ one row for each instance:
 | `patch_bytes` | the size of the patch |
 | `patch_files` | the count of files in the patch |
 | `transcript_path` | where the transcripts are |
+| `env_status` | what the environment step did: built, failed or unsupported |
+| `env_python` | the Python version of the environment |
+| `env_seconds` | the time of the environment step |
+| `env_exit_code` | the exit code of the build command that failed |
+| `env_reason` | why the instance did not run |
 
-Each row carries all nine names, in all conditions. A step that did not run
+The five `env_` names hold the step that `swebench_venv.py` does. That step is
+the largest cost of an instance after the agent, and it is the step that
+decides whether the agent starts at all. A run that leaves 121 instances of
+the Lite split out must say why it left each one out, and `env_reason` is
+where it says so.
+
+Each row carries all fourteen names, in all conditions. A step that did not run
 gives `null`, and not a name that is absent, so a reader of the file can use
 `[]` on each row. `append_row` flushes each row, so a run that stops in the
 middle keeps the rows of the instances that are complete.
@@ -98,6 +109,11 @@ def run_record(
     timed_out,
     patch,
     transcript_path,
+    env_status,
+    env_python,
+    env_seconds,
+    env_exit_code,
+    env_reason,
 ):
     """The record of one instance of a run.
 
@@ -110,9 +126,14 @@ def run_record(
     - patch: the diff of the agent. The record measures it, and keeps the
       diff itself out: the prediction row holds that.
     - transcript_path: where the transcripts of the instance are, or None.
+    - env_status: what the environment step did, or None when it did not run.
+    - env_python: the Python version of the environment, or None.
+    - env_seconds: the time of the environment step, or None.
+    - env_exit_code: the exit code of the build command that failed, or None.
+    - env_reason: why the instance did not run, or None when it ran.
 
-    The record carries all nine names in all conditions, so that a reader can
-    use `[]` on each row of the file.
+    The record carries all fourteen names in all conditions, so that a reader
+    can use `[]` on each row of the file.
     """
     return {
         "instance_id": instance_id,
@@ -124,6 +145,11 @@ def run_record(
         "patch_bytes": len(patch.encode(PATCH_ENCODING)),
         "patch_files": patch_file_count(patch),
         "transcript_path": None if transcript_path is None else str(transcript_path),
+        "env_status": env_status,
+        "env_python": env_python,
+        "env_seconds": seconds_of(env_seconds),
+        "env_exit_code": env_exit_code,
+        "env_reason": env_reason,
     }
 
 

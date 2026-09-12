@@ -31,8 +31,10 @@ import os
 import shutil
 from pathlib import Path
 
+# The variable that names the virtual environment a process stands in.
+VIRTUAL_ENV_VARIABLE = "VIRTUAL_ENV"
 # The variables that send a child process to the Python of the harness.
-HARNESS_VARIABLES = ("VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME")
+HARNESS_VARIABLES = (VIRTUAL_ENV_VARIABLE, "PYTHONPATH", "PYTHONHOME")
 # `uv` made the environment of the harness, and it reads every variable with
 # this prefix. `UV_CACHE_DIR` is one of them.
 HARNESS_PREFIXES = ("UV_",)
@@ -77,7 +79,7 @@ def harness_roots(parent):
     A PATH entry that stands below one of these directories is an entry of
     the harness, and the agent does not get it.
     """
-    named = (parent.get("VIRTUAL_ENV"), uv_cache(parent))
+    named = (parent.get(VIRTUAL_ENV_VARIABLE), uv_cache(parent))
     return [Path(directory) for directory in named if directory]
 
 

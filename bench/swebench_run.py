@@ -4,15 +4,20 @@
 # dependencies = [
 #     "datasets==5.0.1",
 #     "rich==15.0.0",
+#     "swebench==4.0.5",
 # ]
 # ///
 """
 swebench_run.py -- make the SWE-bench predictions of the `acp-agent` binary.
 
-For each task this script does four steps. It clones the buggy repository, it
-sets the repository to the commit before the fix, it runs `acp-agent run` in
-that repository, and it writes the source diff the agent made into a
-predictions file.
+For each task this script does five steps. It clones the buggy repository, it
+sets the repository to the commit before the fix, it builds the Python
+environment of that instance, it runs `acp-agent run` in that repository, and
+it writes the source diff the agent made into a predictions file.
+
+The `swebench` pin is 4.0.5, and not the 5.0.2 of `swebench_score.py`. This
+script reads `MAP_REPO_VERSION_TO_SPECS` for the environment of each instance,
+and that table is absent from 5.0.2.
 
 This script does NOT give a score. `swebench_score.py` gives the score, and it
 needs docker. The two steps are separate because they fail in different ways.
@@ -54,6 +59,29 @@ is not the task: it looks in the cache of `uv`, and it tries to install
 packages there. `swebench_env.py` says what the agent keeps and what it
 loses, and each instance writes a log line with the Python the agent gets.
 
+==============================================================================
+THE ENVIRONMENT OF THE INSTANCE
+==============================================================================
+A SWE-bench repository does not import from a source checkout, so the agent
+cannot run one test of the instance until something builds the environment.
+
+In the run of 2026-09-11 the agent had to do that work itself, and it was the
+largest cost of the run: 219 of 707 tool calls were about pip, uv, virtual
+environments or absent modules. For `astropy__astropy-6938` it was 37 of 80
+calls, and the agent never got a working environment.
+
+So this script builds it first. `swebench_venv.py` reads the spec of the
+instance, makes a virtual environment in the clone with `uv`, installs the
+packages of the spec, and puts that environment first on the PATH of the
+agent. The agent then gets the task, and not the environment.
+
+Two groups of instances do not build on this machine: 77 want Python 3.6,
+which `uv` does not build for arm64, and 44 have a `pre_install` that is
+written for linux. Each of them is recorded and left out, and the agent does
+not start for it. A failed environment is not a failure of the agent, so the
+instance gets NO prediction row and it is not part of the score.
+`--oldest-python 3.8` gives the first group a Python to try.
+
 The agent writes its session transcripts into the repository, and the
 repository is removed when the instance ends. So this script copies the
 transcripts out first, into `<preds stem>.transcripts/<instance_id>/` beside
@@ -87,6 +115,7 @@ HOW TO USE IT
   uv run bench/swebench_run.py bench/preds.jsonl --limit 5     # the first 5
   uv run bench/swebench_run.py bench/preds.jsonl --force       # do them again
   uv run bench/swebench_run.py bench/preds.jsonl -i django__django-11099
+  uv run bench/swebench_run.py bench/preds.jsonl --oldest-python 3.8
   uv run bench/swebench_score.py bench/preds.jsonl             # then the score
 """
 import argparse
@@ -101,12 +130,19 @@ import time
 from pathlib import Path
 
 from datasets import load_dataset
+from rich.markup import escape
 from rich.table import Table
 
 from swebench_common import console, log
-from swebench_env import agent_environment, environment_summary
+from swebench_env import environment_summary
 from swebench_prediction import prediction_row
 from swebench_record import append_row, patch_file_count, run_record, runs_path
+from swebench_venv import (
+    BUILT,
+    UNSUPPORTED,
+    instance_environment,
+    prepare_environment,
+)
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -116,10 +152,12 @@ MODEL_NAME = "acp-agent"
 # The wall-clock limit of one instance. The agent is a local model, and it is
 # much slower than a hosted model. One tool call can need ten minutes.
 DEFAULT_TIMEOUT_S = 3600
-# The directories the agent writes in the repository. `git diff <commit>`
-# reports tracked files only, so these are already out of the patch. These
-# pathspecs are the second guard, for a run that COMMITS one of them.
-AGENT_EXCLUDES = [".acp-agent"]
+# The directories that this script and the agent write in the repository:
+# the transcripts of the agent, and the Python environment of the instance.
+# `git diff <commit>` reports tracked files only, so these are already out of
+# the patch. These pathspecs are the second guard, for a run that COMMITS one
+# of them.
+AGENT_EXCLUDES = [".acp-agent", ".venv"]
 # Where the agent writes its session transcripts, below the repository. The
 # repository is removed when the instance ends, so the transcripts are copied
 # out first. They are the only record of what the model did in each round.
@@ -156,6 +194,11 @@ parser.add_argument(
 parser.add_argument(
     "--timeout", type=int, default=DEFAULT_TIMEOUT_S, metavar="SECONDS",
     help=f"the wall-clock limit of one instance (default: {DEFAULT_TIMEOUT_S})",
+)
+parser.add_argument(
+    "--oldest-python", default=None, metavar="VERSION",
+    help="the Python to try when a spec wants one that uv cannot build, for "
+         "example 3.8 (default: leave those 77 instances out)",
 )
 parser.add_argument(
     "--verbose", action="store_true",
@@ -205,7 +248,7 @@ def echo(line):
     console.print(f"    {line}", markup=False, highlight=False, style="dim")
 
 
-def stream_agent(cmd, cwd, prompt, timeout):
+def stream_agent(cmd, cwd, prompt, timeout, environment):
     """Run the agent, and write its output line by line as it comes.
 
     The prompt goes to the standard input of the agent, and a thread writes
@@ -220,16 +263,21 @@ def stream_agent(cmd, cwd, prompt, timeout):
     and its children. If they stay alive they hold the temporary repository
     open, and they use the memory the docker score step needs.
 
-    The agent gets a CLEAN environment, and not the environment of this
-    harness. `uv run --script` makes an ephemeral environment for this
+    The agent gets the environment of the INSTANCE, and not the environment
+    of this harness. `uv run --script` makes an ephemeral environment for this
     script, and a child that gets that environment finds the Python of the
-    harness. `swebench_env.py` says what the agent keeps and what it loses.
-    The log line below names the Python that the agent gets.
+    harness. `swebench_env.py` says what the agent keeps and what it loses,
+    and `swebench_venv.py` puts the environment of the instance first on that
+    PATH. The caller makes it, and it logs which Python the agent gets.
+
+    - cmd: the command of the agent.
+    - cwd: the directory the agent runs in.
+    - prompt: the problem statement of the instance.
+    - timeout: the wall-clock limit of the instance, in seconds.
+    - environment: the environment of the process of the agent.
 
     Returns (returncode, timed_out).
     """
-    environment = agent_environment()
-    log(f"the environment of the agent -- {environment_summary(environment)}")
     proc = subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -381,7 +429,10 @@ log(
 )
 log(f"the record of each instance -> [bold]{runs_path(outpath)}[/]")
 
-counts = {"patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0}
+counts = {
+    "patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0,
+    "env_failed": 0, "unsupported": 0,
+}
 t_all = time.monotonic()
 
 # Both files are appended, and not written over, unless --force. The
@@ -408,6 +459,7 @@ with outpath.open("w" if args.force else "a") as out, \
         exit_code = None
         timed_out = False
         patch = ""
+        built = None
         t0 = time.monotonic()
         try:
             # 1. SET UP the buggy repository, at the commit before the fix.
@@ -436,22 +488,55 @@ with outpath.open("w" if args.force else "a") as out, \
             )
             clone_seconds = time.monotonic() - t_clone
 
-            # 2. RUN THE AGENT in that repository. The prompt is the problem
+            # 2. BUILD THE PYTHON ENVIRONMENT of the instance, in the clone.
+            #    A SWE-bench repository does not import from a source
+            #    checkout, so without this step the agent spends its hour on
+            #    pip. An instance that does not build here gets no prediction
+            #    row: a failed environment is not a failure of the agent, and
+            #    it must not be part of the score.
+            log(f"{prefix} building the environment...")
+            built = prepare_environment(
+                repo,
+                repo_name,
+                inst["version"],
+                oldest_python=args.oldest_python,
+            )
+            if built.status == UNSUPPORTED:
+                counts["unsupported"] += 1
+                log(f"{prefix} [dim]not supported here[/] -- {escape(built.reason)}")
+                continue
+            if built.status != BUILT:
+                counts["env_failed"] += 1
+                log(
+                    f"{prefix} [yellow]NO ENVIRONMENT[/] -- "
+                    f"{escape(built.reason)}"
+                )
+                if built.output:
+                    echo(built.output)
+                continue
+            log(
+                f"{prefix} the environment is ready -- python {built.python} . "
+                f"{built.seconds:.0f}s"
+            )
+
+            # 3. RUN THE AGENT in that repository. The prompt is the problem
             #    statement, and nothing more. `-` makes the agent read the
             #    prompt from its standard input, so no quote and no argument
             #    length can change the text.
             problem = inst["problem_statement"]
+            environment = instance_environment(repo)
+            log(f"the environment of the agent -- {environment_summary(environment)}")
             log(f"{prefix} running the agent (limit {args.timeout}s)...")
             cmd = [str(AGENT), "run", "-", "--cwd", str(repo)]
             if args.verbose:
                 cmd.append("--verbose")
             t_agent = time.monotonic()
             exit_code, timed_out = stream_agent(
-                cmd, str(repo), problem, args.timeout
+                cmd, str(repo), problem, args.timeout, environment
             )
             agent_seconds = time.monotonic() - t_agent
 
-            # 3. GET the source diff, against the clean base commit. The row
+            # 4. GET the source diff, against the clean base commit. The row
             #    KEEPS that diff in all conditions. An agent that the watchdog
             #    stopped gets `truncated` in its row, and nothing more: its
             #    tree can hold the correct answer, and this file is the
@@ -510,6 +595,11 @@ with outpath.open("w" if args.force else "a") as out, \
                     timed_out=timed_out,
                     patch=patch,
                     transcript_path=kept,
+                    env_status=None if built is None else built.status,
+                    env_python=None if built is None else built.python,
+                    env_seconds=None if built is None else built.seconds,
+                    env_exit_code=None if built is None else built.exit_code,
+                    env_reason=None if built is None else built.reason,
                 ),
             )
 
@@ -520,6 +610,8 @@ log(
     f"[green]{counts['patches']} patches[/], "
     f"[yellow]{counts['empty']} empty[/], "
     f"[red]{counts['timeouts']} too slow[/], "
+    f"[yellow]{counts['env_failed']} no environment[/], "
+    f"[dim]{counts['unsupported']} not supported[/], "
     f"[red]{counts['errors']} errors[/], "
     f"[dim]{counts['skipped']} not done again[/] in {total_dt / 60:.1f} min"
 )
@@ -535,6 +627,11 @@ table.add_row("instances", str(len(instances)))
 table.add_row("patches made", f"[green]{counts['patches']}[/]")
 table.add_row("empty patches", f"[yellow]{counts['empty']}[/]")
 table.add_row("too slow", f"[red]{counts['timeouts']}[/]" if counts["timeouts"] else "0")
+table.add_row(
+    "no environment",
+    f"[yellow]{counts['env_failed']}[/]" if counts["env_failed"] else "0",
+)
+table.add_row("not supported", str(counts["unsupported"]))
 table.add_row("errors", f"[red]{counts['errors']}[/]" if counts["errors"] else "0")
 table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))

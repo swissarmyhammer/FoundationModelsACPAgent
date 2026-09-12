@@ -52,8 +52,14 @@ A_PATCH_WITH_A_WIDE_CHARACTER = "diff --git a/x.py b/x.py\n+é\n"
 BYTES_OF_THE_WIDE_PATCH = 29
 # Where `keep_transcripts` puts the transcripts of this instance.
 A_TRANSCRIPT_PATH = f"/tmp/preds.transcripts/{INSTANCE_ID}"
-# The nine names that the record of an instance carries. A reader of the file
-# expects all of them in every row.
+# What the environment step of this instance did. `swebench_venv.py` makes
+# these values, and the record keeps them.
+AN_ENVIRONMENT_STATUS = "built"
+AN_ENVIRONMENT_PYTHON = "3.9"
+# Why an instance of the old Python group does not run on this machine.
+AN_ENVIRONMENT_REASON = "the spec wants Python 3.6, and `uv` has no build of it"
+# The fourteen names that the record of an instance carries. A reader of the
+# file expects all of them in every row.
 RECORD_KEYS = {
     "instance_id",
     "seconds",
@@ -64,6 +70,11 @@ RECORD_KEYS = {
     "patch_bytes",
     "patch_files",
     "transcript_path",
+    "env_status",
+    "env_python",
+    "env_seconds",
+    "env_exit_code",
+    "env_reason",
 }
 
 
@@ -80,6 +91,11 @@ def a_record(**changes):
         "timed_out": False,
         "patch": A_PATCH,
         "transcript_path": A_TRANSCRIPT_PATH,
+        "env_status": AN_ENVIRONMENT_STATUS,
+        "env_python": AN_ENVIRONMENT_PYTHON,
+        "env_seconds": 61.5,
+        "env_exit_code": None,
+        "env_reason": None,
     }
     fields.update(changes)
     return run_record(INSTANCE_ID, **fields)
@@ -155,12 +171,12 @@ class TheRecordOfAnInstance(unittest.TestCase):
         record = a_record(transcript_path=Path(A_TRANSCRIPT_PATH))
         self.assertEqual(record["transcript_path"], A_TRANSCRIPT_PATH)
 
-    def test_it_holds_the_nine_names_when_the_clone_failed(self):
+    def test_it_holds_the_fourteen_names_when_the_clone_failed(self):
         """A step that did not run gives no number, but the row keeps shape.
 
-        An instance that failed in the clone has no agent and no patch. Its
-        row must still carry every name, so that a reader can use `[]` on
-        each row of the file.
+        An instance that failed in the clone has no environment, no agent and
+        no patch. Its row must still carry every name, so that a reader can
+        use `[]` on each row of the file.
         """
         record = run_record(
             INSTANCE_ID,
@@ -171,16 +187,72 @@ class TheRecordOfAnInstance(unittest.TestCase):
             timed_out=False,
             patch="",
             transcript_path=None,
+            env_status=None,
+            env_python=None,
+            env_seconds=None,
+            env_exit_code=None,
+            env_reason=None,
         )
         self.assertEqual(set(record), RECORD_KEYS)
         self.assertIsNone(record["clone_seconds"])
         self.assertIsNone(record["agent_seconds"])
         self.assertIsNone(record["exit_code"])
         self.assertIsNone(record["transcript_path"])
+        self.assertIsNone(record["env_status"])
 
-    def test_it_holds_the_nine_names_when_the_instance_finished(self):
+    def test_it_holds_the_fourteen_names_when_the_instance_finished(self):
         """The rows of one file must all have the same shape."""
         self.assertEqual(set(a_record()), RECORD_KEYS)
+
+
+class TheEnvironmentOfAnInstance(unittest.TestCase):
+    """What the record says about the environment step.
+
+    That step is new, and it is the largest cost of an instance after the
+    agent itself. The run of 2026-09-11 had no such step, and the agent spent
+    31% of its tool calls on the work this step now does.
+    """
+
+    def test_it_says_what_the_environment_step_did(self):
+        """A reader counts the instances of each group with this name."""
+        self.assertEqual(a_record()["env_status"], AN_ENVIRONMENT_STATUS)
+
+    def test_it_names_the_python_of_the_environment(self):
+        """A run can give 3.8 to an instance that wants 3.6.
+
+        The record must say which Python the instance got, because the result
+        of that instance is not the result of the spec.
+        """
+        self.assertEqual(a_record()["env_python"], AN_ENVIRONMENT_PYTHON)
+
+    def test_it_holds_the_time_of_the_environment_step(self):
+        """The whole time of an instance does not say which step was slow."""
+        self.assertEqual(a_record(env_seconds=61.5)["env_seconds"], 61.5)
+
+    def test_it_rounds_the_time_of_the_environment_step(self):
+        """A clock gives more digits than a reader of a run can use."""
+        self.assertEqual(a_record(env_seconds=12.3456789)["env_seconds"], 12.346)
+
+    def test_it_holds_the_exit_code_of_the_build_that_failed(self):
+        """An environment that fails one way must be easy to tell from another."""
+        self.assertEqual(a_record(env_exit_code=127)["env_exit_code"], 127)
+
+    def test_it_says_why_an_instance_did_not_run(self):
+        """121 instances of the Lite split do not build on this machine.
+
+        A count of them is not enough: the record must say why it left each
+        one out.
+        """
+        record = a_record(env_status="unsupported", env_reason=AN_ENVIRONMENT_REASON)
+        self.assertEqual(record["env_reason"], AN_ENVIRONMENT_REASON)
+
+    def test_a_step_that_did_not_run_gives_no_name_at_all(self):
+        """An instance that failed in the clone has no environment."""
+        record = a_record(
+            env_status=None, env_python=None, env_seconds=None, env_reason=None
+        )
+        self.assertIsNone(record["env_status"])
+        self.assertIsNone(record["env_seconds"])
 
 
 class ThePatchOfARecord(unittest.TestCase):
@@ -269,6 +341,11 @@ class TheRowsOnDisk(unittest.TestCase):
             timed_out=False,
             patch="",
             transcript_path=None,
+            env_status=AN_ENVIRONMENT_STATUS,
+            env_python=AN_ENVIRONMENT_PYTHON,
+            env_seconds=8.5,
+            env_exit_code=None,
+            env_reason=None,
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "preds.runs.jsonl"

@@ -13,7 +13,7 @@ The work is two scripts, because the two steps fail in different ways.
 
 | Step | Script | What it needs | What it makes |
 |---|---|---|---|
-| Make the patches | `swebench_run.py` | the agent, git, network | `preds.jsonl` |
+| Make the patches | `swebench_run.py` | the agent, git, uv, network | `preds.jsonl` |
 | Give the score | `swebench_score.py` | docker | a score report |
 
 The agent run is long. The docker run is short, but it can run out of memory.
@@ -101,12 +101,16 @@ Each script has `--help`. These are the options you will use:
 | `--force` | run | do every instance again, and write over the file |
 | `--agent PATH` | run | a different agent binary |
 | `--timeout SECONDS` | run | the limit of one instance (default 3600) |
+| `--oldest-python VERSION` | run | the Python to try for the instances that want 3.6 |
 | `--verbose` | run | give `--verbose` to the agent |
 | `--instance-ids ID` | score | score these ids only |
 | `--max-workers N` | score | how many docker workers run together |
 
 ## What to expect
 
+* **121 of the 300 instances do not run on this machine.** Read
+  [The environment of the instance](#the-environment-of-the-instance). Each
+  one gets a record row that says why, and no prediction row.
 * **The limit of one instance is one hour** (`--timeout`). Three instances
   can thus be three hours. An agent that goes past the limit is stopped, but
   the run KEEPS the patch of that instance. Read
@@ -166,6 +170,66 @@ Each instance writes a log line with the Python that the agent gets:
 09:12:31 the environment of the agent -- python3: /usr/bin/python3 . PATH: ...
 ```
 
+## The environment of the instance
+
+**The run builds the Python environment of each instance, before the agent
+starts.** A SWE-bench repository does not import from a source checkout, so
+without this step the agent cannot run one test of the instance.
+
+In the run of 2026-09-11 the agent had to do that work itself, and it was the
+largest cost of the run: 219 of 707 tool calls were about pip, uv, virtual
+environments or absent modules. For `astropy__astropy-6938` it was 37 of 80
+calls, and the agent never got a working environment. Its transcripts hold
+lines such as:
+
+```
+ModuleNotFoundError: No module named 'erfa'
+ImportError: You appear to be trying to import astropy from within a source
+checkout
+```
+
+So `swebench_venv.py` does it now. For each instance it:
+
+* reads the environment of that repository and version from
+  `MAP_REPO_VERSION_TO_SPECS`, which the `swebench` package publishes;
+* makes `<clone>/.venv` with `uv venv --seed --python <the version of the
+  spec>`;
+* installs the `pip_packages` of the spec with the Python of that
+  environment;
+* installs the requirements file of the repository, when the spec names one.
+  The file is NOT `requirements.txt` at the root: `MAP_REPO_TO_REQS_PATHS`
+  says where it stands, and django keeps its file at
+  `tests/requirements/py3.txt`. The clone already holds it, so this asks for
+  no network;
+* runs the `install` command of the spec, for example
+  `python -m pip install -e .`;
+* puts `<clone>/.venv/bin` FIRST on the `PATH` of the agent.
+
+Django builds in 12 seconds this way, and `./tests/runtests.py` then runs in
+the clone with no more work.
+
+### What this machine cannot build
+
+The agent uses local models, so it runs on the mac and not in a linux
+container. Two groups of the Lite split do not build here:
+
+| Condition | Instances |
+|---|---|
+| The spec wants Python 3.6, and `uv` has no 3.6 and no 3.7 build for arm64 | 77 |
+| The spec has a `pre_install`, which is written for linux | 44 |
+
+The two groups do not intersect, so **179 of the 300 instances run here**. A
+`pre_install` holds `apt-get`, or a `sed -i 's/x/y/' file` in the form of GNU
+that the `sed` of macOS does not accept, so no option answers that group.
+`--oldest-python 3.8` gives the first group a Python to try, and the record of
+each instance then says which Python it got.
+
+**An instance that does not build gets NO prediction row.** A failed
+environment is not a failure of the agent, and it must not be part of the
+score. The instance gets a record row with `env_status` and `env_reason`, so
+a reader of the run knows why it was left out. A later run does that instance
+again, because the predictions file is what says which instances are done.
+
 ### The tests of the harness
 
 ```bash
@@ -179,12 +243,12 @@ uv run bench/test_swebench_env.py
 python3 bench/test_swebench_prediction.py
 ```
 
-The tests of the environment start a real child process with that
+The tests of the clean environment start a real child process with that
 environment, and they read what the process can see. The tests of the
 prediction and of the record read the two rows that a run writes for each
-instance. The tests of docker give the module a stand-in for
-`subprocess.run`, so they start no daemon and they give the same answer on
-each machine. All of them need the standard library only, so `python3` runs
+instance. The tests of docker and of the environment of an instance give the module a
+stand-in for `subprocess.run`, so they start no daemon, they make no virtual
+environment, and they give the same answer on each machine. All of them need the standard library only, so `python3` runs
 them with no help. The `bench` job of CI runs
 the discovery command on each push, so it finds a new `test_*.py` file with
 no change to the workflow.
@@ -243,7 +307,9 @@ says what the instance COST.
 ```json
 {"instance_id": "astropy__astropy-14182", "seconds": 3612.4, "clone_seconds": 24.1,
  "agent_seconds": 3584.2, "exit_code": -9, "timed_out": true, "patch_bytes": 1842,
- "patch_files": 2, "transcript_path": "bench/preds.transcripts/astropy__astropy-14182"}
+ "patch_files": 2, "transcript_path": "bench/preds.transcripts/astropy__astropy-14182",
+ "env_status": "built", "env_python": "3.9", "env_seconds": 61.5,
+ "env_exit_code": null, "env_reason": null}
 ```
 
 | Field | What it is |
@@ -257,13 +323,18 @@ says what the instance COST.
 | `patch_bytes` | the size of the patch |
 | `patch_files` | the count of files in the patch |
 | `transcript_path` | where the transcripts are |
+| `env_status` | what the environment step did: `built`, `failed` or `unsupported` |
+| `env_python` | the Python version of the environment |
+| `env_seconds` | the time of the environment step |
+| `env_exit_code` | the exit code of the build command that failed |
+| `env_reason` | why the instance did not run |
 
 Three notes for a reader of the file:
 
-* **Each row carries all nine names.** A step that did not run gives `null`.
-  An instance that failed in the clone thus has `null` for `clone_seconds`,
-  `agent_seconds` and `exit_code`, and its row still has the same shape as
-  every other row.
+* **Each row carries all fourteen names.** A step that did not run gives
+  `null`. An instance that failed in the clone thus has `null` for
+  `clone_seconds`, `agent_seconds` and `exit_code`, and its row still has the
+  same shape as every other row.
 * **A row goes to disk when its instance ends.** A run of many hours can stop
   at any instance, and the rows of the instances that are complete stay.
 * **An instance that failed also gets a row.** The count of the instances in
@@ -349,11 +420,13 @@ swebench_common.py           the console and the log line the two scripts share
 swebench_env.py              the clean environment that the process of the agent gets
 swebench_prediction.py       the prediction row that a run makes for one instance
 swebench_record.py           the record row that a run makes for one instance
+swebench_venv.py             the Python environment that a run builds for one instance
 swebench_docker.py           the question that the score step asks docker first
 swebench_report.py           the report that a score run writes, and when it does not
 test_swebench_env.py         the tests of that environment
 test_swebench_prediction.py  the tests of that prediction row
 test_swebench_record.py      the tests of that record row
+test_swebench_venv.py        the tests of that environment
 test_swebench_docker.py      the tests of that question to docker
 test_swebench_report.py      the tests of that report
 .gitignore                   keeps the run results out of git
