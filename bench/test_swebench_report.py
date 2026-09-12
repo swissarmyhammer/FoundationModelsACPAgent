@@ -8,7 +8,7 @@ test_swebench_report.py -- the proof that the score report says the truth.
 The report of a score run is the number that a person quotes. So it must say
 what the agent did, and it must not say anything else.
 
-Two rules hold that, and these tests hold the two rules:
+Three rules hold that, and these tests hold the three rules:
 
   * The score is resolved / EVALUATED. An instance that did not run, because
     docker could not build its image, stays out of the divisor. A memory
@@ -16,6 +16,9 @@ Two rules hold that, and these tests hold the two rules:
   * A run that evaluated NOTHING writes no report. The run of the task wrote
     `"submitted": 16, "evaluated": 0, "resolved": 0`, and that file reads like
     a failure of the agent although docker was the cause.
+  * The report stands beside the predictions, and NOWHERE else. The run id
+    comes from the command line and it becomes part of the path of the
+    report, so a run id that is not a name is refused.
 
 This test needs the standard library only, so both commands run it:
 
@@ -27,11 +30,33 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swebench_report import report_path, score_report, write_report
+from swebench_report import (
+    RunIdError,
+    report_path,
+    score_report,
+    write_report,
+)
 
 # The names below are the names of a test. A run id of a score step holds the
 # time, as `score_20260912_090000` does.
 A_RUN_ID = "score_20260912_090000"
+# The run id of the finding: it writes the report outside the directory of
+# the predictions.
+A_CLIMB = "../../etc/hostname"
+# Run ids that a person must never be able to give. The run id comes from the
+# command line, and it becomes part of a path, so each one of these either
+# leaves the directory of the predictions or is not a name at all.
+BAD_RUN_IDS = (
+    A_CLIMB,               # the climb: it writes the report somewhere else
+    "..",                  # a climb by itself, as in `logs/run_evaluation/..`
+    ".",                   # the directory itself, and not a name in it
+    "/etc/hostname",       # an absolute path
+    "..\\..\\etc",         # the climb of the other platform
+    ".hidden",             # a name that begins with a dot, as `.` and `..` do
+    "",                    # no name at all
+    "score $(whoami)",     # the words of a shell
+    "score\n2026",         # a second line
+)
 A_PREDICTIONS_FILE = Path("/a/b/preds.jsonl")
 # Three instances of SWE-bench_Lite: one resolved, one not resolved, and one
 # that docker could not build.
@@ -42,9 +67,10 @@ ERRORED_ID = "astropy__astropy-14182"
 A_WALL_TIME = 12.5
 
 
-def a_report(**changes):
+def a_report(run_id=A_RUN_ID, **changes):
     """The report of a run of three instances, with the given changes.
 
+    - run_id: the run id of the harness.
     - changes: the fields to replace.
     """
     fields = {
@@ -56,7 +82,7 @@ def a_report(**changes):
         "minutes": A_WALL_TIME,
     }
     fields.update(changes)
-    return score_report(A_RUN_ID, **fields)
+    return score_report(run_id, **fields)
 
 
 class TheReportFile(unittest.TestCase):
@@ -77,6 +103,57 @@ class TheReportFile(unittest.TestCase):
         """
         path = report_path(A_PREDICTIONS_FILE, A_RUN_ID)
         self.assertEqual(path.name, f"preds.jsonl.score.{A_RUN_ID}.json")
+
+
+class TheRunIdOfAReport(unittest.TestCase):
+    """Which run ids can become part of the path of the report.
+
+    `--run-id` comes from the command line, and the run id then becomes part
+    of the name of the report file and part of the directory of the harness
+    logs. A run id such as `../../etc/hostname` would put the report outside
+    the directory of the predictions. So a run id must be a NAME.
+    """
+
+    def test_the_path_refuses_a_run_id_that_is_not_a_name(self):
+        """The report can only ever stand beside the predictions file."""
+        for run_id in BAD_RUN_IDS:
+            with self.subTest(run_id=run_id):
+                with self.assertRaises(RunIdError):
+                    report_path(A_PREDICTIONS_FILE, run_id)
+
+    def test_the_report_refuses_a_run_id_that_is_not_a_name(self):
+        """`score_report` is the second door to the path.
+
+        It puts the run id in the report, and `write_report` reads it back
+        to make the path. A gate on `report_path` alone leaves this door
+        open.
+        """
+        for run_id in BAD_RUN_IDS:
+            with self.subTest(run_id=run_id):
+                with self.assertRaises(RunIdError):
+                    a_report(run_id)
+
+    def test_the_refusal_names_the_run_id(self):
+        """A person who gave a bad run id must read which one it was.
+
+        A message that says only "the run id is not a name" makes the person
+        read the command line again to find the answer.
+        """
+        with self.assertRaises(RunIdError) as refusal:
+            report_path(A_PREDICTIONS_FILE, A_CLIMB)
+        self.assertIn(A_CLIMB, str(refusal.exception))
+
+    def test_it_takes_a_run_id_of_capital_letters(self):
+        """A run id is a name, and the case of a name is free.
+
+        The score step makes a run id of small letters, and a person can give
+        `--run-id RESCORE`. The report of that run is a file like any other.
+        """
+        path = report_path(A_PREDICTIONS_FILE, A_RUN_ID.upper())
+        self.assertEqual(path.parent, A_PREDICTIONS_FILE.parent)
+        self.assertEqual(
+            path.name, f"preds.jsonl.score.{A_RUN_ID.upper()}.json"
+        )
 
 
 class TheScoreOfARun(unittest.TestCase):
@@ -166,6 +243,19 @@ class TheReportOnDisk(unittest.TestCase):
                 errored=[RESOLVED_ID, UNRESOLVED_ID, ERRORED_ID],
             )
             write_report(predictions, report)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_it_writes_nothing_when_the_run_id_is_not_a_name(self):
+        """A report can come from a file, and not only from `score_report`.
+
+        The run id of such a report went through no gate, so `write_report`
+        refuses it too. Nothing goes to disk, here or anywhere else.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            predictions = Path(directory) / "preds.jsonl"
+            report = dict(a_report(predictions=predictions), run_id="..")
+            with self.assertRaises(RunIdError):
+                write_report(predictions, report)
             self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_it_names_no_file_when_no_instance_was_evaluated(self):

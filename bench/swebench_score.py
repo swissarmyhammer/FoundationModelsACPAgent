@@ -40,7 +40,8 @@ that `import swebench` finds the installed library and not this file.
 
 THE EXIT CODES:
   0  a score was made, and the report is beside the predictions
-  2  the predictions file is absent, or it holds no instance to score
+  2  the command line is not valid: the predictions file is absent, it holds
+     no instance to score, or the run id is not a name
   3  the docker daemon does not answer
   4  docker ran, and no instance was evaluated. There is no score.
 
@@ -65,7 +66,12 @@ from swebench_docker import (
     ensure_host,
     missing_daemon_message,
 )
-from swebench_report import score_report, write_report
+from swebench_report import (
+    RunIdError,
+    checked_run_id,
+    score_report,
+    write_report,
+)
 
 # --- config -----------------------------------------------------------------
 DATASET = "princeton-nlp/SWE-bench_Lite"
@@ -78,7 +84,8 @@ LOCAL_DEFAULT_WORKERS = 1  # parallel emulated builds are the first cause of fai
 REMOTE_DEFAULT_WORKERS = 4
 # The exit codes of this script. A person reads them, and so does a pipeline
 # that drives a run. The docstring above holds the same table.
-BAD_INPUT_EXIT = 2        # the predictions file is absent, or it names nothing
+BAD_INPUT_EXIT = 2        # the command line is not valid: the file, the ids
+                          # or the run id
 NO_DOCKER_EXIT = 3        # the docker daemon does not answer
 NOTHING_EVALUATED_EXIT = 4  # docker ran, and no instance was evaluated
 # One worker, and a clean build, for the second try of an instance that did
@@ -151,6 +158,26 @@ def require_docker():
         return
     console.print(f"[red]{missing_daemon_message(host)}[/]")
     raise SystemExit(NO_DOCKER_EXIT)
+
+
+def chosen_run_id(named):
+    """The run id of this score run, or stop with `BAD_INPUT_EXIT`.
+
+    - named: the run id of `--run-id`, or None for the run id of the time.
+
+    The run id becomes part of two paths: the name of the report file, and
+    the directory of the logs that `tally` reads. So it must be a NAME. A run
+    id such as `../../etc/hostname` writes outside the directory of the
+    predictions, and `checked_run_id` refuses it.
+
+    The refusal comes BEFORE the harness starts. A person thus reads the
+    cause at once, and not after hours of work.
+    """
+    try:
+        return checked_run_id(named or f"score_{time.strftime('%Y%m%d_%H%M%S')}")
+    except RunIdError as refused:
+        console.print(f"[red]{refused}[/]")
+        raise SystemExit(BAD_INPUT_EXIT) from refused
 
 
 def tally(run_id):
@@ -229,7 +256,7 @@ def main():
 
     ids = [r["instance_id"] for r in rows]
     nonempty = [r["instance_id"] for r in rows if r.get("model_patch", "").strip()]
-    run_id = args.run_id or f"score_{time.strftime('%Y%m%d_%H%M%S')}"
+    run_id = chosen_run_id(args.run_id)
     workers = (
         args.max_workers if args.max_workers is not None
         else (LOCAL_DEFAULT_WORKERS if NAMESPACE is None else REMOTE_DEFAULT_WORKERS)

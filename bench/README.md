@@ -317,12 +317,26 @@ That report reads like a failure of the agent. Docker was the cause.
 **A run that evaluated no instance writes no report.** No file is better than
 a file that says `"resolved": 0` when the agent was never asked.
 
+### The run id is a name
+
+`--run-id` becomes part of two paths: the name of the report file, and the
+directory of the logs of the harness. So a run id is a NAME: a letter or a
+digit, and then letters, digits, dot, dash and underline. A run id such as
+`../../etc/hostname` would write outside the directory of the predictions,
+and the step refuses it before the harness starts:
+
+```
+the run id '../../etc/hostname' is not a name. A run id begins with a letter
+or a digit, and after that it holds letters, digits, dot, dash and underline
+only, because it becomes part of the path of the report.
+```
+
 ### The exit codes of the score step
 
 | Code | What it means |
 |---|---|
 | 0 | a score was made, and the report is beside the predictions |
-| 2 | the predictions file is absent, or it holds no instance to score |
+| 2 | the command line is not valid: the predictions file is absent, it holds no instance to score, or the run id is not a name |
 | 3 | the docker daemon does not answer |
 | 4 | docker ran, and no instance was evaluated. There is no score |
 
