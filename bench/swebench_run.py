@@ -196,7 +196,19 @@ SPLIT = "test"
 MODEL_NAME = "acp-agent"
 # The wall-clock limit of one instance. The agent is a local model, and it is
 # much slower than a hosted model. One tool call can need ten minutes.
-DEFAULT_TIMEOUT_S = 3600
+#
+# The figure comes from the 16 transcripts of the run of 2026-09-11, on an
+# Apple Silicon machine with `mlx-community/Qwen3.8-27B-mxfp4`. 14 of those
+# instances finished on their own, and the longest of the 14 used 2628 s. The
+# other 2 were at the limit of 3600 s, and both were building a Python
+# environment when the watchdog stopped them. The driver now builds that
+# environment BEFORE the turn of the agent starts, so that work is no longer
+# in this budget. 3000 s is above every instance that finished, and it is
+# below the hour that the environment work made necessary.
+#
+# The figure is true for one machine, one model and one date. `--timeout`
+# changes it, and the `too slow` line of the run summary says when it binds.
+DEFAULT_TIMEOUT_S = 3000
 # The directories that this script and the agent write in the repository:
 # the transcripts of the agent, and the Python environment of the instance.
 # `git diff <commit>` reports tracked files only, so these are already out of

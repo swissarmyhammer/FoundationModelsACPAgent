@@ -47,8 +47,29 @@ comments:
     - tests: `python3 -m unittest discover --start-directory bench --pattern 'test_*.py'` -> 196 tests, 0 failures, 0 warnings.
     - next: `/review`
   timestamp: 2026-09-12T16:30:13.314071+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m2b7gb5yjbcchba2ern6ej6h
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit bcff728). 0 findings, 0 confirmed, 0 refuted, from 8 validator runs, 0 failed. Reviewed: `bench/swebench_score.py`, `bench/test_swebench_log_lines.py`. Not reviewed: `bench/README.md` (no validator matches a Markdown file), and 4 `.kanban/` files (an ignore rule).
+    - the `console.print` choice: correct. The card gives two permitted answers — leave the sentences, or make them fields — and it asks only that you say which one you chose and why. The file gives the reason in a comment, and the comment on this card gives it also. The house rule for a constant message and `name=value` fields applies to `swebench_common.log`, and not to `console.print`.
+    - no prior `## Review Findings` section, and no open item. The card moves to `done`.
+    - next: none
+  timestamp: 2026-09-12T16:34:13.310207+00:00
+- actor: claude-code
+  id: 01m2b7gt2chej70mbfyb7zmv8c
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files: bench/swebench_score.py, bench/test_swebench_log_lines.py (new), bench/README.md. Seven f-string log calls became a constant message with name=value fields. New: joined_ids with ID_SEPARATOR, PERCENT_PLACES, LOCAL_BUILD.
+    - the new guard test reads each bench/swebench_*.py with ast and refuses a log call whose first argument is not constant text. It does not import the score script, because that script needs swebench and rich, which the CI job does not install.
+    - test: green — 196 Python tests passed, 561 Swift tests passed, 0 failed, 0 skipped. ruff check bench clean.
+    - commit: bcff728 — 7 files, local only, not pushed
+    - review: clean — 0 findings, 8 validator runs, 2 files, scope HEAD~1..HEAD
+    - the review judged the console.print decision and agreed with it: the house rule names swebench_common.log, so it does not reach console.print, and each console.print is the last line before an exit code of its own.
+    - next: none, the task is in done
+  timestamp: 2026-09-12T16:34:28.556529+00:00
+position_column: done
+position_ordinal: dc80
 title: 'bench: give swebench_score.py the message-and-fields line of the run script'
 ---
 ## The condition

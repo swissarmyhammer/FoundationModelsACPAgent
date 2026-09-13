@@ -106,7 +106,7 @@ Each script has `--help`. These are the options you will use:
 | `-i ID ID` | run | these instance ids only |
 | `--force` | run | do every instance again, and write over the file |
 | `--agent PATH` | run | a different agent binary |
-| `--timeout SECONDS` | run | the limit of one instance (default 3600) |
+| `--timeout SECONDS` | run | the limit of one instance (default 3000) |
 | `--oldest-python VERSION` | run | the Python to try for the instances that want 3.6 |
 | `--verbose` | run | write one line for each session event of the agent |
 | `--instance-ids ID` | score | score these ids only |
@@ -120,10 +120,12 @@ Each script has `--help`. These are the options you will use:
 * **A short run is a fair sample.** `--sample 10` gives ten instances, with
   each repository in the ratio of the split. `--limit 10` gives the first ten
   of the split, which are astropy instances.
-* **The limit of one instance is one hour** (`--timeout`). Three instances
-  can thus be three hours. An agent that goes past the limit is stopped, but
-  the run KEEPS the patch of that instance. Read
-  [A patch that the watchdog stopped](#a-patch-that-the-watchdog-stopped).
+* **The limit of one instance is 3000 seconds, which is 50 minutes**
+  (`--timeout`). Three instances can thus be two and a half hours. An agent
+  that goes past the limit is stopped, but the run KEEPS the patch of that
+  instance. Read
+  [A patch that the watchdog stopped](#a-patch-that-the-watchdog-stopped) and
+  [Where the limit comes from](#where-the-limit-comes-from).
 * **The run continues.** The predictions file says which instances are done.
   If you stop the run with `Ctrl-C`, start the same command again and it
   continues. `--force` does them all again.
@@ -468,6 +470,30 @@ Two notes for a reader of the file:
   of a run before this change. So read the name with `get`, and not with `[]`.
 * The summary of a run still counts the instances that went past the limit.
   The count is the `too slow` line of the table.
+
+### Where the limit comes from
+
+`DEFAULT_TIMEOUT_S` is 3000 seconds. The figure comes from the 16 transcripts
+of the run of 2026-09-11, on an Apple Silicon machine with
+`mlx-community/Qwen3.8-27B-mxfp4`.
+
+| Group | Instances | The longest of the group |
+|---|---|---|
+| Finished on their own | 14 | 2628 s |
+| Stopped by the watchdog at 3600 s | 2 | 3600 s |
+
+Both of the stopped instances were building a Python environment when the
+watchdog stopped them. The run builds that environment BEFORE the turn of the
+agent starts now, so that work is no longer in this budget. 3000 s is above
+every instance that finished, and it is below the hour that the environment
+work made necessary.
+
+**The figure is true for one machine, one model and one date.** A different
+model, a different quantization or a different machine makes it wrong. Do not
+trust this sentence: read the run instead. Each run writes `seconds` for each
+instance in [the record of a run](#the-record-of-a-run), and the `too slow`
+line of the summary counts the instances that reached the limit. If that line
+is not zero, the limit binds and `--timeout` raises it.
 
 ## The record of a run
 
