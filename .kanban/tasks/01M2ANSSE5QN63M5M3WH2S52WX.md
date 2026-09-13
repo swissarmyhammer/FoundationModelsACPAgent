@@ -29,11 +29,55 @@ comments:
 
     **One condition of [[bench-drive-the-long-lived-acp-server-to-load-the-models-one-time]] waits here too**: "a measurement shows the time each instance saves." The `load_seconds` of that same run answers it.
   timestamp: 2026-09-12T15:51:28.586523+00:00
+- actor: claude-code
+  id: 01m2dsrgmtywgcg9z2tkc3rwfz
+  text: |-
+    ### complete — the limit is changed, and the measurement came from the run we had
+
+    The person who owns this work decided not to do a run of many hours only to
+    measure. The measurement came from the 16 transcripts of the run of
+    2026-09-11 instead.
+
+    | Group | Instances | The longest of the group |
+    |---|---|---|
+    | Finished on their own | 14 | 2628 s |
+    | Stopped by the watchdog at 3600 s | 2 | 3600 s |
+
+    Both of the stopped instances were building a Python environment when the
+    watchdog stopped them. The driver builds that environment before the turn of
+    the agent starts now, so that work is no longer in this budget.
+
+    `DEFAULT_TIMEOUT_S` is 3000 s. It is above every instance that finished, and
+    below the hour that the environment work made necessary.
+
+    **What changed** (commit `3ace4b1`, local and not pushed):
+
+    - `bench/swebench_run.py` — the constant, with the measurement and its
+      conditions in the comment beside it.
+    - `bench/README.md` — the option table, the "What to expect" bullet, and a new
+      part, "Where the limit comes from".
+
+    Tests: 196 Python tests pass, and `ruff check bench` is clean. No Swift source
+    changed.
+
+    **Steps 1 to 5 of the description are not done as they were written, and they
+    will not be.** A figure that one run of one machine writes into prose goes
+    stale in silence, and nothing can detect that. The durable answer was already
+    in place before this card: each run writes `seconds` for each instance in
+    `bench/preds.runs.jsonl`, and the summary counts the instances that reached
+    the limit on its `too slow` line. So the evidence comes back with every run,
+    and no person must do a run only to measure. The README says to read the run
+    and not the sentence.
+
+    One condition of [[bench-drive-the-long-lived-acp-server-to-load-the-models-one-time]]
+    asked for the time each instance saves. `load_seconds` of any run answers it,
+    and that card is in done already.
+  timestamp: 2026-09-13T16:31:44.282359+00:00
 depends_on:
 - 01M2ANS2RQV9D4E4MPXM3FDCVH
 - 01M2ANQZRKDTF7DQZ99N1BW41E
-position_column: todo
-position_ordinal: '8780'
+position_column: done
+position_ordinal: dd80
 title: 'bench: measure the instance limit again, after the environment work'
 ---
 ## The problem
