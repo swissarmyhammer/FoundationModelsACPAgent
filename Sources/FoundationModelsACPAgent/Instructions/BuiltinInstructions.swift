@@ -46,6 +46,23 @@
 /// The `## Work` rule beside them answers the other half. A model can find
 /// the correct fix, write it in its answer, and never put it in a file. The
 /// rule names that condition: code that is not in a file is not a change.
+///
+/// ## Why "act first" is the first rule of the section
+///
+/// A small model that knows a popular project believes it remembers that
+/// project. Given a ticket against django it reconstructs the source from
+/// training instead of reading the checkout two directories away. The
+/// SWE-bench runs of 2026-09-13 and 2026-09-14 lost three instances that
+/// way. Each one made ZERO tool calls: one reasoning block of 28 to 33
+/// thousand characters, no search, no read, no edit, and a turn that ended
+/// mid-sentence in "let me recall". The `## Work` section already says to
+/// read the code before changing it, and that rule never fired, because a
+/// model that calls no tool never reaches `## Work`.
+///
+/// So the rule moves to the first two bullets of `## Tools`, which is the
+/// part the model reads before it acts, and it repeats under `## Reminders`.
+/// It names the tell as well as the rule: a thought that ends with "let me
+/// recall" has spent the turn and changed nothing.
 public enum BuiltinInstructions {
     /// The builtin system prompt text. It renders trusted through the
     /// template engine, and it stays self-contained: it names no partial
@@ -69,6 +86,13 @@ public enum BuiltinInstructions {
 
         ## Tools
 
+        - ACT FIRST. The first thing you do in a turn is a tool call, and
+          not a thought. Call a tool, read what it gives you, and think
+          after that.
+        - The code of the project is in the working directory. READ IT. Do
+          not try to remember it. Your memory of a project is not the
+          project. A long thought that ends with "let me recall" has used
+          the turn and changed nothing.
         - The tools change with the session. You cannot know them from
           memory. `searchTools` is how you find them.
         - Every task uses the same three steps, in this order:
@@ -131,6 +155,7 @@ public enum BuiltinInstructions {
 
         ## Reminders
 
+        - Call a tool first. Read the code, do not remember it.
         - Read before you write. Test before you report success.
         - To change a file, search for the tool first. Never write a file
           with the shell.
