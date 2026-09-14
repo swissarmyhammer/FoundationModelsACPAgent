@@ -30,6 +30,7 @@ one row for each instance:
 | `env_seconds` | the time of the environment step |
 | `env_exit_code` | the exit code of the build command that failed |
 | `env_reason` | why the instance did not run |
+| `prompt` | the name of the prompt shape the instance used |
 
 The five `env_` names hold the step that `swebench_venv.py` does. That step is
 the largest cost of an instance after the agent, and it is the step that
@@ -46,7 +47,7 @@ the protocol for how the turn ended -- `end_turn`, `max_tokens`,
 `max_turn_requests`, `refusal`, `cancelled`, or an extension that begins with
 `_`. It is a free string, and the record keeps whatever the agent said.
 
-Each row carries all fifteen names, in all conditions. A step that did not run
+Each row carries all sixteen names, in all conditions. A step that did not run
 gives `null`, and not a name that is absent, so a reader of the file can use
 `[]` on each row. `append_row` flushes each row, so a run that stops in the
 middle keeps the rows of the instances that are complete.
@@ -125,6 +126,7 @@ def run_record(
     env_seconds,
     env_exit_code,
     env_reason,
+    prompt,
 ):
     """The record of one instance of a run.
 
@@ -146,8 +148,11 @@ def run_record(
     - env_seconds: the time of the environment step, or None.
     - env_exit_code: the exit code of the build command that failed, or None.
     - env_reason: why the instance did not run, or None when it ran.
+    - prompt: the name of the prompt shape this instance used.
+      `swebench_prompt.py` gives the name. Two runs are comparable
+      only when the name is the same, so the row keeps it.
 
-    The record carries all fifteen names in all conditions, so that a reader
+    The record carries all sixteen names in all conditions, so that a reader
     can use `[]` on each row of the file.
     """
     return {
@@ -166,6 +171,7 @@ def run_record(
         "env_seconds": seconds_of(env_seconds),
         "env_exit_code": env_exit_code,
         "env_reason": env_reason,
+        "prompt": prompt,
     }
 
 

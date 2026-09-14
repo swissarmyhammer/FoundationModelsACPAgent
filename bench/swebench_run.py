@@ -180,6 +180,7 @@ from swebench_acp import AgentServer, is_chunk
 from swebench_common import console, log
 from swebench_env import environment_fields
 from swebench_prediction import prediction_row
+from swebench_prompt import instance_prompt, prompt_name
 from swebench_record import append_row, patch_file_count, run_record, runs_path
 from swebench_select import DEFAULT_SEED, choose_instances, reason_counts
 from swebench_venv import (
@@ -289,6 +290,14 @@ parser.add_argument(
     "--oldest-python", default=None, metavar="VERSION",
     help="the Python to try when a spec wants one that uv cannot build, for "
          "example 3.8 (default: leave those 77 instances out)",
+)
+parser.add_argument(
+    "--plain-prompt", dest="preamble", action="store_false", default=True,
+    help="send the problem statement alone. The DEFAULT puts a short "
+         "instruction in front of it, which tells the agent to change the "
+         "source only and to write no test, no release note and no "
+         "document. The score throws each of those away. Use this option "
+         "to measure the agent against the plain task",
 )
 parser.add_argument(
     "--verbose", action="store_true",
@@ -635,14 +644,25 @@ with outpath.open("w" if args.force else "a") as out, \
             )
 
             # 3. GIVE THE PROBLEM TO THE AGENT, in one session of the one
-            #    process. The prompt is the problem statement, and nothing
-            #    more. It goes over the wire as one text content block, so no
-            #    quote and no length of an argument can change the text. The
-            #    FIRST instance of a run waits here for the model load.
-            log("running the agent...", **about, limit_seconds=args.timeout)
+            #    process. The prompt is a short instruction of the bench and
+            #    then the problem statement. It goes over the wire as one
+            #    text content block, so no quote and no length of an argument
+            #    can change the text. The FIRST instance of a run waits here
+            #    for the model load. `swebench_prompt.py` holds the
+            #    instruction, and it says why the bench gives one.
+            log(
+                "running the agent...",
+                **about,
+                limit_seconds=args.timeout,
+                prompt=prompt_name(args.preamble),
+            )
             t_agent = time.monotonic()
             report = server.turn(
-                repo, inst["problem_statement"], args.timeout
+                repo,
+                instance_prompt(
+                    inst["problem_statement"], preamble=args.preamble
+                ),
+                args.timeout,
             )
             agent_seconds = time.monotonic() - t_agent
             stop_reason = report.stop_reason
@@ -731,6 +751,7 @@ with outpath.open("w" if args.force else "a") as out, \
                     env_seconds=None if built is None else built.seconds,
                     env_exit_code=None if built is None else built.exit_code,
                     env_reason=None if built is None else built.reason,
+                    prompt=prompt_name(args.preamble),
                 ),
             )
 

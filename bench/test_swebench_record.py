@@ -61,7 +61,10 @@ AN_ENVIRONMENT_REASON = "the spec wants Python 3.6, and `uv` has no build of it"
 # Why the agent stopped the turn of an instance. The wire of `acp-agent acp`
 # gives this, and the one-shot `run` command never did.
 A_STOP_REASON = "end_turn"
-# The fifteen names that the record of an instance carries. A reader of the
+# The name of the prompt shape a run used. `swebench_prompt.py` gives it,
+# and the row keeps it so that two runs can be compared.
+A_PROMPT_NAME = "source-only-v1"
+# The sixteen names that the record of an instance carries. A reader of the
 # file expects all of them in every row.
 RECORD_KEYS = {
     "instance_id",
@@ -79,6 +82,7 @@ RECORD_KEYS = {
     "env_seconds",
     "env_exit_code",
     "env_reason",
+    "prompt",
 }
 
 
@@ -101,6 +105,7 @@ def a_record(**changes):
         "env_seconds": 61.5,
         "env_exit_code": None,
         "env_reason": None,
+        "prompt": A_PROMPT_NAME,
     }
     fields.update(changes)
     return run_record(INSTANCE_ID, **fields)
@@ -200,7 +205,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
         record = a_record(transcript_path=Path(A_TRANSCRIPT_PATH))
         self.assertEqual(record["transcript_path"], A_TRANSCRIPT_PATH)
 
-    def test_it_holds_the_fifteen_names_when_the_clone_failed(self):
+    def test_it_holds_the_sixteen_names_when_the_clone_failed(self):
         """A step that did not run gives no number, but the row keeps shape.
 
         An instance that failed in the clone has no environment, no agent and
@@ -222,6 +227,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
             env_seconds=None,
             env_exit_code=None,
             env_reason=None,
+            prompt=A_PROMPT_NAME,
         )
         self.assertEqual(set(record), RECORD_KEYS)
         self.assertIsNone(record["clone_seconds"])
@@ -230,7 +236,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
         self.assertIsNone(record["transcript_path"])
         self.assertIsNone(record["env_status"])
 
-    def test_it_holds_the_fifteen_names_when_the_instance_finished(self):
+    def test_it_holds_the_sixteen_names_when_the_instance_finished(self):
         """The rows of one file must all have the same shape."""
         self.assertEqual(set(a_record()), RECORD_KEYS)
 
@@ -377,6 +383,7 @@ class TheRowsOnDisk(unittest.TestCase):
             env_seconds=8.5,
             env_exit_code=None,
             env_reason=None,
+            prompt=A_PROMPT_NAME,
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "preds.runs.jsonl"
