@@ -221,13 +221,13 @@ public struct InstructionsAssembler: Sendable {
 
         /// The single source-to-trust derivation (plan.md §3.1): the
         /// compiled-in floor (`nil`) and the shipped-defaults layer render
-        /// trusted; each file from the user or project layer renders
-        /// untrusted. There is no third case.
+        /// trusted; each file from the user, project, or marketplace layer
+        /// renders untrusted. There is no third answer.
         private static func trust(for source: DotfolderStack.Source?) -> TemplateEngine.Trust {
             switch source {
             case nil, .some(.defaults):
                 return .trusted
-            case .some(.user), .some(.project):
+            case .some(.user), .some(.project), .some(.marketplace):
                 return .untrusted
             }
         }

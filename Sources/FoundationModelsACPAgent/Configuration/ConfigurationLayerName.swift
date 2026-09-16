@@ -11,6 +11,12 @@ public enum ConfigurationLayerName: String, Encodable, Equatable, Sendable {
     /// The property defaults of `AgentConfiguration`: in code, no file.
     case builtin
 
+    /// A cached remote skill marketplace layer. A host adds this layer
+    /// itself, below the local layers, and it is never trusted. This
+    /// package derives no such layer, so the name appears only when a
+    /// host builds a stack that holds one.
+    case marketplace
+
     /// The consumer-shipped defaults directory. This package passes none,
     /// so the name appears only under a `<NAME>_DEFAULTS_DIR` override.
     case defaults
@@ -30,6 +36,8 @@ public enum ConfigurationLayerName: String, Encodable, Equatable, Sendable {
         switch source {
         case nil:
             self = .builtin
+        case .marketplace?:
+            self = .marketplace
         case .defaults?:
             self = .defaults
         case .user?:

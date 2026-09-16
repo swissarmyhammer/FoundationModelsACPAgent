@@ -334,6 +334,19 @@ import Testing
         #expect(loaded.sources["profile"] == nil)
     }
 
+    /// Every `DotfolderStack.Source` has its own layer name, the
+    /// marketplace layer included, so a report can name the layer a key
+    /// came from without a fallback.
+    @Test(arguments: [
+        (DotfolderStack.Source.defaults, ConfigurationLayerName.defaults),
+        (DotfolderStack.Source.user, ConfigurationLayerName.user),
+        (DotfolderStack.Source.project, ConfigurationLayerName.project),
+        (DotfolderStack.Source.marketplace, ConfigurationLayerName.marketplace),
+    ])
+    func eachSourceNamesItsOwnLayer(source: DotfolderStack.Source, name: ConfigurationLayerName) {
+        #expect(ConfigurationLayerName(source) == name)
+    }
+
     /// With no file in any layer the source map is empty: every key is
     /// builtin.
     @Test func noFilesGiveAnEmptySourceMap() throws {
