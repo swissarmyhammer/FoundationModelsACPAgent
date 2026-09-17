@@ -174,18 +174,6 @@ import Testing
         return value.map(\.path.rawValue)
     }
 
-    /// The fields of a JSON object value, or `nil` for another shape.
-    private static func objectFields(_ value: FoundationModelsACP.JSONValue?) -> [String: FoundationModelsACP.JSONValue]? {
-        guard case .object(let fields) = value ?? .null else { return nil }
-        return fields
-    }
-
-    /// The string of a JSON string value, or `nil` for another shape.
-    private static func stringValue(_ value: FoundationModelsACP.JSONValue?) -> String? {
-        guard case .string(let string) = value ?? .null else { return nil }
-        return string
-    }
-
     /// The elements of a JSON array value, or `nil` for another shape.
     ///
     /// - Parameter value: The value to read.
@@ -524,9 +512,9 @@ import Testing
         let value = try #require(
             patchValue(call.rawOutput),
             "expected a raw output value, got \(call.rawOutput)")
-        let fields = try #require(Self.objectFields(value))
-        #expect(Self.stringValue(fields["kind"]) == "modify")
-        #expect(Self.stringValue(fields["path"]) == "/tmp/notes.txt")
+        let fields = try #require(jsonObject(of: value))
+        #expect(jsonString(of: fields["kind"]) == "modify")
+        #expect(jsonString(of: fields["path"]) == "/tmp/notes.txt")
     }
 
     /// Several attached documents become one `rawOutput` array, in
@@ -543,10 +531,10 @@ import Testing
         let values = try #require(
             Self.arrayValues(patchValue(call.rawOutput)),
             "expected a raw output array, got \(call.rawOutput)")
-        let first = try #require(Self.objectFields(values.first))
-        #expect(Self.stringValue(first["kind"]) == "modify")
-        let last = try #require(Self.objectFields(values.last))
-        #expect(Self.stringValue(last["note"]) == "the run changed two files")
+        let first = try #require(jsonObject(of: values.first))
+        #expect(jsonString(of: first["kind"]) == "modify")
+        let last = try #require(jsonObject(of: values.last))
+        #expect(jsonString(of: last["note"]) == "the run changed two files")
     }
 
     /// A document that is not JSON still rides as a content item, and
@@ -740,26 +728,26 @@ import Testing
             let frame = try await iterator.next()
         {
             guard case .message(.object(let fields)) = frame,
-                Self.stringValue(fields["method"]) == "session/update",
-                let params = Self.objectFields(fields["params"])
+                jsonString(of: fields["method"]) == "session/update",
+                let params = jsonObject(of: fields["params"])
             else { continue }
-            #expect(Self.stringValue(params["sessionId"]) == syntheticSessionIdValue)
-            let update = try #require(Self.objectFields(params["update"]))
+            #expect(jsonString(of: params["sessionId"]) == syntheticSessionIdValue)
+            let update = try #require(jsonObject(of: params["update"]))
             notifications.append(update)
         }
         await connection.close()
         clientEnd.close()
 
         #expect(
-            notifications.map { Self.stringValue($0["sessionUpdate"]) } == [
+            notifications.map { jsonString(of: $0["sessionUpdate"]) } == [
                 "tool_call_update", "tool_call_update", "state_update",
             ])
         let creation = try #require(notifications.first)
-        #expect(Self.stringValue(creation["toolCallId"]) == Self.sdkToolCallId)
-        #expect(Self.stringValue(creation["status"]) == "in_progress")
-        #expect(Self.stringValue(creation["title"]) == Self.scriptedToolName)
+        #expect(jsonString(of: creation["toolCallId"]) == Self.sdkToolCallId)
+        #expect(jsonString(of: creation["status"]) == "in_progress")
+        #expect(jsonString(of: creation["title"]) == Self.scriptedToolName)
         let settlement = try #require(notifications.dropFirst().first)
         #expect(
-            Self.stringValue(settlement["status"]) == EventProjection.lostStatusWireValue)
+            jsonString(of: settlement["status"]) == EventProjection.lostStatusWireValue)
     }
 }

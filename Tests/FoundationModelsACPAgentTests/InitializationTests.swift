@@ -58,21 +58,6 @@ import Testing
 
     // MARK: - Readers of a JSON shape
 
-    /// The members of a JSON object, or `nil` when the value is absent
-    /// or holds something other than an object.
-    ///
-    /// A test unwraps the result with `try #require`, so a wrong shape
-    /// fails the test instead of ending it quietly.
-    ///
-    /// - Parameter value: The JSON value to read.
-    /// - Returns: The object members, or `nil`.
-    private static func objectMembers(in value: JSONValue?) -> [String: JSONValue]? {
-        guard case .object(let members)? = value else {
-            return nil
-        }
-        return members
-    }
-
     /// The members of a message frame, or `nil` when the frame is not a
     /// message that carries a JSON object.
     ///
@@ -85,7 +70,7 @@ import Testing
         guard case .message(let message) = frame else {
             return nil
         }
-        return objectMembers(in: message)
+        return jsonObject(of: message)
     }
 
     // MARK: - Negotiation
@@ -148,10 +133,10 @@ import Testing
 
         let tree = try Self.jsonTree(of: response.capabilities)
         let root = try #require(
-            Self.objectMembers(in: tree),
+            jsonObject(of: tree),
             "expected capabilities.session to be an object, got \(tree)")
         let session = try #require(
-            Self.objectMembers(in: root["session"]),
+            jsonObject(of: root["session"]),
             "expected capabilities.session to be an object, got \(tree)")
         #expect(Set(root.keys) == ["session"])
         #expect(Set(session.keys) == ["additionalDirectories", "delete", "mcp", "prompt"])
@@ -208,7 +193,7 @@ import Testing
             Self.messageFields(in: frame),
             "expected a successful initialize response, got \(frame)")
         let result = try #require(
-            Self.objectMembers(in: fields["result"]),
+            jsonObject(of: fields["result"]),
             "expected a successful initialize response, got \(frame)")
         #expect(fields["error"] == nil)
         #expect(result["protocolVersion"] == Self.protocolVersion2WireValue)

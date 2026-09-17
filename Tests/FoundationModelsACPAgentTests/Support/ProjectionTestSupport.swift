@@ -208,6 +208,30 @@ func terminalUpdate(of update: SessionUpdate?) -> TerminalUpdate? {
     return terminal
 }
 
+// MARK: - The JSON value readers
+
+/// The members a JSON object carries.
+///
+/// - Parameter value: The JSON value to read, or `nil`.
+/// - Returns: The members, or `nil` when the value is absent or
+///   carries something else.
+func jsonObject(
+    of value: FoundationModelsACP.JSONValue?
+) -> [String: FoundationModelsACP.JSONValue]? {
+    guard case .object(let members) = value else { return nil }
+    return members
+}
+
+/// The string a JSON value carries.
+///
+/// - Parameter value: The JSON value to read, or `nil`.
+/// - Returns: The string, or `nil` when the value is absent or carries
+///   something else.
+func jsonString(of value: FoundationModelsACP.JSONValue?) -> String? {
+    guard case .string(let text) = value else { return nil }
+    return text
+}
+
 /// The text of every plain-content item in a content patch.
 ///
 /// - Parameter content: The content patch to read.

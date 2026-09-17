@@ -596,28 +596,6 @@ import Testing
         return text
     }
 
-    /// The object one JSON value carries.
-    ///
-    /// - Parameter value: The JSON value to read, or `nil`.
-    /// - Returns: The carried object, or `nil` when the value is absent
-    ///   or carries something else.
-    private static func jsonObject(
-        of value: FoundationModelsACP.JSONValue?
-    ) -> [String: FoundationModelsACP.JSONValue]? {
-        guard case .object(let object) = value else { return nil }
-        return object
-    }
-
-    /// The string one JSON value carries.
-    ///
-    /// - Parameter value: The JSON value to read, or `nil`.
-    /// - Returns: The carried string, or `nil` when the value is absent
-    ///   or carries something else.
-    private static func jsonString(of value: FoundationModelsACP.JSONValue?) -> String? {
-        guard case .string(let text) = value else { return nil }
-        return text
-    }
-
     /// The shell run report a collecting `wait` call answered.
     ///
     /// A `wait` play that NAMES its run answers that one run's report
@@ -1010,17 +988,17 @@ import Testing
         #expect(accumulated.status == .value(.completed))
         #expect(accumulated.title == .value(Self.runCodeToolName))
         let rawInput = try #require(
-            Self.jsonObject(of: patchValue(accumulated.rawInput)),
+            jsonObject(of: patchValue(accumulated.rawInput)),
             "expected the runCode rawInput object, got \(accumulated.rawInput)")
         let codeArgument = try #require(
-            Self.jsonString(of: rawInput["code"] ?? .null),
+            jsonString(of: rawInput["code"]),
             "expected the runCode rawInput object, got \(accumulated.rawInput)")
         #expect(codeArgument == Self.noteCode)
 
         // The `runCode` call answers the pending envelope, because the
         // run mounts in the background. The written line is not there.
         let runCodeOutput = try #require(
-            Self.jsonString(of: patchValue(accumulated.rawOutput)),
+            jsonString(of: patchValue(accumulated.rawOutput)),
             "expected the runCode rawOutput string, got \(accumulated.rawOutput)")
         #expect(runCodeOutput.contains(Self.pendingEnvelopeMarker))
         #expect(!runCodeOutput.contains(Self.noteContent))
@@ -1204,6 +1182,10 @@ import Testing
             label: "TierTwoTests-stream",
             waitStepCount: Self.shellWaitStepCount,
             workingDirectory: cwd)
+        // The wire closes on every path out of this test. Each
+        // `try #require` below THROWS when it fails, so a close written
+        // after one of them does not run, and the fixture stays open.
+        defer { await fixture.close() }
         let updates = try await Self.waitForTerminalExit(of: fixture.collector)
         await fixture.harness.flushPendingChunks()
 
@@ -1273,7 +1255,6 @@ import Testing
                 state.toolCalls[ToolCallId(rawValue: terminalId.rawValue)]
             )
         }
-        await fixture.close()
 
         #expect(convergence.terminalText == expectedOutput)
         #expect(convergence.exited)
