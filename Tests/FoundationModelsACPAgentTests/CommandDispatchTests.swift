@@ -84,6 +84,22 @@ struct CommandDispatchTests {
         return update.availableCommands.map(\.name)
     }
 
+    /// The members of the `data` field of a request error, or `nil`
+    /// when the field is absent or holds something other than a JSON
+    /// object.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter data: The `data` field of the recorded error.
+    /// - Returns: The object members, or `nil`.
+    private static func objectFields(in data: JSONValue?) -> [String: JSONValue]? {
+        guard case .object(let fields)? = data else {
+            return nil
+        }
+        return fields
+    }
+
     /// Whether the collected sequence holds any turn update: a state
     /// update, a user-message echo, or an agent-message chunk.
     ///
@@ -119,10 +135,9 @@ struct CommandDispatchTests {
             Issue.record("expected the unknown-command refusal")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
-            guard case .object(let fields) = try #require(error.data) else {
-                Issue.record("expected object data, got \(String(describing: error.data))")
-                return
-            }
+            let fields = try #require(
+                Self.objectFields(in: error.data),
+                "expected object data, got \(String(describing: error.data))")
             // `deployy` is one edit from the provider's `deploy` and far from
             // every registered builtin, so the near miss is `deploy` alone.
             #expect(fields["command"] == .string("deployy"))
@@ -201,10 +216,9 @@ struct CommandDispatchTests {
             Issue.record("expected the attachment refusal")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
-            guard case .object(let fields) = try #require(error.data) else {
-                Issue.record("expected object data, got \(String(describing: error.data))")
-                return
-            }
+            let fields = try #require(
+                Self.objectFields(in: error.data),
+                "expected object data, got \(String(describing: error.data))")
             #expect(fields["command"] == .string("act"))
             #expect(fields["reason"] != nil)
         }
