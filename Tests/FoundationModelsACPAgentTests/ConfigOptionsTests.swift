@@ -105,21 +105,6 @@ import Testing
         return try JSONDecoder().decode([SessionConfigSelectOption].self, from: data)
     }
 
-    /// The concatenated agent-message text of a collected sequence.
-    ///
-    /// - Parameter updates: The collected notifications.
-    /// - Returns: The agent text, chunks joined in arrival order.
-    private static func agentText(in updates: [UpdateSessionNotification]) -> String {
-        updates.compactMap { notification in
-            if case .agentMessageChunk(let chunk) = notification.update,
-                case .text(let content) = chunk.content
-            {
-                return content.text
-            }
-            return nil
-        }.joined()
-    }
-
     /// The `config_option_update` payloads of a collected sequence.
     ///
     /// - Parameter updates: The collected notifications.
@@ -214,7 +199,7 @@ import Testing
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
         let firstTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(Self.agentText(in: firstTurn).contains(Self.standardAnswer))
+        #expect(ScriptedTurnFixture.agentText(in: firstTurn).contains(Self.standardAnswer))
         try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
 
         let response = try await fixture.harness.connection.setSessionConfigOption(
@@ -227,7 +212,7 @@ import Testing
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
         let bothTurns = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
-        #expect(Self.agentText(in: bothTurns).contains(Self.flashAnswer))
+        #expect(ScriptedTurnFixture.agentText(in: bothTurns).contains(Self.flashAnswer))
 
         // The set response already carried the complete state, so no
         // push follows it.
@@ -273,7 +258,7 @@ import Testing
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "still standard"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(Self.agentText(in: updates).contains(Self.standardAnswer))
+        #expect(ScriptedTurnFixture.agentText(in: updates).contains(Self.standardAnswer))
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
         await fixture.close()
     }

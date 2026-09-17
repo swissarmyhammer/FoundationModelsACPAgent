@@ -108,22 +108,7 @@ struct BuiltinCommandsTests {
             _ = try await harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: sessionId, text: command))
             let updates = try await ScriptedTurnFixture.waitForIdle(collector)
-            return (Self.streamedText(in: updates), updates)
-        }
-
-        /// The joined `agent_message_chunk` text of the collected sequence.
-        ///
-        /// - Parameter updates: The collected notifications.
-        /// - Returns: The chunk texts joined in arrival order.
-        static func streamedText(in updates: [UpdateSessionNotification]) -> String {
-            updates.compactMap { notification in
-                guard case .agentMessageChunk(let chunk) = notification.update,
-                    case .text(let content) = chunk.content
-                else {
-                    return nil
-                }
-                return content.text
-            }.joined()
+            return (ScriptedTurnFixture.agentText(in: updates), updates)
         }
     }
 

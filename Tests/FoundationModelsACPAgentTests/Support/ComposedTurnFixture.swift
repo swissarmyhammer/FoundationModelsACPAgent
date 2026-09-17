@@ -81,6 +81,6 @@ enum ComposedTurnFixture {
             AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: prompt))
         let updates = try await ScriptedTurnFixture.waitForIdle(collector)
         await harness.close()
-        return Turn(sessionId: session.sessionId, text: agentMessageText(in: updates))
+        return Turn(sessionId: session.sessionId, text: ScriptedTurnFixture.agentText(in: updates))
     }
 }

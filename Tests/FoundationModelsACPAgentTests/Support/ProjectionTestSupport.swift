@@ -20,22 +20,6 @@ let syntheticSessionIdValue = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 /// a scripted event stream, and the name says so.
 let syntheticModelName = "synthetic-model"
 
-/// The agent text a collected turn streamed: the text of every
-/// `agent_message_chunk`, joined in arrival order.
-///
-/// - Parameter updates: The collected notifications.
-/// - Returns: The joined text; empty when no chunk carried text.
-func agentMessageText(in updates: [UpdateSessionNotification]) -> String {
-    updates.compactMap { notification -> String? in
-        guard case .agentMessageChunk(let chunk) = notification.update,
-            case .text(let content) = chunk.content
-        else {
-            return nil
-        }
-        return content.text
-    }.joined()
-}
-
 /// A sink that collects every update a turn sends.
 actor SinkRecorder {
     /// The collected updates, in send order.
