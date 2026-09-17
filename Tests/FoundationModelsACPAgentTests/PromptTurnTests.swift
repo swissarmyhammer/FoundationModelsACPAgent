@@ -98,10 +98,9 @@ import Testing
                 .userMessage, .sessionInfoUpdate, .stateUpdate,
                 .agentMessageChunk, .agentMessageChunk, .stateUpdate,
             ])
-        guard case .userMessage(let echo) = updates.first?.update else {
-            Issue.record("expected the user_message echo first, got \(updates)")
-            return
-        }
+        let echo = try #require(
+            userMessageEcho(of: updates.first?.update),
+            "expected the user_message echo first, got \(updates)")
         #expect(echo.content == .value([.text(TextContent(text: Self.promptText))]))
         #expect(!echo.messageId.rawValue.isEmpty)
 
@@ -114,10 +113,9 @@ import Testing
         #expect(Set(chunkIds).count == 1)
         #expect(chunkIds.first != echo.messageId)
 
-        guard case .stateUpdate(.running) = updates[2].update else {
-            Issue.record("expected running before the turn output, got \(updates[2])")
-            return
-        }
+        #expect(
+            isRunningState(updates[2].update),
+            "expected running before the turn output, got \(updates[2])")
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
         if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
@@ -222,6 +220,16 @@ import Testing
                 == .unknown(PromptTurn.unmappedStopReasonValue))
     }
 
+    /// Whether one turn stop is the `failed` stop. The stop carries a
+    /// message, so no test can name one value to compare against.
+    ///
+    /// - Parameter stop: The turn stop to read.
+    /// - Returns: `true` for a failed stop.
+    private static func isFailed(_ stop: TurnStop) -> Bool {
+        if case .failed = stop { return true }
+        return false
+    }
+
     /// The error classifier reads `CancellationError` and the public SDK
     /// generation errors; an unmapped error degrades to `failed`.
     @Test func classifyReadsCancellationAndGenerationErrors() {
@@ -229,10 +237,9 @@ import Testing
         #expect(PromptTurn.classify(ScriptedFailure.guardrailViolation.error) == .refusal)
         #expect(
             PromptTurn.classify(ScriptedFailure.exceededContextWindow.error) == .budgetExhausted)
-        guard case .failed = PromptTurn.classify(ScriptedModelError.unknownTool("x")) else {
-            Issue.record("expected an unmapped error to classify as failed")
-            return
-        }
+        #expect(
+            Self.isFailed(PromptTurn.classify(ScriptedModelError.unknownTool("x"))),
+            "expected an unmapped error to classify as failed")
     }
 
     // MARK: - The projection core (synthetic event streams)
@@ -257,10 +264,8 @@ import Testing
 
         #expect(reason == .endTurn)
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        guard case .stateUpdate(.idle(let idle)) = try #require(updates.last) else {
-            Issue.record("expected idle as the terminator, got \(updates)")
-            return
-        }
+        let idle = try #require(
+            idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
         #expect(idle.stopReason == .endTurn)
         #expect(!updates.contains { $0.kind == .usageUpdate })
     }
@@ -275,13 +280,15 @@ import Testing
             ]))
         let updates = await recorder.updates
 
-        guard case .agentMessageChunk(let draft) = updates[0],
-            case .agentMessage(let replace) = updates[1],
-            case .agentMessageChunk(let final) = updates[2]
-        else {
-            Issue.record("expected chunk, replace, chunk; got \(updates)")
-            return
-        }
+        let draft = try #require(
+            agentMessageChunk(of: updates[0]),
+            "expected chunk, replace, chunk; got \(updates)")
+        let replace = try #require(
+            agentMessageReplace(of: updates[1]),
+            "expected chunk, replace, chunk; got \(updates)")
+        let final = try #require(
+            agentMessageChunk(of: updates[2]),
+            "expected chunk, replace, chunk; got \(updates)")
         #expect(replace.messageId == draft.messageId)
         #expect(replace.content == .value([]))
         #expect(final.messageId == draft.messageId)
@@ -597,6 +604,20 @@ import Testing
         return entry.session
     }
 
+    /// Checks that the gate sent two updates: `requires_action` first,
+    /// and then `running`.
+    ///
+    /// - Parameter updates: The updates the gate sent, in send order.
+    private static func expectRequiresActionThenRunning(in updates: [SessionUpdate]) {
+        #expect(updates.count == 2, "expected requires_action then running, got \(updates)")
+        #expect(
+            isRequiresActionState(updates.first),
+            "expected requires_action then running, got \(updates)")
+        #expect(
+            isRunningState(updates.dropFirst().first),
+            "expected requires_action then running, got \(updates)")
+    }
+
     /// `awaitingUser` sends `requires_action`, runs the body under the
     /// Router gate, and returns to `running` with the body's value.
     @Test(.timeLimit(.minutes(1)))
@@ -609,13 +630,7 @@ import Testing
         let updates = await recorder.updates
 
         #expect(answer == "the answer")
-        guard updates.count == 2,
-            case .stateUpdate(.requiresAction) = updates[0],
-            case .stateUpdate(.running) = updates[1]
-        else {
-            Issue.record("expected requires_action then running, got \(updates)")
-            return
-        }
+        Self.expectRequiresActionThenRunning(in: updates)
     }
 
     /// A body that throws still returns the state to `running`.
@@ -632,13 +647,7 @@ import Testing
         }
         let updates = await recorder.updates
 
-        guard updates.count == 2,
-            case .stateUpdate(.requiresAction) = updates[0],
-            case .stateUpdate(.running) = updates[1]
-        else {
-            Issue.record("expected requires_action then running, got \(updates)")
-            return
-        }
+        Self.expectRequiresActionThenRunning(in: updates)
     }
 
     // MARK: - The unknown-id policy (§10.1)

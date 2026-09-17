@@ -56,6 +56,38 @@ import Testing
         }
     }
 
+    // MARK: - Readers of a JSON shape
+
+    /// The members of a JSON object, or `nil` when the value is absent
+    /// or holds something other than an object.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter value: The JSON value to read.
+    /// - Returns: The object members, or `nil`.
+    private static func objectMembers(in value: JSONValue?) -> [String: JSONValue]? {
+        guard case .object(let members)? = value else {
+            return nil
+        }
+        return members
+    }
+
+    /// The members of a message frame, or `nil` when the frame is not a
+    /// message that carries a JSON object.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter frame: The frame read from the wire.
+    /// - Returns: The message members, or `nil`.
+    private static func messageFields(in frame: NDJSONFrame) -> [String: JSONValue]? {
+        guard case .message(let message) = frame else {
+            return nil
+        }
+        return objectMembers(in: message)
+    }
+
     // MARK: - Negotiation
 
     /// A client that sends `2` gets `2` back, with the implementation
@@ -115,10 +147,12 @@ import Testing
         await harness.close()
 
         let tree = try Self.jsonTree(of: response.capabilities)
-        guard case .object(let root) = tree, case .object(let session) = root["session"] ?? .null else {
-            Issue.record("expected capabilities.session to be an object, got \(tree)")
-            return
-        }
+        let root = try #require(
+            Self.objectMembers(in: tree),
+            "expected capabilities.session to be an object, got \(tree)")
+        let session = try #require(
+            Self.objectMembers(in: root["session"]),
+            "expected capabilities.session to be an object, got \(tree)")
         #expect(Set(root.keys) == ["session"])
         #expect(Set(session.keys) == ["additionalDirectories", "delete", "mcp", "prompt"])
         #expect(session["additionalDirectories"] == .object([:]))
@@ -170,10 +204,12 @@ import Testing
 
         var iterator = frames.makeAsyncIterator()
         let frame = try #require(try await iterator.next())
-        guard case .message(.object(let fields)) = frame, case .object(let result) = fields["result"] ?? .null else {
-            Issue.record("expected a successful initialize response, got \(frame)")
-            return
-        }
+        let fields = try #require(
+            Self.messageFields(in: frame),
+            "expected a successful initialize response, got \(frame)")
+        let result = try #require(
+            Self.objectMembers(in: fields["result"]),
+            "expected a successful initialize response, got \(frame)")
         #expect(fields["error"] == nil)
         #expect(result["protocolVersion"] == Self.protocolVersion2WireValue)
 

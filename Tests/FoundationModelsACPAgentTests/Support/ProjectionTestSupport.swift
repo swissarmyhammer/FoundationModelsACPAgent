@@ -107,6 +107,107 @@ func terminalUpdates(in updates: [SessionUpdate]) -> [TerminalUpdate] {
     }
 }
 
+// MARK: - The single-update readers
+//
+// Each reader RETURNS an optional, so a test unwraps it with
+// `try #require` or checks it with `#expect`. A `guard` inside a
+// reader gives a value to its caller; it never ends a test.
+
+/// The value a patch field carries.
+///
+/// - Parameter field: The patch field to read.
+/// - Returns: The carried value, or `nil` when the field is
+///   `unchanged` or `cleared`.
+func patchValue<Wrapped: Codable & Hashable & Sendable>(
+    _ field: PatchField<Wrapped>
+) -> Wrapped? {
+    guard case .value(let value) = field else { return nil }
+    return value
+}
+
+/// The idle state one update carries.
+///
+/// - Parameter update: The update to read.
+/// - Returns: The idle state, or `nil` when the update is something
+///   else.
+func idleState(of update: SessionUpdate?) -> IdleStateUpdate? {
+    guard case .stateUpdate(.idle(let idle)) = update else { return nil }
+    return idle
+}
+
+/// Whether one update is the `idle` state update.
+///
+/// - Parameter update: The update to read.
+/// - Returns: `true` for an idle state update.
+func isIdleState(_ update: SessionUpdate?) -> Bool {
+    idleState(of: update) != nil
+}
+
+/// Whether one update is the `running` state update.
+///
+/// - Parameter update: The update to read.
+/// - Returns: `true` for a running state update.
+func isRunningState(_ update: SessionUpdate?) -> Bool {
+    if case .stateUpdate(.running) = update { return true }
+    return false
+}
+
+/// Whether one update is the `requires_action` state update.
+///
+/// - Parameter update: The update to read.
+/// - Returns: `true` for a requires-action state update.
+func isRequiresActionState(_ update: SessionUpdate?) -> Bool {
+    if case .stateUpdate(.requiresAction) = update { return true }
+    return false
+}
+
+/// The user-message echo one update carries.
+///
+/// - Parameter update: The update to read.
+/// - Returns: The echo, or `nil` when the update is something else.
+func userMessageEcho(of update: SessionUpdate?) -> UserMessage? {
+    guard case .userMessage(let echo) = update else { return nil }
+    return echo
+}
+
+/// The agent-message chunk one update carries.
+///
+/// - Parameter update: The update to read.
+/// - Returns: The chunk, or `nil` when the update is something else.
+func agentMessageChunk(of update: SessionUpdate?) -> ContentChunk? {
+    guard case .agentMessageChunk(let chunk) = update else { return nil }
+    return chunk
+}
+
+/// The whole-message replace one update carries.
+///
+/// - Parameter update: The update to read.
+/// - Returns: The replace, or `nil` when the update is something
+///   else.
+func agentMessageReplace(of update: SessionUpdate?) -> AgentMessage? {
+    guard case .agentMessage(let message) = update else { return nil }
+    return message
+}
+
+/// The usage report one update carries.
+///
+/// - Parameter update: The update to read.
+/// - Returns: The report, or `nil` when the update is something else.
+func usageReport(of update: SessionUpdate?) -> UsageUpdate? {
+    guard case .usageUpdate(let usage) = update else { return nil }
+    return usage
+}
+
+/// The terminal update one update carries.
+///
+/// - Parameter update: The update to read.
+/// - Returns: The terminal update, or `nil` when the update is
+///   something else.
+func terminalUpdate(of update: SessionUpdate?) -> TerminalUpdate? {
+    guard case .terminalUpdate(let terminal) = update else { return nil }
+    return terminal
+}
+
 /// The text of every plain-content item in a content patch.
 ///
 /// - Parameter content: The content patch to read.

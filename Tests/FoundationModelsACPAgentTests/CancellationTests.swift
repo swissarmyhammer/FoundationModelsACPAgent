@@ -76,10 +76,10 @@ import Testing
 
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
-        guard case .stateUpdate(.idle) = try #require(updates.last).update else {
-            Issue.record("expected idle(cancelled) as the strict terminator, got \(updates)")
-            return
-        }
+        let last = try #require(updates.last)
+        #expect(
+            isIdleState(last.update),
+            "expected idle(cancelled) as the strict terminator, got \(updates)")
     }
 
     // MARK: - The normal-completion ending (§8.6)
@@ -100,10 +100,8 @@ import Testing
 
         #expect(reason == .cancelled)
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        guard case .stateUpdate(.idle(let idle)) = try #require(updates.last) else {
-            Issue.record("expected idle as the terminator, got \(updates)")
-            return
-        }
+        let idle = try #require(
+            idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
         #expect(idle.stopReason == .cancelled)
     }
 
@@ -121,10 +119,9 @@ import Testing
         let updates = await recorder.updates
 
         #expect(updates.map(\.kind) == [.toolCallUpdate, .toolCallUpdate, .stateUpdate])
-        guard case .stateUpdate(.idle(let idle)) = try #require(updates.last) else {
-            Issue.record("expected idle after the tool updates, got \(updates)")
-            return
-        }
+        let idle = try #require(
+            idleState(of: updates.last),
+            "expected idle after the tool updates, got \(updates)")
         #expect(idle.stopReason == .cancelled)
     }
 

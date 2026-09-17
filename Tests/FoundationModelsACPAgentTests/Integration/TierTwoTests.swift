@@ -596,6 +596,28 @@ import Testing
         return text
     }
 
+    /// The object one JSON value carries.
+    ///
+    /// - Parameter value: The JSON value to read, or `nil`.
+    /// - Returns: The carried object, or `nil` when the value is absent
+    ///   or carries something else.
+    private static func jsonObject(
+        of value: FoundationModelsACP.JSONValue?
+    ) -> [String: FoundationModelsACP.JSONValue]? {
+        guard case .object(let object) = value else { return nil }
+        return object
+    }
+
+    /// The string one JSON value carries.
+    ///
+    /// - Parameter value: The JSON value to read, or `nil`.
+    /// - Returns: The carried string, or `nil` when the value is absent
+    ///   or carries something else.
+    private static func jsonString(of value: FoundationModelsACP.JSONValue?) -> String? {
+        guard case .string(let text) = value else { return nil }
+        return text
+    }
+
     /// The shell run report a collecting `wait` call answered.
     ///
     /// A `wait` play that NAMES its run answers that one run's report
@@ -987,29 +1009,27 @@ import Testing
         // The converged container: status, title, rawInput, rawOutput.
         #expect(accumulated.status == .value(.completed))
         #expect(accumulated.title == .value(Self.runCodeToolName))
-        guard case .value(.object(let rawInput)) = accumulated.rawInput,
-            case .string(let codeArgument) = rawInput["code"] ?? .null
-        else {
-            Issue.record("expected the runCode rawInput object, got \(accumulated.rawInput)")
-            return
-        }
+        let rawInput = try #require(
+            Self.jsonObject(of: patchValue(accumulated.rawInput)),
+            "expected the runCode rawInput object, got \(accumulated.rawInput)")
+        let codeArgument = try #require(
+            Self.jsonString(of: rawInput["code"] ?? .null),
+            "expected the runCode rawInput object, got \(accumulated.rawInput)")
         #expect(codeArgument == Self.noteCode)
 
         // The `runCode` call answers the pending envelope, because the
         // run mounts in the background. The written line is not there.
-        guard case .value(.string(let runCodeOutput)) = accumulated.rawOutput else {
-            Issue.record("expected the runCode rawOutput string, got \(accumulated.rawOutput)")
-            return
-        }
+        let runCodeOutput = try #require(
+            Self.jsonString(of: patchValue(accumulated.rawOutput)),
+            "expected the runCode rawOutput string, got \(accumulated.rawOutput)")
         #expect(runCodeOutput.contains(Self.pendingEnvelopeMarker))
         #expect(!runCodeOutput.contains(Self.noteContent))
 
         // The `wait` call answers the snippet's own result, so it is the
         // call whose `rawOutput` carries the written line.
-        guard case .value(let waitOutput) = waitAccumulated.rawOutput else {
-            Issue.record("expected the wait rawOutput value, got \(waitAccumulated.rawOutput)")
-            return
-        }
+        let waitOutput = try #require(
+            patchValue(waitAccumulated.rawOutput),
+            "expected the wait rawOutput value, got \(waitAccumulated.rawOutput)")
         #expect(try Self.encodedText(of: waitOutput).contains(Self.noteContent))
     }
 
@@ -1221,13 +1241,12 @@ import Testing
         #expect(lastChunkIndex < exitIndex)
 
         // The exit report carries the authoritative replacement.
-        guard case .terminalUpdate(let exitUpdate) = updates[exitIndex].update,
-            case .value(let replacement) = exitUpdate.output
-        else {
-            Issue.record("expected the exit terminal_update to carry the output replacement")
-            await fixture.close()
-            return
-        }
+        let exitUpdate = try #require(
+            terminalUpdate(of: updates[exitIndex].update),
+            "expected the exit terminal_update to carry the output replacement")
+        let replacement = try #require(
+            patchValue(exitUpdate.output),
+            "expected the exit terminal_update to carry the output replacement")
         let replaced = try #require(Data(base64Encoded: replacement.data))
         #expect(String(decoding: replaced, as: UTF8.self) == expectedOutput)
 
@@ -1265,10 +1284,9 @@ import Testing
         // reference, whose exit status marks the run ended.
         let settledCall = try #require(convergence.call)
         #expect(settledCall.status == .value(.completed))
-        guard case .value(let content) = settledCall.content else {
-            Issue.record("expected the settled call to carry content")
-            return
-        }
+        let content = try #require(
+            patchValue(settledCall.content),
+            "expected the settled call to carry content")
         #expect(
             content.contains { item in
                 guard case .terminal(let terminal) = item else { return false }

@@ -195,10 +195,9 @@ import Testing
         let terminal = try #require(terminalUpdates(in: updates).first)
         #expect(terminal.terminalId.rawValue == Self.completionToken)
         #expect(terminal.exitStatus == .unchanged)
-        guard case .value(let output) = terminal.output else {
-            Issue.record("expected an output replacement, got \(terminal.output)")
-            return
-        }
+        let output = try #require(
+            patchValue(terminal.output),
+            "expected an output replacement, got \(terminal.output)")
         let data = try #require(Data(base64Encoded: output.data))
         #expect(Array(data) == stdout + stderr)
     }
@@ -221,10 +220,9 @@ import Testing
 
         let terminal = try #require(terminalUpdates(in: updates).first)
         #expect(terminal.exitStatus == .value(TerminalExitStatus()))
-        guard case .value(let output) = terminal.output else {
-            Issue.record("expected an output replacement, got \(terminal.output)")
-            return
-        }
+        let output = try #require(
+            patchValue(terminal.output),
+            "expected an output replacement, got \(terminal.output)")
         let data = try #require(Data(base64Encoded: output.data))
         #expect(Array(data) == stdout)
     }

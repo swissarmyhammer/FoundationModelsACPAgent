@@ -105,10 +105,10 @@ struct SessionLifecycleTests {
         let updates = await fixture.collector.updates
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
-        guard case .stateUpdate(.idle) = try #require(turnUpdates(in: updates).last).update else {
-            Issue.record("expected idle(cancelled) as the last turn update, got \(updates)")
-            return
-        }
+        let lastTurnUpdate = try #require(turnUpdates(in: updates).last).update
+        #expect(
+            isIdleState(lastTurnUpdate),
+            "expected idle(cancelled) as the last turn update, got \(updates)")
         #expect(FileManager.default.fileExists(atPath: transcriptDirectory.path))
         await fixture.close()
     }

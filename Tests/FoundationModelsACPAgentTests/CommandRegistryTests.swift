@@ -50,6 +50,42 @@ struct CommandRegistryTests {
         Issue.record("the registry never reached: \(label)")
     }
 
+    // MARK: - Readers of a command body
+
+    /// The action closure of a command body, or `nil` when the body is
+    /// not an `.action` body.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong body
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter body: The body of the merged command.
+    /// - Returns: The action closure, or `nil`.
+    private static func actionBody(
+        in body: SlashCommand.Body
+    ) -> (@Sendable (SlashCommand.Invocation) -> AsyncThrowingStream<String, Error>)? {
+        guard case .action(let action) = body else {
+            return nil
+        }
+        return action
+    }
+
+    /// The render closure of a command body, or `nil` when the body is
+    /// not a `.rendered` body.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong body
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter body: The body of the merged command.
+    /// - Returns: The render closure, or `nil`.
+    private static func renderedBody(
+        in body: SlashCommand.Body
+    ) -> (@Sendable (SlashCommand.Invocation) async throws -> String)? {
+        guard case .rendered(let render) = body else {
+            return nil
+        }
+        return render
+    }
+
     // MARK: - Precedence and reserved builtins (plan.md §14.1)
 
     /// A provider command that collides with a builtin name loses, and
@@ -72,10 +108,9 @@ struct CommandRegistryTests {
         #expect(winner.description == builtin.description)
 
         // The builtin still dispatches: its action streams its text.
-        guard case .action(let action) = winner.body else {
-            Issue.record("expected the builtin .action body, got \(winner.body)")
-            return
-        }
+        let action = try #require(
+            Self.actionBody(in: winner.body),
+            "expected the builtin .action body, got \(winner.body)")
         let invocation = SlashCommand.Invocation(
             arguments: "", workingDirectory: URL(fileURLWithPath: "/", isDirectory: true))
         var streamed = ""
@@ -125,10 +160,9 @@ struct CommandRegistryTests {
         await registry.load()
 
         let greet = try #require(await registry.command(named: "greet"))
-        guard case .rendered(let render) = greet.body else {
-            Issue.record("expected the skills wrap to give a .rendered body, got \(greet.body)")
-            return
-        }
+        let render = try #require(
+            Self.renderedBody(in: greet.body),
+            "expected the skills wrap to give a .rendered body, got \(greet.body)")
         let rendered = try await render(
             SlashCommand.Invocation(arguments: "alpha beta", workingDirectory: root))
         #expect(rendered.contains("Hello beta."))

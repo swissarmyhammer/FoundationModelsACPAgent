@@ -186,6 +186,66 @@ import Testing
         return string
     }
 
+    /// The elements of a JSON array value, or `nil` for another shape.
+    ///
+    /// - Parameter value: The value to read.
+    /// - Returns: The elements, or `nil`.
+    private static func arrayValues(
+        _ value: FoundationModelsACP.JSONValue?
+    ) -> [FoundationModelsACP.JSONValue]? {
+        guard case .array(let values) = value ?? .null else { return nil }
+        return values
+    }
+
+    /// The two endpoints of a move change, or `nil` for another
+    /// operation.
+    ///
+    /// - Parameter change: The wire change to read.
+    /// - Returns: The endpoint pair, or `nil`.
+    private static func movePair(of change: DiffChange) -> DiffPathPairChange? {
+        guard case .move(let pair) = change.operation else { return nil }
+        return pair
+    }
+
+    /// The two endpoints of a copy change, or `nil` for another
+    /// operation.
+    ///
+    /// - Parameter change: The wire change to read.
+    /// - Returns: The endpoint pair, or `nil`.
+    private static func copyPair(of change: DiffChange) -> DiffPathPairChange? {
+        guard case .copy(let pair) = change.operation else { return nil }
+        return pair
+    }
+
+    /// The one path of an add change, or `nil` for another operation.
+    ///
+    /// - Parameter change: The wire change to read.
+    /// - Returns: The path change, or `nil`.
+    private static func addPath(of change: DiffChange) -> DiffPathChange? {
+        guard case .add(let added) = change.operation else { return nil }
+        return added
+    }
+
+    /// The one path of a delete change, or `nil` for another
+    /// operation.
+    ///
+    /// - Parameter change: The wire change to read.
+    /// - Returns: The path change, or `nil`.
+    private static func deletePath(of change: DiffChange) -> DiffPathChange? {
+        guard case .delete(let deleted) = change.operation else { return nil }
+        return deleted
+    }
+
+    /// The one path of a modify change, or `nil` for another
+    /// operation.
+    ///
+    /// - Parameter change: The wire change to read.
+    /// - Returns: The path change, or `nil`.
+    private static func modifyPath(of change: DiffChange) -> DiffPathChange? {
+        guard case .modify(let modified) = change.operation else { return nil }
+        return modified
+    }
+
     // MARK: - The terminal status function (§8.4)
 
     /// The `OperationOutcome` to `ToolCallStatus` function is total and
@@ -229,10 +289,14 @@ import Testing
         let calls = toolCallUpdates(in: updates)
 
         #expect(calls.map(\.toolCallId.rawValue) == Array(repeating: Self.sdkToolCallId, count: calls.count))
-        guard case (let creation?, let running?, let completion?) = (calls.first, calls.dropFirst().first, calls.dropFirst(2).first) else {
-            Issue.record("expected three tool_call_update sends, got \(calls)")
-            return
-        }
+        let creation = try #require(
+            calls.first, "expected three tool_call_update sends, got \(calls)")
+        let running = try #require(
+            calls.dropFirst().first,
+            "expected three tool_call_update sends, got \(calls)")
+        let completion = try #require(
+            calls.dropFirst(2).first,
+            "expected three tool_call_update sends, got \(calls)")
         #expect(creation.title == .value(Self.scriptedToolName))
         #expect(creation.status == .value(.inProgress))
         #expect(creation.rawInput == .value(.object(["path": .string("notes.txt")])))
@@ -457,10 +521,9 @@ import Testing
         let updates = await Self.drive([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
-        guard case .value(let value) = call.rawOutput else {
-            Issue.record("expected a raw output value, got \(call.rawOutput)")
-            return
-        }
+        let value = try #require(
+            patchValue(call.rawOutput),
+            "expected a raw output value, got \(call.rawOutput)")
         let fields = try #require(Self.objectFields(value))
         #expect(Self.stringValue(fields["kind"]) == "modify")
         #expect(Self.stringValue(fields["path"]) == "/tmp/notes.txt")
@@ -477,10 +540,9 @@ import Testing
         let updates = await Self.drive([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
-        guard case .value(.array(let values)) = call.rawOutput else {
-            Issue.record("expected a raw output array, got \(call.rawOutput)")
-            return
-        }
+        let values = try #require(
+            Self.arrayValues(patchValue(call.rawOutput)),
+            "expected a raw output array, got \(call.rawOutput)")
         let first = try #require(Self.objectFields(values.first))
         #expect(Self.stringValue(first["kind"]) == "modify")
         let last = try #require(Self.objectFields(values.last))
@@ -573,10 +635,9 @@ import Testing
         let updates = await Self.drive([.compaction(result)])
 
         #expect(updates.map(\.kind) == [.usageUpdate, .stateUpdate])
-        guard case .usageUpdate(let usage) = try #require(updates.first) else {
-            Issue.record("expected the usage update first, got \(updates)")
-            return
-        }
+        let usage = try #require(
+            usageReport(of: updates.first),
+            "expected the usage update first, got \(updates)")
         #expect(usage.used == Self.tokensAfterFold)
         #expect(usage.size == Self.tokensBeforeFold)
     }
@@ -602,10 +663,9 @@ import Testing
         let change = EventProjection.diffChange(
             for: .move(source: source, destination: destination))
 
-        guard case .move(let pair) = change.operation else {
-            Issue.record("expected a move operation, got \(change.operation)")
-            return
-        }
+        let pair = try #require(
+            Self.movePair(of: change),
+            "expected a move operation, got \(change.operation)")
         #expect(pair.oldPath == source)
         #expect(pair.path == destination)
     }
@@ -617,10 +677,9 @@ import Testing
         let change = EventProjection.diffChange(
             for: .copy(source: source, destination: destination))
 
-        guard case .copy(let pair) = change.operation else {
-            Issue.record("expected a copy operation, got \(change.operation)")
-            return
-        }
+        let pair = try #require(
+            Self.copyPair(of: change),
+            "expected a copy operation, got \(change.operation)")
         #expect(pair.oldPath == source)
         #expect(pair.path == destination)
     }
@@ -629,16 +688,15 @@ import Testing
     @Test func addDeleteAndModifyMapThePathWithoutChange() throws {
         let path = AbsolutePath(rawValue: "/repo/file.txt")
 
-        guard
-            case .add(let added) = EventProjection.diffChange(for: .add(path: path)).operation,
-            case .delete(let deleted) = EventProjection.diffChange(for: .delete(path: path))
-                .operation,
-            case .modify(let modified) = EventProjection.diffChange(for: .modify(path: path))
-                .operation
-        else {
-            Issue.record("expected add, delete and modify operations")
-            return
-        }
+        let added = try #require(
+            Self.addPath(of: EventProjection.diffChange(for: .add(path: path))),
+            "expected add, delete and modify operations")
+        let deleted = try #require(
+            Self.deletePath(of: EventProjection.diffChange(for: .delete(path: path))),
+            "expected add, delete and modify operations")
+        let modified = try #require(
+            Self.modifyPath(of: EventProjection.diffChange(for: .modify(path: path))),
+            "expected add, delete and modify operations")
         #expect(added.path == path)
         #expect(deleted.path == path)
         #expect(modified.path == path)

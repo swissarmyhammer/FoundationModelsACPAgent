@@ -105,6 +105,105 @@ import Testing
         return try #require(await recorder.prompts.first)
     }
 
+    // MARK: - Readers of a mapped block
+
+    /// The text payload of a content block, or `nil` when the block is
+    /// not a text block.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter block: The mapped content block.
+    /// - Returns: The text payload, or `nil`.
+    private static func textContent(in block: ContentBlock) -> TextContent? {
+        guard case .text(let content) = block else {
+            return nil
+        }
+        return content
+    }
+
+    /// The image payload of a content block, or `nil` when the block is
+    /// not an image block.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter block: The mapped content block.
+    /// - Returns: The image payload, or `nil`.
+    private static func imageContent(in block: ContentBlock) -> ImageContent? {
+        guard case .image(let content) = block else {
+            return nil
+        }
+        return content
+    }
+
+    /// The audio payload of a content block, or `nil` when the block is
+    /// not an audio block.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter block: The mapped content block.
+    /// - Returns: The audio payload, or `nil`.
+    private static func audioContent(in block: ContentBlock) -> AudioContent? {
+        guard case .audio(let content) = block else {
+            return nil
+        }
+        return content
+    }
+
+    /// The link payload of a content block, or `nil` when the block is
+    /// not a resource-link block.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter block: The mapped content block.
+    /// - Returns: The link payload, or `nil`.
+    private static func resourceLink(in block: ContentBlock) -> ResourceLink? {
+        guard case .resourceLink(let link) = block else {
+            return nil
+        }
+        return link
+    }
+
+    /// The members of the resource object of an embedded-resource block,
+    /// or `nil` when the block is not an embedded resource that carries a
+    /// JSON object.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter block: The mapped content block.
+    /// - Returns: The resource members, or `nil`.
+    private static func embeddedResourceMembers(
+        in block: ContentBlock
+    ) -> [String: JSONValue]? {
+        guard case .resource(let embedded) = block,
+            case .object(let members) = embedded.resource
+        else {
+            return nil
+        }
+        return members
+    }
+
+    /// The text payload of the first tool-call content item, or `nil`
+    /// when that item is not a wrapped text block.
+    ///
+    /// A test unwraps the result with `try #require`, so a wrong shape
+    /// fails the test instead of ending it quietly.
+    ///
+    /// - Parameter items: The mapped tool-call content items.
+    /// - Returns: The text payload of the first item, or `nil`.
+    private static func firstWrappedText(in items: [ToolCallContent]) -> TextContent? {
+        guard case .content(let first)? = items.first,
+            case .text(let text) = first.content
+        else {
+            return nil
+        }
+        return text
+    }
+
     // MARK: - The honest advertisement (plan.md §5, §12)
 
     /// The advertisement and the consumption agree on every content
@@ -318,10 +417,8 @@ import Testing
         let block = PromptContent.contentBlock(
             from: .text(text: "hello", annotations: nil, _meta: nil))
 
-        guard case .text(let content) = block else {
-            Issue.record("expected a text block, got \(block)")
-            return
-        }
+        let content = try #require(
+            Self.textContent(in: block), "expected a text block, got \(block)")
         #expect(content.text == "hello")
     }
 
@@ -330,10 +427,8 @@ import Testing
         let block = PromptContent.contentBlock(
             from: .image(data: "aW1n", mimeType: "image/png", annotations: nil, _meta: nil))
 
-        guard case .image(let content) = block else {
-            Issue.record("expected an image block, got \(block)")
-            return
-        }
+        let content = try #require(
+            Self.imageContent(in: block), "expected an image block, got \(block)")
         #expect(content.data == "aW1n")
         #expect(content.mimeType == MediaType(rawValue: "image/png"))
     }
@@ -343,10 +438,8 @@ import Testing
         let block = PromptContent.contentBlock(
             from: .audio(data: "YXVk", mimeType: "audio/wav", annotations: nil, _meta: nil))
 
-        guard case .audio(let content) = block else {
-            Issue.record("expected an audio block, got \(block)")
-            return
-        }
+        let content = try #require(
+            Self.audioContent(in: block), "expected an audio block, got \(block)")
         #expect(content.data == "YXVk")
         #expect(content.mimeType == MediaType(rawValue: "audio/wav"))
     }
@@ -359,10 +452,8 @@ import Testing
                 uri: "file:///tmp/a.txt", name: "a", title: "A", description: "the a file",
                 mimeType: "text/plain"))
 
-        guard case .resourceLink(let link) = block else {
-            Issue.record("expected a resource-link block, got \(block)")
-            return
-        }
+        let link = try #require(
+            Self.resourceLink(in: block), "expected a resource-link block, got \(block)")
         #expect(link.uri == "file:///tmp/a.txt")
         #expect(link.name == "a")
         #expect(link.title == "A")
@@ -377,12 +468,9 @@ import Testing
             from: .resource(
                 resource: .text("body", uri: Self.embeddedURI, mimeType: "text/plain")))
 
-        guard case .resource(let embedded) = block,
-            case .object(let members) = embedded.resource
-        else {
-            Issue.record("expected an embedded resource object, got \(block)")
-            return
-        }
+        let members = try #require(
+            Self.embeddedResourceMembers(in: block),
+            "expected an embedded resource object, got \(block)")
         #expect(members["text"] == .string("body"))
         #expect(members["uri"] == .string(Self.embeddedURI))
         #expect(members["mimeType"] == .string("text/plain"))
@@ -395,12 +483,9 @@ import Testing
         let block = PromptContent.contentBlock(
             from: .resource(resource: .binary(bytes, uri: Self.embeddedURI)))
 
-        guard case .resource(let embedded) = block,
-            case .object(let members) = embedded.resource
-        else {
-            Issue.record("expected an embedded resource object, got \(block)")
-            return
-        }
+        let members = try #require(
+            Self.embeddedResourceMembers(in: block),
+            "expected an embedded resource object, got \(block)")
         #expect(members["blob"] == .string(bytes.base64EncodedString()))
         #expect(members["uri"] == .string(Self.embeddedURI))
     }
@@ -417,10 +502,8 @@ import Testing
                     lastModified: "2025-01-12T15:00:58Z"),
                 _meta: nil))
 
-        guard case .text(let content) = block else {
-            Issue.record("expected a text block, got \(block)")
-            return
-        }
+        let content = try #require(
+            Self.textContent(in: block), "expected a text block, got \(block)")
         let annotations = try #require(content.annotations)
         #expect(annotations.audience == [.user, .assistant])
         #expect(annotations.priority == 0.5)
@@ -436,10 +519,8 @@ import Testing
         ])
 
         #expect(items.count == 2)
-        guard case .content(let first) = items[0], case .text(let text) = first.content else {
-            Issue.record("expected a wrapped text item, got \(items)")
-            return
-        }
+        let text = try #require(
+            Self.firstWrappedText(in: items), "expected a wrapped text item, got \(items)")
         #expect(text.text == "first")
     }
 
