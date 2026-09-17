@@ -225,6 +225,16 @@ public enum EchoModel {
     /// resolves is resident at once, and every session it opens answers
     /// through the loader's containers — ``EchoLLMContainer`` by default.
     ///
+    /// Each call also makes its own `ModelPool`, and that is what keeps the
+    /// answer the caller's own. A pool holds one resident container for each
+    /// model identity, and the FIRST loader to reach a key wins it: a later
+    /// router that names the same key gets the container the first loader
+    /// made, whatever its own loader would have made. Every stub router names
+    /// the same tiny model, so one shared pool would give every router the
+    /// container of whichever router ran first, and a scripted caller would
+    /// then read another caller's script. A pool of its own gives each router
+    /// the containers of its own loader.
+    ///
     /// - Parameters:
     ///   - cacheDirectory: Where the router caches. A fresh temporary
     ///     directory per call keeps runs of one suite apart.
@@ -242,7 +252,8 @@ public enum EchoModel {
             recordingsDir: recordingsDirectory,
             probe: StubMachine(),
             metadataSource: StubMetadata(),
-            loader: loader
+            loader: loader,
+            pool: ModelPool()
         )
     }
 }
