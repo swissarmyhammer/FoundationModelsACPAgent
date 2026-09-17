@@ -308,12 +308,14 @@ struct ScriptedTurnFixture {
 
     // MARK: - Readers
 
-    /// The agent message text of a collected sequence: the text of each
-    /// `agent_message_chunk`, joined in arrival order.
+    /// The agent message text of a collected sequence, one item for each
+    /// `agent_message_chunk`, in arrival order. A suite that asks about
+    /// one chunk reads this; a suite that asks about the whole message
+    /// reads ``agentText(in:)``.
     ///
     /// - Parameter updates: The collected notifications.
-    /// - Returns: The agent text.
-    static func agentText(in updates: [UpdateSessionNotification]) -> String {
+    /// - Returns: The chunk texts.
+    static func agentChunkTexts(in updates: [UpdateSessionNotification]) -> [String] {
         updates.compactMap { notification in
             if case .agentMessageChunk(let chunk) = notification.update,
                 case .text(let content) = chunk.content
@@ -321,7 +323,16 @@ struct ScriptedTurnFixture {
                 return content.text
             }
             return nil
-        }.joined()
+        }
+    }
+
+    /// The agent message text of a collected sequence: the text of each
+    /// `agent_message_chunk`, joined in arrival order.
+    ///
+    /// - Parameter updates: The collected notifications.
+    /// - Returns: The agent text.
+    static func agentText(in updates: [UpdateSessionNotification]) -> String {
+        agentChunkTexts(in: updates).joined()
     }
 
     /// The number of idle state updates in the sequence.

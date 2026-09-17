@@ -84,21 +84,6 @@ struct CommandDispatchTests {
         return update.availableCommands.map(\.name)
     }
 
-    /// The `agent_message_chunk` texts in the collected sequence.
-    ///
-    /// - Parameter updates: The collected notifications.
-    /// - Returns: The chunk texts, in arrival order.
-    private static func chunkTexts(in updates: [UpdateSessionNotification]) -> [String] {
-        updates.compactMap { notification in
-            guard case .agentMessageChunk(let chunk) = notification.update,
-                case .text(let content) = chunk.content
-            else {
-                return nil
-            }
-            return content.text
-        }
-    }
-
     /// Whether the collected sequence holds any turn update: a state
     /// update, a user-message echo, or an agent-message chunk.
     ///
@@ -167,7 +152,8 @@ struct CommandDispatchTests {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/render alpha"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(Self.chunkTexts(in: updates).contains { $0.contains("RENDERED alpha") })
+        let texts = ScriptedTurnFixture.agentChunkTexts(in: updates)
+        #expect(texts.contains { $0.contains("RENDERED alpha") })
     }
 
     // MARK: - The skills path (plan.md §14.2)
@@ -186,7 +172,8 @@ struct CommandDispatchTests {
             AgentClientHarness.makePromptRequest(
                 sessionId: fixture.sessionId, text: "/greet alpha beta"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(Self.chunkTexts(in: updates).contains { $0.contains("Hello beta.") })
+        let texts = ScriptedTurnFixture.agentChunkTexts(in: updates)
+        #expect(texts.contains { $0.contains("Hello beta.") })
     }
 
     // MARK: - The .action body (plan.md §14.3)
@@ -243,7 +230,7 @@ struct CommandDispatchTests {
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
         let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
 
-        let texts = Self.chunkTexts(in: updates)
+        let texts = ScriptedTurnFixture.agentChunkTexts(in: updates)
         #expect(texts.contains("ACTION OUTPUT"))
         // The echo model would stream the prompt back. No chunk carries
         // it, so no model turn ran.

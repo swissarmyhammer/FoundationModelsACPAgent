@@ -434,16 +434,8 @@ struct SessionResumeTests {
 
         // The resumed session answers the next turn.
         try await resume.runTurn("second question")
-        let updates = await resume.fixture.collector.updates.map(\.update)
-        let answered = updates.contains { update in
-            if case .agentMessageChunk(let chunk) = update,
-                case .text(let text) = chunk.content
-            {
-                return text.text == ResumeStubBackend.replyPrefix + "second question"
-            }
-            return false
-        }
-        #expect(answered)
+        let texts = ScriptedTurnFixture.agentChunkTexts(in: await resume.fixture.collector.updates)
+        #expect(texts.contains(ResumeStubBackend.replyPrefix + "second question"))
         await resume.fixture.close()
     }
 
