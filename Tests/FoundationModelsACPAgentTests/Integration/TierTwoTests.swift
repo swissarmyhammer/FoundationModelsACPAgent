@@ -60,8 +60,9 @@ import Testing
     private static let runCodeToolName = "runCode"
 
     /// The name of the collector session tool. `runCode` mounts in the
-    /// background and answers a pending envelope, so every tool turn
-    /// plays `wait` after it to settle the run inside the turn.
+    /// background, so a snippet that runs longer than the tool's inline
+    /// settle grace answers a pending envelope, and every tool turn
+    /// plays `wait` after it to settle such a run inside the turn.
     private static let waitToolName = "wait"
 
     /// The SDK id of the first scripted tool call — the `runCode` call.
@@ -101,10 +102,22 @@ import Testing
             recordsChanges: true
         """
 
-    /// The flag of the pending envelope a background `runCode` answers.
-    /// It names the envelope apart from the run's own result, which
-    /// reaches the wire through the following `wait` call.
+    /// The flag of the pending envelope a background `runCode` answers
+    /// when its snippet is still running. It names the envelope apart
+    /// from the run's own result, which then reaches the wire through
+    /// the following `wait` call.
     private static let pendingEnvelopeMarker = "\"pending\":true"
+
+    /// The flag of the settled envelope a background `runCode` answers
+    /// when its snippet finished inside the tool's inline settle grace.
+    /// That envelope carries the run's own result in its `detail`
+    /// field, so the `runCode` call is itself the answering call.
+    ///
+    /// Both flags are by design. `MultiTool.inlineSettleGrace` makes
+    /// the tool answer a fast snippet inline and hand a slow one a
+    /// completion token, and one envelope type carries both shapes —
+    /// `FoundationModelsRouter.PendingRunEnvelope`, plan.md §4.7.
+    private static let settledEnvelopeMarker = "\"pending\":false"
 
     /// The name the client-declared MCP test server mounts under —
     /// the noun of every `tools.<serverName>.<verb>` path.
@@ -670,6 +683,60 @@ import Testing
         return Set(ids)
     }
 
+    /// The envelope the `runCode` call answered, as the rendered text
+    /// the wire carried.
+    ///
+    /// - Parameter updates: The collected sequence.
+    /// - Returns: The rendered envelope.
+    /// - Throws: When the call carried no rendered answer.
+    private static func runCodeEnvelopeText(
+        in updates: [UpdateSessionNotification]
+    ) throws -> String {
+        let answers = toolCallUpdates(in: updates, for: runCodeCallId)
+            .compactMap(rawOutputString(of:))
+        return try #require(answers.last, "the runCode call carried no rendered envelope")
+    }
+
+    /// The `toolCallId` of the call that carried the snippet's own
+    /// result.
+    ///
+    /// `runCode` answers in one of two shapes, and both are by design.
+    /// A snippet that finishes inside the tool's inline settle grace
+    /// answers the SETTLED envelope, whose `detail` field holds the
+    /// result, so the `runCode` call is the call that carried it. A
+    /// snippet that runs longer answers the PENDING envelope, and the
+    /// result then reaches the wire through the following `wait` call.
+    ///
+    /// A proof therefore asks for this id and reads the same result
+    /// value from whichever call the tool put it on.
+    ///
+    /// - Parameter updates: The collected sequence.
+    /// - Returns: The answering call's id.
+    /// - Throws: When the `runCode` call answered neither shape.
+    private static func answeringCallId(
+        in updates: [UpdateSessionNotification]
+    ) throws -> String {
+        let envelope = try runCodeEnvelopeText(in: updates)
+        let settled = envelope.contains(settledEnvelopeMarker)
+        let pending = envelope.contains(pendingEnvelopeMarker)
+        try #require(
+            settled != pending,
+            "expected one of the two runCode envelope shapes, got \(envelope)")
+        return settled ? runCodeCallId : waitCallId
+    }
+
+    /// The JSON text of every update of the call that carried the
+    /// snippet's own result — see ``answeringCallId(in:)``.
+    ///
+    /// - Parameter updates: The collected sequence.
+    /// - Returns: The answering call's JSON text.
+    /// - Throws: When no answering call stands, or the encoding fails.
+    private static func snippetAnswerText(
+        in updates: [UpdateSessionNotification]
+    ) throws -> String {
+        try encodedText(of: toolCallUpdates(in: updates, for: answeringCallId(in: updates)))
+    }
+
     /// The JSON text of the whole collected sequence — the wire as one
     /// searchable string.
     ///
@@ -853,7 +920,7 @@ import Testing
             flashContainer: ScriptedLLMContainer(
                 script: [.textDelta(librarianSelectionJSON), .endTurn],
                 recorder: librarianRecorder))
-        let waitText = try encodedText(of: toolCallUpdates(in: updates, for: waitCallId))
+        let answerText = try snippetAnswerText(in: updates)
         let librarianPrompts = await librarianRecorder.prompts
         let refusedWrite = fixture.cwd.appendingPathComponent(refusedWriteFileName)
         await fixture.close()
@@ -862,17 +929,17 @@ import Testing
         // under the additional root answers content, and the read
         // outside the union answers the confinement correction.
         #expect(
-            waitText.contains(
+            answerText.contains(
                 outcomeLine(label: insideReadLabel, value: additionalRootContent)))
         #expect(
-            waitText.contains(
+            answerText.contains(
                 outcomeLine(label: outsideReadLabel, value: confinementRefusalOpening)))
 
         // The decoded `files` section reached the built verbs: the write
         // answers the read-only correction, and the disk is the truth
         // that nothing was written (plan.md §20.1).
         #expect(
-            waitText.contains(
+            answerText.contains(
                 outcomeLine(label: refusedWriteLabel, value: readOnlyRefusalMarker)))
         #expect(!FileManager.default.fileExists(atPath: refusedWrite.path))
 
@@ -880,17 +947,18 @@ import Testing
         // slot's model answered the selection call for this task, and
         // `searchTools` reports the verb that answer named.
         #expect(librarianPrompts.contains { $0.contains(librarianTask) })
-        #expect(waitText.contains(executeVerbPath))
+        #expect(answerText.contains(executeVerbPath))
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     // MARK: - Proof 2: confinement through the protocol
 
     /// A `tools.files.read` of a path outside the root set refuses IN
-    /// BAND: the `correction` rides the wait call's `tool_call_update`,
-    /// nothing throws — the turn still ends `end_turn` and the call
-    /// completes — and the outside file's content never crosses the
-    /// wire.
+    /// BAND: the `correction` rides the `tool_call_update` of the call
+    /// that carried the snippet's result — see ``answeringCallId(in:)``
+    /// for the two answer shapes — nothing throws, the turn still ends
+    /// `end_turn` and the call completes, and the outside file's
+    /// content never crosses the wire.
     ///
     /// The mechanism the proof exercises is the files capability's own
     /// path check — Multitool's `PathGuard`, whose wording the matched
@@ -916,23 +984,23 @@ import Testing
 
         let (fixture, updates) = try await Self.runToolTurn(
             code: code, label: "TierTwoTests-confinement")
-        let waitUpdates = Self.toolCallUpdates(in: updates, for: Self.waitCallId)
-        let waitText = try Self.encodedText(of: waitUpdates)
+        let answeringId = try Self.answeringCallId(in: updates)
+        let answerText = try Self.snippetAnswerText(in: updates)
         let wireText = try Self.encodedWireText(updates: updates)
-        let accumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId)
+        let accumulated = try await Self.accumulatedToolCall(of: fixture, id: answeringId)
         let pendingPermissionCount = await MainActor.run {
             fixture.harness.client.sessions[fixture.sessionId]?.pendingPermissionRequests.count
         }
         await fixture.close()
 
-        #expect(waitText.contains(Self.confinementRefusalMarker))
-        #expect(waitText.contains("correction"))
+        #expect(answerText.contains(Self.confinementRefusalMarker))
+        #expect(answerText.contains("correction"))
         #expect(!wireText.contains(Self.outsideSecret))
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
         if case .value(let status) = accumulated.status {
             #expect(status == .completed)
         } else {
-            Issue.record("the wait call never carried a status")
+            Issue.record("the answering call never carried a status")
         }
         // The tripwire, not the evidence: it fails on the day a
         // permission request is added (plan.md §11.7).
@@ -951,10 +1019,11 @@ import Testing
     ///
     /// The two calls of the turn answer different things, and the proof
     /// reads both. `runCode` mounts the run in the background, so ITS
-    /// `rawOutput` is the pending envelope that names the completion
-    /// token. The snippet's own result reaches the wire through the
-    /// `wait` call, so the WAIT call's `rawOutput` is the one that
-    /// carries the written line.
+    /// `rawOutput` is an envelope. Which call then carries the written
+    /// line follows the envelope's shape — see ``answeringCallId(in:)``:
+    /// the settled envelope holds the result itself, and the pending
+    /// envelope sends it to the following `wait` call. The written line
+    /// rides the answering call, and rides the other call never.
     @Test(.timeLimit(.minutes(1)))
     func aRealToolCallProjectsAStableUpsertLifecycle() async throws {
         let (fixture, updates) = try await Self.runNoteTurn(label: "TierTwoTests-projection")
@@ -995,20 +1064,20 @@ import Testing
             "expected the runCode rawInput object, got \(accumulated.rawInput)")
         #expect(codeArgument == Self.noteCode)
 
-        // The `runCode` call answers the pending envelope, because the
-        // run mounts in the background. The written line is not there.
-        let runCodeOutput = try #require(
-            jsonString(of: patchValue(accumulated.rawOutput)),
-            "expected the runCode rawOutput string, got \(accumulated.rawOutput)")
-        #expect(runCodeOutput.contains(Self.pendingEnvelopeMarker))
-        #expect(!runCodeOutput.contains(Self.noteContent))
+        // The `runCode` call answers an envelope, because the run mounts
+        // in the background. `answeringCallId` names the call that the
+        // envelope's shape put the snippet's result on.
+        let (answering, other) =
+            try Self.answeringCallId(in: updates) == Self.runCodeCallId
+            ? (accumulated, waitAccumulated)
+            : (waitAccumulated, accumulated)
 
-        // The `wait` call answers the snippet's own result, so it is the
-        // call whose `rawOutput` carries the written line.
-        let waitOutput = try #require(
-            patchValue(waitAccumulated.rawOutput),
-            "expected the wait rawOutput value, got \(waitAccumulated.rawOutput)")
-        #expect(try Self.encodedText(of: waitOutput).contains(Self.noteContent))
+        // The written line rides the answering call's answer.
+        #expect(try Self.answerText(of: answering).contains(Self.noteContent))
+
+        // And it rides the other call of the turn never, so the reading
+        // above cannot be answered by the wrong call.
+        #expect(try !Self.answerText(of: other).contains(Self.noteContent))
     }
 
     // MARK: - Proof 4: turn order
@@ -1070,13 +1139,12 @@ import Testing
             code: code,
             label: "TierTwoTests-disable",
             projectConfigYAML: "tools:\n  shell: false\n")
-        let waitText = try Self.encodedText(
-            of: Self.toolCallUpdates(in: updates, for: Self.waitCallId))
+        let answerText = try Self.snippetAnswerText(in: updates)
         let surface = await fixture.harness.agent.sessions[fixture.sessionId]?.surface
         await fixture.close()
 
-        #expect(waitText.contains("undefined|"))
-        #expect(!waitText.contains("|undefined"))
+        #expect(answerText.contains("undefined|"))
+        #expect(!answerText.contains("|undefined"))
         #expect(!updates.contains { $0.update.kind == .terminalOutputChunk })
         #expect(!updates.contains { $0.update.kind == .terminalUpdate })
         #expect(surface?.shellOutput == nil)
@@ -1099,10 +1167,11 @@ import Testing
     ///
     /// The correlation is plan.md §20.1's: the MCP call runs inside the
     /// snippet, so it opens no ACP tool call of its own, and its answer
-    /// reaches the wire under the `wait` call that collected the run.
+    /// reaches the wire under the call that carried the snippet's
+    /// result — see ``answeringCallId(in:)`` for the two answer shapes.
     /// The proof reads every `tool_call_update` of the turn and asserts
-    /// that the ping stands in exactly one call's ANSWER — the wait
-    /// call's — and in no other.
+    /// that the ping stands in exactly one call's ANSWER — that call's —
+    /// and in no other.
     @Test(.timeLimit(.minutes(1)))
     func aClientDeclaredMCPServerMountsUnderItsOwnNoun() async throws {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
@@ -1118,9 +1187,9 @@ import Testing
             code: try Self.mcpCode(echoPath: echoPath, prefixedPath: prefixedPath),
             label: "TierTwoTests-mcp",
             mcpServers: [server])
-        let waitText = try Self.encodedText(
-            of: Self.toolCallUpdates(in: updates, for: Self.waitCallId))
-        let accumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId)
+        let answeringId = try Self.answeringCallId(in: updates)
+        let answerText = try Self.snippetAnswerText(in: updates)
+        let accumulated = try await Self.accumulatedToolCall(of: fixture, id: answeringId)
         let answeringIds = try Self.toolCallIdsAnswering(text: Self.echoPing, in: updates)
         let pool = await fixture.harness.agent.sessions[fixture.sessionId]?.surface.serverPool
         await pool?.shutdownAll()
@@ -1129,20 +1198,20 @@ import Testing
         // The surface listing alone: the echo verb mounts under the
         // server's own noun, and under no `mcp` noun.
         #expect(
-            waitText.contains(
+            answerText.contains(
                 Self.outcomeLine(label: Self.mountedPathLabel, value: Self.snippetTrue)))
         #expect(
-            waitText.contains(
+            answerText.contains(
                 Self.outcomeLine(label: Self.prefixedPathLabel, value: Self.snippetFalse)))
 
         // The round trip alone: the real subprocess echoed the ping.
         #expect(
-            waitText.contains(
+            answerText.contains(
                 Self.outcomeLine(label: Self.echoedAnswerLabel, value: Self.echoPing)))
 
-        // The correlation: the answer rides the call that ran it, and
-        // no other call of the turn carries it.
-        #expect(answeringIds == [Self.waitCallId])
+        // The correlation: the answer rides the call that carried the
+        // snippet's result, and no other call of the turn carries it.
+        #expect(answeringIds == [answeringId])
         #expect(accumulated.status == .value(.completed))
         let accumulatedText = try Self.encodedText(of: accumulated)
         #expect(accumulatedText.contains(Self.echoPing))

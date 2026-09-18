@@ -619,8 +619,23 @@ three hops. `RunCodeSourceTests` proves each of them:
 1. The **`toolCalls`** entry holds the call's id and its `argumentsJSON`. The
    `code` field of those arguments is the snippet source, whole.
 2. The **`toolOutput`** entry whose entry id equals that call id answers the
-   call. `runCode` mounts in the background, so the answer is the pending
-   envelope, and the envelope carries the run's `completionToken`.
+   call. `runCode` mounts in the background, so the answer is a
+   `PendingRunEnvelope`, and the envelope carries the run's `completionToken`.
+
+   **The envelope has two shapes, and both are by design.** `MultiTool`
+   declares an `inlineSettleGrace`, so a snippet that finishes inside that
+   grace answers the SETTLED envelope — `"pending":false`, with the run's
+   own `outcome` and `detail` beside the token — and the model answers from
+   it without a second round trip. A snippet still running when the grace
+   elapses answers the PENDING envelope — `"pending":true`, with the token
+   alone — and the model collects the result with the `wait` tool. Nothing
+   is cancelled either way, and the `completionToken` is in both shapes, so
+   the three-hop walk above reads the same for each. A reader that wants
+   the run's result reads it from the settled envelope's `detail` when the
+   envelope carries one, and from the `wait` call's answer when it does
+   not. A test that reads the `wait` answer ALONE is wrong for a fast
+   snippet: `TierTwoTests.answeringCallId(in:)` names the call that carried
+   the result, and every proof of that suite reads it.
 3. The **operation event** whose `correlationID` equals that token, and whose
    kind is `completed`, carries the outcome `detail` — the failure message.
    Read these with `TranscriptEvent.operationEvents`, Router's public entry
