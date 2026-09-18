@@ -1280,7 +1280,12 @@ import Testing
         // snippet's result, and no other call of the turn carries it.
         #expect(answeringIds == [answeringId])
         #expect(accumulated.status == .value(.completed))
-        let accumulatedText = try Self.encodedText(of: accumulated)
+        // The accumulated call is read through `answerText(of:)`, thus
+        // the text holds the ANSWER alone. A reader of the whole update
+        // would take the `rawInput` as well, and the snippet source in
+        // that field carries the ping, so the REQUEST would answer this
+        // assertion.
+        let accumulatedText = try Self.answerText(of: accumulated)
         #expect(accumulatedText.contains(Self.echoPing))
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
