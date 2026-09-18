@@ -53,6 +53,15 @@ public enum ScriptedTurnStep: Sendable, Equatable {
     /// this step and cancels it from the client end (plan.md §8.6).
     case hold
 
+    /// Writes `text` to the file at `path`, and plays no model output.
+    ///
+    /// A proof uses it to act BETWEEN two model steps, which is the only
+    /// place a test can act inside a turn: the wire carries a played call
+    /// when the turn's transcript diff goes out, thus nothing of a call is
+    /// observable while the next call runs. The file may be a named pipe,
+    /// and a write to one releases a run the step before it is holding.
+    case writeFile(path: String, text: String)
+
     /// Ends the turn. Steps after this one are never emitted.
     case endTurn
 }
@@ -365,6 +374,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 throw failure.error
             case .hold:
                 try await Self.holdUntilCancelled()
+            case .writeFile(let path, let text):
+                try Self.write(text: text, toFileAt: path)
             case .endTurn:
                 return
             }
@@ -379,6 +390,27 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         for await _ in stream {}
         withExtendedLifetime(continuation) {}
         try Task.checkCancellation()
+    }
+
+    /// Writes `text` to the file at `path`.
+    ///
+    /// The handle is opened for UPDATING, thus `O_RDWR`. A named pipe
+    /// opened that way never waits for the other end, so a step that
+    /// releases a held run through a pipe cannot hang the turn, and the
+    /// close is still the only writer's close, thus the reading run sees
+    /// the end of the stream. A path that holds no file yet is made.
+    ///
+    /// - Parameters:
+    ///   - text: The text to write.
+    ///   - path: The file to write it to.
+    /// - Throws: The write error.
+    private static func write(text: String, toFileAt path: String) throws {
+        guard let handle = FileHandle(forUpdatingAtPath: path) else {
+            try text.write(toFile: path, atomically: true, encoding: .utf8)
+            return
+        }
+        try handle.write(contentsOf: Data(text.utf8))
+        try handle.close()
     }
 
     /// Invokes the handed tool `name` with the fixed arguments, and

@@ -203,6 +203,25 @@ import Testing
     /// escaping write must not report it.
     private static let successExitCode = 0
 
+    /// The named pipe the pending-shape proof plants in the session cwd.
+    ///
+    /// A shell run that reads a named pipe ends when a writer sends a line
+    /// through it and closes, and at no other moment. The proof therefore
+    /// holds its snippet with an event it owns, and the turn carries no
+    /// sleep, no interval, and no budget of its own.
+    private static let pendingGateFileName = "pending-gate.fifo"
+
+    /// The file the held shell run copies the gate line into. The snippet
+    /// reads it back, so the value the proof asserts on the `wait` answer
+    /// can only have come through the gate.
+    private static let pendingGateEchoFileName = "pending-gate-echo.txt"
+
+    /// The line the pending-shape proof sends through the gate.
+    private static let pendingGateContent = "tier two released the held run"
+
+    /// The permissions of the gate: the owner alone reads it and writes it.
+    private static let pendingGateFileMode: mode_t = 0o600
+
     /// The verb paths of the two locally composed capabilities.
     private static let readVerbPath = "files.read"
 
@@ -316,19 +335,30 @@ import Testing
     ///     step before it announced, instead of asking for whatever is
     ///     still running. A named play collects a run that already
     ///     settled as well, so it cannot race the run.
+    ///   - releasingGateAt: The named pipe a step between the snippet and
+    ///     the `wait` plays sends ``pendingGateContent`` through, or `nil`
+    ///     for no such step. It releases a snippet that is holding on that
+    ///     pipe, and it stands AFTER the `runCode` call answered, which is
+    ///     what makes the answer the pending envelope.
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
     private static func makeToolTurnScript(
-        code: String, waitStepCount: Int = 1, collectsRunByToken: Bool = false
+        code: String,
+        waitStepCount: Int = 1,
+        collectsRunByToken: Bool = false,
+        releasingGateAt gatePath: String? = nil
     ) throws -> [ScriptedTurnStep] {
         let play: ScriptedTurnStep =
             collectsRunByToken
             ? .collectingToolCall(name: waitToolName)
             : .toolCall(name: waitToolName, argumentsJSON: "{}")
         let waits = [ScriptedTurnStep](repeating: play, count: waitStepCount)
+        let release = gatePath.map { path in
+            [ScriptedTurnStep.writeFile(path: path, text: pendingGateContent)]
+        }
         return [
             .toolCall(name: runCodeToolName, argumentsJSON: try runCodeArgumentsJSON(code: code))
-        ] + waits + [.endTurn]
+        ] + (release ?? []) + waits + [.endTurn]
     }
 
     /// The write-then-read-back snippet of the projection proofs. Each
@@ -435,6 +465,10 @@ import Testing
     ///     `searchTools`.
     ///   - tapsWire: Whether the harness records the raw wire lines.
     ///     Only the turn-order proof reads them.
+    ///   - releasingGateAt: The named pipe a step between the snippet and
+    ///     the `wait` plays releases — see
+    ///     ``makeToolTurnScript(code:waitStepCount:collectsRunByToken:releasingGateAt:)``.
+    ///     Only the pending-shape proof holds a gate.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
     private static func runToolTurn(
@@ -447,10 +481,14 @@ import Testing
         mcpServers: [FoundationModelsACP.MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
         flashContainer: (any LoadedLLMContainer)? = nil,
-        tapsWire: Bool = false
+        tapsWire: Bool = false,
+        releasingGateAt gatePath: String? = nil
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
         let script = try makeToolTurnScript(
-            code: code, waitStepCount: waitStepCount, collectsRunByToken: collectsRunByToken)
+            code: code,
+            waitStepCount: waitStepCount,
+            collectsRunByToken: collectsRunByToken,
+            releasingGateAt: gatePath)
         var loader = makeScriptedModelLoader(script: script)
         if let flashContainer {
             let scriptedContainer = loader.makeLLMContainer
@@ -568,6 +606,16 @@ import Testing
         ) { collected in
             collected.contains { terminalExitStatus(of: $0) != nil }
         }
+    }
+
+    /// Makes the named pipe the pending-shape proof holds its snippet with.
+    ///
+    /// - Parameter url: Where to make it.
+    /// - Throws: When the system refuses to make the pipe.
+    private static func makeGate(at url: URL) throws {
+        try #require(
+            mkfifo(url.path, pendingGateFileMode) == 0,
+            "the gate was refused at \(url.path), errno \(errno)")
     }
 
     /// Every `terminal_output_chunk` in the sequence, in arrival order.
@@ -725,16 +773,35 @@ import Testing
         return settled ? runCodeCallId : waitCallId
     }
 
-    /// The JSON text of every update of the call that carried the
+    /// The joined ANSWER text of every update of the call that carried the
     /// snippet's own result — see ``answeringCallId(in:)``.
     ///
+    /// It reads each update through ``answerText(of:)``, thus it carries the
+    /// answering fields alone and never the `rawInput` that holds the
+    /// snippet source.
+    ///
     /// - Parameter updates: The collected sequence.
-    /// - Returns: The answering call's JSON text.
+    /// - Returns: The answering call's joined answer text.
     /// - Throws: When no answering call stands, or the encoding fails.
     private static func snippetAnswerText(
         in updates: [UpdateSessionNotification]
     ) throws -> String {
-        try encodedText(of: toolCallUpdates(in: updates, for: answeringCallId(in: updates)))
+        try answerText(ofCall: answeringCallId(in: updates), in: updates)
+    }
+
+    /// The joined ANSWER text of every update of one call of the turn.
+    ///
+    /// - Parameters:
+    ///   - id: The `toolCallId` to read.
+    ///   - updates: The collected sequence.
+    /// - Returns: The call's joined answer text.
+    /// - Throws: The encoding error.
+    private static func answerText(
+        ofCall id: String, in updates: [UpdateSessionNotification]
+    ) throws -> String {
+        try toolCallUpdates(in: updates, for: id)
+            .map { try answerText(of: $0) }
+            .joined()
     }
 
     /// The JSON text of the whole collected sequence — the wire as one
@@ -1442,5 +1509,74 @@ import Testing
 
         // Nothing threw: the turn still ends `end_turn`.
         #expect(ScriptedTurnFixture.idleStopReason(in: turnUpdates) == .endTurn)
+    }
+
+    // MARK: - Proof 9: the pending answer shape
+
+    /// A snippet that CANNOT finish inside the inline settle grace answers
+    /// the PENDING envelope, and the snippet's result then rides the
+    /// following `wait` call — the other arm of ``answeringCallId(in:)``,
+    /// and the slow half of the card's "a fast snippet and a slow snippet
+    /// each pass their proof".
+    ///
+    /// **How the run is held, with no clock of the proof's own.** The proof
+    /// plants a named pipe in the session cwd and gives the snippet a real
+    /// shell run that copies that pipe into a file. A read of a named pipe
+    /// ends when a writer closes it and at no other moment, thus the
+    /// snippet cannot settle while the gate stands. The script releases the
+    /// gate in the step AFTER the `runCode` call — a
+    /// ``ScriptedTurnStep/writeFile(path:text:)`` play — and the model
+    /// reaches that step only when the `runCode` call has answered, thus
+    /// the answer it reads is the pending envelope by construction. The
+    /// turn carries no sleep, no interval and no budget: the ordering is
+    /// the script's own, and the snippet holds its shell run through the
+    /// sandbox's `wait` global under ``snippetWaitSeconds``.
+    ///
+    /// The `wait` play NAMES the run, as proof 8's does, so the collection
+    /// cannot lose the report to a run that settles first.
+    ///
+    /// The asserted value travels the whole path: the script sends it
+    /// through the gate, the shell run copies it into a file, the snippet
+    /// reads that file back, and the `wait` call answers it.
+    @Test(.timeLimit(.minutes(1)))
+    func aHeldSnippetAnswersPendingAndTheWaitCallCarriesTheResult() async throws {
+        let cwd = makeResolvedDirectory(label: "TierTwoTests-pending-repo")
+        let gate = cwd.appendingPathComponent(Self.pendingGateFileName)
+        try Self.makeGate(at: gate)
+        let echo = cwd.appendingPathComponent(Self.pendingGateEchoFileName)
+        let command = "cat '\(gate.path)' > '\(echo.path)'"
+        let code = """
+            const envelope = await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
+            const started = JSON.parse(envelope);
+            await wait(started.completionToken, \(Self.snippetWaitSeconds));
+            const echoed = await tools.files.read({ path: "\(Self.pendingGateEchoFileName)", format: "plain" });
+            if (echoed.correction) { return echoed.correction; }
+            return echoed.lines.join("");
+            """
+
+        let (fixture, updates) = try await Self.runToolTurn(
+            code: code,
+            label: "TierTwoTests-pending",
+            collectsRunByToken: true,
+            workingDirectory: cwd,
+            releasingGateAt: gate.path)
+        let envelope = try Self.runCodeEnvelopeText(in: updates)
+        let answeringId = try Self.answeringCallId(in: updates)
+        let answerText = try Self.snippetAnswerText(in: updates)
+        let runCodeAnswer = try Self.answerText(ofCall: Self.runCodeCallId, in: updates)
+        await fixture.close()
+
+        // The grace expired with the snippet still held, so the `runCode`
+        // call answered the pending envelope, and the answering call of the
+        // turn is the `wait` call.
+        #expect(envelope.contains(Self.pendingEnvelopeMarker))
+        #expect(answeringId == Self.waitCallId)
+
+        // The released line rides that call's ANSWER, and it rides the
+        // `runCode` call never, so the reading cannot be answered by the
+        // wrong call.
+        #expect(answerText.contains(Self.pendingGateContent))
+        #expect(!runCodeAnswer.contains(Self.pendingGateContent))
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 }
