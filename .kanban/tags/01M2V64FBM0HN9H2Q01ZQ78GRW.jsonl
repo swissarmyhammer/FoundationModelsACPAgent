@@ -1,0 +1,1 @@
+{"id":"01M2V64FBMYJ0RZ24NXB4E7YQH","timestamp":"2026-09-18T21:18:06.708347Z","op":"create","item_id":"01M2V64FBM0HN9H2Q01ZQ78GRW","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 006b75\n+tag_name: instructions\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 006b75\n-tag_name: instructions\n","transaction_id":null}

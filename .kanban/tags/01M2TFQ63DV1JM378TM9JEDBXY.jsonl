@@ -1,0 +1,1 @@
+{"id":"01M2TFQ63DK9J0J9WN976XBR3B","timestamp":"2026-09-18T14:46:22.573242Z","op":"create","item_id":"01M2TFQ63DV1JM378TM9JEDBXY","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: d73a4a\n+tag_name: upstream\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: d73a4a\n-tag_name: upstream\n","transaction_id":null}

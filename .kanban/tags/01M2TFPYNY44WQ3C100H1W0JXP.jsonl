@@ -1,0 +1,1 @@
+{"id":"01M2TFPYNY05D7F2NBJM8B5BA7","timestamp":"2026-09-18T14:46:14.974987Z","op":"create","item_id":"01M2TFPYNY44WQ3C100H1W0JXP","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: fbca04\n+tag_name: skills\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: fbca04\n-tag_name: skills\n","transaction_id":null}

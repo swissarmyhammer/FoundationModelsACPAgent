@@ -1,6 +1,6 @@
 ---
-position_column: todo
-position_ordinal: '80'
+position_column: done
+position_ordinal: e280
 title: A truncated turn reports end_turn
 ---
 ## The problem
