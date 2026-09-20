@@ -17,9 +17,11 @@ import Testing
 /// CI runs the first two levels. It never runs the third, because the
 /// first two answer "is the code correct" and a failure there is a
 /// defect, while an evaluation scores a real model over hours and a low
-/// score can be a model question. Two cases below pin that separation
-/// from both sides: `evaluation.yml` triggers on a manual dispatch alone
-/// and drives its own package, and `ci.yml` names neither.
+/// score can be a model question. Three cases below pin that separation
+/// from both sides: `evaluation.yml` triggers on a manual dispatch and on
+/// a nightly schedule and on nothing else, that scheduled run selects the
+/// one suite that takes minutes, and `ci.yml` names neither the evaluation
+/// package nor its workflow.
 ///
 /// The suite pins seven properties of that shape: the `uses:` line names
 /// the shared workflow at `@main`; exactly one job exists and it has no
@@ -107,11 +109,24 @@ struct CIWorkflowTests {
 
     /// The triggers `evaluation.yml` is allowed to declare.
     ///
-    /// One, and only one: a person asks for it. A push trigger or a
-    /// pull-request trigger would put hours of real model turns back on
-    /// every commit, and would put a score that varies from run to run
-    /// back in front of a contract verdict.
-    private static let evaluationAllowedTriggers = ["workflow_dispatch:"]
+    /// Two: a person asks for it, and a nightly schedule drives the skill
+    /// trigger suite alone (the workflow's `FILTER` picks it for a
+    /// scheduled run).
+    ///
+    /// A push trigger or a pull-request trigger stays refused. Those would
+    /// put hours of real model turns back on every commit, and a score that
+    /// varies from run to run back in front of a contract verdict. A
+    /// nightly run is neither: it drives five short turns on a small model,
+    /// it stops each one at the decision of the model, and it answers the
+    /// one question no unit test can — does a live model still load the
+    /// skill that fits the task.
+    private static let evaluationAllowedTriggers = ["schedule:", "workflow_dispatch:"]
+
+    /// The `swift test --filter` pattern a scheduled run must select.
+    ///
+    /// A nightly run drives this suite and no other. The filter is what
+    /// keeps the schedule short enough to pay for itself.
+    private static let scheduledEvaluationFilter = "SkillTrigger"
 
     /// The directory name the removed-gate walk steps over. A build
     /// directory holds checkouts of every dependency, so a walk into one
@@ -369,8 +384,8 @@ struct CIWorkflowTests {
         )
     }
 
-    @Test("the evaluations run on a manual dispatch and on nothing else")
-    func theEvaluationWorkflowRunsOnDispatchAlone() throws {
+    @Test("the evaluations run on a dispatch and on the nightly schedule, and on nothing else")
+    func theEvaluationWorkflowRunsOnDispatchAndSchedule() throws {
         let lines = try Self.evaluationWorkflowLines()
         let triggers = Self.block(under: "on:", in: lines)
 
@@ -387,6 +402,30 @@ struct CIWorkflowTests {
             no other trigger. A push or a pull_request trigger puts hours of real model turns on \
             every commit, and puts a score that varies from run to run in front of a contract \
             verdict; found: \(triggerKeys)
+            """
+        )
+    }
+
+    @Test("a nightly run drives the skill trigger suite alone")
+    func theScheduledEvaluationRunSelectsOneSuite() throws {
+        let lines = try Self.evaluationWorkflowLines()
+
+        // The schedule pays for itself only while it stays short. The
+        // filter is what holds it there: without it a nightly run drives
+        // the whole level, which is hours of real model turns every night
+        // on the one self-hosted machine.
+        let selectsTheShortSuite = lines.contains { line in
+            line.contains("github.event_name == 'schedule'")
+                && line.contains("'\(Self.scheduledEvaluationFilter)'")
+        }
+        #expect(
+            selectsTheShortSuite,
+            """
+            \(Self.evaluationWorkflowFileName) must give FILTER the value \
+            "\(Self.scheduledEvaluationFilter)" when "github.event_name == 'schedule'". The \
+            nightly run measures one question — does a live model still load the skill that fits \
+            the task — and that suite takes minutes. An unfiltered nightly run drives the whole \
+            level instead, which is hours of real model turns every night.
             """
         )
     }

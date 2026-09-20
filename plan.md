@@ -914,11 +914,15 @@ needs a named owner for this state machine:
 exception and map it.** A Swift `CancellationError` that gets out as a
 JSON-RPC error, or as `refusal`, is the failure that the spec names.
 
-Two extension values stand beside the five. A turn that completed with no
+Three extension values stand beside the five. A turn that completed with no
 output and a zero-token usage report stops with `_no_output`, because a bare
 `end_turn` would hide it (task ^pez780d). A turn the agent ended because the
 generation made no fragment for the whole stall bound stops with `_stalled`
-(task ^s0bw5cv). Both map to exit code 1 through the §5.8 table of
+(task ^s0bw5cv). A turn whose last generate call reached the output token
+ceiling of the model, by Router's `FinishReason.maxTokens`, stops with
+`_truncated`: its answer, its reasoning or its tool call is cut, and
+`max_tokens` is the overflow of the input context, which is a different budget
+(task ^bw9qt1z). All three map to exit code 1 through the §5.8 table of
 `cli-plan.md`, which gives every unknown stop reason that row.
 
 ### 8.3 The upsert algebra
@@ -2288,7 +2292,7 @@ structural. No environment variable selects a test.
 |---|---|---|---|---|---|
 | **Unit** | the root package | CI, every commit, seconds | scripted or none | is each part correct, and is the wire shape right — ordering, upserts, replay, and real tools through the real conformance | a defect |
 | **Integration** | `IntegrationTests` | CI, every commit, about 90 seconds | scripted | does the contract hold across a real process boundary — framing, spawned binaries, no stray children | a defect |
-| **Evaluation** | `EvaluationTests` | on demand only, hours | **real** | does a local model, driven over ACP end to end, *choose* to use the tools, and succeed | a score moved; maybe a defect, maybe the model |
+| **Evaluation** | `EvaluationTests` | on demand, hours; plus a nightly run of the skill trigger suite alone, minutes | **real** | does a local model, driven over ACP end to end, *choose* to use the tools, and succeed | a score moved; maybe a defect, maybe the model |
 
 **Why Evaluation stands apart, and why CI never runs it.** The first two
 levels assert. They are fast, they are deterministic, and a red mark is
@@ -2304,9 +2308,20 @@ A CI run also measured week-old code for a week, because a red job that
 nobody can read is a job nobody watches.
 
 So: `ci.yml` runs Unit and Integration. `evaluation.yml` runs Evaluation
-on `workflow_dispatch` alone, and `CIWorkflowTests` pins both halves of
-that separation. By hand it is
-`swift test --package-path EvaluationTests`.
+when a person asks for it, and `CIWorkflowTests` pins both halves of that
+separation. By hand it is `swift test --package-path EvaluationTests`.
+
+**One evaluation suite also runs nightly.** The skill trigger suite is the
+exception that proves the rule above: it drives five short turns on a
+small model, three times each, it stops each turn at the decision of the
+model, and it takes about ten minutes. It answers the one question no unit test can — does a
+live model still load the skill that fits the task — so a change of a
+skill description, of the catalog, or of the instructions cannot go
+unmeasured until the next SWE-bench run. A `schedule:` trigger therefore
+drives it, and the workflow's `FILTER` holds a scheduled run to that suite
+alone. `CIWorkflowTests` pins the filter too: without it a nightly run
+would drive the whole level, which is hours of real model turns every
+night on the one self-hosted machine.
 
 **The unit level covers what used to be three rungs.** An earlier draft
 numbered five tiers, 0 through 4. Tiers 0, 1 and 2 differed only in how

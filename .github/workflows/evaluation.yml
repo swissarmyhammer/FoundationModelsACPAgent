@@ -2,7 +2,8 @@ name: Evaluation
 
 # The third test level: the evaluations (plan.md §20.3).
 #
-# This workflow is `workflow_dispatch` only. It runs on no push and on no
+# This workflow runs when a person asks for it, and on a nightly schedule
+# that drives the skill trigger suite alone. It runs on no push and on no
 # pull request, and `ci.yml` never calls it. That is the point.
 #
 # The unit level and the integration level answer "is the code correct".
@@ -31,6 +32,14 @@ name: Evaluation
 #     swift test --package-path EvaluationTests
 
 on:
+  # The skill trigger suite is minutes, not hours: it drives five short
+  # turns on a small model and stops each one at the decision. A nightly
+  # run therefore costs little and answers the one question that a unit
+  # test cannot — does a live model still load the skill that fits the
+  # task — so a change of a description, of the catalog or of the
+  # instructions cannot go unmeasured until the next SWE-bench run.
+  schedule:
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       filter:
@@ -70,4 +79,7 @@ jobs:
           # a turnstile, so a parallel drive spends the limit on queue
           # time and a queued sample fails in the same way as a hang.
           # `--no-parallel` above holds the live turns to one at a time.
-          FILTER: ${{ inputs.filter }}
+          # A scheduled run drives the skill trigger suite alone; a
+          # person's run takes the filter of the dispatch, or none for the
+          # whole level.
+          FILTER: ${{ inputs.filter || (github.event_name == 'schedule' && 'SkillTrigger' || '') }}
