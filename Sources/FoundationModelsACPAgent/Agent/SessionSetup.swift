@@ -534,12 +534,13 @@ extension RoutedACPAgent {
         // One watched registry serves the preload assembly here and the
         // slash-command source below (plan.md §14.2). `watch: true` is
         // what makes its `commandUpdates` non-nil.
-        let skills = ToolCatalog.makeSkillsRegistry(context: catalogContext)
+        let skills = await ToolCatalog.makeSkillsRegistry(context: catalogContext)
         let instructions = try InstructionsAssembler(
             stack: context.loader.stack, workingDirectory: workingDirectory
         ).assemble(skills: skills)
 
-        let surface = try await ToolCatalog.sessionSurface(context: catalogContext)
+        let surface = try await ToolCatalog.sessionSurface(
+            context: catalogContext, skillsRegistry: skills)
 
         return SessionComposition(
             configuration: context.loaded.configuration,
