@@ -115,6 +115,18 @@ struct EventProjection {
     /// The completion tokens summed across every `turnEnded`.
     private var tokensOut = 0
 
+    /// The finish reason of the last inner generate call of the turn, or
+    /// `nil` before the first usage report.
+    private var lastFinishReason: FinishReason?
+
+    /// True when the generate call that ended the turn stopped at the
+    /// output token ceiling of the model (task ^bw9qt1z). The text, the
+    /// reasoning or the tool call of that generation is cut, so the turn
+    /// must not read as a normal `end_turn`.
+    var endedAtTokenCeiling: Bool {
+        lastFinishReason == .maxTokens
+    }
+
     /// The newest context fill. `nan` means "no stamp": send no meter
     /// for the turn (§8.4).
     private var contextFill = Double.nan
@@ -243,6 +255,9 @@ struct EventProjection {
             tokensIn += usage.tokensIn
             tokensOut += usage.tokensOut
             contextFill = usage.contextFill
+            // The LAST generate call is the one that ends the turn, so
+            // its finish reason wins over each earlier one.
+            lastFinishReason = usage.finishReason
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a

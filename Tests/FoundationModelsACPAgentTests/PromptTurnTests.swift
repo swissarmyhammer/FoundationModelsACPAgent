@@ -358,6 +358,46 @@ import Testing
 
     // MARK: - The no-output turn (§8.2, task ^pez780d)
 
+    /// A turn whose last generate call reached the output token ceiling
+    /// ends with the `_truncated` extension stop reason, never with a
+    /// bare `end_turn` (task ^bw9qt1z).
+    @Test func aTurnThatEndsAtTheTokenCeilingEndsWithTheTruncatedStopReason() async throws {
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .turnEnded(
+                    TokenUsage(
+                        tokensIn: 100, tokensOut: 8192, contextFill: .nan,
+                        finishReason: .maxTokens))
+            ]))
+        let updates = await recorder.updates
+
+        #expect(reason == .unknown(PromptTurn.truncatedStopReasonValue))
+        #expect(
+            ScriptedTurnFixture.idleStopReason(in: updates)
+                == .unknown(PromptTurn.truncatedStopReasonValue))
+    }
+
+    /// Only the LAST generate call decides: a tool-calling turn that
+    /// reached the ceiling in an earlier call, and then completed its
+    /// last call, keeps `end_turn`.
+    @Test func anEarlierCeilingDoesNotTruncateATurnWhoseLastCallCompleted() async throws {
+        let (turn, _) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                .turnEnded(
+                    TokenUsage(
+                        tokensIn: 100, tokensOut: 8192, contextFill: .nan,
+                        finishReason: .maxTokens)),
+                .turnEnded(
+                    TokenUsage(
+                        tokensIn: 200, tokensOut: 50, contextFill: .nan,
+                        finishReason: .completed)),
+            ]))
+
+        #expect(reason == .endTurn)
+    }
+
     /// A completed turn with no output and a zero-token usage report
     /// ends with the honest `_no_output` extension stop reason, never
     /// with a bare `end_turn`.

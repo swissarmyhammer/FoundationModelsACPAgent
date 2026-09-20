@@ -34,6 +34,15 @@ enum TurnStop: Equatable, Sendable {
     /// ^pez780d).
     case noOutput
 
+    /// The turn completed, but the generate call that ended it stopped at
+    /// the output token ceiling of the model: Router's `FinishReason` of
+    /// that call is `maxTokens`. The answer, the reasoning or the tool
+    /// call is cut. A bare `end_turn` would hide that, and `max_tokens`
+    /// is the overflow of the INPUT context, which is a different
+    /// budget. So the arm maps to the `_truncated` extension value
+    /// (§8.2's `_` rule; task ^bw9qt1z).
+    case truncated
+
     /// The turn stopped waiting on a generation that made nothing: the
     /// model call produced no fragment at all for the whole
     /// ``PromptTurn/stalledGenerationBound``, so the turn ended it
@@ -71,6 +80,11 @@ struct PromptTurn: Sendable {
     /// The wire value a completed turn that generated nothing stops
     /// with, under the same `_`-prefix extension rule (task ^pez780d).
     static let noOutputStopReasonValue = "_no_output"
+
+    /// The wire value a turn whose last generation reached the output
+    /// token ceiling stops with, under the same `_`-prefix extension rule
+    /// (task ^bw9qt1z).
+    static let truncatedStopReasonValue = "_truncated"
 
     /// The wire value a turn that ended a stalled generation stops with,
     /// under the same `_`-prefix extension rule (task ^s0bw5cv).
@@ -231,6 +245,13 @@ struct PromptTurn: Sendable {
         if stop == .completed, projection.generatedNothing {
             stop = .noOutput
         }
+        // A completed turn whose LAST generate call stopped at the output
+        // token ceiling is cut, not finished (task ^bw9qt1z). A turn of
+        // 8192 reasoning tokens and no answer ended as `end_turn` before
+        // Router gave the finish reason.
+        if stop == .completed, projection.endedAtTokenCeiling {
+            stop = .truncated
+        }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
         await turnState.turnDidEnd(reason: reason)
@@ -274,6 +295,7 @@ struct PromptTurn: Sendable {
         case .budgetExhausted: .maxTokens
         case .toolLoopCapped: .maxTurnRequests
         case .noOutput: .unknown(noOutputStopReasonValue)
+        case .truncated: .unknown(truncatedStopReasonValue)
         case .stalled: .unknown(stalledStopReasonValue)
         case .failed: .unknown(unmappedStopReasonValue)
         }
