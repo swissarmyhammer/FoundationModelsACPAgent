@@ -28,8 +28,8 @@ THE STOP REASON
 
 `acp-agent run` gave the harness an exit code and nothing more. The wire
 gives the STOP REASON of each turn: `end_turn`, `max_tokens`,
-`max_turn_requests`, `refusal`, `cancelled`, and the three that this agent
-adds -- `_error`, `_no_output` and `_stalled`. A reason is a free string, so
+`max_turn_requests`, `refusal`, `cancelled`, and the four that this agent
+adds -- `_error`, `_no_output`, `_stalled` and `_truncated`. A reason is a free string, so
 this module never refuses one it does not know, and the record of the
 instance keeps whatever the agent said.
 
@@ -162,6 +162,7 @@ WIRE_ENDED = (
     "this line."
 )
 QUIET_WIRE = "the agent said nothing for {seconds} seconds"
+NO_ANSWER = "`{method}` got no answer from the agent in {seconds} seconds"
 FRAME_IS_NOT_JSON = "the agent wrote a line that is not a JSON message: {line}"
 NO_SUCH_METHOD = "this client serves no `{method}`"
 PROCESS_IS_GONE = "the agent process no longer reads its standard input"
@@ -509,13 +510,22 @@ class Connection:
         - params: the parameters of the request.
         - seconds: how long to wait for the answer, in seconds.
 
-        Raises ``AgentAnswerError`` when the agent refuses, and
-        ``AgentGoneError`` when the wire ends first.
+        Raises ``AgentAnswerError`` when the agent refuses,
+        ``AgentGoneError`` when the wire ends first, and a `TimeoutError`
+        that names the method when no answer comes in the time given.
         """
         identifier = self._ask(method, params)
         deadline = time.monotonic() + seconds
         while True:
-            message = self._receive(deadline)
+            try:
+                message = self._receive(deadline)
+            except TimeoutError as error:
+                # The wire says only that it was quiet. The reader of a run
+                # needs the step: a `session/new` with no answer is a fault
+                # of the session start, and not of the turn of the model.
+                raise TimeoutError(
+                    NO_ANSWER.format(method=method, seconds=round(seconds))
+                ) from error
             if self._answers(message, identifier):
                 return self._result(method, message)
             self._serve(message)

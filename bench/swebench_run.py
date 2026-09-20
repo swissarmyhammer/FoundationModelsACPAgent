@@ -220,6 +220,9 @@ AGENT_EXCLUDES = [".acp-agent", ".venv"]
 # repository is removed when the instance ends, so the transcripts are copied
 # out first. They are the only record of what the model did in each round.
 AGENT_TRANSCRIPTS = Path(".acp-agent") / "transcripts"
+# Where the agent reads the configuration of the project layer, below the
+# repository. `--agent-config` puts a file there before the session starts.
+AGENT_CONFIG = Path(".acp-agent") / "config.yaml"
 # Where to look for the agent binary, in this order, below the package root.
 AGENT_CANDIDATES = (".build/release/acp-agent", ".build/debug/acp-agent")
 # The package root: the parent of this `bench` directory.
@@ -302,6 +305,13 @@ parser.add_argument(
 parser.add_argument(
     "--verbose", action="store_true",
     help="write one line for each session event of the agent",
+)
+parser.add_argument(
+    "--agent-config",
+    type=Path,
+    default=None,
+    help="a config.yaml of the agent; the run writes it into the project layer "
+    "of each clone, for example bench/code-context.config.yaml",
 )
 args = parser.parse_args()
 outpath = args.outpath
@@ -419,6 +429,21 @@ def keep_transcripts(repo, outpath, instance_id):
         shutil.rmtree(destination, ignore_errors=True)
     shutil.copytree(source, destination)
     return destination
+
+
+def give_agent_config(repo, config):
+    """Copy the `--agent-config` file into the project layer of the clone.
+
+    The agent reads the configuration of a session at `session/new`, from the
+    directory of that session. The clone is removed when the instance ends, so
+    each instance gets the file again. `.acp-agent` is in AGENT_EXCLUDES, and
+    the file is not tracked, so it is never part of the patch.
+    """
+    if config is None:
+        return
+    destination = repo / AGENT_CONFIG
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(config, destination)
 
 
 def capture_patch(repo, base_commit):
@@ -650,6 +675,7 @@ with outpath.open("w" if args.force else "a") as out, \
             #    can change the text. The FIRST instance of a run waits here
             #    for the model load. `swebench_prompt.py` holds the
             #    instruction, and it says why the bench gives one.
+            give_agent_config(repo, args.agent_config)
             log(
                 "running the agent...",
                 **about,

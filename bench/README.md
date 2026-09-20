@@ -30,7 +30,7 @@ cd /path/to/FoundationModelsACPAgent
 swift build -c release
 
 # 1. Make the patches. Start with 3, and keep a record.
-uv run bench/swebench_run.py bench/preds.jsonl --sample 3 | tee bench/run.log
+uv run bench/swebench_run.py bench/preds.jsonl --sample 3 2>&1 | tee bench/run.log
 
 # 2. Give the score. Docker must run.
 uv run bench/swebench_score.py bench/preds.jsonl
@@ -83,10 +83,129 @@ a true number, build the release.
 
 The first line of the output says which binary it found. Read it.
 
+### The code context with skills run
+
+This run gives the agent the `code-context` branch of the skills marketplace
+and the `tools.code_context` group of Multitool. Read
+[What the agent gets](#what-the-agent-gets).
+
+```bash
+swift package update      # ONLY when a sibling package has a new commit
+swift build -c release
+uv run bench/swebench_run.py bench/preds.code-context.jsonl --limit 16 \
+  --agent-config bench/code-context.config.yaml 2>&1 | tee bench/run.code-context.log
+uv run bench/swebench_score.py bench/preds.code-context.jsonl
+```
+
+**Give this run a predictions file of its own.** The predictions file says
+which instances are done. A run that writes into the `bench/preds.jsonl` of a
+different configuration finds those instances there, and it does none of them
+again. With a file of its own, the run also keeps its record in
+`bench/preds.code-context.runs.jsonl` and its transcripts in
+`bench/preds.code-context.transcripts/`, and the two scores stay apart.
+
+`--limit 16` with no `--sample` takes the first 16 of the instances that this
+machine can build, in the order of the split. The same command with no
+`--agent-config` and a different predictions file does the same 16 instances,
+so you can compare the two scores.
+
+**A rebuild alone does not take a new commit of a sibling package.**
+`Package.resolved` pins one revision of Skills, Router, Multitool and
+CodeContext, and `swift build` keeps that pin. A run that must have a new
+sibling commit needs `swift package update` first, and then the release build.
+The first line of the run log names the binary; compare its time with the time
+of your build.
+
+**Remove the transcripts of a stopped run before you read the new ones.** The
+run replaces the folder of each instance that it finishes, so a folder of an
+instance that this run has not reached is left from an older run. Remove
+`bench/preds.code-context.transcripts/` before the run, or compare the time of
+each folder with the start of the run.
+
+The first session of a machine fetches the branch into
+`~/.cache/skills/marketplaces`. Each later session asks the remote for its head
+only. The agent writes its code context index into `.code-context/` in the
+clone. That directory ignores itself, and the patch holds tracked files only,
+so the index is never part of the patch.
+
+### What the configuration does
+
+`bench/code-context.config.yaml` sets two sections:
+
+| Key | Value | Why |
+|---|---|---|
+| `tools.skills.marketplaces[0].url` | the HTTPS URL of `swissarmyhammer/skills` | A marketplace supports HTTPS only. The SSH form gives `unreachable`, because the skills package builds no SSH transport. |
+| `tools.skills.marketplaces[0].ref` | `code-context` | That branch holds the five skills whose one requirement is the `tools.code_context` verbs. |
+| `tools.codeContext.autoInstall` | `true` | A language server that is absent is installed automatically. |
+| `tools.codeContext.semanticSearch` | `false` | The index then embeds no chunk. Each instance is a new clone, thus each instance makes a new index, and the embedder uses the same GPU as the model. The symbol, call graph, blast radius and language server verbs need no embedding. Only `searchCode` does, and it answers with an error that says the embedding layer is off. |
+
+### Did the model use the skills and the code context?
+
+The transcripts answer this. Each `<id>/<session>/transcript.jsonl` holds one
+JSON object per line. A line with `"kind": "toolCalls"` holds the calls of one
+round, and a line with `"kind": "toolOutput"` holds one answer.
+
+- **The skills:** look for a call with `"toolName": "skills"`. Its
+  `argumentsJSON` names the operation: `search skill` finds the skills of the
+  task, and `use skill` loads one. A turn that never calls `use skill` never
+  got the instructions of a skill.
+- **The code context:** the verbs stand in the code of each `runCode` call.
+  Count `tools.code_context.` in the `argumentsJSON` of the `runCode` calls.
+  `tools.files.` and `tools.shell.` count the other two groups.
+- **What the model was offered:** a `"kind": "instructions"` line holds the
+  tool definitions of the session. The `skills` definition holds the catalog
+  of the skills, and the `id` parameter holds the enum of their ids.
+
+A live run writes only the `toolOutput` lines of the turn that runs now. The
+calls and the instructions of an instance are in the copied transcript, after
+that instance ends.
+
+### The fast answer to the same question
+
+A SWE-bench run takes hours to tell you that the model never loaded a skill.
+The skill trigger evaluation tells you in about ten minutes:
+
+```bash
+swift test --package-path EvaluationTests --no-parallel --filter SkillTrigger
+```
+
+It opens a real session on a small live model, gives it five prompts three
+times each, and stops each turn as soon as the model decides. Four prompts
+fit a skill in `Tests/Fixtures/skills/`, one fits none. Each line of the
+report names the sample, the skill the model loaded, and the seconds it
+took:
+
+```
+SKILL TRIGGER who-calls expected=fixture-explore rate=1.0 loaded=[fixture-explore] ...
+SKILL TRIGGER swebench-issue expected=fixture-explore rate=0.0 loaded=[] ...
+SKILL TRIGGER TOTAL loadRate=0.58 falseLoadRate=0.0
+```
+
+**`swebench-issue` is the sample that fails.** It is written as a bug
+report, and it uses none of the words of the skill description. In the run
+of 2026-09-20 the model loaded no skill in all three of its runs, and it
+called `searchTools` alone. That is the same condition as the SWE-bench run
+of 2026-09-19, in one turn of a minute instead of one run of hours. The
+other four samples say the delivery of the skills works, so the fault is in
+the words of the description and of the use rule. Card `^4apmcft` of
+FoundationModelsSkills rewrites the use rule for that reason.
+
+`loadRate` must stay above 0.5, and `falseLoadRate` below it. A nightly
+GitHub run drives this suite alone, so a change of a skill description, of
+the catalog, or of the instructions cannot go unmeasured until the next
+SWE-bench run. The environment variables `ACP_AGENT_SKILL_TRIGGER_MODEL`,
+`ACP_AGENT_SKILL_TRIGGER_SAMPLES`, `ACP_AGENT_SKILL_TRIGGER_REPEATS` and
+`ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS` change the model, the samples,
+the runs of each sample, and the deadline.
+
+A pass here and no `use skill` call in a SWE-bench transcript is a useful
+split: the delivery of the skills works, and the issue text of that instance
+did not reach the model as a task that fits a skill.
+
 ### The full split
 
 ```bash
-uv run bench/swebench_run.py bench/preds.jsonl | tee bench/run.log
+uv run bench/swebench_run.py bench/preds.jsonl 2>&1 | tee bench/run.log
 uv run bench/swebench_score.py bench/preds.jsonl
 ```
 
@@ -108,6 +227,7 @@ Each script has `--help`. These are the options you will use:
 | `--agent PATH` | run | a different agent binary |
 | `--timeout SECONDS` | run | the limit of one instance (default 3000) |
 | `--oldest-python VERSION` | run | the Python to try for the instances that want 3.6 |
+| `--agent-config FILE` | run | a `config.yaml` of the agent, written into the project layer of each clone; `bench/code-context.config.yaml` mounts the `code-context` branch of the skills marketplace and states the code context capability |
 | `--verbose` | run | write one line for each session event of the agent |
 | `--instance-ids ID` | score | score these ids only |
 | `--max-workers N` | score | how many docker workers run together |
@@ -137,7 +257,10 @@ Each script has `--help`. These are the options you will use:
   repository use the image again.
 
 Each script writes its messages to standard output, and it makes no log
-file. `| tee run.log` keeps a record of a long run.
+file. `2>&1 | tee run.log` keeps a record of a long run. The `2>&1` is
+necessary: `tee` reads standard output only, and an interrupt or a Python
+error goes to standard error. The run of 2026-09-18 stopped after 22 seconds,
+and its log had no line that said why.
 
 **A line is a message and its fields.** The message says what happened, and
 each value stands after a name of its own:
@@ -236,8 +359,10 @@ for each instance:
 `swebench_acp.py` speaks that wire, and its module comment says how.
 
 **The wire gives the STOP REASON of each turn.** `end_turn`, `max_tokens`,
-`max_turn_requests`, `refusal`, `cancelled`, and the `_error`, `_no_output`
-and `_stalled` of this agent. The one-shot `run` command gave the harness an
+`max_turn_requests`, `refusal`, `cancelled`, and the `_error`, `_no_output`,
+`_stalled` and `_truncated` of this agent. `_truncated` says that the last
+generation of the turn reached the output token ceiling of the model, so the
+work of that turn is cut. The one-shot `run` command gave the harness an
 exit code and nothing more. The record of the instance keeps the reason.
 
 **A turn past the limit gets `session/cancel`,** and not a signal. The agent
@@ -250,10 +375,24 @@ option of its own, because it writes the events of a session to its client.
 
 ### What the agent gets
 
-The agent gets the problem statement of the instance, and nothing more. There
-is no skill, and there is no workflow, because this package has no skills
-yet. This is the simple test. When skills come, a skill prompt can go in
-front of the problem statement, and then you can compare the two numbers.
+The agent gets the problem statement of the instance, and nothing more. With
+no `--agent-config`, the agent has its default tools and no marketplace skill.
+This is the simple test.
+
+`--agent-config bench/code-context.config.yaml` is the "code context with
+skills" test. The run writes that file to `.acp-agent/config.yaml` in each
+clone. The agent then mounts the `code-context` branch of the
+`swissarmyhammer/skills` marketplace in its stand-alone `skills` tool, and the
+`tools.code_context` group in Multitool. Compare the two numbers. Read
+[What the configuration does](#what-the-configuration-does) for each key, and
+[Did the model use the skills and the code context?](#did-the-model-use-the-skills-and-the-code-context)
+to read the answer out of the transcripts.
+
+**A tool that the agent mounts is not a tool that the model uses.** In the run
+of 2026-09-19 the model got the catalog of the skills in the tool description,
+it searched for a skill, and it then made 0 `tools.code_context` calls and
+loaded no skill. So read the transcripts of a run before you read its score:
+the score alone does not say whether the tools reached the work.
 
 The prompt goes over the wire as one text content block. So no shell quote
 and no argument length can change the text of the problem.
@@ -680,6 +819,7 @@ test_swebench_report.py      the tests of that report
 test_swebench_event.py       the tests of that line
 test_swebench_log_lines.py   the proof that no log call of a script holds an f-string
 test_fixtures.py             the stand-in for subprocess.run that the tests share
+code-context.config.yaml     the agent configuration of the code context with skills run
 .gitignore                   keeps the run results out of git
 ```
 

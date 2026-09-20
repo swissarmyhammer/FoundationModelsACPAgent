@@ -363,6 +363,25 @@ class SessionTests(unittest.TestCase):
         self.assertIn(AN_ERROR_MESSAGE, str(caught.exception))
 
 
+    def test_a_request_with_no_answer_names_its_method(self):
+        """In the run of 2026-09-18 `session/new` got no answer in 600
+        seconds, and the line said `the agent said nothing`. A reader took
+        that for a quiet model. The error must name the step that waited."""
+
+        def silent(message):
+            if message.get("method") == "session/new":
+                return []
+            return a_working_agent()(message)
+
+        connection = Connection(AWire(silent))
+        connection.handshake()
+
+        with self.assertRaises(TimeoutError) as caught:
+            connection.open_session(A_CLONE)
+
+        self.assertIn("session/new", str(caught.exception))
+
+
 class TurnTests(unittest.TestCase):
     """One turn of one instance, and how the harness learns it ended."""
 

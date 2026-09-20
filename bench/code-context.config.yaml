@@ -1,0 +1,27 @@
+# The agent configuration of the "code context with skills" run.
+#
+# Give this file to the run with `--agent-config bench/code-context.config.yaml`.
+# The run writes it to `.acp-agent/config.yaml` in each clone.
+#
+# - `skills` is the stand-alone `skills` tool. It reads the `code-context`
+#   branch of the skills marketplace, which holds only the five skills that
+#   need the code context tool. The URL is the HTTPS form: the agent of a
+#   run gets a clean environment, and the HTTPS form of this public
+#   repository needs no SSH agent and no credential.
+# - `codeContext` is the Multitool group `tools.code_context`. It is on by
+#   default; the entry is here so that the run states it.
+#   `semanticSearch: false` stops the embedding pass of the index. Each
+#   instance is a new clone, thus each instance makes a new index. On
+#   2026-09-18 the django clone had 44,532 chunks, and the embedder of the
+#   profile did 273 of them in 8 minutes, on the same GPU as the model. The
+#   symbol, call graph, blast radius and language server verbs need no
+#   embedding. Only `searchCode` does, and with this key it answers with an
+#   error that says the embedding layer is off.
+tools:
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: code-context
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
