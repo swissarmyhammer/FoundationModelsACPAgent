@@ -117,7 +117,7 @@ extension RoutedACPAgent {
         // runs still have their transports (plan.md §10.1, §11.5). The pool
         // stops the attached `SurfaceRefresher` first.
         markSessionClosed(sessionId)
-        await entry.surface.serverPool.shutdownAll()
+        await entry.surface.shutdown()
     }
 
     // MARK: - The disk removal (plan.md §10.2)

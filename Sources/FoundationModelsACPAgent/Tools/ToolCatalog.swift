@@ -1,9 +1,9 @@
 import Foundation
 import FoundationModels
+import FoundationModelsCodeContext
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import FoundationModelsSkills
-
 /// The surface one session mounts (plan.md §11.1, §11.5): the composed
 /// tools in mount order, and the pool that holds every MCP server, spawned
 /// subprocess and the attached surface refresher.
@@ -32,6 +32,11 @@ public struct SessionSurface: Sendable {
     /// its `finish()` at teardown.
     public let shellOutput: ShellOutputChunkStream?
 
+    /// Stops the code context of the session — its index loop, its file
+    /// watcher and its language servers — or `nil` when the `codeContext:`
+    /// section is off.
+    public let codeContextStop: (@Sendable () async -> Void)?
+
     /// Makes a session surface.
     ///
     /// - Parameters:
@@ -41,16 +46,28 @@ public struct SessionSurface: Sendable {
     ///     files section is off.
     ///   - shellOutput: The host-owned live shell output stream, or
     ///     `nil` when the shell section is off.
+    ///   - codeContextStop: Stops the code context of the session, or
+    ///     `nil` when the code context section is off.
     public init(
         tools: [any FoundationModels.Tool],
         serverPool: MCPServerPool,
         filesReadVerb: (any FoundationModels.Tool)? = nil,
-        shellOutput: ShellOutputChunkStream? = nil
+        shellOutput: ShellOutputChunkStream? = nil,
+        codeContextStop: (@Sendable () async -> Void)? = nil
     ) {
         self.tools = tools
         self.serverPool = serverPool
         self.filesReadVerb = filesReadVerb
         self.shellOutput = shellOutput
+        self.codeContextStop = codeContextStop
+    }
+
+    /// Releases what the surface holds outside the session: it stops the
+    /// code context, then it shuts the server pool down. The session
+    /// lifecycle calls this after the session sweep (plan.md §11.5).
+    public func shutdown() async {
+        await codeContextStop?()
+        await serverPool.shutdownAll()
     }
 }
 
@@ -78,6 +95,12 @@ public enum ToolCatalog {
     /// turn's resource-link resolver reads through (plan.md §12).
     static let filesReadVerbPath = "files.read"
 
+    /// The Multitool group the code context tools mount under. Multitool
+    /// gives each operation of the three fused tools its own verb, so they
+    /// render at `tools.code_context.<verb>`, for example
+    /// `tools.code_context.getSymbol`.
+    static let codeContextGroupName = "code_context"
+
     /// One built registry and the MCP composition around it: the recorded
     /// registrations for a rebuild, the pool that owns the servers, and
     /// the connected servers for the refresher.
@@ -101,6 +124,10 @@ public enum ToolCatalog {
         /// `withShell(outputChunkStream:)` (plan.md §11.8), or `nil`
         /// when the shell section is off.
         let shellOutput: ShellOutputChunkStream?
+
+        /// Stops the started code context of the build, or `nil` when the
+        /// `codeContext:` section is off.
+        let codeContextStop: (@Sendable () async -> Void)?
     }
 
     /// Builds the composed session surface: the Multitool session tools —
@@ -122,19 +149,26 @@ public enum ToolCatalog {
     /// on every search and ranks by keywords alone. The catalog is
     /// embedded at the first search, so the call still starts no task.
     ///
-    /// - Parameter context: What the builder calls need — the session
-    ///   root set, the decoded configuration, the resolved profile, and
-    ///   the client's per-session MCP servers.
+    /// - Parameters:
+    ///   - context: What the builder calls need — the session root set,
+    ///     the decoded configuration, the resolved profile, and the
+    ///     client's per-session MCP servers.
+    ///   - skillsRegistry: The skills registry the session already made,
+    ///     so the `skills` tool and the slash-command source read one
+    ///     registry and one marketplace store. With `nil`, the call makes
+    ///     its own through ``makeSkillsRegistry(context:)``.
     /// - Returns: The composed surface.
     /// - Throws: Whatever the MCP composition, the registry build, the
     ///   session-tool construction, or the skills assembly throws.
-    public static func sessionSurface(context: CatalogContext) async throws -> SessionSurface {
+    public static func sessionSurface(
+        context: CatalogContext, skillsRegistry: SkillsRegistry? = nil
+    ) async throws -> SessionSurface {
         let built = try await makeRegistry(context: context)
         let mounted = try built.registry.makeSessionToolsAndStaging(
             librarian: context.profile.flash,
             embedder: context.profile.embedding)
         var tools = mounted.tools
-        if let skillsTool = try await makeSkillsTool(context: context) {
+        if let skillsTool = try await makeSkillsTool(context: context, registry: skillsRegistry) {
             tools.append(skillsTool)
         }
         await MCPComposition.startSurfaceRefresher(
@@ -144,7 +178,8 @@ public enum ToolCatalog {
             tools: tools,
             serverPool: built.pool,
             filesReadVerb: built.registry.tools[Self.filesReadVerbPath],
-            shellOutput: built.shellOutput)
+            shellOutput: built.shellOutput,
+            codeContextStop: built.codeContextStop)
     }
 
     /// Builds the Multitool registry over the enabled capability modules.
@@ -156,7 +191,10 @@ public enum ToolCatalog {
     /// gate (§11.7); there is no policy and no permission layer — and
     /// `mcp` composes the config-derived servers with the client's
     /// per-session ones (§7.3, §11.5), connects each one, and records the
-    /// spawned subprocesses in the builder's pool.
+    /// spawned subprocesses in the builder's pool. `codeContext` opens and
+    /// starts one `CodeContext` over the session working directory, with the
+    /// profile's embedding slot as its embedder, and mounts the operations
+    /// of its three tools as the verbs of the `tools.code_context` group.
     ///
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
@@ -198,12 +236,70 @@ public enum ToolCatalog {
         for process in composed.processes {
             await builder.serverPool.add(process: process)
         }
-        return BuiltRegistry(
-            registry: try builder.buildRegistry(),
-            source: builder.registrySource,
-            pool: builder.serverPool,
-            mcpServers: composed.servers,
-            shellOutput: shellOutput)
+        // The code context is the last composition step, so a failure
+        // before it leaves no started context behind.
+        let codeContextStop = try await composeCodeContext(into: builder, context: context)
+        do {
+            return BuiltRegistry(
+                registry: try builder.buildRegistry(),
+                source: builder.registrySource,
+                pool: builder.serverPool,
+                mcpServers: composed.servers,
+                shellOutput: shellOutput,
+                codeContextStop: codeContextStop)
+        } catch {
+            await codeContextStop?()
+            throw error
+        }
+    }
+
+    /// Opens and starts the code context of the session, and queues its
+    /// three tools in `builder` as the `tools.code_context` group, or does
+    /// nothing when the `codeContext:` section is off.
+    ///
+    /// The workspace root is the session working directory. With
+    /// `semanticSearch` on, the embedder is the profile's embedding slot,
+    /// the same handle the discovery search ranks with. With it off, the
+    /// context gets no embedder: its embedding layer is off, and
+    /// `searchCode` answers with a clear error.
+    ///
+    /// `start()` returns before the first index pass, and the pass runs in
+    /// the index loop of the context. Thus `session/new` does not wait for
+    /// the index of a large repository. The verbs answer from what the
+    /// index holds at the time of the call.
+    ///
+    /// - Parameters:
+    ///   - builder: The builder that gets the tool group.
+    ///   - context: The session whose working directory and profile the
+    ///     code context reads.
+    /// - Returns: The closure that stops the started code context, or `nil`
+    ///   when the section is off.
+    /// - Throws: Whatever `CodeContext.init`, `start()` or
+    ///   `CodeContextTools.make(context:)` throws. After a failure the
+    ///   started context is stopped.
+    static func composeCodeContext(
+        into builder: MultiTool.Builder, context: CatalogContext
+    ) async throws -> (@Sendable () async -> Void)? {
+        guard case .enabled(let options) = context.configuration.tools.codeContext else {
+            return nil
+        }
+        let embedder: (any FoundationModelsCodeContext.TextEmbedding)? =
+            options.semanticSearch
+            ? ProfileTextEmbedding(embedder: context.profile.embedding)
+            : nil
+        let codeContext = try await CodeContext(
+            rootDirectory: context.workingDirectory,
+            embedder: embedder,
+            autoInstall: LspAutoInstall(isEnabled: options.autoInstall))
+        do {
+            try await codeContext.start()
+            builder.addGroup(
+                named: codeContextGroupName, try CodeContextTools.make(context: codeContext))
+        } catch {
+            await codeContext.stop()
+            throw error
+        }
+        return { await codeContext.stop() }
     }
 
     /// Builds the skills registry over the dotfolder stack, or `nil` when
@@ -217,18 +313,29 @@ public enum ToolCatalog {
     /// `watch: true` is what makes `commandUpdates` non-nil for the
     /// slash-command registry.
     ///
+    /// With a `marketplaces:` list in the section, the registry also reads
+    /// one layer for each marketplace, below the full local stack. The
+    /// store is started here, before the return: a cold cache fetches the
+    /// repository and the ref of each source, thus the first session
+    /// already has the skills. A fetch that fails gives a diagnostic and no
+    /// layer; it does not fail the session.
+    ///
     /// - Parameter context: The session whose working directory roots the
     ///   stack's project layer.
     /// - Returns: The watched registry, or `nil` when skills is disabled.
-    static func makeSkillsRegistry(context: CatalogContext) -> SkillsRegistry? {
-        guard case .enabled = context.configuration.tools.skills else {
+    static func makeSkillsRegistry(context: CatalogContext) async -> SkillsRegistry? {
+        guard case .enabled(let options) = context.configuration.tools.skills else {
             return nil
         }
-        return SkillsRegistry(
-            stack: DotfolderStack(
-                name: skillsDotfolderName,
-                workingDirectory: context.workingDirectory),
-            watch: true)
+        let stack = DotfolderStack(
+            name: skillsDotfolderName,
+            workingDirectory: context.workingDirectory)
+        guard !options.marketplaces.isEmpty else {
+            return SkillsRegistry(stack: stack, watch: true)
+        }
+        let store = MarketplaceStore(sources: options.marketplaces)
+        await store.start()
+        return SkillsRegistry(marketplaces: store, stack: stack, watch: true)
     }
 
     /// Builds the standalone `skills` tool, or `nil` when the `skills:`
@@ -241,21 +348,34 @@ public enum ToolCatalog {
     /// captures the profile itself so the resident models outlive the
     /// context.
     ///
-    /// - Parameter context: The session whose profile backs the selection
-    ///   tier.
+    /// - Parameters:
+    ///   - context: The session whose profile backs the selection tier.
+    ///   - registry: The registry the tool reads, or `nil` to make one
+    ///     through ``makeSkillsRegistry(context:)``.
     /// - Returns: The `skills` tool, or `nil` when skills is disabled.
     /// - Throws: Whatever `SkillsTool.make(registry:session:)` throws.
-    static func makeSkillsTool(context: CatalogContext) async throws
-        -> (any FoundationModels.Tool)?
-    {
-        guard let registry = makeSkillsRegistry(context: context) else {
+    static func makeSkillsTool(
+        context: CatalogContext, registry: SkillsRegistry? = nil
+    ) async throws -> (any FoundationModels.Tool)? {
+        var registry = registry
+        if registry == nil {
+            registry = await makeSkillsRegistry(context: context)
+        }
+        guard let registry else {
             return nil
         }
         let profile = context.profile
         return try await SkillsTool.make(
             registry: registry,
-            session: { instructions in
-                SelectionAgentSession(session: profile.flash.makeSession(instructions: instructions))
+            session: { request in
+                // The selection answer must be `{"ids": [...]}` with ids of
+                // the candidate set. The skills package gives that JSON
+                // Schema in the request, and the guided session applies it
+                // as a grammar, so a small model cannot write `[explore]`.
+                SelectionAgentSession(
+                    session: profile.flash.makeGuidedSession(
+                        grammar: .jsonSchema(request.jsonSchema),
+                        instructions: request.instructions))
             })
     }
 }

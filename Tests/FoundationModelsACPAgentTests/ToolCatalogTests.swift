@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsCodeContext
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import FoundationModelsSkills
@@ -210,12 +211,92 @@ import Testing
         #expect(!result.lines.isEmpty)
     }
 
+    // MARK: The code context group
+
+    /// The code context tools mount inside Multitool, and not as direct
+    /// session tools. Multitool gives each operation of the three fused
+    /// tools its own verb in the `tools.code_context` group.
+    @Test func aDefaultRegistryMountsTheCodeContextGroup() async throws {
+        let context = try await Self.makeContext()
+
+        let built = try await ToolCatalog.makeRegistry(context: context)
+
+        let prefix = "\(ToolCatalog.codeContextGroupName)."
+        let verbs = built.registry.surface.entries.map(\.path).filter { $0.hasPrefix(prefix) }
+        let operationCount = CodeContextTools.operationNames.values.map(\.count).reduce(0, +)
+        #expect(verbs.count == operationCount)
+        for verb in ["getSymbol", "getCallgraph", "getBlastradius"] {
+            #expect(verbs.contains(prefix + verb))
+        }
+        let stop = try #require(built.codeContextStop)
+        await stop()
+    }
+
+    /// The catalog does not wait for the index. `CodeContext.start()` does
+    /// one full index pass with an embedding of each chunk, and for a large
+    /// repository that pass is longer than a client waits for `session/new`
+    /// (the SWE-bench run of 2026-09-18). Here the embedder never answers
+    /// until the task is cancelled, and the workspace holds a source file,
+    /// so a catalog that waits for `start()` never returns. The stop closure
+    /// must return too: it cancels the start task before it stops the context.
+    @Test(.timeLimit(.minutes(1)))
+    func theCatalogDoesNotWaitForTheCodeContextIndex() async throws {
+        var loader = StubModelLoader()
+        loader.makeEmbeddingContainer = { _ in NeverAnsweringEmbeddingContainer() }
+        let context = try await Self.makeContext(loader: loader)
+        try "func answer() -> Int { 42 }\n".write(
+            to: context.workingDirectory.appendingPathComponent("Answer.swift"),
+            atomically: true, encoding: .utf8)
+
+        let built = try await ToolCatalog.makeRegistry(context: context)
+
+        let stop = try #require(built.codeContextStop)
+        await stop()
+    }
+
+    /// With `semanticSearch` off, the index never calls the profile's
+    /// embedder.
+    @Test func semanticSearchOffCallsNoEmbedder() async throws {
+        let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
+        var loader = StubModelLoader()
+        loader.makeEmbeddingContainer = { _ in embedder }
+        let context = try await Self.makeContext(loader: loader) { configuration in
+            configuration.tools.codeContext = .enabled(
+                CodeContextToolOptions(semanticSearch: false))
+        }
+        try "func answer() -> Int { 42 }\n".write(
+            to: context.workingDirectory.appendingPathComponent("Answer.swift"),
+            atomically: true, encoding: .utf8)
+
+        let built = try await ToolCatalog.makeRegistry(context: context)
+        // With the profile's embedder, the index reaches it in less than
+        // this time for the one file of the workspace.
+        try await Task.sleep(for: .seconds(2))
+        let stop = try #require(built.codeContextStop)
+        await stop()
+
+        #expect(embedder.batches.isEmpty)
+    }
+
+    @Test func aDisabledCodeContextSectionMountsNoCodeContextGroup() async throws {
+        let context = try await Self.makeContext { configuration in
+            configuration.tools.codeContext = .disabled
+        }
+
+        let built = try await ToolCatalog.makeRegistry(context: context)
+
+        let prefix = "\(ToolCatalog.codeContextGroupName)."
+        #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(prefix) })
+        #expect(built.codeContextStop == nil)
+    }
+
     // MARK: The skills registry
 
     @Test func theSkillsRegistryWatchesForCommandUpdates() async throws {
         let context = try await Self.makeContext()
 
-        let registry = try #require(ToolCatalog.makeSkillsRegistry(context: context))
+        let made = await ToolCatalog.makeSkillsRegistry(context: context)
+        let registry = try #require(made)
 
         #expect(registry.commandUpdates != nil)
     }
@@ -225,6 +306,20 @@ import Testing
             configuration.tools.skills = .disabled
         }
 
-        #expect(ToolCatalog.makeSkillsRegistry(context: context) == nil)
+        let made = await ToolCatalog.makeSkillsRegistry(context: context)
+        #expect(made == nil)
+    }
+}
+
+/// An embedding container that never answers. `embed(texts:)` sleeps until
+/// its task is cancelled, and then it throws the cancellation.
+private final class NeverAnsweringEmbeddingContainer: LoadedEmbeddingContainer {
+    /// An arbitrary vector length; no vector is ever made.
+    let dimension = 8
+
+    /// Waits for the cancellation of the task.
+    func embed(texts: [String]) async throws -> [[Float]] {
+        try await Task.sleep(for: .seconds(3600))
+        return []
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsSkills
 import Testing
 
 /// The `tools:` enable and disable codec (plan.md §11.2): the five-shape
@@ -19,6 +20,7 @@ import Testing
         #expect(tools.files == .enabled(FilesToolOptions()))
         #expect(tools.shell == .enabled(ShellToolOptions()))
         #expect(tools.skills == .enabled(SkillsToolOptions()))
+        #expect(tools.codeContext == .enabled(CodeContextToolOptions()))
         #expect(tools.mcp == .enabled(servers: []))
     }
 
@@ -106,8 +108,8 @@ import Testing
         }
     }
 
-    /// The skills body carries no options, so any key in it is unknown.
-    @Test func anyKeyInTheSkillsBodyIsAnError() throws {
+    /// The skills body decodes one key, so any other key in it is unknown.
+    @Test func anUnknownKeyInTheSkillsBodyIsAnError() throws {
         let fixture = ConfigurationLoaderTests.Fixture()
 
         #expect(throws: ConfigurationError.unknownKey(section: "tools.skills", key: "watch")) {
@@ -118,6 +120,39 @@ import Testing
                     watch: true
                 """)
         }
+    }
+
+    /// The skills body decodes the marketplace list, with the repository
+    /// and the branch of each entry.
+    @Test func skillsBodyDecodesTheMarketplaceList() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            """
+            tools:
+              skills:
+                marketplaces:
+                  - url: https://github.com/swissarmyhammer/skills.git
+                    ref: code-context
+            """)
+
+        let expected = SkillsToolOptions(marketplaces: [
+            MarketplaceSource("https://github.com/swissarmyhammer/skills.git", ref: "code-context")
+        ])
+        #expect(loaded.configuration.tools.skills == .enabled(expected))
+    }
+
+    /// The code context body decodes its two policies, and a scalar
+    /// `false` turns the capability off.
+    @Test func codeContextBodyDecodesTheInstallPolicy() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+
+        let configured = try fixture.loadProjectConfig(
+            "tools:\n  codeContext:\n    autoInstall: false\n    semanticSearch: false\n")
+        let disabled = try fixture.loadProjectConfig("tools:\n  codeContext: false\n")
+
+        #expect(
+            configured.configuration.tools.codeContext
+                == .enabled(CodeContextToolOptions(autoInstall: false, semanticSearch: false)))
+        #expect(disabled.configuration.tools.codeContext == .disabled)
     }
 
     /// An unknown tool section under `tools:` is a warning only, and the

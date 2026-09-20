@@ -114,7 +114,34 @@ its config section to `false` to turn it off.
 | `files` | The `tools.files.*` verbs, confined to the session root set | `tools.files` |
 | `shell` | The `tools.shell.*` verbs, under a Seatbelt sandbox over the root set | `tools.shell` |
 | `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
-| `skills` | The standalone `skills` tool, over the `skills` dotfolder stack | `tools.skills` |
+| `codeContext` | The `tools.code_context.*` verbs — symbol lookup, call graph, blast radius and the language server operations — over an index of the session working directory | `tools.codeContext` |
+| `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
+
+`tools.codeContext` has two keys. `autoInstall` (default `true`) says whether a
+language server that is not installed is installed automatically.
+`semanticSearch` (default `true`) says whether the index embeds each chunk with
+the `embedding` slot of the profile, which the `searchCode` verb ranks with.
+That pass is long for a large repository, and it uses the same GPU as the
+model; with `false`, the index calls no model, each other verb works, and
+`searchCode` answers with an error that says the embedding layer is off. The
+first index pass runs after the session starts, thus `session/new` does not
+wait for it.
+
+The `tools.skills.marketplaces` list names remote skill marketplaces. Each entry
+has a `url`, and optionally a `ref` (a branch or a tag), a `sha`, a `path`, an
+`alias`, a `select`, an `autoUpdate` and a `grants` key:
+
+```yaml
+tools:
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: code-context
+```
+
+Use the HTTPS form of a marketplace URL. The SSH form (`git@github.com:…`) is
+not supported for now: the skills package gives `unreachable` for it, and the
+session then has no marketplace skill.
 
 **Know the sandbox limit.** The sandbox is the only gate on shell commands:
 there is no permission prompt, and the agent never sends

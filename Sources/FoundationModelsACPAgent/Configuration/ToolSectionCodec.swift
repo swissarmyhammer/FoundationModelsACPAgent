@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsExtras
+import FoundationModelsSkills
 
 // MARK: - The per-tool codec
 
@@ -140,15 +141,88 @@ public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
 }
 
 /// The `tools.skills:` body. The skills package reads its own dotfolder
-/// stack (plan.md §14.2) and takes no config options, so the body decodes
-/// no key and every key in it is unknown.
-public struct SkillsToolOptions: ToolSectionOptions {
-    /// The empty key set the loader checks the body against: an enabling
-    /// body is `{}` or absent.
-    static let knownKeys: Set<String> = []
+/// stack (plan.md §14.2), so the one option is the list of remote skill
+/// marketplaces. Each entry is a `MarketplaceSource` of the skills package:
+/// `url` is necessary, and `ref`, `sha`, `path`, `alias`, `select`,
+/// `autoUpdate` and `grants` are optional. The marketplace layers are below
+/// the full local stack, and the last entry wins over the entries before it.
+///
+/// ```yaml
+/// tools:
+///   skills:
+///     marketplaces:
+///       - url: https://github.com/swissarmyhammer/skills.git
+///         ref: code-context
+/// ```
+public struct SkillsToolOptions: ToolSectionOptions, KeyCheckedSection {
+    /// The remote skill marketplaces, in document order.
+    public var marketplaces: [MarketplaceSource]
 
-    /// The one value there is.
-    public init() {}
+    /// The YAML spelling of each key.
+    public enum CodingKeys: String, CodingKey, CaseIterable {
+        case marketplaces
+    }
+
+    /// Makes options with the marketplace list stated.
+    public init(marketplaces: [MarketplaceSource]) {
+        self.marketplaces = marketplaces
+    }
+
+    /// The default: no marketplace, thus the local dotfolder stack alone.
+    public init() {
+        self.init(marketplaces: [])
+    }
+
+    /// Decodes `marketplaces` when present and keeps the empty default
+    /// when absent.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        marketplaces =
+            try container.decodeIfPresent([MarketplaceSource].self, forKey: .marketplaces) ?? []
+    }
+}
+
+/// The `tools.codeContext:` body. The workspace root is the session working
+/// directory and the embedder is the profile's embedding slot, so neither is
+/// here.
+public struct CodeContextToolOptions: ToolSectionOptions, KeyCheckedSection {
+    /// Whether a language server that is not installed is installed
+    /// automatically.
+    public var autoInstall: Bool
+
+    /// Whether the index embeds each chunk with the profile's embedding
+    /// slot, which is what the `searchCode` verb ranks with. The embedding
+    /// pass of a large repository is long, and it uses the same GPU as the
+    /// model. With `false`, the context gets no embedder, so the index calls
+    /// no model: each other verb works, and `searchCode` answers with an
+    /// error that says the embedding layer is off.
+    public var semanticSearch: Bool
+
+    /// The YAML spelling of each key.
+    public enum CodingKeys: String, CodingKey, CaseIterable {
+        case autoInstall, semanticSearch
+    }
+
+    /// Makes options with each policy stated.
+    public init(autoInstall: Bool = true, semanticSearch: Bool = true) {
+        self.autoInstall = autoInstall
+        self.semanticSearch = semanticSearch
+    }
+
+    /// The defaults: automatic install is on, as in the code context
+    /// package, and semantic search is on.
+    public init() {
+        self.init(autoInstall: true)
+    }
+
+    /// Decodes each present key and keeps the default for each absent one.
+    public init(from decoder: any Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        autoInstall = try container.decodeIfPresent(Bool.self, forKey: .autoInstall) ?? autoInstall
+        semanticSearch =
+            try container.decodeIfPresent(Bool.self, forKey: .semanticSearch) ?? semanticSearch
+    }
 }
 
 // MARK: - The mcp entry
@@ -301,12 +375,15 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
     /// The skills tool's entry.
     public var skills = ToolSection<SkillsToolOptions>.enabled(SkillsToolOptions())
 
+    /// The code context capability's entry.
+    public var codeContext = ToolSection<CodeContextToolOptions>.enabled(CodeContextToolOptions())
+
     /// The mcp entry — the one list-bodied section.
     public var mcp = MCPToolSection.enabled(servers: [])
 
     /// The YAML spelling of each tool key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case files, shell, skills, mcp
+        case files, shell, skills, codeContext, mcp
     }
 
     /// The default roster: every built-in on, with its defaults.
@@ -326,6 +403,10 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
         skills =
             try container.decodeIfPresent(ToolSection<SkillsToolOptions>.self, forKey: .skills)
             ?? skills
+        codeContext =
+            try container.decodeIfPresent(
+                ToolSection<CodeContextToolOptions>.self, forKey: .codeContext)
+            ?? codeContext
         mcp = try container.decodeIfPresent(MCPToolSection.self, forKey: .mcp) ?? mcp
     }
 }
@@ -338,6 +419,7 @@ extension ToolsConfiguration {
         CodingKeys.files.stringValue: FilesToolOptions.knownKeys,
         CodingKeys.shell.stringValue: ShellToolOptions.knownKeys,
         CodingKeys.skills.stringValue: SkillsToolOptions.knownKeys,
+        CodingKeys.codeContext.stringValue: CodeContextToolOptions.knownKeys,
     ]
 
     /// The key checks of the `tools:` body (plan.md §11.2), run by the

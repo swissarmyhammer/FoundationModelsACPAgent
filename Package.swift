@@ -60,6 +60,12 @@ private let multitoolDependencyName = "FoundationModelsMultitool"
 /// in one request/response and not through the async code-mode lane.
 private let skillsDependencyName = "FoundationModelsSkills"
 
+/// The code context package: the indexed symbol, call graph and language
+/// server operations of one workspace. It gives three plain
+/// `FoundationModels.Tool` values, which the tool catalog mounts in Multitool
+/// as the `tools.code_context` group.
+private let codeContextDependencyName = "FoundationModelsCodeContext"
+
 /// The Client role (plan.md §20.1): the driver of every integration tier.
 ///
 /// The test target alone links it. The library target never does. The client
@@ -168,7 +174,7 @@ private let multitoolTestProducts: [Target.Dependency] = [
     .product(name: "mcp-test-server", package: multitoolDependencyName),
 ]
 
-/// The five family packages the library target depends on (plan.md §1).
+/// The six family packages the library target depends on (plan.md §1).
 ///
 /// Router and Extras are declared by name, and not reached through Multitool:
 /// Multitool has no `@_exported import`, so its dependencies do not come for
@@ -180,6 +186,7 @@ private let familyDependencyNames = [
     extrasDependencyName,
     multitoolDependencyName,
     skillsDependencyName,
+    codeContextDependencyName,
 ]
 
 /// Makes the `.package(url:branch:)` dependency of a family package hosted

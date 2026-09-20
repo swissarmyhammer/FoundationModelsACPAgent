@@ -398,7 +398,7 @@ extension RoutedACPAgent {
             return restored
         } catch {
             composition.surface.shellOutput?.finish()
-            await composition.surface.serverPool.shutdownAll()
+            await composition.surface.shutdown()
             if case TranscriptTreeError.sessionNotFound = error {
                 throw RequestError.unknownSession(id: sessionId)
             }
@@ -436,7 +436,7 @@ extension RoutedACPAgent {
             return
         }
         existing.surface.shellOutput?.finish()
-        await existing.surface.serverPool.shutdownAll()
+        await existing.surface.shutdown()
     }
 
     // MARK: - The persisted root set (plan.md §7.4, §9)
