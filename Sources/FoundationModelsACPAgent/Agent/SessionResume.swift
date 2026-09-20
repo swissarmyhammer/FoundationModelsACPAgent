@@ -393,7 +393,8 @@ extension RoutedACPAgent {
                 id: rootId,
                 recordingRoot: composition.transcriptRoot,
                 instructions: composition.instructions,
-                tools: composition.surface.tools)
+                tools: composition.surface.tools,
+                toolOutputProtection: SkillOutputProtection.rule)
             logRestoreReports(of: restored, sessionId: sessionId)
             return restored
         } catch {

@@ -278,6 +278,25 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             recorder: recorder)
     }
 
+    /// Makes a backend that continues from `transcript`, not from this
+    /// backend's own entries.
+    ///
+    /// Router calls this after a compaction fold, with the folded
+    /// transcript. The protocol default ignores `transcript` and forks, so
+    /// without this override a fold never reaches the transcript that a
+    /// scripted session reports.
+    ///
+    /// - Parameter transcript: The transcript the new backend starts from.
+    /// - Returns: A backend with this script, these tools and `transcript`.
+    public func replacingTranscript(_ transcript: Transcript) -> any LanguageModelSessionBackend {
+        ScriptedSessionBackend(
+            script: script,
+            tools: tools,
+            instructions: instructions,
+            seededEntries: Array(transcript),
+            recorder: recorder)
+    }
+
     public func transcriptEntries() -> [Transcript.Entry] {
         // The SDK entries the played tool calls appended. Router's
         // transcript diff reads them and derives the `toolCall` and

@@ -609,7 +609,8 @@ extension RoutedLLM {
     ///   - tools: The tools the model can call.
     ///   - compaction: The `compaction:` section the budget derives from.
     /// - Returns: A new session over this model, with automatic
-    ///   compaction on.
+    ///   compaction on. The compaction keeps each skill that the model
+    ///   loads with `use skill` (``SkillOutputProtection``).
     func makeBudgetedSession(
         instructions: String,
         workingDirectory: URL,
@@ -628,6 +629,7 @@ extension RoutedLLM {
                 target: compaction.target,
                 hardCeiling: compaction.hardCeiling,
                 toolOutputLimit: compaction.toolOutputLimit),
-            compactionPrompt: .default)
+            compactionPrompt: .default,
+            toolOutputProtection: SkillOutputProtection.rule)
     }
 }
