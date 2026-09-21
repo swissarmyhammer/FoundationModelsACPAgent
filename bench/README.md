@@ -163,42 +163,52 @@ that instance ends.
 ### The fast answer to the same question
 
 A SWE-bench run takes hours to tell you that the model never loaded a skill.
-The skill trigger evaluation tells you in about nine minutes:
+The skill trigger gate proves the path in about 20 seconds, and CI runs it on
+every push as part of the integration package:
 
 ```bash
-swift test --package-path EvaluationTests --no-parallel --filter SkillTrigger
+swift test --package-path IntegrationTests --filter SkillTriggerTests
 ```
 
-It opens a real session on a small live model, gives it four prompts three
-times each, and stops each turn as soon as the model decides. Each prompt
-fits a skill in `Tests/Fixtures/skills/`. Each line of the report names the
-sample, the skill the model loaded, and the seconds it took:
+It opens a real session on the shipped standard model
+(`mlx-community/Qwen3.8-27B-mxfp4`), with the skills library of
+`Tests/Fixtures/skills/`, and decodes greedy, so every run gives the same
+decision. The one gate sample asks for "your skill for writing release notes".
+It names no skill, no id and no tool, thus the model must read the catalog in
+the description of the `skills` tool and load the right one of two skills.
+The run stops at that call:
 
 ```
-SKILL TRIGGER who-calls expected=fixture-explore rate=0.67 loaded=[fixture-explore] ...
-SKILL TRIGGER swebench-issue expected=fixture-explore rate=0.33 loaded=[fixture-explore] ...
-SKILL TRIGGER TOTAL loadRate=0.75
+SKILL TRIGGER load-release-notes expected=fixture-release-notes rate=1.0 loaded=[fixture-release-notes] skillsCalls=[1] toolsSeen=["skills"] seconds=[14]
 ```
 
-**`swebench-issue` is the hard sample.** It is written as a bug report, and it
-uses none of the words of the skill description. That is the condition of the
-SWE-bench run of 2026-09-19, in one turn of a minute instead of one run of
-hours. With the old use rule of Skills the model loaded no skill in all three
-of its runs. With the use rule of Skills `cbbcd37` it loaded the skill in one
-of three.
+**Does the model look for a skill when the task does not ask for one?** The
+other samples of the dataset measure that, and you run them by name. The
+shipped model does it, but it first runs code and searches the tools, thus
+each sample takes two to three minutes:
 
-**One sample has three runs, so its rate moves in steps of 0.33.** The same
-text gave `who-calls` 1.0, 0.33 and 0.67 in three runs. Read a change of one
-step on one sample as noise.
+```bash
+ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes \
+ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS=300 \
+swift test --package-path IntegrationTests --filter SkillTriggerTests
+```
 
-`loadRate` must stay above 0.5. An extra load is not a failure: it costs one
-tool call, and a missed load loses the skill. A nightly
-GitHub run drives this suite alone, so a change of a skill description, of
-the catalog, or of the instructions cannot go unmeasured until the next
-SWE-bench run. The environment variables `ACP_AGENT_SKILL_TRIGGER_MODEL`,
-`ACP_AGENT_SKILL_TRIGGER_SAMPLES`, `ACP_AGENT_SKILL_TRIGGER_REPEATS` and
-`ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS` change the model, the samples,
-the runs of each sample, and the deadline.
+| Sample | Shipped model, greedy, 2026-09-21 |
+|---|---|
+| `understand-parser` | loaded after 198 s |
+| `release-notes` | loaded after 201 s |
+
+`swebench-issue` is written as a bug report, with none of the words of the
+skill description. That is the condition of the SWE-bench run of 2026-09-19.
+`ACP_AGENT_SKILL_TRIGGER_MODEL` pins another model, and
+`ACP_AGENT_SKILL_TRIGGER_REPEATS` runs each sample more than one time.
+
+**A small model shows a defect that the shipped model hides.** With
+`mlx-community/Qwen3-4B-Instruct-2507-4bit`, `release-notes` and `who-calls`
+end with the stop reason `_error` and no tool call. The model writes a
+`runCode` call whose JSON is not valid, MLX rejects the call, and the
+rejection ends the whole turn, so the model never gets to choose a skill. A
+rejected call must go back to the model as a tool error.
 
 A pass here and no `use skill` call in a SWE-bench transcript is a useful
 split: the delivery of the skills works, and the issue text of that instance

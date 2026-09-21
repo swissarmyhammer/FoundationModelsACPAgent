@@ -48,6 +48,36 @@ private let clientDependencyName = "FoundationModelsACPClient"
 /// against the agent binary standing next to it.
 private let clientExecutableName = "acp-client"
 
+/// The runtime (plan.md §1). The skill trigger suite builds a live router,
+/// and Router's test-support product carries `MetalLibraryTestBootstrap`.
+private let routerDependencyName = "FoundationModelsRouter"
+
+/// The MLX-backed model package, declared by the exact URL Router
+/// declares, because a second location for one package identity makes the
+/// resolve fail.
+private let mlxPackage = "mlx-swift-lm"
+
+/// The `mlxPackage` branch, matching Router's own declaration.
+private let mlxStableBranch = "stable"
+
+/// The Hugging Face Hub client package. The `#hubDownloader()` macro
+/// expands to code that references `HuggingFace.HubClient`.
+private let huggingFacePackage = "swift-huggingface"
+
+/// The Swift Transformers tokenizer package, paired with
+/// `huggingFacePackage`: the `#huggingFaceTokenizerLoader()` macro
+/// expansion references `Tokenizers.AutoTokenizer`.
+private let transformersPackage = "swift-transformers"
+
+/// The products the live-loader construction of the skill trigger suite
+/// links.
+private let liveLoaderProducts: [Target.Dependency] = [
+    .product(name: "MLXLMCommon", package: mlxPackage),
+    .product(name: "MLXHuggingFace", package: mlxPackage),
+    .product(name: "HuggingFace", package: huggingFacePackage),
+    .product(name: "Tokenizers", package: transformersPackage),
+]
+
 /// SwiftPM manifest for the integration suites of FoundationModelsACPAgent.
 ///
 /// This package exists so that `swift test` at the repository root runs the
@@ -57,10 +87,14 @@ private let clientExecutableName = "acp-client"
 /// shared CI workflow's integration job. No environment variable selects
 /// them.
 ///
-/// Every suite here is deterministic and a failure is a defect. Nothing
-/// here loads a model. The evaluations, which do load a real model and
-/// which score rather than assert, are the `EvaluationTests` package, and
-/// CI never runs them. See that manifest for why the two are apart.
+/// A failure here is a defect. Most suites use the stub model or none.
+/// `StdioContractTests` drives a small real model through the live loader
+/// behind the spawned binary. `SkillTriggerTests` proves that the shipped
+/// standard model loads the skill that fits a task; it decodes greedy, thus
+/// every run gives the same decision. The evaluations, which
+/// score a model over hours rather than assert, are the `EvaluationTests`
+/// package, and CI never runs them. See that manifest for why the two are
+/// apart.
 let package = Package(
     name: integrationTargetName,
     platforms: [
@@ -70,6 +104,10 @@ let package = Package(
         .package(path: ".."),
         .package(url: "\(swissArmyHammerOrgURL)\(wireDependencyName).git", branch: mainBranch),
         .package(url: "\(swissArmyHammerOrgURL)\(clientDependencyName).git", branch: mainBranch),
+        .package(url: "\(swissArmyHammerOrgURL)\(routerDependencyName).git", branch: mainBranch),
+        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: mlxStableBranch),
+        .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
+        .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
     ],
     targets: [
         .testTarget(
@@ -82,7 +120,10 @@ let package = Package(
                 .product(name: wireDependencyName, package: wireDependencyName),
                 .product(name: clientDependencyName, package: clientDependencyName),
                 .product(name: clientExecutableName, package: clientDependencyName),
-            ],
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(
+                    name: "\(routerDependencyName)TestSupport", package: routerDependencyName),
+            ] + liveLoaderProducts,
             path: "Tests/\(integrationTargetName)"
         )
     ]

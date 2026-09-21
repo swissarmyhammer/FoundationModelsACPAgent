@@ -4,7 +4,6 @@ import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
-import ULID
 
 /// What one sample run observed: which skills the model loaded, and how the
 /// turn ended.
@@ -28,6 +27,10 @@ struct SkillTriggerRun: Sendable {
     /// A run that saw no `skills` call says here what it did see instead.
     let toolTitlesSeen: [String]
 
+    /// The start of the text the model wrote in the turn. A run that loaded
+    /// no skill says here what the model did instead.
+    let answerPreview: String
+
     /// Whether the run did what the sample asks: the expected skill is
     /// loaded, or no skill is loaded when the sample expects none.
     var passed: Bool {
@@ -40,12 +43,17 @@ struct SkillTriggerRun: Sendable {
 
 /// The model of the standard slot of a live run.
 ///
-/// The default is the small model the flash slot ships with, and it is in
-/// the model cache of any machine that ran this agent.
+/// The default is the standard model the agent ships with
+/// (`ProfileConfiguration.defaultStandard`), because the proof that matters is
+/// that the shipped model uses skills. The test follows a change of that
+/// default with no edit. `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another model.
 let skillTriggerModel: String = {
     let variable = "ACP_AGENT_SKILL_TRIGGER_MODEL"
     let value = ProcessInfo.processInfo.environment[variable]
-    return (value?.isEmpty == false ? value : nil) ?? "mlx-community/Qwen3-4B-4bit"
+    guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
+        preconditionFailure("ProfileConfiguration.defaultStandard names no model")
+    }
+    return (value?.isEmpty == false ? value : nil) ?? shipped
 }()
 
 /// How long a run waits for the decision, from the environment.
@@ -60,7 +68,7 @@ let decisionDeadlineFromEnvironment: Duration = {
     return .seconds(seconds)
 }()
 
-/// The live subject of the skill trigger evaluation: one composed agent, one
+/// The live subject of the skill trigger gate: one composed agent, one
 /// session for each sample, and a reading of the recorded transcript.
 ///
 /// **What it measures.** Whether a real model, given a real task and the
@@ -92,12 +100,9 @@ struct SkillTriggerSubject {
     /// transcript. The shell and the code context stay off, because no
     /// sample needs them and each one makes a turn slower.
     ///
-    /// The standard slot is pinned to ``skillTriggerModel``, which is a
-    /// small model. What this suite measures is a decision of one move, not
-    /// the quality of the work that follows, and a small model makes that
-    /// decision in seconds where the 27B model of the shipped default takes
-    /// minutes. `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another one; measure
-    /// the model you ship before you trust a rate.
+    /// The standard slot is ``skillTriggerModel``, which is the shipped
+    /// standard model unless `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another
+    /// one.
     static var userConfigYAML: String {
         """
         transcripts:
@@ -141,7 +146,7 @@ struct SkillTriggerSubject {
     /// - Returns: The workspace directory.
     /// - Throws: Whatever the copy throws.
     static func makeWorkspace() throws -> URL {
-        let workspace = makeResolvedDirectory(label: "SkillTriggerEval-workspace")
+        let workspace = makeResolvedDirectory(label: "SkillTrigger-workspace")
         try FileManager.default.copyItem(
             at: libraryDirectory(),
             to: workspace.appendingPathComponent(".skills", isDirectory: true))
@@ -176,13 +181,37 @@ struct SkillTriggerSubject {
             sessionId: sessionId,
             deadline: ContinuousClock.now + Self.cancelDeadline)
         await harness.flushPendingChunks()
+        let answer = await Self.answerText(of: collector, sessionId: sessionId)
         return SkillTriggerRun(
             sample: sample,
             loadedSkillIDs: decision.loadedIDs,
             skillsCallCount: decision.skillsCallCount,
             stopReason: stopReason,
             elapsedSeconds: Double(elapsed.components.seconds),
-            toolTitlesSeen: decision.toolTitlesSeen)
+            toolTitlesSeen: decision.toolTitlesSeen,
+            answerPreview: String(answer.prefix(Self.answerPreviewLength)))
+    }
+
+    /// The characters of the answer that a report line shows.
+    static let answerPreviewLength = 240
+
+    /// The text the model wrote in one session, joined in wire order.
+    ///
+    /// - Parameters:
+    ///   - collector: The recorder of the sequence.
+    ///   - sessionId: The session to read.
+    /// - Returns: The answer text, with its line breaks as spaces.
+    private static func answerText(
+        of collector: UpdateCollector, sessionId: SessionId
+    ) async -> String {
+        let chunks = await collector.updates.compactMap { notification -> String? in
+            guard notification.sessionId == sessionId,
+                case .agentMessageChunk(let chunk) = notification.update,
+                case .text(let content) = chunk.content
+            else { return nil }
+            return content.text
+        }
+        return chunks.joined().replacingOccurrences(of: "\n", with: " ")
     }
 
     /// How long a run waits for the idle that its cancel gives.
@@ -265,80 +294,6 @@ struct SkillTriggerSubject {
         }
         return SkillsDecision(
             loadedIDs: loadedIDs, skillsCallCount: callCount, toolTitlesSeen: titles)
-    }
-
-    /// One `skills` call of a recorded transcript.
-    struct SkillsCall: Sendable {
-        /// The operation the call named, such as `use skill`.
-        let operation: String
-
-        /// The id the call named, or `nil` when it named none.
-        let id: String?
-
-        /// The id this call loaded, or `nil` when the call loaded nothing.
-        var loadedID: String? {
-            guard operation.lowercased().contains("use") else { return nil }
-            return id
-        }
-    }
-
-    /// Every `skills` call of one recorded session, in call order.
-    ///
-    /// The transcript is the honest source: the wire carries the call too,
-    /// but the transcript is what the model itself produced.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The session to read.
-    ///   - workspace: The project the session ran in.
-    ///   - userDirectory: The user layer that holds the transcripts.
-    /// - Returns: The calls, in order.
-    static func skillsCalls(
-        sessionId: SessionId, workspace: URL, userDirectory: URL
-    ) -> [SkillsCall] {
-        guard let sessionULID = ULID(ulidString: sessionId.rawValue),
-            let name = try? DotfolderName(AgentClientHarness.dotfolderName)
-        else { return [] }
-        let store = TranscriptStore(location: .home, name: name, userDirectory: userDirectory)
-        let events = (try? store.transcript(for: sessionULID, inProject: workspace)) ?? []
-        return events.flatMap { event -> [SkillsCall] in
-            guard event.kind == .toolCalls, let entry = event.entry,
-                let data = try? JSONEncoder().encode(entry),
-                let decoded = try? JSONDecoder().decode(RecordedToolCalls.self, from: data)
-            else { return [] }
-            return (decoded.toolCalls ?? []).compactMap { call in
-                guard call.toolName == "skills" else { return nil }
-                return SkillsCall(
-                    operation: call.argument(named: "op") ?? "",
-                    id: call.argument(named: "id"))
-            }
-        }
-    }
-
-    /// The `.toolCalls` payload this reader needs. Router keeps its own
-    /// payload type internal, so the reader decodes the two fields it uses.
-    private struct RecordedToolCalls: Decodable {
-        /// One recorded call.
-        struct Call: Decodable {
-            /// The tool the model named.
-            let toolName: String
-
-            /// The arguments, as the JSON text the model produced.
-            let argumentsJSON: String?
-
-            /// One string argument of the call.
-            ///
-            /// - Parameter name: The argument name.
-            /// - Returns: The value, or `nil` when the call carries none.
-            func argument(named name: String) -> String? {
-                guard let argumentsJSON, let data = argumentsJSON.data(using: .utf8),
-                    let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                else { return nil }
-                return object[name] as? String
-            }
-        }
-
-        /// The calls of the entry.
-        let toolCalls: [Call]?
     }
 
     /// Waits for the idle terminator of one session.

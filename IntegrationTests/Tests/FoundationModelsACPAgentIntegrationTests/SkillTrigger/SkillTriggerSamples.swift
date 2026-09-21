@@ -1,6 +1,6 @@
 import Foundation
 
-/// One prompt of the skill trigger evaluation, and the skill it must make
+/// One prompt of the skill trigger gate, and the skill it must make
 /// the model load.
 ///
 /// A sample is a task, written the way a user writes one. It never names a
@@ -18,17 +18,40 @@ struct SkillTriggerSample: Sendable, Equatable {
     let expectedSkillID: String?
 }
 
-/// The dataset of the skill trigger evaluation.
+/// The dataset of the skill trigger gate.
 ///
 /// The library the samples run against is `Tests/Fixtures/skills/` of the
 /// root package: `fixture-explore` (understand code before a change) and
 /// `fixture-release-notes` (write the release notes of a version). The
 /// hidden skill of that library is not reachable, so no sample expects it.
 ///
-/// **The dataset is small on purpose.** Each sample is one live turn, thus
-/// each one costs real seconds. Four samples — three for one skill and one
-/// for the other — measure a missed load, and the whole suite then runs in
-/// minutes.
+/// **The runs are deterministic.** The suite decodes greedy, thus the same
+/// model and the same code give the same decision in every run.
+///
+/// **One sample is the gate, and CI runs it on every push.**
+/// `load-release-notes` asks for "your skill for writing release notes" and
+/// names no skill, no id and no tool. The model must read the catalog in the
+/// description of the `skills` tool, choose the right one of the two visible
+/// skills, and call `use skill` with its id. That is the whole path of a
+/// skill load with the shipped model, in one round: measured on 2026-09-21
+/// with `mlx-community/Qwen3.8-27B-mxfp4`, the first and only tool call was
+/// `use skill` for `fixture-release-notes`, after 14 seconds.
+///
+/// **The other samples do not ask for a skill, and a person runs them by
+/// name.** They measure whether the model chooses to look for a skill by
+/// itself. The shipped model does, but it first runs code and searches the
+/// tools, thus each one takes two to three minutes. Measured on 2026-09-21
+/// with the shipped model, greedy: `understand-parser` loaded its skill after
+/// 198 seconds and `release-notes` after 201. A small model such as
+/// `mlx-community/Qwen3-4B-Instruct-2507-4bit` fails `release-notes` and
+/// `who-calls` for a reason that is not its choice: it writes a `runCode`
+/// call whose JSON is not valid, MLX rejects the call, and the rejection
+/// ends the whole turn with `_error`. That is a defect of the engine or of
+/// Router, which must give a rejected call back to the model as a tool error.
+///
+/// Run them with `ACP_AGENT_SKILL_TRIGGER_SAMPLES` and a longer deadline:
+/// `ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes`
+/// `ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS=300`.
 ///
 /// **No sample measures an extra load.** A near-miss sample ("run the test
 /// suite", which no skill covers) stood here until 2026-09-21. The use rule
@@ -51,8 +74,21 @@ enum SkillTriggerDataset {
     /// The id of the skill for release notes.
     static let releaseNotesID = "fixture-release-notes"
 
+    /// The samples that CI runs on every push: each one loads its skill in
+    /// every run.
+    static let gateNames: Set<String> = ["load-release-notes"]
+
+    /// The gate samples, in report order.
+    static var gate: [SkillTriggerSample] {
+        samples.filter { gateNames.contains($0.name) }
+    }
+
     /// Every sample, in report order.
     static let samples: [SkillTriggerSample] = [
+        SkillTriggerSample(
+            name: "load-release-notes",
+            prompt: "Load your skill for writing release notes, and tell me its first step.",
+            expectedSkillID: releaseNotesID),
         SkillTriggerSample(
             name: "understand-parser",
             prompt: """

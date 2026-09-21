@@ -2291,8 +2291,8 @@ structural. No environment variable selects a test.
 | Level | Package | Runs on | Model | Answers | A failure means |
 |---|---|---|---|---|---|
 | **Unit** | the root package | CI, every commit, seconds | scripted or none | is each part correct, and is the wire shape right — ordering, upserts, replay, and real tools through the real conformance | a defect |
-| **Integration** | `IntegrationTests` | CI, every commit, about 90 seconds | scripted | does the contract hold across a real process boundary — framing, spawned binaries, no stray children | a defect |
-| **Evaluation** | `EvaluationTests` | on demand, hours; plus a nightly run of the skill trigger suite alone, minutes | **real** | does a local model, driven over ACP end to end, *choose* to use the tools, and succeed | a score moved; maybe a defect, maybe the model |
+| **Integration** | `IntegrationTests` | CI, every commit, about three minutes | scripted, plus the shipped standard model for the skill trigger gate | does the contract hold across a real process boundary — framing, spawned binaries, no stray children | a defect |
+| **Evaluation** | `EvaluationTests` | on demand only, hours | **real** | does a local model, driven over ACP end to end, *choose* to use the tools, and succeed | a score moved; maybe a defect, maybe the model |
 
 **Why Evaluation stands apart, and why CI never runs it.** The first two
 levels assert. They are fast, they are deterministic, and a red mark is
@@ -2311,17 +2311,17 @@ So: `ci.yml` runs Unit and Integration. `evaluation.yml` runs Evaluation
 when a person asks for it, and `CIWorkflowTests` pins both halves of that
 separation. By hand it is `swift test --package-path EvaluationTests`.
 
-**One evaluation suite also runs nightly.** The skill trigger suite is the
-exception that proves the rule above: it drives four short turns on a
-small model, three times each, it stops each turn at the decision of the
-model, and it takes about nine minutes. It answers the one question no unit test can — does a
-live model still load the skill that fits the task — so a change of a
-skill description, of the catalog, or of the instructions cannot go
-unmeasured until the next SWE-bench run. A `schedule:` trigger therefore
-drives it, and the workflow's `FILTER` holds a scheduled run to that suite
-alone. `CIWorkflowTests` pins the filter too: without it a nightly run
-would drive the whole level, which is hours of real model turns every
-night on the one self-hosted machine.
+**The skill trigger gate is in Integration, and it uses the shipped model.**
+It answers the one question no unit test can: does the model we ship load
+the skill that fits a task. It runs on every commit, because a change of a
+skill description, of the catalog, or of the instructions must not go
+unmeasured until the next SWE-bench run. It can stand beside the
+deterministic suites for two reasons. It decodes greedy, thus the same code
+gives the same decision in every run, and a red gate is a change, not an off
+night of a model. And it is short: one sample that asks for a skill by its
+kind of work, so the load is the first move, about 15 seconds. The samples
+that wait for the model to look for a skill by itself take minutes each, and
+a person runs them by name.
 
 **The unit level covers what used to be three rungs.** An earlier draft
 numbered five tiers, 0 through 4. Tiers 0, 1 and 2 differed only in how

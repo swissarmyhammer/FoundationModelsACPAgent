@@ -65,9 +65,10 @@ private let liveLoaderProducts: [Target.Dependency] = [
 /// SwiftPM manifest for the evaluations of FoundationModelsACPAgent
 /// (plan.md §20.3).
 ///
-/// This package is the third and last test level, and it is the only one
-/// that loads a real model. The unit level and the integration level
-/// answer "is the code correct", and a failure there is a defect. This
+/// This package is the third and last test level. The unit level and the
+/// integration level answer "is the code correct", and a failure there is
+/// a defect. The integration level loads a small real model only for a fact
+/// that holds in every measured run, such as the skill trigger gate. This
 /// level answers "does a local model, driven end to end, choose to use
 /// the tools and succeed". A score below the floor can be a model
 /// question, not a code defect, and one whole-dataset drive takes hours.
