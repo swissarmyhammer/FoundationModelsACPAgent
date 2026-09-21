@@ -230,6 +230,9 @@ struct PromptTurn: Sendable {
             }
         } catch {
             stop = Self.classify(error)
+            if case .failed(let message) = stop {
+                report(failure: message)
+            }
         }
         // A cancelled turn does not always throw (§8.6): model work that
         // never checks for cancellation runs to completion. The recorded
@@ -347,6 +350,21 @@ struct PromptTurn: Sendable {
         let reason = Self.stalledStopReasonValue
         turnLogger.error(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the turn ends with \(reason, privacy: .public)"
+        )
+    }
+
+    /// Records the error a turn failed on. The wire carries the
+    /// ``unmappedStopReasonValue`` stop reason alone, thus this line is the
+    /// one place that names the cause.
+    ///
+    /// - Parameter message: The description of the error.
+    private func report(failure message: String) {
+        // Copies for the log line: the logger's message is an escaping
+        // autoclosure, which must not capture the turn itself.
+        let sessionIdValue = sessionId.rawValue
+        let model = modelName
+        turnLogger.error(
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) failed: \(message, privacy: .public)"
         )
     }
 
