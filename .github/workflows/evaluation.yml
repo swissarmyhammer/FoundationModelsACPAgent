@@ -32,7 +32,7 @@ name: Evaluation
 #     swift test --package-path EvaluationTests
 
 on:
-  # The skill trigger suite is minutes, not hours: it drives five short
+  # The skill trigger suite is minutes, not hours: it drives four short
   # turns on a small model and stops each one at the decision. A nightly
   # run therefore costs little and answers the one question that a unit
   # test cannot — does a live model still load the skill that fits the

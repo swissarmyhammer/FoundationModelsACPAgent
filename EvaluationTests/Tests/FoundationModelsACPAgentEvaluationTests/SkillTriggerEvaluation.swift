@@ -86,23 +86,14 @@ var skillTriggerRepeats: Int {
 ///   0.67, `release-notes` 1.0, `swebench-issue` 0.33. Rate 0.75, in 11
 ///   minutes. The same rule made `run-the-tests` load `fixture-explore` in
 ///   two of three runs, thus the false-load rate was 0.67 and the ceiling
-///   below failed. A rule that pushes harder moves both rates.
+///   failed. A rule that pushes harder moves both rates. The owner of this
+///   work accepts extra loads, thus that ceiling and its sample are gone
+///   (read ``SkillTriggerDataset``), and this bar is the one bar.
 ///
 /// **One sample has three runs, thus its rate moves in steps of 0.33.**
 /// `who-calls` gave 1.0, 0.33 and 0.67 in three runs with no change of
 /// text. Read a change of one sample by one step as noise.
 let skillTriggerFloor = 0.5
-
-/// The share of the runs of a task that no skill covers, in which the model
-/// may still load a skill.
-///
-/// A skill that fires on every task is as wrong as one that never fires, so
-/// the near-miss samples have a ceiling of their own.
-///
-/// In the run of 2026-09-19 both near misses stayed clean: "run the test
-/// suite" made five `skills` calls and loaded nothing, and the typo task
-/// made none.
-let skillTriggerFalseCeiling = 0.5
 
 // MARK: - The host
 
@@ -203,7 +194,7 @@ struct SkillTriggerRate: Sendable {
 /// models and the graphics processor, so no workflow of every commit runs
 /// it; `evaluation.yml` drives it when a person asks, and every night at
 /// 09:00 UTC with the filter `SkillTrigger`. It is the one suite of this
-/// level that a schedule drives, because it takes about ten minutes and the
+/// level that a schedule drives, because it takes about nine minutes and the
 /// others take hours. The suite carries no gate of its own, as
 /// `PythonCLIEvaluationTests` carries none: a run of this package runs it.
 ///
@@ -222,7 +213,7 @@ struct SkillTriggerRate: Sendable {
     .serialized,
     .timeLimit(.minutes(60)))
 struct SkillTriggerEvaluationTests {
-    /// Runs every sample, prints the rates, and asserts the two bars.
+    /// Runs every sample, prints the rates, and asserts the bar.
     @Test("A live model loads the skill that fits the task")
     func aLiveModelLoadsTheSkillThatFitsTheTask() async throws {
         let subject = try await skillTriggerHost.makeSubject()
@@ -240,21 +231,14 @@ struct SkillTriggerEvaluationTests {
         }
 
         let covered = rates.filter { $0.sample.expectedSkillID != nil }
-        let uncovered = rates.filter { $0.sample.expectedSkillID == nil }
         let loadRate = Self.mean(of: covered.map(\.rate))
-        let falseLoadRate = 1 - Self.mean(of: uncovered.map(\.rate))
-        print("SKILL TRIGGER TOTAL loadRate=\(loadRate) falseLoadRate=\(falseLoadRate)")
+        print("SKILL TRIGGER TOTAL loadRate=\(loadRate)")
 
         let floorMessage: Comment = """
             the model loaded the fitting skill in \(loadRate) of the runs of the covered \
             tasks, under the floor \(skillTriggerFloor)
             """
         #expect(loadRate >= skillTriggerFloor, floorMessage)
-        let ceilingMessage: Comment = """
-            the model loaded a skill in \(falseLoadRate) of the runs of the tasks that no \
-            skill covers, over the ceiling \(skillTriggerFalseCeiling)
-            """
-        #expect(falseLoadRate <= skillTriggerFalseCeiling, ceilingMessage)
     }
 
     /// The mean of `values`, or zero for an empty list.

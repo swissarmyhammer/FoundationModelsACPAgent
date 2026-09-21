@@ -2312,9 +2312,9 @@ when a person asks for it, and `CIWorkflowTests` pins both halves of that
 separation. By hand it is `swift test --package-path EvaluationTests`.
 
 **One evaluation suite also runs nightly.** The skill trigger suite is the
-exception that proves the rule above: it drives five short turns on a
+exception that proves the rule above: it drives four short turns on a
 small model, three times each, it stops each turn at the decision of the
-model, and it takes about ten minutes. It answers the one question no unit test can — does a
+model, and it takes about nine minutes. It answers the one question no unit test can — does a
 live model still load the skill that fits the task — so a change of a
 skill description, of the catalog, or of the instructions cannot go
 unmeasured until the next SWE-bench run. A `schedule:` trigger therefore

@@ -116,7 +116,7 @@ struct CIWorkflowTests {
     /// A push trigger or a pull-request trigger stays refused. Those would
     /// put hours of real model turns back on every commit, and a score that
     /// varies from run to run back in front of a contract verdict. A
-    /// nightly run is neither: it drives five short turns on a small model,
+    /// nightly run is neither: it drives four short turns on a small model,
     /// it stops each one at the decision of the model, and it answers the
     /// one question no unit test can — does a live model still load the
     /// skill that fits the task.

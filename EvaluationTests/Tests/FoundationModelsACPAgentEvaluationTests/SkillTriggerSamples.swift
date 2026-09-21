@@ -26,14 +26,16 @@ struct SkillTriggerSample: Sendable, Equatable {
 /// hidden skill of that library is not reachable, so no sample expects it.
 ///
 /// **The dataset is small on purpose.** Each sample is one live turn, thus
-/// each one costs real seconds. Five samples — three for one skill, one for
-/// the other, and one near miss — measure the things that can go wrong, and
-/// the whole suite then runs in minutes.
+/// each one costs real seconds. Four samples — three for one skill and one
+/// for the other — measure a missed load, and the whole suite then runs in
+/// minutes.
 ///
-/// **The should-not-trigger sample matters as much as the others.** A
-/// description that fires on every task is as wrong as one that never fires,
-/// and only a near miss shows the difference: "run the tests" shares the
-/// words of the work, and no skill covers it.
+/// **No sample measures an extra load.** A near-miss sample ("run the test
+/// suite", which no skill covers) stood here until 2026-09-21. The use rule
+/// of Skills `cbbcd37` made the model load a skill for it in two of three
+/// runs. The owner of this work accepts that: an extra load costs one tool
+/// call and the text of one skill, and a missed load loses the skill. A
+/// sample with no bar is only time, thus it went.
 ///
 /// **One sample is written as a bug report, and not as a request.** The
 /// other prompts say "work out how", "who calls", "what breaks" — the words
@@ -81,21 +83,10 @@ enum SkillTriggerDataset {
                 Fix it.
                 """,
             expectedSkillID: exploreID),
-        SkillTriggerSample(
-            name: "run-the-tests",
-            prompt: """
-                Run the test suite of this project and tell me the result. Change no file.
-                """,
-            expectedSkillID: nil),
     ]
 
     /// The samples whose task a skill covers.
     static var triggering: [SkillTriggerSample] {
         samples.filter { $0.expectedSkillID != nil }
-    }
-
-    /// The samples that no skill covers.
-    static var nonTriggering: [SkillTriggerSample] {
-        samples.filter { $0.expectedSkillID == nil }
     }
 }

@@ -163,34 +163,36 @@ that instance ends.
 ### The fast answer to the same question
 
 A SWE-bench run takes hours to tell you that the model never loaded a skill.
-The skill trigger evaluation tells you in about ten minutes:
+The skill trigger evaluation tells you in about nine minutes:
 
 ```bash
 swift test --package-path EvaluationTests --no-parallel --filter SkillTrigger
 ```
 
-It opens a real session on a small live model, gives it five prompts three
-times each, and stops each turn as soon as the model decides. Four prompts
-fit a skill in `Tests/Fixtures/skills/`, one fits none. Each line of the
-report names the sample, the skill the model loaded, and the seconds it
-took:
+It opens a real session on a small live model, gives it four prompts three
+times each, and stops each turn as soon as the model decides. Each prompt
+fits a skill in `Tests/Fixtures/skills/`. Each line of the report names the
+sample, the skill the model loaded, and the seconds it took:
 
 ```
-SKILL TRIGGER who-calls expected=fixture-explore rate=1.0 loaded=[fixture-explore] ...
-SKILL TRIGGER swebench-issue expected=fixture-explore rate=0.0 loaded=[] ...
-SKILL TRIGGER TOTAL loadRate=0.58 falseLoadRate=0.0
+SKILL TRIGGER who-calls expected=fixture-explore rate=0.67 loaded=[fixture-explore] ...
+SKILL TRIGGER swebench-issue expected=fixture-explore rate=0.33 loaded=[fixture-explore] ...
+SKILL TRIGGER TOTAL loadRate=0.75
 ```
 
-**`swebench-issue` is the sample that fails.** It is written as a bug
-report, and it uses none of the words of the skill description. In the run
-of 2026-09-20 the model loaded no skill in all three of its runs, and it
-called `searchTools` alone. That is the same condition as the SWE-bench run
-of 2026-09-19, in one turn of a minute instead of one run of hours. The
-other four samples say the delivery of the skills works, so the fault is in
-the words of the description and of the use rule. Card `^4apmcft` of
-FoundationModelsSkills rewrites the use rule for that reason.
+**`swebench-issue` is the hard sample.** It is written as a bug report, and it
+uses none of the words of the skill description. That is the condition of the
+SWE-bench run of 2026-09-19, in one turn of a minute instead of one run of
+hours. With the old use rule of Skills the model loaded no skill in all three
+of its runs. With the use rule of Skills `cbbcd37` it loaded the skill in one
+of three.
 
-`loadRate` must stay above 0.5, and `falseLoadRate` below it. A nightly
+**One sample has three runs, so its rate moves in steps of 0.33.** The same
+text gave `who-calls` 1.0, 0.33 and 0.67 in three runs. Read a change of one
+step on one sample as noise.
+
+`loadRate` must stay above 0.5. An extra load is not a failure: it costs one
+tool call, and a missed load loses the skill. A nightly
 GitHub run drives this suite alone, so a change of a skill description, of
 the catalog, or of the instructions cannot go unmeasured until the next
 SWE-bench run. The environment variables `ACP_AGENT_SKILL_TRIGGER_MODEL`,
