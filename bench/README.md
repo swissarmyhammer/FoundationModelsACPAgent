@@ -189,7 +189,6 @@ each sample takes two to three minutes:
 
 ```bash
 ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes \
-ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS=300 \
 swift test --package-path IntegrationTests --filter SkillTriggerTests
 ```
 

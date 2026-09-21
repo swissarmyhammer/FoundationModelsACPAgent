@@ -58,13 +58,16 @@ let skillTriggerModel: String = {
 
 /// How long a run waits for the decision, from the environment.
 ///
-/// `ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS` raises or lowers the wait of a
-/// run. A person measuring a slower model raises it.
+/// The default is 300 seconds. A run stops at the decision, thus a long
+/// deadline costs time only when the model loads no skill. The first run of
+/// a process also pays the load of the model: on the CI machine on
+/// 2026-09-21 the gate sample took 76 seconds, where a warm machine takes
+/// 15. `ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS` raises or lowers the wait.
 let decisionDeadlineFromEnvironment: Duration = {
     let variable = "ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS"
     guard let text = ProcessInfo.processInfo.environment[variable], let seconds = Int(text),
         seconds > 0
-    else { return .seconds(90) }
+    else { return .seconds(300) }
     return .seconds(seconds)
 }()
 

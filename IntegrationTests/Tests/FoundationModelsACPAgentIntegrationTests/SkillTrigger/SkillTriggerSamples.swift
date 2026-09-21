@@ -49,9 +49,8 @@ struct SkillTriggerSample: Sendable, Equatable {
 /// ends the whole turn with `_error`. That is a defect of the engine or of
 /// Router, which must give a rejected call back to the model as a tool error.
 ///
-/// Run them with `ACP_AGENT_SKILL_TRIGGER_SAMPLES` and a longer deadline:
-/// `ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes`
-/// `ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS=300`.
+/// Run them with `ACP_AGENT_SKILL_TRIGGER_SAMPLES`, for example
+/// `ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes`.
 ///
 /// **No sample measures an extra load.** A near-miss sample ("run the test
 /// suite", which no skill covers) stood here until 2026-09-21. The use rule
