@@ -79,6 +79,18 @@ var skillTriggerRepeats: Int {
 /// samples work, and that is the split the bar is for: this measures the
 /// words of the descriptions and of the rules, and a red suite must mean
 /// that the delivery itself broke.
+///
+/// - 2026-09-21, the same model and samples, with the use rule of Skills
+///   `cbbcd37` ("If a skill helps with any part of your task, load it now
+///   … Load each skill that helps"): `understand-parser` 1.0, `who-calls`
+///   0.67, `release-notes` 1.0, `swebench-issue` 0.33. Rate 0.75, in 11
+///   minutes. The same rule made `run-the-tests` load `fixture-explore` in
+///   two of three runs, thus the false-load rate was 0.67 and the ceiling
+///   below failed. A rule that pushes harder moves both rates.
+///
+/// **One sample has three runs, thus its rate moves in steps of 0.33.**
+/// `who-calls` gave 1.0, 0.33 and 0.67 in three runs with no change of
+/// text. Read a change of one sample by one step as noise.
 let skillTriggerFloor = 0.5
 
 /// The share of the runs of a task that no skill covers, in which the model
