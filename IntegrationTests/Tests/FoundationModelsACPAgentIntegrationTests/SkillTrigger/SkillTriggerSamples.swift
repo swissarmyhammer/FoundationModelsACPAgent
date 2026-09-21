@@ -42,12 +42,15 @@ struct SkillTriggerSample: Sendable, Equatable {
 /// itself. The shipped model does, but it first runs code and searches the
 /// tools, thus each one takes two to three minutes. Measured on 2026-09-21
 /// with the shipped model, greedy: `understand-parser` loaded its skill after
-/// 198 seconds and `release-notes` after 201. A small model such as
-/// `mlx-community/Qwen3-4B-Instruct-2507-4bit` fails `release-notes` and
-/// `who-calls` for a reason that is not its choice: it writes a `runCode`
-/// call whose JSON is not valid, MLX rejects the call, and the rejection
-/// ends the whole turn with `_error`. That is a defect of the engine or of
-/// Router, which must give a rejected call back to the model as a tool error.
+/// 198 seconds and `release-notes` after 201.
+///
+/// Before Router `d19f64a`, a small model such as
+/// `mlx-community/Qwen3-4B-Instruct-2507-4bit` failed `release-notes` and
+/// `who-calls` for a reason that was not its choice: it wrote a `runCode`
+/// call whose JSON was not valid, MLX rejected the call, and the rejection
+/// ended the whole turn with `_error`. Router now gives a rejected call back
+/// to the model in a retry. With that model, `release-notes` loads its skill
+/// in 17 seconds, and `who-calls` ends normally without a skill.
 ///
 /// Run them with `ACP_AGENT_SKILL_TRIGGER_SAMPLES`, for example
 /// `ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes`.

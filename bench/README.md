@@ -202,12 +202,13 @@ skill description. That is the condition of the SWE-bench run of 2026-09-19.
 `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another model, and
 `ACP_AGENT_SKILL_TRIGGER_REPEATS` runs each sample more than one time.
 
-**A small model shows a defect that the shipped model hides.** With
+**A rejected tool call goes back to the model.** Before Router `d19f64a`, a
+`runCode` call with JSON that was not valid made MLX reject the call, and the
+rejection ended the whole turn with `_error`. With
 `mlx-community/Qwen3-4B-Instruct-2507-4bit`, `release-notes` and `who-calls`
-end with the stop reason `_error` and no tool call. The model writes a
-`runCode` call whose JSON is not valid, MLX rejects the call, and the
-rejection ends the whole turn, so the model never gets to choose a skill. A
-rejected call must go back to the model as a tool error.
+failed that way in every run. Router now gives the rejection back to the model
+in a retry, at most two times. With the same model, `release-notes` now loads
+its skill after 17 seconds, and `who-calls` ends normally.
 
 A pass here and no `use skill` call in a SWE-bench transcript is a useful
 split: the delivery of the skills works, and the issue text of that instance

@@ -1,8 +1,21 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '80'
+comments:
+- actor: claude-code
+  id: 01m32k9dvxczskjry90z1dzj1b
+  text: 'Decision of the owner (2026-09-21): fix it in Router. Router''s turn loop (`Session/RoutedSessionActorTurnExecution.swift`) already has the shape: the overflow recovery catches an error, changes the conversation, and runs `runTurnAttempt` again once. A rejected call takes the same path, with a bound on the retries. The task went to the Router session foundationmodelsrouter-b7 for its board. This card stays open until the Router fix is on main and the acceptance run here no longer ends with `_error`.'
+  timestamp: 2026-09-21T18:22:41.533409+00:00
+- actor: claude-code
+  id: 01m32k9zyewmmhwss3tkqmcvz2
+  text: 'The Router card is ^naqfcqj (01M32K9JMDN70X7ADXPNAQFCQJ) on the FoundationModelsRouter board, in todo and ready. Its description is the text of this card. When it is on Router main: run `swift package update` here, then the acceptance run of this card.'
+  timestamp: 2026-09-21T18:23:00.046674+00:00
+- actor: claude-code
+  id: 01m32r6m6a8whxwn5z4j9wp0n1
+  text: Accepted on 2026-09-21 against Router d19f64a (contains 3424179, ^naqfcqj), taken from the remote. With `mlx-community/Qwen3-4B-Instruct-2507-4bit`, `release-notes` loaded its skill in 19 seconds; on Router dd66b68 the same run ended with `_error` after 10 seconds. `who-calls` now ends with `end_turn` and no skill, which is the choice of the model. The whole integration package passes (18 tests, 83 seconds).
+  timestamp: 2026-09-21T19:48:32.586032+00:00
+position_column: done
+position_ordinal: e680
 title: A rejected tool call ends the whole turn instead of going back to the model
 ---
 ## What happens
