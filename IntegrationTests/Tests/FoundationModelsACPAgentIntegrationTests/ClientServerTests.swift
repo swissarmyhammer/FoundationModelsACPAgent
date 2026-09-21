@@ -15,11 +15,10 @@ import Testing
 // `swift test` never sees this target, and
 // `swift test --package-path IntegrationTests` runs it.
 //
-// The spawned agent resolves a REAL profile with a live loader, so the
-// prompt case needs the network on its first run, and the model load can
-// take tens of seconds. The known live-model defect ^pez780d can give an
-// empty zero-token answer; the assertions here state the card's contract
-// and the run reports what the model did.
+// The prompt case runs on the deterministic stub model, because its
+// contract is the exit code of a turn that ends, and a small real model
+// does not always end a turn. `StdioContractTests` drives the real profile
+// and the live loader behind the spawned binary.
 
 /// The case's time limit in minutes. It covers the first-run model
 /// download and the model load of the spawned agent.
@@ -71,13 +70,15 @@ struct ClientServerTests {
     /// - Returns: The finished run.
     /// - Throws: The locator or spawn error.
     private static func runPrintCLI(
-        arguments: [String], workspace: URL, configHome: URL
+        arguments: [String], workspace: URL, configHome: URL,
+        environment: [String: String] = [:]
     ) async throws -> BuiltExecutableRun {
         try await BuiltExecutableRun.run(
             executableNamed: printExecutableName,
             arguments: arguments,
             workspace: workspace,
-            configHome: configHome)
+            configHome: configHome,
+            environment: environment)
     }
 
     // MARK: - The contract
@@ -85,13 +86,23 @@ struct ClientServerTests {
     /// The one-shot happy path: `acp-print "say hello"` streams the
     /// answer text to stdout, logs to stderr, exits 0 for `end_turn`,
     /// and leaves no agent process behind.
+    ///
+    /// The turn runs on the deterministic stub model. This case proves the
+    /// contract of the CLI for a turn that ends, and only the stub model
+    /// always ends a turn. The small real model of the fixture wrote 14 KB
+    /// of noise to "say hello" until it reached its token ceiling, and the
+    /// agent then reports `_truncated` and the CLI exits nonzero — the
+    /// correct answer for that turn, but not the case this test names.
+    /// `StdioContractTests` keeps the real profile and the live loader
+    /// behind the spawned binary.
     @Test func aTrivialPromptPrintsOnlyTheAnswerAndExitsZero() async throws {
         let workspace = makeResolvedDirectory(label: "ClientServer-repo")
         let configHome = makeResolvedDirectory(label: "ClientServer-config")
         try TierThreeFixture.writeUserConfig(under: configHome)
 
         let run = try await Self.runPrintCLI(
-            arguments: [Self.promptText], workspace: workspace, configHome: configHome)
+            arguments: [Self.promptText], workspace: workspace, configHome: configHome,
+            environment: TierThreeFixture.stubModelEnvironment)
 
         #expect(run.exitCode == 0, "stderr: \(run.standardError)")
         let answer = run.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
