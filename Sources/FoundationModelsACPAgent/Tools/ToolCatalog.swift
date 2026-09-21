@@ -333,7 +333,7 @@ public enum ToolCatalog {
         guard !options.marketplaces.isEmpty else {
             return SkillsRegistry(stack: stack, watch: true)
         }
-        let store = MarketplaceStore(sources: options.marketplaces)
+        let store = MarketplaceStore(sources: options.marketplaces, layout: SkillMarketplaceLayout.skills)
         await store.start()
         return SkillsRegistry(marketplaces: store, stack: stack, watch: true)
     }

@@ -103,10 +103,10 @@ import Testing
 
     // MARK: - The builtin floor
 
-    @Test func assemblesExactlyTheBuiltinWithNoFiles() throws {
+    @Test func assemblesExactlyTheBuiltinWithNoFiles() async throws {
         let fixture = Fixture()
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text == BuiltinInstructions.text)
         #expect(assembled.warnings.isEmpty)
@@ -128,35 +128,35 @@ import Testing
         #expect(text.contains("If a skill matches the task, load it and follow it."))
     }
 
-    @Test func projectInstructionsReplaceTheBuiltinWholesale() throws {
+    @Test func projectInstructionsReplaceTheBuiltinWholesale() async throws {
         let fixture = Fixture()
         fixture.write(
             "PROJECT-PROMPT-TEXT", to: "Instructions.md", under: fixture.projectDirectory)
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text.contains("PROJECT-PROMPT-TEXT"))
         #expect(!assembled.text.contains(Self.builtinMarker))
     }
 
-    @Test func nearestInstructionsLayerWins() throws {
+    @Test func nearestInstructionsLayerWins() async throws {
         let fixture = Fixture()
         fixture.write("USER-PROMPT-TEXT", to: "Instructions.md", under: fixture.userDirectory)
         fixture.write(
             "PROJECT-PROMPT-TEXT", to: "Instructions.md", under: fixture.projectDirectory)
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text.contains("PROJECT-PROMPT-TEXT"))
         #expect(!assembled.text.contains("USER-PROMPT-TEXT"))
         #expect(!assembled.text.contains(Self.builtinMarker))
     }
 
-    @Test func userInstructionsReplaceWhenNoProjectFile() throws {
+    @Test func userInstructionsReplaceWhenNoProjectFile() async throws {
         let fixture = Fixture()
         fixture.write("USER-PROMPT-TEXT", to: "Instructions.md", under: fixture.userDirectory)
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text.contains("USER-PROMPT-TEXT"))
         #expect(!assembled.text.contains(Self.builtinMarker))
@@ -164,21 +164,21 @@ import Testing
 
     // MARK: - Trust from the source
 
-    @Test func diskInstructionsRenderUntrusted() throws {
+    @Test func diskInstructionsRenderUntrusted() async throws {
         let fixture = Fixture()
         // `{% now %}` is not in the untrusted tag whitelist, so an
         // untrusted render must refuse it.
         fixture.write(
             "PROMPT {% now %}", to: "Instructions.md", under: fixture.projectDirectory)
 
-        #expect(throws: TemplateEngineError.self) {
-            try fixture.assembler().assemble()
+        await #expect(throws: TemplateEngineError.self) {
+            try await fixture.assembler().assemble()
         }
     }
 
     // MARK: - Partials
 
-    @Test func projectPartialReplacesOnePartialAndKeepsThePrompt() throws {
+    @Test func projectPartialReplacesOnePartialAndKeepsThePrompt() async throws {
         let fixture = Fixture()
         fixture.write(
             "BASE-PROMPT-TEXT\n{% include \"style\" %}",
@@ -187,7 +187,7 @@ import Testing
         fixture.write(
             "PROJECT-STYLE-TEXT", to: "_partials/style.md", under: fixture.projectDirectory)
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text.contains("BASE-PROMPT-TEXT"))
         #expect(assembled.text.contains("PROJECT-STYLE-TEXT"))
@@ -196,7 +196,7 @@ import Testing
 
     // MARK: - Preloaded skill bodies
 
-    @Test func preloadedSkillBodiesJoinAfterThePromptBeforeAgents() throws {
+    @Test func preloadedSkillBodiesJoinAfterThePromptBeforeAgents() async throws {
         let fixture = Fixture()
         fixture.writeSkill(
             id: "alpha",
@@ -209,7 +209,7 @@ import Testing
         fixture.write("USER-AGENTS-TEXT", to: "AGENTS.md", under: fixture.userDirectory)
         let registry = SkillsRegistry(roots: [fixture.skillsDirectory])
 
-        let assembled = try fixture.assembler().assemble(skills: registry)
+        let assembled = try await fixture.assembler().assemble(skills: registry)
 
         let text = assembled.text
         #expect(text.contains("PRELOADED-ALPHA-BODY"))
@@ -230,7 +230,7 @@ import Testing
         let registry = SkillsRegistry(roots: [fixture.skillsDirectory], watch: true)
         let assembler = fixture.assembler()
 
-        let before = try assembler.assemble(skills: registry)
+        let before = try await assembler.assemble(skills: registry)
         #expect(before.text.contains("PRELOADED-BODY-V1"))
 
         fixture.writeSkill(
@@ -243,10 +243,10 @@ import Testing
         let reloadTimeout: Duration = .seconds(10)
         let pollInterval: Duration = .milliseconds(50)
         let deadline = ContinuousClock.now.advanced(by: reloadTimeout)
-        var after = try assembler.assemble(skills: registry)
+        var after = try await assembler.assemble(skills: registry)
         while !after.text.contains("PRELOADED-BODY-V2"), ContinuousClock.now < deadline {
             try await Task.sleep(for: pollInterval)
-            after = try assembler.assemble(skills: registry)
+            after = try await assembler.assemble(skills: registry)
         }
         #expect(after.text.contains("PRELOADED-BODY-V2"))
         #expect(!after.text.contains("PRELOADED-BODY-V1"))
@@ -254,7 +254,7 @@ import Testing
 
     // MARK: - AGENTS.md assembly
 
-    @Test func agentsDocumentsAssembleRootToCwdWithPathHeaders() throws {
+    @Test func agentsDocumentsAssembleRootToCwdWithPathHeaders() async throws {
         let fixture = Fixture()
         let subDirectory = fixture.workingDirectory.appendingPathComponent(
             "sub", isDirectory: true)
@@ -264,7 +264,7 @@ import Testing
         fixture.write("ROOT-AGENTS-TEXT", to: "AGENTS.md", under: fixture.workingDirectory)
         fixture.write("SUB-CLAUDE-TEXT", to: "CLAUDE.md", under: subDirectory)
 
-        let assembled = try fixture.assembler(at: subDirectory).assemble()
+        let assembled = try await fixture.assembler(at: subDirectory).assemble()
 
         let text = assembled.text
         let builtinRange = try #require(text.range(of: Self.builtinMarker))
@@ -289,34 +289,34 @@ import Testing
 
     // MARK: - Unreadable files
 
-    @Test func unreadableInstructionsWarnsAndFallsBackToTheBuiltin() throws {
+    @Test func unreadableInstructionsWarnsAndFallsBackToTheBuiltin() async throws {
         let fixture = Fixture()
         fixture.writeUnreadable(to: "Instructions.md", under: fixture.projectDirectory)
         let path = fixture.projectDirectory.appendingPathComponent("Instructions.md").path
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text == BuiltinInstructions.text)
         #expect(assembled.warnings == [.fileUnreadable(path: path)])
     }
 
-    @Test func unreadableUserAgentsWarnsAndContinues() throws {
+    @Test func unreadableUserAgentsWarnsAndContinues() async throws {
         let fixture = Fixture()
         fixture.writeUnreadable(to: "AGENTS.md", under: fixture.userDirectory)
         let path = fixture.userDirectory.appendingPathComponent("AGENTS.md").path
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text.contains(Self.builtinMarker))
         #expect(assembled.warnings == [.fileUnreadable(path: path)])
     }
 
-    @Test func unreadableProjectAgentsWarnsAndKeepsTheRest() throws {
+    @Test func unreadableProjectAgentsWarnsAndKeepsTheRest() async throws {
         let fixture = Fixture()
         fixture.write("USER-AGENTS-TEXT", to: "AGENTS.md", under: fixture.userDirectory)
         fixture.writeUnreadable(to: "AGENTS.md", under: fixture.workingDirectory)
 
-        let assembled = try fixture.assembler().assemble()
+        let assembled = try await fixture.assembler().assemble()
 
         #expect(assembled.text.contains(Self.builtinMarker))
         #expect(assembled.text.contains("USER-AGENTS-TEXT"))

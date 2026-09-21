@@ -535,7 +535,7 @@ extension RoutedACPAgent {
         // slash-command source below (plan.md §14.2). `watch: true` is
         // what makes its `commandUpdates` non-nil.
         let skills = await ToolCatalog.makeSkillsRegistry(context: catalogContext)
-        let instructions = try InstructionsAssembler(
+        let instructions = try await InstructionsAssembler(
             stack: context.loader.stack, workingDirectory: workingDirectory
         ).assemble(skills: skills)
 

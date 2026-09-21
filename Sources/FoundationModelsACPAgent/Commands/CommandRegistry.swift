@@ -293,7 +293,7 @@ struct SkillCommandSource: SlashCommandProviding {
         let id = command.name
         var wrapped = command
         wrapped.body = .rendered { invocation in
-            try registry.call(id: id, arguments: Self.splitArguments(invocation.arguments))
+            try await registry.call(id: id, arguments: Self.splitArguments(invocation.arguments))
         }
         return wrapped
     }

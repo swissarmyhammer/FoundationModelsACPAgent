@@ -89,14 +89,14 @@ public struct InstructionsAssembler: Sendable {
     /// - Returns: The assembled text and the warnings, also logged.
     /// - Throws: `TemplateEngineError` when a document does not render,
     ///   e.g. an untrusted file that uses a disallowed tag.
-    public func assemble(skills registry: SkillsRegistry? = nil) throws -> AssembledInstructions {
+    public func assemble(skills registry: SkillsRegistry? = nil) async throws -> AssembledInstructions {
         let renderer = Renderer(engine: TemplateEngine(partials: stack))
         var warnings: [InstructionsWarning] = []
         var sections = [try basePrompt(renderer: renderer, warnings: &warnings)]
 
         // Already ONE rendered string, joined with blank lines — never
         // rendered again and never iterated (plan.md §3.1).
-        if let preloadedBodies = registry?.preloadedBodies(), !preloadedBodies.isEmpty {
+        if let preloadedBodies = await registry?.preloadedBodies(), !preloadedBodies.isEmpty {
             sections.append(preloadedBodies)
         }
 

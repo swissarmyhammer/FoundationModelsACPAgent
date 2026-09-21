@@ -157,15 +157,15 @@ struct InstructionsEjectTests {
     /// After an eject the assembler reads the written file in place of the
     /// compiled-in text: the body is the same bytes, and the path header
     /// says the text now comes from disk.
-    @Test func theAssemblerReadsTheEjectedFileInPlaceOfTheFloor() throws {
+    @Test func theAssemblerReadsTheEjectedFileInPlaceOfTheFloor() async throws {
         let fixture = ConfigCommandFixture(label: "InstructionsEjectTests-assembler")
         let assembler = try Self.assembler(in: fixture)
-        let before = try assembler.assemble().text
+        let before = try await assembler.assemble().text
         #expect(before == BuiltinInstructions.text)
 
         try Self.eject(in: fixture)
 
-        let after = try assembler.assemble().text
+        let after = try await assembler.assemble().text
         let written = Self.instructionsURL(in: fixture.projectDirectory)
         #expect(after.hasSuffix(BuiltinInstructions.text))
         #expect(after.contains(written.path))
@@ -174,13 +174,13 @@ struct InstructionsEjectTests {
 
     /// An edit to the ejected file becomes the whole prompt: the file
     /// replaces the floor wholesale, and no line of the floor survives.
-    @Test func anEditToTheEjectedFileBecomesTheWholePrompt() throws {
+    @Test func anEditToTheEjectedFileBecomesTheWholePrompt() async throws {
         let fixture = ConfigCommandFixture(label: "InstructionsEjectTests-edit")
         try Self.eject(in: fixture)
         let written = Self.instructionsURL(in: fixture.projectDirectory)
         try Self.editedText.write(to: written, atomically: true, encoding: .utf8)
 
-        let assembled = try Self.assembler(in: fixture).assemble().text
+        let assembled = try await Self.assembler(in: fixture).assemble().text
 
         #expect(assembled.contains(Self.editedText))
         #expect(!assembled.contains(BuiltinInstructions.text))
