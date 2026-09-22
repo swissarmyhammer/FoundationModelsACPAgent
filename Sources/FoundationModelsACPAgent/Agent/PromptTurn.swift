@@ -254,6 +254,7 @@ struct PromptTurn: Sendable {
         // Router gave the finish reason.
         if stop == .completed, projection.endedAtTokenCeiling {
             stop = .truncated
+            report(truncation: projection.usageSummary)
         }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
@@ -350,6 +351,23 @@ struct PromptTurn: Sendable {
         let reason = Self.stalledStopReasonValue
         turnLogger.error(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the turn ends with \(reason, privacy: .public)"
+        )
+    }
+
+    /// Records the numbers of a turn that stopped at the output token
+    /// ceiling. The wire carries ``truncatedStopReasonValue`` alone, thus
+    /// this line is the one place that says how full the context was and how
+    /// many tokens the turn spent.
+    ///
+    /// - Parameter usage: The summary ``EventProjection/usageSummary`` makes.
+    private func report(truncation usage: String) {
+        // Copies for the log line: the logger's message is an escaping
+        // autoclosure, which must not capture the turn itself.
+        let sessionIdValue = sessionId.rawValue
+        let model = modelName
+        let reason = Self.truncatedStopReasonValue
+        turnLogger.error(
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) ended with \(reason, privacy: .public): \(usage, privacy: .public)"
         )
     }
 

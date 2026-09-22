@@ -618,7 +618,19 @@ extension RoutedLLM {
         tools: [any FoundationModels.Tool],
         compaction: CompactionConfiguration
     ) -> any RoutedSession {
-        makeSession(
+        // The resolved context decides two things that a reader cannot see
+        // otherwise: the fold point of the compaction, and the token ceiling
+        // of each generate call, which Router derives from the same number.
+        // A turn that ends `_truncated` is read against this line.
+        // Copies for the log line: the logger's message is an escaping
+        // autoclosure, which must not capture this model.
+        let context = contextTokens
+        let trigger = compaction.trigger
+        let target = compaction.target
+        sessionLogger.info(
+            "session budget: context=\(context, privacy: .public) trigger=\(trigger, privacy: .public) target=\(target, privacy: .public)"
+        )
+        return makeSession(
             instructions: instructions,
             workingDirectory: workingDirectory,
             recordingRoot: recordingRoot,

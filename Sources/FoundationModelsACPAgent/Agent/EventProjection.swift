@@ -127,6 +127,19 @@ struct EventProjection {
         lastFinishReason == .maxTokens
     }
 
+    /// The numbers behind a stop reason, for the log of a turn that ended
+    /// cut or empty.
+    ///
+    /// A `_truncated` turn says that the last generate call stopped at the
+    /// ceiling, and nothing more. The reader then cannot tell a model that
+    /// reasoned too long in one round from a context that filled up. These
+    /// three numbers name the difference: the tokens the whole turn fed and
+    /// generated, and how full the context was at the last report.
+    var usageSummary: String {
+        let fill = contextFill.isNaN ? "unknown" : String(format: "%.3f", contextFill)
+        return "tokensIn=\(tokensIn) tokensOut=\(tokensOut) contextFill=\(fill)"
+    }
+
     /// The newest context fill. `nan` means "no stamp": send no meter
     /// for the turn (§8.4).
     private var contextFill = Double.nan

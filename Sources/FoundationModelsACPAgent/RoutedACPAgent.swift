@@ -7,7 +7,7 @@ import os
 
 /// The logger of the session surface: the order rule and the ignored
 /// notifications.
-private let sessionLogger = Logger(subsystem: RoutedACPAgent.implementation.name, category: "Session")
+let sessionLogger = Logger(subsystem: RoutedACPAgent.implementation.name, category: "Session")
 
 /// The composed ACP agent over the Router runtime (plan.md §1).
 ///
