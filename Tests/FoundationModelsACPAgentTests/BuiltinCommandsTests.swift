@@ -228,6 +228,26 @@ struct BuiltinCommandsTests {
         #expect(!result.text.contains("tokens after"))
     }
 
+    /// A fold that leaves the context as it was is not reported as a
+    /// compaction. The oversized seed does not fit the window of any
+    /// summarizer, thus Router gives a shortfall and calls no model, and
+    /// `/compact` says that nothing was compacted, and why.
+    @Test(.timeLimit(.minutes(1)))
+    func compactReportsAShortfallHonestly() async throws {
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-compact-shortfall",
+            loader: CompactionStubBackend.makeLoader(
+                shouldFail: false, phraseRepeat: CompactionStubBackend.oversizedPhraseRepeat))
+        defer { Task { await fixture.close() } }
+
+        let result = try await fixture.runCommand("/compact")
+
+        #expect(result.text.contains("not compacted"))
+        #expect(result.text.contains("does not fit the window of any summarizer"))
+        #expect(!result.text.contains("Compacted the session"))
+        #expect(!result.text.contains(Self.defaultStandardModel))
+    }
+
     // MARK: - /config (plan.md §14.1, §2.2)
 
     /// `/config` prints the effective configuration as YAML: the section keys
@@ -355,9 +375,19 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     /// four-turn recency window, so an old span remains to summarize.
     private static let seedTurnCount = 8
 
-    /// The number of times the seed phrase repeats in one segment, sized so
-    /// the recency window alone stays over the fold target.
-    private static let seedPhraseRepeat = 900
+    /// The number of times the seed phrase repeats in one segment.
+    ///
+    /// The span that the summarizer reads must fit its window: Router counts
+    /// with the container's counter (one token per character here) against
+    /// the stub window of 32,768 tokens, and a span that does not fit gives a
+    /// shortfall and no summarizer call. The span must also be large enough
+    /// that the fold needs a summary at all. Measured on 2026-09-23 at that
+    /// window: 120 folds with no summary, 160 to 220 call the summarizer.
+    /// 180 is the middle of that band.
+    static let seedPhraseRepeat = 180
+
+    /// A repeat far past the summarizer window, for the shortfall case.
+    static let oversizedPhraseRepeat = 900
 
     /// The phrase each seeded segment repeats.
     private static let seedPhrase = "context "
@@ -387,11 +417,18 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
 
     /// Makes a loader whose LLM containers vend seeded compaction backends.
     ///
-    /// - Parameter shouldFail: Whether each backend's summarizer call throws.
+    /// - Parameters:
+    ///   - shouldFail: Whether each backend's summarizer call throws.
+    ///   - phraseRepeat: How many times the seed phrase repeats in one
+    ///     segment.
     /// - Returns: The loader to inject into the stub agent.
-    static func makeLoader(shouldFail: Bool) -> StubModelLoader {
+    static func makeLoader(
+        shouldFail: Bool, phraseRepeat: Int = seedPhraseRepeat
+    ) -> StubModelLoader {
         var loader = StubModelLoader()
-        loader.makeLLMContainer = { _ in CompactionStubContainer(shouldFail: shouldFail) }
+        loader.makeLLMContainer = { _ in
+            CompactionStubContainer(shouldFail: shouldFail, phraseRepeat: phraseRepeat)
+        }
         return loader
     }
 
@@ -399,9 +436,11 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     /// segment a repeated phrase large enough to keep the recency window over
     /// the fold target.
     ///
+    /// - Parameter phraseRepeat: How many times the phrase repeats in one
+    ///   segment.
     /// - Returns: The seed entries, in append order.
-    static func makeSeedEntries() -> [Transcript.Entry] {
-        let segmentText = String(repeating: seedPhrase, count: seedPhraseRepeat)
+    static func makeSeedEntries(phraseRepeat: Int) -> [Transcript.Entry] {
+        let segmentText = String(repeating: seedPhrase, count: phraseRepeat)
         var entries: [Transcript.Entry] = []
         for _ in 0..<seedTurnCount {
             entries.append(
@@ -463,17 +502,27 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
 /// comment of `StubProfileFixtures.swift` states: the public default of
 /// `makeSession(instructions:tools:)` drops `tools`.
 struct CompactionStubContainer: LoadedLLMContainer {
+    /// The counter of a model with no tokenizer: one token per character.
+    var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+
     /// Whether each vended backend's summarizer call throws.
     let shouldFail: Bool
 
+    /// How many times the seed phrase repeats in one segment.
+    let phraseRepeat: Int
+
     func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        CompactionStubBackend(entries: CompactionStubBackend.makeSeedEntries(), shouldFail: shouldFail)
+        CompactionStubBackend(
+            entries: CompactionStubBackend.makeSeedEntries(phraseRepeat: phraseRepeat),
+            shouldFail: shouldFail)
     }
 
     func makeSession(
         instructions: String?, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        CompactionStubBackend(entries: CompactionStubBackend.makeSeedEntries(), shouldFail: shouldFail)
+        CompactionStubBackend(
+            entries: CompactionStubBackend.makeSeedEntries(phraseRepeat: phraseRepeat),
+            shouldFail: shouldFail)
     }
 
     func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {

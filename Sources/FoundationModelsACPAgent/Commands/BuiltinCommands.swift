@@ -220,6 +220,12 @@ enum BuiltinCommands {
     /// token counts and the summarizer model. A caller-driven fold does not
     /// degrade, so a summarizer failure is reported honestly, not as success.
     ///
+    /// A fold can also leave the context as it was without an error: Router
+    /// reports that as a ``CompactionShortfall``, for example when the span to
+    /// summarize does not fit the window of any summarizer. That is not a
+    /// compaction, thus the report says so and names the reason, instead of
+    /// "Compacted" beside two equal token counts.
+    ///
     /// - Parameter context: The session context.
     /// - Returns: The report, or the failure.
     private static func compactReport(context: BuiltinCommandContext) async -> String {
@@ -228,6 +234,12 @@ enum BuiltinCommands {
         }
         do {
             let result = try await binding.session.compact()
+            if let shortfall = result.shortfall {
+                return """
+                    The session was not compacted: \(shortfallReason(shortfall))
+                    tokens: \(result.tokensBefore)
+                    """
+            }
             let model = result.summarizerModel ?? noSummarizerModel
             return """
                 Compacted the session.
@@ -237,6 +249,24 @@ enum BuiltinCommands {
                 """
         } catch {
             return "Compaction failed: \(error)"
+        }
+    }
+
+    /// The reason a fold left the context as it was, in words a user reads.
+    ///
+    /// - Parameter shortfall: The reason Router gave.
+    /// - Returns: One sentence.
+    static func shortfallReason(_ shortfall: CompactionShortfall) -> String {
+        switch shortfall {
+        case .targetLeavesNoRoomForSummary(let allowed):
+            return "the fold target leaves no room for a summary (\(allowed) tokens)."
+        case .inputFillsSummarizerWindow(let input, let window):
+            return
+                "the text to summarize (\(input) tokens) does not fit the window of any summarizer (\(window) tokens)."
+        case .summaryDidNotShrinkContext(let snapshot):
+            return "the summary did not make the context smaller (\(snapshot) tokens), so it was discarded."
+        @unknown default:
+            return "\(shortfall)."
         }
     }
 

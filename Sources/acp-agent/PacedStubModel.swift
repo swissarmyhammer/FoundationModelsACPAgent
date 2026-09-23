@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgent
 import FoundationModelsRouter
 
 // MARK: - The paced stub model (cli-plan.md §5.9, §9)
@@ -119,6 +120,9 @@ final class PacedEchoSessionBackend: LanguageModelSessionBackend {
 /// `makeSession(instructions:tools:)` drops `tools` and forwards to
 /// `makeSession(instructions:)`.
 struct PacedEchoLLMContainer: LoadedLLMContainer {
+    /// The counter of a model with no tokenizer: one token per character.
+    var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+
     /// The pause each session's backend puts between two chunks.
     let pause: Swift.Duration
 

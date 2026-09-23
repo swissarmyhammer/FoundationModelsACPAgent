@@ -514,7 +514,7 @@ import Testing
         GenerationStall(
             timeWithoutProgress: withoutProgress,
             timeInFlight: withoutProgress,
-            visibility: .fragments(observed: fragments))
+            visibility: .fragments(observed: fragments), lastProgress: .callStart)
     }
 
     /// A generation that has made no fragment for the whole bound ends

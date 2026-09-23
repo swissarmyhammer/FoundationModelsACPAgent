@@ -74,6 +74,9 @@ final class TranscriptStubBackend: LanguageModelSessionBackend, @unchecked Senda
 /// comment of `StubProfileFixtures.swift` states: the public default of
 /// `makeSession(instructions:tools:)` drops `tools`.
 struct TranscriptStubContainer: LoadedLLMContainer {
+    /// The counter of a model with no tokenizer: one token per character.
+    var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+
     func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
         TranscriptStubBackend()
     }

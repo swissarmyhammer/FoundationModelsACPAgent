@@ -70,11 +70,99 @@ public final class EchoSessionBackend: LanguageModelSessionBackend {
     }
 }
 
+/// The ``TokenCounter`` of a model that has no tokenizer: one token per
+/// `Character` of the text that the model reads.
+///
+/// Router asks each loaded container for a counter, and it counts every
+/// transcript, summary and tool output with it before a model call. The stub
+/// models and the scripted test models have no tokenizer, so this counter
+/// states its rule instead. The rule is the one of Router's own
+/// `CharacterTokenCounter`: a transcript counts the text of the
+/// instructions, the prompts and the responses, the name and the arguments of
+/// each tool call, and the text and the structure of each tool output. A
+/// reasoning entry is not replayed to the model, so it counts nothing.
+public struct CharacterCountTokenCounter: TokenCounter {
+    /// Creates the counter.
+    public init() {}
+
+    /// The number of `Character`s in `text`.
+    ///
+    /// - Parameter text: The text to count.
+    /// - Returns: The count.
+    public func count(_ text: String) -> Int {
+        text.count
+    }
+
+    /// The number of `Character`s in the content of each entry of
+    /// `transcript` that the model reads.
+    ///
+    /// - Parameter transcript: The transcript to count.
+    /// - Returns: The count.
+    public func count(_ transcript: Transcript) throws -> Int {
+        transcript.reduce(0) { $0 + Self.content(of: $1).count }
+    }
+
+    /// The first `limit` `Character`s of `text`.
+    ///
+    /// - Parameters:
+    ///   - text: The text to cut.
+    ///   - limit: The number of tokens to keep.
+    /// - Returns: The prefix, or the empty string for a limit of zero or below.
+    public func prefix(of text: String, tokens limit: Int) -> String {
+        guard limit > 0 else { return "" }
+        return String(text.prefix(limit))
+    }
+
+    /// The text that the model reads of `entry`.
+    ///
+    /// - Parameter entry: The entry to read.
+    /// - Returns: The content, or the empty string for an entry that the
+    ///   model does not read again.
+    static func content(of entry: Transcript.Entry) -> String {
+        switch entry {
+        case .instructions(let instructions):
+            return text(of: instructions.segments)
+        case .prompt(let prompt):
+            return text(of: prompt.segments)
+        case .response(let response):
+            return text(of: response.segments)
+        case .toolCalls(let calls):
+            return calls.map { $0.toolName + $0.arguments.jsonString }.joined()
+        case .toolOutput(let output):
+            return output.segments.map { segment -> String in
+                if case .text(let text) = segment { return text.content }
+                if case .structure(let structure) = segment { return structure.content.jsonString }
+                return ""
+            }.joined()
+        case .reasoning:
+            return ""
+        @unknown default:
+            return ""
+        }
+    }
+
+    /// The `.text` content of `segments`. A `.structure` segment of an
+    /// instructions, prompt or response entry is not read, so it counts
+    /// nothing.
+    ///
+    /// - Parameter segments: The segments to read.
+    /// - Returns: The joined text.
+    private static func text(of segments: [Transcript.Segment]) -> String {
+        segments.map { segment -> String in
+            if case .text(let text) = segment { return text.content }
+            return ""
+        }.joined()
+    }
+}
+
 /// A resident model that hands every session an ``EchoSessionBackend``.
 ///
 /// All four factories are written out. See the file comment: the public
 /// default of `makeSession(instructions:tools:)` drops `tools`.
 public struct EchoLLMContainer: LoadedLLMContainer {
+    /// The counter of a model with no tokenizer: one token per character.
+    public var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+
     /// Creates a container that vends ``EchoSessionBackend``.
     public init() {}
 
@@ -201,6 +289,21 @@ struct StubMachine: MachineProbe {
 /// The numbers match Multitool's stub fixture, which measured them as
 /// sufficient for the sizing pass.
 struct StubMetadata: MetadataSource {
+    /// The context window the stub model reports, in tokens.
+    ///
+    /// Router sizes a session from the window that the model's own metadata
+    /// states, and a profile that names no context takes it from there. The
+    /// stub model has no real metadata, thus it states one.
+    ///
+    /// It is 32,768 and not the old default of 8,192, because the stub
+    /// counter counts one token per character, about four times the count of
+    /// a real tokenizer. At 8,192 a scripted tool turn of about 7,800
+    /// characters filled the whole context, and Router's overflow recovery
+    /// ran the attempt a second time (measured on 2026-09-23 in the streamed
+    /// shell proof of `TierTwoTests`: two terminals, one scripted turn played
+    /// twice).
+    static let window = 32768
+
     /// Creates a metadata source of one tiny model.
     init() {}
 
@@ -209,7 +312,8 @@ struct StubMetadata: MetadataSource {
             configJSON: Data(
                 """
                 {"num_hidden_layers":2,"num_attention_heads":8,\
-                "num_key_value_heads":2,"head_dim":16,"hidden_size":128}
+                "num_key_value_heads":2,"head_dim":16,"hidden_size":128,\
+                "max_position_embeddings":\(Self.window)}
                 """.utf8),
             treeJSON: Data(
                 """

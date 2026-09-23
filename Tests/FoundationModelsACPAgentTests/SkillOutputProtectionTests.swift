@@ -18,6 +18,16 @@ import Testing
     /// The text the stub `notes` tool gives, an ordinary tool output.
     static let notesText = "NOTES: an ordinary tool output that compaction may elide."
 
+    /// The budget of the forced fold, in the tokens of the stub counter (one
+    /// token per character).
+    ///
+    /// The target must leave room for a summary beside the protected skill
+    /// bodies, or Router gives a shortfall and folds nothing; and it must be
+    /// under the size of the six turns, or there is nothing to fold.
+    /// Measured on 2026-09-23: a limit of 2,048 left -520 tokens for the
+    /// summary and 4,096 left -315, both shortfalls; 8,192 folds.
+    static let foldBudget = TokenBudget(limit: 8192, trigger: 0.1, target: 0.1)
+
     /// The arguments of the stub `skills` tool: the fused `op` and the id.
     @Generable
     struct SkillsArguments {
@@ -133,7 +143,10 @@ import Testing
             _ = try await session.respond(to: "turn \(turn)")
         }
 
-        let result = try await session.compact(budget: TokenBudget(limit: 64, trigger: 0.1, target: 0.1))
+        let result = try await session.compact(budget: Self.foldBudget)
+        // The fold must really fold: a shortfall leaves every output as it
+        // was, and the assertions below would then prove nothing.
+        #expect(result.shortfall == nil, "shortfall: \(String(describing: result.shortfall))")
         #expect(result.protectedTokens > 0)
 
         var skillOutputs: [String] = []

@@ -465,7 +465,7 @@ import Testing
         let stall = GenerationStall(
             timeWithoutProgress: .seconds(1),
             timeInFlight: .seconds(1),
-            visibility: .wholeAnswer)
+            visibility: .wholeAnswer, lastProgress: .callStart)
         let updates = await Self.drive([
             .toolInvocation(record),
             .discoveryPrimingFailed(.toolNotMounted(tool: "codemode")),

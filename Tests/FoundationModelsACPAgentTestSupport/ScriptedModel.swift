@@ -546,6 +546,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
 /// `makeSession(instructions:tools:)` DROPS `tools`, and a scripted
 /// tool call needs them.
 public struct ScriptedLLMContainer: LoadedLLMContainer {
+    /// The counter of a model with no tokenizer: one token per character.
+    public var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+
     /// The script every session plays.
     public let script: [ScriptedTurnStep]
 

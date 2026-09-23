@@ -108,6 +108,9 @@ final class ResumeStubBackend: LanguageModelSessionBackend {
 /// so a test asserts on what the restored model actually received —
 /// never on a property that merely holds a string.
 final class ResumeRecordingContainer: LoadedLLMContainer {
+    /// The counter of a model with no tokenizer: one token per character.
+    var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+
     /// The observations one container accumulates.
     private struct Observations {
         /// How many backends this container was asked for.

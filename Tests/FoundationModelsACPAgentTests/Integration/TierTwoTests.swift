@@ -169,14 +169,12 @@ import Testing
 
     /// The bound, in seconds, the snippet's own `wait` global takes.
     ///
-    /// The global demands a number, and this is the one number that is
-    /// not a guess: `ToolContext.deadlineSecondsCeiling` is the host's
-    /// own no-bound value. `SessionMailbox` caps every seconds-valued
-    /// deadline there, and `WaitTool` passes it for a call that names
-    /// none, so a wait under it ends when the run ends and never on a
-    /// clock of its own. The guard on a run that never ends is the
-    /// proof's own `.timeLimit`.
-    private static let snippetWaitSeconds = ToolContext.deadlineSecondsCeiling
+    /// The global demands a number, and the host honors it as given (Router
+    /// deleted its 24-hour clamp and the ceiling value with it). One hour is
+    /// far past the `.timeLimit` of every proof here, so a wait under it ends
+    /// when the run ends and never on a clock of its own. The guard on a run
+    /// that never ends is the proof's own `.timeLimit`.
+    private static let snippetWaitSeconds = 3600
 
     /// What a proof waits for when it needs the shell run's exit report.
     private static let terminalExitLabel = "the terminal exit report"
