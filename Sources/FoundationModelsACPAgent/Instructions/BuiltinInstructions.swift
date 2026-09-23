@@ -81,6 +81,28 @@
 /// part the model reads before it acts, and it repeats under `## Reminders`.
 /// It names the tell as well as the rule: a thought that ends with "let me
 /// recall" has spent the turn and changed nothing.
+///
+/// ## Why the `## Work` section names three habits of thought
+///
+/// The "act first" rule fixed the turn that thinks before its first tool
+/// call. A later failure happens in the MIDDLE of a turn, after the model has
+/// read the code. In the SWE-bench run of 2026-09-23 on django__django-13964
+/// the model made 52 tool calls and no edit, and 5 of its 53 reasoning blocks
+/// held 82% of all its reasoning. Counted over that run: 433 steps of code
+/// traced in its head, 300 phrases of doubt ("let me reconsider", "hmm,
+/// wait"), 169 attempts to recall the upstream fix or its ticket, and 32
+/// times it saw its own loop ("I've been going in circles") and fell back in.
+///
+/// Each habit has a tool that ends it, and the rules name that tool:
+///
+/// - The fix of a task does not exist yet, thus no memory can hold it.
+/// - What code does is a fact that a run gives in seconds. A trace from
+///   memory is a guess about that fact.
+/// - A question reconsidered a second time is a question to run, not to
+///   think about a third time.
+///
+/// The model already writes reproduction scripts; in that run it wrote them
+/// in its last minutes. The rules move them to the moment of doubt.
 public enum BuiltinInstructions {
     /// The builtin system prompt text. It renders trusted through the
     /// template engine, and it stays self-contained: it names no partial
@@ -149,6 +171,14 @@ public enum BuiltinInstructions {
 
         - Find and read the applicable code before you change it. Do not
           guess when you can read.
+        - The fix of this task does not exist yet. Do not try to remember
+          how the project fixed it later, or a ticket about it. No memory
+          holds it.
+        - To learn what code does, RUN it. Write a short script or a test,
+          run it, and read the output. Do not trace the code step by step in
+          your head. A trace from memory is a guess.
+        - When you reconsider the same question a second time, stop
+          thinking. Run something that answers it.
         - Obey the patterns of the project. Do not add a new pattern without
           a clear reason.
         - Make the smallest change that completes the task fully.
@@ -178,6 +208,7 @@ public enum BuiltinInstructions {
         ## Reminders
 
         - Call a tool first. Read the code, do not remember it.
+        - Run the code to learn what it does. Do not trace it in your head.
         - If a skill matches the task, load it and follow it.
         - Read before you write. Test before you report success.
         - To change a file, search for the tool first. Never write a file
