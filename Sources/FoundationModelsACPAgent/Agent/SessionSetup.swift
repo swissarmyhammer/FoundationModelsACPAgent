@@ -627,7 +627,10 @@ extension RoutedLLM {
         let context = contextTokens
         let trigger = compaction.trigger
         let target = compaction.target
-        sessionLogger.info(
+        // `notice`, not `info`: the unified log keeps `info` in memory only,
+        // thus an `info` line is gone by the time a reader of a long run
+        // looks for it.
+        sessionLogger.notice(
             "session budget: context=\(context, privacy: .public) trigger=\(trigger, privacy: .public) target=\(target, privacy: .public)"
         )
         return makeSession(
