@@ -18,22 +18,16 @@
 #   embedding. Only `searchCode` does, and with this key it answers with an
 #   error that says the embedding layer is off.
 #
-# `compaction.toolOutputLimit` caps each tool result at the tool-instancing
-# seam, before the model and before the transcript. It is the one cap that
-# works INSIDE a turn. One instance is one prompt, thus one turn, and the
-# automatic fold runs only at the start of a turn: a turn of 41 model rounds
-# never folds, however full the context gets.
-#
-# Measured on the run of 2026-09-21, instance django__django-13964: the
-# conversation reached about 225,000 tokens of the 262,144 window. The tool
-# results were 119,000 of them (162 results, the largest about 2,900 tokens)
-# and the reasoning was 99,000. The last round then ran into the ceiling in
-# one long reasoning block, the turn ended `_truncated`, and the patch was
-# empty. A cap of 1,500 tokens holds each result to about two screens of
-# text, and the marker tells the model that the result was cut.
-compaction:
-  toolOutputLimit: 1500
-
+# No `compaction.toolOutputLimit`. A cap on a tool result keeps the first N
+# tokens and drops the rest before the model reads it: a file read loses its
+# end, a grep its later matches, a test run its failure summary. It is not
+# compaction, which must shrink OLD results after they have done their job.
+# The run of 2026-09-23 used a cap of 1,500 tokens: django__django-13964 got
+# a patch where it had none, but by the spacing of the results, not by
+# design. It took 67 rounds against 41, and the cap cut the grepCode answer
+# under study. A model that loses the end of a result must ask for it again.
+# The real fix is a fold at each append, in Router (cards ^9ddjkjm,
+# ^46bz58k).
 tools:
   skills:
     marketplaces:
