@@ -252,7 +252,7 @@ struct MultiRootConfinementTests {
         var fixture = try await Self.makeFixture(
             label: "transcripts", additionalRoots: [additionalRoot])
 
-        try await fixture.runTurn("one recorded turn")
+        try await fixture.runPrompt("one recorded turn")
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: fixture.recordingRoot,
             sessionId: fixture.fixture.sessionId,
@@ -279,7 +279,7 @@ struct MultiRootConfinementTests {
         var fixture = try await Self.makeFixture(
             label: "list", additionalRoots: [firstRoot, secondRoot])
 
-        try await fixture.runTurn("write the index record")
+        try await fixture.runPrompt("write the index record")
         let cwd = AbsolutePath(rawValue: fixture.fixture.cwd.path)
         let response = try await fixture.fixture.harness.connection.listSessions(
             ListSessionsRequest(cwd: cwd))

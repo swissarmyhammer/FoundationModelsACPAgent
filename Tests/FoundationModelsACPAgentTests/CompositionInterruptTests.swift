@@ -156,7 +156,7 @@ struct CompositionInterruptTests {
             composedBy: parked.compose)
 
         #expect(result.stopReason == .cancelled)
-        #expect(AgentExitCode(turn: result) == .cancelled)
+        #expect(AgentExitCode(prompt: result) == .cancelled)
     }
 
     /// The download the interrupt stopped leaves its part file in the cache,

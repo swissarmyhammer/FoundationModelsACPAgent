@@ -22,9 +22,9 @@ import FoundationModelsExtras
 /// CLI's table, where `--timeout` exists.
 ///
 /// The reason of a nonzero exit goes to stderr and never to stdout:
-/// stdout carries the answer bytes of the turn, and nothing else (§5.6).
+/// stdout carries the answer bytes of the prompt, and nothing else (§5.6).
 enum AgentExitCode: Int32, CaseIterable, Sendable {
-    /// The turn ended on `end_turn`, or a reporting subcommand ran.
+    /// The prompt ended on `end_turn`, or a reporting subcommand ran.
     case success = 0
 
     /// An error: configuration, spawn, protocol, or I/O. `doctor` found
@@ -36,10 +36,10 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
     /// ``AcpAgentCommand/exitOutcome(for:)`` maps it here.
     case usage = 2
 
-    /// The turn ended on `refusal`.
+    /// The prompt ended on `refusal`.
     case refusal = 3
 
-    /// The turn ended on `cancelled`, which is what a `Ctrl-C` gives
+    /// The prompt ended on `cancelled`, which is what a `Ctrl-C` gives
     /// (§5.9).
     case cancelled = 4
 
@@ -57,7 +57,7 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
         ExitCode(rawValue)
     }
 
-    /// The exit code of a turn that ended on `stopReason`.
+    /// The exit code of a prompt that ended on `stopReason`.
     ///
     /// **The switch is total, and it declares no `default`.** A
     /// `default` arm would answer every case the wire gains later, so a
@@ -67,7 +67,7 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
     /// reason. That is why the mapping is a switch and not a lookup: a
     /// lookup compiles clean and answers nothing at run time.
     ///
-    /// - Parameter stopReason: The stop reason the turn ended on.
+    /// - Parameter stopReason: The stop reason the prompt ended on.
     init(stopReason: StopReason) {
         self = switch stopReason {
         case .endTurn: .success
@@ -100,14 +100,14 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
         }
     }
 
-    /// The exit code of a finished `run` turn.
+    /// The exit code of a finished `run` prompt.
     ///
-    /// A turn with no stop reason exits ``error``: the wire ended before
-    /// an idle update arrived, so the turn has no outcome to report, and
+    /// A prompt with no stop reason exits ``error``: the wire ended before
+    /// an idle update arrived, so the prompt has no outcome to report, and
     /// a script must not read that as a finished answer.
     ///
-    /// - Parameter result: The finished turn.
-    init(turn result: RunTurnResult) {
+    /// - Parameter result: The finished prompt.
+    init(prompt result: RunPromptResult) {
         guard let stopReason = result.stopReason else {
             self = .error
             return

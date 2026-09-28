@@ -7,7 +7,7 @@ import FoundationModelsRouter
 
 // MARK: - The shared CLI composition fixture (cli-plan.md §4, §5.10)
 //
-// `RunCommandTests` and `InterruptTests` both drive `RunTurn` against an
+// `RunCommandTests` and `InterruptTests` both drive `RunPrompt` against an
 // `AgentComposition.Composed` whose model is scripted. The construction
 // is the same for both — a stub agent under the CLI's own dotfolder
 // name, with every root in a throwaway directory — so it stands here

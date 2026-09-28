@@ -128,13 +128,13 @@ struct ExitCodeTests {
                 ScriptedInterruptWatch.armed(
                     waitingFor: arrivalOrderLabel, after: capture.holds($0))
             } ?? InterruptHandler.unwatched
-        let result = try await RunTurn.answer(
+        let result = try await RunPrompt.answer(
             of: composed,
             in: .new(workingDirectory: workspace),
             prompt: promptText,
             into: capture.writer,
             interruptedBy: install)
-        return AgentExitCode(turn: result)
+        return AgentExitCode(prompt: result)
     }
 
     /// The arms of the stop-reason switch, read out of the shipped
@@ -212,7 +212,7 @@ struct ExitCodeTests {
     /// turn has no outcome to report, and a script must not read that as
     /// a finished answer.
     @Test func aTurnWithNoStopReasonExitsError() {
-        #expect(AgentExitCode(turn: RunTurnResult(stopReason: nil)) == .error)
+        #expect(AgentExitCode(prompt: RunPromptResult(stopReason: nil)) == .error)
     }
 
     // MARK: - The rows a failure decides

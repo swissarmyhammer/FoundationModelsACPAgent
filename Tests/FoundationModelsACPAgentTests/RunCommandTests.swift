@@ -127,7 +127,7 @@ struct RunCommandTests {
             script: [.textDelta(Self.scriptedAnswer), .endTurn], label: "RunCommandTests-turn")
         let capture = try AnswerCapture(label: "RunCommandTests-turn-answer")
 
-        let result = try await RunTurn.answer(
+        let result = try await RunPrompt.answer(
             of: composed,
             in: .new(workingDirectory: workspace),
             prompt: Self.promptText,
@@ -150,7 +150,7 @@ struct RunCommandTests {
             label: "RunCommandTests-bytes")
         let capture = try AnswerCapture(label: "RunCommandTests-bytes-answer")
 
-        _ = try await RunTurn.answer(
+        _ = try await RunPrompt.answer(
             of: composed,
             in: .new(workingDirectory: workspace),
             prompt: Self.promptText,
@@ -184,7 +184,7 @@ struct RunCommandTests {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-resume-repo")
         let composed = try await Self.resumableComposition(label: "RunCommandTests-resume")
         let first = try AnswerCapture(label: "RunCommandTests-resume-first")
-        _ = try await RunTurn.answer(
+        _ = try await RunPrompt.answer(
             of: composed,
             in: .new(workingDirectory: workspace),
             prompt: Self.promptText,
@@ -192,7 +192,7 @@ struct RunCommandTests {
         let opened = try await Self.oneSessionId(of: composed)
         let capture = try AnswerCapture(label: "RunCommandTests-resume-second")
 
-        let result = try await RunTurn.answer(
+        let result = try await RunPrompt.answer(
             of: composed,
             in: .resumed(opened),
             prompt: Self.resumedPromptText,
@@ -214,7 +214,7 @@ struct RunCommandTests {
         let capture = try AnswerCapture(label: "RunCommandTests-unlisted-answer")
 
         await #expect(throws: UnknownResumedSessionError.self) {
-            _ = try await RunTurn.answer(
+            _ = try await RunPrompt.answer(
                 of: composed,
                 in: .resumed(unlisted),
                 prompt: Self.promptText,

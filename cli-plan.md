@@ -111,7 +111,7 @@ a `Pipe` and asserts zero bytes.
 ### 5.3 The subcommands
 
 ```
-acp-agent run <prompt>       Run one turn. Print the answer. This is the default.
+acp-agent run <prompt>       Run one prompt. Print the answer. This is the default.
 acp-agent acp                Serve ACP on stdin and stdout.
 acp-agent config show        Print the merged configuration, and where each value came from.
 acp-agent config init        Write a config.yaml with every key at its default.

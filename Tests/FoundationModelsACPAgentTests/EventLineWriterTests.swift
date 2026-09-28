@@ -184,7 +184,7 @@ struct EventLineWriterTests {
         let answer = try AnswerCapture(label: "\(label)-answer")
         let capture = TerminalCapture()
 
-        _ = try await RunTurn.answer(
+        _ = try await RunPrompt.answer(
             of: composed,
             in: .new(workingDirectory: workspace),
             prompt: promptText,

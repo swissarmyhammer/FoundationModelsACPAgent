@@ -5,31 +5,31 @@ import FoundationModelsACP
 import FoundationModelsRouter
 
 extension AcpAgentCommand {
-    /// `acp-agent run <prompt>`: run one turn, and print the answer
+    /// `acp-agent run <prompt>`: run one prompt, and print the answer
     /// (cli-plan.md §5.3). The default subcommand, so a bare prompt
     /// selects it; `run` written out is the script form, which no prompt
     /// word can surprise.
     ///
     /// The CLI reaches the agent through an ACP connection, and only the
-    /// transport changes between the modes (§4). By default the turn runs
-    /// in this process over `InMemoryTransport.pair()`, which ``RunTurn``
+    /// transport changes between the modes (§4). By default the prompt runs
+    /// in this process over `InMemoryTransport.pair()`, which ``RunPrompt``
     /// holds; with `--out-of-process` it runs over the stdio of a second
-    /// copy of this binary, which ``OutOfProcessTurn`` holds.
+    /// copy of this binary, which ``OutOfProcessPrompt`` holds.
     ///
     /// The options are the whole §5.4 surface, so the parse is final.
     /// `--verbose` and `--quiet` select the verbosity of stderr (§5.7),
     /// which ``EventLineWriter`` and the download bar each read.
-    /// `--out-of-process` selects ``OutOfProcessTurn`` in place of
-    /// ``RunTurn``, which is the only difference the flag makes.
+    /// `--out-of-process` selects ``OutOfProcessPrompt`` in place of
+    /// ``RunPrompt``, which is the only difference the flag makes.
     struct Run: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "run",
-            abstract: "Run one turn, and print the answer. This is the default.")
+            abstract: "Run one prompt, and print the answer. This is the default.")
 
-        /// The prompt of the turn (§5.5): the argument when one is given,
+        /// The text of the prompt (§5.5): the argument when one is given,
         /// stdin when the argument is `-` or absent on a pipe.
         @Argument(
-            help: "The prompt of the one turn. `-` reads stdin, and so does no prompt on a piped stdin.")
+            help: "The text of the one prompt. `-` reads stdin, and so does no prompt on a piped stdin.")
         var prompt: String?
 
         /// The `--cwd` option (§5.4, §5.10). It roots the dotfolder stack
@@ -48,7 +48,7 @@ extension AcpAgentCommand {
             help: "Continue an existing session with session/load. Default: a new session.")
         var resumeSessionId: String?
 
-        /// Whether a second copy of this binary serves the turn in `acp`
+        /// Whether a second copy of this binary serves the prompt in `acp`
         /// mode over stdio (§5.4), which tests the wire path.
         @Flag(
             name: .customLong("out-of-process"),
@@ -83,7 +83,7 @@ extension AcpAgentCommand {
         /// The writer the session event lines go to: the process standard
         /// error, at the verbosity the flags select.
         ///
-        /// stderr, and never stdout: the answer of the turn owns file
+        /// stderr, and never stdout: the answer of the prompt owns file
         /// descriptor 1 (§5.6), and an event line is decoration beside it.
         var eventLineWriter: EventLineWriter {
             EventLineWriter(destination: .standardError, verbosity: eventVerbosity)
@@ -103,7 +103,7 @@ extension AcpAgentCommand {
                     isTerminal: isatty(STDERR_FILENO) == 1 && eventVerbosity.drawsProgress))
         }
 
-        /// Runs the one turn, and ends the process on the row of the
+        /// Runs the one prompt, and ends the process on the row of the
         /// §5.8 table the stop reason names (``AgentExitCode``).
         ///
         /// A `success` row returns instead of throwing, which is how
@@ -115,13 +115,13 @@ extension AcpAgentCommand {
                 reporting: eventLineWriter,
                 drawing: progressReporter,
                 interruptedBy: InterruptHandler.onSIGINT)
-            let code = AgentExitCode(turn: result)
+            let code = AgentExitCode(prompt: result)
             guard code == .success else {
                 throw code.parserError
             }
         }
 
-        /// Runs the one turn: the prompt by the §5.5 table, and the
+        /// Runs the one prompt: the text by the §5.5 table, and the
         /// answer to `writer` chunk by chunk as it arrives (§5.6).
         ///
         /// stdout carries the answer bytes and nothing else. Not a
@@ -137,7 +137,7 @@ extension AcpAgentCommand {
         ///   - events: The writer the session event lines go to (§5.7).
         ///     `run()` gives the one over standard error, at the verbosity
         ///     the flags select; the default writes nothing.
-        ///   - install: How the composition window and the turn get their
+        ///   - install: How the composition window and the prompt get their
         ///     `Ctrl-C` watch. `run()` gives the real `SIGINT` watch; the
         ///     default watches nothing, so no suite arms a process-wide
         ///     signal. The two windows are armed one after the other and
@@ -148,9 +148,9 @@ extension AcpAgentCommand {
         ///     standard error. The out-of-process mode ignores it: the
         ///     child composes its own agent, and this process holds no
         ///     progress object to read.
-        /// - Returns: The stop reason of the turn.
+        /// - Returns: The stop reason of the prompt.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
-        ///   table, and whatever the composition, the turn or the writer
+        ///   table, and whatever the composition, the prompt or the writer
         ///   throws.
         func perform(
             environment: [String: String],
@@ -158,7 +158,7 @@ extension AcpAgentCommand {
             reporting events: EventLineWriter = .silent,
             drawing progress: ProgressReporter = .silent,
             interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
-        ) async throws -> RunTurnResult {
+        ) async throws -> RunPromptResult {
             guard outOfProcess else {
                 // The progress object is made HERE, before the composition:
                 // the whole resolution stands inside the construction of
@@ -180,7 +180,7 @@ extension AcpAgentCommand {
                 into: writer, reporting: events, interruptedBy: install)
         }
 
-        /// Runs the one turn over a second copy of this binary, started in
+        /// Runs the one prompt over a second copy of this binary, started in
         /// `acp` mode and spoken to over its stdio (§5.4).
         ///
         /// This process composes NO agent: the child composes its own, from
@@ -193,39 +193,39 @@ extension AcpAgentCommand {
         ///   - events: The writer the session event lines go to (§5.7).
         ///   - install: How the two windows of §5.9 get their `Ctrl-C`
         ///     watch.
-        /// - Returns: The stop reason of the turn.
+        /// - Returns: The stop reason of the prompt.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
         ///   table, ``OwnExecutableUnknownError`` when this binary cannot be
-        ///   named, and whatever the spawn, the turn or the writer throws.
+        ///   named, and whatever the spawn, the prompt or the writer throws.
         func performOutOfProcess(
             into writer: AnswerWriter,
             reporting events: EventLineWriter,
             interruptedBy install: InterruptHandler.Installer
-        ) async throws -> RunTurnResult {
+        ) async throws -> RunPromptResult {
             let text = try promptSource.text()
-            return try await OutOfProcessTurn.answer(
-                command: try OutOfProcessTurn.ownExecutablePath(),
+            return try await OutOfProcessPrompt.answer(
+                command: try OutOfProcessPrompt.ownExecutablePath(),
                 in: session, prompt: text, into: writer,
                 reporting: events, interruptedBy: install)
         }
 
-        /// Runs the one turn over a supplied composition.
+        /// Runs the one prompt over a supplied composition.
         ///
         /// The composition is a parameter for the same reason the watch is:
         /// `run()` gives the real one, and a test gives one it can hold open
         /// long enough for a scripted `Ctrl-C` to reach it.
         ///
         /// - Parameters:
-        ///   - environment: The environment the turn reads.
+        ///   - environment: The environment the run reads.
         ///   - writer: The writer the answer goes to.
         ///   - events: The writer the session event lines go to (§5.7).
-        ///   - install: How the composition window and the turn get their
+        ///   - install: How the composition window and the prompt get their
         ///     `Ctrl-C` watch.
         ///   - compose: The composition work to run under the first watch.
-        /// - Returns: The stop reason of the turn, or the `cancelled` stop
+        /// - Returns: The stop reason of the prompt, or the `cancelled` stop
         ///   reason when the first `Ctrl-C` stopped the composition.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
-        ///   table, and whatever the composition, the turn or the writer
+        ///   table, and whatever the composition, the prompt or the writer
         ///   throws.
         func perform(
             environment: [String: String],
@@ -233,7 +233,7 @@ extension AcpAgentCommand {
             reporting events: EventLineWriter = .silent,
             interruptedBy install: InterruptHandler.Installer,
             composedBy compose: @escaping @Sendable () async throws -> AgentComposition.Composed
-        ) async throws -> RunTurnResult {
+        ) async throws -> RunPromptResult {
             let text = try promptSource.text()
             let composed: AgentComposition.Composed
             do {
@@ -244,9 +244,9 @@ extension AcpAgentCommand {
                 // send and no answer text to keep. The run reports the
                 // `cancelled` stop reason, and `run()` turns that into exit 4
                 // (§5.8, §5.9).
-                return RunTurnResult(stopReason: .cancelled)
+                return RunPromptResult(stopReason: .cancelled)
             }
-            return try await RunTurn.answer(
+            return try await RunPrompt.answer(
                 of: composed, in: session, prompt: text, into: writer,
                 reporting: events, interruptedBy: install)
         }
@@ -279,7 +279,7 @@ extension AcpAgentCommand {
                 reporting: progress)
         }
 
-        /// The session the turn runs in: the recorded one when `--resume`
+        /// The session the prompt runs in: the recorded one when `--resume`
         /// names it, and otherwise a fresh session in `--cwd`.
         var session: RunSession {
             guard let resumeSessionId else {

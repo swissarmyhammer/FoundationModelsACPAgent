@@ -107,7 +107,7 @@ struct InterruptTests {
             script: [.textDelta(Self.arrivedText), .hold], label: "InterruptTests-first")
         let capture = try AnswerCapture(label: "InterruptTests-first-answer")
 
-        let result = try await RunTurn.answer(
+        let result = try await RunPrompt.answer(
             of: composed,
             in: .new(workingDirectory: workspace),
             prompt: Self.promptText,
@@ -138,7 +138,7 @@ struct InterruptTests {
         }
         try await ScriptedTurnFixture.waitForRunning(fixture.collector)
 
-        await RunTurn.react(
+        await RunPrompt.react(
             to: Self.oneArrival(),
             cancelling: fixture.sessionId,
             over: fixture.harness.connection)
@@ -157,13 +157,13 @@ struct InterruptTests {
 
     /// A cancelled turn exits 4.
     @Test func aCancelledTurnExitsFour() {
-        #expect(AgentExitCode(turn: RunTurnResult(stopReason: .cancelled)) == .cancelled)
+        #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .cancelled)) == .cancelled)
     }
 
     /// A turn that ran to its end exits 0, so the interrupt code never
     /// leaks into an ordinary run.
     @Test func aFinishedTurnDoesNotExitFour() {
-        #expect(AgentExitCode(turn: RunTurnResult(stopReason: .endTurn)) == .success)
+        #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .endTurn)) == .success)
     }
 
     // MARK: - The handler is async-signal-safe (cli-plan.md §5.9)

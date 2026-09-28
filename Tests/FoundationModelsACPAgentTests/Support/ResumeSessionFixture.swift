@@ -202,7 +202,7 @@ struct ResumeSessionFixture {
     let container: ResumeRecordingContainer
 
     /// The number of idle updates the fixture has waited for so far.
-    /// Each ``runTurn(_:)`` waits for one more.
+    /// Each ``runPrompt(_:)`` waits for one more.
     private var completedTurnCount = 0
 
     /// The default project recording root of the fixture's cwd:
@@ -260,7 +260,7 @@ struct ResumeSessionFixture {
     ///
     /// - Parameter text: The prompt text.
     /// - Throws: Whatever the wire call or the waits throw.
-    mutating func runTurn(_ text: String) async throws {
+    mutating func runPrompt(_ text: String) async throws {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
         completedTurnCount += 1

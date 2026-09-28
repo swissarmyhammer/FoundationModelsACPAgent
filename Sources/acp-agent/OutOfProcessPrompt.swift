@@ -17,13 +17,13 @@ struct OwnExecutableUnknownError: Error, CustomStringConvertible {
     }
 }
 
-/// One `run` turn over a real pipe: a second copy of this binary in `acp`
+/// One `run` prompt over a real pipe: a second copy of this binary in `acp`
 /// mode, spoken to over its stdio (cli-plan.md §5.4).
 ///
-/// **Only the transport changes.** ``RunTurn`` pairs two in-process ends,
+/// **Only the transport changes.** ``RunPrompt`` pairs two in-process ends,
 /// and this file spawns a child and takes the pipe the client package
 /// hands back. Everything after the wire is open is the same code — the
-/// same handshake, the same turn — so the two modes cannot answer one
+/// same handshake, the same prompt — so the two modes cannot answer one
 /// prompt differently. That is the claim `--out-of-process` exists to
 /// test, and the tier-3 suite reads it byte for byte.
 ///
@@ -40,7 +40,7 @@ struct OwnExecutableUnknownError: Error, CustomStringConvertible {
 /// process group of its own and group-kills and reaps it on `shutdown()`,
 /// which stands on the success path, the failing path and the interrupted
 /// path alike.
-enum OutOfProcessTurn {
+enum OutOfProcessPrompt {
     /// The subcommand the spawned copy runs. Bare `acp-agent` is `run`,
     /// which would read the inherited stdin as a prompt, so the spawn names
     /// this one (cli-plan.md §5.3).
@@ -81,13 +81,13 @@ enum OutOfProcessTurn {
         return executable.path
     }
 
-    /// Starts a second copy of `command` in `acp` mode, runs one turn over
+    /// Starts a second copy of `command` in `acp` mode, runs one prompt over
     /// its stdio, and reaps it.
     ///
     /// - Parameters:
     ///   - command: The absolute path of the binary to start.
-    ///   - session: The session the turn runs in.
-    ///   - prompt: The text of the one turn.
+    ///   - session: The session the prompt runs in.
+    ///   - prompt: The text of the one prompt.
     ///   - writer: The writer each `agent_message_chunk` goes to, as it
     ///     arrives (cli-plan.md §5.6).
     ///   - events: The writer each session event goes to, one line each
@@ -95,7 +95,7 @@ enum OutOfProcessTurn {
     ///   - install: How the two windows of §5.9 get their `Ctrl-C` watch.
     ///     The default watches nothing, so a caller that says nothing about
     ///     interrupts arms no signal.
-    /// - Returns: The stop reason of the turn, or the `cancelled` stop
+    /// - Returns: The stop reason of the prompt, or the `cancelled` stop
     ///   reason when the first `Ctrl-C` stopped the child's composition.
     /// - Throws: `AgentProcessError` when the spawn fails, and whatever the
     ///   handshake, the session call, the prompt or the writer throws.
@@ -106,17 +106,17 @@ enum OutOfProcessTurn {
         into writer: AnswerWriter,
         reporting events: EventLineWriter = .silent,
         interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
-    ) async throws -> RunTurnResult {
+    ) async throws -> RunPromptResult {
         let agent = try AgentProcess(command: command, arguments: [acpSubcommand])
         let client = await SwiftUIACPClient()
-        // `.disabled` and never stdout: the answer of the turn owns file
+        // `.disabled` and never stdout: the answer of the prompt owns file
         // descriptor 1 (§5.6). The child writes its own diagnostics to the
         // stderr it inherits.
         let connection = await client.connect(over: agent.transport)
         // Swift has no asynchronous `defer`, and the child must be reaped
         // on the failing path as well, so the outcome is held here and
         // rethrown after the teardown.
-        let outcome: Result<RunTurnResult, any Error>
+        let outcome: Result<RunPromptResult, any Error>
         do {
             outcome = .success(
                 try await drive(
@@ -130,18 +130,18 @@ enum OutOfProcessTurn {
         return try outcome.get()
     }
 
-    /// Drives the turn over the open pipe: the handshake under the
-    /// composition watch, then the turn under its own.
+    /// Drives the prompt over the open pipe: the handshake under the
+    /// composition watch, then the prompt under its own.
     ///
     /// - Parameters:
     ///   - connection: The client end of the pipe.
     ///   - agent: The spawned child, which the composition watch reaps.
-    ///   - session: The session the turn runs in.
-    ///   - prompt: The text of the one turn.
+    ///   - session: The session the prompt runs in.
+    ///   - prompt: The text of the one prompt.
     ///   - writer: The writer each chunk goes to.
     ///   - events: The writer each session event goes to, one line each.
     ///   - install: How the two windows get their `Ctrl-C` watch.
-    /// - Returns: The stop reason of the turn, or `cancelled` when the
+    /// - Returns: The stop reason of the prompt, or `cancelled` when the
     ///   first `Ctrl-C` stopped the child's composition.
     /// - Throws: Whatever the handshake, the session call, the prompt or
     ///   the writer throws.
@@ -153,15 +153,15 @@ enum OutOfProcessTurn {
         into writer: AnswerWriter,
         reporting events: EventLineWriter,
         interruptedBy install: InterruptHandler.Installer
-    ) async throws -> RunTurnResult {
+    ) async throws -> RunPromptResult {
         guard try await shakeHands(over: connection, with: agent, interruptedBy: install) else {
             // The child is gone and no session was ever opened, so there is
             // no `session/cancel` to send and no answer text to keep. The
             // run reports the `cancelled` stop reason, and `run()` turns
             // that into exit 4 (§5.8, §5.9).
-            return RunTurnResult(stopReason: .cancelled)
+            return RunPromptResult(stopReason: .cancelled)
         }
-        return try await RunTurn.turn(
+        return try await RunPrompt.send(
             over: connection, in: session, prompt: prompt, into: writer,
             reporting: events, interruptedBy: install)
     }
@@ -208,7 +208,7 @@ enum OutOfProcessTurn {
             watching.cancel()
         }
         do {
-            try await RunTurn.handshake(over: connection)
+            try await RunPrompt.handshake(over: connection)
         } catch {
             guard interrupted.isRaised else {
                 throw error

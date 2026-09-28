@@ -90,7 +90,7 @@ subcommand, so `acp-agent "write a haiku"` runs a turn.
 
 | Command | What it does |
 |---|---|
-| `acp-agent run` | Run one turn, and print the answer. This is the default. |
+| `acp-agent run` | Run one prompt, and print the answer. This is the default. |
 | `acp-agent acp` | Serve ACP on stdin and stdout. |
 | `acp-agent config show` | Print the merged configuration, and where each value came from. |
 | `acp-agent config init` | Write a `config.yaml` with every key at its default. |

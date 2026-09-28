@@ -55,7 +55,7 @@ private final class InterruptState: Sendable {
 /// **The watch stands for two windows, one after the other.**
 /// ``InterruptibleComposition`` arms it for the composition — the
 /// configuration load, the model download and the model load — and
-/// disarms it once the composition is done. ``RunTurn`` then arms it
+/// disarms it once the composition is done. ``RunPrompt`` then arms it
 /// again for the turn and disarms it when the turn settles. The two
 /// never overlap, so `SIGINT` has exactly one watcher at any moment.
 ///

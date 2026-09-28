@@ -182,7 +182,7 @@ struct SessionLifecycleTests {
     func afterCloseResumeStillWorks() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionLifecycleTests-resume")
         let root = try resume.recordingRoot
-        try await resume.runTurn("first")
+        try await resume.runPrompt("first")
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
         let transcriptDirectory = try #require(
@@ -209,7 +209,7 @@ struct SessionLifecycleTests {
     func deleteRemovesTheDirectoryAndTheIndexLineAndResumeThenFails() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionLifecycleTests-delete")
         let root = try resume.recordingRoot
-        try await resume.runTurn("first")
+        try await resume.runPrompt("first")
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
         let transcriptDirectory = try #require(

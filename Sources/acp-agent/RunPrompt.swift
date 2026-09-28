@@ -2,7 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPClient
 
-/// Which session one `run` turn speaks to (cli-plan.md §5.4).
+/// Which session one `run` prompt speaks to (cli-plan.md §5.4).
 enum RunSession {
     /// A fresh session, opened with `session/new` in this directory.
     /// `--cwd` names the directory, and the process working directory is
@@ -14,13 +14,13 @@ enum RunSession {
     case resumed(SessionId)
 }
 
-/// What one `run` turn gave back.
+/// What one `run` prompt gave back.
 ///
 /// The answer itself is not here. It went to the ``AnswerWriter`` chunk
-/// by chunk while the turn ran (cli-plan.md §5.6), so the text has one
+/// by chunk while the prompt ran (cli-plan.md §5.6), so the text has one
 /// path and no second copy.
-struct RunTurnResult {
-    /// The stop reason the turn ended on, or `nil` when the wire ended
+struct RunPromptResult {
+    /// The stop reason the prompt ended on, or `nil` when the wire ended
     /// before an idle update arrived.
     let stopReason: StopReason?
 }
@@ -38,7 +38,7 @@ struct UnknownResumedSessionError: Error, CustomStringConvertible {
     }
 }
 
-/// One `run` turn, in one process, over `InMemoryTransport.pair()`
+/// One `run` prompt, in one process, over `InMemoryTransport.pair()`
 /// (cli-plan.md §4, §5.4, plan.md §19).
 ///
 /// **The one architecture rule.** The CLI reaches the agent through an
@@ -54,15 +54,15 @@ struct UnknownResumedSessionError: Error, CustomStringConvertible {
 ///
 /// The drive over the open wire is two steps, and each is its own entry
 /// point here because `--out-of-process` arms a `Ctrl-C` watch between
-/// them (``OutOfProcessTurn``). ``handshake(over:)`` is `initialize`, and
-/// ``turn(over:in:prompt:into:reporting:interruptedBy:)`` is everything
+/// them (``OutOfProcessPrompt``). ``handshake(over:)`` is `initialize`, and
+/// ``send(over:in:prompt:into:reporting:interruptedBy:)`` is everything
 /// after it. Both modes call the same two, so the two cannot drift apart.
-enum RunTurn {
+enum RunPrompt {
     /// The client name `initialize` reports to the agent. One binary
     /// stands on both ends of the pair, so the name is the binary's.
     private static let clientName = "acp-agent"
 
-    /// Runs one turn against `composed`, and writes what it said.
+    /// Runs one prompt against `composed`, and writes what it said.
     ///
     /// The drive is the protocol's own: `initialize`, then `session/new`
     /// or `session/load`, then `session/prompt`, then the notifications
@@ -70,17 +70,17 @@ enum RunTurn {
     ///
     /// - Parameters:
     ///   - composed: The composition whose agent serves the agent end.
-    ///   - session: The session the turn runs in.
-    ///   - prompt: The text of the one turn.
+    ///   - session: The session the prompt runs in.
+    ///   - prompt: The text of the one prompt.
     ///   - writer: The writer each `agent_message_chunk` goes to, as it
     ///     arrives (cli-plan.md §5.6).
     ///   - events: The writer each session event goes to, one line each
     ///     (cli-plan.md §5.7). The default writes nothing, so a caller
     ///     that says nothing about the event lines writes none.
-    ///   - install: How the turn gets its `Ctrl-C` watch. The default
+    ///   - install: How the prompt gets its `Ctrl-C` watch. The default
     ///     watches nothing, so a caller that says nothing about
     ///     interrupts arms no signal.
-    /// - Returns: The stop reason of the turn.
+    /// - Returns: The stop reason of the prompt.
     /// - Throws: ``UnknownResumedSessionError`` when a resumed id is in no
     ///   listing, ``AnswerWriteError`` when a chunk cannot be written,
     ///   and whatever the handshake, the session call or the prompt
@@ -92,7 +92,7 @@ enum RunTurn {
         into writer: AnswerWriter,
         reporting events: EventLineWriter = .silent,
         interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
-    ) async throws -> RunTurnResult {
+    ) async throws -> RunPromptResult {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agentConnection = await composed.serve(over: agentEnd)
         let client = await SwiftUIACPClient()
@@ -100,11 +100,11 @@ enum RunTurn {
         // Swift has no asynchronous `defer`, and the wire must come down
         // on the failing path as well, so the outcome is held here and
         // rethrown after the teardown.
-        let outcome: Result<RunTurnResult, any Error>
+        let outcome: Result<RunPromptResult, any Error>
         do {
             try await handshake(over: connection)
             outcome = .success(
-                try await turn(
+                try await send(
                     over: connection, in: session, prompt: prompt, into: writer,
                     reporting: events, interruptedBy: install))
         } catch {
@@ -124,7 +124,7 @@ enum RunTurn {
     /// construction: the spawned binary resolves its profile before it
     /// answers, so a model download stands inside this one `await`. That
     /// is why the handshake is a step of its own, and why
-    /// ``OutOfProcessTurn`` arms a watch around it.
+    /// ``OutOfProcessPrompt`` arms a watch around it.
     ///
     /// - Parameter connection: The client end of the wire.
     /// - Throws: Whatever the handshake throws.
@@ -136,27 +136,28 @@ enum RunTurn {
                 capabilities: ACPClient.advertisedCapabilities))
     }
 
-    /// Drives the turn over an already handshaken `connection`: the
-    /// session, the prompt, and the updates until the turn goes idle.
+    /// Sends the prompt over an already handshaken `connection`: the
+    /// session, the prompt request, and the updates until the prompt goes
+    /// idle.
     ///
     /// - Parameters:
     ///   - connection: The client end of the wire.
-    ///   - session: The session the turn runs in.
-    ///   - prompt: The text of the one turn.
+    ///   - session: The session the prompt runs in.
+    ///   - prompt: The text of the one prompt.
     ///   - writer: The writer each `agent_message_chunk` goes to.
     ///   - events: The writer each session event goes to, one line each.
-    ///   - install: How the turn gets its `Ctrl-C` watch.
-    /// - Returns: The stop reason of the turn.
+    ///   - install: How the prompt gets its `Ctrl-C` watch.
+    /// - Returns: The stop reason of the prompt.
     /// - Throws: Whatever the session call, the prompt or the writer
     ///   throws.
-    static func turn(
+    static func send(
         over connection: ClientSideConnection,
         in session: RunSession,
         prompt: String,
         into writer: AnswerWriter,
         reporting events: EventLineWriter,
         interruptedBy install: InterruptHandler.Installer
-    ) async throws -> RunTurnResult {
+    ) async throws -> RunPromptResult {
         let sessionId = try await open(session, over: connection)
         // Subscribe before the prompt: an update with no subscriber is
         // dropped by the connection's router.
@@ -166,7 +167,7 @@ enum RunTurn {
         }
         // The watch is armed here, with a session open and the collector
         // reading: a `session/cancel` that reached the agent before the
-        // turn ran would find no active turn and be ignored (§8.6).
+        // prompt ran would find no active prompt and be ignored (§8.6).
         let watch = install()
         let watching = Task {
             await react(to: watch.arrivals, cancelling: sessionId, over: connection)
@@ -185,7 +186,7 @@ enum RunTurn {
         }
         watch.disarm()
         watching.cancel()
-        return RunTurnResult(stopReason: try outcome.get())
+        return RunPromptResult(stopReason: try outcome.get())
     }
 
     /// Reacts to each `Ctrl-C` of `arrivals` (cli-plan.md §5.9).
@@ -193,7 +194,7 @@ enum RunTurn {
     /// The first arrival sends `session/cancel`. Nothing is awaited for
     /// it: the notification carries no response, and the `cancelled`
     /// stop reason arrives on the update stream, where the collector
-    /// reads it and ends the turn. So the text that already arrived is
+    /// reads it and ends the prompt. So the text that already arrived is
     /// on the descriptor, and ``RunCommand`` exits 4.
     ///
     /// Every later arrival ends the process at once. A model whose
@@ -201,8 +202,8 @@ enum RunTurn {
     /// a person who pressed `Ctrl-C` twice is done waiting.
     ///
     /// A cancel that cannot be sent is dropped: the wire is already
-    /// down, so the turn is already ending, and a thrown error here
-    /// would replace the turn's own outcome with a teardown detail.
+    /// down, so the prompt is already ending, and a thrown error here
+    /// would replace the prompt's own outcome with a teardown detail.
     ///
     /// - Parameters:
     ///   - arrivals: The ordinals of the watch.
@@ -218,7 +219,7 @@ enum RunTurn {
         }
     }
 
-    /// Opens the session the turn runs in.
+    /// Opens the session the prompt runs in.
     ///
     /// - Parameters:
     ///   - session: The session to open.
@@ -280,7 +281,7 @@ enum RunTurn {
     /// One stream feeds two writers. The answer text goes to `writer`, on
     /// stdout (§5.6), and the same update goes to `events`, which writes
     /// one line on stderr when `--verbose` asked for it (§5.7). The event
-    /// line goes out first, so the update that ends the turn is reported
+    /// line goes out first, so the update that ends the prompt is reported
     /// before the loop leaves.
     ///
     /// - Parameters:
