@@ -367,15 +367,17 @@ public enum ToolCatalog {
         let profile = context.profile
         return try await SkillsTool.make(
             registry: registry,
-            session: { request in
+            session: OwnedSelectionSession.factory(makingEach: { request in
                 // The selection answer must be `{"ids": [...]}` with ids of
                 // the candidate set. The skills package gives that JSON
                 // Schema in the request, and the guided session applies it
                 // as a grammar, so a small model cannot write `[explore]`.
-                SelectionAgentSession(
-                    session: profile.flash.makeGuidedSession(
-                        grammar: .jsonSchema(request.jsonSchema),
-                        instructions: request.instructions))
-            })
+                // The factory owns each guided session and closes it when
+                // the tier drops it: the cached root when the tier ends,
+                // and an over-budget session after its one prompt.
+                profile.flash.makeGuidedSession(
+                    grammar: .jsonSchema(request.jsonSchema),
+                    instructions: request.instructions)
+            }))
     }
 }

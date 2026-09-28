@@ -33,8 +33,24 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsACPAgent/Tools/SelectionAgentSession.swift (changed), Sources/FoundationModelsACPAgent/Tools/SelectionAgentFork.swift (new), Tests/FoundationModelsACPAgentTests/SelectionAgentSessionTests.swift (new), Tests/FoundationModelsACPAgentTests/Support/CloseCountingRoutedSession.swift (new); swift test 589 passed
     - next: /review
   timestamp: 2026-09-28T22:36:01.994535+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3n30wb6awptsc7fxa71p7nb
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 0345760). 0 findings, 0 confirmed, 0 refuted. 4 files reviewed. 12 .kanban files not reviewed (.reviewignore).
+    - next: The task is in done. No work remains.
+  timestamp: 2026-09-28T22:43:58.438847+00:00
+- actor: claude-code
+  id: 01m3n315dcz8q8ypjeb80zdcsw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — SelectionAgentSession.swift, SelectionAgentFork.swift (new), SelectionAgentSessionTests.swift (new), CloseCountingRoutedSession.swift (new)
+    - test: green — swift test, 589 tests in 65 suites, 0 project warnings
+    - commit: 0345760
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-28T22:44:07.724498+00:00
+position_column: done
+position_ordinal: e980
 title: Close the forks that SelectionAgentSession makes, so they do not keep a prompt cache entry
 ---
 ## Why
