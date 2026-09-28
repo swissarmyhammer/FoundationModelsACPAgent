@@ -37,9 +37,14 @@ struct SelectionAgentSession: AgentSession {
     /// call, and the loss would be silent — the tier would still answer
     /// correctly, only slower and at more tokens.
     ///
+    /// The child is a ``SelectionAgentFork``, which owns the Router fork
+    /// and closes it one time when the tier drops the child. Without that
+    /// close, each fork keeps a prompt cache entry. This session is not
+    /// closed.
+    ///
     /// - Returns: The forked child session.
     /// - Throws: Whatever the underlying session throws while forking.
     func fork() async throws -> any AgentSession {
-        SelectionAgentSession(session: try await session.fork(workingDirectory: nil))
+        SelectionAgentFork(fork: try await session.fork(workingDirectory: nil))
     }
 }

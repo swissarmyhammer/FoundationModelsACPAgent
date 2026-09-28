@@ -49,8 +49,24 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Tests/FoundationModelsACPAgentTests/SkillOutputProtectionTests.swift. Clean `swift build --build-tests`: 0 warnings from project sources. `swift test`: 587 tests pass (1 known issue from before this change).
     - next: test
   timestamp: 2026-09-28T22:13:10.060030+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3n1s0kdb4zvdb85qeeq396j
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 118bb6e). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 5 files reviewed. 6 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-09-28T22:22:12.077297+00:00
+- actor: claude-code
+  id: 01m3n1sj19xe50f4kffdjp2xa3
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Package.swift, Telemetry/ACPAgentTelemetry.swift, ACPAgentTelemetryTests.swift; then EventProjection.swift and SkillOutputProtectionTests.swift to remove 2 warnings
+    - test: red (2 warnings), then green — swift test, 587 tests in 64 suites, 0 project warnings
+    - commit: 118bb6e
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-28T22:22:29.929908+00:00
+position_column: done
+position_ordinal: e880
 title: 'OTel 1: add the ACPAgentTelemetry vocabulary file and the telemetry API products'
 ---
 ## What

@@ -25,6 +25,14 @@ comments:
     - evidence: Router card ^ake8sax is on Router `origin/main` (commit b7359b1, 2026-09-25, "do not count a wait for a queue place as a stalled generation, and report the wait to the consumer"). The local `Package.resolved` pins Router at bbad3ce (2026-09-23). `git merge-base --is-ancestor b7359b1 bbad3ce` returns 1: the pin does not contain the ^ake8sax API. Step 1 of this task (`swift package update FoundationModelsRouter`) moves Router past API that `main` of this repository uses (`cancelCurrentTurn` is gone, new request event names, `.repeatedPartRemoval`), and Multitool `makeSessionToolsAndStaging(librarian:)` changed too (see the comments on ^258q0h3). The adoption of that newer Router is the scope of ^tz867gz, which is blocked by 01M3A30KQBCN1051EVS6KCTS5V and 01M3A30WN7D2CB2X7EGM0K2VN6. No file changed.
     - next: do ^tz867gz (and the Multitool adoption) first. Then this task can update Router and use the final queue-wait shape of ^ake8sax. Suggest: add ^tz867gz to `depends_on` of this task.
   timestamp: 2026-09-28T21:39:02.660935+00:00
+- actor: claude-code
+  id: 01m3n1sjx8yk8qfkh15exngmbh
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — no files changed. The task needs Router b7359b1 (^ake8sax). The local pin bbad3ce does not contain it. The Router update is the scope of ^tz867gz, which is blocked.
+    - test, commit, review: not run
+    - next: this task waits for ^tz867gz. A person must decide the order.
+  timestamp: 2026-09-28T22:22:30.824749+00:00
 position_column: todo
 position_ordinal: '8180'
 title: Do not stop a prompt as _stalled while its request waits for a place in the model queue

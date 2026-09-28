@@ -1,6 +1,28 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3n1v0yzse0v0bwpeh222rmq
+  text: |-
+    Step 4 decision of Router card 01M39ZNAJWMVZ291SCH8CSJ2HW (from its comments): option (a). A container that has no executor seam gets no pass-level gate from the Router. `GenerationQueue` is public. A stub container of the consumer owns its own queue and runs each scripted pass in `queue.runPass { ... }`.
+
+    Blocker: the pinned Router does not have this API. The local `Package.resolved` pins FoundationModelsRouter to bbad3ce (2026-09-23 14:07). `rg GenerationQueue` in `.build/checkouts/FoundationModelsRouter/Sources` finds nothing. The queue came in Router commit 2e97dac (^8csj2hw, 2026-09-25), and `git merge-base --is-ancestor 2e97dac bbad3ce` is false. Later Router commits also changed the queue: 10cae0b (one worker task for each model), 7dc8ee4 (one submission is the queue item), bd786db (removal of the per-pass queue path), 3c0f397 (the queue primitives moved to FoundationModelsExtras), 00cf518 (each model call goes through the work queue of its pool entry). Thus the queue API that this task must use is not stable yet, and the name `runPass` can be gone on the current Router main.
+
+    This task cannot start until the adoption of the newer Router (card ^tz867gz) is done. No file was changed. Do not run `swift package update` to fix this; the current family main branches break the build here (see ^258q0h3).
+
+    ### implement — stuck
+    - evidence: GenerationQueue is not in the pinned Router bbad3ce; it came in 2e97dac on 2026-09-25. No file changed.
+    - next: finish ^tz867gz (adopt the newer Router), then read the queue API on that Router again before this task starts.
+  timestamp: 2026-09-28T22:23:17.983406+00:00
+- actor: claude-code
+  id: 01m3n1vapq2b2eg3gw0zc61hr7
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — no files changed. GenerationQueue is not in the pinned Router bbad3ce; it came in Router 2e97dac (2026-09-25).
+    - test, commit, review: not run
+    - next: this task waits for ^tz867gz (adopt the newer Router). A person must decide the order.
+  timestamp: 2026-09-28T22:23:27.959337+00:00
 position_column: todo
 position_ordinal: '8980'
 title: Give the test support a scripted model that goes through the Router generation queue

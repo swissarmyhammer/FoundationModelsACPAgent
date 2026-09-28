@@ -1,6 +1,7 @@
 ---
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
+- 01M3MNC26MHCGN4R7BVKFQVQQB
 position_column: todo
 position_ordinal: '9380'
 title: 'OTel 9: metrics for prompts, active sessions, commands and MCP connect failures'
