@@ -1,10 +1,58 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3n4bb684fyxfvm8x5xk3zvw
+  text: |-
+    Research:
+    - `swift package update FoundationModelsExtras` moved only the Extras pin: 0dc42cf to 6c399a4 (Extras origin/main, OTel A to E). No other pin moved. `Package.resolved` is not tracked in git.
+    - `TelemetryCapture` (Extras `Tests/TelemetryTestSupport`) bootstraps logging one time with `RoutingLogHandler`. The factory ignores the logger label (`{ _ in RoutingLogHandler() }`), and `InMemoryLogHandler.Entry` has only `level`, `message`, `error` and `metadata`. Thus a captured record does NOT hold the logger label. A test cannot assert the label `FoundationModelsACPAgent.PromptTurn` through the capture. This is a gap between the acceptance criterion and the Extras helper.
+    - The ACP `Connection` makes its read loop with `Task { }` in its `init`, and runs each notification inline in that loop. Thus a harness made inside the capture sends the agent log records to the capture, and a request after `session/cancel` runs after the cancel handler.
+    - `turnLogger` has call sites in TurnState.swift, PromptTurn.swift, TerminalStream.swift and EventProjection.swift. `sessionLogger` has call sites in RoutedACPAgent.swift and SessionSetup.swift.
+  timestamp: 2026-09-28T23:07:09.896624+00:00
+- actor: claude-code
+  id: 01m3n4tzm9x9hsq9z2467vxemy
+  text: |-
+    Blocker: the Extras version that this task needs does not build with the pinned Router.
+
+    What I did:
+    - `swift package update FoundationModelsExtras` moved only the Extras pin, from 0dc42cf to 6c399a4. No other pin moved.
+    - I added `TelemetryTestSupport` to the test target and wrote `SessionSurfaceLoggingTests` (RED step).
+    - `swift test --filter SessionSurfaceLoggingTests` failed in the build of the library target, before a test ran:
+      `Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift:159:24: error: 'ModelRef' is ambiguous for type lookup in this context` (the same error also at ProfileDoctor.swift lines 206, 245 and 469, and follow-on key path errors at lines 247 and 470). The candidates are `FoundationModelsExtras.ModelRef` and `FoundationModelsRouter.ModelRef`.
+
+    Cause:
+    - Extras commit d682e45 (2026-09-26, "feat(model-pool): move the work queue from the router into the core target") adds `public struct ModelRef` in `Sources/FoundationModelsExtras/ModelPool/ModelRef.swift`. It is the first Extras commit after the old pin 0dc42cf. The TelemetryTestSupport commits (9b97617 and later, OTel A to E) all come after it. Thus each Extras version with `TelemetryCapture` also has `ModelRef`.
+    - The pinned Router bbad3ce still declares its own `public struct ModelRef`. The newer Router (after the work queue move) is the Router API adoption of card ^tz867gz, which is blocked.
+
+    State now:
+    - Per the orchestrator rule, I restored the old Extras pin (0dc42cf; `Package.resolved` is the same as before), reverted `Package.swift`, and deleted the test file. `swift build --build-tests` passes on the old pin. No source file of this project is changed.
+
+    Research for the next attempt (in the comment before this one): `TelemetryCapture` does not keep the logger label of a record (`RoutingLogHandler` ignores the label, and `InMemoryLogHandler.Entry` has no label). Thus the acceptance criterion "one .notice record with the label FoundationModelsACPAgent.PromptTurn" cannot be asserted through the capture. A possible way: assert the label of the logger that the agent makes (for example `ACPAgentTelemetry.logger(.promptTurn).label`), or an Extras change so that the capture keeps the label.
+
+    Decision needed from a person: (a) unblock ^tz867gz so that Router and Extras move together, or (b) allow a qualification `FoundationModelsRouter.ModelRef` in ProfileDoctor.swift so that the new Extras builds with the old Router.
+  timestamp: 2026-09-28T23:15:42.345100+00:00
+- actor: claude-code
+  id: 01m3n4v4ew9xty6b9xq13mw59g
+  text: |-
+    ### implement — stuck
+    - evidence: Extras 6c399a4 (and each Extras commit from d682e45 on, which includes all OTel A to E commits) adds `public struct ModelRef`. With the pinned Router bbad3ce, `Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift` fails: "'ModelRef' is ambiguous for type lookup in this context" (lines 159, 206, 245, 469). Extras pin restored to 0dc42cf, `Package.swift` reverted, test file deleted. `swift build --build-tests` passes. No project file changed.
+    - next: a person decides: unblock ^tz867gz (move Router and Extras together), or allow a `FoundationModelsRouter.ModelRef` qualification in ProfileDoctor.swift. Also decide how to assert the logger label, because `TelemetryCapture` does not keep it.
+  timestamp: 2026-09-28T23:15:47.292470+00:00
+- actor: claude-code
+  id: 01m3n4vmwxdkg6s72b6pswj3vp
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — no project files changed. Each Extras version with TelemetryCapture (from d682e45 on, including 6c399a4) adds a public ModelRef. With the pinned Router bbad3ce, Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift:159, 206, 245, 469 give "'ModelRef' is ambiguous for type lookup in this context". The Extras pin is back at 0dc42cf.
+    - Also: TelemetryCapture does not keep the logger label, so the label criterion cannot be checked through the capture as written.
+    - test, commit, review: not run
+    - next: a person must decide: (1) unblock ^tz867gz so Router and Extras move together, or (2) permit a FoundationModelsRouter.ModelRef qualification in ProfileDoctor.swift. A person must also decide how to test the label criterion.
+  timestamp: 2026-09-28T23:16:04.125933+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
-position_column: todo
-position_ordinal: 8d80
+position_column: doing
+position_ordinal: '80'
 title: 'OTel 3: replace os.Logger with swift-log in the session surface (Session, PromptTurn, Initialization, SessionResume)'
 ---
 ## What

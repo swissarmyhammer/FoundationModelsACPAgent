@@ -139,9 +139,6 @@ struct StdioContractTests {
     /// The one prompt the suite sends: the probe skill command.
     private static let promptText = "/" + probeSkillID
 
-    /// The newline byte that divides ndJSON frames (plan.md §17).
-    private static let newlineByte = UInt8(ascii: "\n")
-
     /// The `SKILL.md` of the probe skill. The body's first line is a
     /// shell injection: the render pass runs it through `/bin/sh -c`
     /// with captured output, so a real child writes the marker to ITS
@@ -199,56 +196,6 @@ struct StdioContractTests {
         }
     }
 
-    // MARK: - Waits
-
-    /// Consumes `updates` until the first idle state update, then
-    /// returns its stop reason.
-    ///
-    /// - Parameter updates: The session's update stream, subscribed
-    ///   before the prompt.
-    /// - Returns: The stop reason, or `nil` when the stream ended with
-    ///   no idle update — the connection died before the turn ended.
-    private static func waitForIdle(on updates: AsyncStream<SessionUpdate>) async -> StopReason? {
-        for await update in updates {
-            if case .stateUpdate(.idle(let idle)) = update {
-                return idle.stopReason
-            }
-        }
-        return nil
-    }
-
-    // MARK: - The frame assertions (plan.md §17)
-
-    /// Asserts the §17 framing MUSTs on the tapped raw bytes: the
-    /// stream divides on `\n` into complete frames, every frame parses
-    /// as one JSON-RPC message, no frame is empty, and nothing follows
-    /// the final newline. A frame with an interior newline cannot pass:
-    /// the split would break it into pieces that do not parse.
-    ///
-    /// - Parameter data: The tapped raw inbound bytes.
-    /// - Throws: The `#require` failure when the stream is empty.
-    private static func assertFramesArePureJSONRPC(in data: Data) throws {
-        let lines = data.split(separator: newlineByte, omittingEmptySubsequences: false)
-        try #require(lines.count > 1, "the agent's stdout carried no complete frame")
-        #expect(
-            lines.last?.isEmpty == true,
-            "bytes after the final newline are a torn or unterminated frame")
-        for line in lines.dropLast() {
-            #expect(!line.isEmpty, "an empty line is not a JSON-RPC message")
-            guard let object = try? JSONSerialization.jsonObject(with: Data(line)),
-                let message = object as? [String: Any]
-            else {
-                Issue.record(
-                    "a stdout line does not parse as a JSON object: \(String(decoding: line, as: UTF8.self))"
-                )
-                continue
-            }
-            #expect(
-                message["jsonrpc"] as? String == "2.0",
-                "a stdout frame is not a JSON-RPC message: \(message)")
-        }
-    }
-
     // MARK: - The contract
 
     /// The whole tier-3 drive, in one case on purpose (plan.md §20.1:
@@ -293,7 +240,7 @@ struct StdioContractTests {
         _ = try await connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: session.sessionId, text: Self.promptText))
-        let stopReason = await Self.waitForIdle(on: updates)
+        let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)
         #expect(stopReason != nil, "the turn never reached an idle state update")
 
         // The child ran, proven on the file system: the probe's `tee`
@@ -314,9 +261,9 @@ struct StdioContractTests {
         // leak would stand as a bare non-JSON line and fail the parse
         // assertion.
         let recordedBytes = tap.recordedBytes
-        try Self.assertFramesArePureJSONRPC(in: recordedBytes)
+        try StdoutFrameChecks.assertFramesArePureJSONRPC(in: recordedBytes)
         let rawLines = recordedBytes.split(
-            separator: Self.newlineByte, omittingEmptySubsequences: true)
+            separator: StdoutFrameChecks.newlineByte, omittingEmptySubsequences: true)
         #expect(
             !rawLines.contains(Data(Self.probeMarker.utf8)),
             "the shell child's stdout leaked raw into the frame stream")

@@ -157,6 +157,11 @@ private let metricsPackage = "swift-metrics"
 /// The version floor of `metricsPackage`, matching Extras.
 private let metricsVersionFloor: Version = "2.11.0"
 
+/// The one product of `loggingPackage`. The library target links it with the
+/// other telemetry APIs, and the agent CLI links it to bootstrap
+/// `LoggingSystem`.
+private let loggingProduct = Target.Dependency.product(name: "Logging", package: loggingPackage)
+
 /// The telemetry API products the library target links (the approved
 /// OpenTelemetry design, items 1 and 3).
 ///
@@ -165,9 +170,38 @@ private let metricsVersionFloor: Version = "2.11.0"
 /// and until it does so each API is a no-op.
 private let telemetryAPIProducts: [Target.Dependency] = [
     .product(name: "Tracing", package: tracingPackage),
-    .product(name: "Logging", package: loggingPackage),
+    loggingProduct,
     .product(name: "Metrics", package: metricsPackage),
 ]
+
+/// The OpenTelemetry backend package: the OTLP exporters of traces, logs and
+/// metrics, and `OTel.bootstrap`. Only the `acp-agent` executable links it
+/// (the approved OpenTelemetry design, item 1). The library target, the
+/// `acp-print` example and the test support link the APIs only — see
+/// `telemetryAPIProducts`.
+private let otelPackage = "swift-otel"
+
+/// The version floor of `otelPackage`. 1.5.1 is the newest release, and it
+/// builds with the swift-log, swift-metrics and swift-distributed-tracing
+/// versions this graph already resolves.
+private let otelVersionFloor: Version = "1.5.1"
+
+/// The one product of `otelPackage` the agent CLI links.
+private let otelProduct = Target.Dependency.product(name: "OTel", package: otelPackage)
+
+/// The service lifecycle package. `OTel.bootstrap` returns a `Service` that
+/// must run in a `ServiceGroup` for the life of the process, and the group
+/// shuts it down (and so flushes it) at the end. `otelPackage` already
+/// declares this package from the same floor, so this declaration adds no
+/// checkout. Only the agent CLI links it.
+private let serviceLifecyclePackage = "swift-service-lifecycle"
+
+/// The version floor of `serviceLifecyclePackage`, matching `otelPackage`.
+private let serviceLifecycleVersionFloor: Version = "2.4.1"
+
+/// The one product of `serviceLifecyclePackage` the agent CLI links.
+private let serviceLifecycleProduct = Target.Dependency.product(
+    name: "ServiceLifecycle", package: serviceLifecyclePackage)
 
 /// Makes the `.package(url:from:)` dependency of a package hosted under the
 /// apple GitHub organization.
@@ -293,6 +327,11 @@ let package = Package(
         makeApplePackage(name: tracingPackage, from: tracingVersionFloor),
         makeApplePackage(name: loggingPackage, from: loggingVersionFloor),
         makeApplePackage(name: metricsPackage, from: metricsVersionFloor),
+        // The telemetry backend of the agent CLI — see `otelPackage`.
+        .package(url: "https://github.com/swift-otel/\(otelPackage).git", from: otelVersionFloor),
+        .package(
+            url: "https://github.com/swift-server/\(serviceLifecyclePackage).git",
+            from: serviceLifecycleVersionFloor),
         // The terminal design system of the agent CLI — see
         // `nooraPackage` and `nooraVersion`.
         .package(url: "https://github.com/tuist/\(nooraPackage).git", exact: nooraVersion),
@@ -310,7 +349,9 @@ let package = Package(
         // path `ACP_AGENT_STUB_MODEL=1` selects is the library's own
         // `EchoModel`, never the test support: that target links the
         // `Testing` framework, and a product that carried it would not
-        // start outside a test host.
+        // start outside a test host. It is the one target that links the
+        // telemetry backend — see `otelPackage` — and bootstraps it in
+        // `AcpAgentCommand.main()`.
         .executableTarget(
             name: agentExecutableName,
             dependencies: [
@@ -320,6 +361,9 @@ let package = Package(
                 makeFamilyProduct(name: clientDependencyName),
                 argumentParserProduct,
                 nooraProduct,
+                otelProduct,
+                serviceLifecycleProduct,
+                loggingProduct,
             ] + liveLoaderProducts,
             path: "Sources/\(agentExecutableName)"
         ),

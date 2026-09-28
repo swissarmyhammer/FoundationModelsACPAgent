@@ -84,7 +84,15 @@ struct AcpAgentCommand: AsyncParsableCommand {
     /// error rendering stay the library's: ``exitAfterFailure(_:)`` writes
     /// `fullMessage(for:)`, and only the stream and the code are this
     /// type's.
+    ///
+    /// The first step bootstraps the telemetry backend
+    /// (``TelemetryBootstrap/bootstrap(environment:)``), before the process
+    /// can write a log record. This is the only call site: the unit test
+    /// target links this target, and a test process must not bootstrap
+    /// logging. A normal return stops the telemetry service, which flushes
+    /// its last batch.
     static func main() async {
+        TelemetryBootstrap.bootstrap(environment: ProcessInfo.processInfo.environment)
         do {
             var command = try parseAsRoot()
             if var asyncCommand = command as? any AsyncParsableCommand {
@@ -95,6 +103,7 @@ struct AcpAgentCommand: AsyncParsableCommand {
         } catch {
             exitAfterFailure(error)
         }
+        await TelemetryBootstrap.shutdown()
     }
 
     /// Exits the process for `error` by its ``exitOutcome(for:)``: the
