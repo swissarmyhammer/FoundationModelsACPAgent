@@ -32,7 +32,7 @@ Extras: FoundationModelsExtras OTel A to D are on Extras origin/main (HEAD 70ad7
 ## Tests
 - [ ] Add `Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift`. Use `TelemetryCapture` from Extras `TelemetryTestSupport` with the test rules in OTel 3 (its task-local `withTracer`; no `InstrumentationSystem.bootstrap`). Drive initialize, session/new, one prompt with `ScriptedModel`, and session/cancel through `Tests/FoundationModelsACPAgentTestSupport/Harness.swift`, all inside the capture. Assert the span names, kinds, attributes and the parent link of the Router submission span.
 - [ ] The Router spans go to the same capture: `InstrumentationSystem.tracer` checks the task-local instrument first (`_findInstrument` in swift-distributed-tracing), and `RouterTracing.tracer(explicit: nil)` reads it at call time. The parent-link assertion above proves this; no Router change is necessary.
-- [ ] The "enter" record ids come from the W3C `traceparent` that the tracer injects. The `TelemetryCapture` tracer is an `InMemoryTracer`: it injects only its own trace-id and span-id keys, not W3C `traceparent`, so its "enter" records have no ids. In this task, assert only that the "enter" record exists. Task OTel 6b ^naf9z8b adds the id checks after Extras OTel E ^wts388b is on Extras origin/main.
+- [ ] In this task, assert only that the "enter" record exists. Task OTel 6b ^naf9z8b adds the id checks. (Extras OTel E ^wts388b is on origin/main: `TelemetryCapture.Context.tracer` is a `W3CInMemoryTracer`; code that needs the `InMemoryTracer` type uses `context.tracer.inMemoryTracer`.)
 - [ ] Run `swift test --filter RequestTracingTests`. Expected: pass.
 - [ ] Run `swift test`. Expected: all tests pass.
 

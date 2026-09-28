@@ -7,11 +7,11 @@ position_ordinal: '9680'
 title: 'OTel 6b: add the enter record id checks of OTel 6 and OTel 8'
 ---
 ## What
-OTel 6 (^bt21bas) and OTel 8 (^503gb5g) write an "enter" log record when a long call starts (design item 8), through `TracedCall.run` of FoundationModelsExtras. `TracedCall.run` reads the trace id and span id of that record from the W3C `traceparent` that the tracer injects. The current `TelemetryCapture` tracer is an `InMemoryTracer`, which does not inject W3C `traceparent`. So OTel 6 and OTel 8 check only that each "enter" record exists. This task adds the id checks.
+OTel 6 (^bt21bas) and OTel 8 (^503gb5g) write an "enter" log record when a long call starts (design item 8), through `TracedCall.run` of FoundationModelsExtras. `TracedCall.run` reads the trace id and span id of that record from the W3C `traceparent` that the tracer injects. When OTel 6 and OTel 8 were planned, the `TelemetryCapture` tracer did not inject W3C `traceparent`, so those tasks check only that each "enter" record exists. This task adds the id checks.
 
-Blocker: FoundationModelsExtras OTel E ^wts388b (01M3MV1R3D52RAMFNFKWTS388B). With it, `TelemetryCapture` binds by default a tracer that records spans and injects and extracts `traceparent` and `tracestate`. A task cannot depend on a task on a different board, so this link is text only. Do not start this task until OTel E is on Extras origin/main.
+FoundationModelsExtras OTel E ^wts388b is on Extras origin/main (6c399a4, 2026-09-28). Run `swift package update FoundationModelsExtras` first. `TelemetryCapture.Context.tracer` is now a `W3CInMemoryTracer`: it records spans and injects and extracts `traceparent` and `tracestate`, and the "enter" records of `TracedCall.run` have `trace.id` and `span.id`. Code that needs the `InMemoryTracer` type uses `context.tracer.inMemoryTracer`.
 
-- [ ] Update FoundationModelsExtras in `Package.resolved` to a revision that has OTel E.
+- [ ] Update FoundationModelsExtras in `Package.resolved` to 6c399a4 or later.
 - [ ] In `Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift` (OTel 6): assert that the "enter" record of the prompt, of `session/new` and of `session/resume` has the trace id and the span id of its span.
 - [ ] In `Tests/FoundationModelsACPAgentTests/AgentSpanTests.swift` (OTel 8): assert the same for the elicitation span and the MCP connect span.
 - [ ] Change no production code, unless a test shows that an id is wrong. In that case, fix the code that opens the span.

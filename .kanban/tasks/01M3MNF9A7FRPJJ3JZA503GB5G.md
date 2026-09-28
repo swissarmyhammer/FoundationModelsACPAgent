@@ -25,7 +25,7 @@ Extras: FoundationModelsExtras OTel A to D are on Extras origin/main (HEAD 70ad7
 
 ## Tests
 - [ ] Add `Tests/FoundationModelsACPAgentTests/AgentSpanTests.swift` with one case for each acceptance criterion. Use `TelemetryCapture` the same way as `RequestTracingTests` (OTel 6), with the test rules in OTel 3, the fixtures of `CommandDispatchTests.swift`, `ElicitationRelayTests.swift` and `MCPCompositionTests.swift`, and `BuiltProductLocator` for `mcp-test-server`.
-- [ ] The `TelemetryCapture` tracer is an `InMemoryTracer` and does not inject W3C `traceparent`, so its "enter" records have no ids. In this task, assert that the "enter" record exists, not its ids. Task OTel 6b ^naf9z8b adds the id checks after Extras OTel E ^wts388b is on Extras origin/main.
+- [ ] In this task, assert only that the "enter" record exists. Task OTel 6b ^naf9z8b adds the id checks. (Extras OTel E ^wts388b is on origin/main: `TelemetryCapture.Context.tracer` is a `W3CInMemoryTracer`; code that needs the `InMemoryTracer` type uses `context.tracer.inMemoryTracer`.)
 - [ ] Run `swift test --filter AgentSpanTests`. Expected: pass.
 - [ ] Run `swift test`. Expected: all tests pass.
 
