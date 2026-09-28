@@ -72,12 +72,14 @@ import Testing
     }
 
     /// The text of a tool output: a text segment as it is, and a
-    /// structured segment as the string it holds.
+    /// structured segment as the string it holds. An attachment segment
+    /// has no text, so it adds nothing.
     private static func text(of output: Transcript.ToolOutput) -> String {
         output.segments.compactMap { segment -> String? in
             switch segment {
             case .text(let text): text.content
             case .structure(let structure): try? structure.content.value(String.self)
+            case .attachment: nil
             @unknown default: nil
             }
         }.joined()

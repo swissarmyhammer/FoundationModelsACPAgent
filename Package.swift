@@ -135,6 +135,51 @@ private let argumentParserVersionFloor: Version = "1.8.0"
 private let argumentParserProduct = Target.Dependency.product(
     name: "ArgumentParser", package: argumentParserPackage)
 
+/// The tracing API package: the `Tracer` protocol and the span API. It is an
+/// abstraction and not an exporter. Router already declares it from the same
+/// floor, so it stands in `Package.resolved` and this declaration adds no
+/// checkout.
+private let tracingPackage = "swift-distributed-tracing"
+
+/// The version floor of `tracingPackage`, matching Router and Extras.
+private let tracingVersionFloor: Version = "1.4.1"
+
+/// The logging API package: `Logging.Logger` and its metadata. Router
+/// already declares it from the same floor.
+private let loggingPackage = "swift-log"
+
+/// The version floor of `loggingPackage`, matching Router and Extras.
+private let loggingVersionFloor: Version = "1.15.1"
+
+/// The metrics API package: the counter, the timer and the gauge API.
+private let metricsPackage = "swift-metrics"
+
+/// The version floor of `metricsPackage`, matching Extras.
+private let metricsVersionFloor: Version = "2.11.0"
+
+/// The telemetry API products the library target links (the approved
+/// OpenTelemetry design, items 1 and 3).
+///
+/// A library links only the APIs. `swift-otel`, the exporter, is for an
+/// executable only, and it is NOT here: an application bootstraps the backend,
+/// and until it does so each API is a no-op.
+private let telemetryAPIProducts: [Target.Dependency] = [
+    .product(name: "Tracing", package: tracingPackage),
+    .product(name: "Logging", package: loggingPackage),
+    .product(name: "Metrics", package: metricsPackage),
+]
+
+/// Makes the `.package(url:from:)` dependency of a package hosted under the
+/// apple GitHub organization.
+///
+/// - Parameters:
+///   - name: The package name, which is also the repository name.
+///   - floor: The lowest version the package resolves to.
+/// - Returns: The package dependency.
+private func makeApplePackage(name: String, from floor: Version) -> Package.Dependency {
+    .package(url: "https://github.com/apple/\(name).git", from: floor)
+}
+
 /// The terminal design system of the agent CLI (cli-plan.md §5.2): one
 /// package in place of a spinner library, a progress library, a table
 /// library and a color library. `TerminalRenderer.swift` is the only
@@ -243,9 +288,11 @@ let package = Package(
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
         // The parser of the agent CLI — see `argumentParserPackage`.
-        .package(
-            url: "https://github.com/apple/\(argumentParserPackage).git",
-            from: argumentParserVersionFloor),
+        makeApplePackage(name: argumentParserPackage, from: argumentParserVersionFloor),
+        // The telemetry APIs of the library — see `telemetryAPIProducts`.
+        makeApplePackage(name: tracingPackage, from: tracingVersionFloor),
+        makeApplePackage(name: loggingPackage, from: loggingVersionFloor),
+        makeApplePackage(name: metricsPackage, from: metricsVersionFloor),
         // The terminal design system of the agent CLI — see
         // `nooraPackage` and `nooraVersion`.
         .package(url: "https://github.com/tuist/\(nooraPackage).git", exact: nooraVersion),
@@ -253,7 +300,7 @@ let package = Package(
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts + [mcpSDKProduct]
+            dependencies: familyProducts + [mcpSDKProduct] + telemetryAPIProducts
         ),
         // The agent CLI (cli-plan.md §5, §8): the ArgumentParser subcommand
         // tree over `AgentComposition`, and the tier-3 fixture. It links

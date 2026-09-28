@@ -39,8 +39,24 @@ comments:
     - evidence: 17 files — Sources/acp-agent/RunPrompt.swift (renamed from RunTurn.swift), Sources/acp-agent/OutOfProcessPrompt.swift (renamed from OutOfProcessTurn.swift), Sources/acp-agent/RunCommand.swift, Sources/acp-agent/ExitCode.swift, Sources/acp-agent/InterruptHandler.swift, README.md, cli-plan.md, Tests/FoundationModelsACPAgentTests/{CompositionInterruptTests,EventLineWriterTests,ExitCodeTests,InterruptTests,MultiRootConfinementTests,RunCommandTests,SessionLifecycleTests,SessionResumeTests}.swift, Tests/FoundationModelsACPAgentTests/Support/{CLICompositionFixture,ResumeSessionFixture}.swift. `rg -n "RunTurn|runTurn|OutOfProcessTurn" Sources Tests` gives no result. `swift build --build-tests` passes with no warnings from the project. `swift test`: 584 tests in 63 suites pass (1 known issue from before), the same count as before the change.
     - next: /review
   timestamp: 2026-09-28T21:27:41.805153+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3mz8c3dftqts8sps10mqpmg
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c94d2b4). 0 findings, 0 confirmed, 0 refuted, 14 attempted, 0 failed. The code-hygiene Swift rules did not read Sources/acp-agent/RunTurn.swift and Sources/acp-agent/OutOfProcessTurn.swift, because the rename removed these files. README.md and cli-plan.md have no validator.
+    - next: the task moved to done. Task ^01M3A32XJSSVH8E7XKWGMDF7FR is not blocked by this task now.
+  timestamp: 2026-09-28T21:38:09.645462+00:00
+- actor: claude-code
+  id: 01m3mz8q25p284edjv31y5sehj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 17 files (RunTurn → RunPrompt, OutOfProcessTurn → OutOfProcessPrompt, with git mv)
+    - test: green — swift test, 584 tests in 63 suites passed
+    - commit: c94d2b4
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-28T21:38:20.869366+00:00
+position_column: done
+position_ordinal: e780
 title: Rename the "turn" types of the acp-agent CLI to "prompt"
 ---
 ## Why

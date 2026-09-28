@@ -40,7 +40,7 @@ enum ProjectedFileChange: Equatable, Sendable {
 /// (plan.md §8.4–§8.5, §11.6).
 ///
 /// One value projects one turn: `project(_:)` maps each of the
-/// fifteen `SessionEvent` cases, and `reportUsage()` closes the turn
+/// sixteen `SessionEvent` cases, and `reportUsage()` closes the turn
 /// with its one summed `usage_update`. The live shell bytes have no
 /// `SessionEvent` source, so their mapping rides ``TerminalStream``
 /// over the host-owned `ShellOutputChunkStream` (§11.8); this
@@ -167,7 +167,7 @@ struct EventProjection {
         !sawOutput && sawUsageReport && tokensOut == 0
     }
 
-    // MARK: - The fifteen cases (§8.4)
+    // MARK: - The sixteen cases (§8.4)
 
     /// Projects one event to the wire.
     ///
@@ -175,6 +175,10 @@ struct EventProjection {
     /// arm: `SessionEvent` has no library evolution, and its own
     /// contract tells a consumer to absorb a new case rather than
     /// break.
+    ///
+    /// A `generationCall` event sends no wire update now. The full
+    /// projection of the Router request events is the scope of card
+    /// ^tz867gz.
     ///
     /// - Parameter event: The event to project.
     mutating func project(_ event: SessionEvent) async {
@@ -271,6 +275,11 @@ struct EventProjection {
             // The LAST generate call is the one that ends the turn, so
             // its finish reason wins over each earlier one.
             lastFinishReason = usage.finishReason
+        case .generationCall:
+            // The usage of one generation call alone. The `turnEnded`
+            // sum above already counts these tokens, so no wire update
+            // goes out (card ^tz867gz).
+            break
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a
