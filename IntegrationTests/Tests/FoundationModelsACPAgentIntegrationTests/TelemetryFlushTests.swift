@@ -202,28 +202,12 @@ struct TelemetryFlushTests {
         label: String, endpoint: String,
         ending: (SpawnedACPAgent) async throws -> SpawnedAgentExit
     ) async throws -> PathEnd {
-        let workspace = makeResolvedDirectory(label: "\(label)-repo")
-        let configHome = makeResolvedDirectory(label: "\(label)-config")
-        let environment = TierThreeFixture.stubModelEnvironment
-            .merging(flushEnvironment(endpoint: endpoint)) { _, flush in flush }
-            .merging([TierThreeFixture.configHomeVariable: configHome.path]) { _, home in home }
-        let agent = try SpawnedACPAgent.start(workspace: workspace, environment: environment)
-        let client = await SwiftUIACPClient()
-        let connection = await client.connect(over: agent.transport)
+        let drive = try await SpawnedAgentPromptDrive.run(
+            label: label, environment: flushEnvironment(endpoint: endpoint),
+            promptText: promptText, ending: ending)
+        #expect(drive.stopReason == .endTurn, "the prompt did not end on end_turn")
 
-        _ = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
-        let session = try await connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-        // Subscribe before the prompt: the router drops an update that has no
-        // subscriber.
-        let updates = connection.updates(for: session.sessionId)
-        _ = try await connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))
-        let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)
-        #expect(stopReason == .endTurn, "the prompt did not end on end_turn")
-
-        let exit = try await ending(agent)
-        await connection.close()
+        let exit = drive.exit
         return PathEnd(
             exitCode: exit.status, didExit: exit.didExit, elapsed: exit.elapsed,
             standardError: exit.standardError)

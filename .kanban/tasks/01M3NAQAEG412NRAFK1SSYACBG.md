@@ -33,10 +33,26 @@ comments:
     - evidence: 13 files — Sources/acp-agent/{ArrivalFlag.swift (new), TerminationHandler.swift, InterruptibleComposition.swift, RunPrompt.swift, RunCommand.swift, AcpCommand.swift, OutOfProcessPrompt.swift, TelemetryBootstrap.swift}; Tests/FoundationModelsACPAgentTests/{TerminationHandlerTests.swift, CompositionInterruptTests.swift, Support/ScriptedInterruptWatch.swift}; IntegrationTests/.../{TelemetryFlushTests.swift, Support/SignalledExecutableRun.swift}. `swift test`: 602 tests in 68 suites passed (1 known issue, earlier). `swift test --package-path IntegrationTests`: 25 tests in 10 suites passed. No warning from project sources.
     - next: review
   timestamp: 2026-09-29T02:15:44.946738+00:00
+- actor: claude-code
+  id: 01m3nftpqdr0mjq5a7k2z2vq6v
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 5b97645). 0 findings, 0 confirmed, 1 refuted. 13 files reviewed. 4 .kanban files not reviewed because of .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T02:27:47.565344+00:00
+- actor: claude-code
+  id: 01m3nftze3g570yyrx80tnd439
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 13 files (TerminationHandler.run, ArrivalFlag.swift new, SIGTERM in composition and run prompt, tests)
+    - test: green — swift test 602 tests in 68 suites; IntegrationTests 25 tests in 10 suites; 0 project warnings
+    - commit: 5b97645
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-29T02:27:56.483417+00:00
 depends_on:
 - 01M3MNNAQ6YMAM4T4E9RM6R3RH
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ed80
 title: 'OTel 2d: flush OTel on SIGTERM outside the ACP serve window (run mode, acp composition)'
 ---
 ## What

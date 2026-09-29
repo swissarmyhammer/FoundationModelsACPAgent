@@ -12,16 +12,29 @@ import Synchronization
 /// application bootstraps it, and only an executable can do that. So the
 /// executable, not a library default, decides where a log record goes.
 ///
-/// - When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, ``bootstrap(environment:)``
-///   calls `OTel.bootstrap` for traces, logs and metrics. The standard
-///   `OTEL_*` variables configure the exporters. The returned service runs
-///   in a `ServiceGroup` for the life of the process, and ``shutdown()``
-///   stops it, which flushes the last batch.
-/// - When it is not set, ``bootstrap(environment:)`` sends each log record to
-///   stderr, and tracing and metrics stay no-op.
+/// - When `OTEL_EXPORTER_OTLP_ENDPOINT` is set and `OTEL_SDK_DISABLED` is not
+///   `true` (in any case), ``bootstrap(environment:)`` exports. It makes the
+///   OTLP logging backend with `OTel.makeLoggingBackend` and bootstraps
+///   `LoggingSystem` with it, and then calls `OTel.bootstrap` for traces and
+///   metrics only. The standard `OTEL_*` variables configure the exporters.
+///   The services run in a `ServiceGroup` for the life of the process, and
+///   ``shutdown()`` stops them, which flushes the last batch.
+/// - Otherwise ``bootstrap(environment:)`` sends each log record to stderr,
+///   and tracing and metrics stay no-op.
 ///
-/// In both cases no record goes to stdout: `acp-agent acp` writes the ACP
-/// frames there. The diagnostic logger of swift-otel writes to stderr too.
+/// **`LoggingSystem.bootstrap` runs exactly one time on each path.** swift-log
+/// stops the process on a second bootstrap. `OTel.bootstrap` bootstraps the
+/// logs first and can then throw on metrics or traces, so it never gets the
+/// logs: a failure of traces or metrics leaves the logging as it is. When
+/// the logging backend cannot be made, the stderr handler is the one
+/// bootstrap.
+///
+/// In each case no record goes to stdout: `acp-agent acp` writes the ACP
+/// frames there. The swift-log default handler writes to stderr too
+/// (`StreamLogHandler.standardError`), but this executable does not depend
+/// on that default: it states its own handler, so a change of the default,
+/// or a bootstrap in a library, cannot move the records. The diagnostic
+/// logger of swift-otel writes to stderr too.
 ///
 /// Only ``AcpAgentCommand/main()`` calls ``bootstrap(environment:)``. The unit
 /// test target links this target, and a test process must never bootstrap
@@ -62,18 +75,37 @@ enum TelemetryBootstrap {
     /// The standard variable that turns on the OTLP exporters.
     private static let otlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
+    /// The standard variable that turns off the whole OpenTelemetry SDK.
+    private static let sdkDisabledVariable = "OTEL_SDK_DISABLED"
+
+    /// The value of ``sdkDisabledVariable`` that turns the SDK off, in lower
+    /// case. The OpenTelemetry specification reads a Boolean variable
+    /// without case sensitivity.
+    private static let sdkDisabledValue = "true"
+
     /// The label of the stderr logger that reports a bootstrap failure and a
     /// failure of the running service.
     private static let diagnosticLoggerLabel = "acp-agent.telemetry"
 
-    /// The running OpenTelemetry service, or `nil` when no OTLP endpoint is
-    /// set or when ``shutdown()`` stopped it.
+    /// The running OpenTelemetry services, or `nil` when the agent does not
+    /// export, when no backend started, or when ``shutdown()`` stopped them.
     private static let running = Mutex<RunningService?>(nil)
+
+    /// A log handler factory, in the form that `LoggingSystem.bootstrap`
+    /// takes.
+    typealias LogHandlerFactory = @Sendable (String) -> any LogHandler
+
+    /// The factory of the stderr log handler: the handler when the agent does
+    /// not export, and the fallback when the OTLP logging backend cannot be
+    /// made.
+    private static let standardErrorFactory: LogHandlerFactory = { label in
+        StreamLogHandler.standardError(label: label)
+    }
 
     /// The OpenTelemetry service group and the task that runs it.
     private struct RunningService: Sendable {
-        /// The group that holds the OpenTelemetry service. A graceful shutdown
-        /// of the group flushes the exporters.
+        /// The group that holds the OpenTelemetry services. A graceful
+        /// shutdown of the group flushes the exporters.
         let group: ServiceGroup
 
         /// The task that runs `group`. It ends when the group ends.
@@ -83,30 +115,92 @@ enum TelemetryBootstrap {
     /// Bootstraps logging, tracing and metrics for this process. Call it one
     /// time, before the process writes a log record.
     ///
-    /// When `OTel.bootstrap` throws, the reason goes to stderr, and the
-    /// swift-log default handler stays in place. That handler also writes to
-    /// stderr, so stdout stays for ACP frames.
+    /// Each path calls `LoggingSystem.bootstrap` exactly one time. When the
+    /// agent exports, a failure of the logging backend installs the stderr
+    /// handler, and a failure of the traces and metrics bootstrap leaves the
+    /// logging as it is. Each failure writes its reason to stderr.
     ///
     /// - Parameter environment: The process environment. It selects the
-    ///   backend and configures the exporters.
+    ///   backend and configures the exporters. The logging backend of
+    ///   swift-otel 1.5.1 reads the process environment itself, because
+    ///   `OTel.makeLoggingBackend` takes no environment. The only caller
+    ///   gives the process environment, so the two agree.
     static func bootstrap(environment: [String: String]) {
-        guard let endpoint = environment[otlpEndpointVariable], !endpoint.isEmpty else {
-            LoggingSystem.bootstrap(StreamLogHandler.standardError)
+        guard exportsTelemetry(environment: environment) else {
+            LoggingSystem.bootstrap(standardErrorFactory)
             return
         }
-        do {
-            try startOpenTelemetry(environment: environment)
-        } catch {
-            makeDiagnosticLogger().error(
-                "The OpenTelemetry bootstrap failed. Logs go to stderr, and traces and metrics are off.",
-                metadata: ["error": "\(error)"])
-        }
+        let loggingService = installLogging(
+            from: makeLoggingBackend,
+            otherwise: standardErrorFactory,
+            installing: { factory in LoggingSystem.bootstrap(factory) })
+        let tracingAndMetricsService = startTracingAndMetrics(
+            environment: tracingAndMetricsEnvironment(from: environment))
+        run([loggingService, tracingAndMetricsService].compactMap { $0 })
     }
 
-    /// Stops the running OpenTelemetry service and waits until it ends, for
-    /// ``shutdownDeadline`` at most. The graceful shutdown flushes the last
-    /// batch of spans, log records and metrics. When no service runs, it
-    /// does nothing.
+    /// Tells whether `environment` asks for the OTLP exporters: an
+    /// `OTEL_EXPORTER_OTLP_ENDPOINT` that is not empty, and no
+    /// `OTEL_SDK_DISABLED` of `true` in any case.
+    ///
+    /// - Parameter environment: The process environment.
+    /// - Returns: `true` when the agent exports, and `false` when it logs to
+    ///   stderr and keeps tracing and metrics no-op.
+    static func exportsTelemetry(environment: [String: String]) -> Bool {
+        guard let endpoint = environment[otlpEndpointVariable], !endpoint.isEmpty else {
+            return false
+        }
+        return environment[sdkDisabledVariable]?.lowercased() != sdkDisabledValue
+    }
+
+    /// The environment for the traces and metrics bootstrap: `environment`
+    /// with no `OTEL_SDK_DISABLED`.
+    ///
+    /// ``exportsTelemetry(environment:)`` already read that variable. The
+    /// traces and metrics bootstrap must not read it again: swift-otel sets
+    /// the logs switch from it in both directions, so a value of `false`
+    /// turns on the logs that the configuration turned off, and
+    /// `OTel.bootstrap` then bootstraps `LoggingSystem` a second time.
+    ///
+    /// - Parameter environment: The process environment.
+    /// - Returns: `environment` without `OTEL_SDK_DISABLED`.
+    static func tracingAndMetricsEnvironment(from environment: [String: String]) -> [String: String] {
+        environment.filter { $0.key != sdkDisabledVariable }
+    }
+
+    /// Installs one log handler factory: the factory of the backend that
+    /// `makeBackend` makes, or `fallback` when it throws. `install` runs
+    /// exactly one time.
+    ///
+    /// - Parameters:
+    ///   - makeBackend: Makes the backend: its factory and its service.
+    ///   - fallback: The factory to install when `makeBackend` throws.
+    ///   - install: Installs a factory, for example `LoggingSystem.bootstrap`.
+    /// - Returns: The service of the backend, or `nil` when `makeBackend`
+    ///   threw. The reason then goes to stderr.
+    static func installLogging<Factory, BackendService>(
+        from makeBackend: () throws -> (factory: Factory, service: BackendService),
+        otherwise fallback: Factory,
+        installing install: (Factory) -> Void
+    ) -> BackendService? {
+        let backend: (factory: Factory, service: BackendService)
+        do {
+            backend = try makeBackend()
+        } catch {
+            install(fallback)
+            makeDiagnosticLogger().error(
+                "The OpenTelemetry logging backend failed. Logs go to stderr.",
+                metadata: ["error": "\(error)"])
+            return nil
+        }
+        install(backend.factory)
+        return backend.service
+    }
+
+    /// Stops the running OpenTelemetry services and waits until they end,
+    /// for ``shutdownDeadline`` at most. The graceful shutdown flushes the
+    /// last batch of spans, log records and metrics. When no service runs,
+    /// it does nothing.
     ///
     /// When the deadline comes first, the service task is cancelled and
     /// this function returns, so the process can exit. The batch that did
@@ -160,15 +254,52 @@ enum TelemetryBootstrap {
         return ended
     }
 
-    /// Bootstraps swift-otel from `environment` and starts its service.
+    /// Makes the OTLP logging backend of swift-otel. It does not bootstrap
+    /// `LoggingSystem`.
     ///
-    /// - Parameter environment: The process environment with the `OTEL_*`
-    ///   variables.
-    /// - Throws: The configuration or bootstrap error of `OTel.bootstrap`.
-    private static func startOpenTelemetry(environment: [String: String]) throws {
-        let service = try OTel.bootstrap(environment: environment)
+    /// - Returns: The log handler factory and the service that exports the
+    ///   records.
+    /// - Throws: The configuration error of `OTel.makeLoggingBackend`.
+    private static func makeLoggingBackend() throws -> (factory: LogHandlerFactory, service: any Service) {
+        let backend = try OTel.makeLoggingBackend()
+        return (backend.factory, backend.service)
+    }
+
+    /// Bootstraps tracing and metrics with swift-otel, and not logging.
+    ///
+    /// The configuration turns the logs off, so `OTel.bootstrap` never calls
+    /// `LoggingSystem.bootstrap`. When it throws, the reason goes to stderr.
+    /// Metrics can already be bootstrapped then, because swift-otel does
+    /// metrics before traces, but no service exports them.
+    ///
+    /// - Parameter environment: The `OTEL_*` variables, with no
+    ///   `OTEL_SDK_DISABLED` (see ``tracingAndMetricsEnvironment(from:)``).
+    /// - Returns: The service that exports spans and metrics, or `nil` when
+    ///   the bootstrap failed.
+    private static func startTracingAndMetrics(environment: [String: String]) -> (any Service)? {
+        var configuration = OTel.Configuration.default
+        configuration.logs.enabled = false
+        do {
+            return try OTel.bootstrap(configuration: configuration, environment: environment)
+        } catch {
+            makeDiagnosticLogger().error(
+                "The OpenTelemetry traces and metrics bootstrap failed. Traces and metrics are not exported, and the logs stay as they are.",
+                metadata: ["error": "\(error)"])
+            return nil
+        }
+    }
+
+    /// Runs `services` in one service group on a task of its own, and keeps
+    /// the group for ``shutdown()``. When `services` is empty, it does
+    /// nothing.
+    ///
+    /// - Parameter services: The OpenTelemetry services that started.
+    private static func run(_ services: [any Service]) {
+        guard !services.isEmpty else {
+            return
+        }
         let diagnosticLogger = makeDiagnosticLogger()
-        let group = ServiceGroup(services: [service], logger: diagnosticLogger)
+        let group = ServiceGroup(services: services, logger: diagnosticLogger)
         let task = Task {
             do {
                 try await group.run()
