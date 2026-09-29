@@ -281,6 +281,14 @@ extension RoutedACPAgent {
         // means no additional roots. Former roots are never inherited.
         let additionalRoots = try SessionSetup.additionalRoots(
             fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
+
+        // The replaced entry's surface is released before the new one is
+        // composed, never after: its code context indexes the same working
+        // directory the new composition is about to open a fresh code
+        // context over, and two open index databases on the same path
+        // race for the same SQLite write lock (plan.md §7.4, §11.6).
+        await releaseReplacedSession(params.sessionId)
+
         let composition = try await composeSession(
             from: context,
             workingDirectory: workingDirectory,
@@ -289,7 +297,6 @@ extension RoutedACPAgent {
         let restored = try await restoreRecordedSession(
             rootId, sessionId: params.sessionId, composition: composition)
 
-        await releaseReplacedSession(params.sessionId)
         let activation = try await activateSession(
             restored.session,
             composition: composition,
