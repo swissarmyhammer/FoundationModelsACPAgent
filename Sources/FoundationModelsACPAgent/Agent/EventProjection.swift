@@ -84,7 +84,7 @@ struct EventProjection {
     /// The id of the session this projection reports for, in the logs.
     let sessionId: SessionId
 
-    /// The turn-state owner: `turnStarted` maps through it (§8.2).
+    /// The turn-state owner: `submissionStarted` maps through it (§8.2).
     let turnState: TurnStateOwner
 
     /// The sink every update of this projection goes to.
@@ -114,10 +114,10 @@ struct EventProjection {
     /// The one agent thought id of the current reasoning message.
     private var thoughtMessageId: MessageId?
 
-    /// The prompt tokens summed across every `turnEnded` (§8.1).
+    /// The prompt tokens summed across every `submissionEnded` (§8.1).
     private var tokensIn = 0
 
-    /// The completion tokens summed across every `turnEnded`.
+    /// The completion tokens summed across every `submissionEnded`.
     private var tokensOut = 0
 
     /// The finish reason of the last inner generate call of the turn, or
@@ -159,12 +159,12 @@ struct EventProjection {
     /// that cannot generate (task ^s0bw5cv).
     private(set) var sawOutput = false
 
-    /// Whether at least one `turnEnded` usage report arrived
+    /// Whether at least one `submissionEnded` usage report arrived
     /// (task ^pez780d).
     private var sawUsageReport = false
 
     /// Whether the turn generated nothing: no observable output, while
-    /// at least one `turnEnded` arrived and the summed output tokens
+    /// at least one `submissionEnded` arrived and the summed output tokens
     /// are zero. `PromptTurn.drive` reads it to report the honest
     /// `_no_output` stop reason instead of a bare `end_turn`
     /// (plan.md §8.2's `_` rule; task ^pez780d).
@@ -293,6 +293,9 @@ struct EventProjection {
         case .answered, .answerFailed, .repetitionStopped, .mailDeliveryPaused:
             // Router bookkeeping with no ACP counterpart: the stream of
             // the prompt carries the text, the tool calls and the end.
+            // The usage of `answered` is the total of the chain. The
+            // `submissionEnded` sum above already counts these tokens, so
+            // the projection does not add them again.
             turnLogger.debug(
                 "session \(sessionIdValue, privacy: .public): \(String(describing: event), privacy: .public)"
             )

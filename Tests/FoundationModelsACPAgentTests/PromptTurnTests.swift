@@ -248,20 +248,34 @@ import Testing
     // `Support/ProjectionTestSupport.swift`, shared with
     // `EventProjectionTests`.
 
-    /// A retry makes two submissions in one prompt; the prompt still sends
-    /// exactly one `running` and exactly one `idle`, keyed on stream
-    /// completion (§8.1).
-    @Test func aRetryWithTwoSubmissionsSendsOneRunningAndExactlyOneIdle() async throws {
+    /// A retry makes two submissions in one prompt. The Router sends the
+    /// events of both submissions, the usage of each generation call, and
+    /// one `answered` event with the total usage of the chain. The prompt
+    /// sends one `running`, one `usage_update` with each submission counted
+    /// one time, and one `idle`, keyed on stream completion (§8.1).
+    @Test func aRetryWithTwoSubmissionsSendsOneRunningOneSummedUsageUpdateAndOneIdle() async throws {
+        let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.25)
+        let second = TokenUsage(tokensIn: 150, tokensOut: 30, contextFill: 0.5)
+        let chain = TokenUsage(tokensIn: 250, tokensOut: 50, contextFill: 0.5)
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
                 makeSubmissionStarted(),
                 .textDelta("first attempt"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
-                makeSubmissionStarted(),
+                .generationCall(
+                    GenerationCallUsage(
+                        tokensIn: 100, tokensOut: 20, finishReason: .completed, entryKind: .text,
+                        contextFill: 0.25)),
+                makeSubmissionEnded(first),
+                makeSubmissionStarted(cause: .continuation),
                 .textReset,
                 .textDelta("second attempt"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: .nan)),
+                .generationCall(
+                    GenerationCallUsage(
+                        tokensIn: 150, tokensOut: 30, finishReason: .completed, entryKind: .text,
+                        contextFill: 0.5)),
+                makeSubmissionEnded(second),
+                .answered(.makeSynthetic(usage: chain)),
             ]))
         let updates = await recorder.updates
 
@@ -271,7 +285,9 @@ import Testing
         let idle = try #require(
             idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
         #expect(idle.stopReason == .endTurn)
-        #expect(!updates.contains { $0.kind == .usageUpdate })
+        let usages = updates.compactMap(usageReport(of:))
+        #expect(usages.count == 1)
+        #expect(usages.first?.used == chain.tokensIn + chain.tokensOut)
     }
 
     /// `textReset` discards the collected text as a whole-message

@@ -49,10 +49,26 @@ comments:
   id: 01m3q38bn9tj9sg3tg7sdzxp7y
   text: 'Correction to the "Implementation landed" comment: the card that owns the remaining `cancelCurrentTurn()` text in the plan.md dependency table is ^wqe0awe (the plan.md prose rewrite), not "^33agh". That card also names `cancelCurrentRequest()` for §8.6. The Router API is `cancel()`, so its text is now old too. The §8.6 row of this card already uses `cancel()`.'
   timestamp: 2026-09-29T17:26:32.361947+00:00
+- actor: claude-code
+  id: 01m3q3kmvq5j41sz4g6wafj5rv
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit a4680be). 0 findings, 0 confirmed, 0 refuted. The review examined 3 files. The review did not examine `plan.md` (no validator matches it) or the 6 `.kanban/` files (`.reviewignore` excludes them). The task has no earlier review findings.
+    - next: none. The task moved to done.
+  timestamp: 2026-09-29T17:32:42.231357+00:00
+- actor: claude-code
+  id: 01m3q3kw0hc2evm4nvmdq59fy6
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files (CancellationTests.swift, Support/QueuedScriptedFixture.swift, PromptTurn.swift doc comment, plan.md §8.6)
+    - test: green — swift test 613 tests pass; IntegrationTests build ok
+    - commit: a4680be
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T17:32:49.553907+00:00
 depends_on:
 - 01M3A37J8X6VKD5BKYWSJ4HCZD
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: f280
 title: Prove that session/cancel and session/close end a request that waits for a place in the model queue
 ---
 ## Why

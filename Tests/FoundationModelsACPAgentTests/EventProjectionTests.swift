@@ -137,6 +137,18 @@ import Testing
                 .encodedOperationEventDetail())
     }
 
+    /// Makes the result of the scripted fold, which shrinks the transcript
+    /// from `tokensBeforeFold` to `tokensAfterFold`.
+    ///
+    /// - Returns: The compaction result.
+    private static func makeFoldResult() -> CompactionResult {
+        CompactionResult(
+            summary: nil,
+            tokensBefore: tokensBeforeFold,
+            tokensAfter: tokensAfterFold,
+            stagesApplied: ["fold"])
+    }
+
     /// Drives one synthetic event stream through a sinked turn.
     ///
     /// - Parameters:
@@ -615,12 +627,7 @@ import Testing
     /// A compaction sends one `usage_update` — the meter drops to the
     /// post-fold size — and no message update.
     @Test func aCompactionSendsOneUsageUpdateAndNoMessageUpdate() async throws {
-        let result = CompactionResult(
-            summary: nil,
-            tokensBefore: Self.tokensBeforeFold,
-            tokensAfter: Self.tokensAfterFold,
-            stagesApplied: ["fold"])
-        let updates = await Self.drive([.compaction(result)])
+        let updates = await Self.drive([.compaction(Self.makeFoldResult())])
 
         #expect(updates.map(\.kind) == [.usageUpdate, .stateUpdate])
         let usage = try #require(
@@ -628,6 +635,32 @@ import Testing
             "expected the usage update first, got \(updates)")
         #expect(usage.used == Self.tokensAfterFold)
         #expect(usage.size == Self.tokensBeforeFold)
+    }
+
+    /// A retry after a context overflow is two submissions with one
+    /// compaction between them, and one `answered` event with the total
+    /// usage of the chain. The compaction sends its meter update. The
+    /// prompt then sends one more `usage_update`, which counts the usage of
+    /// each submission one time and adds nothing from the `answered` total.
+    @Test func anOverflowRetrySendsItsCompactionUpdateAndOneSummedUsageUpdate() async throws {
+        let overflowed = TokenUsage(tokensIn: 800, tokensOut: 0, contextFill: 0.8)
+        let retried = TokenUsage(tokensIn: 300, tokensOut: 100, contextFill: 0.4)
+        let chain = TokenUsage(tokensIn: 1100, tokensOut: 100, contextFill: 0.4)
+        let updates = await Self.drive([
+            makeSubmissionStarted(),
+            makeSubmissionEnded(overflowed),
+            .compaction(Self.makeFoldResult()),
+            makeSubmissionStarted(cause: .continuation),
+            .textDelta("the answer after the retry"),
+            makeSubmissionEnded(retried),
+            .answered(.makeSynthetic(usage: chain)),
+        ])
+
+        let usages = updates.compactMap(usageReport(of:))
+        #expect(usages.count == 2, "expected the compaction meter and one sum, got \(updates)")
+        #expect(usages.first?.used == Self.tokensAfterFold)
+        #expect(usages.last?.used == chain.tokensIn + chain.tokensOut)
+        #expect(updates.count { isRunningState($0) } == 1)
     }
 
     // MARK: - The NaN meter guard (§8.4)

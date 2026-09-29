@@ -24,10 +24,12 @@ func makeSubmissionQueued() -> SessionEvent {
 
 /// The `submissionStarted` event of one synthetic submission.
 ///
+/// - Parameter cause: Why the session made the submission. A retry after
+///   a context overflow or a rejected tool call is a `continuation`.
 /// - Returns: The event.
-func makeSubmissionStarted() -> SessionEvent {
+func makeSubmissionStarted(cause: SubmissionStart.Cause = .message) -> SessionEvent {
     .submissionStarted(
-        SubmissionStart(submissionId: syntheticSubmissionId, messageIds: [], cause: .message))
+        SubmissionStart(submissionId: syntheticSubmissionId, messageIds: [], cause: cause))
 }
 
 /// The `submissionEnded` event of one synthetic submission, with `usage`
@@ -39,6 +41,22 @@ func makeSubmissionEnded(_ usage: TokenUsage) -> SessionEvent {
     .submissionEnded(
         SubmissionEnd(
             submissionId: syntheticSubmissionId, usage: usage, finishReason: usage.finishReason))
+}
+
+extension SessionAnswer {
+    /// Makes the final answer of one synthetic chain of submissions.
+    ///
+    /// The Router sends the `answered` event after the `submissionEnded`
+    /// event of the last submission. Its usage is the total of the chain,
+    /// so it holds tokens that each `submissionEnded` event already gave.
+    ///
+    /// - Parameter usage: The total usage of the chain.
+    /// - Returns: The answer.
+    static func makeSynthetic(usage: TokenUsage) -> SessionAnswer {
+        SessionAnswer(
+            reply: "", messageIds: [], usage: usage, compactions: [], toolCalls: [],
+            toolInvocations: [])
+    }
 }
 
 // MARK: - The synthetic projection fixtures (plan.md §20.1)

@@ -208,7 +208,7 @@ struct PromptTurn: Sendable {
     /// Drives one event stream to completion and closes the turn: each
     /// event is projected, the summed usage is reported one time, and
     /// exactly one `idle` goes out — keyed on stream completion, never
-    /// on a `turnEnded` count (plan.md §8.1). A `CancellationError` is
+    /// on a `submissionEnded` count (plan.md §8.1). A `CancellationError` is
     /// classified here; it never escapes (§8.2).
     ///
     /// The loop also carries the stalled-generation guard of task
