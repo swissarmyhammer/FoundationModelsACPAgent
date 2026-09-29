@@ -277,6 +277,14 @@ enum ACPAgentTelemetry {
         /// The path of a file that the agent reads or writes. Never the
         /// content of the file.
         static let filePath = "file.path"
+
+        /// The W3C trace id of the span that an "enter" record starts.
+        /// `TracedCall` of Extras uses the same key.
+        static let traceId = "trace.id"
+
+        /// The W3C span id of the span that an "enter" record starts.
+        /// `TracedCall` of Extras uses the same key.
+        static let spanId = "span.id"
     }
 
     /// The text that ``caseName(of:)`` gives for a value that shows no case
@@ -329,8 +337,33 @@ enum ACPAgentTelemetry {
     ///   ``LogMetadataKey/errorType`` values.
     static func errorMetadata(_ error: any Error, sessionId: SessionId) -> Logger.Metadata {
         var metadata = sessionMetadata(sessionId)
-        metadata[LogMetadataKey.errorType] = "\(String(reflecting: type(of: error)))"
+        metadata[LogMetadataKey.errorType] = "\(errorTypeName(of: error))"
         return metadata
+    }
+
+    /// The type name of `error`, for the ``AttributeKey/errorType`` attribute
+    /// and the ``LogMetadataKey/errorType`` metadata value.
+    ///
+    /// - Parameter error: The error.
+    /// - Returns: The full type name, with its module, for example
+    ///   `FoundationModelsACP.RequestError`. Never the error message, because a
+    ///   message can hold content.
+    static func errorTypeName(of error: any Error) -> String {
+        String(reflecting: type(of: error))
+    }
+
+    /// The text before the span name in the message of an "enter" record.
+    /// It is the text that `TracedCall` of FoundationModelsExtras writes.
+    private static let enterMessagePrefix = "enter "
+
+    /// The message of the "enter" record of the span with the name
+    /// `spanName`: the record that a call writes when it starts, so that a
+    /// call that hangs shows as a record with no span that ends.
+    ///
+    /// - Parameter spanName: The name of the span of the call.
+    /// - Returns: `enter <spanName>`, the message that `TracedCall` writes.
+    static func enterMessage(forSpanNamed spanName: String) -> String {
+        enterMessagePrefix + spanName
     }
 
     /// The metadata of a record about one file: its path, never its content.
@@ -403,12 +436,9 @@ enum ACPAgentTelemetry {
     /// makes the agent still traces, because the tracer is read only when the
     /// call starts.
     ///
-    /// OTel 6 and OTel 8 call this function, so periphery sees no caller yet.
-    ///
     /// - Parameter explicit: The tracer the agent was made with, or `nil` to
     ///   read the bootstrapped tracer now.
     /// - Returns: `explicit` when it is set, else `InstrumentationSystem.tracer`.
-    // periphery:ignore
     static func tracer(explicit: (any Tracer)?) -> any Tracer {
         explicit ?? InstrumentationSystem.tracer
     }

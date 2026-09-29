@@ -4,6 +4,7 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
+import Tracing
 
 @testable import FoundationModelsACPAgent
 
@@ -70,6 +71,9 @@ struct ScriptedPromptFixture {
     ///   - tapsAgentWire: Whether the harness stands a `WireTap` on the
     ///     agent end, so a proof can read what the client sent. Only the
     ///     §5.9 cancel proof needs it.
+    ///   - tracer: The tracer of each Router session, or `nil` to read
+    ///     `InstrumentationSystem.tracer` at call time. A suite that
+    ///     captures the Router spans gives the tracer of its capture.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -80,7 +84,8 @@ struct ScriptedPromptFixture {
         projectConfigYAML: String? = nil,
         mcpServers: [MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
-        tapsAgentWire: Bool = false
+        tapsAgentWire: Bool = false,
+        tracer: (any Tracer)? = nil
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
@@ -90,7 +95,8 @@ struct ScriptedPromptFixture {
             projectConfigYAML: projectConfigYAML,
             mcpServers: mcpServers,
             additionalDirectories: additionalDirectories,
-            tapsAgentWire: tapsAgentWire)
+            tapsAgentWire: tapsAgentWire,
+            tracer: tracer)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -120,6 +126,8 @@ struct ScriptedPromptFixture {
     ///   - tapsAgentWire: Whether the harness stands a `WireTap` on the
     ///     agent end, so a proof can read what the client sent. Only the
     ///     §5.9 cancel proof needs it.
+    ///   - tracer: The tracer of each Router session, or `nil` to read
+    ///     `InstrumentationSystem.tracer` at call time.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -131,7 +139,8 @@ struct ScriptedPromptFixture {
         mcpServers: [MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
         tapsWire: Bool = false,
-        tapsAgentWire: Bool = false
+        tapsAgentWire: Bool = false,
+        tracer: (any Tracer)? = nil
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -143,7 +152,8 @@ struct ScriptedPromptFixture {
             cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
             recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
             userDirectory: userDirectory,
-            loader: loader)
+            loader: loader,
+            tracer: tracer)
         let harness = await AgentClientHarness.makeRecording(
             agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
         _ = try await harness.connection.initialize(

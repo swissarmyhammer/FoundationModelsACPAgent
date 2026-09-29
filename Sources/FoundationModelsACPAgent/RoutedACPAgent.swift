@@ -182,9 +182,11 @@ public actor RoutedACPAgent: Agent {
     // (plan.md §15).
 }
 
-/// The wire names of the session requests this agent serves, as the
-/// generated routing table spells them.
+/// The wire names of the requests and the notifications this agent serves, as
+/// the generated routing table spells them.
 enum ACPMethod {
+    /// `initialize`.
+    static let initialize = "initialize"
     /// `session/new`.
     static let sessionNew = "session/new"
     /// `session/list`.
@@ -195,6 +197,8 @@ enum ACPMethod {
     static let sessionClose = "session/close"
     /// `session/prompt`.
     static let sessionPrompt = "session/prompt"
+    /// `session/cancel`, a notification.
+    static let sessionCancel = "session/cancel"
     /// `session/delete`.
     static let sessionDelete = "session/delete"
     /// `session/set_config_option`.

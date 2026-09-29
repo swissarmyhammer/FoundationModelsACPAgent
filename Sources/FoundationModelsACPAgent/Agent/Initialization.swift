@@ -94,9 +94,24 @@ extension RoutedACPAgent {
     /// ``negotiatedClientCapabilities``, which also marks the agent as
     /// initialized for the order rule.
     ///
+    /// The request runs in one server span (``RequestTracing``).
+    ///
     /// - Parameter params: The client's `initialize` request.
     /// - Returns: The agent's `initialize` response.
     public func initialize(_ params: InitializeRequest) async throws -> InitializeResponse {
+        await RequestTracing.withRequestSpan(
+            ACPAgentTelemetry.SpanName.initialize, method: ACPMethod.initialize, sessionId: nil
+        ) { _ in
+            negotiate(params)
+        }
+    }
+
+    /// Negotiates the protocol version, reads the client's capabilities and
+    /// logs the client identity: the work of ``initialize(_:)``.
+    ///
+    /// - Parameter params: The client's `initialize` request.
+    /// - Returns: The agent's `initialize` response.
+    private func negotiate(_ params: InitializeRequest) -> InitializeResponse {
         let protocolVersion = Self.negotiateProtocolVersion(requested: params.protocolVersion)
         negotiatedClientCapabilities = NegotiatedClientCapabilities(reading: params.capabilities)
         ACPAgentTelemetry.logger(.initialization).info(

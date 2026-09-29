@@ -4,6 +4,7 @@ import FoundationModelsACP
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import Logging
+import Tracing
 
 /// Why one prompt stopped, in this agent's own vocabulary
 /// (plan.md §8.2). Router's error enums are internal, so the prompt
@@ -579,12 +580,59 @@ extension RoutedACPAgent {
     /// through `afterRespondingToCurrentRequest`, and returns `{}` at
     /// once. Never a detached task that races the response.
     ///
+    /// The prompt runs in one server span, from the request in to the stop
+    /// reason out, and it writes one "enter" record when it starts
+    /// (``RequestTracing``). The work after the `{}` response runs in the
+    /// context of the span, so each Router submission span of the prompt is
+    /// a child of it. The span ends with the prompt stop reason after that
+    /// work, or with the error when the prompt is refused.
+    ///
     /// - Parameter params: The prompt request.
     /// - Returns: The empty acceptance.
     /// - Throws: The order rule's error, `unknownSession` (§10.1),
     ///   `closedSession` (§10.1), `busySession` (§7.1), or a command
     ///   refusal (§14.3).
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
+        let span = RequestTracing.startRequestSpan(
+            ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
+            sessionId: params.sessionId, logger: ACPAgentTelemetry.logger(.promptExecution))
+        do {
+            let response = try await ServiceContext.withValue(span.context) {
+                try await acceptPrompt(params)
+            }
+            endSpanAfterPrompt(span, sessionId: params.sessionId)
+            return response
+        } catch {
+            RequestTracing.endRequestSpan(span, throwing: error)
+            throw error
+        }
+    }
+
+    /// Ends the span of an accepted prompt after the work of the prompt.
+    ///
+    /// The prompt registered its work with `afterRespondingToCurrentRequest`
+    /// during the acceptance, and the connection runs the registered work in
+    /// order. Thus the work that this method registers runs after the
+    /// prompt ended, and it reads the stop reason from the prompt-state
+    /// owner. An accepted prompt always has an owner and a bound connection.
+    ///
+    /// - Parameters:
+    ///   - span: The span of the prompt.
+    ///   - sessionId: The session of the prompt.
+    private func endSpanAfterPrompt(_ span: any Span, sessionId: SessionId) {
+        let owner = sessions[sessionId]?.activePrompt
+        boundConnection?.afterRespondingToCurrentRequest {
+            RequestTracing.endPromptSpan(span, stopReason: await owner?.stopReason)
+        }
+    }
+
+    /// Accepts one prompt: the work of ``prompt(_:)`` before the `{}`
+    /// response.
+    ///
+    /// - Parameter params: The prompt request.
+    /// - Returns: The empty acceptance.
+    /// - Throws: The errors that ``prompt(_:)`` names.
+    private func acceptPrompt(_ params: PromptRequest) async throws -> PromptResponse {
         try requireInitialized(before: ACPMethod.sessionPrompt)
         guard let entry = sessions[params.sessionId] else {
             throw RequestError.unknownSession(id: params.sessionId)
@@ -689,7 +737,9 @@ extension RoutedACPAgent {
             relayElicitation: { event in
                 await relay.relay(event, on: session, promptState: owner)
             })
-        connection.afterRespondingToCurrentRequest {
+        // The prompt span context goes with the work, so each Router
+        // submission span of the prompt is a child of the prompt span.
+        connection.afterRespondingInCurrentServiceContext {
             await execution.run(session: session)
             await self.promptFinished(sessionId: sessionId)
         }
@@ -709,8 +759,22 @@ extension RoutedACPAgent {
     /// an unknown id or an idle session is logged and ignored (plan.md
     /// §10.1).
     ///
+    /// The notification runs in one server span (``RequestTracing``).
+    ///
     /// - Parameter params: The cancellation notification.
     public func sessionCancel(_ params: CancelSessionNotification) async {
+        await RequestTracing.withRequestSpan(
+            ACPAgentTelemetry.SpanName.cancel, method: ACPMethod.sessionCancel, sessionId: params.sessionId
+        ) { _ in
+            await cancelRunningPrompt(params)
+        }
+    }
+
+    /// Cancels the running prompt of one session: the work of
+    /// ``sessionCancel(_:)``.
+    ///
+    /// - Parameter params: The cancellation notification.
+    private func cancelRunningPrompt(_ params: CancelSessionNotification) async {
         guard let entry = sessions[params.sessionId], let promptState = entry.activePrompt else {
             ACPAgentTelemetry.logger(.promptExecution).notice(
                 "A session/cancel found no running prompt. The agent ignores it.",

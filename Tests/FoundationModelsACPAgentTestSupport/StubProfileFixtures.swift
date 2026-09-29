@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsRouter
+import Tracing
 
 // MARK: - A resolved profile over stub models
 //
@@ -33,6 +34,10 @@ import FoundationModelsRouter
 ///   - userDirectory: The injected user layer root, or `nil` when the
 ///     suite composes no session.
 ///   - loader: The loader the router loads through.
+///   - tracer: The tracer of each Router session, or `nil` (the default) to
+///     read `InstrumentationSystem.tracer` at call time. A suite that
+///     captures the Router spans gives the tracer of its capture — see
+///     ``EchoModel/makeRouter(cacheDirectory:recordingsDirectory:loader:tracer:)``.
 /// - Returns: The constructed agent.
 /// - Throws: `DotfolderNameError` when `name` is refused, or
 ///   `ProfileResolutionError` when the stub resolution fails.
@@ -41,12 +46,14 @@ public func makeStubAgent(
     cacheDirectory: URL,
     recordingsDirectory: URL? = nil,
     userDirectory: URL? = nil,
-    loader: any ModelLoader = StubModelLoader()
+    loader: any ModelLoader = StubModelLoader(),
+    tracer: (any Tracer)? = nil
 ) async throws -> RoutedACPAgent {
     let router = EchoModel.makeRouter(
         cacheDirectory: cacheDirectory,
         recordingsDirectory: recordingsDirectory,
-        loader: loader)
+        loader: loader,
+        tracer: tracer)
     return try await RoutedACPAgent(
         name: DotfolderName(name),
         router: router,

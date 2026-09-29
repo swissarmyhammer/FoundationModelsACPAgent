@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsRouter
+import Tracing
 
 // MARK: - The deterministic model path (cli-plan.md §9)
 //
@@ -345,15 +346,23 @@ public enum EchoModel {
     ///   - recordingsDirectory: The durable transcripts root, or `nil` (the
     ///     default) to record nothing.
     ///   - loader: The loader the router loads through.
+    ///   - tracer: The tracer that each session of the router opens its
+    ///     spans through, or `nil` (the default) to read
+    ///     `InstrumentationSystem.tracer` at call time. The work of a Router
+    ///     session runs in a detached task, which does not get a task-local
+    ///     tracer, so a test that captures the Router spans gives its tracer
+    ///     here.
     /// - Returns: The router to resolve against.
     public static func makeRouter(
         cacheDirectory: URL,
         recordingsDirectory: URL? = nil,
-        loader: any ModelLoader = StubModelLoader()
+        loader: any ModelLoader = StubModelLoader(),
+        tracer: (any Tracer)? = nil
     ) -> Router {
         Router(
             cacheDir: cacheDirectory,
             recordingsDir: recordingsDirectory,
+            tracer: tracer,
             probe: StubMachine(),
             metadataSource: StubMetadata(),
             loader: loader,

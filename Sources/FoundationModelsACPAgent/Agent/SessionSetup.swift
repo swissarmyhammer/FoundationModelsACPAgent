@@ -301,6 +301,11 @@ extension RoutedACPAgent {
     /// the first recorded activity, because §9's zero-prompt rule makes a
     /// persisted transcript the listability test.
     ///
+    /// The request runs in one server span, and it writes one "enter" record
+    /// when it starts, because the tool and MCP server composition can take a
+    /// long time (``RequestTracing``). The span carries the id of the new
+    /// session.
+    ///
     /// - Parameter params: The request: the absolute `cwd`, the ordered
     ///   `additionalDirectories`, and the client's session-scoped
     ///   `mcpServers` (§7.2, §7.3).
@@ -310,6 +315,24 @@ extension RoutedACPAgent {
     ///   `RequestError.invalidParams` for a relative cwd, or whatever the
     ///   composition pipeline throws.
     public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
+        try await RequestTracing.withEnteredRequestSpan(
+            ACPAgentTelemetry.SpanName.sessionNew, method: ACPMethod.sessionNew, sessionId: nil,
+            logger: ACPAgentTelemetry.logger(.session)
+        ) { span in
+            let response = try await createSession(params)
+            span.attributes[ACPAgentTelemetry.AttributeKey.sessionId] = response.sessionId.rawValue
+            return response
+        }
+    }
+
+    /// Creates the root Router session of one `session/new`: the work of
+    /// ``newSession(_:)``.
+    ///
+    /// - Parameter params: The `session/new` request.
+    /// - Returns: The response carrying the new sessionId and the
+    ///   `configOptions` list.
+    /// - Throws: The errors that ``newSession(_:)`` names.
+    private func createSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
         try requireInitialized(before: ACPMethod.sessionNew)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
             path: params.cwd.rawValue, field: .cwd)

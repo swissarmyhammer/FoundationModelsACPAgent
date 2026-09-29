@@ -47,10 +47,12 @@ actor PromptStateOwner {
     /// Whether ``promptDidStart()`` already sent `running` for the prompt.
     private var didStart = false
 
-    /// Whether the prompt has ended: whether ``promptDidEnd(reason:)`` sent
-    /// the `idle` terminator. `session/close` reads it, so the close
-    /// response follows the terminator (plan.md §10.1).
-    private var didEnd = false
+    /// The stop reason that the `idle` terminator carried, or `nil` while the
+    /// prompt runs: a value tells that ``promptDidEnd(reason:)`` sent the
+    /// terminator. `session/close` reads it, so the close response follows
+    /// the terminator (plan.md §10.1), and the prompt span reads it when it
+    /// ends.
+    private(set) var stopReason: StopReason?
 
     /// The waiters suspended in ``waitForPromptEnd()`` until the terminator
     /// goes out.
@@ -103,7 +105,7 @@ actor PromptStateOwner {
     /// - Parameter reason: Why the prompt stopped.
     func promptDidEnd(reason: StopReason) async {
         await send(.stateUpdate(.idle(IdleStateUpdate(stopReason: reason))))
-        didEnd = true
+        stopReason = reason
         let waiters = endWaiters
         endWaiters = []
         for waiter in waiters {
@@ -116,7 +118,7 @@ actor PromptStateOwner {
     /// ended before the close response (plan.md §10.1). It returns at once
     /// when the terminator already went out.
     func waitForPromptEnd() async {
-        guard !didEnd else {
+        guard stopReason == nil else {
             return
         }
         await withCheckedContinuation { continuation in

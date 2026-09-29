@@ -251,7 +251,7 @@ extension RoutedACPAgent {
                     arguments: command.arguments,
                     workingDirectory: entry.workingDirectory))
             let sessionId = params.sessionId
-            connection.afterRespondingToCurrentRequest {
+            connection.afterRespondingInCurrentServiceContext {
                 await execution.run()
                 await self.promptFinished(sessionId: sessionId)
             }

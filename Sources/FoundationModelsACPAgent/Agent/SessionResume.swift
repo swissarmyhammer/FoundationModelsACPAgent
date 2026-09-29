@@ -244,6 +244,10 @@ extension RoutedACPAgent {
     /// reconnect. Replay, when asked for, goes out before the response
     /// returns.
     ///
+    /// The request runs in one server span, and it writes one "enter" record
+    /// when it starts, because the composition and the restore can take a
+    /// long time (``RequestTracing``).
+    ///
     /// - Parameter params: The resume request.
     /// - Returns: The response: the `configOptions` list, and a `_meta`
     ///   `missingTools` report when the restore could not re-apply every
@@ -254,6 +258,21 @@ extension RoutedACPAgent {
     ///   unknown-cursor refusals; `RequestError.busySession` while a prompt
     ///   runs; or whatever the composition or the restore throws.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
+        try await RequestTracing.withEnteredRequestSpan(
+            ACPAgentTelemetry.SpanName.sessionResume, method: ACPMethod.sessionResume,
+            sessionId: params.sessionId, logger: ACPAgentTelemetry.logger(.sessionResume)
+        ) { _ in
+            try await restoreSession(params)
+        }
+    }
+
+    /// Restores one recorded root session: the work of
+    /// ``resumeSession(_:)``.
+    ///
+    /// - Parameter params: The resume request.
+    /// - Returns: The response that ``resumeSession(_:)`` names.
+    /// - Throws: The errors that ``resumeSession(_:)`` names.
+    private func restoreSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
         try requireInitialized(before: ACPMethod.sessionResume)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
             path: params.cwd.rawValue, field: .cwd)

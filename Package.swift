@@ -170,6 +170,18 @@ private let metricsVersionFloor: Version = "2.11.0"
 /// `LoggingSystem`.
 private let loggingProduct = Target.Dependency.product(name: "Logging", package: loggingPackage)
 
+/// The span API product of `tracingPackage`. The library target links it with
+/// the other telemetry APIs, the test support links it for the tracer of the
+/// stub agent, and the request tracing suite links it to read the kind and the
+/// attributes of a span.
+private let tracingProduct = Target.Dependency.product(name: "Tracing", package: tracingPackage)
+
+/// The in-memory tracer product of `tracingPackage`. Only the unit test target
+/// links it: the request tracing suite reads the trace id, the span id and the
+/// parent span id of each span that a `TelemetryCapture` keeps.
+private let inMemoryTracingProduct = Target.Dependency.product(
+    name: "InMemoryTracing", package: tracingPackage)
+
 /// The telemetry API products the library target links (the approved
 /// OpenTelemetry design, items 1 and 3).
 ///
@@ -177,7 +189,7 @@ private let loggingProduct = Target.Dependency.product(name: "Logging", package:
 /// executable only, and it is NOT here: an application bootstraps the backend,
 /// and until it does so each API is a no-op.
 private let telemetryAPIProducts: [Target.Dependency] = [
-    .product(name: "Tracing", package: tracingPackage),
+    tracingProduct,
     loggingProduct,
     .product(name: "Metrics", package: metricsPackage),
 ]
@@ -400,12 +412,15 @@ let package = Package(
         // agent-and-client harness, the scripted model, the stub profile
         // fixtures, the built-product locator, and the assertion helpers.
         // A library target, so the nested `IntegrationTests` package
-        // reaches it as a product — see `testSupportTargetName`.
+        // reaches it as a product — see `testSupportTargetName`. It links
+        // the span API, because the stub agent factory takes the tracer of
+        // the Router sessions.
         .target(
             name: testSupportTargetName,
             dependencies: [
                 .target(name: packageName),
                 makeFamilyProduct(name: clientDependencyName),
+                tracingProduct,
             ] + familyProducts,
             path: "Tests/\(testSupportTargetName)"
         ),
@@ -417,8 +432,9 @@ let package = Package(
         // §12) — and the agent CLI target with its parser, so the parse
         // and composition suites drive the command tree in process. The
         // telemetry suites also link the Extras telemetry test helper — see
-        // `telemetryTestSupportProduct` — and swift-log, whose record types
-        // they read.
+        // `telemetryTestSupportProduct` — swift-log, whose record types
+        // they read, and the span API with the in-memory tracer, whose span
+        // kinds and span ids they read — see `inMemoryTracingProduct`.
         //
         // `acp-print` and the live-loader products are NOT here: the
         // suites that spawn a built binary or load a real model live in
@@ -434,6 +450,8 @@ let package = Package(
                 argumentParserProduct,
                 telemetryTestSupportProduct,
                 loggingProduct,
+                tracingProduct,
+                inMemoryTracingProduct,
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
         ),
