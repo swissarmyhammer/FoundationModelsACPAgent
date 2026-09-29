@@ -2279,37 +2279,30 @@ ACP Client conformance = @Observable   SwiftUI binds this
 
 ## 20. Testing
 
-### 20.1 The three test levels — one package each, and only the last needs a model
+### 20.1 The two test levels — one package each
 
-The organizing question: **"is the code correct" and "does the model use
-the tools" are different questions.** Only the second needs a model, and
-only the second can answer differently on two runs of the same code.
-
-Three levels, and each is one SwiftPM package, so the boundary is
-structural. No environment variable selects a test.
+The org test contract (swissarmyhammer/workflows' `docs/swift-ci.md`) has
+two levels, and this package has the same two. Each level is one SwiftPM
+package, so the boundary is structural. No environment variable selects a
+test.
 
 | Level | Package | Runs on | Model | Answers | A failure means |
 |---|---|---|---|---|---|
 | **Unit** | the root package | CI, every commit, seconds | scripted or none | is each part correct, and is the wire shape right — ordering, upserts, replay, and real tools through the real conformance | a defect |
-| **Integration** | `IntegrationTests` | CI, every commit, about three minutes | scripted, plus the shipped standard model for the skill trigger gate | does the contract hold across a real process boundary — framing, spawned binaries, no stray children | a defect |
-| **Evaluation** | `EvaluationTests` | on demand only, hours | **real** | does a local model, driven over ACP end to end, *choose* to use the tools, and succeed | a score moved; maybe a defect, maybe the model |
+| **Integration** | `IntegrationTests` | CI, every commit, a few minutes | scripted, plus the shipped standard model for the skill trigger gate and the tool calling gate (§20.3) | does the contract hold across a real process boundary — framing, spawned binaries, no stray children — and can the shipped model use the tools | a defect |
 
-**Why Evaluation stands apart, and why CI never runs it.** The first two
-levels assert. They are fast, they are deterministic, and a red mark is
-always a defect, so they belong on every commit. The third scores. It
-drives 24 real model turns, it takes hours, and a mean below the floor
-can be a model question rather than a code defect.
+Every suite on both levels asserts. A suite that uses the real model
+decodes greedy, thus the same code gives the same result in every run, and
+a red mark is always a change.
 
-Those two verdicts must not share one exit code. They did, and the bill
-came in twice. One low score marked the process-boundary contract broken,
-the job stayed red for days, and two real faults sat in the integration
-package with no red mark to name them (cards `^gwnczy6` and `^bah727b`).
-A CI run also measured week-old code for a week, because a red job that
-nobody can read is a job nobody watches.
+`ci.yml` runs both levels, and `CIWorkflowTests` pins that delegation.
 
-So: `ci.yml` runs Unit and Integration. `evaluation.yml` runs Evaluation
-when a person asks for it, and `CIWorkflowTests` pins both halves of that
-separation. By hand it is `swift test --package-path EvaluationTests`.
+An evaluation level stood here until 2026-09-27: the `EvaluationTests`
+package, which scored a real model over a dataset of Python CLI build tasks,
+on demand only. It was removed. It was a third level that the org contract
+does not have, CI never ran it, and its no-model tests thus never ran
+either. The tool calling gate (§20.3) keeps the question that matters on
+every commit: can the shipped model call `files` and `shell`.
 
 **The skill trigger gate is in Integration, and it uses the shipped model.**
 It answers the one question no unit test can: does the model we ship load
@@ -2451,11 +2444,10 @@ value.
 stays small.** That package is the whole selection: `swift test` at the root
 never sees it, `swift test --package-path IntegrationTests` runs it, and the
 shared CI workflow's integration job runs it at each commit. No environment
-variable selects a test. The Evaluation level is a third package,
-`EvaluationTests`, and CI never runs it (§20.1). Integration exists for the
+variable selects a test. Integration exists for the
 one thing the unit level cannot see: real process boundaries. stdout carries only ndJSON
 while `shell` runs subprocesses that write to *their* stdout. And no message
-contains a newline. (Both are protocol MUSTs, §17.) Tier 4 is §20.3.
+contains a newline. (Both are protocol MUSTs, §17.) The tool calling gate is §20.3.
 
 ### 20.2 Examples: `acp-agent` (the server + the integration fixture) and `acp-print` (the client driver)
 
@@ -2526,52 +2518,28 @@ first, because `acp-print` spawns it. The same client package is the driver
 for every level above unit (§20.1), so `acp-print` and the stdio contract test share
 one spawn-and-connect path.
 
-### 20.3 Evaluations — `PythonCLIEvaluation`
+### 20.3 The tool calling gate — `ToolCallingTests`
 
-The end-to-end coding eval belongs to the layer that composes the roster.
-(Router keeps its compaction eval over sample tools.) The eval drives real
-`files` + `shell` through a real multi-turn build task, on Apple's Evaluations
-framework (swift-testing native). It needs Apple silicon + real models +
-network, and it scores rather than asserts, so it lives in its own nested
-`EvaluationTests` package, which CI never runs (§20.1):
+One integration test proves on every commit that the shipped model can call
+the tools. It lives in `IntegrationTests` beside the skill trigger gate, and
+it uses the same shape: the shipped standard model
+(`ProfileConfiguration.defaultStandard`), greedy decoding, and the composed
+agent driven over ACP through the in-memory harness.
 
-1. **Subject**: `subject(from sample:)` makes a fresh temp workspace (the
-   session's `workingDirectory` and the tools' confinement root). It wires
-   recording to a temp location. It constructs the composed agent with real
-   `files`/`shell` and the coding instructions. **It drives the agent over
-   ACP, end to end** (decided 2026-09-01): `InMemoryTransport.pair()`, an
-   `AgentSideConnection` around the real `RoutedACPAgent`,
-   `SwiftUIACPClient.connect(over:)` (§20.1), then `initialize` →
-   `session/new(workspace)` → `session/prompt`, and it waits for
-   `turnState == .idle`. It never calls the Router session directly.
-   "Working" means a Client can drive the Agent, so the one level with a real
-   local model proves the same path that the Mac app and an editor use. It
-   returns the workspace path + the transcript + the `ACPSessionState` + the
-   recorder's notification list + the run stats.
-2. **Dataset**: an `ArrayLoader` of `ModelSample`s. Each is a variant of
-   "build a small Python CLI" (`pyproject.toml`, a third-party package such as
-   `click`, the CLI, pytest tests, a project-local venv, pytest green, then
-   run it). `expected` carries the fixed input/output pair. Start with 20–30
-   hand-written samples, per Apple's guidance. Scale later with
-   `SampleGenerator`.
-3. **Evaluators: mechanical, and confirmed outside the agent.** They do not
-   trust the transcript's claims. One `Metric` each: `PytestGreen` (runs
-   pytest again in the venv; exit 0), `CLIRuns` (runs the CLI against
-   `expected` and checks the output), `FilesPresent`, `ToolTraffic` (two
-   readings that must agree: the transcript's operation events show
-   `tools.files.*` and `tools.shell.execute` under `runCode`, and the wire
-   shows the same — `ACPSessionState.toolCalls` holds completed `runCode`
-   calls and the recorder holds `tool_call_content_chunk` updates for the
-   shell steps, §8.4; tool traffic that never reached the wire is a
-   projection defect).
-4. **Aggregation**: `MetricsAggregator.computeMean` for each metric. The
-   `@Test` asserts the mean pass rates against thresholds. The turn count, the
-   tool-call counts, and the token usage ride along, keyed by the resolved
-   model from `manifest.json`.
+1. **The prompt** asks for two steps with `runCode`: write `probe.txt` with a
+   marker text through `tools.files.write`, then run
+   `shasum -a 256 probe.txt > probe.sha256` through `tools.shell.execute`.
+2. **The disk is the proof.** The marker in `probe.txt` shows that the file
+   write ran. A model cannot calculate a SHA-256 hash itself, thus a correct
+   hash in `probe.sha256` shows that the shell ran.
+3. **The turn ends with `end_turn`.** The test does not cancel the turn. On
+   2026-09-27 a cancel gave the idle update while the MLX prefill still ran,
+   and the process stopped with SIGSEGV at exit after the test passed.
 
-Isolation: everything stays in the temp workspace. The venv is in it. There is
-no system-Python change. There is no network beyond the package install.
-Delete the workspace after grading. (Keep the transcripts for failed runs.)
+Measured on 2026-09-27: 90 seconds with the model load, and `end_turn`.
+
+Run it with `swift test --package-path IntegrationTests --filter
+ToolCallingTests`.
 
 ## 21. Upstream dependencies
 

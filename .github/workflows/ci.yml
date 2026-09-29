@@ -14,16 +14,10 @@ name: CI
 #   `acp-agent` and `acp-print` binaries. `integration-package-path` alone
 #   starts the shared workflow's integration job on the `[self-hosted, macOS]`
 #   pool, and it also makes the unit job BUILD the nested package on every
-#   run, so those tests cannot break unseen.
-# - The evaluations are NOT here. They are the third test level, the
-#   `EvaluationTests` package, and `evaluation.yml` drives them on
-#   `workflow_dispatch` alone. CI answers "is the code correct", and every
-#   suite it runs is deterministic, so a red mark here is always a defect.
-#   The evaluations answer "does a real model choose to use the tools and
-#   succeed": hours long, and a low score can be a model question. The two
-#   must not share one exit code. When they did, one low score marked the
-#   process-boundary contract broken and a real contract regression had
-#   nowhere to show (cards ^gwnczy6 and ^bah727b).
+#   run, so those tests cannot break unseen. Two of its suites drive the
+#   shipped model with greedy decoding, thus each run gives the same result:
+#   `SkillTriggerTests` (the model loads a skill) and `ToolCallingTests` (the
+#   model writes a file and runs a shell command).
 # - The package boundary is the whole selection. No suite reads an
 #   environment variable to decide whether it runs, and the root `swift test`
 #   never sees the slow targets.

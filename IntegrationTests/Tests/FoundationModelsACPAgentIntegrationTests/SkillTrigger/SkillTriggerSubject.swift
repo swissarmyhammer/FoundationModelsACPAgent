@@ -185,6 +185,11 @@ struct SkillTriggerSubject {
             deadline: ContinuousClock.now + Self.cancelDeadline)
         await harness.flushPendingChunks()
         let answer = await Self.answerText(of: collector, sessionId: sessionId)
+        // The cancel ends the prompt, but a model call or a background run of
+        // the session can still be at work. Drain the session and close it,
+        // so no generation of this sample runs when the next sample starts,
+        // or when the process exits.
+        try await SessionDrain.drainAndClose(sessionId, in: harness)
         return SkillTriggerRun(
             sample: sample,
             loadedSkillIDs: decision.loadedIDs,

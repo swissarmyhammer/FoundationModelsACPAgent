@@ -90,11 +90,9 @@ private let liveLoaderProducts: [Target.Dependency] = [
 /// A failure here is a defect. Most suites use the stub model or none.
 /// `StdioContractTests` drives a small real model through the live loader
 /// behind the spawned binary. `SkillTriggerTests` proves that the shipped
-/// standard model loads the skill that fits a task; it decodes greedy, thus
-/// every run gives the same decision. The evaluations, which
-/// score a model over hours rather than assert, are the `EvaluationTests`
-/// package, and CI never runs them. See that manifest for why the two are
-/// apart.
+/// standard model loads the skill that fits a task, and `ToolCallingTests`
+/// proves that it writes a file and runs a shell command. Both decode
+/// greedy, thus every run gives the same result.
 let package = Package(
     name: integrationTargetName,
     platforms: [
