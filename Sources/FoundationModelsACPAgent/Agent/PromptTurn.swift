@@ -115,11 +115,22 @@ struct PromptTurn: Sendable {
     /// every time.
     ///
     /// A zero fragment count is no evidence that the model made nothing.
-    /// Through that whole successful turn Router kept reporting `0
-    /// fragments`, at 1780 seconds in flight, while `runCode` and shell
-    /// calls were completing. So ``endsTurn(_:sawOutput:)`` holds one
-    /// honest signal, `sawOutput`, and the bound must stand clear of the
-    /// window before the first output rather than measure the decode.
+    /// ``GenerationStall/visibility`` counts the fragments of the whole
+    /// model call, and a tool call is not a fragment. So
+    /// ``endsTurn(_:sawOutput:)`` holds one honest signal, `sawOutput`,
+    /// and the bound must stand clear of the window before the first
+    /// output rather than measure the decode. The 2026-09-08 run showed
+    /// this: the Router watch of that date also counted the tool bodies,
+    /// and it reported `0 fragments` at 1780 seconds in flight while
+    /// `runCode` and shell calls were completing.
+    ///
+    /// The bound compares with ``GenerationStall/timeWithoutProgress``
+    /// only. The Router counts that time only while a pass of the request
+    /// holds its place in the model queue (Router task ^ake8sax). A wait
+    /// for a place in the queue and a tool body between two passes do not
+    /// count, thus a request that waits behind other sessions never
+    /// reaches the bound. ``GenerationStall/timeInFlight`` includes the
+    /// wait and the tool bodies, so no stop decision reads it.
     ///
     /// Thirty minutes stands well past the measured 555 seconds and well
     /// under the 3120 seconds of the model that made nothing, so the
@@ -144,7 +155,8 @@ struct PromptTurn: Sendable {
     /// The model reference the turn's session generates with.
     ///
     /// The stalled-generation report names it (task ^s0bw5cv), so a
-    /// person who reads the log learns which model made nothing. It is
+    /// person who reads the log learns which model made nothing. The log
+    /// line of a wait for a place in the model queue names it too. It is
     /// the same string `/status` shows for the selected slot.
     let modelName: String
 
@@ -213,6 +225,7 @@ struct PromptTurn: Sendable {
             sessionId: sessionId,
             turnState: turnState,
             send: send,
+            modelName: modelName,
             shellSnapshot: shellSnapshot,
             relayElicitation: relayElicitation)
         var stop = TurnStop.completed
@@ -310,12 +323,20 @@ struct PromptTurn: Sendable {
     /// Whether the turn stops waiting on the generation `stall` reports.
     ///
     /// Two facts must hold together. The report names a model call that
-    /// has made no fragment at all for the whole
-    /// ``stalledGenerationBound``, and the turn has made no observable
-    /// output either. A stall on a call that already streamed is a slow
-    /// decode, and a stall on a fresh call raised while a tool runs is
-    /// a slow tool; neither is a model this loader cannot drive, and
-    /// Router's report-only behaviour stands for both.
+    /// has made no fragment at all, with a
+    /// ``GenerationStall/timeWithoutProgress`` of the whole
+    /// ``stalledGenerationBound`` or more, and the prompt has made no
+    /// observable output either. A stall on a call that already streamed
+    /// is a slow decode. A stall after a tool call is not a model that
+    /// cannot generate, because the tool call is output. Router's
+    /// report-only behaviour stands for both.
+    ///
+    /// A wait for a place in the model queue never ends the prompt. The
+    /// Router does not count the wait in `timeWithoutProgress` (Router
+    /// task ^ake8sax), and it tells the wait with `submissionQueued`,
+    /// which ``EventProjection`` writes as a log line. This guard does
+    /// not read ``GenerationStall/timeInFlight``, because that time
+    /// includes the wait.
     ///
     /// A `wholeAnswer` visibility never ends the turn. Such a call
     /// streams nothing by design, so a long one reads exactly like a

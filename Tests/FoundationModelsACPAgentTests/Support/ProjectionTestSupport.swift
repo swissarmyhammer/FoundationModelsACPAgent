@@ -14,6 +14,14 @@ import FoundationModelsMultitool
 /// no id, so one value serves every event.
 private let syntheticSubmissionId = SubmissionID(0)
 
+/// The `submissionQueued` event of one synthetic submission: the
+/// submission waits for a place in the model queue.
+///
+/// - Returns: The event.
+func submissionQueued() -> SessionEvent {
+    .submissionQueued(syntheticSubmissionId)
+}
+
 /// The `submissionStarted` event of one synthetic submission.
 ///
 /// - Returns: The event.

@@ -964,6 +964,7 @@ arm. Write one.
 | `compaction(CompactionResult)` | `usage_update` — the context meter drops; no message change (§8.5) |
 | `discoveryPrimingFailed(DiscoveryPrimingFailure)` | nothing on the wire — log it |
 | `generationStalled(GenerationStall)` | nothing on the wire — log it, and read it as the stalled-generation guard below |
+| `submissionQueued(SubmissionID)` | nothing on the wire — a `notice` log line with the session id and the model name: the request waits for a place in the model queue, because the model runs a submission of another session. It is not a stall (see the guard below) |
 | `runSettled(OperationEvent)` | `tool_call_update` with the **terminal** status (see the mapping below) |
 | `turnEnded(TokenUsage)` | `usage_update` only (the `idle` `state_update` comes from the completion of our own turn task, never from this event — §8.1) |
 
@@ -982,9 +983,21 @@ which cancels Router's turn by that surface's own contract, and stops with
 `_stalled` (§8.2). The log line names the model and the report.
 
 The two facts together are what keeps the guard honest. A stall on a call that
-already streamed is a slow decode, and a stall on a fresh call raised while a
-tool runs is a slow tool. Neither is a model that cannot generate, and the
-report-only behaviour of the table row stands for both.
+already streamed is a slow decode, and a stall after a tool call is not a model
+that cannot generate, because the tool call is output. The report-only
+behaviour of the table row stands for both.
+
+**A wait for a place in the model queue is not a stall** (task ^rfn4m87, Router
+task ^ake8sax). The Router puts each request into one queue for each model, so
+a request can wait a long time while other sessions generate. The Router stall
+watch counts `GenerationStall.timeWithoutProgress` only while a pass of the
+request holds its queue place. A queue wait and a tool body between two passes
+do not count, so a request that only waits never reaches
+`PromptTurn.stalledGenerationBound` and never ends with `_stalled`. The Router
+tells the wait with `submissionQueued`, then `submissionStarted` when the
+request gets its place; the agent writes the `notice` line of the table row.
+`GenerationStall.timeInFlight` includes the wait and the tool bodies, so the
+guard does not read it.
 
 Of those two facts, `sawOutput` is the only one the agent can trust, and the
 bound must therefore stand clear of the whole window before the first output

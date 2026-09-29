@@ -90,6 +90,11 @@ struct EventProjection {
     /// The sink every update of this projection goes to.
     let send: SessionUpdateSink
 
+    /// The model reference the session generates with. The log line of a
+    /// wait for a place in the model queue names it, so a person who reads
+    /// the log learns which model was busy.
+    let modelName: String
+
     /// The reader of a settled run's stored output, for the §11.6
     /// convergence replace. The default finds no run.
     var shellSnapshot: ShellSnapshotProvider = { _ in nil }
@@ -282,8 +287,10 @@ struct EventProjection {
             // `submissionEnded` sum above already counts these tokens,
             // so no wire update goes out.
             break
-        case .submissionQueued, .answered, .answerFailed, .repetitionStopped,
-            .mailDeliveryPaused:
+        case .submissionQueued:
+            // A log line, not a wire message (§8.4).
+            reportQueueWait()
+        case .answered, .answerFailed, .repetitionStopped, .mailDeliveryPaused:
             // Router bookkeeping with no ACP counterpart: the stream of
             // the prompt carries the text, the tool calls and the end.
             turnLogger.debug(
@@ -297,6 +304,25 @@ struct EventProjection {
                 "session \(sessionIdValue, privacy: .public): unprojected event \(String(describing: event), privacy: .public)"
             )
         }
+    }
+
+    /// Records that a submission of the prompt waits for a place in the
+    /// model queue, because the model runs a submission of another session.
+    ///
+    /// plan.md §8.4 gives the wait no wire message. The wait is not a
+    /// stall: the Router stall watch does not count it (Router task
+    /// ^ake8sax), so it never ends the prompt with `_stalled`. The line is
+    /// a `notice` and not a `debug`, because a person who reads the log of
+    /// a slow prompt must learn that the prompt waited, and for which
+    /// model.
+    private func reportQueueWait() {
+        // Copies for the log line: the logger's message is an escaping
+        // autoclosure, which must not capture the projection itself.
+        let sessionIdValue = sessionId.rawValue
+        let model = modelName
+        turnLogger.notice(
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) runs a submission of another session; this request waits for a place in the model queue"
+        )
     }
 
     /// Sends the one `usage_update` of the turn, from the summed

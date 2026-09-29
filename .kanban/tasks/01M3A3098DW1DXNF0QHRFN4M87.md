@@ -33,7 +33,24 @@ comments:
     - test, commit, review: not run
     - next: this task waits for ^tz867gz. A person must decide the order.
   timestamp: 2026-09-28T22:22:30.824749+00:00
-position_column: todo
+- actor: claude-code
+  id: 01m3py62z811b5fqkknxnrgm0d
+  text: |-
+    External dependency resolved (2026-09-29). The Router change is on Router main and in this repository: HEAD 394a277 pins Router c49e453 (adopted by 4ac665b). Router ^ake8sax shipped as `passQueued`/`passStarted`, and Router ^1psqdm9 renamed them to `SessionEvent.submissionQueued(SubmissionID)` / `.submissionStarted(SubmissionStart)` (see `.build/checkouts/FoundationModelsRouter/generation-queue.md`, "A wait for a queue place is not a stall"). The stall watch counts `GenerationStall.timeWithoutProgress` only while a pass holds its queue place. A queue wait and a tool body between two passes give no `generationStalled`. `timeInFlight` still includes the wait and the tool bodies. No Router card is necessary, and no Router file changed. Step 1 of the card (`swift package update FoundationModelsRouter`) is not necessary: the pin already contains the change.
+
+    Discoveries:
+    - `endsTurn(_:sawOutput:)` needs no logic change. It reads only `timeWithoutProgress`, which never counts a queue wait. The work is the `notice` log line, the doc comments and plan.md.
+    - `submissionQueued` carries only a `SubmissionID`. The model name is on `PromptTurn`, so `EventProjection` gets a new stored `modelName` (one construction site, `PromptTurn.drive`).
+    - TDD: `queueWaitNeverEndsTheRequestAsStalled` passed on its first run, because the fix is in the Router. It is a regression test. A change that makes the guard read `timeInFlight` makes it fail (the stall report after the wait has `timeInFlight` past the bound and `timeWithoutProgress` of one interval). The `notice` line goes through `os.Logger` (`turnLogger`), which a unit test cannot read, so no test asserts the log line.
+  timestamp: 2026-09-29T15:57:55.048067+00:00
+- actor: claude-code
+  id: 01m3py6pa3cy1pqh0j8cytdw6x
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift (`submissionQueued` is a `notice` line with the session id and the model name, through the new `reportQueueWait()`; new stored `modelName`), Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift (passes `modelName` to the projection; doc comments of `stalledGenerationBound`, `endsTurn(_:sawOutput:)` and `modelName` state the queue rule), plan.md (§8.4 table row `submissionQueued(SubmissionID)`, and a guard paragraph "A wait for a place in the model queue is not a stall"), Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift (new `queueWaitNeverEndsTheRequestAsStalled`; doc of `aStallPastTheBoundAfterAToolCallDoesNotEndTheTurn` no longer describes the old watch, and its expectations did not change), Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift (new `submissionQueued()` helper). `swift test --filter PromptTurnTests`: 31 tests, all pass, `queueWaitNeverEndsTheRequestAsStalled` and the four `_stalled` guard tests among them. `swift test`: 605 tests in 69 suites pass (the one known issue is the `withKnownIssue` self-check in `HarnessSmokeTests`, which was there before). No compiler warning; the only `warning:` line is the SwiftPM mlx bundle "missing creator" line, which was also there before the change.
+    - next: /review. Not committed.
+  timestamp: 2026-09-29T15:58:14.851549+00:00
+position_column: doing
 position_ordinal: '8180'
 title: Do not stop a prompt as _stalled while its request waits for a place in the model queue
 ---
@@ -45,6 +62,8 @@ The Router stall watchdog starts at the start of the model call (`../FoundationM
 
 ## External dependency (discuss before you start)
 
+RESOLVED 2026-09-29: Router ^ake8sax is on Router `main`, and this repository pins it (Router c49e453, adopted by 4ac665b). The final shape is `SessionEvent.submissionQueued` then `SessionEvent.submissionStarted`, and the stall watch does not count a queue wait. See the comment of 2026-09-29.
+
 The agent cannot see a queue wait now. The Router must tell it, for example one of:
 - `GenerationStall` gets a field that says "waiting for a queue place" (the watchdog does not count queue time), or
 - a new `SessionEvent` case for "queued" and "pass started".
@@ -53,21 +72,21 @@ This needs a task on the FoundationModelsRouter board. Per memory `stop-before-r
 
 ## What
 
-1. `swift package update FoundationModelsRouter`.
-2. `Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift`: `endsTurn(_:sawOutput:)` returns `false` for a report about a queue wait. Update its doc comment and the doc comment of `stalledGenerationBound`.
+1. `swift package update FoundationModelsRouter`. (Not necessary: the pin already contains Router ^ake8sax.)
+2. `Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift`: `endsTurn(_:sawOutput:)` returns `false` for a report about a queue wait. Update its doc comment and the doc comment of `stalledGenerationBound`. (No logic change: the guard reads only `timeWithoutProgress`, which never counts a queue wait.)
 3. `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift`: project the new report or event. It is a log line (`notice`) with the session id and the model name. It is not a wire message (plan.md §8.4 gives a stall report no wire message). Add the new case to the §8.4 table in `plan.md`.
 
 ## Acceptance Criteria
 
-- [ ] A request that waits for a queue place for longer than `stalledGenerationBound` does not end with `_stalled`.
-- [ ] A pass that runs and makes no fragment for the full bound still ends with `_stalled` (the old guard stays).
-- [ ] The log shows one `notice` line when a request waits for a queue place.
+- [x] A request that waits for a queue place for longer than `stalledGenerationBound` does not end with `_stalled`.
+- [x] A pass that runs and makes no fragment for the full bound still ends with `_stalled` (the old guard stays).
+- [x] The log shows one `notice` line when a request waits for a queue place.
 
 ## Tests
 
-- [ ] `Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift`: add `queueWaitNeverEndsTheRequestAsStalled` (a synthetic event stream with a queue-wait report past the bound, then text, then usage; the stop reason is `end_turn`).
-- [ ] Same file: keep the current `_stalled` tests green without change to their expectations.
-- [ ] Run `swift test --filter PromptTurnTests` and then `swift test`. All pass. Read the real test names in the output (a filter that matches nothing also passes).
+- [x] `Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift`: add `queueWaitNeverEndsTheRequestAsStalled` (a synthetic event stream with a queue-wait report past the bound, then text, then usage; the stop reason is `end_turn`).
+- [x] Same file: keep the current `_stalled` tests green without change to their expectations.
+- [x] Run `swift test --filter PromptTurnTests` and then `swift test`. All pass. Read the real test names in the output (a filter that matches nothing also passes).
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #generation-queue #upstream

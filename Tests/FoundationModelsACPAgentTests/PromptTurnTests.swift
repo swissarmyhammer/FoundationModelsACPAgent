@@ -584,10 +584,10 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    /// A stall past the bound after the turn made a tool call does not
-    /// end the turn. Each model call opens its own watch, so a fresh
-    /// watch that counts no fragment while a tool runs reports a slow
-    /// tool, never a model that cannot generate.
+    /// A stall past the bound after the prompt made a tool call does not
+    /// end the prompt. A tool call is observable output, and the fragment
+    /// count of the report does not count it, so a report of zero
+    /// fragments after a tool call is never a model that cannot generate.
     @Test(.timeLimit(.minutes(1)))
     func aStallPastTheBoundAfterAToolCallDoesNotEndTheTurn() async throws {
         let stall = Self.makeStall(
@@ -602,6 +602,44 @@ import Testing
         _ = await recorder.updates
 
         #expect(reason == .endTurn)
+    }
+
+    /// The seconds of one reporting interval of the Router stall watch
+    /// in the synthetic stream below. The value is shorter than the
+    /// bound, and no assertion reads it.
+    private static let stallReportIntervalSeconds = 60
+
+    /// A request that waited for a place in the model queue for longer
+    /// than the bound does not end with `_stalled`.
+    ///
+    /// The Router does not count a queue wait as time without progress
+    /// (Router task ^ake8sax). It sends `submissionQueued`, then
+    /// `submissionStarted` when the submission gets its place. A stall
+    /// report after the wait has a `timeInFlight` that includes the wait,
+    /// and a `timeWithoutProgress` that does not. The guard must read
+    /// only `timeWithoutProgress`, thus the request continues to its
+    /// text and its usage, and it ends with `end_turn`.
+    @Test(.timeLimit(.minutes(1)))
+    func queueWaitNeverEndsTheRequestAsStalled() async throws {
+        let queueWait = PromptTurn.stalledGenerationBound + .seconds(1)
+        let interval = Duration.seconds(Self.stallReportIntervalSeconds)
+        let stallAfterTheWait = GenerationStall(
+            timeWithoutProgress: interval,
+            timeInFlight: queueWait + interval,
+            visibility: .fragments(observed: 0), lastProgress: .callStart)
+        let (turn, recorder) = makeSinkedTurn()
+        let reason = await turn.drive(
+            events: makeEventStream([
+                submissionQueued(),
+                submissionStarted(),
+                .generationStalled(stallAfterTheWait),
+                .textDelta("the answer, after the wait"),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+            ]))
+        let updates = await recorder.updates
+
+        #expect(reason == .endTurn)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     /// The seconds a real build task took to reach its FIRST observable
