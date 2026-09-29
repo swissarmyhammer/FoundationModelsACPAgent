@@ -49,6 +49,10 @@ comments:
     - test, commit, review: not run
     - next: a person must decide: (1) unblock ^tz867gz so Router and Extras move together, or (2) permit a FoundationModelsRouter.ModelRef qualification in ProfileDoctor.swift. A person must also decide how to test the label criterion.
   timestamp: 2026-09-28T23:16:04.125933+00:00
+- actor: claude-code
+  id: 01m3q6c1fafsntgd5kbcyspx0k
+  text: 'Note from card ^f9513f2 (not committed yet, in the working tree): `Agent/PromptTurn.swift` is now `Agent/PromptExecution.swift` (type `PromptExecution`). `Agent/TurnState.swift` is now `Agent/PromptState.swift`. The logger `turnLogger` (os.Logger, category "PromptTurn") is now `promptLogger` (category "PromptExecution") in `Agent/PromptState.swift`. When this card moves the logger to swift-log, use the name `promptLogger` and the label "PromptExecution".'
+  timestamp: 2026-09-29T18:20:58.730665+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
 position_column: doing

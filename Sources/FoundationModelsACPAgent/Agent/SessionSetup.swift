@@ -77,10 +77,10 @@ struct ActiveSession: Sendable {
     /// truth against this baseline.
     var announcedConfigOptions: [SessionConfigOption]
 
-    /// The running turn's state owner, or `nil` when no turn is in
-    /// flight (plan.md §8.2). `session/cancel` reaches the turn through
+    /// The running prompt's state owner, or `nil` when no prompt is in
+    /// flight (plan.md §8.2). `session/cancel` reaches the prompt through
     /// this reference.
-    var activeTurn: TurnStateOwner?
+    var activePrompt: PromptStateOwner?
 
     /// The running turn's elicitation relay, or `nil` when no turn is in
     /// flight (plan.md §16). `session/cancel` and `session/close` answer
@@ -108,7 +108,7 @@ struct ActiveSession: Sendable {
         if isClosed {
             return .closed
         }
-        return activeTurn == nil ? .idle : .busy
+        return activePrompt == nil ? .idle : .busy
     }
 }
 
@@ -421,7 +421,7 @@ extension RoutedACPAgent {
             commands: commands,
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
-            activeTurn: nil,
+            activePrompt: nil,
             activeElicitationRelay: nil,
             indexRecorded: indexRecorded)
 

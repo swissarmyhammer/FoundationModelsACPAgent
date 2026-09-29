@@ -61,7 +61,7 @@ extension SessionAnswer {
 
 // MARK: - The synthetic projection fixtures (plan.md §20.1)
 //
-// The projection tests drive `PromptTurn.drive(events:)` with a
+// The projection tests drive `PromptExecution.drive(events:)` with a
 // synthetic event stream and record each update the turn sends. No
 // session and no model is necessary for that. `PromptTurnTests` and
 // `EventProjectionTests` share these fixtures.
@@ -95,13 +95,13 @@ actor SinkRecorder {
 /// - Returns: The turn and the recorder of its updates.
 func makeSinkedTurn(
     shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
-) -> (turn: PromptTurn, recorder: SinkRecorder) {
+) -> (turn: PromptExecution, recorder: SinkRecorder) {
     let recorder = SinkRecorder()
     let send: SessionUpdateSink = { update in await recorder.append(update) }
-    let turn = PromptTurn(
+    let turn = PromptExecution(
         sessionId: SessionId(rawValue: syntheticSessionIdValue),
         promptBlocks: [],
-        turnState: TurnStateOwner(send: send),
+        promptState: PromptStateOwner(send: send),
         send: send,
         firstActivity: nil,
         modelName: syntheticModelName,

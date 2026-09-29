@@ -175,7 +175,7 @@ public actor RoutedACPAgent: Agent {
     // `closeSession` and `deleteSession` live in
     // `Agent/SessionLifecycle.swift` (plan.md §10).
 
-    // `prompt` and `sessionCancel` live in `Agent/PromptTurn.swift`
+    // `prompt` and `sessionCancel` live in `Agent/PromptExecution.swift`
     // (plan.md §8.1–§8.3).
 
     // MARK: - Capability-gated (plan.md §15)

@@ -4,37 +4,37 @@ import FoundationModelsACP
 import FoundationModelsMultitool
 import FoundationModelsRouter
 
-/// Why one prompt turn stopped, in this agent's own vocabulary
-/// (plan.md §8.2). Router's error enums are internal, so the turn
+/// Why one prompt stopped, in this agent's own vocabulary
+/// (plan.md §8.2). Router's error enums are internal, so the prompt
 /// catches `any Error` and classifies it into this intent first;
-/// ``PromptTurn/stopReason(for:)`` then maps each intent to the wire
+/// ``PromptExecution/stopReason(for:)`` then maps each intent to the wire
 /// value, totally.
-enum TurnStop: Equatable, Sendable {
-    /// The turn completed.
+enum PromptStop: Equatable, Sendable {
+    /// The prompt completed.
     case completed
 
-    /// A guardrail refused the turn.
+    /// A guardrail refused the prompt.
     case refusal
 
-    /// The turn was cancelled.
+    /// The prompt was cancelled.
     case cancelled
 
-    /// The token budget ended the turn.
+    /// The token budget ended the prompt.
     case budgetExhausted
 
-    /// The tool-loop cap ended the turn. No producer exists yet: neither
+    /// The tool-loop cap ended the prompt. No producer exists yet: neither
     /// Router nor the SDK caps tool loops today. The arm keeps the
     /// §8.2 mapping total for the task that adds the cap.
     case toolLoopCapped
 
-    /// The turn completed, but it generated nothing: no text, no
+    /// The prompt completed, but it generated nothing: no text, no
     /// reasoning, no tool call, and a usage report of zero output
     /// tokens. A bare `end_turn` would hide that, so the arm maps to
     /// the `_no_output` extension value (§8.2's `_` rule; task
     /// ^pez780d).
     case noOutput
 
-    /// The turn completed, but the generate call that ended it stopped at
+    /// The prompt completed, but the generate call that ended it stopped at
     /// the output token ceiling of the model: Router's `FinishReason` of
     /// that call is `maxTokens`. The answer, the reasoning or the tool
     /// call is cut. A bare `end_turn` would hide that, and `max_tokens`
@@ -43,15 +43,15 @@ enum TurnStop: Equatable, Sendable {
     /// (§8.2's `_` rule; task ^bw9qt1z).
     case truncated
 
-    /// The turn stopped waiting on a generation that made nothing: the
+    /// The prompt stopped waiting on a generation that made nothing: the
     /// model call produced no fragment at all for the whole
-    /// ``PromptTurn/stalledGenerationBound``, so the turn ended it
+    /// ``PromptExecution/stalledGenerationBound``, so the prompt ended it
     /// rather than hang. The arm carries Router's own report, which
     /// names the times, and maps to the `_stalled` extension value
     /// (§8.2's `_` rule; task ^s0bw5cv).
     case stalled(GenerationStall)
 
-    /// The turn failed for a reason outside the mapped intents.
+    /// The prompt failed for a reason outside the mapped intents.
     case failed(message: String)
 }
 
@@ -66,27 +66,28 @@ struct FirstActivity: Sendable {
     let record: SessionIndexRecord
 }
 
-/// One prompt turn (plan.md §8.1–§8.3).
+/// The execution of one prompt: one ACP `session/prompt`, from the `{}`
+/// response to its one `idle` terminator (plan.md §8.1–§8.3).
 ///
-/// The turn runs after the `{}` response went out, on the request's own
+/// The prompt runs after the `{}` response went out, on the request's own
 /// dispatch task through `afterRespondingToCurrentRequest`. It sends the
 /// `user_message` echo, writes the first-activity index record, drives
 /// the session's event stream, and ends with one `idle` state update.
-struct PromptTurn: Sendable {
-    /// The wire value an unmapped turn failure stops with, under the
+struct PromptExecution: Sendable {
+    /// The wire value an unmapped prompt failure stops with, under the
     /// `_`-prefix extension rule (plan.md §18).
     static let unmappedStopReasonValue = "_error"
 
-    /// The wire value a completed turn that generated nothing stops
+    /// The wire value a completed prompt that generated nothing stops
     /// with, under the same `_`-prefix extension rule (task ^pez780d).
     static let noOutputStopReasonValue = "_no_output"
 
-    /// The wire value a turn whose last generation reached the output
+    /// The wire value a prompt whose last generation reached the output
     /// token ceiling stops with, under the same `_`-prefix extension rule
     /// (task ^bw9qt1z).
     static let truncatedStopReasonValue = "_truncated"
 
-    /// The wire value a turn that ended a stalled generation stops with,
+    /// The wire value a prompt that ended a stalled generation stops with,
     /// under the same `_`-prefix extension rule (task ^s0bw5cv).
     static let stalledStopReasonValue = "_stalled"
 
@@ -94,11 +95,11 @@ struct PromptTurn: Sendable {
     private static let stalledGenerationBoundSeconds = 1800
 
     /// How long a generation may run with no fragment at all before the
-    /// turn stops waiting on it (task ^s0bw5cv).
+    /// prompt stops waiting on it (task ^s0bw5cv).
     ///
     /// Router bounds no decode. A model the loader cannot drive reports
     /// a stall on each interval and never ends, so without this bound
-    /// the turn holds the session for as long as the process lives.
+    /// the prompt holds the session for as long as the process lives.
     /// Measured on 2026-09-08, one such generation stayed in flight
     /// 3120 seconds and made zero fragments, and the person who asked
     /// for the answer read nothing at all.
@@ -117,7 +118,7 @@ struct PromptTurn: Sendable {
     /// A zero fragment count is no evidence that the model made nothing.
     /// ``GenerationStall/visibility`` counts the fragments of the whole
     /// model call, and a tool call is not a fragment. So
-    /// ``endsTurn(_:sawOutput:)`` holds one honest signal, `sawOutput`,
+    /// ``endsPrompt(_:sawOutput:)`` holds one honest signal, `sawOutput`,
     /// and the bound must stand clear of the window before the first
     /// output rather than measure the decode. The 2026-09-08 run showed
     /// this: the Router watch of that date also counted the tool bodies,
@@ -137,22 +138,22 @@ struct PromptTurn: Sendable {
     /// guard still ends a generation this loader cannot drive.
     static let stalledGenerationBound: Duration = .seconds(stalledGenerationBoundSeconds)
 
-    /// The id of the session this turn runs in.
+    /// The id of the session this prompt runs in.
     let sessionId: SessionId
 
     /// The prompt's content blocks, echoed as the `user_message`.
     let promptBlocks: [ContentBlock]
 
-    /// The turn-state owner of the session.
-    let turnState: TurnStateOwner
+    /// The prompt-state owner of the session.
+    let promptState: PromptStateOwner
 
-    /// The sink every update of this turn goes to.
+    /// The sink every update of this prompt goes to.
     let send: SessionUpdateSink
 
     /// The first-activity index write, or `nil` when the record exists.
     let firstActivity: FirstActivity?
 
-    /// The model reference the turn's session generates with.
+    /// The model reference the prompt's session generates with.
     ///
     /// The stalled-generation report names it (task ^s0bw5cv), so a
     /// person who reads the log learns which model made nothing. The log
@@ -179,16 +180,16 @@ struct PromptTurn: Sendable {
     /// The handler of a live elicitation request (plan.md §16), or `nil`
     /// when no relay is wired — a synthetic projection drive. The
     /// scheduling wiring supplies the session's ``ElicitationRelay``
-    /// bound to the turn's session and owner.
+    /// bound to the prompt's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
-    /// Runs the turn: the echo, the first-activity record, and the
+    /// Runs the prompt: the echo, the first-activity record, and the
     /// session's event stream to completion (plan.md §8.1). A plain
     /// prompt folds through `PromptContent` (§12); an expanded command
     /// keeps its override text (§14.3). The echo always carries the
     /// original blocks verbatim.
     ///
-    /// - Parameter session: The Router session that generates the turn.
+    /// - Parameter session: The Router session that generates the answer.
     func run(session: any RoutedSession) async {
         await send(
             .userMessage(
@@ -205,17 +206,17 @@ struct PromptTurn: Sendable {
         await drive(events: session.streamEvents(to: prompt, maxTokens: nil))
     }
 
-    /// Drives one event stream to completion and closes the turn: each
+    /// Drives one event stream to completion and closes the prompt: each
     /// event is projected, the summed usage is reported one time, and
     /// exactly one `idle` goes out — keyed on stream completion, never
     /// on a `submissionEnded` count (plan.md §8.1). A `CancellationError` is
     /// classified here; it never escapes (§8.2).
     ///
     /// The loop also carries the stalled-generation guard of task
-    /// ^s0bw5cv. Leaving `events` cancels Router's turn, which is that
+    /// ^s0bw5cv. Leaving `events` cancels the Router stream, which is that
     /// surface's own contract, so the guard needs no second call.
     ///
-    /// - Parameter events: The turn's event stream.
+    /// - Parameter events: The prompt's event stream.
     /// - Returns: The stop reason the idle update carried.
     @discardableResult
     func drive<Events: AsyncSequence>(
@@ -223,17 +224,17 @@ struct PromptTurn: Sendable {
     ) async -> StopReason where Events.Element == SessionEvent {
         var projection = EventProjection(
             sessionId: sessionId,
-            turnState: turnState,
+            promptState: promptState,
             send: send,
             modelName: modelName,
             shellSnapshot: shellSnapshot,
             relayElicitation: relayElicitation)
-        var stop = TurnStop.completed
+        var stop = PromptStop.completed
         do {
             for try await event in events {
                 await projection.project(event)
                 guard case .generationStalled(let stall) = event,
-                    Self.endsTurn(stall, sawOutput: projection.sawOutput)
+                    Self.endsPrompt(stall, sawOutput: projection.sawOutput)
                 else {
                     continue
                 }
@@ -247,22 +248,22 @@ struct PromptTurn: Sendable {
                 report(failure: message)
             }
         }
-        // A cancelled turn does not always throw (§8.6): model work that
+        // A cancelled prompt does not always throw (§8.6): model work that
         // never checks for cancellation runs to completion. The recorded
-        // request still ends the turn as cancelled.
-        if await turnState.cancelRequested {
+        // request still ends the prompt as cancelled.
+        if await promptState.cancelRequested {
             stop = .cancelled
         }
-        // A completed live turn that streamed no output and whose usage
+        // A completed live prompt that streamed no output and whose usage
         // report says zero generated tokens must not read as a normal
         // `end_turn` (task ^pez780d): the intermittent live-model defect
-        // ends exactly this shape of turn, and a bare `end_turn` would
+        // ends exactly this shape of prompt, and a bare `end_turn` would
         // hide it. The honest `_no_output` extension value reports it.
         if stop == .completed, projection.generatedNothing {
             stop = .noOutput
         }
-        // A completed turn whose LAST generate call stopped at the output
-        // token ceiling is cut, not finished (task ^bw9qt1z). A turn of
+        // A completed prompt whose LAST generate call stopped at the output
+        // token ceiling is cut, not finished (task ^bw9qt1z). A prompt of
         // 8192 reasoning tokens and no answer ended as `end_turn` before
         // Router gave the finish reason.
         if stop == .completed, projection.endedAtTokenCeiling {
@@ -271,7 +272,7 @@ struct PromptTurn: Sendable {
         }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
-        await turnState.turnDidEnd(reason: reason)
+        await promptState.promptDidEnd(reason: reason)
         return reason
     }
 
@@ -279,13 +280,13 @@ struct PromptTurn: Sendable {
 
     /// Appends the `sessions.jsonl` record and announces the title with
     /// `session_info_update`. A write failure is logged; it does not end
-    /// the turn.
+    /// the prompt.
     private func recordFirstActivity() async {
         guard let firstActivity else { return }
         do {
             try firstActivity.index.append(firstActivity.record)
         } catch {
-            turnLogger.error(
+            promptLogger.error(
                 "session \(sessionId.rawValue, privacy: .public): sessions.jsonl append failed: \(error, privacy: .public)"
             )
         }
@@ -298,13 +299,13 @@ struct PromptTurn: Sendable {
 
     // MARK: - The stop-reason mapping (plan.md §8.2)
 
-    /// Maps a turn-stop intent to the wire stop reason. Total: every
+    /// Maps a prompt-stop intent to the wire stop reason. Total: every
     /// intent has a wire value, and an unmapped failure degrades to the
     /// ``unmappedStopReasonValue`` extension value, never to an error.
     ///
-    /// - Parameter stop: Why the turn stopped.
+    /// - Parameter stop: Why the prompt stopped.
     /// - Returns: The wire stop reason.
-    static func stopReason(for stop: TurnStop) -> StopReason {
+    static func stopReason(for stop: PromptStop) -> StopReason {
         switch stop {
         case .completed: .endTurn
         case .refusal: .refusal
@@ -320,7 +321,7 @@ struct PromptTurn: Sendable {
 
     // MARK: - The stalled-generation guard (task ^s0bw5cv)
 
-    /// Whether the turn stops waiting on the generation `stall` reports.
+    /// Whether the prompt stops waiting on the generation `stall` reports.
     ///
     /// Two facts must hold together. The report names a model call that
     /// has made no fragment at all, with a
@@ -338,16 +339,16 @@ struct PromptTurn: Sendable {
     /// not read ``GenerationStall/timeInFlight``, because that time
     /// includes the wait.
     ///
-    /// A `wholeAnswer` visibility never ends the turn. Such a call
+    /// A `wholeAnswer` visibility never ends the prompt. Such a call
     /// streams nothing by design, so a long one reads exactly like a
     /// hung one, and the drive loop reads a fragment stream in any
     /// case.
     ///
     /// - Parameters:
     ///   - stall: The report Router made.
-    ///   - sawOutput: Whether the turn has made observable output.
-    /// - Returns: Whether the turn ends on this report.
-    static func endsTurn(_ stall: GenerationStall, sawOutput: Bool) -> Bool {
+    ///   - sawOutput: Whether the prompt has made observable output.
+    /// - Returns: Whether the prompt ends on this report.
+    static func endsPrompt(_ stall: GenerationStall, sawOutput: Bool) -> Bool {
         guard case .fragments(let observed) = stall.visibility, observed == 0 else {
             return false
         }
@@ -355,67 +356,67 @@ struct PromptTurn: Sendable {
         return stall.timeWithoutProgress >= stalledGenerationBound
     }
 
-    /// Records the stall the turn stopped on, naming the model and the
+    /// Records the stall the prompt stopped on, naming the model and the
     /// reason.
     ///
     /// The wire carries the ``stalledStopReasonValue`` stop reason and
     /// nothing else: plan.md §8.4 gives a stall report no wire message,
-    /// and the terminator of the turn is what a client reads.
+    /// and the terminator of the prompt is what a client reads.
     ///
-    /// - Parameter stall: The report the turn stopped on.
+    /// - Parameter stall: The report the prompt stopped on.
     private func report(_ stall: GenerationStall) {
         // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the turn itself.
+        // autoclosure, which must not capture the prompt itself.
         let sessionIdValue = sessionId.rawValue
         let model = modelName
         let reported = stall.description
         let reason = Self.stalledStopReasonValue
-        turnLogger.error(
+        promptLogger.error(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the turn ends with \(reason, privacy: .public)"
         )
     }
 
-    /// Records the numbers of a turn that stopped at the output token
+    /// Records the numbers of a prompt that stopped at the output token
     /// ceiling. The wire carries ``truncatedStopReasonValue`` alone, thus
     /// this line is the one place that says how full the context was and how
-    /// many tokens the turn spent.
+    /// many tokens the prompt spent.
     ///
     /// - Parameter usage: The summary ``EventProjection/usageSummary`` makes.
     private func report(truncation usage: String) {
         // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the turn itself.
+        // autoclosure, which must not capture the prompt itself.
         let sessionIdValue = sessionId.rawValue
         let model = modelName
         let reason = Self.truncatedStopReasonValue
-        turnLogger.error(
+        promptLogger.error(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) ended with \(reason, privacy: .public): \(usage, privacy: .public)"
         )
     }
 
-    /// Records the error a turn failed on. The wire carries the
+    /// Records the error a prompt failed on. The wire carries the
     /// ``unmappedStopReasonValue`` stop reason alone, thus this line is the
     /// one place that names the cause.
     ///
     /// - Parameter message: The description of the error.
     private func report(failure message: String) {
         // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the turn itself.
+        // autoclosure, which must not capture the prompt itself.
         let sessionIdValue = sessionId.rawValue
         let model = modelName
-        turnLogger.error(
+        promptLogger.error(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) failed: \(message, privacy: .public)"
         )
     }
 
-    /// Classifies a turn error by intent. Router's error enums are
+    /// Classifies a prompt error by intent. Router's error enums are
     /// internal, so the readable types are Swift's `CancellationError`
     /// and the SDK's public `LanguageModelError` — the same vocabulary
     /// Router's own overflow recovery matches; everything else degrades
     /// to `failed`.
     ///
-    /// - Parameter error: The error the turn's stream finished with.
+    /// - Parameter error: The error the prompt's stream finished with.
     /// - Returns: The intent.
-    static func classify(_ error: any Error) -> TurnStop {
+    static func classify(_ error: any Error) -> PromptStop {
         if error is CancellationError {
             return .cancelled
         }
@@ -483,7 +484,7 @@ extension RequestError {
     private static let closedSessionReason = "closed; resume it first"
 
     /// The reason a busy session's refusal reports (plan.md §7.1).
-    private static let busySessionReason = "a prompt turn is in flight; one prompt for each session at a time"
+    private static let busySessionReason = "a prompt is in flight; one prompt for each session at a time"
 
     /// The unknown-id refusal (plan.md §10.1): JSON-RPC invalid params
     /// with the id in `data`, so a client bug is visible, never a silent
@@ -514,7 +515,7 @@ extension RequestError {
     }
 
     /// The busy-session refusal (plan.md §7.1): a prompt during a
-    /// running turn is a client error, not a queue entry.
+    /// running prompt is a client error, not a queue entry.
     ///
     /// - Parameter id: The busy session's id.
     /// - Returns: The typed invalid-request error.
@@ -530,8 +531,8 @@ extension RequestError {
 }
 
 extension RoutedACPAgent {
-    /// Accepts one prompt turn (plan.md §8.1): validates the session,
-    /// marks it busy, defers the turn to run after the `{}` response
+    /// Accepts one prompt (plan.md §8.1): validates the session,
+    /// marks it busy, defers the prompt to run after the `{}` response
     /// through `afterRespondingToCurrentRequest`, and returns `{}` at
     /// once. Never a detached task that races the response.
     ///
@@ -566,33 +567,33 @@ extension RoutedACPAgent {
                 command, params: params, entry: entry, connection: connection)
         }
 
-        let (owner, send) = beginTurn(params: params, connection: connection)
-        return scheduleModelTurn(
+        let (owner, send) = beginPrompt(params: params, connection: connection)
+        return scheduleModelPrompt(
             overridePrompt: nil,
             params: params, entry: entry, connection: connection, owner: owner, send: send)
     }
 
-    /// Marks the session busy for one turn: builds the update sink over
-    /// `connection` and installs a fresh turn-state owner as the
-    /// session's active turn.
+    /// Marks the session busy for one prompt: builds the update sink over
+    /// `connection` and installs a fresh prompt-state owner as the
+    /// session's active prompt.
     ///
     /// - Parameters:
     ///   - params: The prompt request.
     ///   - connection: The bound connection the sink posts through.
     /// - Returns: The installed owner and the sink.
-    func beginTurn(
+    func beginPrompt(
         params: PromptRequest, connection: AgentSideConnection
-    ) -> (owner: TurnStateOwner, send: SessionUpdateSink) {
+    ) -> (owner: PromptStateOwner, send: SessionUpdateSink) {
         let sessionId = params.sessionId
         let send: SessionUpdateSink = { update in
             await connection.post(update, in: sessionId)
         }
-        let owner = TurnStateOwner(send: send)
-        sessions[sessionId]?.activeTurn = owner
+        let owner = PromptStateOwner(send: send)
+        sessions[sessionId]?.activePrompt = owner
         return (owner, send)
     }
 
-    /// Defers one model turn to run after the `{}` response through
+    /// Defers one model prompt to run after the `{}` response through
     /// `afterRespondingToCurrentRequest`, and returns `{}` at once.
     /// Never a detached task that races the response (plan.md §8.1).
     ///
@@ -602,17 +603,17 @@ extension RoutedACPAgent {
     ///     prompt (§14.3).
     ///   - params: The prompt request.
     ///   - entry: The session's table entry.
-    ///   - connection: The bound connection the turn registers with.
-    ///   - owner: The turn-state owner ``beginTurn(params:connection:)``
+    ///   - connection: The bound connection the prompt registers with.
+    ///   - owner: The prompt-state owner ``beginPrompt(params:connection:)``
     ///     installed.
-    ///   - send: The sink every update of the turn goes to.
+    ///   - send: The sink every update of the prompt goes to.
     /// - Returns: The empty acceptance.
-    func scheduleModelTurn(
+    func scheduleModelPrompt(
         overridePrompt: String?,
         params: PromptRequest,
         entry: ActiveSession,
         connection: AgentSideConnection,
-        owner: TurnStateOwner,
+        owner: PromptStateOwner,
         send: @escaping SessionUpdateSink
     ) -> PromptResponse {
         let sessionId = params.sessionId
@@ -620,7 +621,7 @@ extension RoutedACPAgent {
         // the same host-owned stream the terminal projection consumes.
         let shellOutput = entry.surface.shellOutput
         let session = entry.session
-        // The elicitation relay of this turn (plan.md §16): it holds the
+        // The elicitation relay of this prompt (plan.md §16): it holds the
         // capabilities `initialize` read, and `session/cancel` and
         // `session/close` reach it through the session's table entry. A
         // missing negotiation reads as "supports nothing", the same rule
@@ -631,10 +632,10 @@ extension RoutedACPAgent {
                 ?? NegotiatedClientCapabilities(reading: ClientCapabilities()),
             connection: connection)
         sessions[sessionId]?.activeElicitationRelay = relay
-        let turn = PromptTurn(
+        let execution = PromptExecution(
             sessionId: sessionId,
             promptBlocks: params.prompt,
-            turnState: owner,
+            promptState: owner,
             send: send,
             firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
             modelName: ConfigOptions.handle(for: entry.selectedSlot, of: residentProfile)
@@ -643,17 +644,17 @@ extension RoutedACPAgent {
             shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
             contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb),
             relayElicitation: { event in
-                await relay.relay(event, on: session, turnState: owner)
+                await relay.relay(event, on: session, promptState: owner)
             })
         connection.afterRespondingToCurrentRequest {
-            await turn.run(session: session)
-            await self.turnFinished(sessionId: sessionId)
+            await execution.run(session: session)
+            await self.promptFinished(sessionId: sessionId)
         }
         return PromptResponse()
     }
 
-    /// Stops the session's running turn (plan.md §8.6): records the
-    /// request on the turn owner, answers every pending elicitation with
+    /// Stops the session's running prompt (plan.md §8.6): records the
+    /// request on the prompt owner, answers every pending elicitation with
     /// `cancel` — the suspended tool must resume before the `idle`
     /// terminator, and Router's mailbox does not resume on task
     /// cancellation — then cancels the work of the Router session: the
@@ -667,16 +668,16 @@ extension RoutedACPAgent {
     ///
     /// - Parameter params: The cancellation notification.
     public func sessionCancel(_ params: CancelSessionNotification) async {
-        guard let entry = sessions[params.sessionId], let turn = entry.activeTurn else {
-            turnLogger.notice(
+        guard let entry = sessions[params.sessionId], let promptState = entry.activePrompt else {
+            promptLogger.notice(
                 "session/cancel for session \(params.sessionId.rawValue, privacy: .public) with no running turn; ignored"
             )
             return
         }
-        await turn.noteCancelRequested()
+        await promptState.noteCancelRequested()
         await entry.activeElicitationRelay?.cancelPendingElicitations()
         let result = await entry.session.cancel()
-        turnLogger.info(
+        promptLogger.info(
             "session \(params.sessionId.rawValue, privacy: .public): cancel -> \(String(describing: result), privacy: .public)"
         )
     }
@@ -695,18 +696,18 @@ extension RoutedACPAgent {
         sessions[sessionId]?.surface.shellOutput?.finish()
     }
 
-    /// Clears the finished turn, so the session accepts a new prompt.
-    /// Runs after the turn's `idle` went out, so a second turn's
-    /// `running` can never pass the first turn's terminator. It then
-    /// reconciles the config-option state (plan.md §15): a turn that ran
+    /// Clears the finished prompt, so the session accepts a new prompt.
+    /// Runs after the prompt's `idle` went out, so a second prompt's
+    /// `running` can never pass the first prompt's terminator. It then
+    /// reconciles the config-option state (plan.md §15): a prompt that ran
     /// on a model the announced options do not show pushes one
-    /// `config_option_update`, after the turn's terminator.
+    /// `config_option_update`, after the prompt's terminator.
     ///
-    /// - Parameter sessionId: The session whose turn finished.
-    func turnFinished(sessionId: SessionId) async {
-        sessions[sessionId]?.activeTurn = nil
-        // The relay goes with the turn: a pending round trip holds the
-        // drive loop, so a finished turn has none left.
+    /// - Parameter sessionId: The session whose prompt finished.
+    func promptFinished(sessionId: SessionId) async {
+        sessions[sessionId]?.activePrompt = nil
+        // The relay goes with the prompt: a pending round trip holds the
+        // drive loop, so a finished prompt has none left.
         sessions[sessionId]?.activeElicitationRelay = nil
         await reconcileConfigOptions(for: sessionId)
     }
@@ -728,7 +729,7 @@ extension RoutedACPAgent {
         let record = SessionIndexRecord(
             sessionId: sessionId.rawValue,
             cwd: entry.workingDirectory.path,
-            title: PromptTurn.oneLineTitle(from: PromptTurn.promptText(from: blocks)),
+            title: PromptExecution.oneLineTitle(from: PromptExecution.promptText(from: blocks)),
             updatedAt: Date(),
             additionalDirectories: entry.additionalRoots.map(\.path))
         return FirstActivity(

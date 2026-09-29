@@ -92,19 +92,19 @@ enum CommandDispatch {
     }
 }
 
-// MARK: - The .action turn (plan.md §14.3)
+// MARK: - The .action prompt (plan.md §14.3)
 
-/// One `.action` command turn: the closure runs and its text streams as
-/// agent-message chunks. There is no model turn, and there are no
-/// transcript entries beyond what the action records.
-struct ActionCommandTurn: Sendable {
+/// The execution of one `.action` command prompt: the closure runs and its
+/// text streams as agent-message chunks. There is no model prompt, and
+/// there are no transcript entries beyond what the action records.
+struct ActionCommandExecution: Sendable {
     /// The prompt's content blocks, echoed as the `user_message`.
     let promptBlocks: [ContentBlock]
 
-    /// The turn-state owner of the session.
-    let turnState: TurnStateOwner
+    /// The prompt-state owner of the session.
+    let promptState: PromptStateOwner
 
-    /// The sink every update of this turn goes to.
+    /// The sink every update of this prompt goes to.
     let send: SessionUpdateSink
 
     /// The action closure of the command's body.
@@ -113,17 +113,17 @@ struct ActionCommandTurn: Sendable {
     /// The invocation the action runs with.
     let invocation: SlashCommand.Invocation
 
-    /// Runs the turn: the echo, `running`, the streamed chunks, and one
+    /// Runs the prompt: the echo, `running`, the streamed chunks, and one
     /// `idle` with the stop reason. A stream error is classified the
-    /// same way a model turn's error is (plan.md §8.2).
+    /// same way a model prompt's error is (plan.md §8.2).
     func run() async {
         await send(
             .userMessage(
                 UserMessage(
                     messageId: EventProjection.makeMessageId(), content: .value(promptBlocks))))
-        await turnState.turnDidStart()
+        await promptState.promptDidStart()
         let messageId = EventProjection.makeMessageId()
-        var stop = TurnStop.completed
+        var stop = PromptStop.completed
         do {
             for try await text in action(invocation) {
                 await send(
@@ -131,12 +131,12 @@ struct ActionCommandTurn: Sendable {
                         ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
             }
         } catch {
-            stop = PromptTurn.classify(error)
+            stop = PromptExecution.classify(error)
         }
-        if await turnState.cancelRequested {
+        if await promptState.cancelRequested {
             stop = .cancelled
         }
-        await turnState.turnDidEnd(reason: PromptTurn.stopReason(for: stop))
+        await promptState.promptDidEnd(reason: PromptExecution.stopReason(for: stop))
     }
 }
 
@@ -241,10 +241,10 @@ extension RoutedACPAgent {
             guard command.attachments.isEmpty else {
                 throw RequestError.actionCommandAttachments(name: command.name)
             }
-            let (owner, send) = beginTurn(params: params, connection: connection)
-            let turn = ActionCommandTurn(
+            let (owner, send) = beginPrompt(params: params, connection: connection)
+            let execution = ActionCommandExecution(
                 promptBlocks: params.prompt,
-                turnState: owner,
+                promptState: owner,
                 send: send,
                 action: action,
                 invocation: SlashCommand.Invocation(
@@ -252,8 +252,8 @@ extension RoutedACPAgent {
                     workingDirectory: entry.workingDirectory))
             let sessionId = params.sessionId
             connection.afterRespondingToCurrentRequest {
-                await turn.run()
-                await self.turnFinished(sessionId: sessionId)
+                await execution.run()
+                await self.promptFinished(sessionId: sessionId)
             }
             return PromptResponse()
         case .prompt(let template):
@@ -263,15 +263,15 @@ extension RoutedACPAgent {
             } catch {
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
-            let (owner, send) = beginTurn(params: params, connection: connection)
-            return scheduleModelTurn(
+            let (owner, send) = beginPrompt(params: params, connection: connection)
+            return scheduleModelPrompt(
                 overridePrompt: CommandDispatch.modelPrompt(
                     expandedText: expandedText, attachments: command.attachments),
                 params: params, entry: entry, connection: connection, owner: owner, send: send)
         case .rendered(let render):
             // Mark the session busy before the async render, so a
             // concurrent prompt is refused instead of racing this one.
-            let (owner, send) = beginTurn(params: params, connection: connection)
+            let (owner, send) = beginPrompt(params: params, connection: connection)
             let renderedText: String
             do {
                 renderedText = try await render(
@@ -279,10 +279,10 @@ extension RoutedACPAgent {
                         arguments: command.arguments,
                         workingDirectory: entry.workingDirectory))
             } catch {
-                await turnFinished(sessionId: params.sessionId)
+                await promptFinished(sessionId: params.sessionId)
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
-            return scheduleModelTurn(
+            return scheduleModelPrompt(
                 overridePrompt: CommandDispatch.modelPrompt(
                     expandedText: renderedText, attachments: command.attachments),
                 params: params, entry: entry, connection: connection, owner: owner, send: send)

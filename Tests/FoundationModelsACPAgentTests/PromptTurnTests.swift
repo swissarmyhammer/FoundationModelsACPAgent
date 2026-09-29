@@ -200,24 +200,24 @@ import Testing
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
     }
 
-    /// The `TurnStop` to `StopReason` function is total, including the
+    /// The `PromptStop` to `StopReason` function is total, including the
     /// tool-loop arm whose producer is a later task.
     @Test func theStopReasonMappingIsTotal() {
-        #expect(PromptTurn.stopReason(for: .completed) == .endTurn)
-        #expect(PromptTurn.stopReason(for: .refusal) == .refusal)
-        #expect(PromptTurn.stopReason(for: .cancelled) == .cancelled)
-        #expect(PromptTurn.stopReason(for: .budgetExhausted) == .maxTokens)
-        #expect(PromptTurn.stopReason(for: .toolLoopCapped) == .maxTurnRequests)
+        #expect(PromptExecution.stopReason(for: .completed) == .endTurn)
+        #expect(PromptExecution.stopReason(for: .refusal) == .refusal)
+        #expect(PromptExecution.stopReason(for: .cancelled) == .cancelled)
+        #expect(PromptExecution.stopReason(for: .budgetExhausted) == .maxTokens)
+        #expect(PromptExecution.stopReason(for: .toolLoopCapped) == .maxTurnRequests)
         #expect(
-            PromptTurn.stopReason(for: .noOutput)
-                == .unknown(PromptTurn.noOutputStopReasonValue))
+            PromptExecution.stopReason(for: .noOutput)
+                == .unknown(PromptExecution.noOutputStopReasonValue))
         #expect(
-            PromptTurn.stopReason(
+            PromptExecution.stopReason(
                 for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
-                == .unknown(PromptTurn.stalledStopReasonValue))
+                == .unknown(PromptExecution.stalledStopReasonValue))
         #expect(
-            PromptTurn.stopReason(for: .failed(message: "boom"))
-                == .unknown(PromptTurn.unmappedStopReasonValue))
+            PromptExecution.stopReason(for: .failed(message: "boom"))
+                == .unknown(PromptExecution.unmappedStopReasonValue))
     }
 
     /// Whether one turn stop is the `failed` stop. The stop carries a
@@ -225,7 +225,7 @@ import Testing
     ///
     /// - Parameter stop: The turn stop to read.
     /// - Returns: `true` for a failed stop.
-    private static func isFailed(_ stop: TurnStop) -> Bool {
+    private static func isFailed(_ stop: PromptStop) -> Bool {
         if case .failed = stop { return true }
         return false
     }
@@ -233,12 +233,12 @@ import Testing
     /// The error classifier reads `CancellationError` and the public SDK
     /// generation errors; an unmapped error degrades to `failed`.
     @Test func classifyReadsCancellationAndGenerationErrors() {
-        #expect(PromptTurn.classify(CancellationError()) == .cancelled)
-        #expect(PromptTurn.classify(ScriptedFailure.guardrailViolation.error) == .refusal)
+        #expect(PromptExecution.classify(CancellationError()) == .cancelled)
+        #expect(PromptExecution.classify(ScriptedFailure.guardrailViolation.error) == .refusal)
         #expect(
-            PromptTurn.classify(ScriptedFailure.exceededContextWindow.error) == .budgetExhausted)
+            PromptExecution.classify(ScriptedFailure.exceededContextWindow.error) == .budgetExhausted)
         #expect(
-            Self.isFailed(PromptTurn.classify(ScriptedModelError.unknownTool("x"))),
+            Self.isFailed(PromptExecution.classify(ScriptedModelError.unknownTool("x"))),
             "expected an unmapped error to classify as failed")
     }
 
@@ -392,10 +392,10 @@ import Testing
             ]))
         let updates = await recorder.updates
 
-        #expect(reason == .unknown(PromptTurn.truncatedStopReasonValue))
+        #expect(reason == .unknown(PromptExecution.truncatedStopReasonValue))
         #expect(
             ScriptedTurnFixture.idleStopReason(in: updates)
-                == .unknown(PromptTurn.truncatedStopReasonValue))
+                == .unknown(PromptExecution.truncatedStopReasonValue))
     }
 
     /// Only the LAST generate call decides: a tool-calling turn that
@@ -429,11 +429,11 @@ import Testing
             ]))
         let updates = await recorder.updates
 
-        #expect(reason == .unknown(PromptTurn.noOutputStopReasonValue))
+        #expect(reason == .unknown(PromptExecution.noOutputStopReasonValue))
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(
             ScriptedTurnFixture.idleStopReason(in: updates)
-                == .unknown(PromptTurn.noOutputStopReasonValue))
+                == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
     /// A turn that streamed text keeps `end_turn`, also when the usage
@@ -514,7 +514,7 @@ import Testing
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(
             ScriptedTurnFixture.idleStopReason(in: updates)
-                == .unknown(PromptTurn.noOutputStopReasonValue))
+                == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
     // MARK: - The stalled generation (§8.2, task ^s0bw5cv)
@@ -548,7 +548,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aGenerationWithNoFragmentPastTheBoundEndsTheTurnAsStalled() async throws {
         let stall = Self.makeStall(
-            withoutProgress: PromptTurn.stalledGenerationBound, fragments: 0)
+            withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
         let events = AsyncThrowingStream<SessionEvent, Error> { continuation in
             continuation.yield(.generationStalled(stall))
         }
@@ -556,11 +556,11 @@ import Testing
         let reason = await turn.drive(events: events)
         let updates = await recorder.updates
 
-        #expect(reason == .unknown(PromptTurn.stalledStopReasonValue))
+        #expect(reason == .unknown(PromptExecution.stalledStopReasonValue))
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         #expect(
             ScriptedTurnFixture.idleStopReason(in: updates)
-                == .unknown(PromptTurn.stalledStopReasonValue))
+                == .unknown(PromptExecution.stalledStopReasonValue))
     }
 
     /// A stall shorter than the bound is a report and not a bound: the
@@ -568,7 +568,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aStallShorterThanTheBoundDoesNotEndTheTurn() async throws {
         let stall = Self.makeStall(
-            withoutProgress: PromptTurn.stalledGenerationBound - .seconds(1), fragments: 0)
+            withoutProgress: PromptExecution.stalledGenerationBound - .seconds(1), fragments: 0)
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
@@ -587,7 +587,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aStallPastTheBoundAfterAFragmentDoesNotEndTheTurn() async throws {
         let stall = Self.makeStall(
-            withoutProgress: PromptTurn.stalledGenerationBound, fragments: 1)
+            withoutProgress: PromptExecution.stalledGenerationBound, fragments: 1)
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
@@ -607,7 +607,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aStallPastTheBoundAfterAToolCallDoesNotEndTheTurn() async throws {
         let stall = Self.makeStall(
-            withoutProgress: PromptTurn.stalledGenerationBound, fragments: 0)
+            withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
@@ -637,7 +637,7 @@ import Testing
     /// text and its usage, and it ends with `end_turn`.
     @Test(.timeLimit(.minutes(1)))
     func queueWaitNeverEndsTheRequestAsStalled() async throws {
-        let queueWait = PromptTurn.stalledGenerationBound + .seconds(1)
+        let queueWait = PromptExecution.stalledGenerationBound + .seconds(1)
         let interval = Duration.seconds(Self.stallReportIntervalSeconds)
         let stallAfterTheWait = GenerationStall(
             timeWithoutProgress: interval,
@@ -713,7 +713,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func awaitingUserPairsRequiresActionWithRunning() async throws {
         let recorder = SinkRecorder()
-        let owner = TurnStateOwner(send: { update in await recorder.append(update) })
+        let owner = PromptStateOwner(send: { update in await recorder.append(update) })
 
         let answer = await owner.awaitingUser { "the answer" }
         let updates = await recorder.updates
@@ -726,7 +726,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func awaitingUserReturnsToRunningWhenTheBodyThrows() async throws {
         let recorder = SinkRecorder()
-        let owner = TurnStateOwner(send: { update in await recorder.append(update) })
+        let owner = PromptStateOwner(send: { update in await recorder.append(update) })
 
         await #expect(throws: ScriptedModelError.self) {
             _ = try await owner.awaitingUser { () -> String in

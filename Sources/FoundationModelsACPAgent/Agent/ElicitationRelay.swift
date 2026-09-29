@@ -21,7 +21,7 @@ typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 /// turns that event into one `elicitation/create` on the wire, decodes the
 /// client's answer, and delivers it back through
 /// `RoutedSession.respond(elicitationId:response:)`. Each round trip runs
-/// inside ``TurnStateOwner/awaitingUser(_:)``, so the wire shows
+/// inside ``PromptStateOwner/awaitingUser(_:)``, so the wire shows
 /// `requires_action` before the question and `running` after the answer
 /// (plan.md §8.2).
 ///
@@ -80,18 +80,18 @@ actor ElicitationRelay {
     // MARK: - The round trip
 
     /// Relays one elicitation event: the capability gate, the wire round
-    /// trip inside the turn's `awaitingUser`, and the answer delivery
+    /// trip inside the prompt's `awaitingUser`, and the answer delivery
     /// through `session.respond(elicitationId:response:)`.
     ///
     /// - Parameters:
     ///   - event: The `.elicitation` operation event the session posted.
     ///   - session: The Router session the answer goes back to.
-    ///   - turnState: The turn-state owner that pairs `requires_action`
+    ///   - promptState: The prompt-state owner that pairs `requires_action`
     ///     with `running` around the wait.
     func relay(
         _ event: OperationEvent,
         on session: any RoutedSession,
-        turnState: TurnStateOwner
+        promptState: PromptStateOwner
     ) async {
         // The "elicitation is non-nil iff the kind is .elicitation" rule
         // is a doc comment upstream, not a type guarantee; read it
@@ -122,7 +122,7 @@ actor ElicitationRelay {
                 elicitationId: elicitationId, on: session, reason: Self.duplicateURLIdReason)
             return
         }
-        await turnState.awaitingUser {
+        await promptState.awaitingUser {
             await self.deliverRoundTrip(
                 wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
         }
@@ -130,7 +130,7 @@ actor ElicitationRelay {
     }
 
     /// Answers every round trip still in flight with `cancel`, so each
-    /// suspended tool resumes before the turn's `idle` terminator.
+    /// suspended tool resumes before the prompt's `idle` terminator.
     /// `session/cancel` and `session/close` call it (plan.md §8.6, §10.1).
     ///
     /// The tasks that still wait on the client are cancelled too. An

@@ -30,8 +30,24 @@ comments:
     - evidence: 4 files — Tests/FoundationModelsACPAgentTests/CancellationTests.swift (new test), Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift (`onPrompt(containing:play:)` step), Tests/FoundationModelsACPAgentTests/Support/NamedPipe.swift (new), Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift (uses NamedPipe). `swift test`: 615 tests in 70 suites passed, 0 compiler warnings. Mutation check: without `cancel()` in Router `runDrain()` the test fails at the 60 s time limit.
     - next: /review
   timestamp: 2026-09-29T18:02:37.101653+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3q5rg472f9nvtym40t8w7qx
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit e1eb32e). The engine did 7 validator runs on 4 source files. It found 0 findings (0 confirmed, 0 refuted, 0 failed). The .reviewignore rule excluded 4 .kanban files. The task has no prior review findings.
+    - next: none. The task moved to done.
+  timestamp: 2026-09-29T18:10:18.375041+00:00
+- actor: claude-code
+  id: 01m3q5rqqkjcxvventvwhwdyhm
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files (CancellationTests.swift, ScriptedModel.swift, Support/NamedPipe.swift new, PromptTurnTests.swift)
+    - test: green — swift test 615 tests pass; IntegrationTests build ok; Router checkout clean
+    - commit: e1eb32e
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T18:10:26.163272+00:00
+position_column: done
+position_ordinal: f480
 title: Prove or rule out a session/close hang when a mail-started answer waits for a place in the model queue
 ---
 ## Why

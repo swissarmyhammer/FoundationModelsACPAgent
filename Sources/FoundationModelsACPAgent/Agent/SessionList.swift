@@ -137,7 +137,7 @@ extension SessionInfo {
             additionalDirectories: record.additionalDirectories.compactMap(
                 AbsolutePath.init(absolute:)),
             title: record.title,
-            updatedAt: PromptTurn.rfc3339(record.updatedAt))
+            updatedAt: PromptExecution.rfc3339(record.updatedAt))
     }
 }
 

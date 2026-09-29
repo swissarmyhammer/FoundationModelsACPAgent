@@ -92,17 +92,17 @@ extension RoutedACPAgent {
         guard !entry.isClosed else {
             return
         }
-        // A close during an active turn cancels it as `session/cancel` would,
+        // A close during an active prompt cancels it as `session/cancel` would,
         // and waits for the `idle(cancelled)` terminator to go out before the
         // close response (plan.md §10.1). Every pending elicitation is
         // answered with `cancel` first (plan.md §16): the suspended tool must
-        // resume, or the turn's drive loop never ends and this wait holds
+        // resume, or the prompt's drive loop never ends and this wait holds
         // forever — Router's mailbox does not resume on task cancellation.
-        if let turn = entry.activeTurn {
-            await turn.noteCancelRequested()
+        if let promptState = entry.activePrompt {
+            await promptState.noteCancelRequested()
             await entry.activeElicitationRelay?.cancelPendingElicitations()
             await entry.session.cancel()
-            await turn.waitForTurnEnd()
+            await promptState.waitForPromptEnd()
         }
         // The session sweep: it cancels every background run, rejects every
         // pending elicitation, journals the terminal events, and finishes

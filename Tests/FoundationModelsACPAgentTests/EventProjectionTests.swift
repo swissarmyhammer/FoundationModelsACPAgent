@@ -739,10 +739,10 @@ import Testing
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
         let sessionId = SessionId(rawValue: syntheticSessionIdValue)
         let send: SessionUpdateSink = { update in await connection.post(update, in: sessionId) }
-        let turn = PromptTurn(
+        let turn = PromptExecution(
             sessionId: sessionId,
             promptBlocks: [],
-            turnState: TurnStateOwner(send: send),
+            promptState: PromptStateOwner(send: send),
             send: send,
             firstActivity: nil,
             modelName: syntheticModelName)

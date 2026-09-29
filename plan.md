@@ -977,7 +977,7 @@ model the loader cannot drive reports a stall on each interval and never ends,
 so the turn would hold the session for as long as the process lives. The drive
 loop therefore reads each `generationStalled` report and ends the turn when
 two facts hold together: the report names a model call that has made no
-fragment at all for the whole `PromptTurn.stalledGenerationBound`, and the
+fragment at all for the whole `PromptExecution.stalledGenerationBound`, and the
 turn has made no observable output. The turn then leaves the event stream,
 which cancels Router's turn by that surface's own contract, and stops with
 `_stalled` (§8.2). The log line names the model and the report.
@@ -993,7 +993,7 @@ a request can wait a long time while other sessions generate. The Router stall
 watch counts `GenerationStall.timeWithoutProgress` only while a pass of the
 request holds its queue place. A queue wait and a tool body between two passes
 do not count, so a request that only waits never reaches
-`PromptTurn.stalledGenerationBound` and never ends with `_stalled`. The Router
+`PromptExecution.stalledGenerationBound` and never ends with `_stalled`. The Router
 tells the wait with `submissionQueued`, then `submissionStarted` when the
 request gets its place; the agent writes the `notice` line of the table row.
 `GenerationStall.timeInFlight` includes the wait and the tool bodies, so the
@@ -1007,7 +1007,7 @@ tool call 555 seconds after the prompt, and through that same successful turn
 Router kept reporting `0 fragments` at 1780 seconds in flight while `runCode`
 and shell calls were completing. So a fragment count of zero never proves that
 the model made nothing, and a bound of two minutes ended a healthy turn every
-time. `PromptTurn.stalledGenerationBound` is thirty minutes for that reason.
+time. `PromptExecution.stalledGenerationBound` is thirty minutes for that reason.
 
 **One wire update has no `SessionEvent` source: `tool_call_content_chunk`.**
 It appends one `ToolCallContent` item to a tool call's content, and a later

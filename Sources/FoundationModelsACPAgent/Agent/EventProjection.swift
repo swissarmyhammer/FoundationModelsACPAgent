@@ -84,8 +84,8 @@ struct EventProjection {
     /// The id of the session this projection reports for, in the logs.
     let sessionId: SessionId
 
-    /// The turn-state owner: `submissionStarted` maps through it (§8.2).
-    let turnState: TurnStateOwner
+    /// The prompt-state owner: `submissionStarted` maps through it (§8.2).
+    let promptState: PromptStateOwner
 
     /// The sink every update of this projection goes to.
     let send: SessionUpdateSink
@@ -101,7 +101,7 @@ struct EventProjection {
 
     /// The handler of a live elicitation request (plan.md §16), or `nil`
     /// when no relay is wired — a synthetic projection drive. The
-    /// production wiring supplies ``ElicitationRelay/relay(_:on:turnState:)``
+    /// production wiring supplies ``ElicitationRelay/relay(_:on:promptState:)``
     /// bound to the turn's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
@@ -154,7 +154,7 @@ struct EventProjection {
     /// an attachment report, a relayed elicitation, or a run
     /// settlement (task ^pez780d).
     ///
-    /// `PromptTurn.drive` reads it beside a stall report as well: a
+    /// `PromptExecution.drive` reads it beside a stall report as well: a
     /// turn that already produced something is not waiting on a model
     /// that cannot generate (task ^s0bw5cv).
     private(set) var sawOutput = false
@@ -165,7 +165,7 @@ struct EventProjection {
 
     /// Whether the turn generated nothing: no observable output, while
     /// at least one `submissionEnded` arrived and the summed output tokens
-    /// are zero. `PromptTurn.drive` reads it to report the honest
+    /// are zero. `PromptExecution.drive` reads it to report the honest
     /// `_no_output` stop reason instead of a bare `end_turn`
     /// (plan.md §8.2's `_` rule; task ^pez780d).
     var generatedNothing: Bool {
@@ -193,7 +193,7 @@ struct EventProjection {
         let sessionIdValue = sessionId.rawValue
         switch event {
         case .submissionStarted:
-            await turnState.turnDidStart()
+            await promptState.promptDidStart()
         case .textDelta(let text):
             sawOutput = true
             let messageId = agentMessageId ?? Self.makeMessageId()
@@ -226,7 +226,7 @@ struct EventProjection {
             // A correlation record only, never a wire message: its
             // `correlationID` is the run's completion token, a
             // different identity space from `Transcript.ToolCall.id`.
-            turnLogger.debug(
+            promptLogger.debug(
                 "session \(sessionIdValue, privacy: .public): tool invocation record for run \(record.correlationID, privacy: .public)"
             )
         case .entryRecorded(let id, let kind):
@@ -234,12 +234,12 @@ struct EventProjection {
         case .compaction(let result):
             await projectCompaction(result)
         case .discoveryPrimingFailed(let failure):
-            turnLogger.error(
+            promptLogger.error(
                 "session \(sessionIdValue, privacy: .public): discovery priming failed: \(String(describing: failure), privacy: .public)"
             )
         case .generationStalled(let stall):
             // A report, not a bound (§8.4): the generation continues.
-            turnLogger.notice(
+            promptLogger.notice(
                 "session \(sessionIdValue, privacy: .public): \(stall.description, privacy: .public)"
             )
         case .runSettled(let operationEvent):
@@ -251,7 +251,7 @@ struct EventProjection {
             // nothing, because an empty content replace would erase
             // the call's content.
             guard !report.attachments.isEmpty else {
-                turnLogger.warning(
+                promptLogger.warning(
                     "session \(sessionIdValue, privacy: .public): run \(report.correlationID, privacy: .public) reported no attachments; nothing goes to the wire"
                 )
                 return
@@ -264,7 +264,7 @@ struct EventProjection {
             // answer is delivered, so holding this drive loop holds
             // nothing the turn could otherwise do.
             guard let relayElicitation else {
-                turnLogger.notice(
+                promptLogger.notice(
                     "session \(sessionIdValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) requested an elicitation, but no relay is wired; the request is only reported"
                 )
                 return
@@ -296,14 +296,14 @@ struct EventProjection {
             // The usage of `answered` is the total of the chain. The
             // `submissionEnded` sum above already counts these tokens, so
             // the projection does not add them again.
-            turnLogger.debug(
+            promptLogger.debug(
                 "session \(sessionIdValue, privacy: .public): \(String(describing: event), privacy: .public)"
             )
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a
             // broken stream.
-            turnLogger.debug(
+            promptLogger.debug(
                 "session \(sessionIdValue, privacy: .public): unprojected event \(String(describing: event), privacy: .public)"
             )
         }
@@ -323,7 +323,7 @@ struct EventProjection {
         // autoclosure, which must not capture the projection itself.
         let sessionIdValue = sessionId.rawValue
         let model = modelName
-        turnLogger.notice(
+        promptLogger.notice(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) runs a submission of another session; this request waits for a place in the model queue"
         )
     }
@@ -360,7 +360,7 @@ struct EventProjection {
         if let value = Self.jsonValue(from: argumentsJSON) {
             rawInput = .value(value)
         } else {
-            turnLogger.warning(
+            promptLogger.warning(
                 "session \(sessionId.rawValue, privacy: .public): tool call \(id, privacy: .public) arguments did not parse as JSON"
             )
             rawInput = .unchanged
@@ -418,7 +418,7 @@ struct EventProjection {
         case .toolCalls:
             break
         @unknown default:
-            turnLogger.debug(
+            promptLogger.debug(
                 "session \(sessionIdValue, privacy: .public): recorded entry \(recordedEntryId, privacy: .public) of an unmapped kind"
             )
         }
@@ -462,7 +462,7 @@ struct EventProjection {
     private func projectSettlement(of operationEvent: OperationEvent) async {
         guard operationEvent.kind == .completed else {
             if operationEvent.outcome != nil {
-                turnLogger.warning(
+                promptLogger.warning(
                     "session \(sessionId.rawValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) carried an outcome on a non-terminal event; ignored"
                 )
             }
@@ -472,7 +472,7 @@ struct EventProjection {
         if let outcome = operationEvent.outcome {
             status = Self.wireStatus(for: outcome)
         } else {
-            turnLogger.warning(
+            promptLogger.warning(
                 "session \(sessionId.rawValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) completed with no outcome"
             )
             status = .unknown(Self.unknownOutcomeStatusWireValue)
@@ -522,7 +522,7 @@ struct EventProjection {
             Self.projectedChange(for: change).map(Self.location(for:))
         }
         if locations.count < changes.count {
-            turnLogger.warning(
+            promptLogger.warning(
                 "session \(sessionId.rawValue, privacy: .public): run \(report.correlationID, privacy: .public) recorded a file change the wire cannot carry; it rides no location"
             )
         }

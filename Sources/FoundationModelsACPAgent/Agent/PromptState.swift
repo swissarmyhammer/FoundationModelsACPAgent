@@ -2,19 +2,20 @@ import FoundationModelsACP
 import FoundationModelsRouter
 import os
 
-/// The logger of the turn: the state machine, the update sends, and the
+/// The logger of the prompt: the state machine, the update sends, and the
 /// ignored events.
-let turnLogger = Logger(subsystem: RoutedACPAgent.implementation.name, category: "PromptTurn")
+let promptLogger = Logger(
+    subsystem: RoutedACPAgent.implementation.name, category: "PromptExecution")
 
-/// The consumer of a turn's `session/update` payloads. The production
+/// The consumer of a prompt's `session/update` payloads. The production
 /// sink posts through the bound `AgentSideConnection`; a test sink
 /// records the sequence.
 typealias SessionUpdateSink = @Sendable (SessionUpdate) async -> Void
 
 extension AgentSideConnection {
     /// Sends one `session/update` for `sessionId`. A send failure is
-    /// logged and dropped: the turn already returned `{}` (plan.md §8.1),
-    /// so no turn error can become a JSON-RPC error, and a closed
+    /// logged and dropped: the prompt already returned `{}` (plan.md §8.1),
+    /// so no prompt error can become a JSON-RPC error, and a closed
     /// connection has no reader to correct.
     ///
     /// - Parameters:
@@ -25,38 +26,38 @@ extension AgentSideConnection {
             try await sessionUpdate(
                 UpdateSessionNotification(sessionId: sessionId, update: update))
         } catch {
-            turnLogger.warning(
+            promptLogger.warning(
                 "session/update send failed for session \(sessionId.rawValue, privacy: .public): \(error, privacy: .public)"
             )
         }
     }
 }
 
-/// The turn-state owner of one session (plan.md §8.2).
+/// The prompt-state owner of one session (plan.md §8.2).
 ///
 /// It owns the `state_update` transitions of the session's one running
-/// turn: `running` at the turn start, `requires_action` while the turn is
-/// blocked on the human, back to `running` at the answer, and `idle` with
-/// a stop reason at the end.
-/// It also records a `session/cancel` request, so the turn ends as
+/// prompt: `running` at the prompt start, `requires_action` while the
+/// prompt is blocked on the human, back to `running` at the answer, and
+/// `idle` with a stop reason at the end.
+/// It also records a `session/cancel` request, so the prompt ends as
 /// `cancelled` even when the cancelled model work runs to completion
 /// (plan.md §8.6).
-actor TurnStateOwner {
+actor PromptStateOwner {
     /// The sink every state update goes to.
     private let send: SessionUpdateSink
 
-    /// Whether `session/cancel` asked this turn to stop.
+    /// Whether `session/cancel` asked this prompt to stop.
     private(set) var cancelRequested = false
 
-    /// Whether ``turnDidStart()`` already sent `running` for the prompt.
+    /// Whether ``promptDidStart()`` already sent `running` for the prompt.
     private var didStart = false
 
-    /// Whether the turn has ended: whether ``turnDidEnd(reason:)`` sent the
-    /// `idle` terminator. `session/close` reads it, so the close response
-    /// follows the terminator (plan.md §10.1).
+    /// Whether the prompt has ended: whether ``promptDidEnd(reason:)`` sent
+    /// the `idle` terminator. `session/close` reads it, so the close
+    /// response follows the terminator (plan.md §10.1).
     private var didEnd = false
 
-    /// The waiters suspended in ``waitForTurnEnd()`` until the terminator
+    /// The waiters suspended in ``waitForPromptEnd()`` until the terminator
     /// goes out.
     private var endWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -71,7 +72,7 @@ actor TurnStateOwner {
     /// projection calls it at each Router `submissionStarted` event
     /// (plan.md §8.4), and a prompt can make more than one submission, so
     /// a later call sends nothing.
-    func turnDidStart() async {
+    func promptDidStart() async {
         guard !didStart else { return }
         didStart = true
         await sendRunning()
@@ -101,11 +102,11 @@ actor TurnStateOwner {
         }
     }
 
-    /// Sends the one `state_update: idle` that ends the turn, with its
+    /// Sends the one `state_update: idle` that ends the prompt, with its
     /// stop reason (plan.md §8.1).
     ///
-    /// - Parameter reason: Why the turn stopped.
-    func turnDidEnd(reason: StopReason) async {
+    /// - Parameter reason: Why the prompt stopped.
+    func promptDidEnd(reason: StopReason) async {
         await send(.stateUpdate(.idle(IdleStateUpdate(stopReason: reason))))
         didEnd = true
         let waiters = endWaiters
@@ -115,11 +116,11 @@ actor TurnStateOwner {
         }
     }
 
-    /// Suspends until the turn's `idle` terminator has gone out. A close
-    /// during an active turn awaits it, so the client learns the turn ended
-    /// before the close response (plan.md §10.1). It returns at once when the
-    /// terminator already went out.
-    func waitForTurnEnd() async {
+    /// Suspends until the prompt's `idle` terminator has gone out. A close
+    /// during an active prompt awaits it, so the client learns the prompt
+    /// ended before the close response (plan.md §10.1). It returns at once
+    /// when the terminator already went out.
+    func waitForPromptEnd() async {
         guard !didEnd else {
             return
         }
@@ -128,9 +129,9 @@ actor TurnStateOwner {
         }
     }
 
-    /// Records that `session/cancel` asked this turn to stop. The turn
-    /// reads it at the end, because a cancelled turn does not always
-    /// throw (plan.md §8.6).
+    /// Records that `session/cancel` asked this prompt to stop. The
+    /// prompt reads it at the end, because a cancelled prompt does not
+    /// always throw (plan.md §8.6).
     func noteCancelRequested() {
         cancelRequested = true
     }

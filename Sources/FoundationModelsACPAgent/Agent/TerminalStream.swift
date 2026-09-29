@@ -108,7 +108,7 @@ struct TerminalStream {
         @unknown default:
             // The upstream kind is not frozen: a new case degrades to a
             // log line, never to a broken stream.
-            turnLogger.debug(
+            promptLogger.debug(
                 "run \(event.commandID, privacy: .public): unprojected shell output event")
         }
     }
@@ -157,7 +157,7 @@ struct TerminalStream {
     /// - Parameter commandID: The run whose bytes went away.
     private func replaceOutput(of commandID: String) async {
         guard let stored = snapshot(commandID) else {
-            turnLogger.warning(
+            promptLogger.warning(
                 "run \(commandID, privacy: .public): a gap arrived with no stored record to replace from"
             )
             return

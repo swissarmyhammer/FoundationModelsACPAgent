@@ -90,7 +90,7 @@ import Testing
     /// wins over the stream's clean finish.
     @Test func aTurnThatIgnoresCancellationStillEndsIdleCancelled() async throws {
         let (turn, recorder) = makeSinkedTurn()
-        await turn.turnState.noteCancelRequested()
+        await turn.promptState.noteCancelRequested()
         let reason = await turn.drive(
             events: makeEventStream([
                 .textDelta("a full answer"),
@@ -110,7 +110,7 @@ import Testing
     /// request is still sent, and it never holds the idle update.
     @Test func postCancelUpdatesGoOutBeforeTheIdleTerminator() async throws {
         let (turn, recorder) = makeSinkedTurn()
-        await turn.turnState.noteCancelRequested()
+        await turn.promptState.noteCancelRequested()
         _ = await turn.drive(
             events: makeEventStream([
                 .toolCall(id: Self.toolCallId, name: "shell", argumentsJSON: "{}"),
