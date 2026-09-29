@@ -11,7 +11,6 @@
 
 import Darwin
 import Foundation
-import FoundationModelsACPAgentTestSupport
 
 /// What went wrong with a signalled run.
 struct SignalledRunError: Error, CustomStringConvertible {
@@ -126,23 +125,15 @@ struct SignalledExecutableRun {
         firstOutputLimit: Swift.Duration,
         exitLimit: Swift.Duration
     ) async throws -> SignalledExecutableRun {
-        let process = Process()
-        process.executableURL = try BuiltProductLocator.executableURL(named: executableName)
-        process.arguments = arguments
-        process.currentDirectoryURL = workspace
-        var childEnvironment = inheritedEnvironment
-        childEnvironment[TierThreeFixture.configHomeVariable] = configHome.path
-        for (key, value) in environment {
-            childEnvironment[key] = value
-        }
-        process.environment = childEnvironment
-
-        let standardOutputPipe = Pipe()
-        let standardErrorPipe = Pipe()
-        standardOutputPipe.markCloseOnExec()
-        standardErrorPipe.markCloseOnExec()
-        process.standardOutput = standardOutputPipe
-        process.standardError = standardErrorPipe
+        let child = try PipedChildProcess(
+            executableNamed: executableName,
+            arguments: arguments,
+            workspace: workspace,
+            inheritedEnvironment: inheritedEnvironment,
+            environment: PipedChildProcess.environment(configHome: configHome, adding: environment))
+        let process = child.process
+        let standardOutputPipe = child.standardOutput
+        let standardErrorPipe = child.standardError
 
         let store = Store()
         try process.run()

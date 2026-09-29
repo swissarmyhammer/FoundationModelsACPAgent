@@ -153,24 +153,20 @@ struct SpawnedACPAgent {
     /// - Returns: The running agent.
     /// - Throws: The locator or spawn error.
     static func start(workspace: URL, environment: [String: String]) throws -> SpawnedACPAgent {
-        let process = Process()
-        process.executableURL = try BuiltProductLocator.executableURL(
-            named: TierThreeFixture.agentExecutableName)
-        process.arguments = [TierThreeFixture.acpSubcommand]
-        process.currentDirectoryURL = workspace
-        process.environment = environmentWithoutOpenTelemetry.merging(environment) { _, set in set }
+        // The setup marks the stdin pipe close-on-exec too: a copy of its
+        // write end in another child would keep the stdin of this agent open
+        // after the close, and the agent would never read its end of file.
         let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        // A copy of the stdin write end in another child would keep the
-        // stdin of this agent open after the close, and the agent would never
-        // read its end of file.
-        for pipe in [inputPipe, outputPipe, errorPipe] {
-            pipe.markCloseOnExec()
-        }
-        process.standardInput = inputPipe
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        let child = try PipedChildProcess(
+            executableNamed: TierThreeFixture.agentExecutableName,
+            arguments: [TierThreeFixture.acpSubcommand],
+            workspace: workspace,
+            inheritedEnvironment: environmentWithoutOpenTelemetry,
+            environment: environment,
+            standardInput: inputPipe)
+        let process = child.process
+        let outputPipe = child.standardOutput
+        let errorPipe = child.standardError
         // A write to the stdin of a child that ended raises `SIGPIPE`, and that
         // signal ends this whole test process. With the flag the write fails
         // with `EPIPE` instead.

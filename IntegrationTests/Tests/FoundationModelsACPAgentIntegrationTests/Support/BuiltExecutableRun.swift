@@ -5,7 +5,6 @@
 // place, and the two suites cannot drift apart.
 
 import Foundation
-import FoundationModelsACPAgentTestSupport
 
 /// One finished run of a built executable: its exit code and its captured
 /// stdout and stderr text.
@@ -44,23 +43,15 @@ struct BuiltExecutableRun {
         configHome: URL,
         environment: [String: String] = [:]
     ) async throws -> BuiltExecutableRun {
-        let process = Process()
-        process.executableURL = try BuiltProductLocator.executableURL(named: executableName)
-        process.arguments = arguments
-        process.currentDirectoryURL = workspace
-        var childEnvironment = ProcessInfo.processInfo.environment
-        childEnvironment[TierThreeFixture.configHomeVariable] = configHome.path
-        for (key, value) in environment {
-            childEnvironment[key] = value
-        }
-        process.environment = childEnvironment
-
-        let standardOutputPipe = Pipe()
-        let standardErrorPipe = Pipe()
-        standardOutputPipe.markCloseOnExec()
-        standardErrorPipe.markCloseOnExec()
-        process.standardOutput = standardOutputPipe
-        process.standardError = standardErrorPipe
+        let child = try PipedChildProcess(
+            executableNamed: executableName,
+            arguments: arguments,
+            workspace: workspace,
+            inheritedEnvironment: ProcessInfo.processInfo.environment,
+            environment: PipedChildProcess.environment(configHome: configHome, adding: environment))
+        let process = child.process
+        let standardOutputPipe = child.standardOutput
+        let standardErrorPipe = child.standardError
 
         try process.run()
         // Drain the two pipes on their own tasks. A full pipe buffer

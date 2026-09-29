@@ -70,6 +70,38 @@ comments:
     - evidence: 14 files. Sources: Sources/acp-agent/{TelemetryBootstrap,AcpAgentCommand,AcpCommand,InterruptHandler}.swift (modified), Sources/acp-agent/TerminationHandler.swift (new). Unit tests: Tests/FoundationModelsACPAgentTests/{TerminationHandlerTests,TelemetryShutdownTests}.swift (new). Integration: TelemetryFlushTests.swift, Support/{OTLPTestReceiver,SpawnedACPAgent,PipeCloseOnExec}.swift (new); Support/{SignalledExecutableRun,BuiltExecutableRun,ProcessCensus}.swift (modified). `swift test`: 597 tests in 68 suites passed (1 known issue, as before). `swift test --package-path IntegrationTests --filter TelemetryFlushTests`: 4 tests passed. `swift test --package-path IntegrationTests`: 24 tests in 10 suites passed, two runs in a row. No compiler warning from project sources. Package.resolved pins unchanged (Router bbad3ce, Extras 0dc42cf). Not committed.
     - next: /review. Follow-up ^ssyacbg (SIGTERM outside the ACP serve window).
   timestamp: 2026-09-29T01:24:47.546860+00:00
+- actor: claude-code
+  id: 01m3nd9ksedgetms94skrzxvzv
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (d9764b5), 3 findings (3 confirmed, 0 refuted) — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/BuiltExecutableRun.swift:60, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SignalledExecutableRun.swift:142, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SpawnedACPAgent.swift:169
+    - next: Extract the common process setup (Process, environment, pipes, close-on-exec marks) into one shared helper. Use it in BuiltExecutableRun, SignalledExecutableRun and SpawnedACPAgent. Then run the review again.
+  timestamp: 2026-09-29T01:43:30.350870+00:00
+- actor: claude-code
+  id: 01m3nda6ggfsz2w8jrt59ta3j2
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 14 files (2-second flush bound in TelemetryBootstrap, flush in exitAfterFailure, TerminationHandler, tests, OTLPTestReceiver, SpawnedACPAgent, PipeCloseOnExec)
+    - test: green — swift test 597 tests in 68 suites; IntegrationTests 24 tests in 10 suites; 0 project warnings
+    - commit: d9764b5
+    - review: findings — IntegrationTests/.../Support/BuiltExecutableRun.swift:60, SignalledExecutableRun.swift:142, SpawnedACPAgent.swift:169 (duplication)
+  timestamp: 2026-09-29T01:43:49.520631+00:00
+- actor: claude-code
+  id: 01m3ndmfqgmp439vqb1sssasgr
+  text: |-
+    Review findings (duplication, 3 items) resolved.
+    - New `IntegrationTests/.../Support/PipedChildProcess.swift`: one `init(executableNamed:arguments:workspace:inheritedEnvironment:environment:standardInput:)` makes the `Process`, sets the environment (the `environment` pairs on top of `inheritedEnvironment`), makes the stdout and stderr pipes, marks each pipe close-on-exec (also the stdin pipe when the caller gives one), and sets them on the process. `static func environment(configHome:adding:)` gives `XDG_CONFIG_HOME` with the extra pairs on top, so the configHome merge also stands in one place.
+    - `BuiltExecutableRun` passes `ProcessInfo.processInfo.environment`, `SignalledExecutableRun` passes its `inheritedEnvironment`, and `SpawnedACPAgent` passes `environmentWithoutOpenTelemetry` and its own stdin pipe. The `FoundationModelsACPAgentTestSupport` import went out of the first two files, because they no longer use it.
+    - What did not work: a first shape made the stdin pipe inside the helper (`pipesStandardInput: Bool`) and gave it back as `Pipe?`. The caller then had to unwrap it, and `#require` is not available outside a test. So the caller now makes the stdin pipe and gives it to the helper.
+    - The environment merge order is the same as before: configHome first, then the extra pairs replace it.
+  timestamp: 2026-09-29T01:49:26.640992+00:00
+- actor: claude-code
+  id: 01m3ndmjydcevgnv71zzteyhxp
+  text: |-
+    ### implement — changed
+    - evidence: 4 files. New: IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/PipedChildProcess.swift. Modified: Support/BuiltExecutableRun.swift, Support/SignalledExecutableRun.swift, Support/SpawnedACPAgent.swift. `swift build --build-tests`: build complete, 0 warnings from project sources. `swift test --package-path IntegrationTests`: 24 tests in 10 suites passed (OutOfProcessTests, InterruptTests, TranscriptRecordingTests, ClientServerTests, ClientInteropTests, CLIProcessTests, TelemetryFlushTests, TelemetryStdoutTests, StdioContractTests, SkillTriggerTests), 0 warnings from project sources. Package.resolved pins unchanged. 3 of 3 findings checked. Not committed.
+    - next: /review.
+  timestamp: 2026-09-29T01:49:29.933997+00:00
 depends_on:
 - 01M3MNB6VZFQ81436GMVVJXE66
 position_column: doing
@@ -107,3 +139,14 @@ Work:
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 
 #otel
+
+## Review Findings (2026-09-28 20:32)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 14 file(s) reviewed, 12 not reviewed.
+
+> 12 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 12 file(s)
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/BuiltExecutableRun.swift:60` `duplication/duplication` — Lines 60-61 are part of a process setup block (lines 47-65) that is 0.97 identical to SignalledExecutableRun.run(). The blocks differ only in environment source (ProcessInfo.processInfo.environment vs an inherited parameter), making them one function with a parameter. Extract the common process setup code (Process creation through pipe assignment and marking) into a shared helper function that both BuiltExecutableRun.run() and SignalledExecutableRun.run() call, parameterizing the environment source.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SignalledExecutableRun.swift:142` `duplication/duplication` — Lines 142-143 are part of a process setup block (lines 129-145) that is 0.97 identical to BuiltExecutableRun.run(). The blocks differ only in the environment parameter (inheritedEnvironment vs ProcessInfo.processInfo.environment), making them one function with a parameter. Extract the common process setup logic into a shared helper function parameterized by environment source, and call it from SignalledExecutableRun.run().
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SpawnedACPAgent.swift:169` `duplication/duplication` — Line 169 is part of a process setup block (lines 156-173) that is 0.86-0.94 identical to the process setup in both BuiltExecutableRun.run() and SignalledExecutableRun.run(). All three files initialize Process, set environment, create pipes, and mark them close-on-exec in nearly identical patterns. Extract the common process setup pattern (Process initialization, environment setup, pipe creation, and close-on-exec marking) into a reusable helper function to be used across all three files, eliminating the maintenance burden of keeping these patterns in sync.
