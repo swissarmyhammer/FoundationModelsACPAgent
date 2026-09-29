@@ -255,13 +255,13 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                submissionStarted(),
+                makeSubmissionStarted(),
                 .textDelta("first attempt"),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
-                submissionStarted(),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
+                makeSubmissionStarted(),
                 .textReset,
                 .textDelta("second attempt"),
-                submissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: .nan)),
             ]))
         let updates = await recorder.updates
 
@@ -310,7 +310,7 @@ import Testing
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
                 .textDelta("b"),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         let updates = await recorder.updates
 
@@ -333,8 +333,8 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         _ = await turn.drive(
             events: makeEventStream([
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
-                submissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
             ]))
         let updates = await recorder.updates
 
@@ -369,7 +369,7 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                submissionEnded(
+                makeSubmissionEnded(
                     TokenUsage(
                         tokensIn: 100, tokensOut: 8192, contextFill: .nan,
                         finishReason: .maxTokens))
@@ -389,11 +389,11 @@ import Testing
         let (turn, _) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                submissionEnded(
+                makeSubmissionEnded(
                     TokenUsage(
                         tokensIn: 100, tokensOut: 8192, contextFill: .nan,
                         finishReason: .maxTokens)),
-                submissionEnded(
+                makeSubmissionEnded(
                     TokenUsage(
                         tokensIn: 200, tokensOut: 50, contextFill: .nan,
                         finishReason: .completed)),
@@ -409,7 +409,7 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
+                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
             ]))
         let updates = await recorder.updates
 
@@ -427,7 +427,7 @@ import Testing
         let reason = await turn.drive(
             events: makeEventStream([
                 .textDelta("real output"),
-                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -442,7 +442,7 @@ import Testing
             events: makeEventStream([
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
-                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -465,7 +465,7 @@ import Testing
         let reason = await turn.drive(
             events: makeEventStream([
                 .toolCallReport(report),
-                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -558,7 +558,7 @@ import Testing
             events: makeEventStream([
                 .generationStalled(stall),
                 .textDelta("late, and real"),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -577,7 +577,7 @@ import Testing
             events: makeEventStream([
                 .textDelta("a first fragment"),
                 .generationStalled(stall),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -597,7 +597,7 @@ import Testing
             events: makeEventStream([
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .generationStalled(stall),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -630,11 +630,11 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                submissionQueued(),
-                submissionStarted(),
+                makeSubmissionQueued(),
+                makeSubmissionStarted(),
                 .generationStalled(stallAfterTheWait),
                 .textDelta("the answer, after the wait"),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         let updates = await recorder.updates
 
@@ -669,7 +669,7 @@ import Testing
             events: makeEventStream([
                 .generationStalled(stall),
                 .textDelta("the first output, nine minutes in"),
-                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 

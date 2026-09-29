@@ -636,7 +636,7 @@ import Testing
     /// and never puts a `NaN` on the wire.
     @Test func aNaNContextFillOmitsTheUsageUpdate() async {
         let updates = await Self.drive([
-            submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan))
+            makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan))
         ])
         #expect(!updates.contains { $0.kind == .usageUpdate })
     }

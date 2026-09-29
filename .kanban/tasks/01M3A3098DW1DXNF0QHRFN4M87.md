@@ -50,6 +50,36 @@ comments:
     - evidence: 5 files — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift (`submissionQueued` is a `notice` line with the session id and the model name, through the new `reportQueueWait()`; new stored `modelName`), Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift (passes `modelName` to the projection; doc comments of `stalledGenerationBound`, `endsTurn(_:sawOutput:)` and `modelName` state the queue rule), plan.md (§8.4 table row `submissionQueued(SubmissionID)`, and a guard paragraph "A wait for a place in the model queue is not a stall"), Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift (new `queueWaitNeverEndsTheRequestAsStalled`; doc of `aStallPastTheBoundAfterAToolCallDoesNotEndTheTurn` no longer describes the old watch, and its expectations did not change), Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift (new `submissionQueued()` helper). `swift test --filter PromptTurnTests`: 31 tests, all pass, `queueWaitNeverEndsTheRequestAsStalled` and the four `_stalled` guard tests among them. `swift test`: 605 tests in 69 suites pass (the one known issue is the `withKnownIssue` self-check in `HarnessSmokeTests`, which was there before). No compiler warning; the only `warning:` line is the SwiftPM mlx bundle "missing creator" line, which was also there before the change.
     - next: /review. Not committed.
   timestamp: 2026-09-29T15:58:14.851549+00:00
+- actor: claude-code
+  id: 01m3pynmbxk14fx94w7mg8e2pv
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (0eae8bb): 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift:21 (swift/fluent-usage).
+    - next: Rename the factory `submissionQueued()` to `makeSubmissionQueued()`. Apply the `make` prefix to all factory helpers in ProjectionTestSupport.swift. Then run the tests, commit, and review again.
+  timestamp: 2026-09-29T16:06:24.381644+00:00
+- actor: claude-code
+  id: 01m3pyp0d77rggacbesrbxcc25
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files (EventProjection.swift, PromptTurn.swift, plan.md, PromptTurnTests.swift, ProjectionTestSupport.swift)
+    - test: green — swift test 605 tests pass; IntegrationTests build ok
+    - commit: 0eae8bb
+    - review: findings — Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift:21 (swift/fluent-usage: factory helper must begin with make)
+  timestamp: 2026-09-29T16:06:36.711405+00:00
+- actor: claude-code
+  id: 01m3pywnp5h533yzgmjj63bqg5
+  text: |-
+    Finding swift/fluent-usage (ProjectionTestSupport.swift:21) done for the whole file. The three factory helpers that make and return a `SessionEvent` now start with `make`: `submissionQueued()` -> `makeSubmissionQueued()`, `submissionStarted()` -> `makeSubmissionStarted()`, `submissionEnded(_:)` -> `makeSubmissionEnded(_:)`. The other helpers in the file already had the prefix (`makeSinkedTurn`, `makeEventStream`), or they are readers that return a value from an update and do not make one (`toolCallUpdates(in:)`, `idleState(of:)`, `jsonString(of:)` and the others). Call sites changed in PromptTurnTests.swift (20), EventProjectionTests.swift (1) and CancellationTests.swift (1). A search for a bare `submissionQueued(`, `submissionStarted(` or `submissionEnded(` call in all Swift files finds nothing; the leading-dot enum cases stay as they are.
+
+    Discovery: the `files` tool `edit file` with `replace_all: true` replaced only the first match in each call. Thus the edits of PromptTurnTests.swift went in multi-line blocks. The next agent must not trust `replace_all`, and must search again after an edit.
+  timestamp: 2026-09-29T16:10:15.109628+00:00
+- actor: claude-code
+  id: 01m3pywrwbfwrj8vzjnh3nm2ye
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift, Tests/FoundationModelsACPAgentTests/CancellationTests.swift. `swift test`: 605 tests in 69 suites pass, 0 failures (1 known issue: the `withKnownIssue` self-check in HarnessSmokeTests, which was there before). No compiler warning; the only `warning:` line is the SwiftPM mlx bundle "missing creator" line, which was there before. The finding is `- [x]`.
+    - next: /test, /commit, then /review. Not committed. The task stays in `doing`.
+  timestamp: 2026-09-29T16:10:18.379583+00:00
 position_column: doing
 position_ordinal: '8180'
 title: Do not stop a prompt as _stalled while its request waits for a place in the model queue
@@ -90,3 +120,15 @@ This needs a task on the FoundationModelsRouter board. Per memory `stop-before-r
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #generation-queue #upstream
+
+## Review Findings (2026-09-29 11:01)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift:21` `swift/fluent-usage` — Factory methods should begin with `make`. The function `submissionQueued()` constructs and returns a `SessionEvent` value, making it a factory method that should follow Apple's Swift API Design Guidelines naming convention. Rename `submissionQueued()` to `makeSubmissionQueued()` to follow the factory method naming convention.

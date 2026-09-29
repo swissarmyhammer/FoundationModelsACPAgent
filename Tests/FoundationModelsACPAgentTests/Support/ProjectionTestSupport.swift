@@ -18,14 +18,14 @@ private let syntheticSubmissionId = SubmissionID(0)
 /// submission waits for a place in the model queue.
 ///
 /// - Returns: The event.
-func submissionQueued() -> SessionEvent {
+func makeSubmissionQueued() -> SessionEvent {
     .submissionQueued(syntheticSubmissionId)
 }
 
 /// The `submissionStarted` event of one synthetic submission.
 ///
 /// - Returns: The event.
-func submissionStarted() -> SessionEvent {
+func makeSubmissionStarted() -> SessionEvent {
     .submissionStarted(
         SubmissionStart(submissionId: syntheticSubmissionId, messageIds: [], cause: .message))
 }
@@ -35,7 +35,7 @@ func submissionStarted() -> SessionEvent {
 ///
 /// - Parameter usage: The measured usage of the submission.
 /// - Returns: The event.
-func submissionEnded(_ usage: TokenUsage) -> SessionEvent {
+func makeSubmissionEnded(_ usage: TokenUsage) -> SessionEvent {
     .submissionEnded(
         SubmissionEnd(
             submissionId: syntheticSubmissionId, usage: usage, finishReason: usage.finishReason))
