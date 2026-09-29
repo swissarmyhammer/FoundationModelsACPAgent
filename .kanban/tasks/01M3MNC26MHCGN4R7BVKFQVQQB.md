@@ -90,6 +90,39 @@ comments:
     - notes: the stderr log level rule of acp-agent (`TelemetryBootstrap.standardErrorLogLevel = .warning`) is not changed, and its tests pass. The test target also links the swift-log `Logging` product, because the new suite reads `Logger.Level`. The cwd mismatch record of the resume holds no path; the refusal error gives both paths to the client.
     - next: /review
   timestamp: 2026-09-29T21:26:36.240686+00:00
+- actor: claude-code
+  id: 01m3qhn2w9zemy7xn5cq58j9za
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit 3b44c15). 23 findings confirmed, 2 refuted. PromptExecution.swift:735 (completeness/inverse-operation-coverage). ACPAgentTelemetry.swift:187, 191, 195, 199, 203, 206, 209, 213, 217, 220, 223, 227, 230, 234, 238, 241, 244, 248, 251, 254, 257, 260 (code-hygiene/dead-code-swift, superfluousIgnoreCommand).
+    - next: Do the items in "Review Findings (2026-09-29 16:28)". Then run the review again. The task stays in review.
+  timestamp: 2026-09-29T21:38:09.417049+00:00
+- actor: claude-code
+  id: 01m3qhnggvr86vbcbm48kr37xm
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 11 files (Package.swift, ACPAgentTelemetry.swift, RoutedACPAgent.swift, Agent/*.swift, SessionSurfaceLoggingTests.swift new)
+    - test: green — swift test 627 tests pass; IntegrationTests build ok
+    - commit: 3b44c15
+    - review: findings — PromptExecution.swift:735; ACPAgentTelemetry.swift:187-260 (22 x superfluousIgnoreCommand)
+  timestamp: 2026-09-29T21:38:23.387265+00:00
+- actor: claude-code
+  id: 01m3qj6tcrvrf7qc7v8gvtfqfq
+  text: |-
+    Review findings correction:
+    - Finding 1 (`cancelResultName` coverage): new test `cancelOfARunningPromptWritesOneInfoWithTheCancelResultInMetadata` in SessionSurfaceLoggingTests. It makes a scripted fixture with a held pass inside a `TelemetryCapture`, cancels the running prompt, waits for the record with `Poll.until`, and asserts one `.info` record with `cancel.result` = `requested` and the `session.id` of the fixture. RED proof: with `.requested` mapped to "nothingToCancel" for one run, the test failed on the `cancel.result` expectation. The mapping is restored.
+    - Findings 2 to 23 (superfluousIgnoreCommand): the cause was the `// periphery:ignore` marker on the whole `LogMetadataKey` enum. Periphery reports each member that has a reader as a superfluous ignore. The marker is removed. The three keys that nothing read (`commandName`, `mcpServerName`, `elicitationMode`) are removed. The same cause was on the `AttributeKey` enum (its `acpMethod`, `sessionId`, `promptStopReason`, `errorType` and `commandKind` have readers): the enum-level marker is removed, and each of the five values with no reader (`commandName`, `elicitationMode`, `elicitationOutcome`, `mcpServerName`, `mcpServerTransport`) has its own marker. The markers on `MetricDimension` (no member has a reader) and on `tracer(explicit:)` (no caller) stay.
+    - Periphery check: `periphery scan --skip-build --index-store-path .build/out` with the flag set of the dead-code-swift rule reports nothing in ACPAgentTelemetry.swift and nothing in any Sources file other than one `var.parameter` in acp-agent/RunCommand.swift, which the rule filters out.
+    - A note for OTel 4 is on card ^b65g02: add the three removed keys again when a reader comes.
+  timestamp: 2026-09-29T21:47:50.552862+00:00
+- actor: claude-code
+  id: 01m3qj6wdmzazggn78xra89w8r
+  text: |-
+    ### implement — changed
+    - evidence: `swift test`: 628 tests in 71 suites passed (627 before, plus 1 new), 1 known issue (the old intentional `withKnownIssue` in HarnessSmokeTests), zero compiler warnings. Periphery: no finding in the changed files.
+    - files: Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift; Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift.
+    - next: /review
+  timestamp: 2026-09-29T21:47:52.628917+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
 position_column: doing
@@ -133,3 +166,34 @@ Rules for each site:
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 
 #otel
+
+## Review Findings (2026-09-29 16:28)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift:735` `completeness/inverse-operation-coverage` — The new function `cancelResultName` maps `CancellationResult` enum cases to strings for logging (write operation), but the test suite only verifies logging for the unknown-session case (line 26-47 of SessionSurfaceLoggingTests.swift), not the known-session case where `cancelResultName` is actually called (line 724). A test should round-trip the successful session cancel to verify that the info log is written with the correct cancel result metadata. Add a test case that calls `sessionCancel` with a known session, then verify that the resulting log record is an info-level message containing the expected cancel result in metadata (e.g., 'requested' or 'nothingToCancel').
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:187` `code-hygiene/dead-code-swift` — var.static `stopReason` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:191` `code-hygiene/dead-code-swift` — var.static `errorType` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:195` `code-hygiene/dead-code-swift` — var.static `errorCase` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:199` `code-hygiene/dead-code-swift` — var.static `modelRef` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:203` `code-hygiene/dead-code-swift` — var.static `toolCallId` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:206` `code-hygiene/dead-code-swift` — var.static `toolName` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:209` `code-hygiene/dead-code-swift` — var.static `entryId` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:213` `code-hygiene/dead-code-swift` — var.static `eventKind` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:217` `code-hygiene/dead-code-swift` — var.static `routerReport` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:220` `code-hygiene/dead-code-swift` — var.static `tokensIn` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:223` `code-hygiene/dead-code-swift` — var.static `tokensOut` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:227` `code-hygiene/dead-code-swift` — var.static `contextFill` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:230` `code-hygiene/dead-code-swift` — var.static `contextTokens` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:234` `code-hygiene/dead-code-swift` — var.static `recordedContextTokens` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:238` `code-hygiene/dead-code-swift` — var.static `resolvedContextTokens` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:241` `code-hygiene/dead-code-swift` — var.static `compactionTriggerFraction` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:244` `code-hygiene/dead-code-swift` — var.static `compactionTargetFraction` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:248` `code-hygiene/dead-code-swift` — var.static `cancelResult` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:251` `code-hygiene/dead-code-swift` — var.static `clientName` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:254` `code-hygiene/dead-code-swift` — var.static `clientVersion` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:257` `code-hygiene/dead-code-swift` — var.static `requestedProtocolVersion` is superfluousIgnoreCommand.
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:260` `code-hygiene/dead-code-swift` — var.static `answeredProtocolVersion` is superfluousIgnoreCommand.

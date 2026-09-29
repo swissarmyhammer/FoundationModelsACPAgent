@@ -71,9 +71,9 @@ enum ACPAgentTelemetry {
     /// key: a key names an identifier, a name, a count or a size, and never
     /// the content of the client.
     ///
-    /// OTel 6, OTel 8 and OTel 9 read these keys, so periphery sees no reader
-    /// yet.
-    // periphery:ignore
+    /// The log metadata keys read some of these keys. OTel 8 reads the
+    /// command, elicitation and MCP server keys, so periphery sees no reader
+    /// of those yet. Each of those keys has its own ignore marker.
     enum AttributeKey {
         /// The ACP method of the request, for example `session/prompt`.
         static let acpMethod = "acp.method"
@@ -85,21 +85,26 @@ enum ACPAgentTelemetry {
         static let promptStopReason = "prompt.stop_reason"
 
         /// The name of the slash command, without the leading `/`.
+        // periphery:ignore
         static let commandName = "command.name"
 
         /// The kind of the slash command: built-in, or from a layer.
         static let commandKind = "command.kind"
 
         /// The mode of the elicitation: `form` or `url`.
+        // periphery:ignore
         static let elicitationMode = "elicitation.mode"
 
         /// How the elicitation ended: accept, decline or cancel.
+        // periphery:ignore
         static let elicitationOutcome = "elicitation.outcome"
 
         /// The configured name of the MCP server.
+        // periphery:ignore
         static let mcpServerName = "mcp.server.name"
 
         /// The transport of the MCP server: `stdio` or `http`.
+        // periphery:ignore
         static let mcpServerTransport = "mcp.server.transport"
 
         /// The type name of the error that ended the work. Never the error
@@ -163,25 +168,12 @@ enum ACPAgentTelemetry {
     ///
     /// A key for a value that no span carries uses the key that Router or
     /// Extras uses for the same value, where one exists.
-    ///
-    /// OTel 4 reads the command, MCP server and elicitation keys, so
-    /// periphery sees no reader of those yet.
-    // periphery:ignore
     enum LogMetadataKey {
         /// The ACP session id.
         static let sessionId = AttributeKey.sessionId
 
         /// The ACP method of the request.
         static let acpMethod = AttributeKey.acpMethod
-
-        /// The name of the slash command.
-        static let commandName = AttributeKey.commandName
-
-        /// The configured name of the MCP server.
-        static let mcpServerName = AttributeKey.mcpServerName
-
-        /// The mode of the elicitation.
-        static let elicitationMode = AttributeKey.elicitationMode
 
         /// The ACP stop reason of a prompt.
         static let stopReason = AttributeKey.promptStopReason
