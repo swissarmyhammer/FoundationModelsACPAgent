@@ -82,9 +82,10 @@ enum SessionReplay {
             return .agentThought(
                 AgentThought(messageId: messageId(of: event), content: .value(contentBlocks(of: event))))
         // `.generationCall` is Router's usage record of one generate call
-        // inside a turn: bookkeeping, not a message.
+        // inside a submission, and `.repeatedPartRemoval` is Router's
+        // record of a cut in its own render: bookkeeping, not messages.
         case .session, .instructions, .toolCalls, .toolOutput, .embedding, .divergence,
-            .toolCall, .generationCall, .unknown:
+            .toolCall, .generationCall, .repeatedPartRemoval, .unknown:
             return nil
         }
     }

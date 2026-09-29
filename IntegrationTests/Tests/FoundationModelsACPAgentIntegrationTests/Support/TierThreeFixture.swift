@@ -1,7 +1,7 @@
 // `TierThreeFixture` — the shared setup of the tier-3 suites.
 //
 // `StdioContractTests` and `ClientServerTests` both spawn built binaries
-// across a real process boundary, and inject the same small-model user
+// across a real process boundary, and inject the same shipped-profile user
 // configuration. This one home keeps the names and the configuration in
 // one place, so the two suites cannot drift apart.
 //
@@ -10,7 +10,9 @@
 // `swift test --package-path IntegrationTests` runs them.
 
 import Foundation
+import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
 
 /// The shared constants and fixtures of the tier-3 suites.
 enum TierThreeFixture {
@@ -64,22 +66,37 @@ enum TierThreeFixture {
     }
 
     /// The user-layer `config.yaml` the spawned agent resolves its
-    /// profile from: the small real `mlx-community` models the family's
-    /// own integration suites load (Router's examples and Multitool's
-    /// fixture), so the first run downloads little.
-    static let userConfigYAML = """
-        profile:
-          standard: ["mlx-community/SmolLM-135M-Instruct-4bit"]
-          flash: ["mlx-community/SmolLM-135M-Instruct-4bit"]
-          embedding: ["mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"]
+    /// profile from: the shipped profile, slot for slot.
+    ///
+    /// The tests drive the models the agent ships, so a pass says the
+    /// shipped agent works, and a change of a default reaches the tests
+    /// with no edit here.
+    static var userConfigYAML: String {
         """
+        profile:
+          standard: ["\(shippedModel(ProfileConfiguration.defaultStandard))"]
+          flash: ["\(shippedModel(ProfileConfiguration.defaultFlash))"]
+          embedding: ["\(shippedModel(ProfileConfiguration.defaultEmbedding))"]
+        """
+    }
+
+    /// The first model of one shipped slot.
+    ///
+    /// - Parameter slot: The shipped default of the slot.
+    /// - Returns: The model reference.
+    private static func shippedModel(_ slot: [ModelRef]) -> String {
+        guard let first = slot.first?.stringValue else {
+            preconditionFailure("a shipped profile slot names no model")
+        }
+        return first
+    }
 
     /// Writes the user-layer `config.yaml` under `configHome`, at
     /// `<configHome>/<dotfolder name>/config.yaml`.
     ///
     /// - Parameters:
     ///   - configHome: The injected `XDG_CONFIG_HOME` root.
-    ///   - yaml: The configuration to write; the small-model default
+    ///   - yaml: The configuration to write; the shipped-profile default
     ///     resolves a real profile.
     /// - Throws: The directory-creation or write error.
     static func writeUserConfig(under configHome: URL, yaml: String = userConfigYAML) throws {

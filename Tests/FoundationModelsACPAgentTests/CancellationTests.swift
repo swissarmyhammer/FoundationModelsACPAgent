@@ -94,7 +94,7 @@ import Testing
         let reason = await turn.drive(
             events: makeEventStream([
                 .textDelta("a full answer"),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         let updates = await recorder.updates
 

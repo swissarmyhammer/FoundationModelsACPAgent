@@ -386,7 +386,7 @@ enum MCPComposition {
     ///   - source: The recorded registrations of the build —
     ///     `Builder.registrySource`.
     ///   - staging: Where each rebuilt registry is staged — the staging
-    ///     half of `makeSessionToolsAndStaging(librarian:)`.
+    ///     half of `makeSessionToolsAndStaging(selection:embedder:)`.
     ///   - servers: The connected servers to watch.
     ///   - pool: The pool that stops the refresher at shutdown.
     static func startSurfaceRefresher(

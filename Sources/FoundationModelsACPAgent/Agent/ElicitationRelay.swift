@@ -21,7 +21,7 @@ typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 /// turns that event into one `elicitation/create` on the wire, decodes the
 /// client's answer, and delivers it back through
 /// `RoutedSession.respond(elicitationId:response:)`. Each round trip runs
-/// inside ``TurnStateOwner/awaitingUser(on:_:)``, so the wire shows
+/// inside ``TurnStateOwner/awaitingUser(_:)``, so the wire shows
 /// `requires_action` before the question and `running` after the answer
 /// (plan.md §8.2).
 ///
@@ -122,7 +122,7 @@ actor ElicitationRelay {
                 elicitationId: elicitationId, on: session, reason: Self.duplicateURLIdReason)
             return
         }
-        await turnState.awaitingUser(on: session) {
+        await turnState.awaitingUser {
             await self.deliverRoundTrip(
                 wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
         }

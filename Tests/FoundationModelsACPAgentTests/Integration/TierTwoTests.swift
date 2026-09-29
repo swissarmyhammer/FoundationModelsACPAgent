@@ -12,44 +12,23 @@ import Testing
 /// Tier 2 of the test ladder (plan.md §20.1): a real `ToolCatalog`, a
 /// real `MultiTool` with the files and shell capabilities, a real
 /// `RoutedACPAgent`, a real `session/new` on a temp directory, and a
-/// scripted model — the seven proofs, driven and asserted through
-/// `FoundationModelsACPClient`, and proof 8 beside them.
+/// scripted model, driven and asserted through `FoundationModelsACPClient`.
+///
+/// Each proof checks a fact that this agent owns: the composition of the
+/// catalog, the projection of a tool call to the wire, the wire order, the
+/// enable and disable rule, and the MCP mount. The confinement and the
+/// sandbox rules belong to Multitool and to `SandboxComposition`, and the
+/// suites of those rules prove them (`MultiRootConfinementTests`,
+/// `SandboxCompositionTests`). The terminal projection has its own
+/// synthetic suite (`TerminalStreamTests`).
+///
+/// Each script is `runCode`, then the end. No script waits for an async
+/// tool result: a run that does not settle inside the inline grace of
+/// `runCode` comes back as mail when it comes back.
 ///
 /// The discipline is §20.1's: check the filesystem, never the
 /// transcript. A "file written" claim is proven by reading the file
 /// from disk.
-///
-/// **Where the denial coverage lives.** Two doors refuse a path outside
-/// the session root set, and this file drives both from the client end:
-/// proof 2 refuses a READ through Multitool's `PathGuard`, and proof 8
-/// refuses a shell WRITE through the seatbelt sandbox (plan.md §11.7).
-/// Two suites in this target prove the same rule below the wire, and a
-/// reader wanting the whole picture reads them beside the two proofs:
-/// `SandboxCompositionTests` — `aWriteOutsideTheRootSetNeverLands` and
-/// the empty-root-set, preflight and `/private` symlink regressions —
-/// and `MultiRootConfinementTests.aPathOutsideTheRootUnionIsStillRefused`.
-///
-/// Two card notes, recorded on task `^qg1rfct`:
-///
-/// - Proof 7 asserts the LANDED shell-output vocabulary. The card
-///   predates the terminal stream; plan.md §11.8 says "When the
-///   terminal stream lands, `shell` moves its bytes to
-///   `terminal_output_chunk` and the tool call carries a `terminal`
-///   reference", and that landing shipped. The streamed-chunks proof
-///   therefore reads `terminal_output_chunk` and `terminal_update`,
-///   and the convergence proof reads `ACPSessionState.terminals`.
-/// - Proof 3 asserts `locations` from the structured per-call record
-///   (plan.md §11.5, task `^9jfmhh0`): the note turn runs with
-///   `recordsChanges: true`, so the write attaches its `FileChangeSet`
-///   and the projection fills the paths from it, never from a
-///   rendered string.
-/// - Proof 1 reads the surface NAMES from a direct
-///   `ToolCatalog.makeRegistry` call (task `^7dwcz2a`), because
-///   `journalOp` and `group` are `APISurface.Entry` properties and the
-///   sandbox's `help()` renders paths alone. Its three `CatalogContext`
-///   facts — the root set, the decoded config section, and the resolved
-///   profile — are driven and asserted through
-///   `FoundationModelsACPClient`, like the other six proofs.
 @Suite struct TierTwoTests {
     // MARK: - Constants
 
@@ -59,17 +38,8 @@ import Testing
     /// The name of the code-mode session tool the scripts invoke.
     private static let runCodeToolName = "runCode"
 
-    /// The name of the collector session tool. `runCode` mounts in the
-    /// background, so a snippet that runs longer than the tool's inline
-    /// settle grace answers a pending envelope, and every tool turn
-    /// plays `wait` after it to settle such a run inside the turn.
-    private static let waitToolName = "wait"
-
     /// The SDK id of the first scripted tool call — the `runCode` call.
     private static let runCodeCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "1"
-
-    /// The SDK id of the second scripted tool call — the `wait` call.
-    private static let waitCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "2"
 
     /// The marker of the files capability's in-band out-of-root
     /// correction (Multitool's `PathGuard` wording).
@@ -102,23 +72,6 @@ import Testing
             recordsChanges: true
         """
 
-    /// The flag of the pending envelope a background `runCode` answers
-    /// when its snippet is still running. It names the envelope apart
-    /// from the run's own result, which then reaches the wire through
-    /// the following `wait` call.
-    private static let pendingEnvelopeMarker = "\"pending\":true"
-
-    /// The flag of the settled envelope a background `runCode` answers
-    /// when its snippet finished inside the tool's inline settle grace.
-    /// That envelope carries the run's own result in its `detail`
-    /// field, so the `runCode` call is itself the answering call.
-    ///
-    /// Both flags are by design. `MultiTool.inlineSettleGrace` makes
-    /// the tool answer a fast snippet inline and hand a slow one a
-    /// completion token, and one envelope type carries both shapes —
-    /// `FoundationModelsRouter.PendingRunEnvelope`, plan.md §4.7.
-    private static let settledEnvelopeMarker = "\"pending\":false"
-
     /// The name the client-declared MCP test server mounts under —
     /// the noun of every `tools.<serverName>.<verb>` path.
     private static let mcpServerName = "alpha"
@@ -144,81 +97,6 @@ import Testing
 
     /// The text a JavaScript `false` becomes on an outcome line.
     private static let snippetFalse = "false"
-
-    /// The lines the streamed-shell proof prints, with a pause between
-    /// each pair, so the output arrives as more than one chunk.
-    private static let streamedLines = ["line-1", "line-2", "line-3"]
-
-    /// The pause between two printed lines, as the shell `sleep`
-    /// argument.
-    private static let streamedPauseSeconds = "0.2"
-
-    /// The fewest separate output chunks the streamed run must
-    /// produce: the pauses split the three lines across at least two
-    /// pipe reads.
-    private static let minimumStreamedChunkCount = 2
-
-    /// The `wait` plays the streamed-shell proof runs: the first settles
-    /// the `runCode` run, and the second joins the nested shell run, so
-    /// the run settles inside the turn.
-    ///
-    /// The sandbox proof runs ONE collecting play instead, because a play
-    /// that names its run reads no snapshot — see that proof's own
-    /// comment.
-    private static let shellWaitStepCount = 2
-
-    /// The bound, in seconds, the snippet's own `wait` global takes.
-    ///
-    /// The global demands a number, and the host honors it as given (Router
-    /// deleted its 24-hour clamp and the ceiling value with it). One hour is
-    /// far past the `.timeLimit` of every proof here, so a wait under it ends
-    /// when the run ends and never on a clock of its own. The guard on a run
-    /// that never ends is the proof's own `.timeLimit`.
-    private static let snippetWaitSeconds = 3600
-
-    /// What a proof waits for when it needs the shell run's exit report.
-    private static let terminalExitLabel = "the terminal exit report"
-
-    /// The file the sandbox proof asks a real sandboxed shell run to
-    /// write OUTSIDE the session root set. It must never reach the disk.
-    private static let escapedWriteFileName = "sandbox-escaped-write.txt"
-
-    /// The content the escaping write would have carried.
-    private static let escapedWriteContent = "tier two must never write outside the root set"
-
-    /// The text a denied write reaches the terminal stream as. The
-    /// seatbelt sandbox sends no message of its own: the kernel refuses
-    /// the `open` with `EPERM`, and this is `strerror(3)` of that code,
-    /// as `/bin/sh` prints it when a redirect fails.
-    private static let sandboxDenialMarker = "Operation not permitted"
-
-    /// The `status` a shell run report carries when the command ran to
-    /// its own end. A sandboxed write that the kernel refuses still
-    /// reports it: the command spawned and the redirect then failed.
-    private static let completedRunStatus = "completed"
-
-    /// The `exitCode` a shell command reports when it succeeded. The
-    /// escaping write must not report it.
-    private static let successExitCode = 0
-
-    /// The named pipe the pending-shape proof plants in the session cwd.
-    ///
-    /// A shell run that reads a named pipe ends when a writer sends a line
-    /// through it and closes, and at no other moment. The proof therefore
-    /// holds its snippet with an event it owns, and the turn carries no
-    /// sleep, no interval, and no budget of its own.
-    private static let pendingGateFileName = "pending-gate.fifo"
-
-    /// The file the held shell run copies the gate line into. The snippet
-    /// reads it back, so the value the proof asserts on the `wait` answer
-    /// can only have come through the gate.
-    private static let pendingGateEchoFileName = "pending-gate-echo.txt"
-
-    /// The line the pending-shape proof sends through the gate.
-    private static let pendingGateContent = "tier two released the held run"
-
-    /// The permissions of the gate: the owner alone reads it and writes it.
-    private static let pendingGateFileMode: mode_t = 0o600
 
     /// The verb paths of the two locally composed capabilities.
     private static let readVerbPath = "files.read"
@@ -317,51 +195,26 @@ import Testing
         try encodedText(of: text)
     }
 
-    /// The script of one tool turn: `runCode` with `code`, then
-    /// `waitStepCount` plays of `wait`, then the turn end.
+    /// The script of one tool turn: `runCode` with `code`, then the end.
     ///
-    /// One `wait` settles the `runCode` run itself. A snippet that
-    /// starts a nested background run — `tools.shell.execute` — and
-    /// leaves it running needs a second `wait`: the nested run registers
-    /// only when the snippet resolves, after the first `wait` took its
-    /// pending snapshot.
+    /// The snippets here finish inside the inline settle grace of
+    /// `runCode`, so the `runCode` call answers the result itself. A run
+    /// that takes longer comes back as mail when it comes back, and no
+    /// proof here scripts a step that waits for it.
     ///
-    /// - Parameters:
-    ///   - code: The snippet the turn runs.
-    ///   - waitStepCount: How many `wait` plays follow the snippet.
-    ///   - collectsRunByToken: Whether each `wait` play NAMES the run the
-    ///     step before it announced, instead of asking for whatever is
-    ///     still running. A named play collects a run that already
-    ///     settled as well, so it cannot race the run.
-    ///   - releasingGateAt: The named pipe a step between the snippet and
-    ///     the `wait` plays sends ``pendingGateContent`` through, or `nil`
-    ///     for no such step. It releases a snippet that is holding on that
-    ///     pipe, and it stands AFTER the `runCode` call answered, which is
-    ///     what makes the answer the pending envelope.
+    /// - Parameter code: The snippet the turn runs.
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
-    private static func makeToolTurnScript(
-        code: String,
-        waitStepCount: Int = 1,
-        collectsRunByToken: Bool = false,
-        releasingGateAt gatePath: String? = nil
-    ) throws -> [ScriptedTurnStep] {
-        let play: ScriptedTurnStep =
-            collectsRunByToken
-            ? .collectingToolCall(name: waitToolName)
-            : .toolCall(name: waitToolName, argumentsJSON: "{}")
-        let waits = [ScriptedTurnStep](repeating: play, count: waitStepCount)
-        let release = gatePath.map { path in
-            [ScriptedTurnStep.writeFile(path: path, text: pendingGateContent)]
-        }
-        return [
-            .toolCall(name: runCodeToolName, argumentsJSON: try runCodeArgumentsJSON(code: code))
-        ] + (release ?? []) + waits + [.endTurn]
+    private static func makeToolTurnScript(code: String) throws -> [ScriptedTurnStep] {
+        [
+            .toolCall(name: runCodeToolName, argumentsJSON: try runCodeArgumentsJSON(code: code)),
+            .endTurn,
+        ]
     }
 
     /// The write-then-read-back snippet of the projection proofs. Each
     /// step returns its in-band correction when one arrives, so a
-    /// failure names itself in the wait output.
+    /// failure names itself in the answer.
     private static var noteCode: String {
         """
         const written = await tools.files.write({ path: "\(noteFileName)", content: "\(noteContent)" });
@@ -447,9 +300,6 @@ import Testing
     /// - Parameters:
     ///   - code: The snippet the turn runs.
     ///   - label: The directory label of the calling proof.
-    ///   - waitStepCount: How many `wait` plays follow the snippet.
-    ///   - collectsRunByToken: Whether each `wait` play names the run it
-    ///     collects — see ``makeToolTurnScript(code:waitStepCount:collectsRunByToken:)``.
     ///   - workingDirectory: The pre-made session working directory,
     ///     or `nil` to let the fixture make one.
     ///   - projectConfigYAML: The project `config.yaml`, or `nil`.
@@ -463,30 +313,19 @@ import Testing
     ///     `searchTools`.
     ///   - tapsWire: Whether the harness records the raw wire lines.
     ///     Only the turn-order proof reads them.
-    ///   - releasingGateAt: The named pipe a step between the snippet and
-    ///     the `wait` plays releases — see
-    ///     ``makeToolTurnScript(code:waitStepCount:collectsRunByToken:releasingGateAt:)``.
-    ///     Only the pending-shape proof holds a gate.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
     private static func runToolTurn(
         code: String,
         label: String,
-        waitStepCount: Int = 1,
-        collectsRunByToken: Bool = false,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
         mcpServers: [FoundationModelsACP.MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
         flashContainer: (any LoadedLLMContainer)? = nil,
-        tapsWire: Bool = false,
-        releasingGateAt gatePath: String? = nil
+        tapsWire: Bool = false
     ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
-        let script = try makeToolTurnScript(
-            code: code,
-            waitStepCount: waitStepCount,
-            collectsRunByToken: collectsRunByToken,
-            releasingGateAt: gatePath)
+        let script = try makeToolTurnScript(code: code)
         var loader = makeScriptedModelLoader(script: script)
         if let flashContainer {
             let scriptedContainer = loader.makeLLMContainer
@@ -573,108 +412,6 @@ import Testing
         }
     }
 
-    /// The exit status one notification carries, when it is a shell run's
-    /// exit report.
-    ///
-    /// - Parameter notification: The notification to read.
-    /// - Returns: The exit status, or `nil` when the notification is not
-    ///   an exit report.
-    private static func terminalExitStatus(
-        of notification: UpdateSessionNotification
-    ) -> TerminalExitStatus? {
-        guard case .terminalUpdate(let update) = notification.update,
-            case .value(let status) = update.exitStatus
-        else { return nil }
-        return status
-    }
-
-    /// Polls the collector until a shell run's exit report arrives.
-    ///
-    /// The exit report rides the terminal projection task, so it can land
-    /// after the turn's idle: a proof waits for it, never sleeps for it.
-    ///
-    /// - Parameter collector: The collector to poll.
-    /// - Returns: The collected sequence, the exit report in it.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    private static func waitForTerminalExit(
-        of collector: UpdateCollector
-    ) async throws -> [UpdateSessionNotification] {
-        try await ScriptedTurnFixture.waitForUpdates(
-            of: collector, toReach: terminalExitLabel
-        ) { collected in
-            collected.contains { terminalExitStatus(of: $0) != nil }
-        }
-    }
-
-    /// Makes the named pipe the pending-shape proof holds its snippet with.
-    ///
-    /// - Parameter url: Where to make it.
-    /// - Throws: When the system refuses to make the pipe.
-    private static func makeGate(at url: URL) throws {
-        try #require(
-            mkfifo(url.path, pendingGateFileMode) == 0,
-            "the gate was refused at \(url.path), errno \(errno)")
-    }
-
-    /// Every `terminal_output_chunk` in the sequence, in arrival order.
-    ///
-    /// - Parameter updates: The collected sequence.
-    /// - Returns: The carried chunks.
-    private static func terminalChunks(
-        in updates: [UpdateSessionNotification]
-    ) -> [TerminalOutputChunk] {
-        updates.compactMap { notification in
-            guard case .terminalOutputChunk(let chunk) = notification.update else { return nil }
-            return chunk
-        }
-    }
-
-    /// The streamed bytes of a shell run, decoded as text: every
-    /// `terminal_output_chunk` of the sequence, concatenated in arrival
-    /// order.
-    ///
-    /// - Parameter updates: The collected sequence.
-    /// - Returns: The streamed text.
-    /// - Throws: When one chunk does not decode as base64.
-    private static func streamedTerminalText(
-        in updates: [UpdateSessionNotification]
-    ) throws -> String {
-        let decoded = try terminalChunks(in: updates).map { chunk in
-            try #require(Data(base64Encoded: chunk.data))
-        }
-        return String(decoding: Data(decoded.joined()), as: UTF8.self)
-    }
-
-    /// The `rawOutput` string one tool call carries.
-    ///
-    /// - Parameter update: The tool call to read.
-    /// - Returns: The carried string, or `nil` when the field carries
-    ///   none or carries something else.
-    private static func rawOutputString(of update: ToolCallUpdate) -> String? {
-        guard case .value(.string(let text)) = update.rawOutput else { return nil }
-        return text
-    }
-
-    /// The shell run report a collecting `wait` call answered.
-    ///
-    /// A `wait` play that NAMES its run answers that one run's report
-    /// object. Its `detail` field holds the collected run's own value,
-    /// and the sandbox proof's snippet returns the shell run's report as
-    /// the `runCode` run's value, so the field holds the report. Both
-    /// are decoded as JSON, so the proof reads the report's fields and
-    /// never matches a rendered string.
-    ///
-    /// - Parameter update: The accumulated `wait` tool call.
-    /// - Returns: The decoded run report.
-    /// - Throws: When the call carries no decodable run report.
-    private static func shellRunReport(of update: ToolCallUpdate) throws -> [String: Any] {
-        let collected = try #require(rawOutputString(of: update))
-        let run = try JSONSerialization.jsonObject(with: Data(collected.utf8))
-        let detail = try #require((run as? [String: Any])?["detail"] as? String)
-        let report = try JSONSerialization.jsonObject(with: Data(detail.utf8))
-        return try #require(report as? [String: Any])
-    }
-
     /// The JSON text of one encodable wire value, for a contains
     /// assertion over everything the value carries.
     ///
@@ -729,62 +466,20 @@ import Testing
         return Set(ids)
     }
 
-    /// The envelope the `runCode` call answered, as the rendered text
-    /// the wire carried.
-    ///
-    /// - Parameter updates: The collected sequence.
-    /// - Returns: The rendered envelope.
-    /// - Throws: When the call carried no rendered answer.
-    private static func runCodeEnvelopeText(
-        in updates: [UpdateSessionNotification]
-    ) throws -> String {
-        let answers = toolCallUpdates(in: updates, for: runCodeCallId)
-            .compactMap(rawOutputString(of:))
-        return try #require(answers.last, "the runCode call carried no rendered envelope")
-    }
-
-    /// The `toolCallId` of the call that carried the snippet's own
-    /// result.
-    ///
-    /// `runCode` answers in one of two shapes, and both are by design.
-    /// A snippet that finishes inside the tool's inline settle grace
-    /// answers the SETTLED envelope, whose `detail` field holds the
-    /// result, so the `runCode` call is the call that carried it. A
-    /// snippet that runs longer answers the PENDING envelope, and the
-    /// result then reaches the wire through the following `wait` call.
-    ///
-    /// A proof therefore asks for this id and reads the same result
-    /// value from whichever call the tool put it on.
-    ///
-    /// - Parameter updates: The collected sequence.
-    /// - Returns: The answering call's id.
-    /// - Throws: When the `runCode` call answered neither shape.
-    private static func answeringCallId(
-        in updates: [UpdateSessionNotification]
-    ) throws -> String {
-        let envelope = try runCodeEnvelopeText(in: updates)
-        let settled = envelope.contains(settledEnvelopeMarker)
-        let pending = envelope.contains(pendingEnvelopeMarker)
-        try #require(
-            settled != pending,
-            "expected one of the two runCode envelope shapes, got \(envelope)")
-        return settled ? runCodeCallId : waitCallId
-    }
-
-    /// The joined ANSWER text of every update of the call that carried the
-    /// snippet's own result — see ``answeringCallId(in:)``.
+    /// The joined ANSWER text of the `runCode` call, which carries the
+    /// snippet's own result.
     ///
     /// It reads each update through ``answerText(of:)``, thus it carries the
     /// answering fields alone and never the `rawInput` that holds the
     /// snippet source.
     ///
     /// - Parameter updates: The collected sequence.
-    /// - Returns: The answering call's joined answer text.
-    /// - Throws: When no answering call stands, or the encoding fails.
+    /// - Returns: The joined answer text.
+    /// - Throws: The encoding error.
     private static func snippetAnswerText(
         in updates: [UpdateSessionNotification]
     ) throws -> String {
-        try answerText(ofCall: answeringCallId(in: updates), in: updates)
+        try answerText(ofCall: runCodeCallId, in: updates)
     }
 
     /// The joined ANSWER text of every update of one call of the turn.
@@ -1016,62 +711,6 @@ import Testing
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
-    // MARK: - Proof 2: confinement through the protocol
-
-    /// A `tools.files.read` of a path outside the root set refuses IN
-    /// BAND: the `correction` rides the `tool_call_update` of the call
-    /// that carried the snippet's result — see ``answeringCallId(in:)``
-    /// for the two answer shapes — nothing throws, the turn still ends
-    /// `end_turn` and the call completes, and the outside file's
-    /// content never crosses the wire.
-    ///
-    /// The mechanism the proof exercises is the files capability's own
-    /// path check — Multitool's `PathGuard`, whose wording the matched
-    /// marker carries. The seatbelt sandbox is NOT the gate here:
-    /// plan.md §11.7 says the sandbox "bounds writing and deleting
-    /// only. Reads are free", and this proof reads.
-    ///
-    /// The pending-permission assertion is a REGRESSION TRIPWIRE, and
-    /// not evidence of the refusal. No code path in this package sends
-    /// `session/request_permission` (plan.md §11.7), and
-    /// ``RecordingClient`` therefore carries no configurable permission
-    /// answer, so the count cannot rise today. The assertion fails on
-    /// the day a permission request is added.
-    @Test(.timeLimit(.minutes(1)))
-    func anOutOfRootReadRefusesInBandThroughTheCorrectionField() async throws {
-        let outside = makeResolvedDirectory(label: "TierTwoTests-outside")
-        let secretFile = outside.appendingPathComponent("secret.txt")
-        try Self.outsideSecret.write(to: secretFile, atomically: true, encoding: .utf8)
-        let code = """
-            const read = await tools.files.read({ path: \(try Self.jsonStringLiteral(text: secretFile.path)), format: "plain" });
-            return read;
-            """
-
-        let (fixture, updates) = try await Self.runToolTurn(
-            code: code, label: "TierTwoTests-confinement")
-        let answeringId = try Self.answeringCallId(in: updates)
-        let answerText = try Self.snippetAnswerText(in: updates)
-        let wireText = try Self.encodedWireText(updates: updates)
-        let accumulated = try await Self.accumulatedToolCall(of: fixture, id: answeringId)
-        let pendingPermissionCount = await MainActor.run {
-            fixture.harness.client.sessions[fixture.sessionId]?.pendingPermissionRequests.count
-        }
-        await fixture.close()
-
-        #expect(answerText.contains(Self.confinementRefusalMarker))
-        #expect(answerText.contains("correction"))
-        #expect(!wireText.contains(Self.outsideSecret))
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
-        if case .value(let status) = accumulated.status {
-            #expect(status == .completed)
-        } else {
-            Issue.record("the answering call never carried a status")
-        }
-        // The tripwire, not the evidence: it fails on the day a
-        // permission request is added (plan.md §11.7).
-        #expect(pendingPermissionCount == 0)
-    }
-
     // MARK: - Proof 3: projection fidelity
 
     /// A real tool call becomes a correct `tool_call_update` upsert:
@@ -1082,19 +721,13 @@ import Testing
     /// `ACPSessionState.toolCalls`. The file the snippet claims to
     /// have written is read back from disk, never from the transcript.
     ///
-    /// The two calls of the turn answer different things, and the proof
-    /// reads both. `runCode` mounts the run in the background, so ITS
-    /// `rawOutput` is an envelope. Which call then carries the written
-    /// line follows the envelope's shape — see ``answeringCallId(in:)``:
-    /// the settled envelope holds the result itself, and the pending
-    /// envelope sends it to the following `wait` call. The written line
-    /// rides the answering call, and rides the other call never.
+    /// The snippet settles inside the inline grace of `runCode`, so the
+    /// `runCode` call's own answer carries the written line.
     @Test(.timeLimit(.minutes(1)))
     func aRealToolCallProjectsAStableUpsertLifecycle() async throws {
         let (fixture, updates) = try await Self.runNoteTurn(label: "TierTwoTests-projection")
         let runCodeUpdates = Self.toolCallUpdates(in: updates, for: Self.runCodeCallId)
         let accumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.runCodeCallId)
-        let waitAccumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId)
         let noteURL = fixture.cwd.appendingPathComponent(Self.noteFileName)
         let onDisk = try textOnDisk(at: noteURL)
         await fixture.close()
@@ -1129,20 +762,8 @@ import Testing
             "expected the runCode rawInput object, got \(accumulated.rawInput)")
         #expect(codeArgument == Self.noteCode)
 
-        // The `runCode` call answers an envelope, because the run mounts
-        // in the background. `answeringCallId` names the call that the
-        // envelope's shape put the snippet's result on.
-        let (answering, other) =
-            try Self.answeringCallId(in: updates) == Self.runCodeCallId
-            ? (accumulated, waitAccumulated)
-            : (waitAccumulated, accumulated)
-
-        // The written line rides the answering call's answer.
-        #expect(try Self.answerText(of: answering).contains(Self.noteContent))
-
-        // And it rides the other call of the turn never, so the reading
-        // above cannot be answered by the wrong call.
-        #expect(try !Self.answerText(of: other).contains(Self.noteContent))
+        // The written line rides the `runCode` call's answer.
+        #expect(try Self.answerText(of: accumulated).contains(Self.noteContent))
     }
 
     // MARK: - Proof 4: turn order
@@ -1232,8 +853,8 @@ import Testing
     ///
     /// The correlation is plan.md §20.1's: the MCP call runs inside the
     /// snippet, so it opens no ACP tool call of its own, and its answer
-    /// reaches the wire under the call that carried the snippet's
-    /// result — see ``answeringCallId(in:)`` for the two answer shapes.
+    /// reaches the wire under the `runCode` call that carried the
+    /// snippet's result.
     /// The proof reads every `tool_call_update` of the turn and asserts
     /// that the ping stands in exactly one call's ANSWER — that call's —
     /// and in no other.
@@ -1252,7 +873,7 @@ import Testing
             code: try Self.mcpCode(echoPath: echoPath, prefixedPath: prefixedPath),
             label: "TierTwoTests-mcp",
             mcpServers: [server])
-        let answeringId = try Self.answeringCallId(in: updates)
+        let answeringId = Self.runCodeCallId
         let answerText = try Self.snippetAnswerText(in: updates)
         let accumulated = try await Self.accumulatedToolCall(of: fixture, id: answeringId)
         let answeringIds = try Self.toolCallIdsAnswering(text: Self.echoPing, in: updates)
@@ -1288,298 +909,4 @@ import Testing
         #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
     }
 
-    // MARK: - Proof 7: streamed shell output
-
-    /// A real `tools.shell.execute` that prints several lines with
-    /// pauses streams its bytes live on the terminal stream (plan.md
-    /// §11.8, the landed vocabulary — see the suite comment): the
-    /// run's `tool_call_update` announces the `Terminal` reference
-    /// first, the `terminal_output_chunk` updates follow in order and
-    /// concatenate to the complete output, the exit `terminal_update`
-    /// carries the authoritative replacement, and the container
-    /// converges — `ACPSessionState.terminals` holds the complete
-    /// bytes, and the settled call in `ACPSessionState.toolCalls`
-    /// completes with the `Terminal` reference.
-    @Test(.timeLimit(.minutes(1)))
-    func aStreamedShellRunRidesTheTerminalStreamAndConverges() async throws {
-        // The snippet omits `workingDirectory` on purpose: the shell
-        // composition defaults the run to the session cwd (task
-        // ^fzx2r16), and the trailing `pwd -P` line proves the run
-        // landed there.
-        let command = Self.streamedLines
-            .map { "echo \($0)" }
-            .joined(separator: "; sleep \(Self.streamedPauseSeconds); ")
-            + "; pwd -P"
-        let cwd = makeResolvedDirectory(label: "TierTwoTests-stream-repo")
-        let code = """
-            return await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
-            """
-        let expectedOutput = Self.streamedLines.map { $0 + "\n" }.joined() + cwd.path + "\n"
-
-        let (fixture, _) = try await Self.runToolTurn(
-            code: code,
-            label: "TierTwoTests-stream",
-            waitStepCount: Self.shellWaitStepCount,
-            workingDirectory: cwd)
-        // The wire closes on every path out of this test. Each
-        // `try #require` below THROWS when it fails, so a close written
-        // after one of them does not run, and the fixture stays open.
-        defer { await fixture.close() }
-        let updates = try await Self.waitForTerminalExit(of: fixture.collector)
-        await fixture.harness.flushPendingChunks()
-
-        // The run's identity: every chunk carries one terminalId, which
-        // is the run's toolCallId (plan.md §11.8).
-        let chunks = Self.terminalChunks(in: updates)
-        #expect(chunks.count >= Self.minimumStreamedChunkCount)
-        let terminalId = try #require(chunks.first?.terminalId)
-        #expect(chunks.allSatisfy { $0.terminalId == terminalId })
-
-        // The chunks concatenate, in arrival order, to the complete
-        // output.
-        #expect(try Self.streamedTerminalText(in: updates) == expectedOutput)
-
-        // Order: the announcing tool_call_update precedes the first
-        // chunk, and every chunk precedes the exit terminal_update.
-        let announceIndex = try #require(
-            updates.firstIndex { notification in
-                guard case .toolCallUpdate(let update) = notification.update else { return false }
-                return update.toolCallId.rawValue == terminalId.rawValue
-            })
-        let firstChunkIndex = try #require(
-            updates.firstIndex { notification in
-                guard case .terminalOutputChunk = notification.update else { return false }
-                return true
-            })
-        let exitIndex = try #require(
-            updates.firstIndex { Self.terminalExitStatus(of: $0) != nil })
-        let lastChunkIndex = try #require(
-            updates.lastIndex { notification in
-                guard case .terminalOutputChunk = notification.update else { return false }
-                return true
-            })
-        #expect(announceIndex < firstChunkIndex)
-        #expect(lastChunkIndex < exitIndex)
-
-        // The exit report carries the authoritative replacement.
-        let exitUpdate = try #require(
-            terminalUpdate(of: updates[exitIndex].update),
-            "expected the exit terminal_update to carry the output replacement")
-        let replacement = try #require(
-            patchValue(exitUpdate.output),
-            "expected the exit terminal_update to carry the output replacement")
-        let replaced = try #require(Data(base64Encoded: replacement.data))
-        #expect(String(decoding: replaced, as: UTF8.self) == expectedOutput)
-
-        // Convergence in the container: the terminal holds the complete
-        // bytes, and the settled call completes with the Terminal
-        // reference. The settlement rides `runSettled` and can land
-        // after the exit report, so wait for the container to hold
-        // the completed status first, never sleep for it.
-        try await ScriptedTurnFixture.waitForCompletedToolCall(
-            of: fixture.harness.client,
-            sessionId: fixture.sessionId,
-            id: ToolCallId(rawValue: terminalId.rawValue))
-        let convergence = await MainActor.run {
-            () -> (terminalText: String?, exited: Bool, call: ToolCallUpdate?) in
-            guard let state = fixture.harness.client.sessions[fixture.sessionId] else {
-                return (nil, false, nil)
-            }
-            let terminal = state.terminals[terminalId]
-            let exited: Bool
-            if case .value = terminal?.exitStatus { exited = true } else { exited = false }
-            return (
-                terminal.map { String(decoding: $0.output, as: UTF8.self) },
-                exited,
-                state.toolCalls[ToolCallId(rawValue: terminalId.rawValue)]
-            )
-        }
-
-        #expect(convergence.terminalText == expectedOutput)
-        #expect(convergence.exited)
-        // The accumulated call settles to the `completed` status —
-        // Router forwards the nested run's terminal from the mailbox
-        // to the outbox, and `runSettled` becomes the terminal
-        // `tool_call_update` (§8.4, §11.6) — and carries the Terminal
-        // reference, whose exit status marks the run ended.
-        let settledCall = try #require(convergence.call)
-        #expect(settledCall.status == .value(.completed))
-        let content = try #require(
-            patchValue(settledCall.content),
-            "expected the settled call to carry content")
-        #expect(
-            content.contains { item in
-                guard case .terminal(let terminal) = item else { return false }
-                return terminal.terminalId == terminalId
-            })
-    }
-
-    // MARK: - Proof 8: the sandbox denies a shell write outside the root
-
-    /// A real sandboxed `tools.shell.execute` that redirects into a path
-    /// OUTSIDE the session root set never lands the file: the target path
-    /// holds nothing afterwards, read from disk.
-    ///
-    /// **The mechanism, named by measurement.** The gate is the seatbelt
-    /// sandbox `SandboxComposition` builds over the session root set,
-    /// which plan.md §11.7 states is the ONLY gate on the shell
-    /// capability. It is NOT Multitool's `PathGuard`: `PathGuard` bounds
-    /// the files verbs, and §11.7 bounds it to writing and deleting, so
-    /// proof 2 — which refuses a READ through `PathGuard` — and this
-    /// proof measure two different doors.
-    ///
-    /// **No named sandbox message reaches the wire, and this proof claims
-    /// none.** The sandbox is a kernel boundary, so the command RUNS: the
-    /// kernel refuses the `open` of the redirect with `EPERM`, and the
-    /// only refusal text anywhere on the wire is `/bin/sh`'s own —
-    /// ``sandboxDenialMarker``, measured on the terminal stream. The
-    /// claim is that the write did not land, and the disk is the proof of
-    /// it. The streamed message and the run report's non-zero `exitCode`
-    /// are the evidence that the kernel is what stopped it.
-    ///
-    /// The exit code is read from the run report the collecting `wait`
-    /// call answered, not from the ACP exit report: `TerminalStream`
-    /// sends an EMPTY `TerminalExitStatus`, whose presence marks the
-    /// terminal exited and which carries neither a code nor a signal.
-    ///
-    /// **Why the snippet holds the shell run, and why the `wait` play
-    /// names it.** Two facts of the run plane decide the shape of this
-    /// turn. A `wait` call that names NO token reads a snapshot of the
-    /// runs that have not settled yet — `SessionMailbox.markSettled`
-    /// removes a run from `runsByToken` and from `trackingOrder` the
-    /// moment it settles — so such a play collects a run only while the
-    /// run is still going, and the report of a run that finished first
-    /// is gone from it for ever. This command finishes in about ten
-    /// milliseconds, which is how long an unnamed play would have had.
-    /// A `wait` call that NAMES its token reads `settledTerminalEvents`
-    /// FIRST, which retains the newest 128 settlements, so it collects
-    /// a settled run as readily as a running one.
-    ///
-    /// So the snippet holds the shell run itself, through the sandbox's
-    /// own `wait(completionToken, seconds)` global, and returns that
-    /// run's report as the `runCode` run's own value; and the turn plays
-    /// ONE `wait` that names the `runCode` run. Neither collection reads
-    /// a snapshot, so neither can lose the report to a slow machine.
-    ///
-    /// The composition-level coverage of the same rule stands beside this
-    /// proof, and a reader wanting the whole picture reads all three:
-    /// `SandboxCompositionTests.aWriteOutsideTheRootSetNeverLands` drives
-    /// this denial through a directly built registry, and
-    /// `MultiRootConfinementTests.aPathOutsideTheRootUnionIsStillRefused`
-    /// proves the files verbs refuse a path outside the root union. This
-    /// proof is the client-end projection of the same denial.
-    @Test(.timeLimit(.minutes(1)))
-    func aSandboxedShellWriteOutsideTheRootSetNeverLands() async throws {
-        let cwd = makeResolvedDirectory(label: "TierTwoTests-sandbox-repo")
-        let outside = makeResolvedDirectory(label: "TierTwoTests-sandbox-outside")
-        let escaped = outside.appendingPathComponent(Self.escapedWriteFileName)
-        let command = "printf '\(Self.escapedWriteContent)' > '\(escaped.path)'"
-        let code = """
-            const envelope = await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
-            const started = JSON.parse(envelope);
-            const finished = await wait(started.completionToken, \(Self.snippetWaitSeconds));
-            return JSON.parse(finished.detail);
-            """
-
-        let (fixture, turnUpdates) = try await Self.runToolTurn(
-            code: code,
-            label: "TierTwoTests-sandbox",
-            collectsRunByToken: true,
-            workingDirectory: cwd)
-        let updates = try await Self.waitForTerminalExit(of: fixture.collector)
-        await fixture.harness.flushPendingChunks()
-        let streamed = try Self.streamedTerminalText(in: updates)
-        let report = try Self.shellRunReport(
-            of: try await Self.accumulatedToolCall(of: fixture, id: Self.waitCallId))
-        await fixture.close()
-
-        // The disk is the truth (plan.md §20.1): the redirect named a
-        // path outside the root set, and nothing is there.
-        #expect(!FileManager.default.fileExists(atPath: escaped.path))
-
-        // The refusal reaches the client in band on the terminal stream:
-        // the shell's own message names the refused path and carries the
-        // kernel's `EPERM`, which is the whole of the refusal text.
-        #expect(streamed.contains(Self.sandboxDenialMarker))
-        #expect(streamed.contains(escaped.path))
-
-        // The run report the collecting `wait` answered says the same
-        // thing in fields: the command RAN to its own end — the sandbox
-        // refuses at the kernel, not before the spawn — and it exited
-        // non-zero.
-        #expect(report["status"] as? String == Self.completedRunStatus)
-        #expect(try #require(report["exitCode"] as? Int) != Self.successExitCode)
-
-        // Nothing threw: the turn still ends `end_turn`.
-        #expect(ScriptedTurnFixture.idleStopReason(in: turnUpdates) == .endTurn)
-    }
-
-    // MARK: - Proof 9: the pending answer shape
-
-    /// A snippet that CANNOT finish inside the inline settle grace answers
-    /// the PENDING envelope, and the snippet's result then rides the
-    /// following `wait` call — the other arm of ``answeringCallId(in:)``,
-    /// and the slow half of the card's "a fast snippet and a slow snippet
-    /// each pass their proof".
-    ///
-    /// **How the run is held, with no clock of the proof's own.** The proof
-    /// plants a named pipe in the session cwd and gives the snippet a real
-    /// shell run that copies that pipe into a file. A read of a named pipe
-    /// ends when a writer closes it and at no other moment, thus the
-    /// snippet cannot settle while the gate stands. The script releases the
-    /// gate in the step AFTER the `runCode` call — a
-    /// ``ScriptedTurnStep/writeFile(path:text:)`` play — and the model
-    /// reaches that step only when the `runCode` call has answered, thus
-    /// the answer it reads is the pending envelope by construction. The
-    /// turn carries no sleep, no interval and no budget: the ordering is
-    /// the script's own, and the snippet holds its shell run through the
-    /// sandbox's `wait` global under ``snippetWaitSeconds``.
-    ///
-    /// The `wait` play NAMES the run, as proof 8's does, so the collection
-    /// cannot lose the report to a run that settles first.
-    ///
-    /// The asserted value travels the whole path: the script sends it
-    /// through the gate, the shell run copies it into a file, the snippet
-    /// reads that file back, and the `wait` call answers it.
-    @Test(.timeLimit(.minutes(1)))
-    func aHeldSnippetAnswersPendingAndTheWaitCallCarriesTheResult() async throws {
-        let cwd = makeResolvedDirectory(label: "TierTwoTests-pending-repo")
-        let gate = cwd.appendingPathComponent(Self.pendingGateFileName)
-        try Self.makeGate(at: gate)
-        let echo = cwd.appendingPathComponent(Self.pendingGateEchoFileName)
-        let command = "cat '\(gate.path)' > '\(echo.path)'"
-        let code = """
-            const envelope = await tools.shell.execute({ command: \(try Self.jsonStringLiteral(text: command)) });
-            const started = JSON.parse(envelope);
-            await wait(started.completionToken, \(Self.snippetWaitSeconds));
-            const echoed = await tools.files.read({ path: "\(Self.pendingGateEchoFileName)", format: "plain" });
-            if (echoed.correction) { return echoed.correction; }
-            return echoed.lines.join("");
-            """
-
-        let (fixture, updates) = try await Self.runToolTurn(
-            code: code,
-            label: "TierTwoTests-pending",
-            collectsRunByToken: true,
-            workingDirectory: cwd,
-            releasingGateAt: gate.path)
-        let envelope = try Self.runCodeEnvelopeText(in: updates)
-        let answeringId = try Self.answeringCallId(in: updates)
-        let answerText = try Self.snippetAnswerText(in: updates)
-        let runCodeAnswer = try Self.answerText(ofCall: Self.runCodeCallId, in: updates)
-        await fixture.close()
-
-        // The grace expired with the snippet still held, so the `runCode`
-        // call answered the pending envelope, and the answering call of the
-        // turn is the `wait` call.
-        #expect(envelope.contains(Self.pendingEnvelopeMarker))
-        #expect(answeringId == Self.waitCallId)
-
-        // The released line rides that call's ANSWER, and it rides the
-        // `runCode` call never, so the reading cannot be answered by the
-        // wrong call.
-        #expect(answerText.contains(Self.pendingGateContent))
-        #expect(!runCodeAnswer.contains(Self.pendingGateContent))
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
-    }
 }

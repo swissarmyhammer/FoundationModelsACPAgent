@@ -1,9 +1,37 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsMultitool
-import FoundationModelsRouter
 
 @testable import FoundationModelsACPAgent
+// `SubmissionID` has an internal initializer only: the session mints the
+// ids. A synthetic event stream still needs one, and a debug build compiles
+// Router with testing enabled, so the fixtures below reach it this way.
+@testable import FoundationModelsRouter
+
+// MARK: - The synthetic submission events
+
+/// The one submission id the synthetic streams carry. The projection reads
+/// no id, so one value serves every event.
+private let syntheticSubmissionId = SubmissionID(0)
+
+/// The `submissionStarted` event of one synthetic submission.
+///
+/// - Returns: The event.
+func submissionStarted() -> SessionEvent {
+    .submissionStarted(
+        SubmissionStart(submissionId: syntheticSubmissionId, messageIds: [], cause: .message))
+}
+
+/// The `submissionEnded` event of one synthetic submission, with `usage`
+/// and its finish reason.
+///
+/// - Parameter usage: The measured usage of the submission.
+/// - Returns: The event.
+func submissionEnded(_ usage: TokenUsage) -> SessionEvent {
+    .submissionEnded(
+        SubmissionEnd(
+            submissionId: syntheticSubmissionId, usage: usage, finishReason: usage.finishReason))
+}
 
 // MARK: - The synthetic projection fixtures (plan.md §20.1)
 //

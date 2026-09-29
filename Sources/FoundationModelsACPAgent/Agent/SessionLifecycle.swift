@@ -101,7 +101,7 @@ extension RoutedACPAgent {
         if let turn = entry.activeTurn {
             await turn.noteCancelRequested()
             await entry.activeElicitationRelay?.cancelPendingElicitations()
-            _ = await entry.session.cancelCurrentTurn()
+            await entry.session.cancel()
             await turn.waitForTurnEnd()
         }
         // The session sweep: it cancels every background run, rejects every

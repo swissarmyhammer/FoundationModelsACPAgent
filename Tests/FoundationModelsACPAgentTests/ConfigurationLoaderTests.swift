@@ -140,7 +140,7 @@ import Testing
     /// upper case. But the case is the publisher's choice, not a rule, so the
     /// match ignores case: a lower-case `mtp` names the same draft head.
     @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
-    func noDefaultModelNamesAnMTPRepository(reference: ModelRef) {
+    func noDefaultModelNamesAnMTPRepository(reference: FoundationModelsExtras.ModelRef) {
         #expect(!Self.namesMultiTokenPredictionRepository(reference.stringValue))
     }
 
@@ -218,7 +218,7 @@ import Testing
     /// empty, and no space in the id. This is the cheap half of the doctor's
     /// model check, and it is available now.
     @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
-    func everyDefaultModelIdHasTheOwnerNameShape(reference: ModelRef) {
+    func everyDefaultModelIdHasTheOwnerNameShape(reference: FoundationModelsExtras.ModelRef) {
         let identifier = reference.stringValue
 
         let parts = identifier.split(

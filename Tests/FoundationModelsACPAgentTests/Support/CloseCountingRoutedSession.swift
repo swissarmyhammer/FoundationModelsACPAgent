@@ -118,70 +118,55 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// Sends the call to the real session.
     ///
     /// - Returns: The result of the real session.
-    func cancelCurrentTurn() async -> TurnCancellationResult {
-        await wrapped.cancelCurrentTurn()
+    func cancel() async -> CancellationResult {
+        await wrapped.cancel()
     }
 
     /// Sends the call to the real session.
     ///
-    /// - Parameter body: The wait on a person.
-    /// - Returns: The value of `body`.
-    /// - Throws: Whatever `body` throws.
-    func awaitingUser<T: Sendable>(_ body: @Sendable () async throws -> T) async rethrows -> T {
-        try await wrapped.awaitingUser(body)
+    /// - Returns: Whether the real session drained.
+    func drain() async -> Bool {
+        await wrapped.drain()
     }
 
     /// Sends the call to the real session.
     ///
-    /// - Returns: The answer of the real session.
-    /// - Throws: Whatever the real session throws.
-    func dispatchNextPrompt() async throws -> String? {
-        try await wrapped.dispatchNextPrompt()
-    }
-
-    /// Sends the call to the real session.
-    func awaitQueuedWork() async {
-        await wrapped.awaitQueuedWork()
-    }
-
-    /// Sends the call to the real session.
-    ///
-    /// - Parameter prompt: The prompt to queue.
-    /// - Returns: The id of the queued prompt.
-    func enqueue(prompt: Transcript.Prompt) async -> PromptID {
-        await wrapped.enqueue(prompt: prompt)
-    }
-
-    /// Sends the call to the real session.
-    ///
-    /// - Returns: The queued prompts of the real session.
-    func pendingPrompts() async -> [(id: PromptID, prompt: Transcript.Prompt)] {
-        await wrapped.pendingPrompts()
-    }
-
-    /// Sends the call to the real session.
-    ///
-    /// - Parameter id: The id of the queued prompt.
+    /// - Parameter message: The id of the message to take back.
     /// - Returns: The result of the real session.
-    func cancel(id: PromptID) async -> PromptQueueMutationResult {
-        await wrapped.cancel(id: id)
+    func cancel(message: MessageID) async -> MessageCancellationResult {
+        await wrapped.cancel(message: message)
+    }
+
+    /// Sends the call to the real session.
+    ///
+    /// - Parameter prompt: The message to send.
+    /// - Returns: The id of the message.
+    func send(_ prompt: Transcript.Prompt) async -> MessageID {
+        await wrapped.send(prompt)
+    }
+
+    /// Sends the call to the real session.
+    ///
+    /// - Returns: The waiting messages of the real session.
+    func pendingMessages() async -> [(id: MessageID, prompt: Transcript.Prompt)] {
+        await wrapped.pendingMessages()
     }
 
     /// Sends the call to the real session.
     ///
     /// - Parameters:
-    ///   - id: The id of the queued prompt.
-    ///   - prompt: The new prompt.
+    ///   - id: The id of the waiting message.
+    ///   - prompt: The new message.
     /// - Returns: The result of the real session.
-    func replace(id: PromptID, prompt: Transcript.Prompt) async -> PromptQueueMutationResult {
+    func replace(id: MessageID, prompt: Transcript.Prompt) async -> MessageQueueMutationResult {
         await wrapped.replace(id: id, prompt: prompt)
     }
 
     /// Sends the call to the real session.
     ///
     /// - Returns: The queue depth of the real session.
-    func promptQueueDepth() async -> PromptQueueDepth {
-        await wrapped.promptQueueDepth()
+    func messageQueueDepth() async -> MessageQueueDepth {
+        await wrapped.messageQueueDepth()
     }
 
     /// Sends the call to the real session.

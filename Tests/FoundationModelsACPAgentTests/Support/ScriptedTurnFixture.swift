@@ -177,31 +177,18 @@ struct ScriptedTurnFixture {
     /// The name of the code-mode session tool a scripted tool turn invokes.
     static let runCodeToolName = "runCode"
 
-    /// The name of the collector session tool. `runCode` mounts in the
-    /// background and answers a pending envelope, so a tool turn plays
-    /// `wait` after it to settle the run inside the turn.
-    static let waitToolName = "wait"
-
-    /// The script of one tool turn: `runCode` with `code`, then
-    /// `waitStepCount` plays of `wait`, then the turn end.
+    /// The script of one tool turn: `runCode` with `code`, then the end.
     ///
-    /// One `wait` settles the `runCode` run itself. A snippet that starts
-    /// a nested background run needs a second `wait`: the nested run
-    /// registers only when the snippet resolves.
+    /// A snippet that settles inside the inline grace of `runCode` answers
+    /// in the `runCode` call itself. A longer run comes back as mail when
+    /// it comes back, and the script waits for nothing.
     ///
-    /// - Parameters:
-    ///   - code: The snippet the turn runs.
-    ///   - waitStepCount: How many `wait` plays follow the snippet.
+    /// - Parameter code: The snippet the turn runs.
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
-    static func makeToolTurnScript(
-        code: String, waitStepCount: Int = 1
-    ) throws -> [ScriptedTurnStep] {
+    static func makeToolTurnScript(code: String) throws -> [ScriptedTurnStep] {
         let arguments = String(decoding: try JSONEncoder().encode(["code": code]), as: UTF8.self)
-        let waits = [ScriptedTurnStep](
-            repeating: .toolCall(name: waitToolName, argumentsJSON: "{}"),
-            count: waitStepCount)
-        return [.toolCall(name: runCodeToolName, argumentsJSON: arguments)] + waits + [.endTurn]
+        return [.toolCall(name: runCodeToolName, argumentsJSON: arguments), .endTurn]
     }
 
     // MARK: - Waits

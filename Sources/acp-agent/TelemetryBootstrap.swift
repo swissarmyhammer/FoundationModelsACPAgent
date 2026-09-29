@@ -95,11 +95,21 @@ enum TelemetryBootstrap {
     /// takes.
     typealias LogHandlerFactory = @Sendable (String) -> any LogHandler
 
+    /// The lowest level the stderr handler writes.
+    ///
+    /// stderr of the CLI is for warnings and errors. The family libraries
+    /// log each span start at `info`, and at the default level of
+    /// `StreamLogHandler` those records filled stderr on every run. When the
+    /// agent exports, the `info` records go to the OTLP backend instead.
+    static let standardErrorLogLevel: Logger.Level = .warning
+
     /// The factory of the stderr log handler: the handler when the agent does
     /// not export, and the fallback when the OTLP logging backend cannot be
     /// made.
     private static let standardErrorFactory: LogHandlerFactory = { label in
-        StreamLogHandler.standardError(label: label)
+        var handler = StreamLogHandler.standardError(label: label)
+        handler.logLevel = standardErrorLogLevel
+        return handler
     }
 
     /// The OpenTelemetry service group and the task that runs it.

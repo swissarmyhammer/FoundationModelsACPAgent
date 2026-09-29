@@ -52,14 +52,14 @@ struct EventLineWriterTests {
     /// The text the scripted model streams as its one delta.
     private static let scriptedAnswer = "an answer over the in-process pair"
 
-    /// The name of the session tool the scripted turn calls. `wait` takes
-    /// an empty argument object, needs no model, and returns at once when
-    /// no background run is pending, so a turn that calls it twice costs
-    /// no weights and no waiting.
-    private static let scriptedToolName = "wait"
+    /// The name of the session tool the scripted turn calls. A trivial
+    /// `runCode` snippet needs no model and settles inside the inline grace
+    /// of the tool, so a turn that calls it twice costs no weights.
+    private static let scriptedToolName = "runCode"
 
-    /// The arguments of each scripted tool call: the empty object.
-    private static let scriptedToolArguments = "{}"
+    /// The arguments of each scripted tool call: a snippet that returns at
+    /// once.
+    private static let scriptedToolArguments = #"{"code":"return 1;"}"#
 
     /// How many tool calls the scripted turn makes.
     private static let scriptedToolCallCount = 2
@@ -377,7 +377,7 @@ struct EventLineWriterTests {
 
     /// A `--verbose` run whose turn makes two tool calls writes one line
     /// for each event and nothing else: every line is a projected event,
-    /// the two calls are the two the script made, and the turn's one stop
+    /// each call the script made has its line, and the turn's one stop
     /// reason stands last. In a pipe, because a person asked to see them.
     @Test(.timeLimit(.minutes(2)))
     func aVerbosePipedRunWritesOneLineForEachEvent() async throws {
@@ -392,7 +392,9 @@ struct EventLineWriterTests {
                     || line.hasPrefix("\(EventLineWriter.planLineKind) ")
                     || line.hasPrefix("\(EventLineWriter.stopLineKind) ")
             })
-        #expect(Self.toolCallIds(in: lines).count == Self.scriptedToolCallCount)
+        // Each scripted call has its line. A `runCode` call can add the id
+        // of its run beside the id of the call, so the count is a floor.
+        #expect(Self.toolCallIds(in: lines).count >= Self.scriptedToolCallCount)
         #expect(lines.count { $0.hasPrefix("\(EventLineWriter.stopLineKind) ") } == 1)
         #expect(lines.last == "\(EventLineWriter.stopLineKind) end_turn")
         #expect(!streams.standardError.contains(Self.ansiIntroducer))

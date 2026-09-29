@@ -66,6 +66,14 @@ private let skillsDependencyName = "FoundationModelsSkills"
 /// as the `tools.code_context` group.
 private let codeContextDependencyName = "FoundationModelsCodeContext"
 
+/// The ranker package: the selection tier and the text-embedding protocol
+/// under `searchTools` and the code context. The tool catalog builds the
+/// `searchTools` selection tier itself — a `SelectionConfig` over guided
+/// sessions of the flash slot, with the id grammar of `SelectionTier` — so
+/// the library names Ranker types. The URL is the one CodeContext declares,
+/// so the package identity stays one.
+private let rankerDependencyName = "FoundationModelsRanker"
+
 /// The Client role (plan.md §20.1): the driver of every integration tier.
 ///
 /// The test target alone links it. The library target never does. The client
@@ -142,7 +150,7 @@ private let argumentParserProduct = Target.Dependency.product(
 private let tracingPackage = "swift-distributed-tracing"
 
 /// The version floor of `tracingPackage`, matching Router and Extras.
-private let tracingVersionFloor: Version = "1.4.1"
+private let tracingVersionFloor: Version = "1.5.0"
 
 /// The logging API package: `Logging.Logger` and its metadata. Router
 /// already declares it from the same floor.
@@ -253,7 +261,7 @@ private let multitoolTestProducts: [Target.Dependency] = [
     .product(name: "mcp-test-server", package: multitoolDependencyName),
 ]
 
-/// The six family packages the library target depends on (plan.md §1).
+/// The family packages the library target depends on (plan.md §1).
 ///
 /// Router and Extras are declared by name, and not reached through Multitool:
 /// Multitool has no `@_exported import`, so its dependencies do not come for
@@ -266,6 +274,7 @@ private let familyDependencyNames = [
     multitoolDependencyName,
     skillsDependencyName,
     codeContextDependencyName,
+    rankerDependencyName,
 ]
 
 /// Makes the `.package(url:branch:)` dependency of a family package hosted

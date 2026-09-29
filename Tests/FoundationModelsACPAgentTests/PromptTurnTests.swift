@@ -248,21 +248,25 @@ import Testing
     // `Support/ProjectionTestSupport.swift`, shared with
     // `EventProjectionTests`.
 
-    /// A retry turn carries two `turnEnded` events; the turn still ends
-    /// with exactly one `idle`, keyed on stream completion (§8.1).
-    @Test func aRetryTurnSendsTwoTurnEndedAndExactlyOneIdle() async throws {
+    /// A retry makes two submissions in one prompt; the prompt still sends
+    /// exactly one `running` and exactly one `idle`, keyed on stream
+    /// completion (§8.1).
+    @Test func aRetryWithTwoSubmissionsSendsOneRunningAndExactlyOneIdle() async throws {
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
+                submissionStarted(),
                 .textDelta("first attempt"),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
+                submissionStarted(),
                 .textReset,
                 .textDelta("second attempt"),
-                .turnEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: .nan)),
             ]))
         let updates = await recorder.updates
 
         #expect(reason == .endTurn)
+        #expect(updates.count { isRunningState($0) } == 1)
         #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
         let idle = try #require(
             idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
@@ -306,7 +310,7 @@ import Testing
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
                 .textDelta("b"),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         let updates = await recorder.updates
 
@@ -323,14 +327,14 @@ import Testing
         #expect(Set(chunkIds).count == 1)
     }
 
-    /// The usage of every `turnEnded` is summed and reported one time,
-    /// before the idle terminator (§8.1).
-    @Test func turnEndedUsageIsSummedIntoOneUsageUpdate() async throws {
+    /// The usage of every `submissionEnded` is summed and reported one
+    /// time, before the idle terminator (§8.1).
+    @Test func submissionUsageIsSummedIntoOneUsageUpdate() async throws {
         let (turn, recorder) = makeSinkedTurn()
         _ = await turn.drive(
             events: makeEventStream([
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
-                .turnEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
             ]))
         let updates = await recorder.updates
 
@@ -365,7 +369,7 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                .turnEnded(
+                submissionEnded(
                     TokenUsage(
                         tokensIn: 100, tokensOut: 8192, contextFill: .nan,
                         finishReason: .maxTokens))
@@ -385,11 +389,11 @@ import Testing
         let (turn, _) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                .turnEnded(
+                submissionEnded(
                     TokenUsage(
                         tokensIn: 100, tokensOut: 8192, contextFill: .nan,
                         finishReason: .maxTokens)),
-                .turnEnded(
+                submissionEnded(
                     TokenUsage(
                         tokensIn: 200, tokensOut: 50, contextFill: .nan,
                         finishReason: .completed)),
@@ -405,7 +409,7 @@ import Testing
         let (turn, recorder) = makeSinkedTurn()
         let reason = await turn.drive(
             events: makeEventStream([
-                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
+                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
             ]))
         let updates = await recorder.updates
 
@@ -423,7 +427,7 @@ import Testing
         let reason = await turn.drive(
             events: makeEventStream([
                 .textDelta("real output"),
-                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -438,7 +442,7 @@ import Testing
             events: makeEventStream([
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
-                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -461,7 +465,7 @@ import Testing
         let reason = await turn.drive(
             events: makeEventStream([
                 .toolCallReport(report),
-                .turnEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -554,7 +558,7 @@ import Testing
             events: makeEventStream([
                 .generationStalled(stall),
                 .textDelta("late, and real"),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -573,7 +577,7 @@ import Testing
             events: makeEventStream([
                 .textDelta("a first fragment"),
                 .generationStalled(stall),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -593,7 +597,7 @@ import Testing
             events: makeEventStream([
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .generationStalled(stall),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -627,7 +631,7 @@ import Testing
             events: makeEventStream([
                 .generationStalled(stall),
                 .textDelta("the first output, nine minutes in"),
-                .turnEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+                submissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
             ]))
         _ = await recorder.updates
 
@@ -636,18 +640,10 @@ import Testing
 
     // MARK: - The requires_action pairing (§8.2)
 
-    /// Makes one composed Router session for the gate pairing tests.
-    private static func makeRoutedSession() async throws -> any RoutedSession {
-        let fixture = try await makeFixture(script: [.endTurn])
-        let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
-        await fixture.close()
-        return entry.session
-    }
-
-    /// Checks that the gate sent two updates: `requires_action` first,
+    /// Checks that the owner sent two updates: `requires_action` first,
     /// and then `running`.
     ///
-    /// - Parameter updates: The updates the gate sent, in send order.
+    /// - Parameter updates: The updates the owner sent, in send order.
     private static func expectRequiresActionThenRunning(in updates: [SessionUpdate]) {
         #expect(updates.count == 2, "expected requires_action then running, got \(updates)")
         #expect(
@@ -658,15 +654,14 @@ import Testing
             "expected requires_action then running, got \(updates)")
     }
 
-    /// `awaitingUser` sends `requires_action`, runs the body under the
-    /// Router gate, and returns to `running` with the body's value.
+    /// `awaitingUser` sends `requires_action`, runs the body, and returns
+    /// to `running` with the body's value.
     @Test(.timeLimit(.minutes(1)))
-    func awaitingUserPairsRequiresActionWithTheRouterGate() async throws {
-        let session = try await Self.makeRoutedSession()
+    func awaitingUserPairsRequiresActionWithRunning() async throws {
         let recorder = SinkRecorder()
         let owner = TurnStateOwner(send: { update in await recorder.append(update) })
 
-        let answer = await owner.awaitingUser(on: session) { "the answer" }
+        let answer = await owner.awaitingUser { "the answer" }
         let updates = await recorder.updates
 
         #expect(answer == "the answer")
@@ -676,12 +671,11 @@ import Testing
     /// A body that throws still returns the state to `running`.
     @Test(.timeLimit(.minutes(1)))
     func awaitingUserReturnsToRunningWhenTheBodyThrows() async throws {
-        let session = try await Self.makeRoutedSession()
         let recorder = SinkRecorder()
         let owner = TurnStateOwner(send: { update in await recorder.append(update) })
 
         await #expect(throws: ScriptedModelError.self) {
-            _ = try await owner.awaitingUser(on: session) { () -> String in
+            _ = try await owner.awaitingUser { () -> String in
                 throw ScriptedModelError.unknownTool("x")
             }
         }

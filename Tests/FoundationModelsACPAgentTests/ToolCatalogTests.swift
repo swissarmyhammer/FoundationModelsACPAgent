@@ -19,13 +19,13 @@ import Testing
 /// `APISurface.entries` paths, and a verb is exercised through the public
 /// `ToolInvoker.invoke(_:content:)` door with its wire JSON.
 @Suite struct ToolCatalogTests {
-    /// The mount order a default context gives the model: the three
+    /// The mount order a default context gives the model: the two
     /// Multitool session tools, then the appended standalone skills tool.
-    private static let defaultToolNames = ["searchTools", "runCode", "wait", "skills"]
+    private static let defaultToolNames = ["searchTools", "runCode", "skills"]
 
     /// The mount order with the skills section disabled: the Multitool
     /// session tools alone.
-    private static let multitoolOnlyNames = ["searchTools", "runCode", "wait"]
+    private static let multitoolOnlyNames = ["searchTools", "runCode"]
 
     /// The surface path of the files read verb.
     private static let readVerbPath = FilesVerbSupport.readVerbPath

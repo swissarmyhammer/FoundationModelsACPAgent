@@ -5,7 +5,7 @@ import FoundationModelsRouter
 // MARK: - A resolved profile over stub models
 //
 // `ToolCatalog` needs a resolved `LanguageModelProfile`: the librarian slot
-// of `makeSessionTools(librarian:)` and the skills selection tier both come
+// of the `searchTools` selection tier and the skills selection tier both come
 // from it. Router makes no profile publicly — `LanguageModelProfile.init` is
 // package-internal — so these factories stand up an agent, or a profile,
 // over the library's own deterministic model path, `EchoModel`: a router

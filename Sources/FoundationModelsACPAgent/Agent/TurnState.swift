@@ -35,9 +35,9 @@ extension AgentSideConnection {
 /// The turn-state owner of one session (plan.md §8.2).
 ///
 /// It owns the `state_update` transitions of the session's one running
-/// turn: `running` at the turn start, `requires_action` paired with
-/// Router's `awaitingUser` while the turn is blocked on the human, back
-/// to `running` at the answer, and `idle` with a stop reason at the end.
+/// turn: `running` at the turn start, `requires_action` while the turn is
+/// blocked on the human, back to `running` at the answer, and `idle` with
+/// a stop reason at the end.
 /// It also records a `session/cancel` request, so the turn ends as
 /// `cancelled` even when the cancelled model work runs to completion
 /// (plan.md §8.6).
@@ -47,6 +47,9 @@ actor TurnStateOwner {
 
     /// Whether `session/cancel` asked this turn to stop.
     private(set) var cancelRequested = false
+
+    /// Whether ``turnDidStart()`` already sent `running` for the prompt.
+    private var didStart = false
 
     /// Whether the turn has ended: whether ``turnDidEnd(reason:)`` sent the
     /// `idle` terminator. `session/close` reads it, so the close response
@@ -64,29 +67,32 @@ actor TurnStateOwner {
         self.send = send
     }
 
-    /// Sends `state_update: running`. The turn projection calls it at
-    /// Router's `turnStarted` event (plan.md §8.4).
+    /// Sends `state_update: running` one time for the prompt. The
+    /// projection calls it at each Router `submissionStarted` event
+    /// (plan.md §8.4), and a prompt can make more than one submission, so
+    /// a later call sends nothing.
     func turnDidStart() async {
+        guard !didStart else { return }
+        didStart = true
         await sendRunning()
     }
 
     /// Runs `body` as a wait on the human (plan.md §8.2): sends
-    /// `requires_action`, opens Router's model gate with the session's
-    /// `awaitingUser`, and returns to `running` when the body ends —
-    /// with a value or with an error.
+    /// `requires_action`, runs the body, and returns to `running` when the
+    /// body ends — with a value or with an error.
     ///
-    /// - Parameters:
-    ///   - session: The Router session whose gate opens for the wait.
-    ///   - body: The wait on the human.
+    /// The wait is an ACP state only. Router has no call for it: its
+    /// generation queue gives a wait for a person no release of the model.
+    ///
+    /// - Parameter body: The wait on the human.
     /// - Returns: The body's value.
     /// - Throws: The body's error, after the state returns to `running`.
     func awaitingUser<T: Sendable>(
-        on session: any RoutedSession,
         _ body: @Sendable () async throws -> T
     ) async rethrows -> T {
         await send(.stateUpdate(.requiresAction(RequiresActionStateUpdate())))
         do {
-            let value = try await session.awaitingUser(body)
+            let value = try await body()
             await sendRunning()
             return value
         } catch {

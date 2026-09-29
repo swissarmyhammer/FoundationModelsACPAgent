@@ -176,9 +176,10 @@ struct EventProjection {
     /// contract tells a consumer to absorb a new case rather than
     /// break.
     ///
-    /// A `generationCall` event sends no wire update now. The full
-    /// projection of the Router request events is the scope of card
-    /// ^tz867gz.
+    /// A prompt can make more than one Router submission: a tool call, a
+    /// retry after an overflow, or a continuation starts a new one. The
+    /// first `submissionStarted` sends `running`. Each `submissionEnded`
+    /// adds its usage to the one sum of the prompt.
     ///
     /// - Parameter event: The event to project.
     mutating func project(_ event: SessionEvent) async {
@@ -186,7 +187,7 @@ struct EventProjection {
         // autoclosure, which must not capture the mutating `self`.
         let sessionIdValue = sessionId.rawValue
         switch event {
-        case .turnStarted:
+        case .submissionStarted:
             await turnState.turnDidStart()
         case .textDelta(let text):
             sawOutput = true
@@ -265,21 +266,29 @@ struct EventProjection {
             }
             sawOutput = true
             await relayElicitation(operationEvent)
-        case .turnEnded(let usage):
-            // One event per inner generate call, not per turn: sum,
-            // and never send `idle` from here (§8.1).
+        case .submissionEnded(let end):
+            // One event per submission, not per prompt: sum, and never
+            // send `idle` from here (§8.1). The LAST submission is the
+            // one that ends the prompt, so its finish reason wins over
+            // each earlier one.
+            lastFinishReason = end.finishReason
+            guard let usage = end.usage else { return }
             sawUsageReport = true
             tokensIn += usage.tokensIn
             tokensOut += usage.tokensOut
             contextFill = usage.contextFill
-            // The LAST generate call is the one that ends the turn, so
-            // its finish reason wins over each earlier one.
-            lastFinishReason = usage.finishReason
         case .generationCall:
-            // The usage of one generation call alone. The `turnEnded`
-            // sum above already counts these tokens, so no wire update
-            // goes out (card ^tz867gz).
+            // The usage of one generation call alone. The
+            // `submissionEnded` sum above already counts these tokens,
+            // so no wire update goes out.
             break
+        case .submissionQueued, .answered, .answerFailed, .repetitionStopped,
+            .mailDeliveryPaused:
+            // Router bookkeeping with no ACP counterpart: the stream of
+            // the prompt carries the text, the tool calls and the end.
+            turnLogger.debug(
+                "session \(sessionIdValue, privacy: .public): \(String(describing: event), privacy: .public)"
+            )
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a

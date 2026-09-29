@@ -635,7 +635,8 @@ extension RoutedACPAgent {
     /// request on the turn owner, answers every pending elicitation with
     /// `cancel` — the suspended tool must resume before the `idle`
     /// terminator, and Router's mailbox does not resume on task
-    /// cancellation — then cancels Router's turn in flight. A
+    /// cancellation — then cancels the work of the Router session: the
+    /// model work in flight and a caller message that waits. A
     /// notification has no response, so an unknown id or an idle
     /// session is logged and ignored (plan.md §10.1).
     ///
@@ -649,9 +650,9 @@ extension RoutedACPAgent {
         }
         await turn.noteCancelRequested()
         await entry.activeElicitationRelay?.cancelPendingElicitations()
-        let result = await entry.session.cancelCurrentTurn()
+        let result = await entry.session.cancel()
         turnLogger.info(
-            "session \(params.sessionId.rawValue, privacy: .public): cancelCurrentTurn -> \(String(describing: result), privacy: .public)"
+            "session \(params.sessionId.rawValue, privacy: .public): cancel -> \(String(describing: result), privacy: .public)"
         )
     }
 

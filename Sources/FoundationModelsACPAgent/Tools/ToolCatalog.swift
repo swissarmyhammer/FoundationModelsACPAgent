@@ -2,8 +2,10 @@ import Foundation
 import FoundationModels
 import FoundationModelsCodeContext
 import FoundationModelsMultitool
+import FoundationModelsRanker
 import FoundationModelsRouter
 import FoundationModelsSkills
+
 /// The surface one session mounts (plan.md §11.1, §11.5): the composed
 /// tools in mount order, and the pool that holds every MCP server, spawned
 /// subprocess and the attached surface refresher.
@@ -143,11 +145,12 @@ public enum ToolCatalog {
     /// surface at the next turn boundary with no further host action.
     ///
     /// The mount takes two slots of the resolved profile: `flash` is the
-    /// librarian every `searchTools` selection runs on, and `embedding`
-    /// is the handle the discovery and did-you-mean searchers rank with.
-    /// Without the embedder the registry reports `no embedder configured`
-    /// on every search and ranks by keywords alone. The catalog is
-    /// embedded at the first search, so the call still starts no task.
+    /// librarian every `searchTools` selection runs on (see
+    /// ``makeSearchSelection(profile:)``), and `embedding` is the handle
+    /// the discovery and did-you-mean searchers rank with. Without the
+    /// embedder the registry reports `no embedder configured` on every
+    /// search and ranks by keywords alone. The catalog is embedded at the
+    /// first search, so the call still starts no task.
     ///
     /// - Parameters:
     ///   - context: What the builder calls need — the session root set,
@@ -165,8 +168,8 @@ public enum ToolCatalog {
     ) async throws -> SessionSurface {
         let built = try await makeRegistry(context: context)
         let mounted = try built.registry.makeSessionToolsAndStaging(
-            librarian: context.profile.flash,
-            embedder: context.profile.embedding)
+            selection: makeSearchSelection(profile: context.profile),
+            embedder: ProfileTextEmbedding(embedder: context.profile.embedding))
         var tools = mounted.tools
         if let skillsTool = try await makeSkillsTool(context: context, registry: skillsRegistry) {
             tools.append(skillsTool)
@@ -379,5 +382,39 @@ public enum ToolCatalog {
                     grammar: .jsonSchema(request.jsonSchema),
                     instructions: request.instructions)
             }))
+    }
+
+    /// Makes the selection tier of `searchTools`: for each catalog, one id
+    /// grammar, and each session of the tier a guided session of the flash
+    /// slot under that grammar.
+    ///
+    /// The selection must run on a model that is not the model of the
+    /// session that calls `searchTools`. The tool is synchronous, so its
+    /// body runs inside the open submission of the calling session, and a
+    /// selection on the same model waits for that submission to end. Router
+    /// refuses that wait. Thus the tier uses `flash`, and never forks the
+    /// calling session.
+    ///
+    /// The grammar is built one time for each catalog, before the session
+    /// factory, because `SelectionConfig` gives the factory the instructions
+    /// alone. Over budget, the tier prompts one slice of the catalog at a
+    /// time while the grammar permits every id of the catalog. The tier drops
+    /// an id outside the slice, so that is safe.
+    ///
+    /// Each guided session goes through ``OwnedSelectionSession``, as the
+    /// skills tier does, so the tier closes each session when it drops it.
+    ///
+    /// - Parameter profile: The resolved profile whose flash slot the tier
+    ///   runs on. The factory captures it, so the resident models outlive
+    ///   the catalog context.
+    /// - Returns: The selection factory that `searchTools` calls.
+    static func makeSearchSelection(profile: LanguageModelProfile) -> SearchToolsTool.SelectionFactory {
+        { ids in
+            let grammar = Grammar.jsonSchema(try SelectionTier.idEnumSchema(ids: ids))
+            return SelectionConfig(
+                model: OwnedSelectionSession.factory(makingEach: { instructions in
+                    profile.flash.makeGuidedSession(grammar: grammar, instructions: instructions)
+                }))
+        }
     }
 }

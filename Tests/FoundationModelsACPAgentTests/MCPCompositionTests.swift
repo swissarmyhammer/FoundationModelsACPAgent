@@ -12,7 +12,7 @@ import Testing
 /// The MCP composition (plan.md §7.3, §11.2, §11.5): two sources compose in
 /// order, a name collision is refused, `mcp: false` refuses the client's
 /// servers, the servers connect before the registry build, and the surface
-/// refresher stages each catalog change for the next turn boundary.
+/// refresher stages each catalog change for the next submission boundary.
 ///
 /// The roster cases run the pure composition step with no connection. The
 /// mount-order case spawns the `mcp-test-server` executable that Multitool
@@ -241,7 +241,7 @@ import Testing
         let builder = MultiTool.Builder()
         try await builder.withMCP(servers: [server])
         let registry = try builder.buildRegistry()
-        let mounted = try registry.makeSessionToolsAndStaging(librarian: nil)
+        let mounted = try registry.makeSessionToolsAndStaging(selection: nil)
         let recording = RecordingStaging(passingTo: mounted.staging)
         await MCPComposition.startSurfaceRefresher(
             source: builder.registrySource, staging: recording, servers: [server],
@@ -457,10 +457,10 @@ import Testing
             let runCode = try #require(surface.tools.compactMap { $0 as? MultiTool }.first)
 
             // The connect snapshot stages one rebuild of its own. Taking a
-            // turn boundary here brings that one in, so the next stage the
+            // submission boundary here brings that one in, so the next stage the
             // case sees belongs to the change the case makes.
             try await Poll.until("the connect snapshot staged") { recording.count >= 1 }
-            await runCode.turnWillBegin()
+            await runCode.submissionWillBegin()
             let beforeTheChange = try await Self.helpPaths(of: runCode)
             #expect(beforeTheChange.contains(Self.boundaryEchoPath))
             #expect(!beforeTheChange.contains(Self.boundaryExtraPath))
@@ -479,8 +479,8 @@ import Testing
             let whileStaged = try await Self.helpPaths(of: runCode)
             #expect(whileStaged == beforeTheChange)
 
-            // A turn boundary is the one thing that brings the change in.
-            await runCode.turnWillBegin()
+            // A submission boundary is the one thing that brings the change in.
+            await runCode.submissionWillBegin()
             let afterTheBoundary = try await Self.helpPaths(of: runCode)
             #expect(afterTheBoundary.contains(Self.boundaryExtraPath))
         } catch {
