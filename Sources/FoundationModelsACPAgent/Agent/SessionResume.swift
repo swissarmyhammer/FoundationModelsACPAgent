@@ -260,7 +260,7 @@ extension RoutedACPAgent {
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
         try await RequestTracing.withEnteredRequestSpan(
             ACPAgentTelemetry.SpanName.sessionResume, method: ACPMethod.sessionResume,
-            sessionId: params.sessionId, logger: ACPAgentTelemetry.logger(.sessionResume)
+            sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.sessionResume)
         ) { _ in
             try await restoreSession(params)
         }

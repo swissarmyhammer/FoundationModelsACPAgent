@@ -4,7 +4,7 @@ import Logging
 import Tracing
 
 /// The server span of each ACP request that the agent serves (the approved
-/// OpenTelemetry design, items 1, 3, 4 and 8).
+/// OpenTelemetry design, items 1, 3, 4, 7 and 8).
 ///
 /// Each span has the kind `.server`, and it carries the ACP method and, when
 /// the request names one, the ACP session id. A request that throws records
@@ -17,6 +17,14 @@ import Tracing
 /// span, so a span that Router opens for that work is a child of the request
 /// span.
 ///
+/// Trace context (design item 7): when the `_meta` of the request holds a
+/// valid W3C `traceparent`, the span of the request is a child of that remote
+/// span, and it keeps the `tracestate` of the client. Thus the trace of the
+/// client and the trace of the agent are one trace. When the `_meta` holds no
+/// `traceparent`, or a `traceparent` that is not valid, the span has the
+/// current `ServiceContext` as its parent, as before, and the request does
+/// not fail.
+///
 /// Hang detection (design item 8): a request that can wait for a long time
 /// also writes one "enter" log record when it starts. A tracing backend
 /// exports a span only when the span ends, but it exports the record at once.
@@ -28,6 +36,8 @@ enum RequestTracing {
     ///   - spanName: The name of the span.
     ///   - method: The ACP method of the request.
     ///   - sessionId: The ACP session id that the request names, or `nil`.
+    ///   - meta: The `_meta` of the request, which can hold the trace context
+    ///     of the client.
     ///   - body: The work of the request. It gets the open span, and it runs
     ///     on the actor of the caller.
     /// - Returns: The value of `body`.
@@ -36,9 +46,12 @@ enum RequestTracing {
         _ spanName: String,
         method: String,
         sessionId: SessionId?,
+        meta: JSONValue?,
         _ body: nonisolated(nonsending) (any Span) async throws -> Output
     ) async rethrows -> Output {
-        try await ACPAgentTelemetry.tracer(explicit: nil).withSpan(spanName, ofKind: .server) { span in
+        try await ACPAgentTelemetry.tracer(explicit: nil).withSpan(
+            spanName, context: parentContext(meta: meta), ofKind: .server
+        ) { span in
             span.updateAttributes { describeRequest(&$0, method: method, sessionId: sessionId) }
             return try await recordingErrorType(on: span, body)
         }
@@ -56,6 +69,8 @@ enum RequestTracing {
     ///   - spanName: The name of the span.
     ///   - method: The ACP method of the request.
     ///   - sessionId: The ACP session id that the request names, or `nil`.
+    ///   - meta: The `_meta` of the request, which can hold the trace context
+    ///     of the client.
     ///   - logger: The logger of the "enter" record.
     ///   - body: The work of the request. It gets the open span, and it runs
     ///     on the actor of the caller.
@@ -65,18 +80,21 @@ enum RequestTracing {
         _ spanName: String,
         method: String,
         sessionId: SessionId?,
+        meta: JSONValue?,
         logger: Logger,
         _ body: nonisolated(nonsending) (any Span) async throws -> Output
     ) async throws -> Output {
-        try await TracedCall.run(
-            spanName,
-            ofKind: .server,
-            tracer: ACPAgentTelemetry.tracer(explicit: nil),
-            logger: logger,
-            attributes: { describeRequest(&$0, method: method, sessionId: sessionId) },
-            metadata: requestMetadata(method: method, sessionId: sessionId)
-        ) { span in
-            try await recordingErrorType(on: span, body)
+        try await ServiceContext.withValue(parentContext(meta: meta)) {
+            try await TracedCall.run(
+                spanName,
+                ofKind: .server,
+                tracer: ACPAgentTelemetry.tracer(explicit: nil),
+                logger: logger,
+                attributes: { describeRequest(&$0, method: method, sessionId: sessionId) },
+                metadata: requestMetadata(method: method, sessionId: sessionId)
+            ) { span in
+                try await recordingErrorType(on: span, body)
+            }
         }
     }
 
@@ -94,13 +112,16 @@ enum RequestTracing {
     ///   - spanName: The name of the span.
     ///   - method: The ACP method of the request.
     ///   - sessionId: The ACP session id that the request names.
+    ///   - meta: The `_meta` of the request, which can hold the trace context
+    ///     of the client.
     ///   - logger: The logger of the "enter" record.
-    /// - Returns: The open span. Its parent is the current `ServiceContext`.
+    /// - Returns: The open span. Its parent is the remote span that the
+    ///   `_meta` names, or else the current `ServiceContext`.
     static func startRequestSpan(
-        _ spanName: String, method: String, sessionId: SessionId, logger: Logger
+        _ spanName: String, method: String, sessionId: SessionId, meta: JSONValue?, logger: Logger
     ) -> any Span {
         let tracer = ACPAgentTelemetry.tracer(explicit: nil)
-        let span = tracer.startSpan(spanName, ofKind: .server)
+        let span = tracer.startSpan(spanName, context: parentContext(meta: meta), ofKind: .server)
         span.updateAttributes { describeRequest(&$0, method: method, sessionId: sessionId) }
         var metadata = requestMetadata(method: method, sessionId: sessionId)
         if let identity = SpanIdentity(context: span.context, tracer: tracer) {
@@ -120,7 +141,7 @@ enum RequestTracing {
     /// and it carries the type name of the error.
     ///
     /// - Parameters:
-    ///   - span: The span that ``startRequestSpan(_:method:sessionId:logger:)``
+    ///   - span: The span that ``startRequestSpan(_:method:sessionId:meta:logger:)``
     ///     opened.
     ///   - error: The error of the request.
     static func endRequestSpan(_ span: any Span, throwing error: any Error) {
@@ -134,7 +155,7 @@ enum RequestTracing {
     /// it.
     ///
     /// - Parameters:
-    ///   - span: The span that ``startRequestSpan(_:method:sessionId:logger:)``
+    ///   - span: The span that ``startRequestSpan(_:method:sessionId:meta:logger:)``
     ///     opened for the prompt.
     ///   - stopReason: The stop reason of the prompt, or `nil` when the prompt
     ///     sent no stop reason.
@@ -203,6 +224,49 @@ enum RequestTracing {
         var metadata = sessionId.map(ACPAgentTelemetry.sessionMetadata) ?? [:]
         metadata[ACPAgentTelemetry.LogMetadataKey.acpMethod] = "\(method)"
         return metadata
+    }
+
+    /// Gives the parent context of the span of one request.
+    ///
+    /// The `TraceContextMeta` codec of FoundationModelsACP reads the
+    /// `traceparent` and `tracestate` values of the `_meta`. The instrument
+    /// of `InstrumentationSystem` then extracts them into the current
+    /// `ServiceContext`, so a span that starts in the result is a child of
+    /// the remote span of the client.
+    ///
+    /// - Parameter meta: The `_meta` of the request, or `nil`.
+    /// - Returns: The current `ServiceContext` with the remote span context of
+    ///   the client. When `meta` holds no valid `traceparent`, the current
+    ///   `ServiceContext` with no change.
+    private static func parentContext(meta: JSONValue?) -> ServiceContext {
+        var context = ServiceContext.current ?? .topLevel
+        if let traceContext = TraceContextMeta.extract(from: meta) {
+            InstrumentationSystem.instrument.extract(traceContext, into: &context, using: TraceContextMetaExtractor())
+        }
+        return context
+    }
+}
+
+/// Gives the values of a `TraceContextMeta` to an instrument that extracts
+/// a W3C trace context.
+///
+/// The instrument asks for each value by its carrier key:
+/// `SpanIdentity.traceparentField` and `SpanIdentity.tracestateField` of
+/// FoundationModelsExtras.
+private struct TraceContextMetaExtractor: Extractor {
+    /// Gives the value of the carrier key `key`.
+    ///
+    /// - Parameters:
+    ///   - key: The carrier key that the instrument asks for.
+    ///   - carrier: The trace context that the `_meta` of the request holds.
+    /// - Returns: The `traceparent` or the `tracestate` value, or `nil` for a
+    ///   different key or for no `tracestate` value.
+    func extract(key: String, from carrier: TraceContextMeta) -> String? {
+        switch key {
+        case SpanIdentity.traceparentField: carrier.traceparent
+        case SpanIdentity.tracestateField: carrier.tracestate
+        default: nil
+        }
     }
 }
 

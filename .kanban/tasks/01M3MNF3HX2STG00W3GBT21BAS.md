@@ -65,11 +65,27 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift; `swift test --filter RequestTracingTests` 7/7 pass; `swift test` 651 tests in 73 suites pass (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), zero compiler warnings.
     - next: /review
   timestamp: 2026-09-29T23:23:02.867240+00:00
+- actor: claude-code
+  id: 01m3qqy314rbq32qvwgax281n4
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit b4acf84). 0 findings, 0 confirmed, 0 refuted. 7 validators ran, 0 failed. 1 file was reviewed: Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift. All items in the prior `## Review Findings` section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T23:27:55.940007+00:00
+- actor: claude-code
+  id: 01m3qqyctc45hba6pk1kw82jqn
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — RequestTracingTests.swift
+    - test: green — swift test 651 tests pass
+    - commit: b4acf84
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T23:28:05.964378+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
 - 01M3MNC26MHCGN4R7BVKFQVQQB
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8180
 title: 'OTel 6: a server span for each ACP request, so the Router spans have a parent'
 ---
 ## What

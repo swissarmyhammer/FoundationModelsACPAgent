@@ -100,7 +100,7 @@ extension RoutedACPAgent {
     /// - Returns: The agent's `initialize` response.
     public func initialize(_ params: InitializeRequest) async throws -> InitializeResponse {
         await RequestTracing.withRequestSpan(
-            ACPAgentTelemetry.SpanName.initialize, method: ACPMethod.initialize, sessionId: nil
+            ACPAgentTelemetry.SpanName.initialize, method: ACPMethod.initialize, sessionId: nil, meta: params.meta
         ) { _ in
             negotiate(params)
         }

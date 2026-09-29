@@ -317,7 +317,7 @@ extension RoutedACPAgent {
     public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
         try await RequestTracing.withEnteredRequestSpan(
             ACPAgentTelemetry.SpanName.sessionNew, method: ACPMethod.sessionNew, sessionId: nil,
-            logger: ACPAgentTelemetry.logger(.session)
+            meta: params.meta, logger: ACPAgentTelemetry.logger(.session)
         ) { span in
             let response = try await createSession(params)
             span.attributes[ACPAgentTelemetry.AttributeKey.sessionId] = response.sessionId.rawValue

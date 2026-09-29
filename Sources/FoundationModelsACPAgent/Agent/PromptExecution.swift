@@ -595,7 +595,7 @@ extension RoutedACPAgent {
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
         let span = RequestTracing.startRequestSpan(
             ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
-            sessionId: params.sessionId, logger: ACPAgentTelemetry.logger(.promptExecution))
+            sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.promptExecution))
         do {
             let response = try await ServiceContext.withValue(span.context) {
                 try await acceptPrompt(params)
@@ -764,7 +764,8 @@ extension RoutedACPAgent {
     /// - Parameter params: The cancellation notification.
     public func sessionCancel(_ params: CancelSessionNotification) async {
         await RequestTracing.withRequestSpan(
-            ACPAgentTelemetry.SpanName.cancel, method: ACPMethod.sessionCancel, sessionId: params.sessionId
+            ACPAgentTelemetry.SpanName.cancel, method: ACPMethod.sessionCancel, sessionId: params.sessionId,
+            meta: params.meta
         ) { _ in
             await cancelRunningPrompt(params)
         }

@@ -1,5 +1,6 @@
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
 import InMemoryTracing
 import TelemetryTestSupport
 import Testing
@@ -59,6 +60,45 @@ import Tracing
 
     /// A session id that has the ULID form, and that no recording holds.
     private static let unrecordedSessionIdValue = "01M3MNF3HX2STG00W3GBT21BAS"
+
+    /// The trace id of the remote parent span of the client. It is the
+    /// example trace id of the W3C Trace Context specification.
+    private static let clientTraceId = "4bf92f3577b34da6a3ce929d0e0e4736"
+
+    /// The span id of the remote parent span of the client. It is the example
+    /// parent id of the W3C Trace Context specification.
+    private static let clientSpanId = "00f067aa0ba902b7"
+
+    /// The `tracestate` value that the client sends with its `traceparent`.
+    private static let clientTracestate = "vendor=client"
+
+    /// A `traceparent` value that holds the ids of the client, with the
+    /// version `ff`, which the W3C format forbids.
+    private static let forbiddenVersionTraceparent = "ff-\(clientTraceId)-\(clientSpanId)-01"
+
+    /// Makes a request `_meta` object that holds a `traceparent` value and,
+    /// when it is not `nil`, a `tracestate` value.
+    ///
+    /// - Parameters:
+    ///   - traceparent: The `traceparent` value.
+    ///   - tracestate: The `tracestate` value, or `nil` for none.
+    /// - Returns: The `_meta` object.
+    private static func makeTraceMeta(traceparent: String, tracestate: String? = nil) -> JSONValue {
+        var members: [String: JSONValue] = [TraceContextMeta.traceparentKey: .string(traceparent)]
+        members[TraceContextMeta.tracestateKey] = tracestate.map(JSONValue.string)
+        return .object(members)
+    }
+
+    /// Makes a request `_meta` object that holds the valid `traceparent` of
+    /// the remote parent span of the client, and the `tracestate` of the
+    /// client.
+    ///
+    /// - Returns: The `_meta` object.
+    /// - Throws: When the ids of the client do not have the W3C format.
+    private static func makeClientTraceMeta() throws -> JSONValue {
+        let identity = try #require(SpanIdentity(traceID: clientTraceId, spanID: clientSpanId))
+        return makeTraceMeta(traceparent: identity.traceparent, tracestate: clientTracestate)
+    }
 
     /// The spans and the log records of one traced run, and the id of its
     /// session.
@@ -123,14 +163,17 @@ import Tracing
     /// `session/cancel` through the harness inside one capture. The run waits
     /// until the prompt span and the cancel span ended.
     ///
+    /// - Parameter promptMeta: The `_meta` of the prompt request, or `nil`
+    ///   for a request with no `_meta`.
     /// - Returns: The spans and the log records of the run.
     /// - Throws: Whatever the fixture, the wire calls or the waits throw.
-    private static func runOnePrompt() async throws -> TracedRun {
+    private static func runOnePrompt(promptMeta: JSONValue? = nil) async throws -> TracedRun {
         try await TelemetryCapture.run(forbidding: [promptText, answerText]) { context in
             let fixture = try await makeTracedFixture(
                 script: [.textDelta(answerText), .endPass], context: context)
-            _ = try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
+            var request = AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText)
+            request.meta = promptMeta
+            _ = try await fixture.harness.connection.prompt(request)
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
             try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
             try await fixture.harness.connection.sessionCancel(
@@ -270,5 +313,86 @@ import Tracing
         #expect(span.status?.code == .error)
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.errorType) == .string(Self.requestErrorTypeName))
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.sessionId) == .string(run.sessionId))
+    }
+
+    /// A prompt whose `_meta` holds a valid `traceparent` records its span in
+    /// the trace of the client, as a child of the span of the client. The
+    /// span keeps the `tracestate` of the client.
+    @Test(.timeLimit(.minutes(1)))
+    func promptSpanIsAChildOfTheTraceparentInItsMeta() async throws {
+        let run = try await Self.runOnePrompt(promptMeta: Self.makeClientTraceMeta())
+
+        let promptSpan = try Self.requireOneServerSpan(
+            named: ACPAgentTelemetry.SpanName.prompt, method: Self.sessionPromptMethod, in: run)
+        #expect(promptSpan.traceID == Self.clientTraceId)
+        #expect(promptSpan.parentSpanID == Self.clientSpanId)
+        #expect(promptSpan.context.w3cTraceState == Self.clientTracestate)
+    }
+
+    /// A prompt whose `_meta` holds a `traceparent` that the W3C format does
+    /// not allow gets its normal response, and its span starts a new trace.
+    @Test(.timeLimit(.minutes(1)))
+    func promptWithABadTraceparentStartsANewTrace() async throws {
+        let run = try await Self.runOnePrompt(
+            promptMeta: Self.makeTraceMeta(traceparent: Self.forbiddenVersionTraceparent))
+
+        let promptSpan = try Self.requireOneServerSpan(
+            named: ACPAgentTelemetry.SpanName.prompt, method: Self.sessionPromptMethod, in: run)
+        #expect(promptSpan.traceID != Self.clientTraceId)
+        #expect(promptSpan.parentSpanID == nil)
+        #expect(
+            promptSpan.attributes.get(ACPAgentTelemetry.AttributeKey.promptStopReason)
+                == .string(Self.endTurnStopReason))
+    }
+
+    /// A prompt with no `_meta` records a span that starts a new trace, as
+    /// before the agent read the trace context.
+    @Test(.timeLimit(.minutes(1)))
+    func promptWithNoMetaStartsANewTrace() async throws {
+        let run = try await Self.runOnePrompt()
+
+        let promptSpan = try Self.requireOneServerSpan(
+            named: ACPAgentTelemetry.SpanName.prompt, method: Self.sessionPromptMethod, in: run)
+        #expect(promptSpan.parentSpanID == nil)
+    }
+
+    /// `initialize`, `session/new`, `session/resume` and `session/cancel`
+    /// each record their span as a child of the `traceparent` in their
+    /// `_meta`.
+    @Test(.timeLimit(.minutes(1)))
+    func eachRequestSpanIsAChildOfTheTraceparentInItsMeta() async throws {
+        let meta = try Self.makeClientTraceMeta()
+        let run = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
+            let connection = fixture.harness.connection
+            var initializeRequest = AgentClientHarness.makeInitializeRequest()
+            initializeRequest.meta = meta
+            _ = try await connection.initialize(initializeRequest)
+            _ = try await connection.newSession(
+                NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), meta: meta))
+            await #expect(throws: RequestError.self) {
+                _ = try await connection.resumeSession(
+                    ResumeSessionRequest(
+                        cwd: AbsolutePath(rawValue: fixture.cwd.path),
+                        sessionId: SessionId(rawValue: Self.unrecordedSessionIdValue), meta: meta))
+            }
+            try await connection.sessionCancel(CancelSessionNotification(sessionId: fixture.sessionId, meta: meta))
+            try await Poll.until("the cancel span ended") {
+                context.spans.contains { $0.operationName == ACPAgentTelemetry.SpanName.cancel }
+            }
+            await fixture.close()
+            return TracedRun(sessionId: fixture.sessionId.rawValue, context: context)
+        }
+
+        let spanNames = [
+            ACPAgentTelemetry.SpanName.initialize, ACPAgentTelemetry.SpanName.sessionNew,
+            ACPAgentTelemetry.SpanName.sessionResume, ACPAgentTelemetry.SpanName.cancel,
+        ]
+        for name in spanNames {
+            let childSpans = run.spans(named: name).filter { span in
+                span.traceID == Self.clientTraceId && span.parentSpanID == Self.clientSpanId
+            }
+            #expect(childSpans.count == 1, "\(name)")
+        }
     }
 }
