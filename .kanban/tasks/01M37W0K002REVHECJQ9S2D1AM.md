@@ -1,6 +1,29 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3nhjwkhc7tswvje4wpsf2wh
+  text: |-
+    Research (2026-09-28):
+    - This repository has no `grepCode` code. The only hit is `bench/code-context.config.yaml`. The verb comes from the FoundationModelsCodeContext package.
+    - The cause is in `FoundationModelsCodeContext/Sources/FoundationModelsCodeContext/Ops/GrepCode.swift`. `GrepCode.matchChunk` returns one `GrepCodeMatch` for each `ts_chunks` row whose text matches. That match holds the full chunk text, its start and end lines and its `symbolPath`. The outer chunk (the class) contains the text of each inner method, so the class chunk matches too. `run` sorts by `(filePath, startLine)` and does not remove a chunk that contains a smaller matching chunk. Thus the class comes first and the 1,500-token tool cap cuts the answer.
+    - A possible fix in that package: for each match line, keep only the innermost chunk that contains it (or answer with the matching lines, their line numbers and the enclosing `symbolPath`). Add a test on a class with one matching method.
+    - The FoundationModelsCodeContext board has no card for this. I searched its `.kanban/tasks` for `grepCode`, `outermost`, `innermost` and `enclosing`: the `grepCode` cards are all done (port, tools, tracing) and none is about the outermost chunk.
+    - I did not change the package, and I did not make a card on its board. The user rule says: stop and discuss a task on a family project with the user first.
+
+    ### implement — stuck
+    - evidence: no files changed. The fix belongs in FoundationModelsCodeContext (`Ops/GrepCode.swift`), not in this repository. No card for it exists on the FoundationModelsCodeContext board.
+    - next: the user decides to open a card on the FoundationModelsCodeContext board (for example with `sah --cwd /Users/wballard/github/swissarmyhammer/FoundationModelsCodeContext tool kanban task add`). This card stays open until that fix ships and the pin moves.
+  timestamp: 2026-09-29T02:58:28.593812+00:00
+- actor: claude-code
+  id: 01m3nhk9ajz53n88vryrzpg3vg
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — no files changed. The fix belongs in FoundationModelsCodeContext Sources/FoundationModelsCodeContext/Ops/GrepCode.swift (matchChunk and run return each matching chunk, the outer class also). The FoundationModelsCodeContext board has no open card for it.
+    - test, commit, review: not run
+    - next: a person must decide if a card goes on the FoundationModelsCodeContext board.
+  timestamp: 2026-09-29T02:58:41.618326+00:00
 position_column: todo
 position_ordinal: '80'
 title: grepCode returns the outermost symbol, so a hit in one method gives back the whole class

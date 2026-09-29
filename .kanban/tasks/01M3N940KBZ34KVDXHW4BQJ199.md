@@ -33,10 +33,26 @@ comments:
     - evidence: 5 files: Sources/acp-agent/TelemetryBootstrap.swift, Tests/FoundationModelsACPAgentTests/TelemetryBootstrapTests.swift (new), IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SpawnedAgentPromptDrive.swift (new), IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TelemetryStdoutTests.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TelemetryFlushTests.swift. `swift test`: 610 tests in 69 suites passed (1 known issue that was there before). `swift test --package-path IntegrationTests --filter "TelemetryStdoutTests|TelemetryFlushTests"`: 10 tests in 2 suites passed. `swift test --package-path IntegrationTests`: 28 tests in 10 suites passed. 0 warnings from project sources.
     - next: review
   timestamp: 2026-09-29T02:46:02.891947+00:00
+- actor: claude-code
+  id: 01m3nhhdaepv9ad1txa9w9cfjm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 0eb73d1). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 5 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task moved to done.
+  timestamp: 2026-09-29T02:57:40.174288+00:00
+- actor: claude-code
+  id: 01m3nhhnkvah6amjf59ya41qzw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — TelemetryBootstrap.swift, TelemetryBootstrapTests.swift (new), SpawnedAgentPromptDrive.swift (new), TelemetryStdoutTests.swift, TelemetryFlushTests.swift
+    - test: green — swift test 610 tests in 69 suites; IntegrationTests 28 tests in 10 suites; 0 project warnings
+    - commit: 0eb73d1
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-29T02:57:48.667657+00:00
 depends_on:
 - 01M3MNNAQ6YMAM4T4E9RM6R3RH
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ee80
 title: 'OTel 2c: bootstrap logging one time, and obey OTEL_SDK_DISABLED, in acp-agent'
 ---
 ## What

@@ -33,6 +33,29 @@ comments:
 
     Decision of the owner (2026-09-24): no compatibility work. Journals from older builds are not a concern of this card.
   timestamp: 2026-09-24T15:11:41.549533+00:00
+- actor: claude-code
+  id: 01m3nhkvr14g0pkgv9hs9v61kz
+  text: |-
+    Blocker (2026-09-28): the pinned Router cannot supply the new case.
+
+    - The local `Package.resolved` pins FoundationModelsRouter to bbad3ce. The current family main branches break the build here, thus the pin stays. The adoption of the newer Router API is card ^tz867gz, which is blocked.
+    - In `.build/checkouts/FoundationModelsRouter` (HEAD bbad3ce), `FinishReason` has only `completed` and `maxTokens`. A search for `endedInsideReasoning` finds no match.
+    - `git merge-base --is-ancestor b3b3d72 HEAD` returns 1: Router b3b3d72 is not in the pinned revision. The cases `repeatedLines`, `SessionEvent.repetitionStopped`, `RepetitionDetection` and the transcript kind `repeatedPartRemoval` from the added scope are also after the pin.
+
+    No file changed. This card can continue when ^tz867gz moves the Router pin to a revision that holds b3b3d72.
+
+    ### implement — stuck
+    - evidence: pinned Router bbad3ce has no `FinishReason.endedInsideReasoning`; b3b3d72 is not an ancestor of bbad3ce. No file changed.
+    - next: finish ^tz867gz (Router pin adoption), then do this card again.
+  timestamp: 2026-09-29T02:59:00.481443+00:00
+- actor: claude-code
+  id: 01m3nhm8wkhvsy7te9t6h8qpe9
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — no files changed. The pinned Router bbad3ce has no FinishReason.endedInsideReasoning (it came in Router b3b3d72).
+    - test, commit, review: not run
+    - next: this task waits for ^tz867gz (adopt the newer Router).
+  timestamp: 2026-09-29T02:59:13.939596+00:00
 position_column: todo
 position_ordinal: '8180'
 title: Map Router's endedInsideReasoning finish reason to an honest ACP stop reason
