@@ -102,10 +102,26 @@ comments:
     - evidence: 4 files. New: IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/PipedChildProcess.swift. Modified: Support/BuiltExecutableRun.swift, Support/SignalledExecutableRun.swift, Support/SpawnedACPAgent.swift. `swift build --build-tests`: build complete, 0 warnings from project sources. `swift test --package-path IntegrationTests`: 24 tests in 10 suites passed (OutOfProcessTests, InterruptTests, TranscriptRecordingTests, ClientServerTests, ClientInteropTests, CLIProcessTests, TelemetryFlushTests, TelemetryStdoutTests, StdioContractTests, SkillTriggerTests), 0 warnings from project sources. Package.resolved pins unchanged. 3 of 3 findings checked. Not committed.
     - next: /review.
   timestamp: 2026-09-29T01:49:29.933997+00:00
+- actor: claude-code
+  id: 01m3ne2q9bkvpxwtaqpr5ftyys
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 9ab356f). 0 findings (0 confirmed, 0 refuted, 7 validator runs, 0 failed). 4 files reviewed. 2 files in `.kanban/` were not reviewed because `.reviewignore` excludes them. The 3 earlier duplication findings (BuiltExecutableRun.swift, SignalledExecutableRun.swift, SpawnedACPAgent.swift) are checked. The code fixes them: each of the three files now calls the shared `PipedChildProcess` helper in Support/PipedChildProcess.swift. Only that helper creates a `Process` and its pipes for these three runs.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T01:57:13.131687+00:00
+- actor: claude-code
+  id: 01m3ne344qpvkr92m5vq1c3mvh
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — PipedChildProcess.swift (new), BuiltExecutableRun.swift, SignalledExecutableRun.swift, SpawnedACPAgent.swift; 3/3 findings checked
+    - test: green — swift test 597 tests in 68 suites; IntegrationTests 24 tests in 10 suites; 0 project warnings
+    - commit: 9ab356f
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-29T01:57:26.295516+00:00
 depends_on:
 - 01M3MNB6VZFQ81436GMVVJXE66
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ec80
 title: 'OTel 2b: flush OTel on each exit path of acp-agent (end of stdin, errors, SIGINT, SIGTERM)'
 ---
 ## What

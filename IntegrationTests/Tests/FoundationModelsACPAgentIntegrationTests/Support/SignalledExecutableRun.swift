@@ -1,5 +1,5 @@
 // `SignalledExecutableRun` — one run of a built executable that a
-// `SIGINT`, or two, ended.
+// signal, or two, ended: `SIGINT` by default, or `SIGTERM`.
 //
 // `BuiltExecutableRun` starts a process and waits for it. An interrupt
 // proof needs three things that plain run cannot give: it must know when
@@ -25,7 +25,7 @@ struct SignalledRunError: Error, CustomStringConvertible {
     }
 }
 
-/// One finished run of a built executable that this process interrupted.
+/// One finished run of a built executable that this process signalled.
 struct SignalledExecutableRun {
     /// The number of milliseconds in ``pollInterval``.
     private static let pollIntervalMilliseconds = 20
@@ -81,8 +81,7 @@ struct SignalledExecutableRun {
     }
 
     /// Runs the built executable `executableName`, waits for its first
-    /// stdout byte, sends `signalCount` interrupts, and waits for it to
-    /// end.
+    /// stdout byte, sends `signalCount` signals, and waits for it to end.
     ///
     /// The child gets `configHome` as `XDG_CONFIG_HOME` and every pair of
     /// `environment` on top of `inheritedEnvironment`.
@@ -102,7 +101,9 @@ struct SignalledExecutableRun {
     ///     holds only while the run is live — which processes this child
     ///     started, for one. The default does nothing, so a caller that
     ///     says nothing about the live run observes none of it.
-    ///   - signalCount: How many `SIGINT`s to send.
+    ///   - signalNumber: The signal to send. The default is `SIGINT`, the
+    ///     signal of `Ctrl-C`; a `SIGTERM` case gives `SIGTERM`.
+    ///   - signalCount: How many signals to send.
     ///   - gap: The pause between two signals. A caller that wants both
     ///     of them to reach a child which ends on the first one gives
     ///     `.zero`.
@@ -120,6 +121,7 @@ struct SignalledExecutableRun {
         inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment,
         environment: [String: String],
         atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in },
+        signalNumber: Int32 = SIGINT,
         signalCount: Int,
         gap: Swift.Duration,
         firstOutputLimit: Swift.Duration,
@@ -161,7 +163,7 @@ struct SignalledExecutableRun {
             guard process.isRunning else {
                 break
             }
-            process.interrupt()
+            kill(process.processIdentifier, signalNumber)
             signalsSent += 1
         }
         let clock = ContinuousClock()

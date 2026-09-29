@@ -55,7 +55,7 @@ struct UnknownResumedSessionError: Error, CustomStringConvertible {
 /// The drive over the open wire is two steps, and each is its own entry
 /// point here because `--out-of-process` arms a `Ctrl-C` watch between
 /// them (``OutOfProcessPrompt``). ``handshake(over:)`` is `initialize`, and
-/// ``send(over:in:prompt:into:reporting:interruptedBy:)`` is everything
+/// ``send(over:in:prompt:into:reporting:interruptedBy:terminatedBy:)`` is everything
 /// after it. Both modes call the same two, so the two cannot drift apart.
 enum RunPrompt {
     /// The client name `initialize` reports to the agent. One binary
@@ -80,10 +80,14 @@ enum RunPrompt {
     ///   - install: How the prompt gets its `Ctrl-C` watch. The default
     ///     watches nothing, so a caller that says nothing about
     ///     interrupts arms no signal.
+    ///   - terminate: How the prompt gets its `SIGTERM` watch. The default
+    ///     watches nothing, so a caller that says nothing about `SIGTERM`
+    ///     arms no signal.
     /// - Returns: The stop reason of the prompt.
     /// - Throws: ``UnknownResumedSessionError`` when a resumed id is in no
     ///   listing, ``AnswerWriteError`` when a chunk cannot be written,
-    ///   and whatever the handshake, the session call or the prompt
+    ///   ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped the
+    ///   prompt, and whatever the handshake, the session call or the prompt
     ///   throws.
     static func answer(
         of composed: AgentComposition.Composed,
@@ -91,7 +95,8 @@ enum RunPrompt {
         prompt: String,
         into writer: AnswerWriter,
         reporting events: EventLineWriter = .silent,
-        interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
+        interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched,
+        terminatedBy terminate: TerminationHandler.Installer = TerminationHandler.unwatched
     ) async throws -> RunPromptResult {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agentConnection = await composed.serve(over: agentEnd)
@@ -106,7 +111,7 @@ enum RunPrompt {
             outcome = .success(
                 try await send(
                     over: connection, in: session, prompt: prompt, into: writer,
-                    reporting: events, interruptedBy: install))
+                    reporting: events, interruptedBy: install, terminatedBy: terminate))
         } catch {
             outcome = .failure(error)
         }
@@ -147,8 +152,11 @@ enum RunPrompt {
     ///   - writer: The writer each `agent_message_chunk` goes to.
     ///   - events: The writer each session event goes to, one line each.
     ///   - install: How the prompt gets its `Ctrl-C` watch.
+    ///   - terminate: How the prompt gets its `SIGTERM` watch. The first
+    ///     `SIGTERM` sends `session/cancel`, as the first `Ctrl-C` does.
     /// - Returns: The stop reason of the prompt.
-    /// - Throws: Whatever the session call, the prompt or the writer
+    /// - Throws: ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped
+    ///   the prompt, and whatever the session call, the prompt or the writer
     ///   throws.
     static func send(
         over connection: ClientSideConnection,
@@ -156,7 +164,8 @@ enum RunPrompt {
         prompt: String,
         into writer: AnswerWriter,
         reporting events: EventLineWriter,
-        interruptedBy install: InterruptHandler.Installer
+        interruptedBy install: InterruptHandler.Installer,
+        terminatedBy terminate: TerminationHandler.Installer
     ) async throws -> RunPromptResult {
         let sessionId = try await open(session, over: connection)
         // Subscribe before the prompt: an update with no subscriber is
@@ -174,19 +183,70 @@ enum RunPrompt {
         }
         let outcome: Result<StopReason?, any Error>
         do {
-            _ = try await connection.prompt(
-                PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: sessionId))
-            outcome = .success(try await collector.value)
+            // The `SIGTERM` watch stands for the same span as the `Ctrl-C`
+            // watch, for the same reason, and its first arrival sends the
+            // same `session/cancel`.
+            outcome = .success(
+                try await TerminationHandler.run(
+                    watchedBy: terminate,
+                    stoppingWith: { await cancel(sessionId, over: connection) }
+                ) {
+                    try await awaitPrompt(
+                        prompt, in: sessionId, over: connection, collectedBy: collector)
+                })
         } catch {
-            collector.cancel()
-            // The prompt failure is the one to report, so a write
-            // failure the collector met on the way down goes with it.
-            _ = try? await collector.value
             outcome = .failure(error)
         }
         watch.disarm()
         watching.cancel()
         return RunPromptResult(stopReason: try outcome.get())
+    }
+
+    /// Sends the prompt request, and waits for the collector to read the
+    /// stop reason.
+    ///
+    /// - Parameters:
+    ///   - prompt: The text of the one prompt.
+    ///   - sessionId: The open session the prompt runs in.
+    ///   - connection: The client end of the wire.
+    ///   - collector: The task that reads the update stream of the session.
+    /// - Returns: The stop reason, or `nil` when the update stream ended
+    ///   before an idle update arrived.
+    /// - Throws: Whatever the prompt or the collector throws. A prompt
+    ///   failure goes out in place of a write failure of the collector.
+    private static func awaitPrompt(
+        _ prompt: String,
+        in sessionId: SessionId,
+        over connection: ClientSideConnection,
+        collectedBy collector: Task<StopReason?, any Error>
+    ) async throws -> StopReason? {
+        do {
+            _ = try await connection.prompt(
+                PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: sessionId))
+            return try await collector.value
+        } catch {
+            collector.cancel()
+            // The prompt failure is the one to report, so a write
+            // failure the collector met on the way down goes with it.
+            _ = try? await collector.value
+            throw error
+        }
+    }
+
+    /// Sends `session/cancel` for `sessionId`: the stop of the first
+    /// `Ctrl-C` and of the first `SIGTERM`.
+    ///
+    /// Nothing is awaited for it: the notification carries no response, and
+    /// the `cancelled` stop reason arrives on the update stream. A cancel
+    /// that cannot be sent is dropped: the wire is already down, so the
+    /// prompt is already ending, and a thrown error here would replace the
+    /// prompt's own outcome with a teardown detail.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session to cancel.
+    ///   - connection: The client end of the wire.
+    private static func cancel(_ sessionId: SessionId, over connection: ClientSideConnection) async {
+        try? await connection.sessionCancel(CancelSessionNotification(sessionId: sessionId))
     }
 
     /// Reacts to each `Ctrl-C` of `arrivals` (cli-plan.md §5.9).
@@ -201,10 +261,6 @@ enum RunPrompt {
     /// generate loop never checks for cancellation runs to its end, and
     /// a person who pressed `Ctrl-C` twice is done waiting.
     ///
-    /// A cancel that cannot be sent is dropped: the wire is already
-    /// down, so the prompt is already ending, and a thrown error here
-    /// would replace the prompt's own outcome with a teardown detail.
-    ///
     /// - Parameters:
     ///   - arrivals: The ordinals of the watch.
     ///   - sessionId: The session to cancel.
@@ -215,7 +271,7 @@ enum RunPrompt {
         over connection: ClientSideConnection
     ) async {
         await InterruptHandler.react(to: arrivals) {
-            try? await connection.sessionCancel(CancelSessionNotification(sessionId: sessionId))
+            await cancel(sessionId, over: connection)
         }
     }
 

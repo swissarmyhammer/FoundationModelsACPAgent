@@ -35,10 +35,14 @@ extension AcpAgentCommand {
             // The download of §5.9 is interruptible here too: the first
             // `Ctrl-C` cancels the composition and the process exits 4,
             // leaving the partly downloaded model in the Hugging Face cache.
+            // A `SIGTERM` here cancels the composition too, and the thrown
+            // exit code takes the failure path of `main()`, which flushes
+            // the telemetry before the exit.
             let composed: AgentComposition.Composed
             do {
                 composed = try await InterruptibleComposition.run(
-                    interruptedBy: InterruptHandler.onSIGINT
+                    interruptedBy: InterruptHandler.onSIGINT,
+                    terminatedBy: TerminationHandler.onSIGTERM
                 ) {
                     try await AgentComposition.compose(
                         workingDirectory: AgentComposition.processWorkingDirectory,

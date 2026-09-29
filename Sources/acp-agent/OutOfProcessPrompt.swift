@@ -1,7 +1,6 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPClient
-import Synchronization
 
 /// The refusal of an `--out-of-process` run that cannot name its own
 /// binary.
@@ -46,26 +45,6 @@ enum OutOfProcessPrompt {
     /// this one (cli-plan.md §5.3).
     static let acpSubcommand = "acp"
 
-    /// Whether a `Ctrl-C` reached the composition window of one run.
-    ///
-    /// A class, because `Mutex` is noncopyable: the watching task's
-    /// escaping closure captures this reference, not the lock itself.
-    private final class InterruptFlag: Sendable {
-        /// Whether an arrival was recorded, guarded for the reader against
-        /// the watching task's write.
-        private let guardedRaised = Mutex(false)
-
-        /// Records that a `Ctrl-C` arrived.
-        func raise() {
-            guardedRaised.withLock { $0 = true }
-        }
-
-        /// Whether a `Ctrl-C` arrived.
-        var isRaised: Bool {
-            guardedRaised.withLock { $0 }
-        }
-    }
-
     /// The absolute path of this binary, which is the agent an
     /// `--out-of-process` run starts.
     ///
@@ -95,17 +74,23 @@ enum OutOfProcessPrompt {
     ///   - install: How the two windows of §5.9 get their `Ctrl-C` watch.
     ///     The default watches nothing, so a caller that says nothing about
     ///     interrupts arms no signal.
+    ///   - terminate: How the handshake and the prompt get their `SIGTERM`
+    ///     watch. The default watches nothing, so a caller that says nothing
+    ///     about `SIGTERM` arms no signal.
     /// - Returns: The stop reason of the prompt, or the `cancelled` stop
     ///   reason when the first `Ctrl-C` stopped the child's composition.
-    /// - Throws: `AgentProcessError` when the spawn fails, and whatever the
-    ///   handshake, the session call, the prompt or the writer throws.
+    /// - Throws: `AgentProcessError` when the spawn fails,
+    ///   ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped the run,
+    ///   and whatever the handshake, the session call, the prompt or the
+    ///   writer throws.
     static func answer(
         command: String,
         in session: RunSession,
         prompt: String,
         into writer: AnswerWriter,
         reporting events: EventLineWriter = .silent,
-        interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
+        interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched,
+        terminatedBy terminate: TerminationHandler.Installer = TerminationHandler.unwatched
     ) async throws -> RunPromptResult {
         let agent = try AgentProcess(command: command, arguments: [acpSubcommand])
         let client = await SwiftUIACPClient()
@@ -121,7 +106,8 @@ enum OutOfProcessPrompt {
             outcome = .success(
                 try await drive(
                     connection, startedBy: agent, in: session, prompt: prompt,
-                    into: writer, reporting: events, interruptedBy: install))
+                    into: writer, reporting: events, interruptedBy: install,
+                    terminatedBy: terminate))
         } catch {
             outcome = .failure(error)
         }
@@ -141,10 +127,14 @@ enum OutOfProcessPrompt {
     ///   - writer: The writer each chunk goes to.
     ///   - events: The writer each session event goes to, one line each.
     ///   - install: How the two windows get their `Ctrl-C` watch.
+    ///   - terminate: How the two windows get their `SIGTERM` watch. In the
+    ///     handshake the first `SIGTERM` reaps the child, as the first
+    ///     `Ctrl-C` does; in the prompt it sends `session/cancel`.
     /// - Returns: The stop reason of the prompt, or `cancelled` when the
     ///   first `Ctrl-C` stopped the child's composition.
-    /// - Throws: Whatever the handshake, the session call, the prompt or
-    ///   the writer throws.
+    /// - Throws: ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped
+    ///   the run, and whatever the handshake, the session call, the prompt
+    ///   or the writer throws.
     private static func drive(
         _ connection: ClientSideConnection,
         startedBy agent: AgentProcess,
@@ -152,9 +142,15 @@ enum OutOfProcessPrompt {
         prompt: String,
         into writer: AnswerWriter,
         reporting events: EventLineWriter,
-        interruptedBy install: InterruptHandler.Installer
+        interruptedBy install: InterruptHandler.Installer,
+        terminatedBy terminate: TerminationHandler.Installer
     ) async throws -> RunPromptResult {
-        guard try await shakeHands(over: connection, with: agent, interruptedBy: install) else {
+        let shookHands = try await TerminationHandler.run(
+            watchedBy: terminate, stoppingWith: { agent.shutdown() }
+        ) {
+            try await shakeHands(over: connection, with: agent, interruptedBy: install)
+        }
+        guard shookHands else {
             // The child is gone and no session was ever opened, so there is
             // no `session/cancel` to send and no answer text to keep. The
             // run reports the `cancelled` stop reason, and `run()` turns
@@ -163,7 +159,7 @@ enum OutOfProcessPrompt {
         }
         return try await RunPrompt.send(
             over: connection, in: session, prompt: prompt, into: writer,
-            reporting: events, interruptedBy: install)
+            reporting: events, interruptedBy: install, terminatedBy: terminate)
     }
 
     /// Sends the handshake under the composition watch of this mode.
@@ -192,7 +188,7 @@ enum OutOfProcessPrompt {
         with agent: AgentProcess,
         interruptedBy install: InterruptHandler.Installer
     ) async throws -> Bool {
-        let interrupted = InterruptFlag()
+        let interrupted = ArrivalFlag()
         let watch = install()
         let watching = Task {
             for await ordinal in watch.arrivals {

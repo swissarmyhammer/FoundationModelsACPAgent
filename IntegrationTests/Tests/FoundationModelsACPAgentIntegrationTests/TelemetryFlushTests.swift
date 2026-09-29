@@ -32,6 +32,9 @@ enum TelemetryExitPath: String, CaseIterable, CustomTestStringConvertible, Senda
     /// `acp` mode after one prompt: `SIGTERM`.
     case termination
 
+    /// `run` mode: `SIGTERM` during the prompt.
+    case runTermination
+
     var testDescription: String {
         rawValue
     }
@@ -177,7 +180,11 @@ struct TelemetryFlushTests {
                 try await agent.terminateAndWait(within: exitLimit)
             }
         case .firstInterrupt:
-            return try await interruptInRunMode(label: label, endpoint: endpoint, exitLimit: exitLimit)
+            return try await signalInRunMode(
+                SIGINT, label: label, endpoint: endpoint, exitLimit: exitLimit)
+        case .runTermination:
+            return try await signalInRunMode(
+                SIGTERM, label: label, endpoint: endpoint, exitLimit: exitLimit)
         }
     }
 
@@ -222,18 +229,19 @@ struct TelemetryFlushTests {
             standardError: exit.standardError)
     }
 
-    /// Runs `acp-agent run` over the paced stub model and sends one `SIGINT`
-    /// once its first answer bytes arrive.
+    /// Runs `acp-agent run` over the paced stub model and sends one
+    /// `signalNumber` once its first answer bytes arrive.
     ///
     /// - Parameters:
+    ///   - signalNumber: The signal to send: `SIGINT` or `SIGTERM`.
     ///   - label: The directory label.
     ///   - endpoint: The OTLP endpoint.
     ///   - exitLimit: How long the agent may take to end after the signal.
     /// - Returns: How the agent ended.
     /// - Throws: The wait, locator or spawn error. `SignalledRunError` names
     ///   an agent that did not end inside `exitLimit` after the signal.
-    private static func interruptInRunMode(
-        label: String, endpoint: String, exitLimit: Swift.Duration
+    private static func signalInRunMode(
+        _ signalNumber: Int32, label: String, endpoint: String, exitLimit: Swift.Duration
     ) async throws -> PathEnd {
         let run = try await SignalledExecutableRun.run(
             executableNamed: TierThreeFixture.agentExecutableName,
@@ -244,6 +252,7 @@ struct TelemetryFlushTests {
             environment: TierThreeFixture.pacedStubModelEnvironment(
                 chunkDelayMilliseconds: chunkDelayMilliseconds
             ).merging(flushEnvironment(endpoint: endpoint)) { _, flush in flush },
+            signalNumber: signalNumber,
             signalCount: 1,
             gap: .zero,
             firstOutputLimit: firstOutputLimit,
@@ -261,7 +270,7 @@ struct TelemetryFlushTests {
         switch path {
         case .endOfStandardInput: successExitCode
         case .firstInterrupt: cancelledExitCode
-        case .termination: terminationExitCode
+        case .termination, .runTermination: terminationExitCode
         }
     }
 
@@ -302,6 +311,13 @@ struct TelemetryFlushTests {
     /// the Router spans of the run reach the receiver.
     @Test func aTerminationFlushesTheLastSpans() async throws {
         try await Self.assertTheLastSpansArrive(on: .termination)
+    }
+
+    /// `run` mode, when `SIGTERM` lands during the prompt: the agent sends
+    /// `session/cancel`, exits 143, and the Router spans of the run reach the
+    /// receiver.
+    @Test func aTerminationDuringARunPromptFlushesTheLastSpans() async throws {
+        try await Self.assertTheLastSpansArrive(on: .runTermination)
     }
 
     // MARK: - No receiver

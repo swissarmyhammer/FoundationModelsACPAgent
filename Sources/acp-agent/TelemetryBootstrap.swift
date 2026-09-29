@@ -35,15 +35,20 @@ import Synchronization
 ///   after the end of stdin, or `run` after the answer;
 /// - the failure path of ``AcpAgentCommand/main()``, before `exit(3)`: each
 ///   error, and the first `Ctrl-C` of cli-plan.md §5.9, which exits 4;
-/// - `SIGTERM` during the ACP serve window of `acp` mode, through
-///   ``TerminationHandler``, which exits 143.
+/// - `SIGTERM` during a watched window, through ``TerminationHandler``, which
+///   exits 143: the ACP serve window of `acp` mode, the composition window of
+///   `acp` and `run` (the configuration load, the model download and the
+///   model load), and the prompt window of `run`.
 ///
 /// The first exception is the second `Ctrl-C`.
 /// ``InterruptHandler/endAtOnce()`` calls `_exit(2)`, because the person
 /// asked to end at once and a flush can wait on the network. So that path
 /// does not flush, and its last batch is lost. The second exception is a
-/// `SIGTERM` outside the ACP serve window: the signal keeps its default
-/// action there, so that path does not flush either.
+/// `SIGTERM` outside the watched windows: the read of the prompt text, the
+/// short open of the wire before the prompt, and the `config`,
+/// `instructions` and `doctor` subcommands, which hold no model, no
+/// connection and no session. The signal keeps its default action there, so
+/// those paths do not flush either.
 ///
 /// ``shutdown()`` waits for the flush for ``shutdownDeadline`` at most, so a
 /// collector that does not answer cannot hold the process.

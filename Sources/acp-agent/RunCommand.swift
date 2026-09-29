@@ -114,7 +114,8 @@ extension AcpAgentCommand {
                 into: AnswerWriter(),
                 reporting: eventLineWriter,
                 drawing: progressReporter,
-                interruptedBy: InterruptHandler.onSIGINT)
+                interruptedBy: InterruptHandler.onSIGINT,
+                terminatedBy: TerminationHandler.onSIGTERM)
             let code = AgentExitCode(prompt: result)
             guard code == .success else {
                 throw code.parserError
@@ -142,6 +143,10 @@ extension AcpAgentCommand {
         ///     default watches nothing, so no suite arms a process-wide
         ///     signal. The two windows are armed one after the other and
         ///     never overlap.
+        ///   - terminate: How the composition window and the prompt get
+        ///     their `SIGTERM` watch, on the same terms as `install`.
+        ///     `run()` gives the real `SIGTERM` watch; the default watches
+        ///     nothing.
         ///   - progress: The reporter the download bar draws through
         ///     (§5.7). `run()` gives the one over standard error; the
         ///     default draws nothing, so no suite draws to the process
@@ -150,14 +155,16 @@ extension AcpAgentCommand {
         ///     progress object to read.
         /// - Returns: The stop reason of the prompt.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
-        ///   table, and whatever the composition, the prompt or the writer
-        ///   throws.
+        ///   table, ``TerminationHandler/signalEnd`` when a `SIGTERM`
+        ///   stopped the run, and whatever the composition, the prompt or
+        ///   the writer throws.
         func perform(
             environment: [String: String],
             into writer: AnswerWriter,
             reporting events: EventLineWriter = .silent,
             drawing progress: ProgressReporter = .silent,
-            interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched
+            interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched,
+            terminatedBy terminate: TerminationHandler.Installer = TerminationHandler.unwatched
         ) async throws -> RunPromptResult {
             guard outOfProcess else {
                 // The progress object is made HERE, before the composition:
@@ -169,7 +176,7 @@ extension AcpAgentCommand {
                 let resolution = await ResolutionProgress()
                 return try await perform(
                     environment: environment, into: writer, reporting: events,
-                    interruptedBy: install
+                    interruptedBy: install, terminatedBy: terminate
                 ) {
                     try await progress.report(on: resolution) {
                         try await compose(environment: environment, reporting: resolution)
@@ -177,7 +184,8 @@ extension AcpAgentCommand {
                 }
             }
             return try await performOutOfProcess(
-                into: writer, reporting: events, interruptedBy: install)
+                into: writer, reporting: events, interruptedBy: install,
+                terminatedBy: terminate)
         }
 
         /// Runs the one prompt over a second copy of this binary, started in
@@ -193,20 +201,23 @@ extension AcpAgentCommand {
         ///   - events: The writer the session event lines go to (§5.7).
         ///   - install: How the two windows of §5.9 get their `Ctrl-C`
         ///     watch.
+        ///   - terminate: How the two windows get their `SIGTERM` watch.
         /// - Returns: The stop reason of the prompt.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
         ///   table, ``OwnExecutableUnknownError`` when this binary cannot be
-        ///   named, and whatever the spawn, the prompt or the writer throws.
+        ///   named, ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped
+        ///   the run, and whatever the spawn, the prompt or the writer throws.
         func performOutOfProcess(
             into writer: AnswerWriter,
             reporting events: EventLineWriter,
-            interruptedBy install: InterruptHandler.Installer
+            interruptedBy install: InterruptHandler.Installer,
+            terminatedBy terminate: TerminationHandler.Installer
         ) async throws -> RunPromptResult {
             let text = try promptSource.text()
             return try await OutOfProcessPrompt.answer(
                 command: try OutOfProcessPrompt.ownExecutablePath(),
                 in: session, prompt: text, into: writer,
-                reporting: events, interruptedBy: install)
+                reporting: events, interruptedBy: install, terminatedBy: terminate)
         }
 
         /// Runs the one prompt over a supplied composition.
@@ -221,24 +232,28 @@ extension AcpAgentCommand {
         ///   - events: The writer the session event lines go to (§5.7).
         ///   - install: How the composition window and the prompt get their
         ///     `Ctrl-C` watch.
+        ///   - terminate: How the composition window and the prompt get their
+        ///     `SIGTERM` watch. The default watches nothing.
         ///   - compose: The composition work to run under the first watch.
         /// - Returns: The stop reason of the prompt, or the `cancelled` stop
         ///   reason when the first `Ctrl-C` stopped the composition.
         /// - Throws: `ValidationError` for the terminal row of the §5.5
-        ///   table, and whatever the composition, the prompt or the writer
-        ///   throws.
+        ///   table, ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped
+        ///   the composition or the prompt, and whatever the composition, the
+        ///   prompt or the writer throws.
         func perform(
             environment: [String: String],
             into writer: AnswerWriter,
             reporting events: EventLineWriter = .silent,
             interruptedBy install: InterruptHandler.Installer,
+            terminatedBy terminate: TerminationHandler.Installer = TerminationHandler.unwatched,
             composedBy compose: @escaping @Sendable () async throws -> AgentComposition.Composed
         ) async throws -> RunPromptResult {
             let text = try promptSource.text()
             let composed: AgentComposition.Composed
             do {
                 composed = try await InterruptibleComposition.run(
-                    interruptedBy: install, compose)
+                    interruptedBy: install, terminatedBy: terminate, compose)
             } catch is CompositionInterrupted {
                 // The wire never opened, so there is no `session/cancel` to
                 // send and no answer text to keep. The run reports the
@@ -248,7 +263,7 @@ extension AcpAgentCommand {
             }
             return try await RunPrompt.answer(
                 of: composed, in: session, prompt: text, into: writer,
-                reporting: events, interruptedBy: install)
+                reporting: events, interruptedBy: install, terminatedBy: terminate)
         }
 
         /// Composes the agent of this run — the first of the two loads of

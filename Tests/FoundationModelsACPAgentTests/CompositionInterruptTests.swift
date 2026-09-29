@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
+import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -101,6 +102,29 @@ struct CompositionInterruptTests {
     /// the composition, before a turn begins.
     private static let promptText = "write a haiku"
 
+    /// The exit code a shell gives to a process that `SIGTERM` ended: 128
+    /// and the signal number 15.
+    private static let signalEndExitCode: Int32 = 143
+
+    /// Records whether the composition task was cancelled when the
+    /// composition failed.
+    private final class CancelRecord: Sendable {
+        /// `true` once a failed composition saw its task cancelled.
+        private let cancelled = Mutex(false)
+
+        /// Records the cancel state of the task of a failed composition.
+        ///
+        /// - Parameter isCancelled: Whether the task was cancelled.
+        func record(_ isCancelled: Bool) {
+            cancelled.withLock { $0 = isCancelled }
+        }
+
+        /// `true` once a failed composition saw its task cancelled.
+        var wasCancelled: Bool {
+            cancelled.withLock { $0 }
+        }
+    }
+
     /// A composer that resolves a real profile through a loader stopped in
     /// the download, and the cache directory that loader writes into.
     ///
@@ -196,6 +220,63 @@ struct CompositionInterruptTests {
         }
     }
 
+    // MARK: - SIGTERM during the download
+
+    /// A `SIGTERM` during the download of `acp-agent run` cancels the
+    /// composition, and the run throws the exit code of an end by a signal.
+    /// The code goes to the failure path of ``AcpAgentCommand/main()``, which
+    /// flushes the telemetry before the process exits.
+    ///
+    /// The loader stops in the transfer for longer than the time limit of
+    /// the case, so only the cancel can end it.
+    @Test(.timeLimit(.minutes(1)))
+    func aTerminationDuringTheDownloadEndsTheRunWithTheSignalEndCode() async throws {
+        let fixture = ConfigCommandFixture(label: "CompositionInterruptTests-term-run")
+        let capture = try AnswerCapture(label: "CompositionInterruptTests-term-run-answer")
+        let parked = Self.makeParkedComposer(label: "CompositionInterruptTests-term-run")
+        let run = try #require(
+            try AcpAgentCommand.parseAsRoot(
+                ["run", "--cwd", fixture.workspace.path, Self.promptText])
+                as? AcpAgentCommand.Run)
+
+        let thrown = await #expect(throws: ExitCode.self) {
+            _ = try await run.perform(
+                environment: fixture.stubEnvironment,
+                into: capture.writer,
+                interruptedBy: InterruptHandler.unwatched,
+                terminatedBy: Self.terminated(after: parked.parked),
+                composedBy: parked.compose)
+        }
+
+        #expect(thrown?.rawValue == Self.signalEndExitCode)
+    }
+
+    /// The composition window that `acp-agent acp` uses: a `SIGTERM` cancels
+    /// the composition task, and the window throws the exit code of an end
+    /// by a signal, not ``CompositionInterrupted``.
+    @Test(.timeLimit(.minutes(1)))
+    func aTerminatedCompositionCancelsTheDownloadAndThrowsTheSignalEndCode() async throws {
+        let parked = Self.makeParkedComposer(label: "CompositionInterruptTests-term")
+        let cancelled = CancelRecord()
+
+        let thrown = await #expect(throws: ExitCode.self) {
+            try await InterruptibleComposition.run(
+                interruptedBy: InterruptHandler.unwatched,
+                terminatedBy: Self.terminated(after: parked.parked)
+            ) {
+                do {
+                    return try await parked.compose()
+                } catch {
+                    cancelled.record(Task.isCancelled)
+                    throw error
+                }
+            }
+        }
+
+        #expect(thrown?.rawValue == Self.signalEndExitCode)
+        #expect(cancelled.wasCancelled)
+    }
+
     /// A composition no signal reaches runs to its end and is returned.
     @Test(.timeLimit(.minutes(1)))
     func anUnwatchedCompositionIsReturned() async throws {
@@ -220,18 +301,19 @@ struct CompositionInterruptTests {
     /// - Returns: The installer of that watch.
     private static func armed(after parked: AsyncStream<Void>) -> InterruptHandler.Installer {
         {
-            let (arrivals, continuation) = AsyncStream<Int>.makeStream()
-            let waiting = Task {
-                await Self.awaitParkedDownload(parked)
-                continuation.yield(InterruptHandler.firstArrival)
-                continuation.finish()
-            }
-            return InterruptWatch(
-                arrivals: arrivals,
-                disarm: {
-                    waiting.cancel()
-                    continuation.finish()
-                })
+            let arrival = ScriptedArrival.after(
+                { await Self.awaitParkedDownload(parked) }, giving: InterruptHandler.firstArrival)
+            return InterruptWatch(arrivals: arrival.arrivals, disarm: arrival.disarm)
         }
+    }
+
+    /// A `SIGTERM` watch whose one arrival is offered only once `parked`
+    /// reports the download has stopped, for the reason ``armed(after:)``
+    /// gives.
+    ///
+    /// - Parameter parked: The stream the loader reports the stop on.
+    /// - Returns: The installer of that watch.
+    private static func terminated(after parked: AsyncStream<Void>) -> TerminationHandler.Installer {
+        ScriptedTerminationWatch.armed(after: { await Self.awaitParkedDownload(parked) })
     }
 }
