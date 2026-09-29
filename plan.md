@@ -1168,15 +1168,22 @@ model call.** Use the right call for the right object:
 
 | What you cancel | Call | Result |
 |---|---|---|
-| the turn in flight | `RoutedSession.cancelCurrentTurn()` | `.requested` / `.noTurnInFlight` |
+| the prompt in flight, also a request that waits for a place in the model queue | `RoutedSession.cancel()` | `.requested` / `.nothingToCancel` |
 | a **queued** prompt — **NOT REACHABLE on our surface** | `cancelPrompt(id:)` | `.withdrawn` / `.turnCancelled` / `.alreadyFinished` |
 | a background run | `ToolContext.cancel(completionToken:)` | `CancelOutcome` |
 
-`cancelCurrentTurn()` is cooperative and best-effort. Read `.requested` as
+`cancel()` is cooperative and best-effort. Read `.requested` as
 "the request was recorded", not as "the model has stopped". It cancels the
 `Task` that runs the model call. Therefore cancellation **does** reach the
 tools that the SDK invokes. A stream keeps the fragments that it already
 yielded. The transcript records a cancelled turn as a failed turn.
+
+A request that waits for a place in the model queue is in flight, and the
+cancel reaches it. The Router removes the request from the queue at once. Thus
+`session/cancel` and `session/close` give `idle(cancelled)` at once, also when
+the pass of another session holds the model. The request never runs. The other
+session keeps its pass, and a later prompt of the cancelled session gets a
+place in the queue as usual.
 
 **The row for a queued prompt is not reachable on our surface.**
 `cancelPrompt(id:)` exists in Router. We never create a queued prompt: a

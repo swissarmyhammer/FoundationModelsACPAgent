@@ -125,6 +125,90 @@ import Testing
         #expect(idle.stopReason == .cancelled)
     }
 
+    // MARK: - A request that waits for the model queue (§8.6, §10.1)
+    //
+    // The two sessions of each proof use one queued scripted model, thus one
+    // generation queue. Session A holds its pass until the test releases the
+    // hold. The prompt of session B thus waits for a queue place. A cancel or
+    // a close of B must end B at once, and must not wait for A.
+
+    /// Wires two sessions over one queued model, starts a held pass on
+    /// session A, and starts a prompt on session B that waits for a queue
+    /// place.
+    ///
+    /// - Parameter hold: The hold of each pass.
+    /// - Returns: The fixture, with A held and B in the queue.
+    /// - Throws: Whatever the construction, the wire or the wait throws.
+    private static func startPromptThatWaitsForTheQueue(
+        hold: ScriptedHold
+    ) async throws -> QueuedScriptedFixture {
+        let fixture = try await QueuedScriptedFixture.make(
+            script: [.holdUntilReleased(hold), .textDelta("released"), .endTurn],
+            label: "CancellationTests-queue")
+        let counter = fixture.passCounter
+        try await fixture.prompt(fixture.firstSessionId, text: promptText)
+        try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
+        try await fixture.prompt(fixture.secondSessionId, text: promptText)
+        try await Poll.until("the prompt of session B waits for a queue place") {
+            await counter.waitingCount == 1
+        }
+        return fixture
+    }
+
+    /// A `session/cancel` for a prompt that waits for a place in the model
+    /// queue ends it with `idle(cancelled)` while the other session still
+    /// holds the model. After the release, the holding session completes,
+    /// and a new prompt on the cancelled session completes too.
+    @Test(.timeLimit(.minutes(1)))
+    func cancelEndsARequestThatWaitsForTheModelQueue() async throws {
+        let hold = ScriptedHold()
+        let fixture = try await Self.startPromptThatWaitsForTheQueue(hold: hold)
+        let sessionA = fixture.firstSessionId
+        let sessionB = fixture.secondSessionId
+
+        try await fixture.base.harness.connection.sessionCancel(
+            CancelSessionNotification(sessionId: sessionB))
+        let cancelledUpdatesOfB = try await fixture.waitForIdle(of: sessionB)
+        let updatesOfAWhileHeld = await fixture.updates(of: sessionA)
+
+        hold.release()
+        let updatesOfA = try await fixture.waitForIdle(of: sessionA)
+        try await ScriptedTurnFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
+        try await fixture.prompt(sessionB, text: Self.promptText)
+        let updatesOfB = try await fixture.waitForIdle(of: sessionB, count: 2)
+        await fixture.close()
+
+        #expect(ScriptedTurnFixture.idleStopReason(in: cancelledUpdatesOfB) == .cancelled)
+        #expect(ScriptedTurnFixture.idleCount(in: updatesOfAWhileHeld) == 0)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
+        #expect(idleState(of: updatesOfB.last?.update)?.stopReason == .endTurn)
+    }
+
+    /// A `session/close` for a session whose prompt waits for a place in the
+    /// model queue answers after the `idle(cancelled)` of that prompt, while
+    /// the other session still holds the model. After the release, the
+    /// holding session completes.
+    @Test(.timeLimit(.minutes(1)))
+    func closeEndsARequestThatWaitsForTheModelQueue() async throws {
+        let hold = ScriptedHold()
+        let fixture = try await Self.startPromptThatWaitsForTheQueue(hold: hold)
+        let sessionA = fixture.firstSessionId
+        let sessionB = fixture.secondSessionId
+
+        _ = try await fixture.base.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: sessionB))
+        let updatesOfB = await fixture.updates(of: sessionB)
+        let updatesOfAWhileHeld = await fixture.updates(of: sessionA)
+
+        hold.release()
+        let updatesOfA = try await fixture.waitForIdle(of: sessionA)
+        await fixture.close()
+
+        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfB) == .cancelled)
+        #expect(ScriptedTurnFixture.idleCount(in: updatesOfAWhileHeld) == 0)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
+    }
+
     // MARK: - The no-op cancels (§8.6, §10.1)
 
     /// A cancel of an idle session is a no-op: no error, no update, and

@@ -86,10 +86,26 @@ comments:
     - evidence: 4 files — Tests/FoundationModelsACPAgentTests/Support/ElicitationPoll.swift (new), Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/ElicitationRelayTests.swift, Tests/FoundationModelsACPAgentTests/Support/QueuedScriptedFixture.swift; `swift test` 611 tests in 70 suites pass (1 known issue, the existing withKnownIssue of HarnessSmokeTests); no compiler warning; review finding PromptTurnTests.swift:757 flipped to [x].
     - next: /review. The card stays in doing. Not committed.
   timestamp: 2026-09-29T17:13:41.061892+00:00
+- actor: claude-code
+  id: 01m3q2skvz433zp0j0aw8gsedh
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 3566285). Counts: 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 4 files reviewed. The 2 `.kanban/` files are excluded by `.reviewignore`. All prior review findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T17:18:29.247536+00:00
+- actor: claude-code
+  id: 01m3q2sw8ehxh2gyb5g1xtqwm0
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files (Support/ElicitationPoll.swift new, PromptTurnTests.swift, ElicitationRelayTests.swift, Support/QueuedScriptedFixture.swift)
+    - test: green — swift test 611 tests pass; IntegrationTests build ok
+    - commit: 3566285
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T17:18:37.838678+00:00
 depends_on:
 - 01M3A37J8X6VKD5BKYWSJ4HCZD
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: f180
 title: Make awaitingUser a plain requires_action wrapper, and prove a waiting session holds no model
 ---
 ## Why

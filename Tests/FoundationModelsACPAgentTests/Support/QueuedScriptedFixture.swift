@@ -62,15 +62,19 @@ struct QueuedScriptedFixture {
             AgentClientHarness.makePromptRequest(sessionId: sessionId, text: text))
     }
 
-    /// Waits until `sessionId` sent its idle state update, and gives the
-    /// updates of that session.
+    /// Waits until `sessionId` sent `count` idle state updates, one for each
+    /// prompt that ended, and gives the updates of that session.
     ///
-    /// - Parameter sessionId: The session to watch.
+    /// - Parameters:
+    ///   - sessionId: The session to watch.
+    ///   - count: The number of idle updates to wait for. The default is 1.
     /// - Returns: The collected updates of `sessionId`.
     /// - Throws: `CancellationError` when the test is cancelled.
-    func waitForIdle(of sessionId: SessionId) async throws -> [UpdateSessionNotification] {
-        try await Poll.until("an idle update of \(sessionId.rawValue)") {
-            ScriptedTurnFixture.idleCount(in: await updates(of: sessionId)) > 0
+    func waitForIdle(
+        of sessionId: SessionId, count: Int = 1
+    ) async throws -> [UpdateSessionNotification] {
+        try await Poll.until("idle update \(count) of \(sessionId.rawValue)") {
+            ScriptedTurnFixture.idleCount(in: await updates(of: sessionId)) >= count
         }
         return await updates(of: sessionId)
     }

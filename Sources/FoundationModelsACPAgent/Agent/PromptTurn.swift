@@ -657,9 +657,13 @@ extension RoutedACPAgent {
     /// `cancel` — the suspended tool must resume before the `idle`
     /// terminator, and Router's mailbox does not resume on task
     /// cancellation — then cancels the work of the Router session: the
-    /// model work in flight and a caller message that waits. A
-    /// notification has no response, so an unknown id or an idle
-    /// session is logged and ignored (plan.md §10.1).
+    /// model work in flight and a caller message that waits. A request
+    /// that waits for a place in the model queue is in flight too, and
+    /// the cancel reaches it: the Router removes it from the queue at
+    /// once, so the `idle(cancelled)` terminator does not wait for the
+    /// pass of another session. A notification has no response, so an
+    /// unknown id or an idle session is logged and ignored (plan.md
+    /// §10.1).
     ///
     /// - Parameter params: The cancellation notification.
     public func sessionCancel(_ params: CancelSessionNotification) async {
