@@ -14,7 +14,7 @@ import Testing
 struct TelemetryBootstrapTests {
     // MARK: - Constants
 
-    /// The standard variable that turns on the OTLP exporters.
+    /// The standard variable that enables the OTLP exporters.
     private static let otlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
     /// The standard variable that turns off the whole OpenTelemetry SDK.
@@ -79,8 +79,8 @@ struct TelemetryBootstrapTests {
     // MARK: - The traces and metrics environment
 
     /// The environment of the traces and metrics bootstrap has no
-    /// `OTEL_SDK_DISABLED`, because swift-otel reads `false` in it as "turn
-    /// the logs on", and the logs have their own bootstrap.
+    /// `OTEL_SDK_DISABLED`, because swift-otel reads `false` in it as
+    /// "enable the logs", and the logs have their own bootstrap.
     @Test func theTracingAndMetricsEnvironmentHasNoSDKSwitch() {
         let environment = [
             Self.otlpEndpointVariable: Self.endpoint,

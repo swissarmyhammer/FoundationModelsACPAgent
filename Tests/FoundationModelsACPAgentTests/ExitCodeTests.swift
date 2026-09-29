@@ -26,14 +26,14 @@ import Testing
 struct ExitCodeTests {
     // MARK: - Constants
 
-    /// The prompt of every turn here.
+    /// The prompt text of every case here.
     private static let promptText = "write a haiku"
 
-    /// The text the scripted model streams before a turn that ends well.
+    /// The text the scripted model streams before a prompt that ends well.
     private static let answeredText = "a finished answer"
 
     /// The text the scripted model streams before it holds, so a
-    /// cancelled turn has text that already arrived.
+    /// cancelled prompt has text that already arrived.
     private static let arrivedText = "part of an answer"
 
     /// The fact the cancelled row waits for before it interrupts, named
@@ -56,7 +56,7 @@ struct ExitCodeTests {
     /// The number of rows the table states.
     private static let tableRowCount = 6
 
-    /// The code of a turn that ended on `end_turn`, and of a report that
+    /// The code of a prompt that ended on `end_turn`, and of a report that
     /// ran.
     private static let successCode: Int32 = 0
 
@@ -66,10 +66,10 @@ struct ExitCodeTests {
     /// The code of a usage error.
     private static let usageCode: Int32 = 2
 
-    /// The code of a turn that ended on `refusal`.
+    /// The code of a prompt that ended on `refusal`.
     private static let refusalCode: Int32 = 3
 
-    /// The code of a turn that ended on `cancelled`.
+    /// The code of a prompt that ended on `cancelled`.
     private static let cancelledCode: Int32 = 4
 
     /// The code of a `doctor` run that found warnings and no error.
@@ -103,8 +103,8 @@ struct ExitCodeTests {
 
     // MARK: - Fixtures
 
-    /// Runs one turn against a model that plays `script`, and gives back
-    /// the exit code of the finished turn.
+    /// Runs one prompt against a model that plays `script`, and gives back
+    /// the exit code of the finished prompt.
     ///
     /// - Parameters:
     ///   - script: The steps the model plays.
@@ -113,7 +113,7 @@ struct ExitCodeTests {
     ///   - arrivedText: The text that, once it has reached the answer
     ///     descriptor, offers one `Ctrl-C` to the prompt. The default arms
     ///     no watch, so a row that needs no interrupt gets none.
-    /// - Returns: The exit code of the finished turn.
+    /// - Returns: The exit code of the finished prompt.
     /// - Throws: Whatever the composition or the prompt throws.
     private static func exitCode(
         ofPromptPlaying script: [ScriptedPassStep],
@@ -185,7 +185,7 @@ struct ExitCodeTests {
     }
 
     /// A scripted refusal exits 3. The model throws the guardrail
-    /// violation, which the turn owner maps to the `refusal` stop reason.
+    /// violation, which the prompt owner maps to the `refusal` stop reason.
     @Test(.timeLimit(.minutes(1)))
     func aScriptedRefusalExitsRefusal() async throws {
         let code = try await Self.exitCode(
@@ -197,7 +197,7 @@ struct ExitCodeTests {
 
     /// A scripted cancellation exits 4. The model streams one delta and
     /// then holds, and the watch offers its one arrival once that delta
-    /// is on the answer descriptor, so the turn ends for one reason only.
+    /// is on the answer descriptor, so the prompt ends for one reason only.
     @Test(.timeLimit(.minutes(1)))
     func aScriptedCancellationExitsCancelled() async throws {
         let code = try await Self.exitCode(
@@ -208,8 +208,8 @@ struct ExitCodeTests {
         #expect(code == .cancelled)
     }
 
-    /// A turn whose wire ended before an idle update arrived exits 1. The
-    /// turn has no outcome to report, and a script must not read that as
+    /// A prompt whose wire ended before an idle update arrived exits 1. The
+    /// prompt has no outcome to report, and a script must not read that as
     /// a finished answer.
     @Test func aPromptWithNoStopReasonExitsError() {
         #expect(AgentExitCode(prompt: RunPromptResult(stopReason: nil)) == .error)

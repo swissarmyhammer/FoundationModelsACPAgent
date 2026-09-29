@@ -24,11 +24,27 @@ comments:
     - Not in scope: about 330 lines of comments and string literals in Tests/ and IntegrationTests/ still say "turn". Examples are the prompt texts `"first turn"` and `"Run the scripted tool turn"`. Task ^yxmr32k now tracks that work.
     - next: review
   timestamp: 2026-09-29T18:39:08.099813+00:00
+- actor: claude-code
+  id: 01m3q8a8cxf9zjydxf328k2hza
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 10d61f7). 49 files reviewed. Findings 0, confirmed 0, refuted 0, attempted 42, failed 0. The declined items name only the old paths that the git mv renames removed (PromptTurnTests.swift, ComposedTurnFixture.swift, ScriptedTurnFixture.swift). No prior review findings are on the task.
+    - next: The task is in done. The "turn" prose in comments and test texts is card ^yxmr32k. The "turn" prose in Sources and docs is card ^wqe0awe.
+  timestamp: 2026-09-29T18:54:57.437101+00:00
+- actor: claude-code
+  id: 01m3q8ah9qz2ppz8kjypjrrhhn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 50 files (3 git mv: ScriptedPromptFixture.swift, PromptExecutionTests.swift, ComposedPromptFixture.swift)
+    - test: green — swift test 615 tests pass (same count as before); IntegrationTests build ok
+    - commit: 10d61f7
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T18:55:06.551973+00:00
 depends_on:
 - 01M3A32E8EVDZ16ZQ8QF9513F2
 - 01M3A32KQB5RFWNGX6M258Q0H3
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: f680
 title: Rename the "turn" names of the test support and the test files to "prompt"
 ---
 ## Why

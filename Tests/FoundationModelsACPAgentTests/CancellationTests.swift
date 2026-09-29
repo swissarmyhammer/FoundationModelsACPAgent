@@ -8,14 +8,14 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// Cancellation (plan.md §8.6, §10.1): the `session/cancel`
-/// notification, the two endings of a cancelled turn, the strict
+/// notification, the two endings of a cancelled prompt, the strict
 /// `idle(cancelled)` terminator, and the no-op cancels for an idle,
 /// unknown, or closed session.
 @Suite struct CancellationTests {
     // MARK: - Constants
 
     /// The prompt text of the wire tests.
-    private static let promptText = "Run one long turn"
+    private static let promptText = "Run one long prompt"
 
     /// The SDK tool-call id the synthetic tool events carry.
     private static let toolCallId = "call-1"
@@ -33,7 +33,7 @@ import Testing
 
     /// Wires the shared fixture with this suite's directory label.
     ///
-    /// - Parameter script: The steps the model plays on every turn.
+    /// - Parameter script: The steps the model plays on every pass.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
@@ -52,8 +52,8 @@ import Testing
 
     // MARK: - The throw ending, and the strict terminator (§8.6)
 
-    /// A `session/cancel` during a long-running turn ends the turn as
-    /// `idle` with `cancelled` — the held turn raises
+    /// A `session/cancel` during a long-running prompt ends the prompt as
+    /// `idle` with `cancelled` — the held pass raises
     /// `CancellationError`, which maps to `cancelled`, never to a
     /// JSON-RPC error and never to `refusal` — and the idle update is
     /// strictly the last update: nothing of any kind arrives after it.
@@ -67,8 +67,8 @@ import Testing
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
         _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        // The agent clears the finished turn after the idle went out,
-        // so the collector holds everything the turn sent once the
+        // The agent clears the finished prompt after the idle went out,
+        // so the collector holds everything the prompt sent once the
         // session is available again.
         try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         let updates = await fixture.collector.updates
@@ -84,7 +84,7 @@ import Testing
 
     // MARK: - The normal-completion ending (§8.6)
 
-    /// A turn that ignores the cancellation and completes normally with
+    /// A prompt that ignores the cancellation and completes normally with
     /// a real answer still ends `idle` with `cancelled`, never
     /// `end_turn`: the client asked to cancel, and the recorded request
     /// wins over the stream's clean finish.
@@ -296,7 +296,7 @@ import Testing
     // MARK: - The no-op cancels (§8.6, §10.1)
 
     /// A cancel of an idle session is a no-op: no error, no update, and
-    /// no state change. A later turn runs untouched and ends with
+    /// no state change. A later prompt runs untouched and ends with
     /// `end_turn`, so the ignored cancel did not leak into it.
     @Test(.timeLimit(.minutes(1)))
     func cancelOfAnIdleSessionIsANoOpWithNoStateChange() async throws {

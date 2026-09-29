@@ -10,7 +10,7 @@ import Testing
 
 /// The six builtin slash commands (plan.md §14.1, source 1): `/compact`,
 /// `/context`, `/memory`, `/status`, `/config` and `/help`. Each streams its
-/// text as an `.action` turn, with no model turn. The suite drives them over
+/// text as an `.action` prompt, with no model pass. The suite drives them over
 /// the harness and asserts the streamed text and the filesystem effects.
 struct BuiltinCommandsTests {
     /// The bare names of the six builtins, in registration order.
@@ -96,7 +96,7 @@ struct BuiltinCommandsTests {
                 cwd: cwd, userDirectory: userDirectory)
         }
 
-        /// Prompts `command` over the wire, waits for the turn to end, and
+        /// Prompts `command` over the wire, waits for the prompt to end, and
         /// returns the streamed agent-message text joined into one string.
         ///
         /// - Parameter command: The full command text, e.g. `"/status"`.
@@ -163,7 +163,7 @@ struct BuiltinCommandsTests {
         #expect(!report.contains("not measured yet"))
     }
 
-    /// `/context` before the first model turn streams a line that never
+    /// `/context` before the first model pass streams a line that never
     /// contains the word NaN.
     @Test(.timeLimit(.minutes(1)))
     func contextBeforeAnyPromptNeverPrintsNaN() async throws {
@@ -329,21 +329,21 @@ struct BuiltinCommandsTests {
         #expect(reloaded.configuration == configuration)
     }
 
-    // MARK: - No model turn (plan.md §14.3)
+    // MARK: - No model pass (plan.md §14.3)
 
-    /// The sentinel a scripted model would stream on a model turn. No builtin
+    /// The sentinel a scripted model would stream on a model pass. No builtin
     /// output ever carries it, so its absence proves the backend was not
     /// invoked.
     private static let modelSentinel = "SCRIPTED-MODEL-BACKEND-SENTINEL"
 
     /// None of the six builtins invokes the model backend: a scripted model
-    /// that would stream a sentinel on any turn is never reached, so no
+    /// that would stream a sentinel on any pass is never reached, so no
     /// builtin's streamed text carries the sentinel.
     @Test(.timeLimit(.minutes(1)))
     func noBuiltinInvokesTheModelBackend() async throws {
         for name in Self.builtinNames {
             let fixture = try await Fixture.make(
-                label: "BuiltinCommandsTests-noturn-\(name)",
+                label: "BuiltinCommandsTests-no-model-pass-\(name)",
                 loader: makeScriptedModelLoader(script: [.textDelta(Self.modelSentinel), .endPass]))
             let result = try await fixture.runCommand("/\(name)")
             #expect(!result.text.contains(Self.modelSentinel))
@@ -397,7 +397,7 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     private static let seedUsage = (input: 1, output: 1)
 
     /// The short summary a successful summarizer call returns.
-    private static let summaryText = "A short synthesized summary of the earlier turns."
+    private static let summaryText = "A short synthesized summary of the earlier prompts."
 
     /// The seed transcript this backend folds.
     private let entries: [Transcript.Entry]

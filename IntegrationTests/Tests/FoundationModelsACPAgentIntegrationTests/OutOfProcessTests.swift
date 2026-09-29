@@ -49,7 +49,7 @@ private final class ObservedAgents: Sendable {
 
 /// The `--out-of-process` contract of `acp-agent run`.
 ///
-/// Serialized so at most one spawned turn of this suite runs at a time.
+/// Serialized so at most one spawned prompt of this suite runs at a time.
 @Suite(.serialized)
 struct OutOfProcessTests {
     // MARK: - Constants
@@ -65,7 +65,7 @@ struct OutOfProcessTests {
     private static let resumeOption = "--resume"
 
     /// A session id no recorded session carries. `--resume` on it makes the
-    /// turn fail after the child has started, which is the failing path the
+    /// prompt fail after the child has started, which is the failing path the
     /// reap must also cover.
     private static let unknownSessionID = "no-session-carries-this-id"
 
@@ -73,19 +73,19 @@ struct OutOfProcessTests {
     /// the answer is deterministic and is not empty.
     private static let promptText = "the wire path gives one answer"
 
-    /// The prompt of the cases that must hold a turn open. The stub model
+    /// The text of the cases that must hold a prompt open. The stub model
     /// echoes it word by word, so eight words are eight chunks.
     private static let pacedPromptText = "one two three four five six seven eight"
 
     /// The pause between two chunks, in milliseconds. Eight chunks at this
-    /// pause make a turn of about one and a half seconds, which is long
+    /// pause make a prompt of about one and a half seconds, which is long
     /// enough to read the live process table inside it.
     private static let chunkDelayMilliseconds = 180
 
     /// How many agents one `--out-of-process` run starts: one.
     private static let expectedChildCount = 1
 
-    /// The exit code of a run that reached the end of its turn (§5.8).
+    /// The exit code of a run that reached the end of its prompt (§5.8).
     private static let endTurnExitCode: Int32 = 0
 
     /// The exit code of an error (§5.8).
@@ -106,7 +106,7 @@ struct OutOfProcessTests {
     private static let exitLimitSeconds = 30
 
     /// How long a child may take to end after its last signal. A cancelled
-    /// turn ends in milliseconds, and the whole uninterrupted turn lasts
+    /// prompt ends in milliseconds, and the whole uninterrupted prompt lasts
     /// under two seconds, so this bound is generous for both.
     private static let exitLimit: Swift.Duration = .seconds(exitLimitSeconds)
 
@@ -142,7 +142,7 @@ struct OutOfProcessTests {
     ///
     /// - Parameters:
     ///   - label: The directory label.
-    ///   - signalCount: How many `SIGINT`s to send. Zero runs the turn to
+    ///   - signalCount: How many `SIGINT`s to send. Zero runs the prompt to
     ///     its end.
     ///   - observed: Where the reading of the live run goes.
     /// - Returns: The finished run.
@@ -196,7 +196,7 @@ struct OutOfProcessTests {
     /// No process of the child's process group outlives the run, in each of
     /// success, failure and interrupt.
     ///
-    /// The success row reads the run's own child while the turn streams,
+    /// The success row reads the run's own child while the prompt streams,
     /// which is the one moment that child can be named, and then asks
     /// whether its whole process group is still alive. The other two rows
     /// never see the child, so each asks whether any agent has outlived the
@@ -218,7 +218,7 @@ struct OutOfProcessTests {
             "a process of the child's group outlived the successful run")
 
         // The failing row. `--resume` names a session no listing carries, so
-        // the turn fails after the child has started, and the reap of the
+        // the prompt fails after the child has started, and the reap of the
         // failing path is what this row reads.
         let failed = try await Self.runAgentCLI(
             arguments: [
@@ -227,7 +227,7 @@ struct OutOfProcessTests {
             ],
             label: "OutOfProcess-failure")
         #expect(failed.exitCode == Self.errorExitCode, "stderr: \(failed.standardError)")
-        #expect(failed.standardOutput.isEmpty, "a failed turn wrote to stdout")
+        #expect(failed.standardOutput.isEmpty, "a failed prompt wrote to stdout")
         try ProcessCensus.expectNoAgentOutlivedItsRun()
 
         // The interrupted row. The first `Ctrl-C` sends `session/cancel` over

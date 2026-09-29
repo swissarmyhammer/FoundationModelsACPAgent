@@ -29,7 +29,7 @@ import Testing
 
     /// Wires the shared fixture with this suite's directory label.
     ///
-    /// - Parameter script: The steps the model plays on every turn.
+    /// - Parameter script: The steps the model plays on every pass.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
@@ -78,7 +78,7 @@ import Testing
 
     // MARK: - The §8.1 order
 
-    /// A scripted turn streams the acknowledge-then-notify order: the
+    /// A scripted prompt streams the acknowledge-then-notify order: the
     /// `{}` response returns first, then the echo, the first-activity
     /// info update, `running`, the chunks, and one `idle` with
     /// `end_turn`. The echo owns the message identity (§8.3): the agent
@@ -115,7 +115,7 @@ import Testing
 
         #expect(
             isRunningState(updates[2].update),
-            "expected running before the turn output, got \(updates[2])")
+            "expected running before the prompt output, got \(updates[2])")
         #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
@@ -125,8 +125,8 @@ import Testing
 
     // MARK: - The busy refusal (§7.1)
 
-    /// A second `session/prompt` during a running turn answers a client
-    /// error and does not disturb the first turn.
+    /// A second `session/prompt` during a running prompt answers a client
+    /// error and does not disturb the first prompt.
     @Test(.timeLimit(.minutes(1)))
     func aBusySessionRefusesASecondPromptAsAClientError() async throws {
         let fixture = try await Self.makeFixture(script: [.hold])
@@ -158,7 +158,7 @@ import Testing
 
     // MARK: - The stop-reason matrix (§8.2)
 
-    /// A guardrail refusal ends the turn as `idle` with `refusal`.
+    /// A guardrail refusal ends the prompt as `idle` with `refusal`.
     @Test(.timeLimit(.minutes(1)))
     func aGuardrailRefusalEndsThePromptWithTheRefusalStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.fail(.guardrailViolation)])
@@ -170,7 +170,7 @@ import Testing
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .refusal)
     }
 
-    /// A context overflow ends the turn as `idle` with `max_tokens`.
+    /// A context overflow ends the prompt as `idle` with `max_tokens`.
     @Test(.timeLimit(.minutes(1)))
     func aContextOverflowEndsThePromptWithTheMaxTokensStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.fail(.exceededContextWindow)])
@@ -182,7 +182,7 @@ import Testing
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .maxTokens)
     }
 
-    /// A `session/cancel` during a held turn surfaces as `idle` with
+    /// A `session/cancel` during a held prompt surfaces as `idle` with
     /// `cancelled`, not as an error (§8.6).
     @Test(.timeLimit(.minutes(1)))
     func aCancelledPromptEndsIdleWithTheCancelledStopReason() async throws {
@@ -220,10 +220,10 @@ import Testing
                 == .unknown(PromptExecution.unmappedStopReasonValue))
     }
 
-    /// Whether one turn stop is the `failed` stop. The stop carries a
+    /// Whether one prompt stop is the `failed` stop. The stop carries a
     /// message, so no test can name one value to compare against.
     ///
-    /// - Parameter stop: The turn stop to read.
+    /// - Parameter stop: The prompt stop to read.
     /// - Returns: `true` for a failed stop.
     private static func isFailed(_ stop: PromptStop) -> Bool {
         if case .failed = stop { return true }
@@ -244,7 +244,7 @@ import Testing
 
     // MARK: - The projection core (synthetic event streams)
     //
-    // The sinked-turn and event-stream fixtures live in
+    // The sinked-execution and event-stream fixtures live in
     // `Support/ProjectionTestSupport.swift`, shared with
     // `EventProjectionTests`.
 
@@ -316,7 +316,7 @@ import Testing
 
     /// Tool events project to `tool_call_update` sends in stream order
     /// (§8.4) and do not disturb the text stream: the two text chunks
-    /// still share one message id, and the turn still ends with one
+    /// still share one message id, and the prompt still ends with one
     /// `idle`.
     @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
         let (execution, recorder) = makeSinkedExecution()
@@ -376,9 +376,9 @@ import Testing
         #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
     }
 
-    // MARK: - The no-output turn (§8.2, task ^pez780d)
+    // MARK: - The no-output prompt (§8.2, task ^pez780d)
 
-    /// A turn whose last generate call reached the output token ceiling
+    /// A prompt whose last generate call reached the output token ceiling
     /// ends with the `_truncated` extension stop reason, never with a
     /// bare `end_turn` (task ^bw9qt1z).
     @Test func aPromptThatEndsAtTheTokenCeilingEndsWithTheTruncatedStopReason() async throws {
@@ -398,7 +398,7 @@ import Testing
                 == .unknown(PromptExecution.truncatedStopReasonValue))
     }
 
-    /// Only the LAST generate call decides: a tool-calling turn that
+    /// Only the LAST generate call decides: a tool-calling prompt that
     /// reached the ceiling in an earlier call, and then completed its
     /// last call, keeps `end_turn`.
     @Test func anEarlierCeilingDoesNotTruncateAPromptWhoseLastCallCompleted() async throws {
@@ -418,7 +418,7 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    /// A completed turn with no output and a zero-token usage report
+    /// A completed prompt with no output and a zero-token usage report
     /// ends with the honest `_no_output` extension stop reason, never
     /// with a bare `end_turn`.
     @Test func aZeroTokenPromptWithNoOutputEndsWithTheNoOutputStopReason() async throws {
@@ -436,7 +436,7 @@ import Testing
                 == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
-    /// A turn that streamed text keeps `end_turn`, also when the usage
+    /// A prompt that streamed text keeps `end_turn`, also when the usage
     /// report is zero: the text is real output.
     @Test func aZeroTokenPromptWithTextKeepsTheEndTurnStopReason() async throws {
         let (execution, recorder) = makeSinkedExecution()
@@ -450,7 +450,7 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    /// A turn that made a tool call keeps `end_turn`, also when the
+    /// A prompt that made a tool call keeps `end_turn`, also when the
     /// usage report is zero: the call is real output.
     @Test func aZeroTokenPromptWithAToolCallKeepsTheEndTurnStopReason() async throws {
         let (execution, recorder) = makeSinkedExecution()
@@ -465,7 +465,7 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    /// A turn that carried an attachment report keeps `end_turn`, also
+    /// A prompt that carried an attachment report keeps `end_turn`, also
     /// when the usage report is zero: the report's `tool_call_update`
     /// is real output.
     @Test func aZeroTokenPromptWithAToolCallReportKeepsTheEndTurnStopReason() async throws {
@@ -488,8 +488,8 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    /// A completed turn with no usage report keeps `end_turn`: with no
-    /// report there is no zero-token evidence, and the turn must not
+    /// A completed prompt with no usage report keeps `end_turn`: with no
+    /// report there is no zero-token evidence, and the prompt must not
     /// invent one.
     @Test func aPromptWithNoUsageReportKeepsTheEndTurnStopReason() async throws {
         let (execution, recorder) = makeSinkedExecution()
@@ -520,7 +520,7 @@ import Testing
     // MARK: - The stalled generation (§8.2, task ^s0bw5cv)
 
     /// Makes one stall report of the shape Router emits on a streaming
-    /// turn.
+    /// request.
     ///
     /// - Parameters:
     ///   - withoutProgress: How long the generation has gone with no
@@ -538,7 +538,7 @@ import Testing
     }
 
     /// A generation that has made no fragment for the whole bound ends
-    /// the turn with the honest `_stalled` extension stop reason.
+    /// the prompt with the honest `_stalled` extension stop reason.
     ///
     /// The stream never finishes, which is the shape of the defect: a
     /// model the loader cannot drive reports a stall on each interval
@@ -564,7 +564,7 @@ import Testing
     }
 
     /// A stall shorter than the bound is a report and not a bound: the
-    /// generation continues, and the turn ends on its own events.
+    /// generation continues, and the prompt ends on its own events.
     @Test(.timeLimit(.minutes(1)))
     func aStallShorterThanTheBoundDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
@@ -582,7 +582,7 @@ import Testing
     }
 
     /// A stall past the bound on a generation that already made a
-    /// fragment does not end the turn: a slow decode is not a model
+    /// fragment does not end the prompt: a slow decode is not a model
     /// that cannot generate.
     @Test(.timeLimit(.minutes(1)))
     func aStallPastTheBoundAfterAFragmentDoesNotEndThePrompt() async throws {
@@ -665,17 +665,17 @@ import Testing
     /// the tier-4 `greet` prompt, sent through `acp-agent run`, made its
     /// first tool call 555 seconds after the prompt, and then wrote the
     /// three files, ran pytest green and printed the expected line. The
-    /// turn thus makes no observable output at all for the first nine
+    /// prompt thus makes no observable output at all for the first nine
     /// minutes.
     private static let measuredSecondsToFirstOutput = 555
 
     /// A generation that has made no fragment for as long as a real
-    /// build task takes to reach its first output does NOT end the turn.
+    /// build task takes to reach its first output does NOT end the prompt.
     ///
     /// The stall reports of that measured run said `0 fragments` for the
-    /// whole turn, while `runCode` and shell calls were completing, so a
+    /// whole prompt, while `runCode` and shell calls were completing, so a
     /// fragment count of zero never proves that the model made nothing.
-    /// A bound under the measured time therefore ends a healthy turn.
+    /// A bound under the measured time therefore ends a healthy prompt.
     @Test(.timeLimit(.minutes(1)))
     func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(

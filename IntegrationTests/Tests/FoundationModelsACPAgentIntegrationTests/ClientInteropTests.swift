@@ -25,7 +25,7 @@ import Testing
 
 /// The interop contract of `acp-client run … -- acp-agent acp`.
 ///
-/// Serialized so at most one spawned turn runs at a time.
+/// Serialized so at most one spawned prompt runs at a time.
 @Suite(.serialized)
 struct ClientInteropTests {
     // MARK: - Constants
@@ -33,13 +33,13 @@ struct ClientInteropTests {
     /// The product name of the client package's CLI this suite runs.
     private static let clientExecutableName = "acp-client"
 
-    /// The subcommand of `acp-client` that runs one turn.
+    /// The subcommand of `acp-client` that runs one prompt.
     private static let runSubcommand = "run"
 
     /// The separator the agent command follows on the client's command line.
     private static let agentCommandSeparator = "--"
 
-    /// The prompt of the turn. The stub model echoes it, so the answer is
+    /// The prompt text. The stub model echoes it, so the answer is
     /// deterministic and is not empty.
     private static let promptText = "the two roles meet on a real pipe"
 
@@ -47,12 +47,12 @@ struct ClientInteropTests {
     /// ndJSON frame carries it, and stdout holds only answer text.
     private static let wireMarker = "\"jsonrpc\""
 
-    /// The exit code of a turn that reached its end.
+    /// The exit code of a prompt that reached its end.
     private static let endTurnExitCode: Int32 = 0
 
     // MARK: - The subprocess drivers
 
-    /// Runs the built `acp-client` for one turn against the built
+    /// Runs the built `acp-client` for one prompt against the built
     /// `acp-agent`, over the stub model.
     ///
     /// - Parameter label: The directory label, so a leftover directory says
@@ -74,7 +74,7 @@ struct ClientInteropTests {
             environment: TierThreeFixture.stubModelEnvironment)
     }
 
-    /// Runs the built `acp-agent` for the same turn in process, which is the
+    /// Runs the built `acp-agent` for the same prompt in process, which is the
     /// yardstick the client's answer is held to.
     ///
     /// - Parameter label: The directory label.

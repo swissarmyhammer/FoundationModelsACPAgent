@@ -3,7 +3,7 @@
 //
 // `BuiltExecutableRun` starts a process and waits for it. An interrupt
 // proof needs three things that plain run cannot give: it must know when
-// the child has begun to answer, so the signal lands inside a live turn
+// the child has begun to answer, so the signal lands inside a live prompt
 // and not before it; it must send more than one signal, and say how many
 // of them reached a child that was still there; and it must bound the
 // wait, so a child that ignores the interrupt fails the test instead of

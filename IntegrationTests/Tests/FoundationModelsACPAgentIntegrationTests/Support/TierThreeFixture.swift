@@ -42,7 +42,7 @@ enum TierThreeFixture {
 
     /// The environment variable that paces the stub model: the pause, in
     /// milliseconds, between two chunks of the echoed prompt. It is what
-    /// holds a turn open long enough for a signal to land inside it
+    /// holds a prompt open long enough for a signal to land inside it
     /// (cli-plan.md §5.9).
     static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
 
@@ -53,7 +53,7 @@ enum TierThreeFixture {
     static let stubModelEnvironment = [stubModelVariable: stubModelEnabledValue]
 
     /// The environment pairs that select the stub model and pace it, so a
-    /// turn stays open long enough for this process to read what a live run
+    /// prompt stays open long enough for this process to read what a live run
     /// carries.
     ///
     /// - Parameter chunkDelayMilliseconds: The pause between two chunks of

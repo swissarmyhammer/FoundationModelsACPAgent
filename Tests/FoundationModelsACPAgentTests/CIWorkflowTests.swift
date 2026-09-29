@@ -17,7 +17,7 @@ import Testing
 /// the shared workflow at `@main`; exactly one job exists and it has no
 /// `steps:` key, thus every test run is delegated;
 /// `integration-package-path` names the nested package and
-/// `integration-no-parallel` holds the live turns to one at a time; no
+/// `integration-no-parallel` holds the live prompts to one at a time; no
 /// other selector or `integration-*` input is present; no source, test,
 /// integration, or workflow file names either environment variable that
 /// used to gate the slow suites; the triggers are a push to `main`, a
@@ -49,7 +49,7 @@ struct CIWorkflowTests {
     /// integration job, makes the unit job build the nested package on
     /// every run, and makes the integration job run
     /// `swift test --package-path` on it. `integration-no-parallel` holds
-    /// the live model turns to one at a time: Swift Testing starts a time
+    /// the live model prompts to one at a time: Swift Testing starts a time
     /// limit before a test takes a turnstile, so a parallel run spends the
     /// limit on queue time.
     private static let requiredInputs = [

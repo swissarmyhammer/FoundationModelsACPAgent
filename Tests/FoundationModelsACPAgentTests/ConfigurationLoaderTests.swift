@@ -481,7 +481,7 @@ import Testing
     }
 
     /// The `tools` and `sandbox` sections decode their bodies through the
-    /// codec (plan.md §11.2, §11.7): a `shell: false` turns the tool off and
+    /// codec (plan.md §11.2, §11.7): a `shell: false` disables the tool and
     /// an `extraWritePaths` entry lands in the sandbox section.
     @Test func toolsAndSandboxBodiesDecodeThroughTheCodec() throws {
         let fixture = Fixture()

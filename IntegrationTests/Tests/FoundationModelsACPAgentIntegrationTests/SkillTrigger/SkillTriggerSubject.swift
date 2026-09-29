@@ -6,7 +6,7 @@ import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// What one sample run observed: which skills the model loaded, and how the
-/// turn ended.
+/// prompt ended.
 struct SkillTriggerRun: Sendable {
     /// The sample that was driven.
     let sample: SkillTriggerSample
@@ -17,17 +17,17 @@ struct SkillTriggerRun: Sendable {
     /// How many `skills` calls of any operation the model made.
     let skillsCallCount: Int
 
-    /// The stop reason of the turn, or `nil` when the deadline passed.
+    /// The stop reason of the prompt, or `nil` when the deadline passed.
     let stopReason: StopReason?
 
-    /// The wall-clock seconds of the turn.
+    /// The wall-clock seconds of the prompt.
     let elapsedSeconds: Double
 
     /// The title of every tool call the wire carried, which names the tool.
     /// A run that saw no `skills` call says here what it did see instead.
     let toolTitlesSeen: [String]
 
-    /// The start of the text the model wrote in the turn. A run that loaded
+    /// The start of the text the model wrote in the prompt. A run that loaded
     /// no skill says here what the model did instead.
     let answerPreview: String
 
@@ -87,13 +87,13 @@ struct SkillTriggerSubject {
     ///
     /// The measurement is the FIRST move: does the model load a skill for
     /// this task? A run therefore stops at the decision — it cancels the
-    /// turn as soon as a `use skill` call reaches the wire, and it cancels
+    /// prompt as soon as a `use skill` call reaches the wire, and it cancels
     /// at this deadline when none does. A sample that no skill covers
     /// always waits the whole deadline, because nothing can end it early.
     ///
     /// Measured on 2026-09-19 with `mlx-community/Qwen3.8-27B-mxfp4`: the
     /// five covered tasks each made their `use skill` call inside the first
-    /// minute of a turn that then ran for 202 to 297 seconds. Waiting for
+    /// minute of a prompt that then ran for 202 to 297 seconds. Waiting for
     /// the idle terminator thus paid three to four minutes for a fact the
     /// first minute already held.
     static let decisionDeadline: Duration = decisionDeadlineFromEnvironment
@@ -101,7 +101,7 @@ struct SkillTriggerSubject {
     /// The user-layer `config.yaml`: the transcripts record under the user
     /// directory, outside the workspace, so a removed workspace keeps its
     /// transcript. The shell and the code context stay off, because no
-    /// sample needs them and each one makes a turn slower.
+    /// sample needs them and each one makes a prompt slower.
     ///
     /// The standard slot is ``skillTriggerModel``, which is the shipped
     /// standard model unless `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another
@@ -174,7 +174,7 @@ struct SkillTriggerSubject {
             sessionId: sessionId,
             deadline: ContinuousClock.now + Self.decisionDeadline)
         let elapsed = start.duration(to: ContinuousClock.now)
-        // The turn goes on doing the work of the task, and the work is not
+        // The prompt goes on doing the work of the task, and the work is not
         // the measurement. Cancel it, and wait for the idle the cancel
         // gives, so the next sample starts on a quiet session.
         try await harness.connection.sessionCancel(
@@ -243,7 +243,7 @@ struct SkillTriggerSubject {
     ///
     /// The wire carries the name of each tool call in `title` and its
     /// arguments in `rawInput`, so a run reads the decision as it happens
-    /// and does not wait for the recorded transcript at the end of a turn.
+    /// and does not wait for the recorded transcript at the end of a prompt.
     ///
     /// - Parameters:
     ///   - collector: The recorder of the sequence.

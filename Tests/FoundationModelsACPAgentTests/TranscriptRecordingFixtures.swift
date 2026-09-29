@@ -9,12 +9,12 @@ import FoundationModelsRouter
 // `TranscriptStore` tests need real recorded session directories, because
 // no shipped `TranscriptRecorder` is reachable and `TranscriptEvent` has no
 // public init. The router records events by diffing
-// `backend.transcriptEntries()` after each turn, so the stub backend here
-// accumulates one `.prompt` and one `.response` entry per turn — unlike
+// `backend.transcriptEntries()` after each request, so the stub backend here
+// accumulates one `.prompt` and one `.response` entry per request — unlike
 // `EchoSessionBackend`, whose empty transcript records nothing.
 
 /// A session backend whose synthetic transcript grows by one `.prompt`
-/// and one `.response` entry per turn, so a routed session over it
+/// and one `.response` entry per request, so a routed session over it
 /// records real events.
 ///
 /// `@unchecked Sendable`, because the transcript array mutates; the owning
@@ -137,16 +137,16 @@ struct RecordedProjectFixture {
     /// The `sessions.jsonl` index of the root.
     let index: SessionIndex
 
-    /// Drives one recorded root session with one turn for each prompt
+    /// Drives one recorded root session with one request for each prompt
     /// and returns its id.
     ///
     /// - Parameters:
-    ///   - prompts: The turns to drive, in order.
+    ///   - prompts: The prompt texts to send, in order.
     ///   - agentSpawn: The spawn context, or `nil` for a plain root.
     /// - Returns: The session's ULID — the name of its directory.
     /// - Throws: Whatever driving the session throws.
     func makeRecordedSession(
-        prompts: [String] = ["one turn"],
+        prompts: [String] = ["one prompt"],
         agentSpawn: SessionSidecar.AgentSpawn? = nil
     ) async throws -> ULID {
         let session = profile.standard.makeSession(

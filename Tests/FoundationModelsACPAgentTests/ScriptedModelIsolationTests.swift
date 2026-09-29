@@ -12,7 +12,7 @@ import Testing
 /// container for each model identity. `ModelPool.shared` is process-wide,
 /// so two agents that name the same stub model would share one container:
 /// the first script loaded would answer every later agent, and each later
-/// agent would report a turn it did not script. Each agent therefore makes
+/// agent would report a prompt it did not script. Each agent therefore makes
 /// its own pool, and this suite proves it.
 @Suite struct ScriptedModelIsolationTests {
     /// The directory label of this suite, so a leftover directory says
@@ -25,7 +25,7 @@ import Testing
     /// The answer the second agent scripts.
     private static let secondAnswer = "the second agent answers"
 
-    /// The prompt text both turns send.
+    /// The prompt text that both prompts send.
     private static let promptText = "Say what you were scripted to say"
 
     /// Two agents made in one process each play their own script. The
@@ -46,10 +46,10 @@ import Testing
         #expect(ScriptedPromptFixture.agentText(in: secondUpdates) == Self.secondAnswer)
     }
 
-    /// Prompts the fixture's session and waits for the turn to end.
+    /// Prompts the fixture's session and waits for the prompt to end.
     ///
     /// - Parameter fixture: The wired fixture to prompt.
-    /// - Returns: The collected notifications of the turn.
+    /// - Returns: The collected notifications of the prompt.
     /// - Throws: Whatever the prompt call or the wait throws.
     private static func promptAndWaitForIdle(
         of fixture: ScriptedPromptFixture

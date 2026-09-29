@@ -7,17 +7,17 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The agent-side half of task ^jz016kq: the recording of a scripted
-/// multi-turn session is faithful.
+/// multi-prompt session is faithful.
 ///
 /// The defect this suite guards was found in `FoundationModelsRouter` and
 /// corrected there: one unchanged `instructions` entry encoded to
 /// different bytes on two readings, the baseline check called that a
-/// rewrite, and the turn's entries went nowhere. These proofs read the
+/// rewrite, and the prompt's entries went nowhere. These proofs read the
 /// recording this package writes and state five facts about it:
 ///
-/// 1. Two turns record no `divergence` event while the tool surface
+/// 1. Two prompts record no `divergence` event while the tool surface
 ///    stands unchanged.
-/// 2. One turn is recorded whole: its `prompt`, its `toolCalls` entry
+/// 2. One prompt is recorded whole: its `prompt`, its `toolCalls` entry
 ///    with the `runCode` arguments, and its `response` with an entry.
 /// 3. `SessionEvent.toolCall` reaches the wire for the `runCode` call.
 /// 4. The recorded event count never falls between two reads of one
@@ -29,18 +29,18 @@ import Testing
 /// touches no network.
 struct TranscriptFidelityTests {
     /// The text the scripted model streams before it calls its tool. A
-    /// turn with text gives the `response` entry a non-empty segment.
+    /// pass with text gives the `response` entry a non-empty segment.
     private static let replyText = "the snippet ran"
 
     /// The snippet the scripted `runCode` call carries. It computes in
     /// the sandbox and reads nothing, so the proof stays fast.
     private static let snippetCode = "return 1 + 1;"
 
-    /// The prompt text of every driven turn. Each turn appends its own
-    /// ordinal, so the two turns carry different text.
-    private static let promptText = "run the snippet, turn "
+    /// The text of every driven prompt. Each prompt appends its own
+    /// ordinal, so the two prompts carry different text.
+    private static let promptText = "run the snippet, prompt "
 
-    /// The scripted id of the turn's first tool call — the `runCode`
+    /// The scripted id of the prompt's first tool call — the `runCode`
     /// call. The scripted backend mints ids by ordinal.
     private static let runCodeCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "1"
 
@@ -53,7 +53,7 @@ struct TranscriptFidelityTests {
     /// The `instructions` kind string.
     private static let instructionsKind = "instructions"
 
-    // MARK: - One two-turn run
+    // MARK: - One two-prompt run
 
     /// What one two-prompt scripted run left behind.
     private struct FidelityRun {
@@ -68,7 +68,7 @@ struct TranscriptFidelityTests {
         let eventsAfterSecondPrompt: [TranscriptEvent]
 
         /// The session's recorded lines, read from disk after the
-        /// second turn.
+        /// second prompt.
         let recordedLines: [RecordedTranscriptLine]
     }
 
@@ -103,7 +103,7 @@ struct TranscriptFidelityTests {
                 under: root, sessionId: fixture.sessionId))
     }
 
-    /// Prompts one turn and waits until its response is recorded and
+    /// Sends one prompt and waits until its response is recorded and
     /// the session accepts the next prompt.
     ///
     /// - Parameters:
@@ -133,7 +133,7 @@ struct TranscriptFidelityTests {
 
     // MARK: - The proofs
 
-    @Test("two turns record no divergence while the tool surface is unchanged", .timeLimit(.minutes(1)))
+    @Test("two prompts record no divergence while the tool surface is unchanged", .timeLimit(.minutes(1)))
     func twoPromptsRecordNoDivergence() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-divergence")
 
@@ -143,7 +143,7 @@ struct TranscriptFidelityTests {
         #expect(run.eventsAfterSecondPrompt.contains { $0.kind == .response })
     }
 
-    @Test("one turn records its prompt, its toolCalls with the arguments, and its response", .timeLimit(.minutes(1)))
+    @Test("one prompt records its prompt text, its toolCalls with the arguments, and its response", .timeLimit(.minutes(1)))
     func onePromptIsRecordedWhole() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-whole")
 

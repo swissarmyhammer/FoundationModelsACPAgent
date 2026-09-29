@@ -26,7 +26,7 @@ enum Poll {
     /// Polls `condition` until it holds, or fails the case at the
     /// deadline.
     ///
-    /// The loop reads the cancellation flag on each turn, so a caller
+    /// The loop reads the cancellation flag on each iteration, so a caller
     /// that cancels the waiting task ends the wait at once and the task
     /// yields nothing after it.
     ///

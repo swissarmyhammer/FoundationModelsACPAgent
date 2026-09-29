@@ -32,8 +32,8 @@ import Testing
 @Suite struct TierTwoTests {
     // MARK: - Constants
 
-    /// The prompt of every scripted tool turn.
-    private static let promptText = "Run the scripted tool turn"
+    /// The prompt text of every scripted tool prompt.
+    private static let promptText = "Run the scripted tool pass"
 
     /// The name of the code-mode session tool the scripts invoke.
     private static let runCodeToolName = "runCode"
@@ -60,7 +60,7 @@ import Testing
     /// The exact content the projection proof writes to disk.
     private static let noteContent = "tier two wrote this line"
 
-    /// The project config of the note turn: change recording on.
+    /// The project config of the note prompt: change recording enabled.
     ///
     /// The flag makes each mutating verb call attach its structured
     /// `FileChangeSet`, which is the only permitted source of
@@ -195,7 +195,7 @@ import Testing
         try encodedText(of: text)
     }
 
-    /// The script of one tool turn: `runCode` with `code`, then the end.
+    /// The script of one tool pass: `runCode` with `code`, then the end.
     ///
     /// The snippets here finish inside the inline settle grace of
     /// `runCode`, so the `runCode` call answers the result itself. A run
@@ -292,13 +292,13 @@ import Testing
         "\(label)=\(value)"
     }
 
-    // MARK: - Turn driver
+    // MARK: - Prompt driver
 
-    /// Wires the fixture, prompts one scripted tool turn, waits for
+    /// Wires the fixture, prompts one scripted tool prompt, waits for
     /// the idle terminator, and flushes the coalescing buffer.
     ///
     /// - Parameters:
-    ///   - code: The snippet the turn runs.
+    ///   - code: The snippet the pass runs.
     ///   - label: The directory label of the calling proof.
     ///   - workingDirectory: The pre-made session working directory,
     ///     or `nil` to let the fixture make one.
@@ -482,7 +482,7 @@ import Testing
         try answerText(ofCall: runCodeCallId, in: updates)
     }
 
-    /// The joined ANSWER text of every update of one call of the turn.
+    /// The joined ANSWER text of every update of one call of the prompt.
     ///
     /// - Parameters:
     ///   - id: The `toolCallId` to read.
@@ -596,7 +596,7 @@ import Testing
     /// `tools.<serverName>.<verb>`, with no `mcp` segment.
     ///
     /// The three context facts come from the client end, through one
-    /// scripted tool turn:
+    /// scripted tool prompt:
     ///
     /// - **The root set.** The session opens with an additional root. A
     ///   read under that root answers the planted content, and a read
@@ -606,7 +606,7 @@ import Testing
     ///   `tools.files.readOnly`. The write refuses in band with the
     ///   capability's read-only correction, and nothing lands on disk.
     /// - **The resolved profile.** The flash slot loads a recording stub
-    ///   librarian that answers one selection. The turn's `searchTools`
+    ///   librarian that answers one selection. The prompt's `searchTools`
     ///   call records the selection prompt on that slot, and the answer
     ///   reports the verb the librarian selected.
     @Test(.timeLimit(.minutes(1)))
@@ -654,7 +654,7 @@ import Testing
         try await Self.assertTheContextReachedTheBuiltTools()
     }
 
-    /// Drives the wire half of proof 1: one scripted tool turn on a
+    /// Drives the wire half of proof 1: one scripted tool prompt on a
     /// session that carries an additional root, a read-only `files`
     /// section, and a recording librarian on the flash slot.
     ///
@@ -766,9 +766,9 @@ import Testing
         #expect(try Self.answerText(of: accumulated).contains(Self.noteContent))
     }
 
-    // MARK: - Proof 4: turn order
+    // MARK: - Proof 4: prompt order
 
-    /// The tool turn keeps §8.1's order on the wire: the `{}` response
+    /// The tool prompt keeps §8.1's order on the wire: the `{}` response
     /// acknowledges first, then `user_message`, `running`, the tool
     /// updates, and one `idle(end_turn)` as the terminator.
     ///
@@ -855,7 +855,7 @@ import Testing
     /// snippet, so it opens no ACP tool call of its own, and its answer
     /// reaches the wire under the `runCode` call that carried the
     /// snippet's result.
-    /// The proof reads every `tool_call_update` of the turn and asserts
+    /// The proof reads every `tool_call_update` of the prompt and asserts
     /// that the ping stands in exactly one call's ANSWER — that call's —
     /// and in no other.
     @Test(.timeLimit(.minutes(1)))
@@ -896,7 +896,7 @@ import Testing
                 Self.outcomeLine(label: Self.echoedAnswerLabel, value: Self.echoPing)))
 
         // The correlation: the answer rides the call that carried the
-        // snippet's result, and no other call of the turn carries it.
+        // snippet's result, and no other call of the prompt carries it.
         #expect(answeringIds == [answeringId])
         #expect(accumulated.status == .value(.completed))
         // The accumulated call is read through `answerText(of:)`, thus

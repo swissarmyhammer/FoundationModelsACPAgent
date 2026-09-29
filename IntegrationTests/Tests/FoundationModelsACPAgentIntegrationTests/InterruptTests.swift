@@ -16,7 +16,7 @@ import Testing
 // `swift test --package-path IntegrationTests` runs it.
 //
 // `ACP_AGENT_STUB_MODEL=1` makes the child deterministic and needs no
-// weights, and `ACP_AGENT_STUB_CHUNK_DELAY_MS` holds its turn open long
+// weights, and `ACP_AGENT_STUB_CHUNK_DELAY_MS` holds its prompt open long
 // enough for the signal to land inside it.
 
 /// The `SIGINT` contract of a running `acp-agent run`.
@@ -26,16 +26,16 @@ struct InterruptTests {
     /// The exit code of a cancelled run (cli-plan.md §5.8).
     private static let cancelledExitCode: Int32 = 4
 
-    /// The exit code of a run that reached the end of its turn.
+    /// The exit code of a run that reached the end of its prompt.
     private static let endTurnExitCode: Int32 = 0
 
-    /// The prompt of every turn here. The stub model echoes it word by
-    /// word, so the words are the chunks, and eight chunks give a turn
+    /// The text of every prompt here. The stub model echoes it word by
+    /// word, so the words are the chunks, and eight chunks give a prompt
     /// with room for a signal in the middle of it.
     private static let prompt = "one two three four five six seven eight"
 
     /// The pause between two chunks, in milliseconds. Eight chunks at
-    /// this pause make a turn of about one and a half seconds.
+    /// this pause make a prompt of about one and a half seconds.
     private static let chunkDelayMilliseconds = 180
 
     /// The pause between the two signals of the second case: none. The
@@ -57,8 +57,8 @@ struct InterruptTests {
     private static let exitLimitSeconds = 30
 
     /// How long a child may take to end after its last signal. A
-    /// cancelled turn ends in milliseconds, and the whole uninterrupted
-    /// turn lasts under two seconds, so this bound is generous for both.
+    /// cancelled prompt ends in milliseconds, and the whole uninterrupted
+    /// prompt lasts under two seconds, so this bound is generous for both.
     private static let exitLimit: Swift.Duration = .seconds(exitLimitSeconds)
 
     // MARK: - The subprocess driver
@@ -68,7 +68,7 @@ struct InterruptTests {
     /// arrive.
     ///
     /// - Parameters:
-    ///   - signalCount: How many `SIGINT`s to send. Zero runs the turn
+    ///   - signalCount: How many `SIGINT`s to send. Zero runs the prompt
     ///     to its end, which gives the answer an interrupted run is
     ///     compared against.
     ///   - label: The directory label, so a leftover directory says
@@ -95,19 +95,19 @@ struct InterruptTests {
 
     // MARK: - The contract
 
-    /// A `SIGINT` during a turn does not kill the process. The run ends
+    /// A `SIGINT` during a prompt does not kill the process. The run ends
     /// itself with exit 4, and the text that already arrived stays on
     /// stdout.
     ///
     /// A killed process would carry a signal status and would never
     /// reach an exit code of the §5.8 table. So the 4 is the proof that
-    /// the CLI answered the signal: it sent `session/cancel`, the turn
+    /// the CLI answered the signal: it sent `session/cancel`, the prompt
     /// ended `cancelled`, and the run mapped that to its code.
     ///
     /// The uninterrupted run of the same prompt is the yardstick for the
     /// text. The interrupted answer must be a **strict** prefix of it:
     /// not empty, so the chunks that arrived were kept; and not the
-    /// whole answer, so the turn really stopped early.
+    /// whole answer, so the prompt really stopped early.
     @Test(.timeLimit(.minutes(3)))
     func aSignalDuringAPromptExitsFourWithTheTextThatArrived() async throws {
         let whole = try await Self.runAgentCLI(signalCount: 0, label: "InterruptTests-whole")
@@ -122,7 +122,7 @@ struct InterruptTests {
             "the interrupted answer is not a prefix of the whole one: \(run.standardOutput)")
         #expect(
             run.standardOutput != whole.standardOutput,
-            "the whole answer arrived, so the turn never stopped early")
+            "the whole answer arrived, so the prompt never stopped early")
         #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
     }
 
@@ -139,7 +139,7 @@ struct InterruptTests {
     /// changes the outcome a script reads. It does not prove that the
     /// second signal is the only way out: this runtime ends a cancelled
     /// stream at its consumer, so the first signal already ends this
-    /// turn, and no spawned turn of the stub model can be made to ignore
+    /// prompt, and no spawned prompt of the stub model can be made to ignore
     /// a cancellation.
     @Test(.timeLimit(.minutes(3)))
     func twoSignalsEndTheProcessInsideTheTimeLimit() async throws {

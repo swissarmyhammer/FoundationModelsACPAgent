@@ -16,8 +16,8 @@ import Testing
 // `swift test --package-path IntegrationTests` runs it.
 //
 // The prompt case runs on the deterministic stub model, because its
-// contract is the exit code of a turn that ends, and a small real model
-// does not always end a turn. `StdioContractTests` drives the real profile
+// contract is the exit code of a prompt that ends, and a small real model
+// does not always end a prompt. `StdioContractTests` drives the real profile
 // and the live loader behind the spawned binary.
 
 /// The case's time limit in minutes. It covers the first-run model
@@ -28,7 +28,7 @@ private let spawnedRunTimeLimitMinutes = 20
 /// the exit code, the stdout purity, the stderr logs, and the agent
 /// reap.
 ///
-/// Serialized so at most one live model turn runs at a time.
+/// Serialized so at most one live model prompt runs at a time.
 @Suite(
     .serialized,
     .timeLimit(.minutes(spawnedRunTimeLimitMinutes)))
@@ -38,14 +38,14 @@ struct ClientServerTests {
     /// The product name of the one-shot client CLI this suite runs.
     private static let printExecutableName = "acp-print"
 
-    /// The trivial prompt of the live turn.
+    /// The trivial text of the live prompt.
     private static let promptText = "say hello"
 
     /// The wire marker that must never appear on `acp-print`'s stdout:
     /// every ndJSON frame carries it, and stdout holds only answer text.
     private static let wireMarker = "\"jsonrpc\""
 
-    /// The stop reason a completed turn logs to stderr.
+    /// The stop reason a completed prompt logs to stderr.
     private static let endTurnWireValue = "end_turn"
 
     /// A user-layer `config.yaml` that does not parse. The spawned agent
@@ -87,12 +87,12 @@ struct ClientServerTests {
     /// answer text to stdout, logs to stderr, exits 0 for `end_turn`,
     /// and leaves no agent process behind.
     ///
-    /// The turn runs on the deterministic stub model. This case proves the
-    /// contract of the CLI for a turn that ends, and only the stub model
-    /// always ends a turn. The small real model of the fixture wrote 14 KB
+    /// The prompt runs on the deterministic stub model. This case proves the
+    /// contract of the CLI for a prompt that ends, and only the stub model
+    /// always ends a prompt. The small real model of the fixture wrote 14 KB
     /// of noise to "say hello" until it reached its token ceiling, and the
     /// agent then reports `_truncated` and the CLI exits nonzero — the
-    /// correct answer for that turn, but not the case this test names.
+    /// correct answer for that prompt, but not the case this test names.
     /// `StdioContractTests` keeps the real profile and the live loader
     /// behind the spawned binary.
     @Test func aTrivialPromptPrintsOnlyTheAnswerAndExitsZero() async throws {
@@ -127,13 +127,13 @@ struct ClientServerTests {
         let run = try await Self.runPrintCLI(
             arguments: [Self.promptText], workspace: workspace, configHome: configHome)
 
-        #expect(run.exitCode != 0, "a failed turn must not exit 0")
+        #expect(run.exitCode != 0, "a failed prompt must not exit 0")
         #expect(
             !run.standardError.isEmpty,
             "the failure reason is missing from stderr")
         #expect(
             run.standardOutput.isEmpty,
-            "a failed turn wrote to stdout: \(run.standardOutput)")
+            "a failed prompt wrote to stdout: \(run.standardOutput)")
         try ProcessCensus.expectNoAgentOutlivedItsRun()
     }
 

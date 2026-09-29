@@ -13,7 +13,7 @@ import Testing
 struct AnswerWriterTests {
     // MARK: - Constants
 
-    /// The chunks one turn hands over, as the card names them.
+    /// The chunks one prompt hands over, as the card names them.
     private static let chunks = ["a", "b", "c"]
 
     /// What the descriptor must carry after ``chunks``: the chunks
@@ -37,7 +37,7 @@ struct AnswerWriterTests {
 
     /// A chunk is on the descriptor when ``AnswerWriter/receive(_:)``
     /// returns, and does not wait for the next chunk or for the end of
-    /// the turn. A local model is slow, so a person must see the answer
+    /// the prompt. A local model is slow, so a person must see the answer
     /// grow.
     @Test func eachChunkIsOnTheDescriptorBeforeTheNextOneIsWritten() throws {
         let capture = try AnswerCapture(label: "AnswerWriterTests-growing")

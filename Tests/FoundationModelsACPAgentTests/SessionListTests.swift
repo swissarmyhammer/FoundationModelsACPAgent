@@ -280,9 +280,9 @@ struct SessionListTests {
         let project = try await Self.makeProject(in: fixture, label: "fork")
         let parent = project.profile.standard.makeSession(
             workingDirectory: project.workingDirectory, recordingRoot: project.root)
-        _ = try await parent.respond(to: "parent turn")
+        _ = try await parent.respond(to: "parent prompt")
         let fork = try await parent.fork(workingDirectory: nil)
-        _ = try await fork.respond(to: "fork turn")
+        _ = try await fork.respond(to: "fork prompt")
         await fork.close()
         await parent.close()
 
@@ -298,7 +298,7 @@ struct SessionListTests {
     @Test(.timeLimit(.minutes(1)))
     func aZeroPromptSessionFromSessionNewDoesNotList() async throws {
         let fixture = try await Self.makeWireFixture()
-        let workingDirectory = makeResolvedDirectory(label: "SessionListTests-zero-turn")
+        let workingDirectory = makeResolvedDirectory(label: "SessionListTests-zero-prompt")
         _ = try await fixture.connection.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: workingDirectory.path)))
 

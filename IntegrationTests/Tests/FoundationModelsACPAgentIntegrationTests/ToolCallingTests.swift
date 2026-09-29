@@ -14,7 +14,7 @@ import Tokenizers
 
 // MARK: - The tool calling gate
 
-/// The proof that the shipped model can call the tools: in one turn, the
+/// The proof that the shipped model can call the tools: in one prompt, the
 /// model writes a file with the `files` tool and runs a command with the
 /// `shell` tool.
 ///
@@ -69,7 +69,7 @@ struct ToolCallingTests {
 
     /// The user-layer `config.yaml`. The shell is on, because the gate
     /// needs it. The code context is off, because the gate does not need
-    /// it and it makes a turn slower.
+    /// it and it makes a prompt slower.
     private static var userConfigYAML: String {
         """
         transcripts:
@@ -91,7 +91,7 @@ struct ToolCallingTests {
         return shipped
     }
 
-    /// The prompt of the turn. It names the two verb paths and the
+    /// The prompt text. It names the two verb paths and the
     /// workspace, so the gate measures the tool calls and not a search for
     /// the tools.
     ///
@@ -165,7 +165,7 @@ struct ToolCallingTests {
             + "stop=\(stopReason.map { "\($0)" } ?? "none") tools=\(titles)"
         print(report)
 
-        #expect(stopReason == .endTurn, "the turn did not end with end_turn: \(report)")
+        #expect(stopReason == .endTurn, "the prompt did not end with end_turn: \(report)")
 
         let probe = workspace.appendingPathComponent(Self.probeFileName)
         let probeData = try #require(

@@ -128,7 +128,7 @@ struct CommandDispatchTests {
             #expect(fields["suggestions"] == .array([.string("deploy")]))
         }
 
-        // No model turn ran: no state update, no echo, no message.
+        // No model pass ran: no state update, no echo, no message.
         #expect(!Self.holdsAPromptUpdate(in: await fixture.collector.updates))
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
     }
@@ -136,7 +136,7 @@ struct CommandDispatchTests {
     // MARK: - The .rendered body (plan.md §14.2 gap 1)
 
     /// A `.rendered` provider body is called, and its output reaches
-    /// the model turn.
+    /// the model pass.
     @Test(.timeLimit(.minutes(1)))
     func aRenderedBodyOutputReachesTheModelPass() async throws {
         let fixture = try await Fixture.make(
@@ -178,7 +178,7 @@ struct CommandDispatchTests {
     // MARK: - The .action body (plan.md §14.3)
 
     /// An `.action` command with an attached resource link is refused
-    /// with a reason, and no model turn runs.
+    /// with a reason, and no model pass runs.
     @Test(.timeLimit(.minutes(1)))
     func anActionCommandWithAnAttachmentIsRefused() async throws {
         let fixture = try await Fixture.make(
@@ -211,8 +211,8 @@ struct CommandDispatchTests {
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
     }
 
-    /// An `.action` command streams its text with no model turn, and
-    /// the turn ends idle with `end_turn`.
+    /// An `.action` command streams its text with no model pass, and
+    /// the prompt ends idle with `end_turn`.
     @Test(.timeLimit(.minutes(1)))
     func anActionCommandStreamsWithNoModelPass() async throws {
         let fixture = try await Fixture.make(
@@ -231,7 +231,7 @@ struct CommandDispatchTests {
         let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains("ACTION OUTPUT"))
         // The echo model would stream the prompt back. No chunk carries
-        // it, so no model turn ran.
+        // it, so no model pass ran.
         #expect(!texts.contains { $0.contains("/act") })
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }

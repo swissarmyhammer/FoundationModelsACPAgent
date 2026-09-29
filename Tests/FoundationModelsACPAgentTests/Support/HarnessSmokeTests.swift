@@ -42,7 +42,7 @@ final class PathRecordingTool: Tool, Sendable {
 /// round trip from the client end, the coalescing flush, the scripted
 /// backend, and the assertion helpers.
 @Suite struct HarnessSmokeTests {
-    /// The deltas the scripted turn streams, in order.
+    /// The deltas the scripted pass streams, in order.
     static let scriptedDeltas = ["Let me look. ", "Reading the file now."]
 
     /// The path the scripted tool call fixes.
@@ -56,7 +56,7 @@ final class PathRecordingTool: Tool, Sendable {
     static let scriptedContextWindow = 4096
 
     /// The script every scripted-backend test plays: two deltas, one known
-    /// tool call with fixed arguments, and a turn end.
+    /// tool call with fixed arguments, and a pass end.
     static let script: [ScriptedPassStep] = [
         .textDelta(scriptedDeltas[0]),
         .textDelta(scriptedDeltas[1]),
@@ -177,7 +177,7 @@ final class PathRecordingTool: Tool, Sendable {
         #expect(recorder.recordedPaths == [Self.scriptedPath])
     }
 
-    /// A scripted tool call that names no handed tool fails the turn
+    /// A scripted tool call that names no handed tool fails the pass
     /// loudly instead of passing silently.
     @Test(.timeLimit(.minutes(1)))
     func scriptedToolCallWithoutItsToolThrows() async throws {

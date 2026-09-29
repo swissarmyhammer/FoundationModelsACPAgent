@@ -142,7 +142,7 @@ struct StdioContractTests {
     /// The `SKILL.md` of the probe skill. The body's first line is a
     /// shell injection: the render pass runs it through `/bin/sh -c`
     /// with captured output, so a real child writes the marker to ITS
-    /// stdout during the turn, with no dependence on the model's tool
+    /// stdout during the prompt, with no dependence on the model's tool
     /// choice. The `tee` copy is the on-disk witness that the child ran.
     private static let probeSkillMarkdown = """
         ---
@@ -200,7 +200,7 @@ struct StdioContractTests {
 
     /// The whole tier-3 drive, in one case on purpose (plan.md §20.1:
     /// tiers 3 and 4 stay small): spawn the built
-    /// example, initialize, open a session, run one turn whose shell
+    /// example, initialize, open a session, run one prompt whose shell
     /// child writes to ITS stdout, then assert the §17 MUSTs on the
     /// tapped bytes and the reaped child on teardown.
     @Test func framingSurvivesTheProcessBoundaryWhileAShellChildRuns() async throws {
@@ -241,7 +241,7 @@ struct StdioContractTests {
             AgentClientHarness.makePromptRequest(
                 sessionId: session.sessionId, text: Self.promptText))
         let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)
-        #expect(stopReason != nil, "the turn never reached an idle state update")
+        #expect(stopReason != nil, "the prompt never reached an idle state update")
 
         // The child ran, proven on the file system: the probe's `tee`
         // wrote the marker beside the skill (plan.md §20.1's

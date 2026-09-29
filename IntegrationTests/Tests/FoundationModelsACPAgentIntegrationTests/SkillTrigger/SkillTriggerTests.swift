@@ -167,7 +167,7 @@ struct SkillTriggerRate: Sendable {
 /// is proved in the root package by `SkillsLibraryTests`, which cannot tell
 /// what a model chooses.
 ///
-/// **It is fast because it stops at the decision.** A run cancels the turn
+/// **It is fast because it stops at the decision.** A run cancels the prompt
 /// as soon as a `use skill` call reaches the wire. The gate is one sample
 /// with one run on the shipped standard model, and it asks for a skill, thus
 /// the load is the first move: about 15 seconds after the model loads.

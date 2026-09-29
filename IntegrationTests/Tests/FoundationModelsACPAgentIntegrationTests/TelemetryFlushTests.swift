@@ -65,7 +65,7 @@ private struct PathEnd {
 struct TelemetryFlushTests {
     // MARK: - Constants
 
-    /// The standard variable that turns on the OTLP exporters.
+    /// The standard variable that enables the OTLP exporters.
     private static let otlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
     /// The standard variable that selects the OTLP protocol.

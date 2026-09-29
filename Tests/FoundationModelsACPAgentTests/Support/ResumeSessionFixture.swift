@@ -12,7 +12,7 @@ import Testing
 //
 // The resume round trips need two things the scripted fixtures do not
 // give: a backend that appends real transcript entries on the streaming
-// path the prompt turn drives, and a container that observes what a
+// path the prompt execution drives, and a container that observes what a
 // restore asks of it. `ScriptedSessionBackend` appends entries only for
 // tool calls, and `TranscriptStubBackend` appends only in `respond`, so
 // this file adds the resume-shaped pair.
@@ -21,7 +21,7 @@ import Testing
 /// appends one `.prompt`, one `.reasoning`, and one `.response` entry, so
 /// a routed session over it records real prompt, reasoning, and response
 /// events through every generation surface — `streamResponse` included,
-/// which the prompt turn drives.
+/// which the prompt execution drives.
 final class ResumeStubBackend: LanguageModelSessionBackend {
     /// The prefix of every reply, so a test matches the reply text.
     static let replyPrefix = "echo: "
@@ -70,7 +70,7 @@ final class ResumeStubBackend: LanguageModelSessionBackend {
         (1, 1)
     }
 
-    /// Appends the three SDK entries of one turn and returns the reply.
+    /// Appends the three SDK entries of one pass and returns the reply.
     ///
     /// - Parameter prompt: The prompt the pass answers.
     /// - Returns: The reply text.
@@ -191,7 +191,7 @@ struct RosterNameTool: FoundationModels.Tool {
     }
 }
 
-/// One wired resume fixture: the recording container, the scripted-turn
+/// One wired resume fixture: the recording container, the scripted-prompt
 /// harness around an agent whose sessions it backs, and the resolved
 /// project recording root.
 struct ResumeSessionFixture {
@@ -255,7 +255,7 @@ struct ResumeSessionFixture {
             of: cwd, dotfolderName: AgentClientHarness.dotfolderName)
     }
 
-    /// Drives one prompt turn over the wire and waits until the session
+    /// Drives one prompt over the wire and waits until the session
     /// accepts the next prompt.
     ///
     /// - Parameter text: The prompt text.

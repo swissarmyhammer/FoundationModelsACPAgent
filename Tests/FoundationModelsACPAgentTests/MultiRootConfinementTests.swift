@@ -244,7 +244,7 @@ struct MultiRootConfinementTests {
     // MARK: - The transcript location (plan.md §7.2, §4.1)
 
     /// The transcripts stay under `<cwd>/.<name>/` when an additional
-    /// root is supplied: the recorded turn lands under the cwd dotfolder
+    /// root is supplied: the recorded prompt lands under the cwd dotfolder
     /// and the additional root stays empty.
     @Test(.timeLimit(.minutes(1)))
     func transcriptsStayUnderTheCwdDotfolderWhenAnAdditionalRootIsSupplied() async throws {
@@ -252,7 +252,7 @@ struct MultiRootConfinementTests {
         var fixture = try await Self.makeFixture(
             label: "transcripts", additionalRoots: [additionalRoot])
 
-        try await fixture.runPrompt("one recorded turn")
+        try await fixture.runPrompt("one recorded prompt")
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: fixture.recordingRoot,
             sessionId: fixture.fixture.sessionId,

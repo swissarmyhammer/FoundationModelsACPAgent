@@ -149,12 +149,12 @@ import Testing
             stagesApplied: ["fold"])
     }
 
-    /// Drives one synthetic event stream through a sinked turn.
+    /// Drives one synthetic event stream through a sinked prompt execution.
     ///
     /// - Parameters:
     ///   - events: The events to project, in order.
     ///   - shellSnapshot: The reader of a settled run's stored output.
-    /// - Returns: The updates the turn sent, in order.
+    /// - Returns: The updates the prompt sent, in order.
     private static func drive(
         _ events: [SessionEvent],
         shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
@@ -273,7 +273,7 @@ import Testing
 
     // MARK: - The tool-call upsert (§11.6)
 
-    /// A scripted tool turn creates the call with a title, an
+    /// A scripted tool pass creates the call with a title, an
     /// `in_progress` status and the parsed raw input, keeps the one
     /// `toolCallId` across the updates, and completes it.
     @Test func aScriptedToolPromptCreatesWithTitleThenRunsThenCompletes() async throws {
@@ -465,7 +465,7 @@ import Testing
     // MARK: - The delivery-only and log-only events (§8.4)
 
     /// A `toolInvocation` record, a priming failure, and a stall report
-    /// send nothing on the wire: the only update of the turn is its
+    /// send nothing on the wire: the only update of the prompt is its
     /// idle terminator.
     @Test func deliveryOnlyEventsSendNoWireMessage() async {
         let record = ToolInvocationRecord(
@@ -665,7 +665,7 @@ import Testing
 
     // MARK: - The NaN meter guard (§8.4)
 
-    /// A `NaN` context fill means "no stamp": the turn sends no meter
+    /// A `NaN` context fill means "no stamp": the prompt sends no meter
     /// and never puts a `NaN` on the wire.
     @Test func aNaNContextFillOmitsTheUsageUpdate() async {
         let updates = await Self.drive([

@@ -14,8 +14,8 @@ import Testing
 struct SessionLifecycleTests {
     // MARK: - Constants
 
-    /// The prompt text of the active-turn cases.
-    private static let promptText = "Run one long turn"
+    /// The prompt text of the active-prompt cases.
+    private static let promptText = "Run one long prompt"
 
     /// The exit status `pgrep` reports when no process matches.
     private static let pgrepNoMatchStatus: Int32 = 1
@@ -31,7 +31,7 @@ struct SessionLifecycleTests {
 
     /// Wires the shared scripted fixture with this suite's directory label.
     ///
-    /// - Parameter script: The steps the model plays on every turn.
+    /// - Parameter script: The steps the model plays on every pass.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
@@ -84,9 +84,9 @@ struct SessionLifecycleTests {
         await fixture.close()
     }
 
-    // MARK: - Close during an active turn (plan.md §10.1)
+    // MARK: - Close during an active prompt (plan.md §10.1)
 
-    /// Closing a session during a scripted turn makes the collector see one
+    /// Closing a session during a scripted prompt makes the collector see one
     /// `idle` with the `cancelled` stop reason — the close waited for the
     /// terminator before it answered — and the transcript directory survives
     /// on disk.
@@ -108,7 +108,7 @@ struct SessionLifecycleTests {
         let lastPromptUpdate = try #require(promptUpdates(in: updates).last).update
         #expect(
             isIdleState(lastPromptUpdate),
-            "expected idle(cancelled) as the last turn update, got \(updates)")
+            "expected idle(cancelled) as the last prompt update, got \(updates)")
         #expect(FileManager.default.fileExists(atPath: transcriptDirectory.path))
         await fixture.close()
     }

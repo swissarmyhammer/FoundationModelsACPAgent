@@ -63,7 +63,7 @@ import Testing
         #expect(loaded.configuration.tools.shell == .enabled(expected))
     }
 
-    /// Shape 5: a scalar `false` turns the tool off, and the other tools
+    /// Shape 5: a scalar `false` disables the tool, and the other tools
     /// stay on.
     @Test func scalarFalseDisablesOnlyThatTool() throws {
         let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
@@ -141,7 +141,7 @@ import Testing
     }
 
     /// The code context body decodes its two policies, and a scalar
-    /// `false` turns the capability off.
+    /// `false` disables the capability.
     @Test func codeContextBodyDecodesTheInstallPolicy() throws {
         let fixture = ConfigurationLoaderTests.Fixture()
 

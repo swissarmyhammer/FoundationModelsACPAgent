@@ -171,8 +171,8 @@ struct ElicitationRelayTests {
     /// The name the eliciting MCP test server mounts under.
     private static let serverName = "elicitor"
 
-    /// The prompt of every scripted elicitation turn.
-    private static let promptText = "Run the eliciting tool turn"
+    /// The prompt text of every scripted elicitation case.
+    private static let promptText = "Run the eliciting tool pass"
 
     /// The form value the accepting tests send.
     private static let acceptedAnswer = "blue"
@@ -212,10 +212,10 @@ struct ElicitationRelayTests {
     }
 
     /// Wires a fixture whose session mounts the loopback `mcp-test-server`
-    /// and whose scripted model runs `code` in one tool turn.
+    /// and whose scripted model runs `code` in one tool pass.
     ///
     /// - Parameters:
-    ///   - code: The snippet the turn runs.
+    ///   - code: The snippet the pass runs.
     ///   - capabilities: The client capabilities `initialize` announces.
     ///   - label: The directory label of the calling test.
     /// - Returns: The fixture.
@@ -297,7 +297,7 @@ struct ElicitationRelayTests {
     }
 
     /// A declined form elicitation reaches the tool as `decline`, and the
-    /// turn still ends `end_turn`.
+    /// prompt still ends `end_turn`.
     @Test(.timeLimit(.minutes(1)))
     func aDeclinedFormElicitationReachesTheToolAsDecline() async throws {
         let fixture = try await Self.makeLoopbackFixture(

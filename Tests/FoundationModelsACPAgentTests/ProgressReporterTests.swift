@@ -117,7 +117,7 @@ import Testing
     // MARK: - The reporter never touches descriptor 1
 
     /// A full progress run on a terminal destination leaves descriptor 1
-    /// empty. The answer of a `run` turn owns stdout (cli-plan.md §5.6),
+    /// empty. The answer of a `run` prompt owns stdout (cli-plan.md §5.6),
     /// and the download bar must never reach it.
     @Test func aFullProgressRunLeavesDescriptorOneEmpty() async throws {
         let capture = TerminalCapture()

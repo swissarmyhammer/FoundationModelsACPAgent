@@ -98,18 +98,18 @@ import Testing
             index: SessionIndex(root: root))
     }
 
-    /// Drives one recorded root session with one turn per prompt and
+    /// Drives one recorded root session with one request per prompt and
     /// returns its id.
     ///
     /// - Parameters:
     ///   - fixture: The project the session records into.
-    ///   - prompts: The turns to drive, in order.
+    ///   - prompts: The prompt texts to send, in order.
     ///   - agentSpawn: The spawn context, or `nil` for a plain root.
     /// - Returns: The session's ULID — the name of its directory.
     /// - Throws: Whatever driving the session throws.
     private static func makeRecordedSession(
         in fixture: ProjectFixture,
-        prompts: [String] = ["one turn"],
+        prompts: [String] = ["one prompt"],
         agentSpawn: SessionSidecar.AgentSpawn? = nil
     ) async throws -> ULID {
         let session = fixture.profile.standard.makeSession(
@@ -241,9 +241,9 @@ import Testing
         defer { fixture.cleanUp() }
         let parent = fixture.profile.standard.makeSession(
             workingDirectory: fixture.workingDirectory, recordingRoot: fixture.root)
-        _ = try await parent.respond(to: "parent turn")
+        _ = try await parent.respond(to: "parent prompt")
         let fork = try await parent.fork(workingDirectory: nil)
-        _ = try await fork.respond(to: "fork turn")
+        _ = try await fork.respond(to: "fork prompt")
         await fork.close()
         await parent.close()
 
@@ -254,7 +254,7 @@ import Testing
         #expect(!ids.contains(fork.id.description))
     }
 
-    @Test("a zero-turn session never wrote a transcript, so it does not list")
+    @Test("a zero-prompt session never wrote a transcript, so it does not list")
     func zeroPromptSessionDoesNotList() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
@@ -419,13 +419,15 @@ import Testing
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
         let id = try await Self.makeRecordedSession(
-            in: fixture, prompts: ["first turn", "second turn"])
+            in: fixture, prompts: ["first prompt", "second prompt"])
         _ = try await Self.makeRecordedSession(in: fixture, prompts: ["other session"])
 
         let events = try fixture.store.transcript(for: id, inProject: fixture.workingDirectory)
 
         #expect(events.map(\.kind) == [.session, .prompt, .response, .prompt, .response])
-        #expect(events.compactMap(\.text) == ["first turn", "first turn", "second turn", "second turn"])
+        #expect(
+            events.compactMap(\.text)
+                == ["first prompt", "first prompt", "second prompt", "second prompt"])
         #expect(events.allSatisfy { $0.sessionId == id })
         #expect(
             try fixture.store.transcript(
@@ -440,9 +442,9 @@ import Testing
     /// - Parameters:
     ///   - fixture: The project the run records into.
     ///   - cacheDirectory: The run's own router cache directory.
-    ///   - prompt: The one turn to drive.
+    ///   - prompt: The one prompt text to send.
     /// - Returns: The recorded session's id.
-    /// - Throws: Whatever profile resolution or the turn throws.
+    /// - Throws: Whatever profile resolution or the request throws.
     private static func driveSeparateRecorderRun(
         in fixture: ProjectFixture, cacheDirectory: URL, prompt: String
     ) async throws -> ULID {

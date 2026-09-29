@@ -11,9 +11,9 @@ import FoundationModelsACPAgentTestSupport
 /// file — which is what this capture is.
 ///
 /// A file, and not a pipe: a pipe holds only what its buffer holds, and
-/// a writer whose reader waits for the end of the turn would block on a
+/// a writer whose reader waits for the end of the prompt would block on a
 /// long answer. A file takes every byte, and a read gives back what is
-/// written so far, whether or not the turn has ended.
+/// written so far, whether or not the prompt has ended.
 ///
 /// No test redirects the real descriptor 1: the suites run together, and
 /// a redirect would take the output of every other suite with it.
@@ -66,7 +66,7 @@ final class AnswerCapture {
     /// A test of whether the capture holds exactly `text` so far.
     ///
     /// The test holds the file location and not the capture, so another
-    /// task may read what already arrived while the turn still runs, and
+    /// task may read what already arrived while the prompt still runs, and
     /// the capture keeps its one owner. A case that must let a chunk
     /// arrive before it acts waits on this fact, and never on a delay.
     ///

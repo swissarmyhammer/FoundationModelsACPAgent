@@ -15,7 +15,7 @@ import Testing
 /// directory the process started in — the "two loads" rule of §5.10.
 /// The answer does not depend on the transport, so `run` mode's
 /// in-process pair and the `acp` mode's stdio pipes give one text. And a
-/// turn over the stdio wire records its transcript, because both modes
+/// prompt over the stdio wire records its transcript, because both modes
 /// compose one router (§4.1).
 struct AcpCommandTests {
     // MARK: - Constants
@@ -174,7 +174,7 @@ struct AcpCommandTests {
 
     // MARK: - The recording of the stdio wire (plan.md §4.1)
 
-    /// A turn over the stdio wire writes
+    /// A prompt over the stdio wire writes
     /// `<recording root>/<sessionId>/transcript.jsonl`.
     ///
     /// `run` and `acp` compose one router, so the recorder cannot be on in

@@ -207,7 +207,7 @@ struct SessionResumeTests {
     func resumeWithARelativeAdditionalDirectoryAnswersInvalidParamsNamingTheField() async throws {
         var resume = try await ResumeSessionFixture.make(
             label: "SessionResumeTests-relative-extra")
-        try await resume.runPrompt("one turn before the resume")
+        try await resume.runPrompt("one prompt before the resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -264,7 +264,7 @@ struct SessionResumeTests {
     @Test(.timeLimit(.minutes(1)))
     func resumeAfterTheSessionDirectoryIsDeletedAnswersInvalidParams() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-deleted")
-        try await resume.runPrompt("one turn before the delete")
+        try await resume.runPrompt("one prompt before the delete")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -296,7 +296,7 @@ struct SessionResumeTests {
         var resume = try await ResumeSessionFixture.make(
             label: "SessionResumeTests-cwd",
             projectConfigYAML: sharedRootYAML)
-        try await resume.runPrompt("one turn before the mismatch")
+        try await resume.runPrompt("one prompt before the mismatch")
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: sharedRoot, sessionId: resume.fixture.sessionId, count: 1)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
@@ -366,7 +366,7 @@ struct SessionResumeTests {
     @Test(.timeLimit(.minutes(1)))
     func resumeWithoutReplayFromSendsNoMessageUpserts() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-noreplay")
-        try await resume.runPrompt("one turn before the quiet resume")
+        try await resume.runPrompt("one prompt before the quiet resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -384,7 +384,7 @@ struct SessionResumeTests {
     @Test(.timeLimit(.minutes(1)))
     func resumeWithAnUnknownReplayCursorAnswersInvalidParams() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-cursor")
-        try await resume.runPrompt("one turn before the unknown cursor")
+        try await resume.runPrompt("one prompt before the unknown cursor")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -417,7 +417,7 @@ struct SessionResumeTests {
             resume.makeResumeRequest())
 
         // The restored model received the earlier context: the transcript
-        // handed to the backend carries the first turn.
+        // handed to the backend carries the first prompt.
         let transcript = try #require(resume.container.restoredTranscripts.last)
         let hadEarlierPrompt = Array(transcript).contains { entry in
             if case .prompt(let prompt) = entry {
@@ -432,7 +432,7 @@ struct SessionResumeTests {
         }
         #expect(hadEarlierPrompt)
 
-        // The resumed session answers the next turn.
+        // The resumed session answers the next prompt.
         try await resume.runPrompt("second question")
         let texts = ScriptedPromptFixture.agentChunkTexts(in: await resume.fixture.collector.updates)
         #expect(texts.contains(ResumeStubBackend.replyPrefix + "second question"))
@@ -451,7 +451,7 @@ struct SessionResumeTests {
             additionalDirectories: [AbsolutePath(rawValue: outside.path)])
         let insideFile = resume.fixture.cwd.appendingPathComponent("inside.txt")
         try "inside the cwd".write(to: insideFile, atomically: true, encoding: .utf8)
-        try await resume.runPrompt("one turn before the root change")
+        try await resume.runPrompt("one prompt before the root change")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -496,7 +496,7 @@ struct SessionResumeTests {
             tools: [RosterNameTool(name: ShellVerbSupport.executeVerbPath)],
             budget: nil,
             compactionPrompt: .default)
-        _ = try await recorded.respond(to: "one recorded turn")
+        _ = try await recorded.respond(to: "one recorded prompt")
         await recorded.close()
         let recordedId = SessionId(rawValue: recorded.id.description)
 
@@ -514,7 +514,7 @@ struct SessionResumeTests {
     @Test(.timeLimit(.minutes(1)))
     func resumingWithAnUnchangedRosterReportsNoMissingTools() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-complete")
-        try await resume.runPrompt("one turn before the clean resume")
+        try await resume.runPrompt("one prompt before the clean resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -533,7 +533,7 @@ struct SessionResumeTests {
     func resumingWithChangedInstructionsReachesTheModelAndWritesOneDivergenceEvent() async throws {
         let marker = "Always answer in iambic pentameter."
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-diverge")
-        try await resume.runPrompt("one turn before the instructions change")
+        try await resume.runPrompt("one prompt before the instructions change")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)
@@ -564,7 +564,7 @@ struct SessionResumeTests {
     @Test(.timeLimit(.minutes(1)))
     func resumingWithUnchangedInstructionsWritesNoDivergenceEvent() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-samewords")
-        try await resume.runPrompt("one turn before the unchanged resume")
+        try await resume.runPrompt("one prompt before the unchanged resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 1)

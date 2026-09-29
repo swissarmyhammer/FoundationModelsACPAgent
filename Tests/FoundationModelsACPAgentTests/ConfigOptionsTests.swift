@@ -13,7 +13,7 @@ import Testing
 /// complete-state semantics, and kept true by the `config_option_update`
 /// push when resolution diverges from the announced state.
 @Suite struct ConfigOptionsTests {
-    /// The text the standard slot's scripted model answers, so a turn's
+    /// The text the standard slot's scripted model answers, so a prompt's
     /// output names the slot that generated it.
     private static let standardAnswer = "standard-answer"
 
@@ -26,7 +26,7 @@ import Testing
     // MARK: Harness
 
     /// A loader whose standard and flash containers play different
-    /// scripts, so a turn's text asserts which slot generated it.
+    /// scripts, so a prompt's text asserts which slot generated it.
     ///
     /// - Returns: The loader to inject.
     private static func makeSlotLoader() -> StubModelLoader {
@@ -191,7 +191,7 @@ import Testing
     // MARK: - The slot switch
 
     /// A set to `flash` answers the complete state showing `flash`, and
-    /// the next turn generates on the flash slot's model.
+    /// the next prompt generates on the flash slot's model.
     @Test(.timeLimit(.minutes(1)))
     func settingFlashSwitchesLaterPromptsToTheFlashSlot() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-switch")
@@ -266,7 +266,7 @@ import Testing
     // MARK: - The divergence push (plan.md §15)
 
     /// When the announced state shows a different model than resolution
-    /// runs, the turn's end pushes exactly one `config_option_update`
+    /// runs, the prompt's end pushes exactly one `config_option_update`
     /// carrying the full option list, and `currentValue` is the truth.
     @Test(.timeLimit(.minutes(1)))
     func aScriptedResolutionDivergencePushesOneFullConfigOptionUpdate() async throws {
@@ -293,7 +293,7 @@ import Testing
         #expect(select.currentValue.rawValue == ModelSlot.standard.rawValue)
         #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
 
-        // The push reconciled the state, so a second turn pushes nothing.
+        // The push reconciled the state, so a second prompt pushes nothing.
         try await ScriptedPromptFixture.waitForAvailability(agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))

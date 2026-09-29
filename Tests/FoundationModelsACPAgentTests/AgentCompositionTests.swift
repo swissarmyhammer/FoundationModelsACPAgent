@@ -71,12 +71,12 @@ struct AgentCompositionTests {
 
     // MARK: - The recorder of the composed router
 
-    /// One turn of the composed agent writes
+    /// One prompt of the composed agent writes
     /// `<recording root>/<sessionId>/transcript.jsonl`, and the file holds
-    /// the events of that turn.
+    /// the events of that prompt.
     ///
     /// The composition is the only shipped call site that builds the
-    /// router, so it is the only place that can turn the recorder on. With
+    /// router, so it is the only place that can enable the recorder. With
     /// no recordings directory the router holds the no-op sink, every
     /// event goes nowhere, and `--resume` has nothing to read.
     ///

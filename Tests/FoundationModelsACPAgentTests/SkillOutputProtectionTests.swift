@@ -23,7 +23,7 @@ import Testing
     ///
     /// The target must leave room for a summary beside the protected skill
     /// bodies, or Router gives a shortfall and folds nothing; and it must be
-    /// under the size of the six turns, or there is nothing to fold.
+    /// under the size of the six requests, or there is nothing to fold.
     /// Measured on 2026-09-23: a limit of 2,048 left -520 tokens for the
     /// summary and 4,096 left -315, both shortfalls; 8,192 folds.
     static let foldBudget = TokenBudget(limit: 8192, trigger: 0.1, target: 0.1)
@@ -115,7 +115,7 @@ import Testing
 
     // MARK: The session the agent vends
 
-    /// Six turns each load a skill and read notes. The compaction removes or
+    /// Six requests each load a skill and read notes. The compaction removes or
     /// elides the old notes outputs, and it keeps every skill body word for
     /// word.
     /// The session comes from `makeBudgetedSession`, the one door that
@@ -165,7 +165,7 @@ import Testing
         #expect(skillOutputs.count == requestCount)
         #expect(skillOutputs.allSatisfy { $0 == Self.skillBody })
         // The fold removed or elided the old notes outputs: fewer than one
-        // per turn keep their text. Only the protected skill bodies all stay.
+        // per request keep their text. Only the protected skill bodies all stay.
         #expect(notesOutputs.filter { $0 == Self.notesText }.count < requestCount)
     }
 }

@@ -7,11 +7,11 @@ import Testing
 @testable import FoundationModelsACPAgent
 @testable import acp_agent
 
-/// The `run` subcommand (cli-plan.md §4, §5.4): one turn, in one process,
+/// The `run` subcommand (cli-plan.md §4, §5.4): one prompt, in one process,
 /// over `InMemoryTransport.pair()`.
 ///
-/// Four claims stand here. A turn over the in-process pair gives the text
-/// the model produced, so the pair carries a whole turn and not only a
+/// Four claims stand here. A prompt over the in-process pair gives the text
+/// the model produced, so the pair carries a whole prompt and not only a
 /// handshake. `--resume` continues a recorded session through
 /// `session/load`, and the run never asks for a working directory: the
 /// stored session already has one, and it wins. `--cwd` selects WHICH
@@ -23,11 +23,11 @@ import Testing
 struct RunCommandTests {
     // MARK: - Constants
 
-    /// The prompt of the first turn of every test here.
+    /// The text of the first prompt of every test here.
     private static let promptText = "write a haiku"
 
-    /// The prompt of the resumed turn, which differs from
-    /// ``promptText`` so the answer names which turn produced it.
+    /// The text of the resumed prompt, which differs from
+    /// ``promptText`` so the answer names which prompt produced it.
     private static let resumedPromptText = "write another haiku"
 
     /// The text the scripted model streams as its one delta.
@@ -115,17 +115,17 @@ struct RunCommandTests {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    // MARK: - One turn over the in-process pair (cli-plan.md §4)
+    // MARK: - One prompt over the in-process pair (cli-plan.md §4)
 
-    /// One turn over `InMemoryTransport.pair()` gives the text the model
+    /// One prompt over `InMemoryTransport.pair()` gives the text the model
     /// produced, and ends on `end_turn`. No subprocess and no pipe: one
     /// process holds the agent connection and the client connection.
     @Test(.timeLimit(.minutes(1)))
     func aPromptOverTheInProcessPairGivesTheScriptedAnswer() async throws {
-        let workspace = makeResolvedDirectory(label: "RunCommandTests-turn-repo")
+        let workspace = makeResolvedDirectory(label: "RunCommandTests-prompt-repo")
         let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-turn")
-        let capture = try AnswerCapture(label: "RunCommandTests-turn-answer")
+            script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-prompt")
+        let capture = try AnswerCapture(label: "RunCommandTests-prompt-answer")
 
         let result = try await RunPrompt.answer(
             of: composed,
@@ -159,7 +159,7 @@ struct RunCommandTests {
         #expect(try capture.bytes() == Data(Self.scriptedChunks.joined().utf8))
     }
 
-    /// `acp-agent run "<prompt>"` runs the whole turn and writes the
+    /// `acp-agent run "<prompt>"` runs the whole prompt and writes the
     /// answer to the descriptor. The stub model answers with the prompt
     /// it received, so the bytes carry the prompt.
     @Test(.timeLimit(.minutes(2)))
@@ -175,8 +175,8 @@ struct RunCommandTests {
 
     // MARK: - `--resume` through `session/load` (cli-plan.md §5.4)
 
-    /// `--resume` continues the recorded session: the second turn runs in
-    /// the id the first turn opened, and the run sends no working
+    /// `--resume` continues the recorded session: the second prompt runs in
+    /// the id the first prompt opened, and the run sends no working
     /// directory of its own — it reads the stored one, because the stored
     /// session already has one and it wins.
     @Test(.timeLimit(.minutes(2)))

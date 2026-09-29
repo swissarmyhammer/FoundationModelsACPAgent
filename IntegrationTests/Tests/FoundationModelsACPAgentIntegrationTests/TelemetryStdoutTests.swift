@@ -36,7 +36,7 @@ private let telemetryRunTimeLimitMinutes = 3
 struct TelemetryStdoutTests {
     // MARK: - Constants
 
-    /// The standard variable that turns on the OTLP exporter of `acp-agent`.
+    /// The standard variable that enables the OTLP exporter of `acp-agent`.
     private static let otlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
     /// The standard variable that selects the span exporter.
@@ -146,7 +146,7 @@ struct TelemetryStdoutTests {
     }
 
     /// `OTEL_SDK_DISABLED=false` keeps the export on. swift-otel reads that
-    /// value as "turn the logs on" too, and the logs have their own
+    /// value as "enable the logs" too, and the logs have their own
     /// bootstrap. So the agent must not give the value to the traces and
     /// metrics bootstrap, or swift-log gets a second bootstrap and the
     /// process stops.

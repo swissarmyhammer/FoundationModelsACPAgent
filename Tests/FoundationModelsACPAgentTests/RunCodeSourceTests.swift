@@ -10,11 +10,11 @@ import Testing
 /// snippet the model wrote, and the message the run answered with.
 ///
 /// The defect the card names was corrected in `FoundationModelsRouter`
-/// under `^jz016kq`: the differ discarded every turn, so no `toolCalls`
+/// under `^jz016kq`: the differ discarded every prompt, so no `toolCalls`
 /// entry was ever written and the snippet source went nowhere. These
 /// proofs state the three facts that make a failed run readable again:
 ///
-/// 1. A recorded turn that calls `runCode` holds the snippet source.
+/// 1. A recorded prompt that calls `runCode` holds the snippet source.
 /// 2. The source and the outcome of ONE call are readable together,
 ///    over the recorded join this suite documents.
 /// 3. An over-long snippet is kept whole. Nothing is dropped, so the
@@ -38,7 +38,7 @@ import Testing
 /// touches no network. The snippets themselves run in the real code-mode
 /// sandbox, so proof 2 reads a real failure and not a scripted string.
 struct RunCodeSourceTests {
-    /// The prompt text of the one driven turn.
+    /// The text of the one driven prompt.
     private static let promptText = "run the snippet"
 
     /// A snippet that computes and reads nothing, so the proof stays
@@ -71,7 +71,7 @@ struct RunCodeSourceTests {
 
     // MARK: - One recorded run
 
-    /// What one scripted `runCode` turn left behind.
+    /// What one scripted `runCode` prompt left behind.
     private struct RecordedRun {
         /// The session's recorded lines, read from disk.
         let lines: [RecordedTranscriptLine]
@@ -95,7 +95,7 @@ struct RunCodeSourceTests {
         let droppedByteCount: Int?
     }
 
-    /// Drives one scripted turn that calls `runCode` with `code`, waits
+    /// Drives one scripted prompt that calls `runCode` with `code`, waits
     /// for the run to settle, and reads the recording back.
     ///
     /// - Parameters:
@@ -189,7 +189,7 @@ struct RunCodeSourceTests {
 
     // MARK: - The proofs
 
-    @Test("a recorded runCode turn holds the snippet source", .timeLimit(.minutes(1)))
+    @Test("a recorded runCode prompt holds the snippet source", .timeLimit(.minutes(1)))
     func theRecordedPromptHoldsTheSnippetSource() async throws {
         let run = try await Self.runOnePrompt(
             code: Self.workingSnippet, label: "RunCodeSourceTests-source")

@@ -99,7 +99,7 @@ private struct ParkingDownloadLoader: ModelLoader {
 /// itself and not a stand-in for it.
 struct CompositionInterruptTests {
     /// The prompt of every run here. It is never answered: each case ends in
-    /// the composition, before a turn begins.
+    /// the composition, before a prompt begins.
     private static let promptText = "write a haiku"
 
     /// The exit code a shell gives to a process that `SIGTERM` ended: 128

@@ -6,7 +6,7 @@ import Testing
 
 // MARK: - Tier 3: the agent CLI records what it did (plan.md §4.1)
 //
-// The suite that spawns the built `acp-agent`, runs one turn, and reads
+// The suite that spawns the built `acp-agent`, runs one prompt, and reads
 // the file the process left behind. A test at this level cannot pass on a
 // no-op recorder: no fixture stands between the composition and the disk.
 //
@@ -29,15 +29,15 @@ private let sessionsPerRun = 1
 struct TranscriptRecordingTests {
     // MARK: - Constants
 
-    /// The prompt of the one turn. The stub model answers with the prompt
+    /// The text of the one prompt. The stub model answers with the prompt
     /// it received, so the answer text carries it.
-    private static let promptText = "record this turn"
+    private static let promptText = "record this prompt"
 
-    /// The prompt of the resumed turn. It differs from ``promptText`` so
-    /// the recorded file says which turn wrote which line.
-    private static let resumedPromptText = "record the second turn too"
+    /// The text of the resumed prompt. It differs from ``promptText`` so
+    /// the recorded file says which prompt wrote which line.
+    private static let resumedPromptText = "record the second prompt too"
 
-    /// The subcommand that runs one turn (cli-plan.md §5.4).
+    /// The subcommand that runs one prompt (cli-plan.md §5.4).
     private static let runSubcommand = "run"
 
     /// The option that names the working directory of the run.
@@ -48,7 +48,7 @@ struct TranscriptRecordingTests {
 
     // MARK: - The contract
 
-    /// `acp-agent run` writes the events of its turn to
+    /// `acp-agent run` writes the events of its prompt to
     /// `<cwd>/.acp-agent/transcripts/<sessionId>/transcript.jsonl`.
     ///
     /// The run opens one session, so the root holds one session directory,
@@ -82,7 +82,7 @@ struct TranscriptRecordingTests {
     }
 
     /// `--resume` continues the session the first run recorded: the second
-    /// turn runs in the same id, and the recorded file grows.
+    /// prompt runs in the same id, and the recorded file grows.
     ///
     /// The run that resumes carries no `--cwd`, because the stored session
     /// already has a working directory and it wins (cli-plan.md §5.4). The
@@ -121,7 +121,7 @@ struct TranscriptRecordingTests {
         let afterSecondPrompt = try String(contentsOf: file, encoding: .utf8)
         #expect(
             afterSecondPrompt.count > afterFirstPrompt.count,
-            "the resumed turn recorded nothing at \(file.path)")
+            "the resumed prompt recorded nothing at \(file.path)")
     }
 
     // MARK: - The subprocess driver

@@ -142,7 +142,7 @@ import Testing
         #expect(!surface.tools.contains { $0.name == "skills" })
     }
 
-    // MARK: - A turn that loads a skill
+    // MARK: - A prompt that loads a skill
 
     /// The text of every `tool_call_update` content block of the collected
     /// sequence, joined in arrival order.
@@ -177,7 +177,7 @@ import Testing
         return try? JSONDecoder().decode(String.self, from: data)
     }
 
-    /// Runs one turn whose script makes the given `skills` call.
+    /// Runs one prompt whose script makes the given `skills` call.
     ///
     /// - Parameters:
     ///   - label: The directory label of the calling test.

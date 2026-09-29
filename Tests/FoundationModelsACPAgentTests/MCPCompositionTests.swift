@@ -16,7 +16,7 @@ import Testing
 ///
 /// The roster cases run the pure composition step with no connection. The
 /// mount-order case spawns the `mcp-test-server` executable that Multitool
-/// ships, through the composition's own stdio path. The turn-boundary case
+/// ships, through the composition's own stdio path. The prompt-boundary case
 /// and the reconnect case each script an in-process `ScriptedServer` from the
 /// `MCPTestServer` library behind a transport factory, so each one moves the
 /// catalog of its own server at the moment it chooses and no wall clock
@@ -34,7 +34,7 @@ import Testing
     /// The name of a second client-supplied server.
     private static let deltaName = "delta"
 
-    /// The name of the server of the turn-boundary case, and so the noun its
+    /// The name of the server of the prompt-boundary case, and so the noun its
     /// verbs render under.
     private static let boundaryName = "boundary"
 
@@ -42,7 +42,7 @@ import Testing
     private static let reconnectName = "reconnecting"
 
     /// The name of the tool a case adds after the first connect — the
-    /// reconnect case between two connects, and the turn-boundary case on the
+    /// reconnect case between two connects, and the prompt-boundary case on the
     /// live connection.
     private static let extraToolName = "extra"
 
@@ -58,11 +58,11 @@ import Testing
     /// The mode that registers the echo tool alone.
     private static let echoMode = "echo"
 
-    /// The rendered path of the tool the server of the turn-boundary case
+    /// The rendered path of the tool the server of the prompt-boundary case
     /// serves from its first connect.
     private static let boundaryEchoPath = "\(boundaryName).\(ScriptedServer.echoToolName)"
 
-    /// The rendered path of the tool the turn-boundary case adds to its
+    /// The rendered path of the tool the prompt-boundary case adds to its
     /// server after the first connect.
     private static let boundaryExtraPath = "\(boundaryName).\(extraToolName)"
 
@@ -200,7 +200,7 @@ import Testing
         /// The mounted staging comes first so that a case which watches
         /// ``count`` or ``newestPaths`` to learn that a rebuild was staged
         /// knows the mounted staging already holds it. In the other order a
-        /// watcher can read the record in the window before that, and a turn
+        /// watcher can read the record in the window before that, and a prompt
         /// boundary taken in that window applies nothing.
         ///
         /// - Parameter registry: The registry to stage.

@@ -4,7 +4,7 @@ import Testing
 
 @testable import acp_agent
 
-/// The prompt-source table (cli-plan.md §5.5): where one `run` turn
+/// The prompt-source table (cli-plan.md §5.5): where one `run` prompt
 /// takes its prompt from.
 ///
 /// One test stands for each row of the table:

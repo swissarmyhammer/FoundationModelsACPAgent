@@ -268,7 +268,7 @@ public struct AgentClientHarness: Sendable {
     /// The wiring every factory shares: the agent with its connection
     /// over the wire's agent end, and the client over the holding clock.
     /// The factory closure binds the connection into the agent, so a
-    /// prompt turn can notify through it (plan.md §8.1).
+    /// prompt can send notifications through it (plan.md §8.1).
     ///
     /// - Parameters:
     ///   - agent: The agent under test.

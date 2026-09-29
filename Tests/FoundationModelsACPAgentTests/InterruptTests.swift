@@ -7,8 +7,8 @@ import Testing
 @testable import FoundationModelsACPAgent
 @testable import acp_agent
 
-/// The interrupt of one `run` turn (cli-plan.md §5.9): `Ctrl-C` sends
-/// `session/cancel`, the turn ends `cancelled`, the text that already
+/// The interrupt of one `run` prompt (cli-plan.md §5.9): `Ctrl-C` sends
+/// `session/cancel`, the prompt ends `cancelled`, the text that already
 /// arrived stays on the answer descriptor, and the run exits 4.
 ///
 /// **No case here arms a real signal.** `signal(SIGINT, SIG_IGN)` changes
@@ -17,17 +17,17 @@ import Testing
 /// watch, and the spawned-binary suite of the nested package sends the
 /// real `SIGINT` to a real `acp-agent`.
 ///
-/// The scope of this suite is the turn, and only the turn. The other
+/// The scope of this suite is the prompt, and only the prompt. The other
 /// window of §5.9 — a `Ctrl-C` during a model download, before the wire
 /// opens — is ``CompositionInterruptTests``.
 struct InterruptTests {
     // MARK: - Constants
 
     /// The text the scripted model streams before it holds, so a
-    /// cancelled turn has text that already arrived.
+    /// cancelled prompt has text that already arrived.
     private static let arrivedText = "working"
 
-    /// The prompt of every turn here.
+    /// The prompt text of every case here.
     private static let promptText = "write a haiku"
 
     /// The fact the first case waits for before it interrupts, named in
@@ -87,16 +87,16 @@ struct InterruptTests {
 
     // MARK: - The first signal (cli-plan.md §5.9)
 
-    /// The first interrupt cancels the running turn, and the text that
+    /// The first interrupt cancels the running prompt, and the text that
     /// already arrived stays on the answer descriptor.
     ///
-    /// The scripted model streams one delta and then holds, so the turn
+    /// The scripted model streams one delta and then holds, so the prompt
     /// ends for one reason only: a `session/cancel` reached the agent.
     ///
     /// **The order the case depends on.** A cancel that lands before the
-    /// turn is running reaches an agent with no active turn, and that
+    /// prompt is running reaches an agent with no active prompt, and that
     /// agent ignores it (plan.md §8.6). A cancel that overtakes the
-    /// first delta gives a turn with no text, which is not what the case
+    /// first delta gives a prompt with no text, which is not what the case
     /// reads back. One fact settles both: the delta is on the answer
     /// descriptor. The watch waits for that fact and then offers its one
     /// arrival, so order decides the result and no delay does.
@@ -155,12 +155,12 @@ struct InterruptTests {
 
     // MARK: - The exit code (cli-plan.md §5.8, §5.9)
 
-    /// A cancelled turn exits 4.
+    /// A cancelled prompt exits 4.
     @Test func aCancelledPromptExitsFour() {
         #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .cancelled)) == .cancelled)
     }
 
-    /// A turn that ran to its end exits 0, so the interrupt code never
+    /// A prompt that ran to its end exits 0, so the interrupt code never
     /// leaks into an ordinary run.
     @Test func aFinishedPromptDoesNotExitFour() {
         #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .endTurn)) == .success)

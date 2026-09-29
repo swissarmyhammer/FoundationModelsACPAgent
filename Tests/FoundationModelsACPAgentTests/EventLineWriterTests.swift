@@ -10,7 +10,7 @@ import Testing
 ///
 /// Five claims stand here. `--verbose` projects each session event to one
 /// line, in arrival order, and it projects nothing else: the answer text
-/// belongs to stdout, and a state update that is not the turn's end is not
+/// belongs to stdout, and a state update that is not the prompt's end is not
 /// an event a person asked for. The lines hold no ANSI escape, so a piped
 /// run is something a person greps. `--quiet` writes no line and draws no
 /// download bar, in a terminal too, and the one error writer of the binary
@@ -52,16 +52,16 @@ struct EventLineWriterTests {
     /// The text the scripted model streams as its one delta.
     private static let scriptedAnswer = "an answer over the in-process pair"
 
-    /// The name of the session tool the scripted turn calls. A trivial
+    /// The name of the session tool the scripted prompt calls. A trivial
     /// `runCode` snippet needs no model and settles inside the inline grace
-    /// of the tool, so a turn that calls it twice costs no weights.
+    /// of the tool, so a prompt that calls it twice costs no weights.
     private static let scriptedToolName = "runCode"
 
     /// The arguments of each scripted tool call: a snippet that returns at
     /// once.
     private static let scriptedToolArguments = #"{"code":"return 1;"}"#
 
-    /// How many tool calls the scripted turn makes.
+    /// How many tool calls the scripted prompt makes.
     private static let scriptedToolCallCount = 2
 
     /// The escape sequence introducer no event line may hold.
@@ -84,7 +84,7 @@ struct EventLineWriterTests {
     /// The four scripted session events the card names: two tool calls,
     /// one plan update, and the stop reason.
     ///
-    /// - Returns: The events, in the order a turn sends them.
+    /// - Returns: The events, in the order a prompt sends them.
     private static func scriptedEvents() -> [SessionUpdate] {
         [
             .toolCallUpdate(
@@ -119,7 +119,7 @@ struct EventLineWriterTests {
     ]
 
     /// The session events that carry no line: the answer text, which
-    /// stdout owns, and the state update that starts the turn.
+    /// stdout owns, and the state update that starts the prompt.
     private static func unprojectedEvents() -> [SessionUpdate] {
         [
             .agentMessageChunk(
@@ -166,14 +166,14 @@ struct EventLineWriterTests {
                 .compactMap { $0.split(separator: " ").dropFirst().first.map(String.init) })
     }
 
-    /// Runs one scripted turn that calls a session tool twice, and gives
+    /// Runs one scripted prompt that calls a session tool twice, and gives
     /// back what each stream carried.
     ///
     /// - Parameters:
     ///   - verbosity: The verbosity of the run's event lines.
     ///   - label: The directory label, so a leftover directory says where
     ///     it came from.
-    /// - Returns: The stderr text and the stdout bytes of the turn.
+    /// - Returns: The stderr text and the stdout bytes of the prompt.
     /// - Throws: Whatever the composition or the prompt throws.
     private static func runScriptedPrompt(
         at verbosity: EventVerbosity, label: String
@@ -243,7 +243,7 @@ struct EventLineWriterTests {
     }
 
     /// The answer text and the running state update carry no line. The
-    /// answer belongs to stdout (§5.6), and a turn that started is not one
+    /// answer belongs to stdout (§5.6), and a prompt that started is not one
     /// of the three events §5.7 names.
     @Test func verboseWritesNoLineForTheAnswerOrTheRunningState() {
         let captured = Self.project(Self.unprojectedEvents(), at: .verbose)
@@ -303,7 +303,7 @@ struct EventLineWriterTests {
 
     // MARK: - `--quiet` and the default (cli-plan.md §5.7)
 
-    /// `--quiet` writes no event line, whatever the turn sent.
+    /// `--quiet` writes no event line, whatever the prompt sent.
     @Test func quietWritesNoEventLine() {
         let captured = Self.project(Self.scriptedEvents(), at: .quiet)
 
@@ -332,7 +332,7 @@ struct EventLineWriterTests {
         #expect(captured.isEmpty)
     }
 
-    // MARK: - `--quiet` turns the download bar off (cli-plan.md §5.7)
+    // MARK: - `--quiet` stops the download bar (cli-plan.md §5.7)
 
     /// `--quiet` draws no download bar, in a terminal too. The renderer
     /// takes its terminal test as an argument, and the verbosity is half
@@ -373,11 +373,11 @@ struct EventLineWriterTests {
         #expect(!capture.bytes().isEmpty)
     }
 
-    // MARK: - One whole turn over a pipe (cli-plan.md §5.7)
+    // MARK: - One whole prompt over a pipe (cli-plan.md §5.7)
 
-    /// A `--verbose` run whose turn makes two tool calls writes one line
+    /// A `--verbose` run whose prompt makes two tool calls writes one line
     /// for each event and nothing else: every line is a projected event,
-    /// each call the script made has its line, and the turn's one stop
+    /// each call the script made has its line, and the prompt's one stop
     /// reason stands last. In a pipe, because a person asked to see them.
     @Test(.timeLimit(.minutes(2)))
     func aVerbosePipedRunWritesOneLineForEachEvent() async throws {
@@ -402,7 +402,7 @@ struct EventLineWriterTests {
     }
 
     /// A run with neither flag writes zero bytes to stderr, over the same
-    /// turn that fills the stream under `--verbose`.
+    /// prompt that fills the stream under `--verbose`.
     @Test(.timeLimit(.minutes(2)))
     func aPipedRunWithNeitherFlagWritesZeroBytesToStandardError() async throws {
         let streams = try await Self.runScriptedPrompt(

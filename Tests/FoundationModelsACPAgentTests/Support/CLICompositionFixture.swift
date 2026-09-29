@@ -13,14 +13,14 @@ import FoundationModelsRouter
 // name, with every root in a throwaway directory — so it stands here
 // once, and the two suites cannot drift apart.
 
-/// The composition of one CLI turn, over a model the test wrote.
+/// The composition of one CLI prompt, over a model the test wrote.
 enum CLICompositionFixture {
-    /// Composes over a model that plays `script`, so a turn gives a text
+    /// Composes over a model that plays `script`, so a prompt gives a text
     /// the test wrote (plan.md §20.1). Nothing downloads and nothing
     /// loads.
     ///
     /// - Parameters:
-    ///   - script: The steps the model plays on every turn.
+    ///   - script: The steps the model plays on every pass.
     ///   - label: The directory label, so a leftover directory says where
     ///     it came from.
     /// - Returns: The composition, over the stub model path.

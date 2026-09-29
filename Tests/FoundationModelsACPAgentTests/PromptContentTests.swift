@@ -92,7 +92,7 @@ import Testing
     ///
     /// - Parameter blocks: The content blocks of the prompt.
     /// - Returns: The recorded model prompt.
-    /// - Throws: Whatever the fixture or the turn throws.
+    /// - Throws: Whatever the fixture or the prompt throws.
     private static func recordedModelPrompt(blocks: [ContentBlock]) async throws -> String {
         let recorder = PromptRecorder()
         let fixture = try await ScriptedPromptFixture.make(
@@ -524,7 +524,7 @@ import Testing
         #expect(text.text == "first")
     }
 
-    // MARK: - The turn on the harness (plan.md §12, §20.1)
+    // MARK: - The prompt on the harness (plan.md §12, §20.1)
 
     /// A prompt with a `resource_link` to a file inside the cwd puts
     /// the file's text into the model prompt the scripted backend

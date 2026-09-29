@@ -10,7 +10,7 @@ struct SkillTriggerSample: Sendable, Equatable {
     /// A short name for the report.
     let name: String
 
-    /// The prompt of the turn.
+    /// The prompt text.
     let prompt: String
 
     /// The id of the skill the model must load, or `nil` when no skill of
@@ -48,7 +48,7 @@ struct SkillTriggerSample: Sendable, Equatable {
 /// `mlx-community/Qwen3-4B-Instruct-2507-4bit` failed `release-notes` and
 /// `who-calls` for a reason that was not its choice: it wrote a `runCode`
 /// call whose JSON was not valid, MLX rejected the call, and the rejection
-/// ended the whole turn with `_error`. Router now gives a rejected call back
+/// ended the whole prompt with `_error`. Router now gives a rejected call back
 /// to the model in a retry. With that model, `release-notes` loads its skill
 /// in 17 seconds, and `who-calls` ends normally without a skill.
 ///
@@ -68,7 +68,7 @@ struct SkillTriggerSample: Sendable, Equatable {
 /// of them: it reports what broke, and the reader must decide that
 /// understanding the code comes first. In the SWE-bench run of 2026-09-19
 /// the model was given the catalog and loaded no skill, and `swebench-issue`
-/// is that condition in one turn of a minute instead of one run of hours.
+/// is that condition in one prompt of a minute instead of one run of hours.
 enum SkillTriggerDataset {
     /// The id of the skill for understanding code.
     static let exploreID = "fixture-explore"

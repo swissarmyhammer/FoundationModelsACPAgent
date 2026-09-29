@@ -160,7 +160,7 @@ import Testing
     // MARK: - The renderer never touches descriptor 1
 
     /// A full render — the spinner, the bar and the table, on a terminal
-    /// destination — leaves descriptor 1 empty. The answer of a `run` turn
+    /// destination — leaves descriptor 1 empty. The answer of a `run` prompt
     /// owns stdout (cli-plan.md §5.6), and decoration must never reach it.
     @Test func aFullRenderLeavesDescriptorOneEmpty() async throws {
         let capture = TerminalCapture()

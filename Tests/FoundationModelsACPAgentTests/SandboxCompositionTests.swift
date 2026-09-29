@@ -187,7 +187,7 @@ import Testing
 
     // MARK: - No permission request
 
-    /// A scripted tool turn that runs a confined shell command sends no
+    /// A scripted tool prompt that runs a confined shell command sends no
     /// `session/request_permission` to the client: the collector holds no
     /// notification, and no session has a pending permission request. The
     /// sandbox is the only gate (plan.md §11.7).
@@ -198,19 +198,19 @@ import Testing
         _ = try await harness.connection.initialize(
             AgentClientHarness.makeInitializeRequest())
 
-        let root = Self.makeResolvedDirectory(named: "turn")
+        let root = Self.makeResolvedDirectory(named: "prompt")
         let registry = try await Self.makeRegistry(workingDirectory: root)
         let tool = try #require(registry.tools[ShellVerbSupport.executeVerbPath])
         let argumentsJSON = try ShellVerbSupport.executeArgumentsJSON(
-            command: "printf turn > turn.txt", workingDirectory: root)
+            command: "printf prompt > prompt.txt", workingDirectory: root)
         let backend = ScriptedLLMContainer(
             script: [.toolCall(name: tool.name, argumentsJSON: argumentsJSON), .endPass]
         ).makeSession(instructions: nil, tools: [tool])
 
         _ = try await backend.respond(to: "run the command", maxTokens: nil)
 
-        let written = root.appendingPathComponent("turn.txt")
-        #expect(try String(contentsOf: written, encoding: .utf8) == "turn")
+        let written = root.appendingPathComponent("prompt.txt")
+        #expect(try String(contentsOf: written, encoding: .utf8) == "prompt")
         #expect(await collector.updates.isEmpty)
         let pendingPermissionCounts = await MainActor.run {
             harness.client.sessions.values.map(\.pendingPermissionRequests.count)
