@@ -102,6 +102,45 @@ comments:
     - evidence: 18 files (17 changed, 1 new). Sources: PromptExecution.swift, EventProjection.swift, SessionSetup.swift, ConfigOptions.swift, AgentConfiguration.swift, ConfigurationYAML.swift, RepetitionConfiguration.swift (new), acp-agent/ExitCode.swift. Tests: PromptExecutionTests, ExitCodeTests, ConfigurationLoaderTests, ConfigShowTests, SessionSetupTests, SessionResumeTests, SkillOutputProtectionTests. Docs: plan.md, bench/README.md, bench/swebench_acp.py. `swift test`: 624 tests in 70 suites passed (1 known issue, from before), no compiler warning (only the swift-build notice "missing creator for mutated node" for the mlx bundle, from before). `swift build --build-tests` in IntegrationTests: complete, no warning. bench unittest: 208 OK.
     - next: /review
   timestamp: 2026-09-29T20:27:01.611020+00:00
+- actor: claude-code
+  id: 01m3qedebxcpbhdvd0w9n4gt4q
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (66bfd3c); 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:450 (completeness/inverse-operation-coverage)
+    - next: add a test that runs a prompt with finish reason `.repeatedLines` and makes sure that the session records a `repeatedPartRemoval` event with the correct text and structure. The task stays in review.
+  timestamp: 2026-09-29T20:41:33.309323+00:00
+- actor: claude-code
+  id: 01m3qedtct82qrssk4xhkv5kyn
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 18 files (PromptExecution.swift, EventProjection.swift, RepetitionConfiguration.swift new, ExitCode.swift, config files, 7 test files, plan.md, bench docs)
+    - test: green — swift test 624 tests pass; IntegrationTests build ok
+    - commit: 66bfd3c
+    - review: findings — Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:450
+  timestamp: 2026-09-29T20:41:45.626420+00:00
+- actor: claude-code
+  id: 01m3qf5ftmmpn9860ce300dazv
+  text: |-
+    Review finding SessionResumeTests.swift:450 (completeness/inverse-operation-coverage) is corrected (2026-09-29).
+
+    Who writes the entry: Router, not this repository. `RoutedSessionActorRepetitionWatch.recordRepeatedPartRemoval` writes the `repeatedPartRemoval` event after a repetition stop. The watch reads the public `LanguageModelSessionBackend.transcriptUpdates()` while a call is in flight. `ScriptedSessionBackend` kept the protocol default (a stream that finishes at once), so Router never watched a scripted call. The tool-call check path (`RepetitionCheckedTool`) is internal to Router's live loader, so the test support cannot use it.
+
+    What changed (test code only, no production code):
+    - `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift`: new step `ScriptedPassStep.reasoning(String)`. It makes one `.reasoning` entry for each pass, with a stable id, and makes its text longer. `ScriptedSessionBackend` now implements `transcriptUpdates()`: it gives the entries at once and after each change (newest value only). All transcript changes go through one `changeTranscript` helper that feeds the open streams. Router's own detector then fires on scripted text. No Router logic is copied.
+    - `PromptExecutionTests.aRepetitionStopRecordsARepeatedPartRemovalThatAResumeReplays`: `repetition:` config with `windowTokens: 200` and `recoveriesPerAnswer: 0`; a script with one new line, the repeated lines, and `.hold`. It asserts the idle stop reason `_repeated`, a `repeatedPartRemoval` event in the journal (Poll.until) with Router's text and a structure segment under `FoundationModelsRouter.RepeatedPartRemovalSegment` whose one cut keeps the UTF-8 length of the new lines, and a resume with `replayFrom` start that replays the recorded messages and no message for the cut. The test runs in 0.4 s.
+    - `Tests/FoundationModelsACPAgentTests/Support/ReplayedMessage.swift` (new): the replay readers moved out of SessionResumeTests, so both suites share them. `ResumeSessionFixture` now holds Router's schema name and text prefix, which SessionResumeTests used as private constants.
+
+    What did not work: asserting the key of the cut against the recorded reasoning entry id. `TranscriptEntryPayload.entryId` is internal to Router, so the test checks the one kept length only.
+
+    RED: without `transcriptUpdates()` the watch never fired; the prompt held until the waits failed (no idle, no journal event). GREEN after the stream.
+  timestamp: 2026-09-29T20:54:41.236180+00:00
+- actor: claude-code
+  id: 01m3qf5jc5bk2fnjaka3e4zdpq
+  text: |-
+    ### implement — changed
+    - evidence: 5 files (1 new). Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift, Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift, Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift, Tests/FoundationModelsACPAgentTests/Support/ResumeSessionFixture.swift, Tests/FoundationModelsACPAgentTests/Support/ReplayedMessage.swift (new). `swift test`: 625 tests in 70 suites passed (1 known issue, from before); no compiler warning (only the swift-build notice "missing creator for mutated node" for the mlx bundle, from before). Finding SessionResumeTests.swift:450 checked. Not committed.
+    - next: /review
+  timestamp: 2026-09-29T20:54:43.845570+00:00
 position_column: doing
 position_ordinal: '8180'
 title: Map Router's endedInsideReasoning finish reason to an honest ACP stop reason
@@ -125,3 +164,16 @@ Router b3b3d72 (card ^gfxd7av there) adds `FinishReason.endedInsideReasoning`: t
 Depends on Router b3b3d72 being on Router main.
 
 #upstream
+
+## Review Findings (2026-09-29 15:29)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 6 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `bench/README.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:450` `completeness/inverse-operation-coverage` — Test covers reading/replaying `repeatedPartRemoval` journal events (via manually inserted events) but provides no test that such events are automatically written when a prompt stops with `repeatedLines` finish reason. The helpers `insertRepeatedPartRemoval`, `repeatedPartRemovalLine`, and `journalKind` are used to *construct* test data, not to verify automatic creation by the production code. Add a test in PromptExecutionTests that runs a prompt with `finishReason: .repeatedLines` (or actual repetition detection) and verifies the session's recorded events include a `repeatedPartRemoval` entry with the expected text and structure. This completes the round-trip: creation (write) and consumption (read).

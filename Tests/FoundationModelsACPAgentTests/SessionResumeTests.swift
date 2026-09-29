@@ -18,97 +18,10 @@ import Testing
 /// drives, so the proofs read behavior — the recorded events, the raw
 /// notification sequence, and what the restored backend received.
 struct SessionResumeTests {
-    /// One replayed message, as both the recording and the wire show it.
-    private struct ReplayedMessage: Equatable {
-        /// Which whole-message form carried it.
-        let kind: Kind
-
-        /// The message id on the wire.
-        let id: String
-
-        /// The joined text content.
-        let text: String
-
-        /// The three whole-message forms replay sends.
-        enum Kind: Equatable {
-            /// A `user_message` upsert.
-            case user
-
-            /// An `agent_message` upsert.
-            case agent
-
-            /// An `agent_thought` upsert.
-            case thought
-        }
-    }
-
     // MARK: - Readers
-
-    /// The messages replay is expected to send for `events`: one row per
-    /// recorded `.prompt`, `.reasoning`, and `.response` event, keyed by
-    /// the recorded first segment id.
-    ///
-    /// - Parameter events: The session's recorded events, in order.
-    /// - Returns: The expected messages, in order.
-    private static func expectedMessages(from events: [TranscriptEvent]) -> [ReplayedMessage] {
-        events.compactMap { event in
-            let kind: ReplayedMessage.Kind
-            switch event.kind {
-            case .prompt:
-                kind = .user
-            case .reasoning:
-                kind = .thought
-            case .response:
-                kind = .agent
-            default:
-                return nil
-            }
-            guard let segments = event.entry?.segments,
-                case .text(let id, let content) = segments.first
-            else {
-                return nil
-            }
-            return ReplayedMessage(kind: kind, id: id, text: content)
-        }
-    }
-
-    /// The whole-message upserts in a raw update sequence.
-    ///
-    /// - Parameter updates: The recorded raw updates.
-    /// - Returns: The messages, in arrival order.
-    private static func replayedMessages(in updates: [SessionUpdate]) -> [ReplayedMessage] {
-        updates.compactMap { update in
-            switch update {
-            case .userMessage(let message):
-                return ReplayedMessage(
-                    kind: .user, id: message.messageId.rawValue, text: text(of: message.content))
-            case .agentMessage(let message):
-                return ReplayedMessage(
-                    kind: .agent, id: message.messageId.rawValue, text: text(of: message.content))
-            case .agentThought(let message):
-                return ReplayedMessage(
-                    kind: .thought, id: message.messageId.rawValue, text: text(of: message.content))
-            default:
-                return nil
-            }
-        }
-    }
-
-    /// The joined text of a whole-message content patch.
-    ///
-    /// - Parameter content: The message's content patch.
-    /// - Returns: The joined text of its text blocks; empty otherwise.
-    private static func text(of content: PatchField<[ContentBlock]>?) -> String {
-        guard case .value(let blocks)? = content else {
-            return ""
-        }
-        return blocks.compactMap { block in
-            if case .text(let text) = block {
-                return text.text
-            }
-            return nil
-        }.joined()
-    }
+    //
+    // The readers of the replayed messages are in
+    // `Support/ReplayedMessage.swift`, shared with `PromptExecutionTests`.
 
     /// Whether an update is one of the chunk forms replay must not send.
     ///
@@ -178,17 +91,9 @@ struct SessionResumeTests {
     /// The file name of the journal in the directory of one session.
     private static let journalFileName = "transcript.jsonl"
 
-    /// The schema name of the one segment that Router writes on a
-    /// `repeatedPartRemoval` event.
-    private static let repeatedPartRemovalSchemaName =
-        "FoundationModelsRouter.RepeatedPartRemovalSegment"
-
     /// The content of a cut that keeps each entry whole, so the restored
     /// render is the same as the recorded one.
     private static let wholeRenderCutJSON = #"{"keptUTF8Lengths":{}}"#
-
-    /// The text Router records on a `repeatedPartRemoval` event.
-    private static let repeatedPartRemovalText = "Repeated part removed from the render: "
 
     /// The journal keys of a `.response` line that a `repeatedPartRemoval`
     /// line does not carry.
@@ -239,14 +144,14 @@ struct SessionResumeTests {
         var fields = try #require(
             JSONSerialization.jsonObject(with: Data(responseLine.utf8)) as? [String: Any])
         let segment = SegmentPayload.structure(
-            id: UUID().uuidString, schemaName: repeatedPartRemovalSchemaName,
+            id: UUID().uuidString, schemaName: ResumeSessionFixture.repeatedPartRemovalSchemaName,
             contentJSON: wholeRenderCutJSON)
         let segmentObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(segment))
         for key in responseOnlyJournalKeys {
             fields.removeValue(forKey: key)
         }
         fields["kind"] = TranscriptEvent.Kind.repeatedPartRemoval.rawValue
-        fields["text"] = repeatedPartRemovalText
+        fields["text"] = ResumeSessionFixture.repeatedPartRemovalText
         fields["entry"] = ["entryId": UUID().uuidString, "segments": [segmentObject]]
         let data = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
         return String(decoding: data, as: UTF8.self)
@@ -413,7 +318,7 @@ struct SessionResumeTests {
             under: root, sessionId: resume.fixture.sessionId, count: 2)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-        let expected = Self.expectedMessages(
+        let expected = ReplayedMessage.expected(
             from: try ResumeSessionFixture.recordedEvents(
                 under: root, sessionId: resume.fixture.sessionId))
         #expect(expected.count == 6)
@@ -428,7 +333,7 @@ struct SessionResumeTests {
         let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
             .map(\.update)
         #expect(!replayUpdates.contains { Self.isChunk($0) })
-        #expect(Self.replayedMessages(in: replayUpdates) == expected)
+        #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
         #expect(response.configOptions?.isEmpty == false)
 
         // A second replay converges: the same ids again, no duplicates
@@ -438,7 +343,7 @@ struct SessionResumeTests {
             resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
         let secondUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBetween))
             .map(\.update)
-        #expect(Self.replayedMessages(in: secondUpdates) == expected)
+        #expect(ReplayedMessage.replayed(in: secondUpdates) == expected)
         await resume.fixture.close()
     }
 
@@ -456,7 +361,7 @@ struct SessionResumeTests {
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: resume.fixture.sessionId, count: 2)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
-        let expected = Self.expectedMessages(
+        let expected = ReplayedMessage.expected(
             from: try ResumeSessionFixture.recordedEvents(
                 under: root, sessionId: resume.fixture.sessionId))
         try Self.insertRepeatedPartRemoval(under: root, sessionId: resume.fixture.sessionId)
@@ -470,7 +375,7 @@ struct SessionResumeTests {
         let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
             .map(\.update)
 
-        #expect(Self.replayedMessages(in: replayUpdates) == expected)
+        #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
         await resume.fixture.close()
     }
 
@@ -488,7 +393,7 @@ struct SessionResumeTests {
             resume.makeResumeRequest())
         let updates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
             .map(\.update)
-        #expect(Self.replayedMessages(in: updates).isEmpty)
+        #expect(ReplayedMessage.replayed(in: updates).isEmpty)
         await resume.fixture.close()
     }
 

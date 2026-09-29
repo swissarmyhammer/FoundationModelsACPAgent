@@ -567,6 +567,119 @@ import Testing
                 == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
+    // MARK: - The repetition stop (§8.2, task ^k51h6bb)
+
+    /// The window of Router's repetition watch in the repetition proof, in
+    /// tokens. It is small, so a short script fills it. The scripted
+    /// counter gives one token for each character.
+    private static let repetitionWindowTokens = 200
+
+    /// How many times the repeating script writes ``repeatedReasoningLines``:
+    /// more than one ``repetitionWindowTokens`` window of tokens.
+    private static let repeatedCycleCount = 10
+
+    /// The reasoning line the repeating script writes one time.
+    private static let newReasoningLine = "First I read the failing test and its fixture.\n"
+
+    /// The reasoning lines the repeating script writes again and again.
+    private static let repeatedReasoningLines = [
+        "Maybe the alias is resolved in the compiler.\n",
+        "Let me look at how the compiler resolves it.\n",
+    ]
+
+    /// The project `config.yaml` of the repetition proof: the small window,
+    /// and no recovery, so the first repetition stop ends the prompt.
+    private static let repetitionConfigYAML = """
+        repetition:
+          windowTokens: \(repetitionWindowTokens)
+          recoveriesPerAnswer: 0
+        """
+
+    /// The script of the repetition proof: one new reasoning line, the
+    /// repeated lines, and a hold that only a cancel ends. Router's
+    /// repetition watch reads the growing reasoning and stops the call.
+    private static var repeatingReasoningScript: [ScriptedPassStep] {
+        let cycle = repeatedReasoningLines.map { ScriptedPassStep.reasoning($0) }
+        let repeated = Array(repeating: cycle, count: repeatedCycleCount).flatMap { $0 }
+        return [.reasoning(newReasoningLine)] + repeated + [.hold]
+    }
+
+    /// The content of the one segment of a `repeatedPartRemoval` event: for
+    /// each cut entry id, the UTF-8 length of its text that the render keeps.
+    private struct RepeatedPartCut: Decodable {
+        /// The kept UTF-8 length of each cut entry, by entry id.
+        let keptUTF8Lengths: [String: Int]
+    }
+
+    /// The cut that `event` records, or `nil` when its first segment is not
+    /// a structure segment under Router's repeated-part schema name.
+    ///
+    /// - Parameter event: A recorded `repeatedPartRemoval` event.
+    /// - Returns: The decoded cut, or `nil`.
+    /// - Throws: When the segment content does not decode.
+    private static func repeatedPartCut(in event: TranscriptEvent) throws -> RepeatedPartCut? {
+        guard case .structure(_, let schemaName, let contentJSON)? = event.entry?.segments?.first,
+            schemaName == ResumeSessionFixture.repeatedPartRemovalSchemaName
+        else {
+            return nil
+        }
+        return try JSONDecoder().decode(RepeatedPartCut.self, from: Data(contentJSON.utf8))
+    }
+
+    /// Runs one prompt over ``repeatingReasoningScript`` to its end, and
+    /// waits until the journal of the session holds the
+    /// `repeatedPartRemoval` event and the session accepts a new request.
+    ///
+    /// - Returns: The fixture, the idle stop reason of the prompt, and the
+    ///   recorded events of the session.
+    /// - Throws: Whatever the wire calls, the waits or the journal read throw.
+    private static func runRepeatingPrompt() async throws -> (
+        fixture: ScriptedPromptFixture, stopReason: StopReason?, events: [TranscriptEvent]
+    ) {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: repeatingReasoningScript, label: "PromptExecutionTests-repetition",
+            projectConfigYAML: repetitionConfigYAML)
+        _ = try await fixture.harness.connection.prompt(makePromptRequest(sessionId: fixture.sessionId))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
+        try await Poll.until("the journal holds a repeatedPartRemoval event") {
+            try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
+                .contains { $0.kind == .repeatedPartRemoval }
+        }
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        let events = try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
+        return (fixture, ScriptedPromptFixture.idleStopReason(in: updates), events)
+    }
+
+    /// A prompt whose reasoning repeats its lines ends with the `_repeated`
+    /// stop reason. Router's repetition watch stops the call, and the
+    /// session records a `repeatedPartRemoval` event in its journal: Router's
+    /// text, and a cut of the one reasoning entry that keeps each new
+    /// reasoning line one time. A resume of that session replays each
+    /// recorded message, and sends no message for the `repeatedPartRemoval`
+    /// event.
+    @Test(.timeLimit(.minutes(1)))
+    func aRepetitionStopRecordsARepeatedPartRemovalThatAResumeReplays() async throws {
+        let (fixture, stopReason, events) = try await Self.runRepeatingPrompt()
+        #expect(stopReason == .unknown(PromptExecution.repeatedStopReasonValue))
+
+        let removal = try #require(events.first { $0.kind == .repeatedPartRemoval })
+        #expect(removal.text?.hasPrefix(ResumeSessionFixture.repeatedPartRemovalText) == true)
+        let cut = try #require(try Self.repeatedPartCut(in: removal))
+        let newLines = Self.newReasoningLine + Self.repeatedReasoningLines.joined()
+        #expect(Array(cut.keptUTF8Lengths.values) == [newLines.utf8.count])
+
+        await fixture.harness.agent.markSessionClosed(fixture.sessionId)
+        let countBefore = await fixture.collector.updates.count
+        _ = try await fixture.harness.connection.resumeSession(
+            ResumeSessionRequest(
+                cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId,
+                replayFrom: .start(ReplayFromStart())))
+        let replayUpdates = Array(await fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+        #expect(ReplayedMessage.replayed(in: replayUpdates) == ReplayedMessage.expected(from: events))
+        await fixture.close()
+    }
+
     // MARK: - The stalled generation (§8.2, task ^s0bw5cv)
 
     /// Makes one stall report of the shape Router emits on a streaming

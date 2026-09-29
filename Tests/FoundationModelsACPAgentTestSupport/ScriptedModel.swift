@@ -23,6 +23,13 @@ public enum ScriptedPassStep: Sendable, Equatable {
     /// Streams `text` as one delta.
     case textDelta(String)
 
+    /// Adds `text` to the `.reasoning` entry of the pass. The first
+    /// reasoning step of a pass makes that entry, and each reasoning step
+    /// after it makes the text of the same entry longer. A proof that
+    /// must show a call in flight to Router's repetition watch plays its
+    /// reasoning with this step (task ^k51h6bb).
+    case reasoning(String)
+
     /// Invokes the handed tool named `name` with the fixed
     /// `argumentsJSON`.
     case toolCall(name: String, argumentsJSON: String)
@@ -136,6 +143,10 @@ public enum ScriptedModelError: Error, Equatable {
 ///   carrying the session instructions and one `Transcript.ToolDefinition`
 ///   per handed tool;
 /// - one `.prompt` entry per generating call, before the play;
+/// - one `.reasoning` entry in a pass that plays a
+///   ``ScriptedPassStep/reasoning(_:)`` step. Each such step makes its text
+///   longer, and ``transcriptUpdates()`` shows each change while the pass
+///   runs, as the live SDK session does (task ^k51h6bb);
 /// - a `.toolCalls` entry before each played invocation and a
 ///   `.toolOutput` entry after it, so Router's transcript diff derives
 ///   the `toolCall` and `toolStatus` session events for the tier-2
@@ -174,6 +185,31 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
 
         /// The number of tool calls played so far.
         var playedToolCallCount = 0
+
+        /// The `.reasoning` entry of the pass in flight, or `nil` before
+        /// the first reasoning step of the pass.
+        var liveReasoning: LiveReasoning?
+
+        /// The continuation of each open ``transcriptUpdates()`` stream, by
+        /// the key of the stream.
+        var observers: [Int: AsyncStream<[Transcript.Entry]>.Continuation] = [:]
+
+        /// The key of the next ``transcriptUpdates()`` stream.
+        var nextObserverKey = 0
+    }
+
+    /// The `.reasoning` entry that the reasoning steps of one pass make
+    /// longer: its place in the entries, its stable id, and its text.
+    private struct LiveReasoning {
+        /// The index of the entry in ``SynthesizedTranscript/entries``.
+        let index: Int
+
+        /// The id of the entry. It stays the same while the text grows, as
+        /// the id of a live SDK entry does.
+        let id: String
+
+        /// The text of the entry so far.
+        var text: String
     }
 
     /// The synthesized transcript, guarded for the sync
@@ -309,6 +345,33 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         synthesized.withLock { $0.entries }
     }
 
+    /// The transcript of this backend now, and again after each change of
+    /// it, while the stream is read (task ^k51h6bb).
+    ///
+    /// Router's repetition watch reads this stream while a call is in
+    /// flight. A backend that keeps the protocol default gives no value,
+    /// and Router does not watch its calls. Values that come faster than
+    /// the reader reads merge into the newest one, as the contract permits.
+    ///
+    /// - Returns: The stream of the transcript.
+    public func transcriptUpdates() -> AsyncStream<[Transcript.Entry]> {
+        let (stream, continuation) = AsyncStream<[Transcript.Entry]>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        let key = synthesized.withLock { state in
+            let key = state.nextObserverKey
+            state.nextObserverKey += 1
+            state.observers[key] = continuation
+            continuation.yield(state.entries)
+            return key
+        }
+        continuation.onTermination = { [weak self] _ in
+            self?.synthesized.withLock { state in
+                _ = state.observers.removeValue(forKey: key)
+            }
+        }
+        return stream
+    }
+
     public func usageTokenCounts() -> (input: Int, output: Int)? {
         Self.scriptedUsage
     }
@@ -369,7 +432,51 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     private func appendPromptEntry(prompt: String) {
         let entry = Transcript.Entry.prompt(
             Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: prompt))]))
-        synthesized.withLock { $0.entries.append(entry) }
+        changeTranscript { state in
+            state.entries.append(entry)
+            state.liveReasoning = nil
+        }
+    }
+
+    /// Changes the synthesized transcript with `change`, and gives the
+    /// changed entries to each open ``transcriptUpdates()`` stream.
+    ///
+    /// - Parameter change: The change to make, under the lock.
+    /// - Returns: What `change` returns.
+    private func changeTranscript<Result: Sendable>(
+        _ change: (inout SynthesizedTranscript) -> Result
+    ) -> Result {
+        synthesized.withLock { state in
+            let result = change(&state)
+            for observer in state.observers.values {
+                observer.yield(state.entries)
+            }
+            return result
+        }
+    }
+
+    /// Adds `text` to the `.reasoning` entry of the pass in flight, and
+    /// makes that entry when the pass has none yet.
+    ///
+    /// - Parameter text: The reasoning text to add.
+    private func appendReasoning(_ text: String) {
+        changeTranscript { state in
+            var reasoning =
+                state.liveReasoning
+                ?? LiveReasoning(index: state.entries.count, id: UUID().uuidString, text: "")
+            reasoning.text += text
+            let entry = Transcript.Entry.reasoning(
+                Transcript.Reasoning(
+                    id: reasoning.id,
+                    segments: [.text(Transcript.TextSegment(content: reasoning.text))],
+                    signature: nil))
+            if state.entries.indices.contains(reasoning.index) {
+                state.entries[reasoning.index] = entry
+            } else {
+                state.entries.append(entry)
+            }
+            state.liveReasoning = reasoning
+        }
     }
 
     /// Appends the `.response` entry that closes one pass.
@@ -378,7 +485,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     private func appendResponseEntry(text: String) {
         let entry = Transcript.Entry.response(
             Transcript.Response(segments: [.text(Transcript.TextSegment(content: text))]))
-        synthesized.withLock { $0.entries.append(entry) }
+        changeTranscript { $0.entries.append(entry) }
     }
 
     /// Plays `steps`: yields each delta, invokes each scripted tool call,
@@ -400,6 +507,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             switch step {
             case .textDelta(let text):
                 yield(text)
+            case .reasoning(let text):
+                appendReasoning(text)
             case .toolCall(let name, let argumentsJSON):
                 try await invokeTool(named: name, argumentsJSON: argumentsJSON)
             case .fail(let failure):
@@ -481,7 +590,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///   - arguments: The call's arguments.
     /// - Returns: The minted scripted call id.
     private func appendToolCallsEntry(name: String, arguments: GeneratedContent) -> String {
-        synthesized.withLock { state in
+        changeTranscript { state in
             state.playedToolCallCount += 1
             let callId = Self.scriptedCallIdPrefix + String(state.playedToolCallCount)
             state.entries.append(
@@ -515,7 +624,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         } else {
             segment = .text(Transcript.TextSegment(content: String(describing: output)))
         }
-        synthesized.withLock { state in
+        changeTranscript { state in
             state.entries.append(
                 .toolOutput(
                     Transcript.ToolOutput(id: callId, toolName: name, segments: [segment])))

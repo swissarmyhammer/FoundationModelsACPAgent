@@ -201,6 +201,13 @@ struct ResumeSessionFixture {
     /// The container every session backend of the agent comes from.
     let container: ResumeRecordingContainer
 
+    /// The schema name of the one segment that Router writes on a
+    /// `repeatedPartRemoval` event.
+    static let repeatedPartRemovalSchemaName = "FoundationModelsRouter.RepeatedPartRemovalSegment"
+
+    /// The start of the text Router records on a `repeatedPartRemoval` event.
+    static let repeatedPartRemovalText = "Repeated part removed from the render: "
+
     /// The number of idle updates the fixture has waited for so far.
     /// Each ``runPrompt(_:)`` waits for one more.
     private var completedPromptCount = 0
