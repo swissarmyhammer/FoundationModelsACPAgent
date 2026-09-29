@@ -229,7 +229,7 @@ public struct CodeContextToolOptions: ToolSectionOptions, KeyCheckedSection {
 
 /// One config-derived MCP server entry (plan.md §7.3, §11.5): a name and
 /// exactly one transport. `env` and `headers` are YAML mappings here; the
-/// MCP composition turns them into the wire's `{name, value}` pairs.
+/// MCP composition changes them into the wire's `{name, value}` pairs.
 public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// How a server is reached (plan.md §11.5). There are two transports:
     /// stdio and http. v2 removed `sse`, and the ACP tunnel is
@@ -361,7 +361,7 @@ public enum MCPToolSection: Codable, Equatable, Sendable {
 // MARK: - The tools section
 
 /// The `tools:` section (plan.md §11.2): the roster of built-in
-/// capabilities, each on unless the config turns it off. Absence enables —
+/// capabilities, each on unless the config sets it off. Absence enables —
 /// a user with no config gets every capability with its defaults — and
 /// disabling is per tool: there is no `tools: false` switch and no `only:`
 /// allowlist.

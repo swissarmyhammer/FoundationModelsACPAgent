@@ -153,7 +153,7 @@ enum OutOfProcessPrompt {
         guard shookHands else {
             // The child is gone and no session was ever opened, so there is
             // no `session/cancel` to send and no answer text to keep. The
-            // run reports the `cancelled` stop reason, and `run()` turns
+            // run reports the `cancelled` stop reason, and `run()` changes
             // that into exit 4 (§5.8, §5.9).
             return RunPromptResult(stopReason: .cancelled)
         }

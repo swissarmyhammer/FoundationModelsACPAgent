@@ -47,7 +47,7 @@ public struct SessionPage: Equatable, Sendable {
 /// `session.json` and never reimplements the Router's transcript format.
 ///
 /// **The listability predicate (§9)**: a session lists when it has a
-/// persisted transcript — a zero-turn session never wrote one — and it is a
+/// persisted transcript — a zero-prompt session never wrote one — and it is a
 /// root: `parentId == nil` on every event, and no event carries the
 /// `agentSpawn` fact the Router stamps on the `session` event of an
 /// agent-spawned session. Agent spawns do not occur in this iteration

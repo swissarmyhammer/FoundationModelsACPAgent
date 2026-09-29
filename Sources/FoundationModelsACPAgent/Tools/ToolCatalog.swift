@@ -22,14 +22,14 @@ public struct SessionSurface: Sendable {
     public let serverPool: MCPServerPool
 
     /// The mounted `tools.files.read` verb, or `nil` when the files
-    /// section is off. The prompt turn's resource-link resolver reads
+    /// section is off. The prompt's resource-link resolver reads
     /// through it (plan.md §12), so a linked file is bounded by the same
     /// root set the model reads under.
     public let filesReadVerb: (any FoundationModels.Tool)?
 
     /// The host-owned live shell output stream (plan.md §11.8), or
     /// `nil` when the shell section is off. The session start hands it
-    /// to the terminal projection, the prompt turn reads settlements
+    /// to the terminal projection, the prompt reads settlements
     /// through its `snapshot(for:)`, and the session-close task calls
     /// its `finish()` at teardown.
     public let shellOutput: ShellOutputChunkStream?
@@ -93,8 +93,8 @@ public enum ToolCatalog {
     /// project layer.
     static let skillsDotfolderName = "skills"
 
-    /// The surface path of the files read verb, the door the prompt
-    /// turn's resource-link resolver reads through (plan.md §12).
+    /// The surface path of the files read verb, the door the prompt's
+    /// resource-link resolver reads through (plan.md §12).
     static let filesReadVerbPath = "files.read"
 
     /// The Multitool group the code context tools mount under. Multitool
@@ -142,7 +142,7 @@ public enum ToolCatalog {
     /// synchronous (plan.md §7.3). The surface refresher starts after the
     /// session tools are made and attaches to the pool, so a
     /// `tools/list_changed`, a reconnect, or a late catalog reaches the
-    /// surface at the next turn boundary with no further host action.
+    /// surface at the next submission boundary with no further host action.
     ///
     /// The mount takes two slots of the resolved profile: `flash` is the
     /// librarian every `searchTools` selection runs on (see

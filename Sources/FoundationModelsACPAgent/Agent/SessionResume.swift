@@ -81,7 +81,7 @@ enum SessionReplay {
         case .reasoning:
             return .agentThought(
                 AgentThought(messageId: messageId(of: event), content: .value(contentBlocks(of: event))))
-        // `.generationCall` is Router's usage record of one generate call
+        // `.generationCall` is Router's usage record of one generation call
         // inside a submission, and `.repeatedPartRemoval` is Router's
         // record of a cut in its own render: bookkeeping, not messages.
         case .session, .instructions, .toolCalls, .toolOutput, .embedding, .divergence,
@@ -256,7 +256,7 @@ extension RoutedACPAgent {
     /// - Throws: The order rule's invalid-request error;
     ///   `RequestError.unknownSession` for an id no recording holds —
     ///   a deleted session included (§10.1); the cwd-mismatch and
-    ///   unknown-cursor refusals; `RequestError.busySession` while a turn
+    ///   unknown-cursor refusals; `RequestError.busySession` while a prompt
     ///   runs; or whatever the composition or the restore throws.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
         try requireInitialized(before: ACPMethod.sessionResume)

@@ -6,7 +6,7 @@ import FoundationModelsRouter
 /// Reads the stored raw output of a settled run, keyed by the run's
 /// `commandID` — which is its `completionToken` and its `toolCallId`
 /// (plan.md §11.8). The production reader is the host-owned
-/// `ShellOutputChunkStream.snapshot(for:)`; a turn with no shell mount
+/// `ShellOutputChunkStream.snapshot(for:)`; a prompt with no shell mount
 /// reads nothing.
 typealias ShellSnapshotProvider = @Sendable (_ commandID: String) -> ShellOutputSnapshot?
 
@@ -39,9 +39,9 @@ enum ProjectedFileChange: Equatable, Sendable {
 /// The one mapping from Router's event stream to the wire
 /// (plan.md §8.4–§8.5, §11.6).
 ///
-/// One value projects one turn: `project(_:)` maps each of the
-/// sixteen `SessionEvent` cases, and `reportUsage()` closes the turn
-/// with its one summed `usage_update`. The live shell bytes have no
+/// One value projects one prompt: `project(_:)` maps each
+/// `SessionEvent` case, and `reportUsage()` closes the prompt with its
+/// one summed `usage_update`. The live shell bytes have no
 /// `SessionEvent` source, so their mapping rides ``TerminalStream``
 /// over the host-owned `ShellOutputChunkStream` (§11.8); this
 /// projection's settlement carries the matching `Terminal` reference.
@@ -79,7 +79,7 @@ struct EventProjection {
     /// The text of a terminal event that carries no outcome.
     private static let missingOutcomeNoteText = "the run ended with no recorded outcome"
 
-    // MARK: - The turn's wiring
+    // MARK: - The prompt's wiring
 
     /// The id of the session this projection reports for, in the logs.
     let sessionId: SessionId
@@ -102,10 +102,10 @@ struct EventProjection {
     /// The handler of a live elicitation request (plan.md §16), or `nil`
     /// when no relay is wired — a synthetic projection drive. The
     /// production wiring supplies ``ElicitationRelay/relay(_:on:promptState:)``
-    /// bound to the turn's session and owner.
+    /// bound to the prompt's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
-    // MARK: - The turn's mutable state
+    // MARK: - The prompt's mutable state
 
     /// The one agent message id of the current message, made at the
     /// first text delta (§8.3: a new id starts a new message).
@@ -120,42 +120,42 @@ struct EventProjection {
     /// The completion tokens summed across every `submissionEnded`.
     private var tokensOut = 0
 
-    /// The finish reason of the last inner generate call of the turn, or
-    /// `nil` before the first usage report.
+    /// The finish reason of the last submission of the prompt, or `nil`
+    /// before the first usage report.
     private var lastFinishReason: FinishReason?
 
-    /// True when the generate call that ended the turn stopped at the
-    /// output token ceiling of the model (task ^bw9qt1z). The text, the
-    /// reasoning or the tool call of that generation is cut, so the turn
-    /// must not read as a normal `end_turn`.
+    /// True when the last submission of the prompt stopped at the output
+    /// token ceiling of the model (task ^bw9qt1z). The text, the
+    /// reasoning or the tool call of that generation is cut, so the
+    /// prompt must not read as a normal `end_turn`.
     var endedAtTokenCeiling: Bool {
         lastFinishReason == .maxTokens
     }
 
-    /// The numbers behind a stop reason, for the log of a turn that ended
-    /// cut or empty.
+    /// The numbers behind a stop reason, for the log of a prompt that
+    /// ended cut or empty.
     ///
-    /// A `_truncated` turn says that the last generate call stopped at the
+    /// A `_truncated` prompt says that the last submission stopped at the
     /// ceiling, and nothing more. The reader then cannot tell a model that
     /// reasoned too long in one round from a context that filled up. These
-    /// three numbers name the difference: the tokens the whole turn fed and
-    /// generated, and how full the context was at the last report.
+    /// three numbers name the difference: the tokens the whole prompt fed
+    /// and generated, and how full the context was at the last report.
     var usageSummary: String {
         let fill = contextFill.isNaN ? "unknown" : String(format: "%.3f", contextFill)
         return "tokensIn=\(tokensIn) tokensOut=\(tokensOut) contextFill=\(fill)"
     }
 
     /// The newest context fill. `nan` means "no stamp": send no meter
-    /// for the turn (§8.4).
+    /// for the prompt (§8.4).
     private var contextFill = Double.nan
 
-    /// Whether the turn produced observable output: a text delta, a
+    /// Whether the prompt produced observable output: a text delta, a
     /// reasoning delta, a tool call or status, an invocation record,
     /// an attachment report, a relayed elicitation, or a run
     /// settlement (task ^pez780d).
     ///
     /// `PromptExecution.drive` reads it beside a stall report as well: a
-    /// turn that already produced something is not waiting on a model
+    /// prompt that already produced something is not waiting on a model
     /// that cannot generate (task ^s0bw5cv).
     private(set) var sawOutput = false
 
@@ -163,7 +163,7 @@ struct EventProjection {
     /// (task ^pez780d).
     private var sawUsageReport = false
 
-    /// Whether the turn generated nothing: no observable output, while
+    /// Whether the prompt generated nothing: no observable output, while
     /// at least one `submissionEnded` arrived and the summed output tokens
     /// are zero. `PromptExecution.drive` reads it to report the honest
     /// `_no_output` stop reason instead of a bare `end_turn`
@@ -172,7 +172,7 @@ struct EventProjection {
         !sawOutput && sawUsageReport && tokensOut == 0
     }
 
-    // MARK: - The sixteen cases (§8.4)
+    // MARK: - The SessionEvent cases (§8.4)
 
     /// Projects one event to the wire.
     ///
@@ -262,7 +262,7 @@ struct EventProjection {
             // The relay runs the round trip inline (plan.md §16): the
             // asking tool is suspended in Router's mailbox until the
             // answer is delivered, so holding this drive loop holds
-            // nothing the turn could otherwise do.
+            // nothing the prompt could otherwise do.
             guard let relayElicitation else {
                 promptLogger.notice(
                     "session \(sessionIdValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) requested an elicitation, but no relay is wired; the request is only reported"
@@ -324,11 +324,11 @@ struct EventProjection {
         let sessionIdValue = sessionId.rawValue
         let model = modelName
         promptLogger.notice(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) runs a submission of another session; this request waits for a place in the model queue"
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) runs a submission of another session; this submission waits for a place in the model queue"
         )
     }
 
-    /// Sends the one `usage_update` of the turn, from the summed
+    /// Sends the one `usage_update` of the prompt, from the summed
     /// usage. A `nan` context fill means "no stamp": no meter goes on
     /// the wire (plan.md §8.4).
     func reportUsage() async {

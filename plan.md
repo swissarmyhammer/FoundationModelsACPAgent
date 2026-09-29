@@ -106,7 +106,7 @@ resident profile for the full life of the process.
 
 **The conformance is a translation, not a construction.** Each ACP noun names
 its peer in this stack. If a noun has no peer, we set that capability off,
-honestly. We do not fake it. ACP turns operate Router's sessions through the
+honestly. We do not fake it. ACP prompts operate Router's sessions through the
 prompt owner. Thus each runtime function operates over ACP with zero
 wire-specific code: automatic compaction (proactive and reactive), budgets,
 retry, chokepoint recording, confinement, and the context meter. The lower
@@ -748,17 +748,19 @@ load-bearing: `cwd` is where the transcripts go (§4.1).
 
 **We support multiple concurrent ACP sessions from the start.** The
 `sessionId` keys the sessions. Each session has its own cwd-derived config
-layer, instructions, confinement, and transcript directory. Turns serialize at
-the model's `serialGate`. Recording stays per-session at Router's chokepoint.
+layer, instructions, confinement, and transcript directory. The submissions of
+all sessions on one model go through the one generation queue of that model
+(§8.0). Recording stays per-session at Router's chokepoint.
 **Per-project profiles are possible now.** Router's pooled, reference-counted
 residency (`kh01tv2`, landed; `PooledResidencyTests` covers it) gives one
 memory-budget authority. It shares a model that two profiles both name. It
-fails cleanly when a union does not fit the budget. Gate waits obey `Task`
-cancellation. Thus a queued session's `session/cancel` does not wait for a
-different session's turn.
+fails cleanly when a union does not fit the budget. A session can have a
+submission that waits in the model queue. A `session/cancel` of that session
+does not wait for the submission of another session: Router removes the
+waiting submission from the queue at once (§8.6).
 
-**One prompt for each session at a time.** `idle` means "ready for a new
-prompt". A `session/prompt` that comes while the session is not idle is a
+**One prompt for each session at a time.** A prompt is the agent unit (§8.0).
+`idle` means "ready for a new prompt". A `session/prompt` that comes while the session is not idle is a
 client error, not a queue entry. The composer owns queueing. We intentionally
 do not show Router's own prompt queue over ACP.
 
@@ -845,7 +847,7 @@ the wire. The last one wins.
   returns. Omitted or `null` skips the replay. **Replay sends whole-message
   upserts** (`user_message` / `agent_message` / `agent_thought`) with the
   initial `messageId`s. It does not send the `*_chunk` variants of a live
-  turn. The same ids let a client that saw some messages converge. It does not
+  prompt. The same ids let a client that saw some messages converge. It does not
   make duplicates.
 - **`ReplayFrom` is an inclusive cursor.** `start` is only its first variant.
   Write the replay path with the cursor as the parameter. Do not hardcode
@@ -869,12 +871,50 @@ new machinery. Do not build it against the unstable schema.
 
 ## 8. Prompt Lifecycle
 
-### 8.1 The turn: acknowledge, then notify
+### 8.0 The units: prompt, submission, generation call, and the model queue
 
-`session/prompt` returns `{}` **immediately** at acceptance. The turn comes as
-notifications. **The order is important**: send the `{}` response *first*,
-then `user_message`, then `state_update: running`, then the turn's output,
-then `idle` + `stopReason`. The wire package supplies the primitive:
+This plan uses these names with one meaning each. The other sections refer
+to this section.
+
+- **Prompt**: the agent unit. One `session/prompt`, from its `{}` response to
+  its `idle` + `stopReason` (§8.1). The agent runs one prompt for each session
+  at a time (§7.1). `PromptExecution` runs it, and `PromptStateOwner` owns its
+  state (§8.2).
+- **Submission**: the Router unit. One submission is one item in the
+  generation queue of a model: one whole SDK call, with its generation calls
+  and the tool bodies between them. Router reports it with
+  `submissionQueued` (only when it must wait), `submissionStarted`, and
+  `submissionEnded(SubmissionEnd)`. `SubmissionEnd` carries the measured usage
+  and the finish reason. One prompt can make more than one submission. A retry
+  after a recovered context overflow is two submissions with a compaction
+  between them, and `answered(SessionAnswer)` gives the total of that chain.
+- **Generation call**: one model call inside a submission. A submission that
+  calls a tool makes more than one generation call. Router reports each one
+  with `generationCall(GenerationCallUsage)`, and `submissionEnded` gives the
+  sum.
+- **The model queue**: Router keeps one generation queue for each resident
+  model. The one worker of the queue runs one submission at a time, first in,
+  first out. A submission that finds the worker busy with a submission of
+  another session waits in the queue (`submissionQueued`), and
+  `submissionStarted` comes when the worker starts it. No lock stays with a
+  prompt from its start to its end.
+- **What holds a model**: only a submission in the worker. A prompt that waits
+  for a background run holds no model: a `runCode` snippet after its inline
+  grace, a shell command, and a wait for a person (an elicitation, §16) inside
+  such a run. The submission ends, and submissions of other sessions and forks
+  run. The settled run comes back to the session as mail, and the mail starts
+  a new answer, which is a new submission. An in-band tool body is part of its
+  submission, so it holds the model until it returns.
+- **Turn** is an ACP protocol word only: `end_turn`, `max_turn_requests`, and
+  a quote of the ACP spec ("prompt turn"). This plan does not use it for a
+  prompt, a submission, or a generation call.
+
+### 8.1 The prompt: acknowledge, then notify
+
+`session/prompt` returns `{}` **immediately** at acceptance. The output of the
+prompt (§8.0) comes as notifications. **The order is important**: send the
+`{}` response *first*, then `user_message`, then `state_update: running`, then
+the output of the prompt, then `idle` + `stopReason`. The wire package supplies the primitive:
 `AgentSideConnection.afterRespondingToCurrentRequest(_:)` delays work until
 the `{}` went out. Use it. Do not use a detached task that races the response.
 
@@ -883,30 +923,30 @@ echo is a MUST**: "the Agent MUST report where the user message was inserted
 in session history". That update is the source of truth for the agent-owned
 `messageId`. A `user_message_chunk` stream also satisfies the rule.
 
-**`turnEnded` is not the end of the turn.** Router emits it once for each
-inner generate call. A turn that retries after a recovered overflow emits one
-`turnStarted` and two `turnEnded` (§8.4). Therefore the `idle` update must key
-on the completion of our own turn task, not on a `turnEnded` event. Sum the
-usage across every `turnEnded` in the turn. Report that sum one time. Two
-`turnEnded` events are one turn, not two turns. Send `idle` one time.
+**`submissionEnded` is not the end of the prompt.** One prompt can make more
+than one submission (§8.0). A prompt that retries after a recovered overflow
+makes two submissions, and thus two `submissionEnded` events (§8.4). Therefore
+the `idle` update must key on the end of our own prompt task, not on a
+`submissionEnded` event. Sum the usage of every `submissionEnded` of the
+prompt. Report that sum one time. Send `idle` one time.
 
 ### 8.2 The state machine
 
 `state_update` carries `running` / `idle` / `requires_action`. The conformance
 needs a named owner for this state machine:
 
-- `running` at turn start.
+- `running` at the first `submissionStarted` of the prompt (§8.0).
 - **`requires_action` each time we stop on the human**: around each
   elicitation round-trip (§16). We send no permission requests (§11.7).
-  Pair it with Router's `awaitingUser { }`. Then the per-model generation gate
-  opens at the same moment that the protocol says "blocked on user". Go back
-  to `running` at the answer. (`requires_action` is "foreground work is
-  blocked on user action". Permission is only the frequent case.) A turn that
-  stays in `running` while it waits on a person shows as a stopped agent. And
-  Router keeps the gate through the full turn. Thus a naive wait blocks each
-  other session and fork on that model.
-- `idle` with a `stopReason` at turn end. Background work can continue during
-  `idle`. Its notifications do not change the state.
+  `PromptStateOwner.awaitingUser { }` sends `requires_action`, runs the round
+  trip, and sends `running` again at the answer. (`requires_action` is
+  "foreground work is blocked on user action". Permission is only the
+  frequent case.) A prompt that stays in `running` while it waits on a person
+  shows as a stopped agent. `awaitingUser { }` is an ACP state only. Router
+  has no call for it, and the model queue needs none: a wait for a person
+  inside a background run holds no model (§8.0).
+- `idle` with a `stopReason` at the end of the prompt. Background work can
+  continue during `idle`. Its notifications do not change the state.
 
 **The `StopReason` mapping**: completed → `end_turn`; guardrail refusal →
 `refusal`; cancel → `cancelled`; budget end → `max_tokens`; tool-loop cap →
@@ -914,12 +954,12 @@ needs a named owner for this state machine:
 exception and map it.** A Swift `CancellationError` that gets out as a
 JSON-RPC error, or as `refusal`, is the failure that the spec names.
 
-Three extension values stand beside the five. A turn that completed with no
+Three extension values stand beside the five. A prompt that completed with no
 output and a zero-token usage report stops with `_no_output`, because a bare
-`end_turn` would hide it (task ^pez780d). A turn the agent ended because the
+`end_turn` would hide it (task ^pez780d). A prompt the agent ended because the
 generation made no fragment for the whole stall bound stops with `_stalled`
-(task ^s0bw5cv). A turn whose last generate call reached the output token
-ceiling of the model, by Router's `FinishReason.maxTokens`, stops with
+(task ^s0bw5cv). A prompt whose last submission reached the output token
+ceiling of the model (`SubmissionEnd.finishReason == .maxTokens`) stops with
 `_truncated`: its answer, its reasoning or its tool call is cut, and
 `max_tokens` is the overflow of the input context, which is a different budget
 (task ^bw9qt1z). All three map to exit code 1 through the §5.8 table of
@@ -947,13 +987,12 @@ that saw the chunk stream (§7.4). `ContentChunk` requires
 
 ### 8.4 The `session/update` stream — Router's events on the wire
 
-**`SessionEvent` has thirteen cases. Handle all of them.** The enum has no
-library evolution, and its doc comment says a consumer must write a `default`
-arm. Write one.
+**Handle every case of `SessionEvent`.** The enum has no library evolution,
+and its doc comment says a consumer must write a `default` arm. Write one.
 
 | Router `SessionEvent` | ACP `SessionUpdate` (v2 discriminator) |
 |---|---|
-| `turnStarted(TurnStart)` | `state_update: running` |
+| `submissionStarted(SubmissionStart)` | `state_update: running` — the first one of the prompt only (§8.0, §8.2) |
 | `textDelta(String)` | `agent_message_chunk` (with the agent-generated `messageId`) |
 | `textReset` | a **whole-message** `agent_message` upsert that replaces the accumulated content (§8.3, row 3) |
 | `reasoningDelta(String)` | `agent_thought_chunk` |
@@ -964,9 +1003,13 @@ arm. Write one.
 | `compaction(CompactionResult)` | `usage_update` — the context meter drops; no message change (§8.5) |
 | `discoveryPrimingFailed(DiscoveryPrimingFailure)` | nothing on the wire — log it |
 | `generationStalled(GenerationStall)` | nothing on the wire — log it, and read it as the stalled-generation guard below |
-| `submissionQueued(SubmissionID)` | nothing on the wire — a `notice` log line with the session id and the model name: the request waits for a place in the model queue, because the model runs a submission of another session. It is not a stall (see the guard below) |
+| `submissionQueued(SubmissionID)` | nothing on the wire — a `notice` log line with the session id and the model name: the submission waits for a place in the model queue, because the model runs a submission of another session (§8.0). It is not a stall (see the guard below) |
 | `runSettled(OperationEvent)` | `tool_call_update` with the **terminal** status (see the mapping below) |
-| `turnEnded(TokenUsage)` | `usage_update` only (the `idle` `state_update` comes from the completion of our own turn task, never from this event — §8.1) |
+| `toolCallReport(ToolCallReport)` | `tool_call_update` that replaces the content of the call with its attachments, and its `locations` when a file change is attached (§11.6). A report with no attachment sends nothing — a `warning` log line |
+| `elicitationRequested(OperationEvent)` | the elicitation round trip to the client (§16), with `requires_action` around it (§8.2). With no relay, nothing on the wire — a `notice` log line |
+| `submissionEnded(SubmissionEnd)` | nothing on its own. Its usage adds to the one sum of the prompt, and the agent keeps its finish reason. The one `usage_update` goes at the end of the prompt. The `idle` `state_update` comes from the end of our own prompt task, never from this event (§8.1) |
+| `generationCall(GenerationCallUsage)` | nothing on the wire — the usage of one generation call; `submissionEnded` already counts it (§8.0) |
+| `answered(SessionAnswer)` / `answerFailed` / `repetitionStopped` / `mailDeliveryPaused` | nothing on the wire — a `debug` log line. The usage of `answered` is the total of the chain, and the `submissionEnded` sum already counts it |
 
 **`textReset` means "discard the text accumulated so far".** Therefore it
 cannot ride as a chunk. Send the whole-message form, which replaces
@@ -974,12 +1017,12 @@ everything accumulated (§8.3).
 
 **The stalled-generation guard** (task ^s0bw5cv). Router bounds no decode: a
 model the loader cannot drive reports a stall on each interval and never ends,
-so the turn would hold the session for as long as the process lives. The drive
-loop therefore reads each `generationStalled` report and ends the turn when
-two facts hold together: the report names a model call that has made no
+so the prompt would hold the session for as long as the process lives. The
+drive loop therefore reads each `generationStalled` report and ends the prompt
+when two facts hold together: the report names a model call that has made no
 fragment at all for the whole `PromptExecution.stalledGenerationBound`, and the
-turn has made no observable output. The turn then leaves the event stream,
-which cancels Router's turn by that surface's own contract, and stops with
+prompt has made no observable output. The prompt then leaves the event stream,
+which cancels Router's work by that surface's own contract, and stops with
 `_stalled` (§8.2). The log line names the model and the report.
 
 The two facts together are what keeps the guard honest. A stall on a call that
@@ -988,14 +1031,15 @@ that cannot generate, because the tool call is output. The report-only
 behaviour of the table row stands for both.
 
 **A wait for a place in the model queue is not a stall** (task ^rfn4m87, Router
-task ^ake8sax). The Router puts each request into one queue for each model, so
-a request can wait a long time while other sessions generate. The Router stall
-watch counts `GenerationStall.timeWithoutProgress` only while a pass of the
-request holds its queue place. A queue wait and a tool body between two passes
-do not count, so a request that only waits never reaches
-`PromptExecution.stalledGenerationBound` and never ends with `_stalled`. The Router
-tells the wait with `submissionQueued`, then `submissionStarted` when the
-request gets its place; the agent writes the `notice` line of the table row.
+task ^ake8sax). The Router puts each submission into one queue for each model
+(§8.0), so a submission can wait a long time while other sessions generate.
+The Router stall watch counts `GenerationStall.timeWithoutProgress` only while
+a generation call of the submission runs. A queue wait and a tool body between
+two generation calls do not count, so a submission that only waits never
+reaches `PromptExecution.stalledGenerationBound` and never ends with
+`_stalled`. The Router tells the wait with `submissionQueued`, then
+`submissionStarted` when the submission gets its place; the agent writes the
+`notice` line of the table row.
 `GenerationStall.timeInFlight` includes the wait and the tool bodies, so the
 guard does not read it.
 
@@ -1003,10 +1047,10 @@ Of those two facts, `sawOutput` is the only one the agent can trust, and the
 bound must therefore stand clear of the whole window before the first output
 (task ^ec8hn3z). Measured on 2026-09-08 with
 `mlx-community/Qwen3.8-27B-mxfp4`: an evaluation build prompt reached its FIRST
-tool call 555 seconds after the prompt, and through that same successful turn
+tool call 555 seconds after the prompt, and through that same successful prompt
 Router kept reporting `0 fragments` at 1780 seconds in flight while `runCode`
 and shell calls were completing. So a fragment count of zero never proves that
-the model made nothing, and a bound of two minutes ended a healthy turn every
+the model made nothing, and a bound of two minutes ended a healthy prompt every
 time. `PromptExecution.stalledGenerationBound` is thirty minutes for that reason.
 
 **One wire update has no `SessionEvent` source: `tool_call_content_chunk`.**
@@ -1022,32 +1066,34 @@ carries the complete `content` from the stored record. That final replace is
 the convergence step: a client that missed a chunk still ends correct
 (§11.6). Decided 2026-09-01.
 
-**Trap: `turnEnded` fires once for each inner generate call, not once for a
-logical turn.** A turn that retries after a recovered overflow emits one
-`turnStarted` and **two** `turnEnded`. Therefore do not send `idle` at the
-first `turnEnded`. Sum the usage across every `turnEnded` in the turn, then
-report that sum one time. Two `turnEnded` events are one turn, not two turns
-(§8.1).
+**Trap: `submissionEnded` comes once for each submission, not once for a
+prompt.** A prompt that retries after a recovered overflow makes **two**
+submissions, and thus two `submissionEnded` events (§8.0). Therefore do not
+send `idle` at the first `submissionEnded`. Sum the usage of every
+`submissionEnded` of the prompt, then report that sum one time (§8.1).
 
 **Two subscription channels carry different sets. Pick with care:**
 
 | Channel | Life | Carries |
 |---|---|---|
-| `streamEvents(to:maxTokens:)` | one turn | every case, `textDelta` and `textReset` included |
+| `streamEvents(to:maxTokens:)` | one prompt | every case, `textDelta` and `textReset` included |
 | `streamSessionEvents()` | the full session | every case **except** `textDelta` and `textReset` |
 
-- **Abandoning a `streamEvents` stream cancels the turn.** It does not drain
-  the run plane. Read it to the end, or cancel on purpose (§8.6).
+- **Abandoning a `streamEvents` stream cancels the work of the prompt.** It
+  does not drain the run plane. Read it to the end, or cancel on purpose
+  (§8.6).
 - Each `streamSessionEvents()` call vends an independent subscription with an
   unbounded buffer. `close()` finishes every outstanding one (§10.1).
 
-**Order within a turn**: `turnStarted` → `textDelta` fragments → (after the
-turn's diff) the tool-call and tool-status events, `reasoningDelta`, and one
-`entryRecorded` for each recorded entry → `turnEnded`. A **proactive** fold's
-`compaction` comes **after** `turnStarted` and **before** the rest of the
-turn's events: Router emits `.turnStarted` first, then runs the proactive fold
-block. A **reactive** fold's `compaction` comes **after** the failed attempt's
-`turnEnded`.
+**Order within a submission** (§8.0): `submissionStarted` → `textDelta`
+fragments → (after the transcript diff of the submission) the tool-call and
+tool-status events, `reasoningDelta`, and one `entryRecorded` for each
+recorded entry → `submissionEnded`. A **proactive** fold's `compaction` comes
+**after** `submissionStarted` and **before** the other events of the
+submission: Router emits `.submissionStarted` first, then runs the proactive
+fold block. A **reactive** fold's `compaction` comes **after** the
+`submissionEnded` of the failed submission and **before** the next
+submission.
 
 The v2 discriminators are **`snake_case`** (`agent_message_chunk`,
 `tool_call_update`, `in_progress`). The JSON *properties* are `camelCase`.
@@ -1058,12 +1104,12 @@ This is an easy place for a wire error.
   and the resolved context. **`TokenUsage` has no cost field**, so send no
   `cost`. **Trap: `contextFill` returns `Double.nan` when there is no stamp**,
   and the naming constant is internal. Therefore test `.isNaN` yourself and
-  omit the meter for that turn. Do not put a `NaN` on the wire.
+  omit the meter for that prompt. Do not put a `NaN` on the wire.
 - **`session_info_update`** carries title/metadata changes in a session.
   Example: the moment when the first prompt gives a title (§4.6).
 - ACP's `ToolCallStatus` is `pending` / `in_progress` / `completed` / `failed`
   / `cancelled`. `pending` (a queued call) and `cancelled` are additions to
-  Router's vocabulary. A detached MCP call stays `in_progress` across turns.
+  Router's vocabulary. A detached MCP call stays `in_progress` across prompts.
 - **Router's own `ToolCallStatus` has only three cases**: `running`,
   `completed`, `failed`. Router derives it from the SDK transcript diff, not
   from `OperationOutcome`. Therefore `toolStatus` alone cannot tell you
@@ -1168,35 +1214,33 @@ model call.** Use the right call for the right object:
 
 | What you cancel | Call | Result |
 |---|---|---|
-| the prompt in flight, also a request that waits for a place in the model queue | `RoutedSession.cancel()` | `.requested` / `.nothingToCancel` |
-| a **queued** prompt — **NOT REACHABLE on our surface** | `cancelPrompt(id:)` | `.withdrawn` / `.turnCancelled` / `.alreadyFinished` |
+| the prompt in flight, also a submission that waits for a place in the model queue (§8.0) | `RoutedSession.cancel()` | `.requested` / `.nothingToCancel` |
 | a background run | `ToolContext.cancel(completionToken:)` | `CancelOutcome` |
+
+`drain()` waits until all background work of the session is complete.
+`close()` drains too (§10.1).
 
 `cancel()` is cooperative and best-effort. Read `.requested` as
 "the request was recorded", not as "the model has stopped". It cancels the
 `Task` that runs the model call. Therefore cancellation **does** reach the
 tools that the SDK invokes. A stream keeps the fragments that it already
-yielded. The transcript records a cancelled turn as a failed turn.
+yielded. The transcript records a cancelled submission as a failed
+submission.
 
-A request that waits for a place in the model queue is in flight, and the
-cancel reaches it. The Router removes the request from the queue at once. Thus
-`session/cancel` and `session/close` give `idle(cancelled)` at once, also when
-the pass of another session holds the model. The request never runs. The other
-session keeps its pass, and a later prompt of the cancelled session gets a
-place in the queue as usual.
+A submission that waits for a place in the model queue is in flight, and the
+cancel reaches it. The Router removes the submission from the queue at once.
+Thus `session/cancel` and `session/close` give `idle(cancelled)` at once, also
+when a submission of another session holds the model. The waiting submission
+never runs. The submission of the other session continues, and a later prompt
+of the cancelled session puts its submission in the queue as usual.
 
-**The row for a queued prompt is not reachable on our surface.**
-`cancelPrompt(id:)` exists in Router. We never create a queued prompt: a
-prompt that arrives while the session is busy is a client error, and we do not
-expose Router's prompt queue over ACP (§7.1). The row stays here so that a
-reader knows why we do not call it.
-
-**A cancelled turn does not always throw.** It **usually** surfaces a
+**A cancelled prompt does not always throw.** It **usually** surfaces a
 `CancellationError`, and we must catch that error and map it to
 `stopReason: "cancelled"` (§8.2) when it appears. But Router's contract says
 that model work which never checks for cancellation runs to completion and the
-turn returns its response. The runner re-raises only what the body threw.
-Therefore the turn owner must handle both results. Do not assume a throw.
+submission returns its response. The runner re-raises only what the body
+threw. Therefore the prompt owner must handle both results. Do not assume a
+throw.
 
 Two limits stay, and we state them honestly:
 
@@ -1206,7 +1250,7 @@ Two limits stay, and we state them honestly:
   `notifications/cancelled` is advisory. Thus the honest UI result for that
   call is "we stopped listening", not "it stopped" (§8.4, `.cancelled`).
 
-**Abandoning a `streamResponse` or `streamEvents` stream also cancels the turn
+**Abandoning a `streamResponse` or `streamEvents` stream also cancels the work
 behind it.** Therefore never drop such a stream to "move on": that is a
 cancellation, and the client will see it as one.
 
@@ -1245,9 +1289,9 @@ stays correct through concurrent writes. There are no duplicates and no skips.
 | active | yes | — |
 | closed | **yes** | closing frees resources but retains the transcript; resuming it is the point |
 | deleted | no | delete removes it from history by definition |
-| created, zero turns | **no** | nothing to resume; noise in every picker |
+| created, zero prompts | **no** | nothing to resume; noise in every picker |
 
-The zero-turn rule is free. We write a session directory when there is data to
+The zero-prompt rule is free. We write a session directory when there is data to
 record. Thus "has a persisted transcript" *is* the listability test. Roots
 only: no `parentId` and no agent spawn (§4.2). Forks and sub-agents do
 not show as conversations.
@@ -1270,17 +1314,18 @@ This is a **MUST**: cancel the session's work "as if `session/cancel` had been
 called", then release the resources. That includes cancellation's full
 semantics (§8.6). Answer each pending elicitation with the **cancelled**
 result (§16). We send no permission requests (§11.7). A
-close during an active turn **sends `state_update` `idle` with
+close during an active prompt (§8.0) **sends `state_update` `idle` with
 `stopReason: "cancelled"` before the close response**. If not, a client with a
-spinner does not learn that the turn ended. Then release: in-flight MCP calls,
-detached work, spawned stdio server processes (§11.5), **and the session's
-descendants**. A fork or sub-agent that operates is this session's work. If it
-continues after close, it burns a model gate with no watcher. That is the
-failure that this MUST prevents. Recording closes. The transcript **stays** on
-disk.
+spinner does not learn that the prompt ended. Then release: in-flight MCP
+calls, detached work, spawned stdio server processes (§11.5), **and the
+session's descendants**. A fork or sub-agent that operates is this session's
+work. If it continues after close, it keeps putting submissions into the model
+queue with no watcher, and these submissions take the model from other
+sessions (§8.0). That is the failure that this MUST prevents. Recording
+closes. The transcript **stays** on disk.
 
-**`RoutedSession.close()` does most of this for us.** It runs
-`SessionMailbox.sweep()`: it cancels every background run, rejects every
+**`RoutedSession.close()` does most of this for us.** It drains, as `drain()`
+does (§8.6), and it runs `SessionMailbox.sweep()`: it cancels every background run, rejects every
 pending elicitation, journals the terminal events, and finishes every
 `streamSessionEvents()` subscription. It is idempotent, so a double close is
 safe. **`deinit` does not run the sweep. The host must call `close()`.**
@@ -1604,7 +1649,7 @@ session lifetime — they are never runs, and they never get a
 
 The MCP call handle is the `OperationEvent.correlationID`, the ACP
 `toolCallId`, and the id that scopes an elicitation (§16). A detached MCP call
-is why `status` stays `in_progress` across turns. The mapping decisions:
+is why `status` stays `in_progress` across prompts. The mapping decisions:
 
 - **The terminal status comes from `OperationEvent.outcome`**, through the
   one total `OperationOutcome → ToolCallStatus` function of §8.4. The
@@ -1814,7 +1859,7 @@ when a source changes.*
 
 **Extras' `SlashCommand` is the cross-package vocabulary**: `name` /
 `description` / `argumentHint`, plus a two-kind `Body`. `.prompt(template:)`
-expands into a usual model turn. `.action` runs code and streams text. It does
+expands into a usual model prompt. `.action` runs code and streams text. It does
 not touch the model. Contributors implement `SlashCommandProviding`
 (`commands(workingDirectory:)` + an optional `commandUpdates` stream) against
 the leaf, never against this package. The registry mechanics are this
@@ -1939,7 +1984,7 @@ async throws -> OperationTool<SkillsToolContext>`. There is an overload that
 takes a session factory closure
 `@escaping @Sendable (String) -> any AgentSession`, and one with **no
 `session:` at all** — keyword retrieval only, with no model and no tokens.
-Use the last one when the config turns model access off.
+Use the last one when the config sets model access off.
 
 The model-facing tool name is `"skills"`. Its description is "Search, list,
 and use skills from the local skill library." **It is one fused tool with six
@@ -1972,17 +2017,17 @@ A leading `/name` goes through the registry *before* anything touches the
 session:
 
 - **`.prompt` (and skill) commands** expand (template + arguments) into a
-  usual, recorded model turn.
-- **`.action` commands** stream output. There is no model turn. There are no
+  usual, recorded model prompt.
+- **`.action` commands** stream output. There is no model call. There are no
   transcript entries other than what the action records (`/compact` its
   `CompactionSegment`; `/help` nothing).
 - **An unknown `/name`** gives an error with near matches. It is never a model
-  turn. Frontends escape a literal leading slash.
+  prompt. Frontends escape a literal leading slash.
 - **A command can arrive with other content attached.** (The spec permits
   `[text("/deploy prod"), resource_link(...), image(...)]`.) `.prompt` and
-  skill commands carry the extra blocks **into the expanded turn**. If we drop
+  skill commands carry the extra blocks **into the expanded prompt**. If we drop
   them, we discard the file that the user attached. `.action` commands make no
-  model turn. Thus the attachments have no place to go: **refuse the
+  model call. Thus the attachments have no place to go: **refuse the
   invocation, with a reason.** Silence is the one handling that is certainly
   wrong.
 
@@ -2168,7 +2213,7 @@ pending.** `ToolContext.elicit(_:)` posts an `OperationEvent` with `kind:
 `SessionMailbox.pendingElicitationIds()` and `SessionOutbox.pending()` are
 internal (Router's audit "Close the public surface to what a host actually
 calls" made them so), and `TranscriptEvent.operationEvents` is a recorded
-read that arrives at the next turn drain, not live. Router's own tests reach
+read that arrives at the next submission, not live. Router's own tests reach
 the internal mailbox. The answer side is public
 (`respond(elicitationId:response:)`, `complete(elicitationId:)`); the request
 side is not. **This is an upstream ask** (§21): a `SessionEvent` case on
@@ -2191,7 +2236,7 @@ for logs. The client can capture, forward, or ignore it.
 production CLI and the ACP agent are the same binary). The Mac app uses
 `InMemoryTransport.pair()` in-process (§19). The connection is full duplex,
 not request/response: `session/prompt` returns `{}` immediately, and the full
-turn arrives as notifications on the same pipe (§8.1).
+prompt output arrives as notifications on the same pipe (§8.1).
 
 **The wire package already does these** (do not build them again): frame
 serialization (`StdioTransport` writes under a lock; concurrent sessions
@@ -2376,7 +2421,7 @@ Every level above a plain unit test uses this same wiring. The rules:
   Never sleep.
 - **Arrival order is not in the state.** The container is a projection.
   `turnState` is a scalar and keeps no history. A proof that asserts order —
-  the turn order (§8.1), cancellation (§8.6), replay upserts (§7.4) — needs
+  the prompt order (§8.1), cancellation (§8.6), replay upserts (§7.4) — needs
   the raw notification sequence. For those, the harness wraps the client in
   a ten-line forwarding recorder: it appends each `UpdateSessionNotification`
   to an `UpdateCollector`, then forwards it to
@@ -2418,7 +2463,7 @@ these:
 3. **Projection**: a real tool call becomes a correct `tool_call_update`: a
    stable `toolCallId`, `in_progress` → `completed`, filled `locations`,
    `rawInput`/`rawOutput`, and the `title` on the first report.
-4. **Turn order**: `{}` → `user_message` → `running` → tool updates →
+4. **Prompt order**: `{}` → `user_message` → `running` → tool updates →
    `idle(end_turn)` (§8.1).
 5. **Enable/disable**: `shell: false` in the project config means that no
    shell tool reaches the session. We confirm this from the client end.
@@ -2494,14 +2539,14 @@ controls; service over `AgentSideConnection(stream: .stdio)`; logs to stderr
 only; and where a frontend adds its own tools to the merged roster (§11.1). It
 must *not* grow into a second product: no argument parsing beyond stdio
 service, no rendering, no config wizardry. An example written as a
-read-request/write-response loop deadlocks when it sends a mid-turn update.
+read-request/write-response loop deadlocks when it sends a mid-prompt update.
 Thus the full-duplex shape (§17) is a lesson as much as a function. (The wire
 package's `acp-test-agent` is the contrast: it answers `initialize` and
 nothing else. Ours composes the real runtime and real tools.)
 
 **`Examples/acp-print` — the client-server example.** The second example is a
 one-shot prompt CLI, in the shape of `claude --print`: send one prompt, run
-the turn to completion, print the answer, exit. It is the interop proof for
+the prompt to completion, print the answer, exit. It is the interop proof for
 the two role packages: the sibling **`FoundationModelsACPClient`** (the
 Client role) drives this package's server example across a real process
 boundary. Nothing goes through a private back door — every byte crosses ACP.
@@ -2509,7 +2554,7 @@ boundary. Nothing goes through a private back door — every byte crosses ACP.
 ```swift
 // 1. spawn Examples/acp-agent over stdio; the client package owns and reaps the process
 // 2. initialize → session/new(cwd) → session/prompt
-// 3. stream the turn's agent_message_chunk text to stdout; exit at the stop reason
+// 3. stream the prompt's agent_message_chunk text to stdout; exit at the stop reason
 ```
 
 (The shapes are illustrative. The client plan owns the API; its container is
@@ -2552,7 +2597,7 @@ agent driven over ACP through the in-memory harness.
 2. **The disk is the proof.** The marker in `probe.txt` shows that the file
    write ran. A model cannot calculate a SHA-256 hash itself, thus a correct
    hash in `probe.sha256` shows that the shell ran.
-3. **The turn ends with `end_turn`.** The test does not cancel the turn. On
+3. **The prompt ends with `end_turn`.** The test does not cancel the prompt. On
    2026-09-27 a cancel gave the idle update while the MLX prefill still ran,
    and the process stopped with SIGSEGV at exit after the test passed.
 
@@ -2565,12 +2610,12 @@ ToolCallingTests`.
 
 | Id | Package | What | Status |
 |---|---|---|---|
-| — | FoundationModelsMultitool | the consolidation itself: the shell, files and mcp capabilities are in, and `searchTools` + `runCode` + `wait` is the model-facing surface (§11.1) | **landed** 2026-08-24..27 |
+| — | FoundationModelsMultitool | the consolidation itself: the shell, files and mcp capabilities are in, and `searchTools` + `runCode` is the model-facing surface (§11.1); there is no `wait` tool, and a background result comes back as mail (§8.0) | **landed** 2026-08-24..27 |
 | — | FoundationModelsMultitool (shell capability) | the shell permission layer is **deleted**; `SeatbeltSandbox` is the only gate (§2.5, §11.7) | **landed** 2026-08-24 — an upstream decision, not an ask |
 | `c2pad49` | FoundationModelsSkills | adopt Extras' `.rendered` `SlashCommand.Body` case in Skills' `SlashCommandProviding` conformance, in place of `.prompt(template:)` with raw text (§14.2) | **the Extras half is done** — `.rendered` ships; the Skills adoption is **open**, and until it lands we dispatch skill commands through `registry.call(id:arguments:)` |
 | `939nnzx` | FoundationModelsMultitool (files capability) | multi-root confinement through `withFiles(root:additionalRoots:)` (§7.2) | **done** |
 | `4egfvw3` | FoundationModelsMultitool (mcp capability) | tier-2 MCP coverage through the `MCPTestServer` library and the `mcp-test-server` executable (§20.1) | **done** |
-| — | FoundationModelsMultitool (agents capability) | sub-agent delegation as a code-mode **background** capability, reached through `runCode` → `tools.agents.*` and collected with `wait` (§11.3, §4.2); the design source is `../FoundationModelsAgents/plan.md`, which predates code mode | **plan-only** — not implemented; a later iteration. Nothing in this iteration waits on it: `agentSpawn: nil` at `session/new` |
+| — | FoundationModelsMultitool (agents capability) | sub-agent delegation as a code-mode **background** capability, reached through `runCode` → `tools.agents.*`, with the result that comes back as mail (§8.0, §11.3, §4.2); the design source is `../FoundationModelsAgents/plan.md`, which predates code mode | **plan-only** — not implemented; a later iteration. Nothing in this iteration waits on it: `agentSpawn: nil` at `session/new` |
 | — | FoundationModelsRouter | a **public restore entry point feeding `session/resume`** (§4.6, §7.4) — `restoreSessionTree` and the tree types are internal, and the only public read is `TranscriptEvent.merged(under:)` | **open** — asked 2026-08-31, decision pending; do **not** reimplement restore against `transcript.jsonl` in the meantime |
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor to `schema-v2.0.0-alpha.3` (elicitation stable), generated `elicitation/*` types, `ClientCapabilities.elicitation`, and the `createElicitation` / `elicitationComplete` entry points on both connections (§16) | **done** — verified 2026-09-01 |
 | — | FoundationModelsRouter | a **public live signal for a pending elicitation** (§16): a `SessionEvent` case on `streamSessionEvents()` that carries the `.elicitation` `OperationEvent`, or a public `RoutedSession.pendingElicitations()` read with a wakeup. Today the answer side is public and the request side is not: `SessionMailbox.pendingElicitationIds()` and `SessionOutbox.pending()` are internal, and `TranscriptEvent.operationEvents` is a recorded read | **open** — to file; the relay (board `2z6qtqy`) waits on it, and the interim declines with a reason |
@@ -2578,7 +2623,7 @@ ToolCallingTests`.
 | — | FoundationModelsACPClient | the Client-role container (`SwiftUIACPClient`, `ACPSessionState`) plus the stdio transport with agent-process ownership (`AgentProcess`) — the client driver for every level above unit (§20.1) and for `Examples/acp-print` (§20.2) | **shipped** — M0–M7 done on its board, verified 2026-09-01; our test target depends on it, the library never does |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
-| — | FoundationModelsRouter | turn cancellation that reaches the model call: `cancelCurrentTurn()`, `cancelPrompt(id:)`, `ToolContext.cancel(completionToken:)` (§8.6) | **landed** — an in-flight MCP call still cannot be forced to stop |
+| — | FoundationModelsRouter | submission cancellation that reaches the model call: `RoutedSession.cancel() -> CancellationResult` (`.requested` / `.nothingToCancel`), `drain()`, `ToolContext.cancel(completionToken:)` (§8.0, §8.6) | **landed** — an in-flight MCP call still cannot be forced to stop |
 | M1–M3, M5 | FoundationModelsSkills | the `/id` command half: `SkillsRegistry` conforms to `SlashCommandProviding` (§14.2) | **shipped** |
 | M4 | FoundationModelsSkills | model access: the standalone `skills` tool, appended to the tool array (§11.3) | **shipped** |
 | `d7jwam5` | FoundationModelsMultitool (files capability) | *note, not an ask*: rename/copy path mapping is a translation here (§11.6) | — |

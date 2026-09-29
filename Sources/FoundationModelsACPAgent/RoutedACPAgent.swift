@@ -90,7 +90,7 @@ public actor RoutedACPAgent: Agent {
 
     /// Binds the wire connection this agent notifies through.
     ///
-    /// The prompt turn sends every `session/update` through this
+    /// Each prompt sends every `session/update` through this
     /// connection, and registers its post-response work with the
     /// connection's `afterRespondingToCurrentRequest(_:)` (plan.md §8.1).
     /// Call it from the `AgentSideConnection` factory closure.

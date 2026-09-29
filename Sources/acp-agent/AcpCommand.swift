@@ -8,10 +8,10 @@ extension AcpAgentCommand {
     /// prompt.
     ///
     /// The shape is full duplex on purpose (plan.md §17): the connection's
-    /// read loop serves every request while the agent streams mid-turn
+    /// read loop serves every request while the agent streams mid-prompt
     /// `session/update` notifications on the same pipe. A program written
     /// as a read-one-request-then-write-one-response loop deadlocks on the
-    /// first mid-turn update — never write that shape.
+    /// first mid-prompt update — never write that shape.
     ///
     /// stdout is sacred: only ndJSON frames go there. Logs go to stderr.
     /// Shell children never inherit stdout — the shell capability captures

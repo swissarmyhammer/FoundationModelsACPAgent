@@ -34,9 +34,9 @@ enum PromptStop: Equatable, Sendable {
     /// ^pez780d).
     case noOutput
 
-    /// The prompt completed, but the generate call that ended it stopped at
-    /// the output token ceiling of the model: Router's `FinishReason` of
-    /// that call is `maxTokens`. The answer, the reasoning or the tool
+    /// The prompt completed, but its last submission stopped at the
+    /// output token ceiling of the model: Router's `FinishReason` of
+    /// that submission is `maxTokens`. The answer, the reasoning or the tool
     /// call is cut. A bare `end_turn` would hide that, and `max_tokens`
     /// is the overflow of the INPUT context, which is a different
     /// budget. So the arm maps to the `_truncated` extension value
@@ -57,7 +57,7 @@ enum PromptStop: Equatable, Sendable {
 
 /// What the first recorded activity writes (plan.md §9): the
 /// `sessions.jsonl` index and the record to append, deferred from
-/// `session/new` by the zero-turn rule.
+/// `session/new` by the zero-prompt rule.
 struct FirstActivity: Sendable {
     /// The index of the session's recording root.
     let index: SessionIndex
@@ -126,12 +126,13 @@ struct PromptExecution: Sendable {
     /// `runCode` and shell calls were completing.
     ///
     /// The bound compares with ``GenerationStall/timeWithoutProgress``
-    /// only. The Router counts that time only while a pass of the request
-    /// holds its place in the model queue (Router task ^ake8sax). A wait
-    /// for a place in the queue and a tool body between two passes do not
-    /// count, thus a request that waits behind other sessions never
-    /// reaches the bound. ``GenerationStall/timeInFlight`` includes the
-    /// wait and the tool bodies, so no stop decision reads it.
+    /// only. The Router counts that time only while a generation call of
+    /// the submission holds its place in the model queue (Router task
+    /// ^ake8sax). A wait for a place in the queue and a tool body between
+    /// two generation calls do not count, thus a submission that waits
+    /// behind other sessions never reaches the bound.
+    /// ``GenerationStall/timeInFlight`` includes the wait and the tool
+    /// bodies, so no stop decision reads it.
     ///
     /// Thirty minutes stands well past the measured 555 seconds and well
     /// under the 3120 seconds of the model that made nothing, so the
@@ -262,7 +263,7 @@ struct PromptExecution: Sendable {
         if stop == .completed, projection.generatedNothing {
             stop = .noOutput
         }
-        // A completed prompt whose LAST generate call stopped at the output
+        // A completed prompt whose LAST submission stopped at the output
         // token ceiling is cut, not finished (task ^bw9qt1z). A prompt of
         // 8192 reasoning tokens and no answer ended as `end_turn` before
         // Router gave the finish reason.
@@ -372,7 +373,7 @@ struct PromptExecution: Sendable {
         let reported = stall.description
         let reason = Self.stalledStopReasonValue
         promptLogger.error(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the turn ends with \(reason, privacy: .public)"
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the prompt ends with \(reason, privacy: .public)"
         )
     }
 
@@ -658,19 +659,19 @@ extension RoutedACPAgent {
     /// `cancel` — the suspended tool must resume before the `idle`
     /// terminator, and Router's mailbox does not resume on task
     /// cancellation — then cancels the work of the Router session: the
-    /// model work in flight and a caller message that waits. A request
+    /// model work in flight and a caller message that waits. A submission
     /// that waits for a place in the model queue is in flight too, and
     /// the cancel reaches it: the Router removes it from the queue at
     /// once, so the `idle(cancelled)` terminator does not wait for the
-    /// pass of another session. A notification has no response, so an
-    /// unknown id or an idle session is logged and ignored (plan.md
+    /// submission of another session. A notification has no response, so
+    /// an unknown id or an idle session is logged and ignored (plan.md
     /// §10.1).
     ///
     /// - Parameter params: The cancellation notification.
     public func sessionCancel(_ params: CancelSessionNotification) async {
         guard let entry = sessions[params.sessionId], let promptState = entry.activePrompt else {
             promptLogger.notice(
-                "session/cancel for session \(params.sessionId.rawValue, privacy: .public) with no running turn; ignored"
+                "session/cancel for session \(params.sessionId.rawValue, privacy: .public) with no running prompt; ignored"
             )
             return
         }

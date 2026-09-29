@@ -97,7 +97,7 @@ final class BuiltinCommandContext: Sendable {
 
 /// The six reserved builtin slash commands (plan.md §14.1, source 1). Each is
 /// an `.action` closure that captures a ``BuiltinCommandContext`` and streams
-/// its text, with no model turn: `/compact` folds now, `/context` reads the
+/// its text, with no model call: `/compact` folds now, `/context` reads the
 /// fill, `/memory` prints the instructions, `/status` prints the session
 /// facts, `/config` prints or ejects the configuration, and `/help` lists the
 /// registered commands.
@@ -127,13 +127,13 @@ enum BuiltinCommands {
         }
     }
 
-    /// The verb that turns `/config` from a print into an export.
+    /// The verb that changes `/config` from a print into an export.
     private static let exportVerb = "export"
 
     /// The one-line usage `/config` prints for a malformed export.
     private static let configUsage = "Usage: /config export home|project"
 
-    /// The multiplier that turns a `0...1` fill fraction into a percent.
+    /// The multiplier that changes a `0...1` fill fraction into a percent.
     private static let percentScale = 100.0
 
     /// The summarizer-model line a fold that wrote no summary reports.
@@ -284,7 +284,7 @@ enum BuiltinCommands {
     }
 
     /// Formats a context fill (plan.md §14.1). The fill is `Double.nan` when
-    /// no turn has stamped a measurement, so the NaN is guarded with "not
+    /// no submission has stamped a measurement, so the NaN is guarded with "not
     /// measured yet" and never printed.
     ///
     /// - Parameter fill: The `0...1` fill fraction, or `Double.nan`.

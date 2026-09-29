@@ -5,11 +5,11 @@ import FoundationModelsRouter
 ///
 /// A `use skill` call of the standalone `skills` tool returns the body of a
 /// skill: the procedure that the model must follow for the rest of the
-/// session. Router's compaction elides old tool outputs and drops old turns,
-/// so without this rule a fold removes the procedure, and the model goes on
-/// with no procedure and no visible error. The Agent Skills standard calls
-/// skill instructions "durable behavioral guidance" and asks a host to exempt
-/// them from pruning.
+/// session. Router's compaction elides old tool outputs and drops old
+/// transcript entries, so without this rule a fold removes the procedure,
+/// and the model goes on with no procedure and no visible error. The Agent
+/// Skills standard calls skill instructions "durable behavioral guidance"
+/// and asks a host to exempt them from pruning.
 ///
 /// The rule reads the call, not the output text: a loaded skill carries no
 /// marker, and none is added. A call is protected when its tool is `skills`

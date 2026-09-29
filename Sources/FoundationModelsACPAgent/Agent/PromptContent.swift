@@ -353,7 +353,7 @@ struct ResourceLinkResolver: Sendable {
     }
 
     /// Resolves `uri` to the linked file's text, or to the reasoned
-    /// refusal. Never throws: a refusal is prompt content, not a turn
+    /// refusal. Never throws: a refusal is prompt content, not a prompt
     /// failure.
     ///
     /// - Parameter uri: The `resource_link` URI.

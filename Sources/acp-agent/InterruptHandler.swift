@@ -3,7 +3,7 @@ import Dispatch
 import Foundation
 import Synchronization
 
-/// The `Ctrl-C` watch of one turn: what arrived, and how to end the
+/// The `Ctrl-C` watch of one prompt: what arrived, and how to end the
 /// watch (cli-plan.md §5.9).
 struct InterruptWatch: Sendable {
     /// The ordinal of each `SIGINT` that arrived while the watch stood:
@@ -43,7 +43,7 @@ private final class InterruptState: Sendable {
     }
 }
 
-/// The interrupt of one `run` turn (cli-plan.md §5.9).
+/// The interrupt of one `run` prompt (cli-plan.md §5.9).
 ///
 /// **`Ctrl-C` must not kill the process.** The first signal sends
 /// `session/cancel`, waits for the `cancelled` stop reason, leaves the
@@ -56,10 +56,10 @@ private final class InterruptState: Sendable {
 /// ``InterruptibleComposition`` arms it for the composition — the
 /// configuration load, the model download and the model load — and
 /// disarms it once the composition is done. ``RunPrompt`` then arms it
-/// again for the turn and disarms it when the turn settles. The two
+/// again for the prompt and disarms it when the prompt settles. The two
 /// never overlap, so `SIGINT` has exactly one watcher at any moment.
 ///
-/// The reaction differs, because the addressee does. During the turn
+/// The reaction differs, because the addressee does. During the prompt
 /// the wire is open and a session exists, so the first signal sends
 /// `session/cancel`. During the composition neither exists, so the
 /// first signal cancels the composition task instead:
@@ -68,7 +68,7 @@ private final class InterruptState: Sendable {
 /// the Hugging Face cache. Outside both windows `SIGINT` keeps its
 /// default disposition and ends the process.
 enum InterruptHandler {
-    /// How a turn gets its watch: a closure, so `run()` gives the real
+    /// How a prompt gets its watch: a closure, so `run()` gives the real
     /// `SIGINT` watch and a test gives a scripted one. No suite arms a
     /// process-wide signal.
     typealias Installer = @Sendable () -> InterruptWatch
@@ -76,10 +76,10 @@ enum InterruptHandler {
     /// The ordinal of the first arrival — the one that cancels.
     static let firstArrival = 1
 
-    /// The watch of a turn no signal reaches: the stream is finished
+    /// The watch of a prompt no signal reaches: the stream is finished
     /// before it is read, so the reaction never runs.
     ///
-    /// It is the default of every turn, so a caller that says nothing
+    /// It is the default of every prompt, so a caller that says nothing
     /// about interrupts arms nothing.
     static var unwatched: Installer {
         { InterruptWatch(arrivals: AsyncStream { $0.finish() }, disarm: {}) }
@@ -95,7 +95,7 @@ enum InterruptHandler {
     ///
     /// Both windows of §5.9 read their arrivals through this loop, so the
     /// ordinal contract stands in one place and cannot drift between them.
-    /// Only the stop differs: the turn sends `session/cancel`, and the
+    /// Only the stop differs: the prompt sends `session/cancel`, and the
     /// composition cancels its task.
     ///
     /// - Parameters:

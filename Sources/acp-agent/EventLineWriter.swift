@@ -1,11 +1,11 @@
 import Foundation
 import FoundationModelsACP
 
-/// How much of a `run` turn the stderr stream carries (cli-plan.md §5.7).
+/// How much of a `run` prompt the stderr stream carries (cli-plan.md §5.7).
 ///
 /// Two flags of §5.4 select one of these three, and everything the CLI
 /// writes to stderr reads its answer here. stdout is not in the picture:
-/// the answer of the turn owns file descriptor 1 (§5.6), and no value of
+/// the answer of the prompt owns file descriptor 1 (§5.6), and no value of
 /// this type moves a byte of it.
 enum EventVerbosity: Sendable, Equatable {
     /// `--quiet`: no event line and no download bar, in a terminal too.
@@ -48,7 +48,7 @@ enum EventVerbosity: Sendable, Equatable {
 
     /// Whether the run draws the model resolution progress on stderr.
     ///
-    /// `--quiet` turns the download bar off, in a terminal too, which is
+    /// `--quiet` sets the download bar off, in a terminal too, which is
     /// the second half of the §5.7 row. The download-progress card reads
     /// this beside `isatty(STDERR_FILENO) == 1` and hands the pair to
     /// ``TerminalRenderer/init(destination:isTerminal:)``.
@@ -68,13 +68,13 @@ enum EventVerbosity: Sendable, Equatable {
     }
 }
 
-/// The session events of one `run` turn, one line each on stderr
+/// The session events of one `run` prompt, one line each on stderr
 /// (cli-plan.md §5.7).
 ///
 /// **The projection.** The writer reads the same `SessionUpdate` stream
-/// the turn already consumes for the answer text, and writes one line for
+/// the prompt already consumes for the answer text, and writes one line for
 /// each of the three events §5.7 names: a tool call, a plan update, and
-/// the stop reason of the turn. Every other update carries no line. The
+/// the stop reason of the prompt. Every other update carries no line. The
 /// agent message chunks in particular carry none: they are the answer,
 /// and the answer belongs to stdout.
 ///
@@ -156,7 +156,7 @@ struct EventLineWriter: Sendable {
     /// Writes the line of one session update, when the update has one and
     /// the verbosity asks for it.
     ///
-    /// - Parameter update: The update the turn received.
+    /// - Parameter update: The update the prompt received.
     mutating func receive(_ update: SessionUpdate) {
         guard verbosity.writesEventLines else { return }
         guard let line = line(for: update) else { return }
@@ -170,10 +170,10 @@ struct EventLineWriter: Sendable {
     /// holds seventeen cases and its own `unknown` case for a variant
     /// this revision does not list, so exhaustiveness buys no safety
     /// here: every update that is not a tool call, a plan update or the
-    /// end of the turn carries no line, and a later wire case must carry
+    /// end of the prompt carries no line, and a later wire case must carry
     /// none either until a card says otherwise.
     ///
-    /// - Parameter update: The update the turn received.
+    /// - Parameter update: The update the prompt received.
     /// - Returns: The line, or `nil`.
     private mutating func line(for update: SessionUpdate) -> String? {
         switch update {
@@ -221,7 +221,7 @@ struct EventLineWriter: Sendable {
         return line(of: planLineKind, fields: ["\(completed)/\(entries.count)", current])
     }
 
-    /// The line of the idle state update that ends the turn.
+    /// The line of the idle state update that ends the prompt.
     ///
     /// - Parameter idle: The idle state update.
     /// - Returns: The line.

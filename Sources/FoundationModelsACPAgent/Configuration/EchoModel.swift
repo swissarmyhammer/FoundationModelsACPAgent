@@ -220,7 +220,7 @@ public struct StubModelLoader: ModelLoader {
     /// being loaded. The default vends ``EchoLLMContainer`` for every
     /// slot; a recording test injects a container whose backend
     /// accumulates transcript entries, and a config-options test injects
-    /// per-slot containers so a turn's text names the slot that
+    /// per-slot containers so the text of a prompt names the slot that
     /// generated it.
     public var makeLLMContainer: @Sendable (ModelSlot) -> any LoadedLLMContainer
 
@@ -297,11 +297,11 @@ struct StubMetadata: MetadataSource {
     ///
     /// It is 32,768 and not the old default of 8,192, because the stub
     /// counter counts one token per character, about four times the count of
-    /// a real tokenizer. At 8,192 a scripted tool turn of about 7,800
+    /// a real tokenizer. At 8,192 a scripted tool prompt of about 7,800
     /// characters filled the whole context, and Router's overflow recovery
-    /// ran the attempt a second time (measured on 2026-09-23 in the streamed
-    /// shell proof of `TierTwoTests`: two terminals, one scripted turn played
-    /// twice).
+    /// ran the submission a second time (measured on 2026-09-23 in the
+    /// streamed shell proof of `TierTwoTests`: two terminals, one scripted
+    /// prompt played twice).
     static let window = 32768
 
     /// Creates a metadata source of one tiny model.

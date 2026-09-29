@@ -2,7 +2,7 @@
 ///
 /// It is not a failure. Nothing went wrong with the configuration, the
 /// profile or the models — a person asked the download to stop, and it
-/// stopped. The caller turns it into the `cancelled` stop reason, which
+/// stopped. The caller changes it into the `cancelled` stop reason, which
 /// exit code 4 belongs to (§5.8).
 struct CompositionInterrupted: Error {}
 
@@ -10,7 +10,7 @@ struct CompositionInterrupted: Error {}
 /// model download and the model load that stand between the command line and
 /// the open wire (cli-plan.md §5.9).
 ///
-/// **Why the composition needs its own window.** The turn's watch is armed
+/// **Why the composition needs its own window.** The prompt's watch is armed
 /// with a session open, so its reaction is a `session/cancel` over the wire.
 /// Here the wire is not open and no session exists, so there is no addressee
 /// and nothing to notify. What there is instead is one task doing the work,
@@ -19,7 +19,7 @@ struct CompositionInterrupted: Error {}
 /// already wrote in the Hugging Face cache, so the next run continues that
 /// download rather than starting it again.
 ///
-/// **The two windows never overlap.** This one is disarmed before the turn
+/// **The two windows never overlap.** This one is disarmed before the prompt
 /// arms its own, so `SIGINT` has exactly one watcher at any moment and the
 /// disposition the second watch restores is the one the first watch left.
 ///
@@ -34,7 +34,7 @@ enum InterruptibleComposition {
     ///
     /// The first `Ctrl-C` cancels the composition task. A later one ends the
     /// process at once through ``InterruptHandler/endAtOnce()``, for the same
-    /// reason the turn's watch does: work that never checks for cancellation
+    /// reason the prompt's watch does: work that never checks for cancellation
     /// runs to its end, and a person must still be able to leave. The first
     /// `SIGTERM` cancels the composition task too.
     ///

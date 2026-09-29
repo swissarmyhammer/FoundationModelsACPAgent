@@ -6,7 +6,7 @@ import FoundationModelsMultitool
 /// Sandbox and Tools rows).
 ///
 /// A probe never throws. `doctor` runs every check, so one refusal must
-/// travel as a value that the component turns into a finding, and never as
+/// travel as a value that the component changes into a finding, and never as
 /// an error that stops the run.
 public enum ProbeOutcome: Equatable, Sendable {
     /// The probe answered, and what it probed works.

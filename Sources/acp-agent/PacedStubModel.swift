@@ -6,21 +6,21 @@ import FoundationModelsRouter
 // MARK: - The paced stub model (cli-plan.md §5.9, §9)
 //
 // `ACP_AGENT_STUB_MODEL=1` gives a spawned `acp-agent` a deterministic
-// model, and that is enough for every claim about what a turn SAYS. It
-// is not enough for a claim about a turn that is still RUNNING: the
+// model, and that is enough for every claim about what a prompt SAYS. It
+// is not enough for a claim about a prompt that is still RUNNING: the
 // library's echo backend answers in one chunk and in microseconds, so a
-// signal always lands after the turn is over.
+// signal always lands after the prompt is over.
 //
-// `ACP_AGENT_STUB_CHUNK_DELAY_MS` holds a turn open. The prompt comes
+// `ACP_AGENT_STUB_CHUNK_DELAY_MS` holds a prompt open. The prompt comes
 // back word by word, with the named pause between the words, so a test
-// can send `SIGINT` into a live turn across a real process boundary.
+// can send `SIGINT` into a live prompt across a real process boundary.
 // The knob touches nothing when it is unset, and it is read only on the
 // stub path.
 
 /// A stub session backend that answers the prompt word by word, with a
 /// pause between the words.
 ///
-/// The pause is the whole feature: it makes a turn last long enough for
+/// The pause is the whole feature: it makes a prompt last long enough for
 /// a signal to land inside it. Nothing else about the answer changes —
 /// the chunks joined equal the prompt, exactly as the library's
 /// one-chunk echo does.
@@ -31,7 +31,7 @@ final class PacedEchoSessionBackend: LanguageModelSessionBackend {
     /// The pause between two chunks.
     private let pause: Swift.Duration
 
-    /// The input and output token counts a paced turn reports. The
+    /// The input and output token counts a paced prompt reports. The
     /// values only satisfy the reader; nothing here counts tokens.
     private static let reportedTokenCounts = (input: 1, output: 1)
 
@@ -66,7 +66,7 @@ final class PacedEchoSessionBackend: LanguageModelSessionBackend {
             // The pacing task is unstructured, so the consumer's own
             // cancellation does not reach it. The stream's termination
             // does, and a cancelled consumer terminates the stream, so
-            // this is what stops the pacing when the turn is cancelled.
+            // this is what stops the pacing when the prompt is cancelled.
             let pacing = Task {
                 for chunk in chunks {
                     try await Task.sleep(for: pause)

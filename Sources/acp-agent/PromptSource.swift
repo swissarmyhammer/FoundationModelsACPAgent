@@ -2,7 +2,7 @@ import ArgumentParser
 import Darwin
 import Foundation
 
-/// Where one `run` turn takes its prompt from (cli-plan.md §5.5).
+/// Where one `run` prompt takes its text from (cli-plan.md §5.5).
 ///
 /// | Condition | Result |
 /// |---|---|
@@ -36,11 +36,11 @@ struct PromptSource {
     /// both not a terminal, and the table treats them alike.
     let standardInputIsTerminal: Bool
 
-    /// The prompt text of the turn, by the table above.
+    /// The text of the prompt, by the table above.
     ///
     /// The bytes of stdin are the prompt as they arrive, with no trim.
     /// The table says read the prompt from stdin, and the newline a
-    /// shell's `echo` adds changes no turn.
+    /// shell's `echo` adds changes no prompt.
     ///
     /// - Returns: The prompt text.
     /// - Throws: `ValidationError` for the terminal row, and the read

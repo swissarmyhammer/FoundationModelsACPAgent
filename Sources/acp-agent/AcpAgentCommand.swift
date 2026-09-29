@@ -3,11 +3,11 @@ import Foundation
 
 /// # The `acp-agent` CLI: the subcommand tree over this package.
 ///
-/// One binary, every mode (cli-plan.md §4, §5.3): `run` runs one turn
+/// One binary, every mode (cli-plan.md §4, §5.3): `run` runs one prompt
 /// and prints the answer, `acp` serves ACP on stdin and stdout, and
 /// `config`, `instructions` and `doctor` report on the configuration.
 /// `run` is the default subcommand, so `acp-agent "write a haiku"` runs
-/// a turn, and `acp-agent run doctor` sends the prompt "doctor" instead
+/// a prompt, and `acp-agent run doctor` sends the prompt "doctor" instead
 /// of running the check.
 ///
 /// The parser is swift-argument-parser (§5.1): it gives `--help`,

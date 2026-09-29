@@ -214,7 +214,7 @@ actor CommandRegistry {
     /// - Parameters:
     ///   - left: The first name.
     ///   - right: The second name.
-    /// - Returns: The number of single-character edits that turn one
+    /// - Returns: The number of single-character edits that change one
     ///   name into the other.
     static func editDistance(_ left: String, _ right: String) -> Int {
         let leftCharacters = Array(left)

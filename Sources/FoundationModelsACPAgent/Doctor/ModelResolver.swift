@@ -5,7 +5,7 @@ import FoundationModelsRouter
 /// Profile row).
 ///
 /// A lookup never throws. `doctor` runs every check, so a refusal must
-/// travel as a value that the component turns into a finding, and never as
+/// travel as a value that the component changes into a finding, and never as
 /// an error that stops the run.
 public enum ModelLookup: Equatable, Sendable {
     /// The repository is on the Hub. `downloadBytes` is what the next run

@@ -161,7 +161,7 @@ extension ResolutionProgress: ResolutionProgressReading {
 /// after it.
 ///
 /// **The bar is erased before the answer.** The resolution ends before the
-/// turn opens the wire, so the drawing is over before the first answer
+/// prompt opens the wire, so the drawing is over before the first answer
 /// chunk can arrive. Nothing here touches file descriptor 1, so the stdout
 /// contract of §5.6 stays byte-exact.
 struct ProgressReporter: Sendable {

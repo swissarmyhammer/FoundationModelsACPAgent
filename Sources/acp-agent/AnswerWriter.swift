@@ -14,10 +14,10 @@ struct AnswerWriteError: Error, CustomStringConvertible {
     }
 }
 
-/// Where the agent text of one `run` turn goes: a file descriptor,
+/// Where the agent text of one `run` prompt goes: a file descriptor,
 /// standard output by default (cli-plan.md §5.6).
 ///
-/// **One chunk at a time.** The turn hands each `agent_message_chunk`
+/// **One chunk at a time.** The prompt hands each `agent_message_chunk`
 /// over as it arrives, and this writer puts it on the descriptor at
 /// once. A local model is slow, so a person must see the answer grow. A
 /// `write(2)` carries no user-space buffer, so the chunk is on the

@@ -72,7 +72,7 @@
 /// training instead of reading the checkout two directories away. The
 /// SWE-bench runs of 2026-09-13 and 2026-09-14 lost three instances that
 /// way. Each one made ZERO tool calls: one reasoning block of 28 to 33
-/// thousand characters, no search, no read, no edit, and a turn that ended
+/// thousand characters, no search, no read, no edit, and a prompt that ended
 /// mid-sentence in "let me recall". The `## Work` section already says to
 /// read the code before changing it, and that rule never fired, because a
 /// model that calls no tool never reaches `## Work`.
@@ -80,12 +80,12 @@
 /// So the rule moves to the first two bullets of `## Tools`, which is the
 /// part the model reads before it acts, and it repeats under `## Reminders`.
 /// It names the tell as well as the rule: a thought that ends with "let me
-/// recall" has spent the turn and changed nothing.
+/// recall" has spent the prompt and changed nothing.
 ///
 /// ## Why the `## Work` section names three habits of thought
 ///
-/// The "act first" rule fixed the turn that thinks before its first tool
-/// call. A later failure happens in the MIDDLE of a turn, after the model has
+/// The "act first" rule fixed the prompt that thinks before its first tool
+/// call. A later failure happens in the MIDDLE of a prompt, after the model has
 /// read the code. In the SWE-bench run of 2026-09-23 on django__django-13964
 /// the model made 52 tool calls and no edit, and 5 of its 53 reasoning blocks
 /// held 82% of all its reasoning. Counted over that run: 433 steps of code

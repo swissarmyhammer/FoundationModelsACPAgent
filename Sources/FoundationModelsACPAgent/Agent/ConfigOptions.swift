@@ -205,14 +205,14 @@ extension RoutedACPAgent {
 
     /// Switches the session's generation slot: the entry's Router
     /// session is replaced by one vended from the selected slot's
-    /// resident handle, so later turns generate on the switched slot.
+    /// resident handle, so later prompts generate on the switched slot.
     /// Both slots are resident, so the switch loads nothing and blocks
     /// on nothing (plan.md §15).
     ///
     /// The replacement records under the session's own transcript
     /// directory, so the lineage stays on disk the way a fork's nesting
     /// states it (plan.md §4.2). The replaced session is closed when it
-    /// is idle; a turn still in flight keeps it and finishes there.
+    /// is idle; a prompt still in flight keeps it and finishes there.
     ///
     /// - Parameters:
     ///   - slot: The selected slot. A set to the current slot changes
@@ -261,8 +261,8 @@ extension RoutedACPAgent {
     /// complete list. When the announced state is already the truth,
     /// nothing goes out.
     ///
-    /// Each turn's end runs this check, so a divergence is corrected at
-    /// the first moment the model demonstrably generated.
+    /// The end of each prompt runs this check, so a divergence is corrected
+    /// at the first moment the model demonstrably generated.
     ///
     /// - Parameter sessionId: The session to reconcile.
     func reconcileConfigOptions(for sessionId: SessionId) async {

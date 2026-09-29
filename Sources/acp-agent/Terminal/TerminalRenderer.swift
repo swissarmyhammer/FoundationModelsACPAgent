@@ -21,7 +21,7 @@ import Noora
 /// no pseudo-terminal and with no person at a screen.
 ///
 /// **The destination is the only stream.** The renderer never writes to
-/// file descriptor 1. The answer of a `run` turn owns standard output
+/// file descriptor 1. The answer of a `run` prompt owns standard output
 /// (cli-plan.md §5.6), and decoration must never reach it.
 ///
 /// **A destination that is not a terminal gets no byte.** The work
@@ -129,7 +129,7 @@ struct TerminalRenderer: Sendable {
 
     // MARK: - Drawing
 
-    /// Runs `work`, and turns a spinner beside `message` while it runs.
+    /// Runs `work`, and rotates a spinner beside `message` while it runs.
     ///
     /// - Parameters:
     ///   - message: The text beside the spinner.
@@ -210,7 +210,7 @@ struct TerminalRenderer: Sendable {
     ///
     /// - Parameters:
     ///   - message: The first text of the step.
-    ///   - showSpinner: Whether the icon turns while the task runs.
+    ///   - showSpinner: Whether the icon rotates while the task runs.
     ///   - task: The work to run. It gets a function that replaces the
     ///     text of the step.
     /// - Returns: What `task` gave back.

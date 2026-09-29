@@ -12,7 +12,7 @@ Two sibling plans go with it:
 
 ## 1. Purpose
 
-We want a headless CLI. You give it a prompt. It runs one turn. It prints
+We want a headless CLI. You give it a prompt. It runs one prompt. It prints
 the answer and it exits. The CLI is an ACP client, and the composed agent
 of this package is the ACP agent. The two speak the protocol in every
 mode.
@@ -124,7 +124,7 @@ acp-agent --version          Print the version to stdout, and exit 0.
 ```
 
 `run` is the **default subcommand**, so `acp-agent "write a haiku"` runs
-a turn. The parser matches the first argument against the subcommand
+a prompt. The parser matches the first argument against the subcommand
 names first, so a prompt that is exactly a subcommand name would select
 that mode instead. The explicit form resolves it:
 
@@ -251,15 +251,15 @@ resolution, exits 4, and leaves the partly downloaded model in the
 Hugging Face cache, so the next run continues that download instead of
 starting it again. `Router.resolve(profile:reporting:)` honours task
 cancellation, so the watch stands over the composition as well as over
-the turn (card `^54ay5s0`).
+the prompt (card `^54ay5s0`).
 
 **The watch stands for two windows, one after the other.** The first
 covers the composition — the configuration load, the download and the
-model load — and the second covers the turn. They never overlap, so
+model load — and the second covers the prompt. They never overlap, so
 `Ctrl-C` has exactly one watcher at any moment. Outside both, `Ctrl-C`
 keeps its killing default disposition.
 
-The reaction differs, because the addressee does. During the turn the
+The reaction differs, because the addressee does. During the prompt the
 wire is open and a session exists, so the first signal sends
 `session/cancel`. During the composition neither exists, so the first
 signal cancels the composition task instead.
@@ -493,7 +493,7 @@ already shipped:
 **`tools.files.recordsChanges` is `false` by default.**
 `ToolCatalog.swift:167` passes it into `withFiles(…)`, so the
 `FileChangeSet` that fills the `tool_call_update` locations is off unless
-a `config.yaml` turns it on. If an editor is meant to see file locations
+a `config.yaml` sets it on. If an editor is meant to see file locations
 out of the box, that default is wrong. This plan does not change it; it
 records the question.
 
@@ -624,7 +624,7 @@ Only if §11.1 shows a cost. The shape:
 
 - ~~**The `standard` model id.**~~ ANSWERED on 2026-09-08, and the answer
   cost a day. `mlx-community/Qwen3.8-27B-4bit` was never driven, and it
-  does not generate: it makes no token and the turn never ends. Router's
+  does not generate: it makes no token and the prompt never ends. Router's
   stall watchdog recorded one generation in flight for 3120 seconds with
   zero fragments. The default is now `mlx-community/Qwen3.8-27B-mxfp4`,
   which the rest of the family already pins — `FoundationModelsMultitool`

@@ -14,7 +14,7 @@ enum SessionAvailability: Equatable, Sendable {
     /// The session is ready for a new prompt.
     case idle
 
-    /// A prompt turn is in flight.
+    /// A prompt is in flight.
     case busy
 
     /// `session/close` released the session. The transcript stays, so
@@ -28,7 +28,7 @@ enum SessionAvailability: Equatable, Sendable {
 /// directory, and the mounted tool surface whose pool the session
 /// lifecycle shuts down at close.
 struct ActiveSession: Sendable {
-    /// The Router session that answers this ACP session's turns.
+    /// The Router session that answers this ACP session's prompts.
     /// Retaining it is what keeps the resident profile alive for this
     /// session's lifetime. Born as the root session from the standard
     /// slot; a model-slot switch (plan.md §15) replaces it with one
@@ -82,7 +82,7 @@ struct ActiveSession: Sendable {
     /// this reference.
     var activePrompt: PromptStateOwner?
 
-    /// The running turn's elicitation relay, or `nil` when no turn is in
+    /// The running prompt's elicitation relay, or `nil` when no prompt is in
     /// flight (plan.md §16). `session/cancel` and `session/close` answer
     /// every pending elicitation with `cancel` through this reference,
     /// so the suspended tool resumes before the `idle` terminator.
@@ -99,11 +99,11 @@ struct ActiveSession: Sendable {
     var isClosed = false
 
     /// Whether the `sessions.jsonl` record was written. The first prompt
-    /// writes it, deferred from `session/new` by §9's zero-turn rule.
+    /// writes it, deferred from `session/new` by §9's zero-prompt rule.
     var indexRecorded = false
 
     /// Whether the session can accept a new prompt. Derived, so the
-    /// stored turn reference stays the one source of the busy state.
+    /// stored prompt reference stays the one source of the busy state.
     var availability: SessionAvailability {
         if isClosed {
             return .closed
@@ -297,7 +297,7 @@ extension RoutedACPAgent {
     /// The ACP `sessionId` IS the root Router session's ULID, serialized —
     /// there is no mapping table (§4.2). The cwd is registered in the
     /// project registry now; the `sessions.jsonl` index record waits for
-    /// the first recorded activity, because §9's zero-turn rule makes a
+    /// the first recorded activity, because §9's zero-prompt rule makes a
     /// persisted transcript the listability test.
     ///
     /// - Parameter params: The request: the absolute `cwd`, the ordered
@@ -325,7 +325,7 @@ extension RoutedACPAgent {
         // session, not a guided one — and `agentSpawn` stays nil: agents
         // arrive later as a Multitool code-mode background capability
         // (§11.3), spawned from inside a tool call, never from
-        // `session/new`. The budget turns automatic compaction on: the
+        // `session/new`. The budget starts automatic compaction: the
         // fractions come from the `compaction:` section and the limit
         // from the model's resolved context (plan.md §2.4).
         let session = residentProfile.standard.makeBudgetedSession(
@@ -336,7 +336,7 @@ extension RoutedACPAgent {
             compaction: composition.configuration.compaction)
 
         // The `sessions.jsonl` index record is NOT written here: the
-        // prompt-turn task appends it at the first recorded activity,
+        // prompt task appends it at the first recorded activity,
         // with the title (§9).
         let activation = try await activateSession(
             session,
@@ -620,8 +620,8 @@ extension RoutedLLM {
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
-        // of each generate call, which Router derives from the same number.
-        // A turn that ends `_truncated` is read against this line.
+        // of each generation call, which Router derives from the same number.
+        // A prompt that ends `_truncated` is read against this line.
         // Copies for the log line: the logger's message is an escaping
         // autoclosure, which must not capture this model.
         let context = contextTokens

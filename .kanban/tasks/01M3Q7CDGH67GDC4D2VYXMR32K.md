@@ -28,10 +28,26 @@ comments:
     - evidence: 59 files in Tests/ and IntegrationTests/ (57 in Tests/FoundationModelsACPAgentTests and IntegrationTests/Tests, plus Tests/FoundationModelsACPAgentTestSupport/Harness.swift). `swift test`: 615 tests in 70 suites passed (1 known issue, the same deliberate withKnownIssue test as before), zero compiler warnings. `swift build --build-tests` in IntegrationTests/: Build complete. The only other warning is the SwiftPM "missing creator for mutated node" line for the mlx bundle, which is a build-system line and not a compiler warning. `rg -n -i "\bturns?\b" Tests IntegrationTests`: 5 lines, all listed under "Kept matches" in the description.
     - next: /review
   timestamp: 2026-09-29T19:05:15.756554+00:00
+- actor: claude-code
+  id: 01m3q9r0c380ymkakx30kh6xf2
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 29b09e4). 57 files reviewed. 49 attempted, 0 failed, 0 skipped. Findings 0, confirmed 0, refuted 0. 4 .kanban files not reviewed because of .reviewignore. The task had no prior review findings.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T19:19:56.547218+00:00
+- actor: claude-code
+  id: 01m3q9r70wnm058ffz0gj0tsn9
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 59 files in Tests/ and IntegrationTests/
+    - test: green — swift test 615 tests pass; IntegrationTests build ok
+    - commit: 29b09e4
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T19:20:03.356026+00:00
 depends_on:
 - 01M3A32XJSSVH8E7XKWGMDF7FR
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: f780
 title: Rewrite the "turn" prose of the comments and the test texts in Tests/ and IntegrationTests/
 ---
 ## Why

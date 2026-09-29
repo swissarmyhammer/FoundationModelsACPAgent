@@ -11,7 +11,7 @@ private let lifecycleLogger = Logger(
 extension RoutedACPAgent {
     /// Closes one session and releases its resources (plan.md §10.1).
     ///
-    /// This is a MUST. A close during an active turn cancels the turn as
+    /// This is a MUST. A close during an active prompt cancels the prompt as
     /// `session/cancel` would, and the `idle` terminator with the `cancelled`
     /// stop reason goes out before this response. Then the session sweep runs
     /// through ``RoutedSession/close()`` — `deinit` does not run it — every
@@ -77,7 +77,7 @@ extension RoutedACPAgent {
 
     // MARK: - The teardown (plan.md §10.1)
 
-    /// Runs the full §10.1 teardown of one session: cancel the running turn,
+    /// Runs the full §10.1 teardown of one session: cancel the running prompt,
     /// run the session sweep, close every descendant, finish the shell stream,
     /// and shut the MCP servers down — in that order. The entry stays in the
     /// table, marked closed, so the session is still resumable.

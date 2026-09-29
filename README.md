@@ -37,7 +37,7 @@ let router = Router(
 let agent = try await RoutedACPAgent(
     name: name, router: router, configuration: configuration)
 
-// Full duplex on one pipe: the read loop serves every request while a turn
+// Full duplex on one pipe: the read loop serves every request while a prompt
 // streams session/update notifications. stdout carries ndJSON only; logs go
 // to stderr. A read-one-then-write-one loop deadlocks here.
 let connection = await AgentSideConnection(
@@ -86,7 +86,7 @@ exits 0.
 ## Command line
 
 `acp-agent` is one binary with one subcommand tree. `run` is the default
-subcommand, so `acp-agent "write a haiku"` runs a turn.
+subcommand, so `acp-agent "write a haiku"` runs a prompt.
 
 | Command | What it does |
 |---|---|
@@ -107,7 +107,7 @@ The model-facing surface is three code-mode tools from
 `FoundationModelsMultitool` — `searchTools`, `runCode` and `wait` — plus the
 standalone `skills` tool. Capability modules mount inside the Multitool
 registry, one row here per capability. Each capability is on by default. Set
-its config section to `false` to turn it off.
+its config section to `false` to set it off.
 
 | Capability | What it gives the model | Config section |
 |---|---|---|

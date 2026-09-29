@@ -377,7 +377,7 @@ enum MCPComposition {
     /// fires for a connect that reached `.ready`, for a reconnect, and for
     /// a coalesced `tools/list_changed` re-list. A snapshot whose catalog
     /// did not move stages nothing, so the rebuild is idempotent and cheap.
-    /// A staged registry applies at the next turn boundary.
+    /// A staged registry applies at the next submission boundary.
     ///
     /// A composition with no server starts no refresher: there is nothing
     /// to watch.

@@ -18,7 +18,7 @@ typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 ///
 /// A tool that calls `ToolContext.elicit` suspends in Router's mailbox, and
 /// the request arrives as `SessionEvent.elicitationRequested`. This actor
-/// turns that event into one `elicitation/create` on the wire, decodes the
+/// changes that event into one `elicitation/create` on the wire, decodes the
 /// client's answer, and delivers it back through
 /// `RoutedSession.respond(elicitationId:response:)`. Each round trip runs
 /// inside ``PromptStateOwner/awaitingUser(_:)``, so the wire shows

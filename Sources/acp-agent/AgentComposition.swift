@@ -51,8 +51,8 @@ enum AgentComposition {
     ///
     /// It exists for one reason. ``stubModelVariable`` gives a spawned
     /// binary a deterministic model, but that model answers in one chunk
-    /// and in microseconds, so a turn is over before a signal can reach
-    /// it. The interrupt of cli-plan.md §5.9 is a claim about a turn
+    /// and in microseconds, so a prompt is over before a signal can reach
+    /// it. The interrupt of cli-plan.md §5.9 is a claim about a prompt
     /// that is still running, and this is what holds one open across a
     /// process boundary.
     ///
@@ -116,7 +116,7 @@ enum AgentComposition {
         /// differs (cli-plan.md §4).
         ///
         /// The factory closure binds the connection into the agent, so a
-        /// prompt turn can notify through it (plan.md §8.1).
+        /// prompt can notify through it (plan.md §8.1).
         ///
         /// - Parameters:
         ///   - transport: The wire end the agent serves on.
@@ -234,7 +234,7 @@ enum AgentComposition {
     /// Makes the router of one model path.
     ///
     /// Both paths take the recordings directory, because that directory is
-    /// what turns the recorder on: a router built without one holds the
+    /// what sets the recorder on: a router built without one holds the
     /// no-op sink, and every event of every session drops (plan.md §4.1).
     /// Each session then names its own root, and Router records the
     /// session to `<root>/<sessionId>/`.

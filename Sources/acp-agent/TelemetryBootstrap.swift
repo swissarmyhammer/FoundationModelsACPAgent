@@ -72,13 +72,13 @@ enum TelemetryBootstrap {
     /// The longest time ``shutdown()`` waits for the flush of the last batch.
     static let shutdownDeadline: Duration = .seconds(shutdownDeadlineSeconds)
 
-    /// The standard variable that turns on the OTLP exporters.
+    /// The standard variable that sets on the OTLP exporters.
     private static let otlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
-    /// The standard variable that turns off the whole OpenTelemetry SDK.
+    /// The standard variable that sets off the whole OpenTelemetry SDK.
     private static let sdkDisabledVariable = "OTEL_SDK_DISABLED"
 
-    /// The value of ``sdkDisabledVariable`` that turns the SDK off, in lower
+    /// The value of ``sdkDisabledVariable`` that sets the SDK off, in lower
     /// case. The OpenTelemetry specification reads a Boolean variable
     /// without case sensitivity.
     private static let sdkDisabledValue = "true"
@@ -169,7 +169,7 @@ enum TelemetryBootstrap {
     /// ``exportsTelemetry(environment:)`` already read that variable. The
     /// traces and metrics bootstrap must not read it again: swift-otel sets
     /// the logs switch from it in both directions, so a value of `false`
-    /// turns on the logs that the configuration turned off, and
+    /// sets on the logs that the configuration set off, and
     /// `OTel.bootstrap` then bootstraps `LoggingSystem` a second time.
     ///
     /// - Parameter environment: The process environment.
@@ -277,7 +277,7 @@ enum TelemetryBootstrap {
 
     /// Bootstraps tracing and metrics with swift-otel, and not logging.
     ///
-    /// The configuration turns the logs off, so `OTel.bootstrap` never calls
+    /// The configuration sets the logs off, so `OTel.bootstrap` never calls
     /// `LoggingSystem.bootstrap`. When it throws, the reason goes to stderr.
     /// Metrics can already be bootstrapped then, because swift-otel does
     /// metrics before traces, but no service exports them.

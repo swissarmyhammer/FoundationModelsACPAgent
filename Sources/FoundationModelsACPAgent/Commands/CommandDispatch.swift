@@ -13,7 +13,7 @@ struct ParsedCommand: Sendable {
     let arguments: String
 
     /// The content blocks after the command's text block. They carry
-    /// into a prompt-style or `.rendered` turn; an `.action` command
+    /// into a prompt-style or `.rendered` prompt; an `.action` command
     /// refuses them (plan.md §14.3).
     let attachments: [ContentBlock]
 }
@@ -56,7 +56,7 @@ enum CommandDispatch {
     }
 
     /// Expands a `.prompt` template through the harness template engine
-    /// into the turn's prompt text (plan.md §14.3). The template is
+    /// into the model text of the prompt (plan.md §14.3). The template is
     /// data-sourced, so it renders untrusted, with the raw argument
     /// text under ``argumentsTemplateKey``.
     ///
@@ -71,9 +71,9 @@ enum CommandDispatch {
         return try TemplateEngine(partials: nil).render(template, context: context, trust: .untrusted)
     }
 
-    /// Assembles the model prompt of an expanded command turn: the
+    /// Assembles the model prompt of an expanded command prompt: the
     /// expanded text first, then the text of each attached text block,
-    /// newline-joined — the attachments carry into the expanded turn
+    /// newline-joined — the attachments carry into the expanded prompt
     /// (plan.md §14.3). Non-text attachments ride in the echoed blocks,
     /// the same way they do for a plain prompt.
     ///
@@ -144,14 +144,14 @@ struct ActionCommandExecution: Sendable {
 
 extension RequestError {
     /// The reason an `.action` command with attachments reports: the
-    /// action makes no model turn, so the attachments have no place to
-    /// go, and silence would discard them.
+    /// action sends nothing to the model, so the attachments have no place
+    /// to go, and silence would discard them.
     private static let actionAttachmentsReason =
-        "an action command makes no model turn, so attached content has no place to go; send the attachments without the command"
+        "an action command sends nothing to the model, so attached content has no place to go; send the attachments without the command"
 
     /// The unknown-command refusal (plan.md §14.3): invalid params with
-    /// the name and the near-miss suggestions in `data`. It is never a
-    /// model turn.
+    /// the name and the near-miss suggestions in `data`. It never sends
+    /// the prompt to the model.
     ///
     /// - Parameters:
     ///   - name: The unknown command name.
@@ -214,7 +214,7 @@ extension RoutedACPAgent {
     /// session (plan.md §14.3): a `.prompt` template expands through
     /// the harness engine, a `.rendered` closure is called — preferred
     /// wherever a provider offers it — and both feed a normal recorded
-    /// model turn; an `.action` streams its text with no model turn. An
+    /// model prompt; an `.action` streams its text with no model call. An
     /// unknown name refuses with near-miss suggestions.
     ///
     /// - Parameters:
