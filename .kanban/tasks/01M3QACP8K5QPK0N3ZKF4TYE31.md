@@ -1,8 +1,32 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9780'
+comments:
+- actor: claude-code
+  id: 01m3qb78a6eqh7qrmby39sr2nm
+  text: |-
+    Research: the pinned Multitool (`MultiTool.makeSessionToolsAndStaging`) vends `[searchTools, runCode]`, or `[runCode]` in direct mode. It mounts no `wait` tool in either mode. The snippet globals are `status()` and `cancel()`. A `wait()` global is removed and exists only to throw a repair message. `TierTwoTests.answeringCallId(in:)`, which plan.md §4.7 named, no longer exists. The TierTwoTests snippets settle inside the inline grace.
+
+    Changes:
+    - plan.md: the §1 composition diagram, §4.7 (the pending envelope: the result comes back as mail; `RoutedSession.drain()` is a test or host surface and not a model tool; removed the stale `answeringCallId` reference), the §11 intro, §11.1 (two tools, and no `wait` tool in either mode), the §11.3 agents paragraph (removed `wait(completionToken, seconds)`), and the §11.4 shell bullet (the globals are `status()` and `cancel()`, with no `wait()`).
+    - README.md § Tools: two code-mode tools. A run that does not settle in the grace comes back as mail.
+    - Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift: a doc comment only (the mount order is `searchTools` and `runCode`).
+    - BuiltinInstructions.swift: it has NO defect. The model-facing text does not name a `wait` tool. The only match is the English quote "hmm, wait" in a doc comment.
+    - cli-plan.md: it has no match (only the English verb).
+
+    The remaining `wait` matches in plan.md and README.md say that no `wait` tool exists, or use the English verb.
+
+    New work found (out of scope, filed): ^s51b6sb (Tests/ ScriptedModel and RecordedTranscriptFile still name a `wait` call) and ^xhc29kx (plan.md §11.1 names a stale `makeSessionTools(librarian:sampleGenerator:)` signature).
+  timestamp: 2026-09-29T19:45:44.774526+00:00
+- actor: claude-code
+  id: 01m3qb7fgwdzs583e79rh4pj9h
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — plan.md, README.md, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift (a doc comment only). `swift test`: 615 tests in 70 suites passed (1 known issue that was there before), and there are zero compiler warnings. `swift build --build-tests` in IntegrationTests/: Build complete, with zero compiler warnings. The only `warning:` line in each build is the SwiftPM "missing creator for mutated node" message for the mlx bundle, which is not a compiler warning.
+    - next: /review
+  timestamp: 2026-09-29T19:45:52.156865+00:00
+position_column: doing
+position_ordinal: '8180'
 title: Remove the obsolete `wait` tool from plan.md §4.7, §11, §11.1 and README.md
 ---
 ## Why
@@ -18,7 +42,7 @@ Rewrite these places for the mail model. Write in ASD-STE100 Simplified Technica
 
 ## Acceptance Criteria
 
-- [ ] `rg -n "\bwait\b" plan.md README.md` shows no line that names a `wait` tool.
-- [ ] No code change.
+- [x] `rg -n "\bwait\b" plan.md README.md` shows no line that names a `wait` tool.
+- [x] No code change.
 
 Found by ^wqe0awe. #generation-queue

@@ -133,7 +133,7 @@ public enum ToolCatalog {
     }
 
     /// Builds the composed session surface: the Multitool session tools —
-    /// `searchTools`, `runCode`, `wait`, in that mount order — the
+    /// `searchTools` and `runCode`, in that mount order — the
     /// appended standalone `skills` tool (plan.md §11.3), and the server
     /// pool behind the mounted MCP verbs (§11.5).
     ///

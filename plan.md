@@ -76,7 +76,7 @@ no cycle is possible there either.
 config  (dotfolder stack, §2)
   → ProfileDefinition → Router.resolve → resident profile
   → tools         (§11: config sections → Multitool capability modules
-                    → searchTools + runCode + wait; plus the standalone
+                    → searchTools + runCode; plus the standalone
                       skills tool the catalog appends)
   → instructions  (Instructions.md + AGENTS.md, §3)
   → per session:  profile.standard.makeSession(instructions:workingDirectory:
@@ -628,14 +628,19 @@ three hops. `RunCodeSourceTests` proves each of them:
    own `outcome` and `detail` beside the token — and the model answers from
    it without a second round trip. A snippet still running when the grace
    elapses answers the PENDING envelope — `"pending":true`, with the token
-   alone — and the model collects the result with the `wait` tool. Nothing
-   is cancelled either way, and the `completionToken` is in both shapes, so
-   the three-hop walk above reads the same for each. A reader that wants
-   the run's result reads it from the settled envelope's `detail` when the
-   envelope carries one, and from the `wait` call's answer when it does
-   not. A test that reads the `wait` answer ALONE is wrong for a fast
-   snippet: `TierTwoTests.answeringCallId(in:)` names the call that carried
-   the result, and every proof of that suite reads it.
+   alone. The run continues in the background. The model does not wait for
+   it: there is no `wait` tool. When the run settles, its result comes back
+   to the session as mail, and the mail starts a new answer, which is a new
+   submission (§8.0). Nothing is cancelled either way, and the
+   `completionToken` is in both shapes, so the three-hop walk above reads
+   the same for each. A reader that wants the run's result reads it from
+   the settled envelope's `detail` when the envelope carries one. When the
+   envelope is pending, the reader reads the result from the operation
+   event of hop 3. A test that must see the end of a pending run calls
+   `RoutedSession.drain()`, which returns when all background work of the
+   session is complete. `drain()` is a surface for a test or a host. It is
+   not a model tool. The `TierTwoTests` snippets settle inside the grace,
+   so each proof of that suite reads the settled envelope.
 3. The **operation event** whose `correlationID` equals that token, and whose
    kind is `completed`, carries the outcome `detail` — the failure message.
    Read these with `TranscriptEvent.operationEvents`, Router's public entry
@@ -1377,8 +1382,10 @@ the recovery path. It is not a reason to keep the file in the working tree.
 *This is the tools' home. v2 removed `fs/read_text_file`,
 `fs/write_text_file`, and all five `terminal/*` client methods. It points
 agents to their own file access, their own execution, and MCP. The
-model-facing surface is three code-mode tools from
-`FoundationModelsMultitool`: `searchTools`, `runCode`, and `wait`. The
+model-facing surface is two code-mode tools from
+`FoundationModelsMultitool`: `searchTools` and `runCode`. There is no `wait`
+tool. A background run comes back to the session as mail when it settles
+(§8.0). The
 capability modules — `files`, `shell`, `mcp` — live inside the MultiTool
 registry, and with the standalone `skills` tool they are the **full surface**
 through which this agent touches the user's world. In-process capabilities are
@@ -1415,9 +1422,11 @@ down after the session sweep (§10.1, §11.5). **It is `async` because it must
 be.** `withMCP(servers:)` is `async throws` (§2.5). A synchronous function
 cannot call it.
 `MultiTool.Registry.makeSessionTools(librarian:sampleGenerator:)` vends
-**three** tools, in this mount order: `searchTools`, `runCode`, `wait`. In
-direct mode it vends `runCode` and `wait`. **`wait` is mounted in both
-modes.** The catalog appends the standalone `skills` tool (§14.2) to that
+**two** tools, in this mount order: `searchTools`, `runCode`. In direct mode
+it vends `runCode` alone. **No `wait` tool is mounted in either mode.** A wait
+inside a submission holds the model for each session on it, so a settled
+background run comes back to the session as mail and starts a new submission
+(§8.0). The catalog appends the standalone `skills` tool (§14.2) to that
 array. Router mounts `ElevatingTool` around each native
 entry. `ToolInvoker` binds the ambient `ToolContext` around each `tools.*`
 call (Multitool eventplan). We name our construction context
@@ -1506,9 +1515,10 @@ Multitool capability behind the code-mode surface. The model does not get a
 stand-alone `agents` tool. It calls `runCode`, and the snippet calls
 `tools.agents.*`. A sub-agent is a long-running background tool, so the
 capability must mount `.background`, in the same way as `runCode` and the
-`shell` commands: a start call hands back a `completionToken` at once, and the
-model collects the result through `wait(completionToken, seconds)`, examines
-it through `status()`, and ends it through `cancel()` (§11.4). Router's
+`shell` commands: a start call hands back a `completionToken` at once. The
+model examines the run through `status()` and ends it through `cancel()`
+(§11.4). The model does not wait for the run: its result comes back to the
+session as mail when it settles (§8.0). Router's
 background engine owns that run plane. This is also why the design fits the
 one-identity rule in §1: the `completionToken` is the `toolCallId` that the
 client sees, and it becomes `AgentSpawn.parentToolCallId` on the child
@@ -1565,8 +1575,9 @@ it today. (The two integration gaps: §14.2.)
   `tools.shell.grepHistory`. The capability's own `status()` and `cancel()`
   verbs are **removed**: Router's background engine owns the run plane. The
   MCP follow-up pseudo-tools `get_result`, `list_calls` and `cancel_call` are
-  removed too, and the snippet globals `status()`, `wait()` and `cancel()`
-  replace them.
+  removed too, and the snippet globals `status()` and `cancel()` replace
+  them. There is no `wait()` global: a settled run comes back to the session
+  as mail (§8.0).
 - **`mcp`**: dynamic. The tools that it gives depend on what the servers
   advertise. Connection completes before `buildRegistry()` (§7.3). A late
   server, a reconnect, or a `tools/list_changed` starts a registry rebuild

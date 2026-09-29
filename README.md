@@ -103,11 +103,13 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 
 ## Tools
 
-The model-facing surface is three code-mode tools from
-`FoundationModelsMultitool` — `searchTools`, `runCode` and `wait` — plus the
-standalone `skills` tool. Capability modules mount inside the Multitool
-registry, one row here per capability. Each capability is on by default. Set
-its config section to `false` to set it off.
+The model-facing surface is two code-mode tools from
+`FoundationModelsMultitool` — `searchTools` and `runCode` — plus the
+standalone `skills` tool. There is no `wait` tool. A `runCode` run that does
+not settle in its inline grace continues in the background, and its result
+comes back to the session as mail when it settles. Capability modules mount
+inside the Multitool registry, one row here per capability. Each capability
+is on by default. Set its config section to `false` to set it off.
 
 | Capability | What it gives the model | Config section |
 |---|---|---|

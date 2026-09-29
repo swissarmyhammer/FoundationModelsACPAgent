@@ -47,10 +47,27 @@ comments:
     - evidence: `swift test`: 615 tests in 70 suites passed (same count), no compiler warnings (only the SwiftPM "missing creator for mutated node" build-system line). `swift build --build-tests` in IntegrationTests/: Build complete. The diff of Sources changes only comments and the 4 runtime texts. Files: plan.md, cli-plan.md, README.md, and 30 Swift files in Sources/FoundationModelsACPAgent and Sources/acp-agent.
     - next: /review
   timestamp: 2026-09-29T19:31:25.198057+00:00
+- actor: claude-code
+  id: 01m3qaxzr8x1ssqs5evem2hzqd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c4f8caf). 35 files reviewed. 0 findings, 0 confirmed, 0 refuted (21 attempted, 0 failed). No validator matches plan.md, cli-plan.md and README.md, so the engine did not review these files. The engine ignores the .kanban/ files because of .reviewignore.
+    - next: none. The task moved to done.
+  timestamp: 2026-09-29T19:40:41.096211+00:00
+- actor: claude-code
+  id: 01m3qaykpme600jd1sn11vjng1
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — plan.md, cli-plan.md, README.md, 30 Swift files in Sources/
+    - test: green — swift test 615 tests pass; IntegrationTests build ok
+    - commit: c4f8caf
+    - review: clean — zero findings; task moved to done
+    - checklist: the orchestrator checked the acceptance items. The gate rg gives no result; plan.md §8.0 exists; the turn rg shows only the 4 kept BuiltinInstructions.swift lines (model text, kept by decision).
+  timestamp: 2026-09-29T19:41:01.524517+00:00
 depends_on:
 - 01M3A32XJSSVH8E7XKWGMDF7FR
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: f880
 title: Rewrite the prose of plan.md, the doc comments and the log text for prompt / submission / generation call and the model queue
 ---
 ## Why
@@ -79,15 +96,15 @@ Router has no turns and no request / attempt / pass API. It has one generation q
 
 ## Acceptance Criteria
 
-- [ ] `rg -n -i "\bturns?\b" Sources` shows only ACP protocol words, and each remaining line is in a list in a comment on this task.
-- [ ] `rg -n -i "model gate|generation gate|generationGate|turn-long" Sources plan.md README.md` gives no result.
-- [ ] `plan.md` has one short section that defines prompt, submission, generation call, and the per-model queue, and the other sections refer to it.
-- [ ] `swift build` and `swift test` pass (615 tests, the same count), with zero compiler warnings; `swift build --build-tests` passes in `IntegrationTests/`.
+- [x] `rg -n -i "\bturns?\b" Sources` shows only ACP protocol words, and each remaining line is in a list in a comment on this task. Exception by decision: 4 lines in `BuiltinInstructions.swift` (131, 137, 162, 188) stay. They are text that the model reads, and a change to them is a behavior change.
+- [x] `rg -n -i "model gate|generation gate|generationGate|turn-long" Sources plan.md README.md` gives no result.
+- [x] `plan.md` has one short section that defines prompt, submission, generation call, and the per-model queue, and the other sections refer to it.
+- [x] `swift build` and `swift test` pass (615 tests, the same count), with zero compiler warnings; `swift build --build-tests` passes in `IntegrationTests/`.
 
 ## Tests
 
-- [ ] No behavior change. If a test reads a log or error text that changed, update the test in the same change.
-- [ ] Run `swift test`. All pass, with the same test count as before.
+- [x] No behavior change. If a test reads a log or error text that changed, update the test in the same change.
+- [x] Run `swift test`. All pass, with the same test count as before.
 
 ## Workflow
 - Use `/tdd` — for a prose change, the green suite before and after the change is the test. #generation-queue
