@@ -760,21 +760,6 @@ import Testing
     private static let waitingSnippet =
         #"return await tools.shell.execute({ command: "cat \#(pipeName)" });"#
 
-    /// The permissions of the named pipe: read and write for the owner.
-    private static let pipePermissions: mode_t = 0o600
-
-    /// Makes a working directory that holds the named pipe of the tool-body
-    /// proof.
-    ///
-    /// - Returns: The directory.
-    /// - Throws: When the named pipe cannot be made.
-    private static func makeDirectoryWithWaitingPipe() throws -> URL {
-        let directory = makeResolvedDirectory(label: "PromptTurnTests-pipe-repo")
-        let pipe = directory.appendingPathComponent(pipeName)
-        try #require(mkfifo(pipe.path, pipePermissions) == 0, "mkfifo failed with errno \(errno)")
-        return directory
-    }
-
     /// Session A waits in an elicitation that the client does not answer.
     /// Session B prompts on the same model, and its prompt ends with
     /// `end_turn` while A still waits.
@@ -813,7 +798,8 @@ import Testing
         let fixture = try await QueuedScriptedFixture.make(
             script: ScriptedTurnFixture.makeToolTurnScript(code: Self.waitingSnippet),
             label: "PromptTurnTests-tool-body",
-            workingDirectory: try Self.makeDirectoryWithWaitingPipe())
+            workingDirectory: try NamedPipe.makeDirectory(
+                holding: Self.pipeName, label: "PromptTurnTests-pipe-repo"))
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
         let counter = fixture.passCounter
         try await Poll.until("the pass of session A starts") { counter.startedCount == 1 }

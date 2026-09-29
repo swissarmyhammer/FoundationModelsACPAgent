@@ -209,6 +209,90 @@ import Testing
         #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }
 
+    // MARK: - An answer that mail starts, and that waits for the model queue (§10.1)
+    //
+    // The prompt of session B starts a shell read of a named pipe in the
+    // background, and ends. Then session A holds the model. The test writes
+    // the pipe, thus the shell run of B settles, and its mail starts an answer
+    // of B. That answer has no caller prompt, and it waits for a queue place
+    // behind A. A close of B must answer, and must not wait for A.
+
+    /// The marker of the prompt of session B. Its pass starts the background
+    /// run.
+    private static let startRunMarker = "Start the background run"
+
+    /// The marker of the prompt of session A. Its pass holds the model.
+    private static let holdModelMarker = "Hold the model"
+
+    /// The name of the named pipe that the background run of session B reads.
+    private static let releasePipeName = "release.fifo"
+
+    /// The text that the test writes into the named pipe.
+    private static let releaseText = "the run can settle"
+
+    /// The snippet of session B: one shell read of the named pipe.
+    private static let pipeReadingSnippet =
+        #"return await tools.shell.execute({ command: "cat \#(releasePipeName)" });"#
+
+    /// The script of the mail proof. The pass of B starts the background
+    /// run, and the pass of A holds the model on `hold`. The answer that the
+    /// mail starts matches no marker. It ends at once and starts no new
+    /// background run, thus the script is finite.
+    ///
+    /// - Parameter hold: The hold of the pass of session A.
+    /// - Returns: The script.
+    /// - Throws: When the arguments of the `runCode` call cannot be encoded.
+    private static func makeMailScript(hold: ScriptedHold) throws -> [ScriptedTurnStep] {
+        [
+            .onPrompt(
+                containing: startRunMarker,
+                play: try ScriptedTurnFixture.makeToolTurnScript(code: pipeReadingSnippet)),
+            .onPrompt(
+                containing: holdModelMarker,
+                play: [.holdUntilReleased(hold), .textDelta("released"), .endTurn]),
+            .textDelta("the mail was read"),
+            .endTurn,
+        ]
+    }
+
+    /// A `session/close` for a session whose mail-started answer waits for a
+    /// place in the model queue answers while the other session still holds
+    /// the model. After the release, the holding session completes.
+    @Test(.timeLimit(.minutes(1)))
+    func closeEndsAMailStartedAnswerThatWaitsForTheModelQueue() async throws {
+        let hold = ScriptedHold()
+        let directory = try NamedPipe.makeDirectory(
+            holding: Self.releasePipeName, label: "CancellationTests-mail")
+        let fixture = try await QueuedScriptedFixture.make(
+            script: try Self.makeMailScript(hold: hold), label: "CancellationTests-mail",
+            workingDirectory: directory)
+        let sessionA = fixture.firstSessionId
+        let sessionB = fixture.secondSessionId
+        let counter = fixture.passCounter
+
+        try await fixture.prompt(sessionB, text: Self.startRunMarker)
+        _ = try await fixture.waitForIdle(of: sessionB)
+        try await ScriptedTurnFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
+        try await fixture.prompt(sessionA, text: Self.holdModelMarker)
+        try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
+        try await NamedPipe.write(
+            Self.releaseText, toPipeAt: directory.appendingPathComponent(Self.releasePipeName))
+        try await Poll.until("the mail-started answer of session B waits for a queue place") {
+            await counter.waitingCount == 1
+        }
+
+        _ = try await fixture.base.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: sessionB))
+        let updatesOfAWhileHeld = await fixture.updates(of: sessionA)
+
+        hold.release()
+        let updatesOfA = try await fixture.waitForIdle(of: sessionA)
+        await fixture.close()
+
+        #expect(ScriptedTurnFixture.idleCount(in: updatesOfAWhileHeld) == 0)
+        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
+    }
+
     // MARK: - The no-op cancels (§8.6, §10.1)
 
     /// A cancel of an idle session is a no-op: no error, no update, and

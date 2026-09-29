@@ -25,11 +25,27 @@ comments:
     - evidence: `swift build --build-tests` passed with zero compiler warnings. The one build line is the SwiftPM note "missing creator for mutated node" for the mlx-swift_Cmlx bundle. It is not a compiler warning, and it is not from this change. `swift test`: 614 tests in 70 suites passed (613 before, plus 1 new). The 1 known issue is the withKnownIssue that HarnessSmokeTests already had. The rg check of the six obsolete names gives no result. Files: Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Sources/FoundationModelsACPAgent/Agent/PromptTurn.swift, Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift.
     - next: /review
   timestamp: 2026-09-29T17:40:14.149766+00:00
+- actor: claude-code
+  id: 01m3q4r0wpqcsyhxcn8c6ykw2d
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~2..HEAD (93e0b5b, 4c95738). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 6 files reviewed. 4 .kanban files not reviewed because of .reviewignore. No earlier review findings are on the task.
+    - next: None. The task is in done.
+  timestamp: 2026-09-29T17:52:34.198740+00:00
+- actor: claude-code
+  id: 01m3q4r8hjgns1hc81b2ra7ge3
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files (EventProjection.swift, PromptTurn.swift, EventProjectionTests.swift, PromptTurnTests.swift, Support/ProjectionTestSupport.swift)
+    - test: green — swift test 614 tests pass after a fix in SessionResume.swift (release the replaced session before the new code context opens); IntegrationTests build ok
+    - commit: 93e0b5b, 4c95738
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T17:52:42.034899+00:00
 depends_on:
 - 01M3A30KQBCN1051EVS6KCTS5V
 - 01M3A30WN7D2CB2X7EGM0K2VN6
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: f380
 title: Adopt the Router submission events and the submission cancel API
 ---
 ## Why

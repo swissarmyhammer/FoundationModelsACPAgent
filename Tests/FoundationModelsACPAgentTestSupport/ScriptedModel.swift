@@ -67,6 +67,15 @@ public enum ScriptedTurnStep: Sendable, Equatable {
     /// and a write to one releases a run the step before it is holding.
     case writeFile(path: String, text: String)
 
+    /// Plays `steps` in place of this step when the prompt of the pass
+    /// contains `marker`, and plays nothing when it does not. An
+    /// ``endTurn`` in `steps` ends the whole pass.
+    ///
+    /// Each pass plays the same script. A proof uses this step to give the
+    /// passes of one script different plays: each caller prompt carries its
+    /// own marker, and an answer that mail starts carries no marker.
+    indirect case onPrompt(containing: String, play: [ScriptedTurnStep])
+
     /// Ends the turn. Steps after this one are never emitted.
     case endTurn
 }
@@ -353,14 +362,14 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///   - prompt: The prompt the turn answers.
     ///   - yield: Receives each text delta, in order.
     /// - Returns: The answer text, the deltas joined in order.
-    /// - Throws: Whatever ``playScript(yield:)`` throws.
+    /// - Throws: Whatever ``play(_:prompt:yield:)`` throws.
     private func playTurn(prompt: String, yield: (String) -> Void) async throws -> String {
         passCounter?.passDidStart()
         defer { passCounter?.passDidEnd() }
         await recorder?.record(prompt: prompt)
         appendPromptEntry(prompt: prompt)
         var text = ""
-        try await playScript { delta in
+        _ = try await play(script, prompt: prompt) { delta in
             text += delta
             yield(delta)
         }
@@ -407,16 +416,24 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         synthesized.withLock { $0.entries.append(entry) }
     }
 
-    /// Plays the script: yields each delta, invokes each scripted tool
-    /// call, and stops at the turn end.
+    /// Plays `steps`: yields each delta, invokes each scripted tool call,
+    /// plays the steps of each ``ScriptedTurnStep/onPrompt(containing:play:)``
+    /// whose marker `prompt` contains, and stops at the turn end.
     ///
-    /// - Parameter yield: Receives each text delta, in order.
+    /// - Parameters:
+    ///   - steps: The steps to play, in order.
+    ///   - prompt: The prompt the pass answers.
+    ///   - yield: Receives each text delta, in order.
+    /// - Returns: `true` when an ``ScriptedTurnStep/endTurn`` step ended
+    ///   the play, and `false` when the play ran out of steps.
     /// - Throws: ``ScriptedModelError/unknownTool(_:)`` for a tool the
     ///   session was not handed, ``ScriptedModelError/noRunToCollect``
     ///   for a collecting play with no token to name, or the invoked
     ///   tool's own error.
-    private func playScript(yield: (String) -> Void) async throws {
-        for step in script {
+    private func play(
+        _ steps: [ScriptedTurnStep], prompt: String, yield: (String) -> Void
+    ) async throws -> Bool {
+        for step in steps {
             switch step {
             case .textDelta(let text):
                 yield(text)
@@ -432,10 +449,15 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 try await hold.waitForRelease()
             case .writeFile(let path, let text):
                 try Self.write(text: text, toFileAt: path)
+            case .onPrompt(let marker, let branch):
+                if prompt.contains(marker), try await play(branch, prompt: prompt, yield: yield) {
+                    return true
+                }
             case .endTurn:
-                return
+                return true
             }
         }
+        return false
     }
 
     /// Suspends until the surrounding task is cancelled, then throws
