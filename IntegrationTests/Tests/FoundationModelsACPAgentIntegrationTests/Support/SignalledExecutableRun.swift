@@ -34,8 +34,16 @@ struct SignalledExecutableRun {
     /// The pause between two looks at the child.
     private static let pollInterval: Swift.Duration = .milliseconds(pollIntervalMilliseconds)
 
-    /// The process exit code.
+    /// The process exit code, or the signal number when a signal with no
+    /// handler ended the child.
     let exitCode: Int32
+
+    /// `true` when the child called `exit`, and `false` when a signal with no
+    /// handler ended it.
+    let didExit: Bool
+
+    /// The time from the last signal to the end of the child.
+    let exitWait: Swift.Duration
 
     /// The captured stdout text.
     let standardOutput: String
@@ -78,13 +86,16 @@ struct SignalledExecutableRun {
     /// end.
     ///
     /// The child gets `configHome` as `XDG_CONFIG_HOME` and every pair of
-    /// `environment` on top of this process's environment.
+    /// `environment` on top of `inheritedEnvironment`.
     ///
     /// - Parameters:
     ///   - executableName: The product name of the executable to run.
     ///   - arguments: The command-line arguments for the executable.
     ///   - workspace: The working directory of the run.
     ///   - configHome: The injected `XDG_CONFIG_HOME` root.
+    ///   - inheritedEnvironment: The environment the child starts from. The
+    ///     default is this process's environment; a caller that must keep a
+    ///     variable of this process out of the child gives a filtered copy.
     ///   - environment: The extra environment pairs.
     ///   - atFirstOutput: What to do once the child has written its first
     ///     stdout byte, and before the first signal goes out. It gets the
@@ -107,6 +118,7 @@ struct SignalledExecutableRun {
         arguments: [String],
         workspace: URL,
         configHome: URL,
+        inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment,
         environment: [String: String],
         atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in },
         signalCount: Int,
@@ -118,7 +130,7 @@ struct SignalledExecutableRun {
         process.executableURL = try BuiltProductLocator.executableURL(named: executableName)
         process.arguments = arguments
         process.currentDirectoryURL = workspace
-        var childEnvironment = ProcessInfo.processInfo.environment
+        var childEnvironment = inheritedEnvironment
         childEnvironment[TierThreeFixture.configHomeVariable] = configHome.path
         for (key, value) in environment {
             childEnvironment[key] = value
@@ -127,6 +139,8 @@ struct SignalledExecutableRun {
 
         let standardOutputPipe = Pipe()
         let standardErrorPipe = Pipe()
+        standardOutputPipe.markCloseOnExec()
+        standardErrorPipe.markCloseOnExec()
         process.standardOutput = standardOutputPipe
         process.standardError = standardErrorPipe
 
@@ -159,11 +173,16 @@ struct SignalledExecutableRun {
             process.interrupt()
             signalsSent += 1
         }
+        let clock = ContinuousClock()
+        let lastSignal = clock.now
         try await waitForExit(of: process, within: exitLimit)
+        let exitWait = clock.now - lastSignal
 
         await draining.value
         return SignalledExecutableRun(
             exitCode: process.terminationStatus,
+            didExit: process.terminationReason == .exit,
+            exitWait: exitWait,
             standardOutput: String(decoding: await store.output, as: UTF8.self),
             standardError: String(decoding: await store.error, as: UTF8.self),
             signalsSent: signalsSent)
@@ -208,13 +227,14 @@ struct SignalledExecutableRun {
         throw SignalledRunError(wait: "write to stdout", limit: limit)
     }
 
-    /// Waits until `process` has ended.
+    /// Waits until `process` has ended, and ends it with `SIGTERM` when the
+    /// wait runs out, so no test leaves a process behind.
     ///
     /// - Parameters:
     ///   - process: The child to watch.
     ///   - limit: How long to wait.
     /// - Throws: ``SignalledRunError`` when the wait runs out.
-    private static func waitForExit(
+    static func waitForExit(
         of process: Process, within limit: Swift.Duration
     ) async throws {
         let clock = ContinuousClock()

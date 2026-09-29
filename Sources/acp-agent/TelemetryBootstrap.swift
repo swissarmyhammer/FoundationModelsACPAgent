@@ -26,7 +26,34 @@ import Synchronization
 /// Only ``AcpAgentCommand/main()`` calls ``bootstrap(environment:)``. The unit
 /// test target links this target, and a test process must never bootstrap
 /// logging: swift-log permits one bootstrap for each process.
+///
+/// **The exit paths call ``shutdown()``, with two exceptions.** A batch
+/// exporter keeps records in memory and sends them later, so an exit without
+/// the shutdown loses the last batch. These paths call it:
+///
+/// - the normal return of ``AcpAgentCommand/main()``, for example `acp` mode
+///   after the end of stdin, or `run` after the answer;
+/// - the failure path of ``AcpAgentCommand/main()``, before `exit(3)`: each
+///   error, and the first `Ctrl-C` of cli-plan.md §5.9, which exits 4;
+/// - `SIGTERM` during the ACP serve window of `acp` mode, through
+///   ``TerminationHandler``, which exits 143.
+///
+/// The first exception is the second `Ctrl-C`.
+/// ``InterruptHandler/endAtOnce()`` calls `_exit(2)`, because the person
+/// asked to end at once and a flush can wait on the network. So that path
+/// does not flush, and its last batch is lost. The second exception is a
+/// `SIGTERM` outside the ACP serve window: the signal keeps its default
+/// action there, so that path does not flush either.
+///
+/// ``shutdown()`` waits for the flush for ``shutdownDeadline`` at most, so a
+/// collector that does not answer cannot hold the process.
 enum TelemetryBootstrap {
+    /// The number of seconds in ``shutdownDeadline``.
+    private static let shutdownDeadlineSeconds = 2
+
+    /// The longest time ``shutdown()`` waits for the flush of the last batch.
+    static let shutdownDeadline: Duration = .seconds(shutdownDeadlineSeconds)
+
     /// The standard variable that turns on the OTLP exporters.
     private static let otlpEndpointVariable = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
@@ -71,15 +98,61 @@ enum TelemetryBootstrap {
         }
     }
 
-    /// Stops the running OpenTelemetry service and waits until it ends. The
-    /// graceful shutdown flushes the last batch of spans, log records and
-    /// metrics. When no service runs, it does nothing.
+    /// Stops the running OpenTelemetry service and waits until it ends, for
+    /// ``shutdownDeadline`` at most. The graceful shutdown flushes the last
+    /// batch of spans, log records and metrics. When no service runs, it
+    /// does nothing.
+    ///
+    /// When the deadline comes first, the service task is cancelled and
+    /// this function returns, so the process can exit. The batch that did
+    /// not go out is lost, and the process does not wait for a collector
+    /// that does not answer.
     static func shutdown() async {
         guard let service = running.withLock({ current in current.take() }) else {
             return
         }
         await service.group.triggerGracefulShutdown()
-        await service.task.value
+        let ended = await waitForEnd(of: service.task, within: shutdownDeadline)
+        guard !ended else {
+            return
+        }
+        service.task.cancel()
+        makeDiagnosticLogger().error(
+            "The OpenTelemetry flush did not end before the deadline. The last batch is lost.",
+            metadata: ["deadline": "\(shutdownDeadline)"])
+    }
+
+    /// Waits until `task` ends or until `deadline` passes, whichever comes
+    /// first.
+    ///
+    /// The wait of a `Task` value does not stop when the waiting task is
+    /// cancelled, so a task group cannot race it: the group waits for each
+    /// child before it returns. So two unstructured tasks, one for the end
+    /// and one for the deadline, report into one stream, and the first
+    /// report decides. When the deadline wins, the task that waits for the
+    /// end stays suspended until `task` ends.
+    ///
+    /// - Parameters:
+    ///   - task: The task to wait for.
+    ///   - deadline: The longest time to wait.
+    /// - Returns: `true` when `task` ended before the deadline, and `false`
+    ///   when the deadline came first.
+    static func waitForEnd(of task: Task<Void, Never>, within deadline: Duration) async -> Bool {
+        let (reports, report) = AsyncStream<Bool>.makeStream()
+        let ending = Task {
+            await task.value
+            report.yield(true)
+        }
+        let timing = Task {
+            try? await Task.sleep(for: deadline)
+            report.yield(false)
+        }
+        var iterator = reports.makeAsyncIterator()
+        let ended = await iterator.next() ?? false
+        report.finish()
+        timing.cancel()
+        ending.cancel()
+        return ended
     }
 
     /// Bootstraps swift-otel from `environment` and starts its service.

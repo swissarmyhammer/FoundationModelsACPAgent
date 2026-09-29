@@ -57,6 +57,8 @@ struct BuiltExecutableRun {
 
         let standardOutputPipe = Pipe()
         let standardErrorPipe = Pipe()
+        standardOutputPipe.markCloseOnExec()
+        standardErrorPipe.markCloseOnExec()
         process.standardOutput = standardOutputPipe
         process.standardError = standardErrorPipe
 

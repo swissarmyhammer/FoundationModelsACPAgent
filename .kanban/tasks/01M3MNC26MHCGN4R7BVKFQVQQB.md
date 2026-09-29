@@ -78,11 +78,12 @@ Rules for each site:
 ## Acceptance Criteria
 - [ ] The 4 files have no `import os`, no `os.Logger`, and no global or `static let` logger.
 - [ ] Each changed log call has a fixed message string and puts identifiers in metadata.
-- [ ] An ignored `session/cancel` for an unknown session writes one `.notice` record with the label `FoundationModelsACPAgent.PromptTurn` and the session id in metadata.
+- [ ] An ignored `session/cancel` for an unknown session writes one `.notice` record with the session id in metadata.
+- [ ] That record has the label `FoundationModelsACPAgent.PromptTurn`. Blocker for this one criterion only: FoundationModelsExtras OTel F ^92q1rms (01M3N95083T1NCMA59E92Q1RMS), "TelemetryCapture keeps the logger label on each log record". Until OTel F is on Extras origin/main, the capture drops the label, so this check cannot run. The rest of this task does not need OTel F.
 
 ## Tests
 - [ ] Test rules for all OTel tasks on this board: use `TelemetryCapture` from `TelemetryTestSupport`. It uses task-local `withTracer` and `withMetricsFactory`, and it bootstraps logging one time. Never call `LoggingSystem.bootstrap`, `InstrumentationSystem.bootstrap` or `MetricsSystem.bootstrap` in the test process. Make the agent and the harness inside the capture.
-- [ ] Add `Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift`: in a capture, send `session/cancel` for an unknown session through the harness in `Tests/FoundationModelsACPAgentTestSupport/Harness.swift`, and assert the captured record (label, level, `session.id` metadata).
+- [ ] Add `Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift`: in a capture, send `session/cancel` for an unknown session through the harness in `Tests/FoundationModelsACPAgentTestSupport/Harness.swift`, and assert the captured record (level and `session.id` metadata; the label also, when Extras OTel F ^92q1rms is on Extras origin/main).
 - [ ] Run `swift test --filter SessionSurfaceLoggingTests`. Expected: pass.
 - [ ] Run `swift test`. Expected: all tests pass.
 

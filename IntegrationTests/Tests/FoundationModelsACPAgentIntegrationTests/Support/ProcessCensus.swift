@@ -51,6 +51,7 @@ enum ProcessCensus {
         pgrep.executableURL = URL(fileURLWithPath: pgrepPath)
         pgrep.arguments = arguments
         let output = Pipe()
+        output.markCloseOnExec()
         pgrep.standardOutput = output
         try pgrep.run()
         // The read stands before the wait: `pgrep` writes one line for each

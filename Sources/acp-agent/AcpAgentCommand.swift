@@ -89,8 +89,9 @@ struct AcpAgentCommand: AsyncParsableCommand {
     /// (``TelemetryBootstrap/bootstrap(environment:)``), before the process
     /// can write a log record. This is the only call site: the unit test
     /// target links this target, and a test process must not bootstrap
-    /// logging. A normal return stops the telemetry service, which flushes
-    /// its last batch.
+    /// logging. Both ways out stop the telemetry service, which flushes its
+    /// last batch: a normal return, and ``exitAfterFailure(_:)`` before its
+    /// `exit(3)`.
     static func main() async {
         TelemetryBootstrap.bootstrap(environment: ProcessInfo.processInfo.environment)
         do {
@@ -101,7 +102,7 @@ struct AcpAgentCommand: AsyncParsableCommand {
                 try command.run()
             }
         } catch {
-            exitAfterFailure(error)
+            await exitAfterFailure(error)
         }
         await TelemetryBootstrap.shutdown()
     }
@@ -111,14 +112,19 @@ struct AcpAgentCommand: AsyncParsableCommand {
     /// outcome's code. An empty message writes nothing, as the library's
     /// `exit(withError:)` does.
     ///
+    /// `exit(3)` does not wait for the batch exporters, so the telemetry
+    /// shuts down first (``TelemetryBootstrap/shutdown()``), after the
+    /// message and before the exit.
+    ///
     /// - Parameter error: The error `parseAsRoot` or `run()` threw.
-    private static func exitAfterFailure(_ error: any Error) -> Never {
+    private static func exitAfterFailure(_ error: any Error) async -> Never {
         let outcome = exitOutcome(for: error)
         let message = fullMessage(for: error)
         if !message.isEmpty {
             let stream: FileHandle = outcome.writesToStandardError ? .standardError : .standardOutput
             stream.write(Data((message + "\n").utf8))
         }
+        await TelemetryBootstrap.shutdown()
         Darwin.exit(outcome.code)
     }
 }

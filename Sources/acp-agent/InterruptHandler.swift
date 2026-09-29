@@ -117,7 +117,10 @@ enum InterruptHandler {
     /// `_exit(2)` and not `exit(3)`: "at once" means no `atexit` handler
     /// and no library teardown runs. Nothing is lost by that. The answer
     /// went out through `write(2)`, which carries no user-space buffer,
-    /// so every byte the person saw is already on the descriptor.
+    /// so every byte the person saw is already on the descriptor. The one
+    /// loss is the last telemetry batch: this path does not wait for the
+    /// flush of ``TelemetryBootstrap/shutdown()``, which can wait on the
+    /// network.
     ///
     /// - Returns: Never; the process is gone.
     static func endAtOnce() -> Never {

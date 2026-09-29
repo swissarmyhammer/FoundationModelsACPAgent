@@ -32,10 +32,26 @@ comments:
     - evidence: 6 files: Package.swift, Sources/acp-agent/TelemetryBootstrap.swift (new), Sources/acp-agent/AcpAgentCommand.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/TelemetryStdoutTests.swift (new), IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/StdoutFrameChecks.swift (new), IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/StdioContractTests.swift. Also local untracked Package.resolved (root and IntegrationTests). `swift build`: 0 warnings from project sources. `swift test`: 591 tests in 66 suites passed (1 known issue that was there before). `swift test --package-path IntegrationTests`: 20 tests in 9 suites passed, TelemetryStdoutTests 2/2 included.
     - next: review
   timestamp: 2026-09-28T23:46:48.383948+00:00
+- actor: claude-code
+  id: 01m3n7bbqxe2cj9xd612zv1q3t
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 988a354). 0 findings (7 validator tasks run, 0 failed). 6 source files reviewed. 6 .kanban files not reviewed because of .reviewignore.
+    - next: none. The task moved to done.
+  timestamp: 2026-09-28T23:59:36.189522+00:00
+- actor: claude-code
+  id: 01m3n7bn775m3hdy60wqp3z2jq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Package.swift, acp-agent/TelemetryBootstrap.swift (new), AcpAgentCommand.swift, IntegrationTests TelemetryStdoutTests.swift (new), Support/StdoutFrameChecks.swift (new), StdioContractTests.swift
+    - test: green — swift test 591 tests in 66 suites; IntegrationTests TelemetryStdoutTests and StdioContractTests 3 tests; 0 project warnings
+    - commit: 988a354
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-09-28T23:59:45.895854+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: eb80
 title: 'OTel 2: bootstrap swift-otel in acp-agent, and keep stdout for ACP only'
 ---
 ## What

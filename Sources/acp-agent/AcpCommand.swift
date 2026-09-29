@@ -56,9 +56,14 @@ extension AcpAgentCommand {
             // The client owns the lifecycle (plan.md §17): it closes
             // stdin, and there is no teardown handshake to wait for. So
             // the process stands here for as long as the client speaks,
-            // and ends when the client stops.
-            await transport.waitForInboundEnd()
-            await connection.close()
+            // and ends when the client stops. A process manager can end it
+            // earlier with `SIGTERM`: the connection closes, and the thrown
+            // exit code takes the failure path of `main()`, which flushes
+            // the telemetry before the exit.
+            try await TerminationHandler.serve(
+                untilInboundEnd: { await transport.waitForInboundEnd() },
+                closing: { await connection.close() },
+                watchedBy: TerminationHandler.onSIGTERM)
         }
     }
 }
