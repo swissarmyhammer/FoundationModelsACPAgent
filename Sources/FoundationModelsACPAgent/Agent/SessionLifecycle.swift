@@ -1,12 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
-import os
-
-/// The logger of the session lifecycle: the teardown steps, the descendant
-/// closes, and the disk removals of a delete.
-private let lifecycleLogger = Logger(
-    subsystem: RoutedACPAgent.implementation.name, category: "SessionLifecycle")
+import Logging
 
 extension RoutedACPAgent {
     /// Closes one session and releases its resources (plan.md §10.1).
@@ -172,9 +167,10 @@ extension RoutedACPAgent {
         do {
             try FileManager.default.removeItem(at: directory)
         } catch {
-            lifecycleLogger.error(
-                "session \(ulidString, privacy: .public): transcript directory removal failed: \(error, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.sessionLifecycle).error(
+                "The delete could not remove the transcript directory of a session.",
+                metadata: ACPAgentTelemetry.errorMetadata(
+                    error, sessionId: SessionId(rawValue: ulidString)))
         }
     }
 
@@ -189,9 +185,10 @@ extension RoutedACPAgent {
         do {
             try SessionIndex(root: root).removeRecords(sessionId: ulidString)
         } catch {
-            lifecycleLogger.error(
-                "session \(ulidString, privacy: .public): sessions.jsonl removal failed: \(error, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.sessionLifecycle).error(
+                "The delete could not remove the sessions.jsonl record of a session.",
+                metadata: ACPAgentTelemetry.errorMetadata(
+                    error, sessionId: SessionId(rawValue: ulidString)))
         }
     }
 }

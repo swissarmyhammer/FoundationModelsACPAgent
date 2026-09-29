@@ -72,8 +72,9 @@ enum ACPAgentTelemetry {
     /// the content of the client.
     ///
     /// The log metadata keys read some of these keys. OTel 8 reads the
-    /// command, elicitation and MCP server keys, so periphery sees no reader
-    /// of those yet. Each of those keys has its own ignore marker.
+    /// elicitation outcome key and the MCP server transport key, so periphery
+    /// sees no reader of those yet. Each of those keys has its own ignore
+    /// marker.
     enum AttributeKey {
         /// The ACP method of the request, for example `session/prompt`.
         static let acpMethod = "acp.method"
@@ -85,14 +86,12 @@ enum ACPAgentTelemetry {
         static let promptStopReason = "prompt.stop_reason"
 
         /// The name of the slash command, without the leading `/`.
-        // periphery:ignore
         static let commandName = "command.name"
 
         /// The kind of the slash command: built-in, or from a layer.
         static let commandKind = "command.kind"
 
         /// The mode of the elicitation: `form` or `url`.
-        // periphery:ignore
         static let elicitationMode = "elicitation.mode"
 
         /// How the elicitation ended: accept, decline or cancel.
@@ -100,7 +99,6 @@ enum ACPAgentTelemetry {
         static let elicitationOutcome = "elicitation.outcome"
 
         /// The configured name of the MCP server.
-        // periphery:ignore
         static let mcpServerName = "mcp.server.name"
 
         /// The transport of the MCP server: `stdio` or `http`.
@@ -250,6 +248,27 @@ enum ACPAgentTelemetry {
 
         /// The protocol version that the agent answered with.
         static let answeredProtocolVersion = "acp.protocol_version.answered"
+
+        /// The name of a slash command, without the leading `/`.
+        static let commandName = AttributeKey.commandName
+
+        /// The configured name of an MCP server. A refusal of `mcp: false`
+        /// that covers more than one server gives an array of names.
+        static let mcpServerName = AttributeKey.mcpServerName
+
+        /// Why the composition refused a client-supplied MCP server: the
+        /// name of the refusal case.
+        static let mcpRefusalReason = "mcp.server.refusal_reason"
+
+        /// The id of an elicitation.
+        static let elicitationId = "elicitation.id"
+
+        /// The mode of an elicitation: `form` or `url`.
+        static let elicitationMode = AttributeKey.elicitationMode
+
+        /// Why the relay declined an elicitation: the name of the decline
+        /// reason.
+        static let elicitationDeclineReason = "elicitation.decline_reason"
     }
 
     /// The text that ``caseName(of:)`` gives for a value that shows no case
@@ -322,6 +341,19 @@ enum ACPAgentTelemetry {
         /// The resume surface: the cwd pre-check, the restore reports and the
         /// root-set update.
         case sessionResume = "SessionResume"
+
+        /// The session lifecycle: the disk removals of a delete.
+        case sessionLifecycle = "SessionLifecycle"
+
+        /// The elicitation relay: the round trips, the declines and the
+        /// dropped late answers.
+        case elicitationRelay = "ElicitationRelay"
+
+        /// The command registry: the merge wins and the reserved-name drops.
+        case commands = "Commands"
+
+        /// The MCP composition: the refusals of client-supplied servers.
+        case mcpComposition = "MCPComposition"
     }
 
     /// Makes a new logger for `category`.

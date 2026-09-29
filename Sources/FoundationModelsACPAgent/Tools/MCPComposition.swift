@@ -1,11 +1,8 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsMultitool
+import Logging
 import MCP
-import os
-
-/// The logger every MCP composition refusal and connect step reports to.
-let mcpCompositionLogger = Logger(subsystem: "FoundationModelsACPAgent", category: "MCPComposition")
 
 /// Errors thrown while the MCP composition connects a server.
 enum MCPCompositionError: Error, CustomStringConvertible, Equatable {
@@ -49,7 +46,7 @@ enum MCPCompositionError: Error, CustomStringConvertible, Equatable {
 /// present, so a Router host never sets the handler.
 enum MCPComposition {
     /// One refused client-supplied server, and why (plan.md §7.3, §11.2).
-    enum Refusal: Equatable, Sendable, CustomStringConvertible {
+    enum Refusal: Equatable, Sendable {
         /// `mcp: false` turned MCP fully off, so every client-supplied
         /// server is refused in one entry.
         case mcpDisabled(serverNames: [String])
@@ -62,17 +59,31 @@ enum MCPComposition {
         /// know. The name is `nil` when the payload does not carry one.
         case unknownTransport(serverName: String?)
 
-        /// The log line this refusal writes.
-        var description: String {
+        /// The metadata of the log record of this refusal: the name of the
+        /// refusal case, and the server name. The `mcp: false` refusal gives
+        /// an array of names. A server with no name gives no name value.
+        ///
+        /// The record holds no other value of the server. An `env` value or
+        /// a `headers` value is a secret, and it never goes into a record.
+        var logMetadata: Logger.Metadata {
+            var metadata: Logger.Metadata = [
+                ACPAgentTelemetry.LogMetadataKey.mcpRefusalReason:
+                    "\(ACPAgentTelemetry.caseName(of: self))"
+            ]
+            metadata[ACPAgentTelemetry.LogMetadataKey.mcpServerName] = serverNameValue
+            return metadata
+        }
+
+        /// The server name value of the log record, or `nil` when the
+        /// refused server has no name.
+        private var serverNameValue: Logger.MetadataValue? {
             switch self {
             case .mcpDisabled(let serverNames):
-                return
-                    "mcpClientServerRefused reason=mcpDisabled servers=\(serverNames.joined(separator: ","))"
+                .array(serverNames.map { .string($0) })
             case .nameCollision(let serverName):
-                return "mcpClientServerRefused reason=nameCollision server=\(serverName)"
+                .string(serverName)
             case .unknownTransport(let serverName):
-                return
-                    "mcpClientServerRefused reason=unknownTransport server=\(serverName ?? "unnamed")"
+                serverName.map { .string($0) }
             }
         }
     }
@@ -266,7 +277,9 @@ enum MCPComposition {
     ) async throws -> ConnectedServers {
         let roster = composeRoster(section: section, clientServers: clientServers)
         for refusal in roster.refusals {
-            mcpCompositionLogger.error("\(refusal.description, privacy: .public)")
+            ACPAgentTelemetry.logger(.mcpComposition).error(
+                "The composition refused a client-supplied MCP server.",
+                metadata: refusal.logMetadata)
         }
         var servers: [FoundationModelsMultitool.MCPServer] = []
         var processes: [StdioServerProcess] = []

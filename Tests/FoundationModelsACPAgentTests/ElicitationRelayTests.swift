@@ -4,7 +4,9 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
 import FoundationModelsRouter
+import Logging
 import MCPTestServer
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -359,6 +361,46 @@ struct ElicitationRelayTests {
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         #expect(!Self.stateMarkers(in: updates).contains("requires_action"))
         #expect(try encodedWireText(of: updates).contains(Self.declinedResultText))
+    }
+
+    // MARK: - The decline log record
+
+    /// The label of each logger of the elicitation relay.
+    private static let elicitationRelayLoggerLabel = "FoundationModelsACPAgent.ElicitationRelay"
+
+    /// A decline of a URL-mode request to a client with `form` only writes
+    /// one `notice` record. The mode, the decline reason and the session id
+    /// are in the metadata of the record.
+    @Test(.timeLimit(.minutes(1)))
+    func aDeclineForAnUnsupportedModeWritesOneNoticeWithTheModeInMetadata() async throws {
+        let modeKey = ACPAgentTelemetry.LogMetadataKey.elicitationMode
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.urlSnippet,
+                capabilities: Self.formOnlyCapabilities,
+                label: "ElicitationRelayTests-decline-record")
+            try await Self.prompt(fixture)
+            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await fixture.close()
+            return (sessionId: fixture.sessionId.rawValue, records: context.logRecords)
+        }
+
+        let declineRecords = captured.records.filter { $0.metadata[modeKey] == .string("url") }
+        #expect(declineRecords.count == 1)
+        let record = try #require(declineRecords.first)
+        #expect(record.level == .notice)
+        #expect(
+            record.metadata[ACPAgentTelemetry.LogMetadataKey.elicitationDeclineReason]
+                == .string("unsupportedMode"))
+        #expect(
+            record.metadata[ACPAgentTelemetry.LogMetadataKey.sessionId] == .string(captured.sessionId))
+    }
+
+    /// The logger of the elicitation relay has the module label and the
+    /// category of the elicitation relay.
+    @Test func elicitationRelayLoggerHasTheModuleLabel() {
+        #expect(
+            ACPAgentTelemetry.logger(.elicitationRelay).label == Self.elicitationRelayLoggerLabel)
     }
 
     // MARK: - The URL round trip

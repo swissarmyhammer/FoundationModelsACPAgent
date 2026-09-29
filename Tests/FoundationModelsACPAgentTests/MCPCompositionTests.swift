@@ -3,8 +3,10 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
+import Logging
 import MCPTestServer
 import Synchronization
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -403,6 +405,59 @@ import Testing
         #expect(connected.servers.isEmpty)
         #expect(connected.processes.isEmpty)
         #expect(connected.refusals == [.mcpDisabled(serverNames: [Self.gammaName])])
+    }
+
+    // MARK: - The refusal log record
+
+    /// The label of each logger of the MCP composition.
+    private static let mcpCompositionLoggerLabel = "FoundationModelsACPAgent.MCPComposition"
+
+    /// The secret `env` value of the refused server of the log case.
+    private static let secretEnvValue = "mcp-composition-secret-env-value"
+
+    /// The secret `headers` value of the refused server of the log case.
+    private static let secretHeaderValue = "mcp-composition-secret-header-value"
+
+    /// A refused client-supplied server of an unknown transport writes one
+    /// `error` record. The server name and the refusal reason are in the
+    /// metadata of the record, and not in its message. No record holds the
+    /// `env` value or the `headers` value of the server.
+    @Test func aRefusedClientServerWritesOneErrorWithItsNameInMetadataAndNoSecret() async throws {
+        let client = FoundationModelsACP.MCPServer.unknown(
+            "carrier-pigeon",
+            .object([
+                "name": .string(Self.remoteName),
+                "env": .array([
+                    .object(["name": .string("TOKEN"), "value": .string(Self.secretEnvValue)])
+                ]),
+                "headers": .array([
+                    .object(["name": .string("Authorization"), "value": .string(Self.secretHeaderValue)])
+                ]),
+            ]))
+
+        let records = try await TelemetryCapture.run(
+            forbidding: [Self.secretEnvValue, Self.secretHeaderValue]
+        ) { context in
+            _ = try await MCPComposition.connectServers(
+                section: .enabled(servers: []), clientServers: [client])
+            return context.logRecords
+        }
+
+        let serverNameKey = ACPAgentTelemetry.LogMetadataKey.mcpServerName
+        let refusalRecords = records.filter { $0.metadata[serverNameKey] == .string(Self.remoteName) }
+        #expect(refusalRecords.count == 1)
+        let record = try #require(refusalRecords.first)
+        #expect(record.level == .error)
+        #expect(
+            record.metadata[ACPAgentTelemetry.LogMetadataKey.mcpRefusalReason]
+                == .string("unknownTransport"))
+        #expect(!"\(record.message)".contains(Self.remoteName))
+    }
+
+    /// The logger of the MCP composition has the module label and the
+    /// category of the MCP composition.
+    @Test func mcpCompositionLoggerHasTheModuleLabel() {
+        #expect(ACPAgentTelemetry.logger(.mcpComposition).label == Self.mcpCompositionLoggerLabel)
     }
 
     // MARK: - The mounted surface

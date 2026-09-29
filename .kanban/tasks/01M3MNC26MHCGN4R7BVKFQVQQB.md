@@ -123,10 +123,26 @@ comments:
     - files: Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift; Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift.
     - next: /review
   timestamp: 2026-09-29T21:47:52.628917+00:00
+- actor: claude-code
+  id: 01m3qjh5fxjgk2nce0r7cmhj7m
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 3d7ab88). 2 files reviewed, 4 .kanban files not reviewed because of .reviewignore. 7 validators ran, 0 failed. Counts: 0 findings, 0 confirmed, 0 refuted. All 23 items in the prior Review Findings section are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-09-29T21:53:29.597343+00:00
+- actor: claude-code
+  id: 01m3qjhcv8py246xbm2jayzz4r
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — ACPAgentTelemetry.swift, SessionSurfaceLoggingTests.swift
+    - test: green — swift test 628 tests pass; IntegrationTests build ok
+    - commit: 3d7ab88
+    - review: clean — zero findings; all 23 prior findings checked; task moved to done
+  timestamp: 2026-09-29T21:53:37.128300+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: fd80
 title: 'OTel 3: replace os.Logger with swift-log in the session surface (Session, PromptTurn, Initialization, SessionResume)'
 ---
 ## What

@@ -2,12 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
-import os
-
-/// The logger of the elicitation relay: the round trips, the declines, and
-/// the dropped late answers.
-private let relayLogger = Logger(
-    subsystem: RoutedACPAgent.implementation.name, category: "ElicitationRelay")
+import Logging
 
 /// The consumer of one live elicitation request event. The production
 /// handler is the bound ``ElicitationRelay``; a synthetic projection test
@@ -97,16 +92,18 @@ actor ElicitationRelay {
         // is a doc comment upstream, not a type guarantee; read it
         // defensively, the way the settlement projection does.
         guard let request = event.elicitation else {
-            relayLogger.warning(
-                "session \(self.sessionId.rawValue, privacy: .public): run \(event.correlationID, privacy: .public) posted an elicitation event with no request; ignored"
-            )
+            var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+            metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(event.correlationID)"
+            ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                "An elicitation event has no request. The relay ignores the event.",
+                metadata: metadata)
             return
         }
         let elicitationId = request.elicitationId.ulidString
         guard supports(request.mode) else {
             await decline(
-                elicitationId: elicitationId, on: session,
-                reason: Self.unsupportedModeReason(for: request.mode))
+                elicitationId: elicitationId, mode: request.mode, on: session,
+                reason: .unsupportedMode)
             return
         }
         guard
@@ -114,12 +111,14 @@ actor ElicitationRelay {
                 for: request, sessionId: sessionId, toolCallId: event.correlationID)
         else {
             await decline(
-                elicitationId: elicitationId, on: session, reason: Self.missingPayloadReason)
+                elicitationId: elicitationId, mode: request.mode, on: session,
+                reason: .missingPayload)
             return
         }
         guard beginURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId) else {
             await decline(
-                elicitationId: elicitationId, on: session, reason: Self.duplicateURLIdReason)
+                elicitationId: elicitationId, mode: request.mode, on: session,
+                reason: .duplicateURLElicitationId)
             return
         }
         await promptState.awaitingUser {
@@ -175,13 +174,13 @@ actor ElicitationRelay {
         case .acceptedAwaitingCompletion:
             await completeURLFlow(elicitationId: elicitationId, on: session)
         case .noPendingElicitation:
-            relayLogger.warning(
-                "session \(self.sessionId.rawValue, privacy: .public): elicitation \(elicitationId, privacy: .public) had no pending entry at Router; the answer was dropped"
-            )
+            ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                "Router has no pending elicitation for the answer. The relay dropped the answer.",
+                metadata: elicitationMetadata(elicitationId))
         @unknown default:
-            relayLogger.debug(
-                "session \(self.sessionId.rawValue, privacy: .public): elicitation \(elicitationId, privacy: .public) delivery \(String(describing: delivery), privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.elicitationRelay).debug(
+                "Router gave an unknown delivery result for an elicitation answer.",
+                metadata: elicitationMetadata(elicitationId))
         }
     }
 
@@ -208,9 +207,9 @@ actor ElicitationRelay {
                 do {
                     raw = try await connection.createElicitation(wireRequest)
                 } catch {
-                    relayLogger.warning(
-                        "session \(self.sessionId.rawValue, privacy: .public): elicitation/create failed: \(error, privacy: .public)"
-                    )
+                    ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                        "The elicitation/create request failed. The relay delivers cancel.",
+                        metadata: self.elicitationMetadata(elicitationId, error: error))
                     raw = nil
                 }
                 self.deliver(Self.answer(from: raw, mode: mode), toPending: elicitationId)
@@ -228,9 +227,9 @@ actor ElicitationRelay {
     private func deliver(_ answer: ElicitationResponse, toPending elicitationId: String) {
         answerTasks.removeValue(forKey: elicitationId)
         guard let continuation = pendingAnswers.removeValue(forKey: elicitationId) else {
-            relayLogger.debug(
-                "session \(self.sessionId.rawValue, privacy: .public): a late answer for elicitation \(elicitationId, privacy: .public) was dropped"
-            )
+            ACPAgentTelemetry.logger(.elicitationRelay).debug(
+                "An answer arrived after its wait ended. The relay dropped the answer.",
+                metadata: elicitationMetadata(elicitationId))
             return
         }
         continuation.resume(returning: answer)
@@ -250,11 +249,40 @@ actor ElicitationRelay {
                 CompleteElicitationNotification(
                     elicitationId: ElicitationId(rawValue: elicitationId)))
         } catch {
-            relayLogger.warning(
-                "session \(self.sessionId.rawValue, privacy: .public): elicitation/complete send failed: \(error, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                "The elicitation/complete notification failed.",
+                metadata: elicitationMetadata(elicitationId, error: error))
         }
         await session.complete(elicitationId: elicitationId)
+    }
+
+    // MARK: - The log metadata
+
+    /// The metadata of a record about one elicitation: the session id and
+    /// the elicitation id.
+    ///
+    /// - Parameter elicitationId: The id of the elicitation.
+    /// - Returns: The ``ACPAgentTelemetry/LogMetadataKey/sessionId`` and
+    ///   ``ACPAgentTelemetry/LogMetadataKey/elicitationId`` values.
+    private func elicitationMetadata(_ elicitationId: String) -> Logger.Metadata {
+        var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+        metadata[ACPAgentTelemetry.LogMetadataKey.elicitationId] = "\(elicitationId)"
+        return metadata
+    }
+
+    /// The metadata of an error in one elicitation: the session id, the
+    /// elicitation id and the type name of the error, never its message.
+    ///
+    /// - Parameters:
+    ///   - elicitationId: The id of the elicitation.
+    ///   - error: The error.
+    /// - Returns: The ``ACPAgentTelemetry/errorMetadata(_:sessionId:)``
+    ///   values and the ``ACPAgentTelemetry/LogMetadataKey/elicitationId``
+    ///   value.
+    private func elicitationMetadata(_ elicitationId: String, error: any Error) -> Logger.Metadata {
+        elicitationMetadata(elicitationId).merging(
+            ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId)
+        ) { current, _ in current }
     }
 
     // MARK: - The capability gate
@@ -273,38 +301,40 @@ actor ElicitationRelay {
         }
     }
 
+    /// Why the relay declines an elicitation. The raw value goes into the
+    /// log record of the decline.
+    private enum DeclineReason: String {
+        /// The client does not advertise the capability of the mode.
+        case unsupportedMode
+
+        /// The request does not carry the payload of its mode.
+        case missingPayload
+
+        /// The URL-mode elicitation id is already outstanding on this
+        /// connection.
+        case duplicateURLElicitationId
+    }
+
     /// Answers Router with `decline`. Extras' response carries no reason
     /// field, so `reason` goes to the log only; the tool sees the bare
     /// decline. No `elicitation/create` goes out on this path.
     ///
     /// - Parameters:
     ///   - elicitationId: The pending elicitation's id.
+    ///   - mode: The mode of the request, for the log.
     ///   - session: The Router session the decline goes to.
     ///   - reason: Why the relay declined, for the log.
     private func decline(
-        elicitationId: String, on session: any RoutedSession, reason: String
+        elicitationId: String, mode: ElicitationMode, on session: any RoutedSession,
+        reason: DeclineReason
     ) async {
-        relayLogger.notice(
-            "session \(self.sessionId.rawValue, privacy: .public): elicitation \(elicitationId, privacy: .public) declined: \(reason, privacy: .public)"
-        )
+        var metadata = elicitationMetadata(elicitationId)
+        metadata[ACPAgentTelemetry.LogMetadataKey.elicitationMode] = "\(mode.rawValue)"
+        metadata[ACPAgentTelemetry.LogMetadataKey.elicitationDeclineReason] = "\(reason.rawValue)"
+        ACPAgentTelemetry.logger(.elicitationRelay).notice(
+            "The relay declined an elicitation.", metadata: metadata)
         await session.respond(elicitationId: elicitationId, response: .decline)
     }
-
-    /// The decline reason for a mode the client does not answer.
-    ///
-    /// - Parameter mode: The unsupported mode.
-    /// - Returns: The reason text.
-    private static func unsupportedModeReason(for mode: ElicitationMode) -> String {
-        "the client does not advertise the \(mode.rawValue) elicitation capability"
-    }
-
-    /// The decline reason for a request without its mode's payload.
-    private static let missingPayloadReason =
-        "the request does not carry its mode's payload"
-
-    /// The decline reason for a URL-mode id that is already outstanding.
-    private static let duplicateURLIdReason =
-        "the elicitationId is already outstanding on this connection"
 
     // MARK: - The URL-mode uniqueness duty
 
@@ -396,7 +426,9 @@ actor ElicitationRelay {
             let encoded = try? JSONEncoder().encode(raw),
             let decoded = try? JSONDecoder().decode(WireAnswer.self, from: encoded)
         else {
-            relayLogger.warning("an elicitation answer did not decode; delivering cancel")
+            ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                "An elicitation answer did not decode. The relay delivers cancel.",
+                metadata: [ACPAgentTelemetry.LogMetadataKey.elicitationMode: "\(mode.rawValue)"])
             return .cancel
         }
         switch decoded.action {

@@ -2,11 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsSkills
-import os
-
-/// The logger of the command registry: merge wins, reserved-name drops,
-/// and update-stream lifecycles.
-let commandLogger = Logger(subsystem: RoutedACPAgent.implementation.name, category: "Commands")
+import Logging
 
 /// The per-session slash-command registry (plan.md §14.1).
 ///
@@ -148,8 +144,9 @@ actor CommandRegistry {
         var merged: [SlashCommand] = []
         for builtin in builtins {
             guard positions[builtin.name] == nil else {
-                commandLogger.error(
-                    "duplicate builtin /\(builtin.name, privacy: .public) dropped")
+                ACPAgentTelemetry.logger(.commands).error(
+                    "Two built-in commands have the same name. The registry dropped the later one.",
+                    metadata: Self.commandMetadata(builtin))
                 continue
             }
             positions[builtin.name] = merged.count
@@ -159,14 +156,15 @@ actor CommandRegistry {
         for set in providerSets {
             for command in set {
                 if reservedNames.contains(command.name) {
-                    commandLogger.notice(
-                        "/\(command.name, privacy: .public) is a reserved builtin name; the later command is dropped"
-                    )
+                    ACPAgentTelemetry.logger(.commands).notice(
+                        "A command has the name of a built-in command. The registry dropped the command.",
+                        metadata: Self.commandMetadata(command))
                     continue
                 }
                 if let position = positions[command.name] {
-                    commandLogger.notice(
-                        "/\(command.name, privacy: .public) collided; the later source wins")
+                    ACPAgentTelemetry.logger(.commands).notice(
+                        "Two command sources have the same command name. The later source wins.",
+                        metadata: Self.commandMetadata(command))
                     merged[position] = command
                 } else {
                     positions[command.name] = merged.count
@@ -175,6 +173,15 @@ actor CommandRegistry {
             }
         }
         commands = merged
+    }
+
+    /// The metadata of a record about one command of the merge: the command
+    /// name. The record holds no other value of the command.
+    ///
+    /// - Parameter command: The command that the record is about.
+    /// - Returns: The ``ACPAgentTelemetry/LogMetadataKey/commandName`` value.
+    private static func commandMetadata(_ command: SlashCommand) -> Logger.Metadata {
+        [ACPAgentTelemetry.LogMetadataKey.commandName: "\(command.name)"]
     }
 
     /// Starts one follower task per provider with a `commandUpdates`
