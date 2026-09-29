@@ -1,6 +1,9 @@
 import Foundation
-import FoundationModelsACPAgent
+import Logging
+import TelemetryTestSupport
 import Testing
+
+@testable import FoundationModelsACPAgent
 
 /// The cross-project registry `projects.jsonl` (plan.md §4.5): one appended
 /// record per new working directory, `lastSeen` updates on a revisit, and a
@@ -116,5 +119,32 @@ import Testing
         let records = try fixture.registry.projects()
 
         #expect(records.isEmpty)
+    }
+
+    /// The text of the line of the log case that does not decode. A line
+    /// holds a project path, so no log record may hold it.
+    private static let undecodableLineText = "{\"path\":\"undecodable-line-of-the-log-case\"}"
+
+    /// A line that does not decode writes one `warning` record. The path of
+    /// the registry file is in the metadata of the record, and no record
+    /// holds the text of the line.
+    @Test func anUndecodableLineWritesOneWarningWithTheRegistryPathInMetadata() async throws {
+        let fixture = Fixture()
+        let registryFile = fixture.userDirectory.appendingPathComponent(
+            ProjectRegistry.registryFileName)
+        try Self.undecodableLineText.write(to: registryFile, atomically: true, encoding: .utf8)
+
+        let records = try await TelemetryCapture.run(forbidding: [Self.undecodableLineText]) {
+            context in
+            _ = try fixture.registry.projects()
+            return context.logRecords
+        }
+
+        let pathKey = ACPAgentTelemetry.LogMetadataKey.filePath
+        let pathRecords = records.filter { $0.metadata[pathKey] != nil }
+        #expect(pathRecords.count == 1)
+        let record = try #require(pathRecords.first)
+        #expect(record.level == .warning)
+        #expect(record.metadata[pathKey] == .string(registryFile.path))
     }
 }

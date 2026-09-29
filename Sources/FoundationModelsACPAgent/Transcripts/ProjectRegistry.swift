@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 
 /// One line of `projects.jsonl` (plan.md §4.5): a project the user worked
 /// in. Paths only, never content.
@@ -102,8 +103,9 @@ public struct ProjectRegistry: Sendable {
             do {
                 return try decoder.decode(ProjectRegistryRecord.self, from: Data(line.utf8))
             } catch {
-                transcriptLogger.warning(
-                    "\(Self.registryFileName): skipped a line that does not decode")
+                ACPAgentTelemetry.logger(.transcripts).warning(
+                    "The project registry skipped a line that does not decode.",
+                    metadata: ACPAgentTelemetry.fileMetadata(path: registryFile.path))
                 return nil
             }
         }

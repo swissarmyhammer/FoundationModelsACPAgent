@@ -269,6 +269,14 @@ enum ACPAgentTelemetry {
         /// Why the relay declined an elicitation: the name of the decline
         /// reason.
         static let elicitationDeclineReason = "elicitation.decline_reason"
+
+        /// The name of a `config.yaml` section, as a dotted key path. Never
+        /// a value of the section, because a value can be a secret.
+        static let configSection = "config.section"
+
+        /// The path of a file that the agent reads or writes. Never the
+        /// content of the file.
+        static let filePath = "file.path"
     }
 
     /// The text that ``caseName(of:)`` gives for a value that shows no case
@@ -325,6 +333,14 @@ enum ACPAgentTelemetry {
         return metadata
     }
 
+    /// The metadata of a record about one file: its path, never its content.
+    ///
+    /// - Parameter path: The path of the file.
+    /// - Returns: The ``LogMetadataKey/filePath`` value.
+    static func fileMetadata(path: String) -> Logger.Metadata {
+        [LogMetadataKey.filePath: "\(path)"]
+    }
+
     /// The category of each logger that the agent makes. The label of the
     /// logger is the module name, a dot and the raw value.
     enum LoggerCategory: String {
@@ -354,6 +370,16 @@ enum ACPAgentTelemetry {
 
         /// The MCP composition: the refusals of client-supplied servers.
         case mcpComposition = "MCPComposition"
+
+        /// The transcripts module: the damaged lines of the session index
+        /// and of the project registry.
+        case transcripts = "Transcripts"
+
+        /// The configuration loader: the unknown sections of `config.yaml`.
+        case configuration = "Configuration"
+
+        /// The instructions assembler: the files that do not read as text.
+        case instructions = "Instructions"
     }
 
     /// Makes a new logger for `category`.

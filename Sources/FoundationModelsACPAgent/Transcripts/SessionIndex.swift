@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsRouter
+import Logging
 
 /// One line of `sessions.jsonl` (plan.md §4.3): a self-contained summary of
 /// one ACP session. The record carries exactly the fields `session/list`
@@ -174,9 +175,10 @@ public struct SessionIndex: Sendable {
                 guard position == numberedLines.count - 1 else {
                     throw SessionIndexError.corruptLine(number: numbered.offset + 1)
                 }
-                let warning = SessionIndexWarning.tornFinalLine
-                transcriptLogger.warning("\(warning.description, privacy: .public)")
-                warnings.append(warning)
+                ACPAgentTelemetry.logger(.transcripts).warning(
+                    "The session index dropped a torn final line.",
+                    metadata: ACPAgentTelemetry.fileMetadata(path: indexFile.path))
+                warnings.append(.tornFinalLine)
             }
         }
         return SessionIndexReadResult(records: records, warnings: warnings)

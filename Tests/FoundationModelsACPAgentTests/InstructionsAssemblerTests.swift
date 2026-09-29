@@ -1,8 +1,11 @@
 import Foundation
-import FoundationModelsACPAgent
 import FoundationModelsExtras
 import FoundationModelsSkills
+import Logging
+import TelemetryTestSupport
 import Testing
+
+@testable import FoundationModelsACPAgent
 
 /// Session-instructions assembly through `InstructionsAssembler` (plan.md
 /// §3). Every test builds its own throwaway tree under a temp directory
@@ -325,5 +328,36 @@ import Testing
         case .fileUnreadable(let warnedPath):
             #expect(warnedPath.hasSuffix("/AGENTS.md"))
         }
+    }
+
+    // MARK: - The warning log record
+
+    /// The label of each logger of the instructions assembler.
+    private static let instructionsLoggerLabel = "FoundationModelsACPAgent.Instructions"
+
+    /// An unreadable instructions file writes one `warning` record, and the
+    /// path of the file is in the metadata of the record.
+    @Test func anUnreadableFileWritesOneWarningWithItsPathInMetadata() async throws {
+        let fixture = Fixture()
+        fixture.writeUnreadable(to: "AGENTS.md", under: fixture.userDirectory)
+        let path = fixture.userDirectory.appendingPathComponent("AGENTS.md").path
+
+        let records = try await TelemetryCapture.run(forbidding: []) { context in
+            _ = try await fixture.assembler().assemble()
+            return context.logRecords
+        }
+
+        let pathKey = ACPAgentTelemetry.LogMetadataKey.filePath
+        let pathRecords = records.filter { $0.metadata[pathKey] != nil }
+        #expect(pathRecords.count == 1)
+        let record = try #require(pathRecords.first)
+        #expect(record.level == .warning)
+        #expect(record.metadata[pathKey] == .string(path))
+    }
+
+    /// The logger of the instructions assembler has the module label and
+    /// the category of the instructions.
+    @Test func instructionsLoggerHasTheModuleLabel() {
+        #expect(ACPAgentTelemetry.logger(.instructions).label == Self.instructionsLoggerLabel)
     }
 }

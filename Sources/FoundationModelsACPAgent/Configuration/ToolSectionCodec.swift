@@ -476,9 +476,13 @@ extension ToolsConfiguration {
         }
     }
 
-    /// The dotted section name an error inside a tool body carries, such as
-    /// `tools.shell`.
-    private static func dottedSection(_ name: String) -> String {
+    /// The dotted section name of one tool, such as `tools.shell`. An error
+    /// inside a tool body carries it, and so does the log record of an
+    /// unknown tool section.
+    ///
+    /// - Parameter name: The key of the tool under `tools:`.
+    /// - Returns: The key path of the tool section.
+    static func dottedSection(_ name: String) -> String {
         "\(AgentConfiguration.CodingKeys.tools.stringValue).\(name)"
     }
 }

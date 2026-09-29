@@ -1,11 +1,7 @@
 import Foundation
 import FoundationModelsExtras
 import FoundationModelsSkills
-import os
-
-/// The logger the assembler reports each unreadable-file warning to.
-private let instructionsLogger = Logger(
-    subsystem: "FoundationModelsACPAgent", category: "Instructions")
+import Logging
 
 /// A condition the assembler reports and continues past (plan.md §3): a
 /// missing file is only absent, but a file that is present and not readable
@@ -19,6 +15,18 @@ public enum InstructionsWarning: Equatable, Sendable, CustomStringConvertible {
         switch self {
         case .fileUnreadable(let path):
             return "instructions file is present but not readable: \(path)"
+        }
+    }
+
+    /// Writes the log record of this warning: one `warning` record with a
+    /// fixed message, and the path of the file in its metadata. The record
+    /// never holds the content of the file.
+    func log() {
+        switch self {
+        case .fileUnreadable(let path):
+            ACPAgentTelemetry.logger(.instructions).warning(
+                "An instructions file is present but it is not readable. The assembler ignored the file.",
+                metadata: ACPAgentTelemetry.fileMetadata(path: path))
         }
     }
 }
@@ -110,7 +118,7 @@ public struct InstructionsAssembler: Sendable {
             contentsOf: try renderedProjectDocuments(renderer: renderer, warnings: &warnings))
 
         for warning in warnings {
-            instructionsLogger.warning("\(warning.description, privacy: .public)")
+            warning.log()
         }
         return AssembledInstructions(
             text: sections.joined(separator: Self.sectionSeparator), warnings: warnings)

@@ -1,8 +1,11 @@
 import Foundation
-import FoundationModelsACPAgent
 import FoundationModelsExtras
 import FoundationModelsRouter
+import Logging
+import TelemetryTestSupport
 import Testing
+
+@testable import FoundationModelsACPAgent
 
 /// Layered `config.yaml` loading through `ConfigurationLoader` (plan.md
 /// §2.2 and §2.4). Every test builds its own throwaway `user/` and
@@ -457,6 +460,47 @@ import Testing
         #expect(loaded.configuration == AgentConfiguration())
         #expect(loaded.warnings == [.unknownSection(name: "permissions")])
         #expect(loaded.warnings[0].description.contains("permissions"))
+    }
+
+    // MARK: - The warning log record
+
+    /// The label of each logger of the configuration loader.
+    private static let configurationLoggerLabel = "FoundationModelsACPAgent.Configuration"
+
+    /// The value inside the unknown section of the log case. A configuration
+    /// value can be a secret, so no record may hold it.
+    private static let unknownSectionValue = "configuration-loader-unknown-section-value"
+
+    /// An unknown section writes one `warning` record. The section name is in
+    /// the metadata of the record, and no record holds the value in the
+    /// section.
+    @Test func anUnknownSectionWritesOneWarningWithTheSectionNameInMetadata() async throws {
+        let fixture = Fixture()
+        fixture.writeConfig(
+            """
+            permissions:
+              allow:
+                - "\(Self.unknownSectionValue)"
+            """, in: fixture.projectDirectory)
+
+        let records = try await TelemetryCapture.run(forbidding: [Self.unknownSectionValue]) {
+            context in
+            _ = try fixture.makeLoader().load()
+            return context.logRecords
+        }
+
+        let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
+        let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
+        #expect(sectionRecords.count == 1)
+        let record = try #require(sectionRecords.first)
+        #expect(record.level == .warning)
+        #expect(record.metadata[sectionKey] == .string("permissions"))
+    }
+
+    /// The logger of the configuration loader has the module label and the
+    /// category of the configuration.
+    @Test func configurationLoggerHasTheModuleLabel() {
+        #expect(ACPAgentTelemetry.logger(.configuration).label == Self.configurationLoggerLabel)
     }
 
     /// An unknown key inside a known section is an error that names the

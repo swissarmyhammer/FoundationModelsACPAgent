@@ -1,7 +1,10 @@
 import Foundation
-import FoundationModelsACPAgent
 import FoundationModelsRouter
+import Logging
+import TelemetryTestSupport
 import Testing
+
+@testable import FoundationModelsACPAgent
 
 /// The append-only `sessions.jsonl` index and its rebuild from a directory
 /// scan (plan.md §4.1 and §4.3). Every test builds its own throwaway
@@ -162,6 +165,40 @@ import Testing
 
         #expect(result.records == [record])
         #expect(result.warnings == [.tornFinalLine])
+    }
+
+    /// The text of the torn final line of the log case. A line holds the
+    /// content of a record, so no log record may hold it.
+    private static let tornLineText = "{\"sessionId\":\"torn-line-of-the-log-case"
+
+    /// The label of each logger of the transcripts module.
+    private static let transcriptsLoggerLabel = "FoundationModelsACPAgent.Transcripts"
+
+    /// A torn final line writes one `warning` record. The path of the index
+    /// file is in the metadata of the record, and no record holds the text
+    /// of the line.
+    @Test func aTornFinalLineWritesOneWarningWithTheIndexPathInMetadata() async throws {
+        let fixture = Fixture()
+        try fixture.index.append(Self.makeRecord())
+        try fixture.writeIndexText(try fixture.indexText() + Self.tornLineText)
+
+        let records = try await TelemetryCapture.run(forbidding: [Self.tornLineText]) { context in
+            _ = try fixture.index.read()
+            return context.logRecords
+        }
+
+        let pathKey = ACPAgentTelemetry.LogMetadataKey.filePath
+        let pathRecords = records.filter { $0.metadata[pathKey] != nil }
+        #expect(pathRecords.count == 1)
+        let record = try #require(pathRecords.first)
+        #expect(record.level == .warning)
+        #expect(record.metadata[pathKey] == .string(fixture.indexFile.path))
+    }
+
+    /// The logger of the transcripts module has the module label and the
+    /// category of the transcripts.
+    @Test func transcriptsLoggerHasTheModuleLabel() {
+        #expect(ACPAgentTelemetry.logger(.transcripts).label == Self.transcriptsLoggerLabel)
     }
 
     /// A corrupt line before the final one is real damage, not a crash

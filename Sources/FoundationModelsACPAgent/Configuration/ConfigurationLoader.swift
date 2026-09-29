@@ -1,10 +1,6 @@
 import Foundation
 import FoundationModelsExtras
-import os
-
-/// The logger the loader reports each unknown-section warning to.
-private let configurationLogger = Logger(
-    subsystem: "FoundationModelsACPAgent", category: "Configuration")
+import Logging
 
 /// A schema failure the loader finds in the merged `config.yaml` tree before
 /// the decode (plan.md §2.4).
@@ -58,6 +54,38 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
         case .unknownToolSection(let name):
             return
                 "\(ConfigurationLoader.configFileName): unknown tool section \"tools.\(name)\" is ignored"
+        }
+    }
+}
+
+extension ConfigurationWarning {
+    /// Writes the log record of this warning: one `warning` record with a
+    /// fixed message, and the section name in its metadata. The record never
+    /// holds a value of the section, because a value can be a secret.
+    func log() {
+        ACPAgentTelemetry.logger(.configuration).warning(
+            logMessage,
+            metadata: [ACPAgentTelemetry.LogMetadataKey.configSection: "\(sectionKeyPath)"])
+    }
+
+    /// The fixed message of the log record of this warning.
+    private var logMessage: Logger.Message {
+        switch self {
+        case .unknownSection:
+            "The configuration has an unknown section. The loader ignored the section."
+        case .unknownToolSection:
+            "The configuration has an unknown tool section. The loader ignored the section."
+        }
+    }
+
+    /// The key path of the section that this warning is about: the section
+    /// name, or `tools.<name>` for a tool section.
+    private var sectionKeyPath: String {
+        switch self {
+        case .unknownSection(let name):
+            name
+        case .unknownToolSection(let name):
+            ToolsConfiguration.dottedSection(name)
         }
     }
 }
@@ -146,7 +174,7 @@ public struct ConfigurationLoader: Sendable {
             context: TemplateContext())
         let warnings = try Self.schemaWarnings(in: document.root)
         for warning in warnings {
-            configurationLogger.warning("\(warning.description, privacy: .public)")
+            warning.log()
         }
         return LoadedConfiguration(
             configuration: try Self.configuration(from: document.root),
