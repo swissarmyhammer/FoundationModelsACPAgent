@@ -454,6 +454,35 @@ import Testing
         #expect(!"\(record.message)".contains(Self.remoteName))
     }
 
+    /// The `mcp: false` refusal of two client-supplied servers writes one
+    /// `error` record. Its message refers to all the servers, because the
+    /// metadata of the record holds the names of all the servers.
+    @Test func anMCPDisabledRefusalWritesOneErrorWhoseMessageRefersToAllTheServers() async throws {
+        let clients = [
+            try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand),
+            try Self.clientStdioServer(named: Self.deltaName, command: Self.unusedCommand),
+        ]
+
+        let records = try await TelemetryCapture.run(forbidding: []) { context in
+            _ = try await MCPComposition.connectServers(section: .disabled, clientServers: clients)
+            return context.logRecords
+        }
+
+        let refusalReasonKey = ACPAgentTelemetry.LogMetadataKey.mcpRefusalReason
+        let refusalRecords = records.filter {
+            $0.metadata[refusalReasonKey] == .string("mcpDisabled")
+        }
+        #expect(refusalRecords.count == 1)
+        let record = try #require(refusalRecords.first)
+        #expect(record.level == .error)
+        #expect(
+            record.metadata[ACPAgentTelemetry.LogMetadataKey.mcpServerName]
+                == .array([.string(Self.gammaName), .string(Self.deltaName)]))
+        #expect(
+            "\(record.message)"
+                == "The composition refused all client-supplied MCP servers, because MCP is off.")
+    }
+
     /// The logger of the MCP composition has the module label and the
     /// category of the MCP composition.
     @Test func mcpCompositionLoggerHasTheModuleLabel() {

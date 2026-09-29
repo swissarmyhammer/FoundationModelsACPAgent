@@ -167,10 +167,9 @@ extension RoutedACPAgent {
         do {
             try FileManager.default.removeItem(at: directory)
         } catch {
-            ACPAgentTelemetry.logger(.sessionLifecycle).error(
+            logSessionDeleteError(
                 "The delete could not remove the transcript directory of a session.",
-                metadata: ACPAgentTelemetry.errorMetadata(
-                    error, sessionId: SessionId(rawValue: ulidString)))
+                ulidString: ulidString, error: error)
         }
     }
 
@@ -185,10 +184,27 @@ extension RoutedACPAgent {
         do {
             try SessionIndex(root: root).removeRecords(sessionId: ulidString)
         } catch {
-            ACPAgentTelemetry.logger(.sessionLifecycle).error(
+            logSessionDeleteError(
                 "The delete could not remove the sessions.jsonl record of a session.",
-                metadata: ACPAgentTelemetry.errorMetadata(
-                    error, sessionId: SessionId(rawValue: ulidString)))
+                ulidString: ulidString, error: error)
         }
+    }
+
+    /// Writes one `error` record for a removal that failed during a delete.
+    /// The metadata holds the session id and the error type, from
+    /// `ACPAgentTelemetry.errorMetadata(_:sessionId:)`. The message is a
+    /// fixed text that tells which removal failed.
+    ///
+    /// - Parameters:
+    ///   - message: The fixed text that tells which removal failed.
+    ///   - ulidString: The canonical ULID string of the deleted session.
+    ///   - error: The error that the removal threw.
+    private func logSessionDeleteError(
+        _ message: Logger.Message, ulidString: String, error: any Error
+    ) {
+        ACPAgentTelemetry.logger(.sessionLifecycle).error(
+            message,
+            metadata: ACPAgentTelemetry.errorMetadata(
+                error, sessionId: SessionId(rawValue: ulidString)))
     }
 }

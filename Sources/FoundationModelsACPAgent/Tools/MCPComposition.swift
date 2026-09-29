@@ -74,6 +74,19 @@ enum MCPComposition {
             return metadata
         }
 
+        /// The message of the log record of this refusal. The `mcp: false`
+        /// refusal refuses all client-supplied servers in one record, thus
+        /// its message refers to all the servers. Each other refusal refuses
+        /// one server, thus its message refers to one server.
+        var logMessage: Logger.Message {
+            switch self {
+            case .mcpDisabled:
+                "The composition refused all client-supplied MCP servers, because MCP is off."
+            case .nameCollision, .unknownTransport:
+                "The composition refused a client-supplied MCP server."
+            }
+        }
+
         /// The server name value of the log record, or `nil` when the
         /// refused server has no name.
         private var serverNameValue: Logger.MetadataValue? {
@@ -278,8 +291,7 @@ enum MCPComposition {
         let roster = composeRoster(section: section, clientServers: clientServers)
         for refusal in roster.refusals {
             ACPAgentTelemetry.logger(.mcpComposition).error(
-                "The composition refused a client-supplied MCP server.",
-                metadata: refusal.logMetadata)
+                refusal.logMessage, metadata: refusal.logMetadata)
         }
         var servers: [FoundationModelsMultitool.MCPServer] = []
         var processes: [StdioServerProcess] = []
