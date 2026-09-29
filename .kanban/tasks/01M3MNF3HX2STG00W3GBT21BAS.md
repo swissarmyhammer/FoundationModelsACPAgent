@@ -33,6 +33,38 @@ comments:
     - evidence: `swift test --filter RequestTracingTests` 7/7 pass; `swift test` 651 tests in 73 suites pass (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), zero compiler warnings; `swift build --build-tests` in IntegrationTests/ clean. Files: Package.swift, Sources/FoundationModelsACPAgent/Telemetry/RequestTracing.swift (new), Telemetry/ACPAgentTelemetry.swift, Agent/Initialization.swift, Agent/SessionSetup.swift, Agent/SessionResume.swift, Agent/PromptExecution.swift, Agent/PromptState.swift, Commands/CommandDispatch.swift, Configuration/EchoModel.swift, RoutedACPAgent.swift, Tests/FoundationModelsACPAgentTestSupport/StubProfileFixtures.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift, Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift (new).
     - next: /review
   timestamp: 2026-09-29T23:07:50.536708+00:00
+- actor: claude-code
+  id: 01m3qqehtn60g5chza7v1jven9
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit 12788a5); 1 finding (1 confirmed, 1 refuted) — Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift:218 (completeness/invariant-propagation)
+    - next: give `tracer: context.tracer` to each fixture that a test makes in a `TelemetryCapture.run` context in RequestTracingTests.swift, then do the review again.
+  timestamp: 2026-09-29T23:19:26.805105+00:00
+- actor: claude-code
+  id: 01m3qqevqq9mzx1193gahnmvnh
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 14 files (2 new)
+    - test: green — swift test 651 tests pass; IntegrationTests build ok
+    - commit: 12788a5
+    - review: findings — Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift:218
+  timestamp: 2026-09-29T23:19:36.951516+00:00
+- actor: claude-code
+  id: 01m3qqn3277a057zvjxqc5rza8
+  text: |-
+    Finding corrected (RequestTracingTests.swift:218, completeness/invariant-propagation). The same cause was in two capture blocks: `sessionResumeRecordsOneServerSpanAndOneEnterRecord` and `promptForAnUnknownSessionRecordsTheErrorOnItsSpan`. Both made the fixture without the capture tracer.
+
+    Fix: a new private helper `makeTracedFixture(script:context:)` makes the fixture with `tracer: context.tracer`. All three capture blocks of the file (`runOnePrompt` and the two cases) use it now. The helper doc comment holds the reason (the Router pump is a detached task and gets no task-local tracer), so no capture block can skip the tracer.
+
+    Other files: no other test file reads spans from a `TelemetryCapture`. The other captures (SessionSurfaceLoggingTests, ElicitationRelayTests, MCPCompositionTests, and more) read log records only, so the cause does not apply to them.
+  timestamp: 2026-09-29T23:23:01.063696+00:00
+- actor: claude-code
+  id: 01m3qqn4tkesankbve8s2hxapb
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift; `swift test --filter RequestTracingTests` 7/7 pass; `swift test` 651 tests in 73 suites pass (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), zero compiler warnings.
+    - next: /review
+  timestamp: 2026-09-29T23:23:02.867240+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
 - 01M3MNC26MHCGN4R7BVKFQVQQB
@@ -78,3 +110,12 @@ Extras: FoundationModelsExtras OTel A to D are on Extras origin/main (HEAD 70ad7
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 
 #otel
+
+## Review Findings (2026-09-29 18:09)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 14 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift:218` `completeness/invariant-propagation` — All fixture creation calls within a `TelemetryCapture.run` context must pass `tracer: context.tracer` to ensure Router spans are captured in the local tracing context, not the global tracer. The documentation at lines 112–115 and the pattern at line 115 (`runOnePrompt()`) make this explicit: Router runs in a detached task and does not inherit the task-local tracer. This test creates a fixture without the tracer parameter. Change line 218 to: `let fixture = try await ScriptedPromptFixture.make(script: [.endPass], label: Self.fixtureLabel, tracer: context.tracer)`.

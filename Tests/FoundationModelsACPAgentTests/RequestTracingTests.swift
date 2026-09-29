@@ -100,6 +100,25 @@ import Tracing
         }
     }
 
+    /// Makes the scripted fixture of this suite inside the capture `context`.
+    ///
+    /// The Router sessions do their work in a detached task, which does not
+    /// get the task-local tracer of the capture. Thus the agent and the Router
+    /// get the tracer of the capture explicitly. Each case of this suite makes
+    /// its fixture with this function, so that no span goes to a different
+    /// tracer.
+    ///
+    /// - Parameters:
+    ///   - script: The steps that the scripted model plays.
+    ///   - context: The context of the capture that must keep the spans.
+    /// - Returns: The fixture, after `initialize` and `session/new`.
+    /// - Throws: Whatever the fixture throws.
+    private static func makeTracedFixture(
+        script: [ScriptedPassStep], context: TelemetryCapture.Context
+    ) async throws -> ScriptedPromptFixture {
+        try await ScriptedPromptFixture.make(script: script, label: fixtureLabel, tracer: context.tracer)
+    }
+
     /// Runs `initialize`, `session/new`, one scripted prompt and one
     /// `session/cancel` through the harness inside one capture. The run waits
     /// until the prompt span and the cancel span ended.
@@ -108,11 +127,8 @@ import Tracing
     /// - Throws: Whatever the fixture, the wire calls or the waits throw.
     private static func runOnePrompt() async throws -> TracedRun {
         try await TelemetryCapture.run(forbidding: [promptText, answerText]) { context in
-            // The Router sessions do their work in a detached task, which
-            // does not get the task-local tracer of the capture, so the
-            // Router gets the tracer of the capture explicitly.
-            let fixture = try await ScriptedPromptFixture.make(
-                script: [.textDelta(answerText), .endPass], label: fixtureLabel, tracer: context.tracer)
+            let fixture = try await makeTracedFixture(
+                script: [.textDelta(answerText), .endPass], context: context)
             _ = try await fixture.harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
@@ -215,7 +231,7 @@ import Tracing
     @Test(.timeLimit(.minutes(1)))
     func sessionResumeRecordsOneServerSpanAndOneEnterRecord() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
-            let fixture = try await ScriptedPromptFixture.make(script: [.endPass], label: Self.fixtureLabel)
+            let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
             await #expect(throws: RequestError.self) {
                 _ = try await fixture.harness.connection.resumeSession(
                     ResumeSessionRequest(
@@ -238,7 +254,7 @@ import Tracing
     @Test(.timeLimit(.minutes(1)))
     func promptForAnUnknownSessionRecordsTheErrorOnItsSpan() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
-            let fixture = try await ScriptedPromptFixture.make(script: [.endPass], label: Self.fixtureLabel)
+            let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
             await #expect(throws: RequestError.self) {
                 _ = try await fixture.harness.connection.prompt(
                     AgentClientHarness.makePromptRequest(
