@@ -1,10 +1,5 @@
 import FoundationModelsACP
-import os
-
-/// The logger of the handshake: the version negotiation and the client
-/// identity.
-private let initializationLogger = Logger(
-    subsystem: RoutedACPAgent.implementation.name, category: "Initialization")
+import Logging
 
 /// The client's capabilities as `initialize` read them (plan.md §5), with
 /// the spec's own rule applied: absent means unsupported.
@@ -104,8 +99,12 @@ extension RoutedACPAgent {
     public func initialize(_ params: InitializeRequest) async throws -> InitializeResponse {
         let protocolVersion = Self.negotiateProtocolVersion(requested: params.protocolVersion)
         negotiatedClientCapabilities = NegotiatedClientCapabilities(reading: params.capabilities)
-        initializationLogger.info(
-            "initialized by \(params.info.name, privacy: .public) \(params.info.version, privacy: .public)")
+        ACPAgentTelemetry.logger(.initialization).info(
+            "A client initialized the agent.",
+            metadata: [
+                ACPAgentTelemetry.LogMetadataKey.clientName: "\(params.info.name)",
+                ACPAgentTelemetry.LogMetadataKey.clientVersion: "\(params.info.version)",
+            ])
         return InitializeResponse(
             info: Self.implementation,
             protocolVersion: protocolVersion,
@@ -124,9 +123,12 @@ extension RoutedACPAgent {
     /// - Returns: The version the response carries.
     static func negotiateProtocolVersion(requested: ProtocolVersion) -> ProtocolVersion {
         guard supportedProtocolVersions.contains(requested) else {
-            initializationLogger.notice(
-                "client sent protocolVersion \(requested.rawValue, privacy: .public); answering \(latestProtocolVersion.rawValue, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.initialization).notice(
+                "The client sent a protocol version that the agent does not serve. The agent answers with its latest version.",
+                metadata: [
+                    ACPAgentTelemetry.LogMetadataKey.requestedProtocolVersion: "\(requested.rawValue)",
+                    ACPAgentTelemetry.LogMetadataKey.answeredProtocolVersion: "\(latestProtocolVersion.rawValue)",
+                ])
             return latestProtocolVersion
         }
         return requested

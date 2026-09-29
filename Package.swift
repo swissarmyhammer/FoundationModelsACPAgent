@@ -241,6 +241,15 @@ private let nooraVersion: Version = "0.57.0"
 /// The one product of `nooraPackage` the agent CLI links.
 private let nooraProduct = Target.Dependency.product(name: nooraPackage, package: nooraPackage)
 
+/// The telemetry test helper of Extras: `TelemetryCapture`, which gives the
+/// code under test an in-memory tracer, log handler and metrics factory, and
+/// which bootstraps the logging system one time for each process. Only the
+/// unit test target links it. A test process that links it must not call
+/// `LoggingSystem.bootstrap`, `InstrumentationSystem.bootstrap` or
+/// `MetricsSystem.bootstrap` itself.
+private let telemetryTestSupportProduct = Target.Dependency.product(
+    name: "TelemetryTestSupport", package: extrasDependencyName)
+
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
 /// declares, because a second URL for the same package identity makes the
@@ -406,7 +415,10 @@ let package = Package(
         // see `multitoolTestProducts` — the MCP sdk, whose tool-result
         // content types the passthrough-map tests construct (plan.md
         // §12) — and the agent CLI target with its parser, so the parse
-        // and composition suites drive the command tree in process.
+        // and composition suites drive the command tree in process. The
+        // telemetry suites also link the Extras telemetry test helper — see
+        // `telemetryTestSupportProduct` — and swift-log, whose record types
+        // they read.
         //
         // `acp-print` and the live-loader products are NOT here: the
         // suites that spawn a built binary or load a real model live in
@@ -420,6 +432,8 @@ let package = Package(
                 .target(name: agentExecutableName),
                 makeFamilyProduct(name: clientDependencyName),
                 argumentParserProduct,
+                telemetryTestSupportProduct,
+                loggingProduct,
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
         ),

@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsMultitool
 import FoundationModelsRouter
+import Logging
 
 /// Reads the stored raw output of a settled run, keyed by the run's
 /// `commandID` — which is its `completionToken` and its `toolCallId`
@@ -129,8 +130,8 @@ struct EventProjection {
     /// generation is cut, so the prompt must not read as a normal `end_turn`.
     private(set) var lastFinishReason: FinishReason?
 
-    /// The numbers behind a stop reason, for the log of a prompt that
-    /// ended cut or empty.
+    /// The numbers behind a stop reason, as log metadata, for the record of a
+    /// prompt that ended cut or empty.
     ///
     /// A `_truncated`, `_ended_in_reasoning` or `_repeated` prompt says how
     /// the last submission stopped, and nothing more. The reader then cannot
@@ -138,9 +139,13 @@ struct EventProjection {
     /// filled up. These three numbers name the difference: the tokens the
     /// whole prompt fed and generated, and how full the context was at the
     /// last report.
-    var usageSummary: String {
+    var usageMetadata: Logger.Metadata {
         let fill = contextFill.isNaN ? "unknown" : String(format: "%.3f", contextFill)
-        return "tokensIn=\(tokensIn) tokensOut=\(tokensOut) contextFill=\(fill)"
+        return [
+            ACPAgentTelemetry.LogMetadataKey.tokensIn: "\(tokensIn)",
+            ACPAgentTelemetry.LogMetadataKey.tokensOut: "\(tokensOut)",
+            ACPAgentTelemetry.LogMetadataKey.contextFill: "\(fill)",
+        ]
     }
 
     /// The newest context fill. `nan` means "no stamp": send no meter
@@ -170,6 +175,30 @@ struct EventProjection {
         !sawOutput && sawUsageReport && tokensOut == 0
     }
 
+    /// The metadata of a record about one run of this prompt: the session id
+    /// and the tool call id of the run.
+    ///
+    /// - Parameter runId: The correlation id of the run, which is its tool
+    ///   call id.
+    /// - Returns: The metadata.
+    private func runMetadata(_ runId: String) -> Logger.Metadata {
+        var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+        metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(runId)"
+        return metadata
+    }
+
+    /// The metadata of a record about one Router event that the projection
+    /// does not send: the session id and the case of the event. The payload
+    /// of the event is not in the record, because it can hold content.
+    ///
+    /// - Parameter event: The event.
+    /// - Returns: The metadata.
+    private func eventMetadata(_ event: SessionEvent) -> Logger.Metadata {
+        var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+        metadata[ACPAgentTelemetry.LogMetadataKey.eventKind] = "\(ACPAgentTelemetry.caseName(of: event))"
+        return metadata
+    }
+
     // MARK: - The SessionEvent cases (§8.4)
 
     /// Projects one event to the wire.
@@ -186,9 +215,6 @@ struct EventProjection {
     ///
     /// - Parameter event: The event to project.
     mutating func project(_ event: SessionEvent) async {
-        // A copy for the log lines: the logger's message is an escaping
-        // autoclosure, which must not capture the mutating `self`.
-        let sessionIdValue = sessionId.rawValue
         switch event {
         case .submissionStarted:
             await promptState.promptDidStart()
@@ -224,22 +250,23 @@ struct EventProjection {
             // A correlation record only, never a wire message: its
             // `correlationID` is the run's completion token, a
             // different identity space from `Transcript.ToolCall.id`.
-            promptLogger.debug(
-                "session \(sessionIdValue, privacy: .public): tool invocation record for run \(record.correlationID, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).debug(
+                "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
         case .entryRecorded(let id, let kind):
             closeMessage(recordedEntryId: id, kind: kind)
         case .compaction(let result):
             await projectCompaction(result)
         case .discoveryPrimingFailed(let failure):
-            promptLogger.error(
-                "session \(sessionIdValue, privacy: .public): discovery priming failed: \(String(describing: failure), privacy: .public)"
-            )
+            var metadata = ACPAgentTelemetry.errorMetadata(failure, sessionId: sessionId)
+            metadata[ACPAgentTelemetry.LogMetadataKey.errorCase] = "\(ACPAgentTelemetry.caseName(of: failure))"
+            ACPAgentTelemetry.logger(.promptExecution).error(
+                "The discovery priming failed. The answer generates with no seed.", metadata: metadata)
         case .generationStalled(let stall):
             // A report, not a bound (§8.4): the generation continues.
-            promptLogger.notice(
-                "session \(sessionIdValue, privacy: .public): \(stall.description, privacy: .public)"
-            )
+            var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+            metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stall.description)"
+            ACPAgentTelemetry.logger(.promptExecution).notice(
+                "A generation made no progress for one stall interval.", metadata: metadata)
         case .runSettled(let operationEvent):
             sawOutput = true
             await projectSettlement(of: operationEvent)
@@ -249,9 +276,9 @@ struct EventProjection {
             // nothing, because an empty content replace would erase
             // the call's content.
             guard !report.attachments.isEmpty else {
-                promptLogger.warning(
-                    "session \(sessionIdValue, privacy: .public): run \(report.correlationID, privacy: .public) reported no attachments; nothing goes to the wire"
-                )
+                ACPAgentTelemetry.logger(.promptExecution).warning(
+                    "A tool call report had no attachments. Nothing goes to the wire.",
+                    metadata: runMetadata(report.correlationID))
                 return
             }
             sawOutput = true
@@ -262,9 +289,9 @@ struct EventProjection {
             // answer is delivered, so holding this drive loop holds
             // nothing the prompt could otherwise do.
             guard let relayElicitation else {
-                promptLogger.notice(
-                    "session \(sessionIdValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) requested an elicitation, but no relay is wired; the request is only reported"
-                )
+                ACPAgentTelemetry.logger(.promptExecution).notice(
+                    "A run requested an elicitation, but no relay is wired. The agent only logs the request.",
+                    metadata: runMetadata(operationEvent.correlationID))
                 return
             }
             sawOutput = true
@@ -299,16 +326,14 @@ struct EventProjection {
             // The usage of `answered` is the total of the chain. The
             // `submissionEnded` sum above already counts these tokens, so
             // the projection does not add them again.
-            promptLogger.debug(
-                "session \(sessionIdValue, privacy: .public): \(String(describing: event), privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).debug(
+                "The projection sends nothing for a Router event.", metadata: eventMetadata(event))
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a
             // broken stream.
-            promptLogger.debug(
-                "session \(sessionIdValue, privacy: .public): unprojected event \(String(describing: event), privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).debug(
+                "The projection does not know a Router event.", metadata: eventMetadata(event))
         }
     }
 
@@ -317,40 +342,32 @@ struct EventProjection {
     ///
     /// plan.md §8.4 gives the wait no wire message. The wait is not a
     /// stall: the Router stall watch does not count it (Router task
-    /// ^ake8sax), so it never ends the prompt with `_stalled`. The line is
+    /// ^ake8sax), so it never ends the prompt with `_stalled`. The record is
     /// a `notice` and not a `debug`, because a person who reads the log of
     /// a slow prompt must learn that the prompt waited, and for which
     /// model.
     private func reportQueueWait() {
-        // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the projection itself.
-        let sessionIdValue = sessionId.rawValue
-        let model = modelName
-        promptLogger.notice(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) runs a submission of another session; this submission waits for a place in the model queue"
-        )
+        ACPAgentTelemetry.logger(.promptExecution).notice(
+            "A submission waits for a place in the model queue, because the model runs a submission of another session.",
+            metadata: ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName))
     }
 
     /// Records that Router stopped a generate call of the prompt because the
     /// call repeated itself (task ^k51h6bb).
     ///
-    /// plan.md §8.4 gives the stop no wire message. The line is a `notice`
+    /// plan.md §8.4 gives the stop no wire message. The record is a `notice`
     /// and not a `debug`, because a person who reads the log of a slow or
     /// cut prompt must learn that the detector stopped a call, with the
     /// counts of the stop and the settings in force. When no recovery is
-    /// left, the prompt ends with the `_repeated` stop reason, and this line
+    /// left, the prompt ends with the `_repeated` stop reason, and this record
     /// is the one place that gives those numbers.
     ///
     /// - Parameter stop: The report Router made.
     private func reportRepetitionStop(_ stop: RepetitionStop) {
-        // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the projection itself.
-        let sessionIdValue = sessionId.rawValue
-        let model = modelName
-        let reported = stop.description
-        promptLogger.notice(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public): \(reported, privacy: .public)"
-        )
+        var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+        metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stop.description)"
+        ACPAgentTelemetry.logger(.promptExecution).notice(
+            "Router stopped a generate call, because the call repeated itself.", metadata: metadata)
     }
 
     /// Sends the one `usage_update` of the prompt, from the summed
@@ -385,9 +402,10 @@ struct EventProjection {
         if let value = Self.jsonValue(from: argumentsJSON) {
             rawInput = .value(value)
         } else {
-            promptLogger.warning(
-                "session \(sessionId.rawValue, privacy: .public): tool call \(id, privacy: .public) arguments did not parse as JSON"
-            )
+            var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+            metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(id)"
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "The arguments of a tool call did not parse as JSON.", metadata: metadata)
             rawInput = .unchanged
         }
         await send(
@@ -432,9 +450,6 @@ struct EventProjection {
     ///     the log line only.
     ///   - kind: The kind of the recorded entry.
     private mutating func closeMessage(recordedEntryId: String, kind: RecordedEntryKind) {
-        // A copy for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the mutating `self`.
-        let sessionIdValue = sessionId.rawValue
         switch kind {
         case .response:
             agentMessageId = nil
@@ -443,9 +458,10 @@ struct EventProjection {
         case .toolCalls:
             break
         @unknown default:
-            promptLogger.debug(
-                "session \(sessionIdValue, privacy: .public): recorded entry \(recordedEntryId, privacy: .public) of an unmapped kind"
-            )
+            var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+            metadata[ACPAgentTelemetry.LogMetadataKey.entryId] = "\(recordedEntryId)"
+            ACPAgentTelemetry.logger(.promptExecution).debug(
+                "The projection sends nothing for a recorded entry of an unmapped kind.", metadata: metadata)
         }
     }
 
@@ -487,9 +503,9 @@ struct EventProjection {
     private func projectSettlement(of operationEvent: OperationEvent) async {
         guard operationEvent.kind == .completed else {
             if operationEvent.outcome != nil {
-                promptLogger.warning(
-                    "session \(sessionId.rawValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) carried an outcome on a non-terminal event; ignored"
-                )
+                ACPAgentTelemetry.logger(.promptExecution).warning(
+                    "A run carried an outcome on an event that is not terminal. The projection ignores the outcome.",
+                    metadata: runMetadata(operationEvent.correlationID))
             }
             return
         }
@@ -497,9 +513,8 @@ struct EventProjection {
         if let outcome = operationEvent.outcome {
             status = Self.wireStatus(for: outcome)
         } else {
-            promptLogger.warning(
-                "session \(sessionId.rawValue, privacy: .public): run \(operationEvent.correlationID, privacy: .public) completed with no outcome"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "A run completed with no outcome.", metadata: runMetadata(operationEvent.correlationID))
             status = .unknown(Self.unknownOutcomeStatusWireValue)
         }
         var items = Self.contents(
@@ -547,9 +562,9 @@ struct EventProjection {
             Self.projectedChange(for: change).map(Self.location(for:))
         }
         if locations.count < changes.count {
-            promptLogger.warning(
-                "session \(sessionId.rawValue, privacy: .public): run \(report.correlationID, privacy: .public) recorded a file change the wire cannot carry; it rides no location"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "A run recorded a file change that the wire cannot carry. The change has no location on the wire.",
+                metadata: runMetadata(report.correlationID))
         }
         await send(
             .toolCallUpdate(

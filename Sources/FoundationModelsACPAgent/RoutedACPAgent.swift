@@ -2,12 +2,8 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
+import Logging
 import Synchronization
-import os
-
-/// The logger of the session surface: the order rule and the ignored
-/// notifications.
-let sessionLogger = Logger(subsystem: RoutedACPAgent.implementation.name, category: "Session")
 
 /// The composed ACP agent over the Router runtime (plan.md §1).
 ///
@@ -159,7 +155,9 @@ public actor RoutedACPAgent: Agent {
     ///   invalid-request error, when no `initialize` came first.
     func requireInitialized(before method: String) throws {
         guard negotiatedClientCapabilities != nil else {
-            sessionLogger.warning("\(method, privacy: .public) before initialize; refused")
+            ACPAgentTelemetry.logger(.session).warning(
+                "A session request came before initialize. The agent refuses it.",
+                metadata: [ACPAgentTelemetry.LogMetadataKey.acpMethod: "\(method)"])
             throw RequestError.initializeRequired(before: method)
         }
     }

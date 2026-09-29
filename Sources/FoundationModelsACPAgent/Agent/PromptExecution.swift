@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsMultitool
 import FoundationModelsRouter
+import Logging
 
 /// Why one prompt stopped, in this agent's own vocabulary
 /// (plan.md §8.2). Router's error enums are internal, so the prompt
@@ -271,8 +272,8 @@ struct PromptExecution: Sendable {
             }
         } catch {
             stop = Self.classify(error)
-            if case .failed(let message) = stop {
-                report(failure: message)
+            if case .failed = stop {
+                report(failure: error)
             }
         }
         // A cancelled prompt does not always throw (§8.6): model work that
@@ -295,7 +296,7 @@ struct PromptExecution: Sendable {
         // gave the finish reason.
         if stop == .completed, let cut = Self.cutStop(for: projection.lastFinishReason) {
             stop = cut
-            report(cut: cut, usage: projection.usageSummary)
+            report(cut: cut, usage: projection.usageMetadata)
         }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
@@ -313,9 +314,9 @@ struct PromptExecution: Sendable {
         do {
             try firstActivity.index.append(firstActivity.record)
         } catch {
-            promptLogger.error(
-                "session \(sessionId.rawValue, privacy: .public): sessions.jsonl append failed: \(error, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).error(
+                "The append to sessions.jsonl failed.",
+                metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
         }
         await send(
             .sessionInfoUpdate(
@@ -414,50 +415,40 @@ struct PromptExecution: Sendable {
     ///
     /// - Parameter stall: The report the prompt stopped on.
     private func report(_ stall: GenerationStall) {
-        // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the prompt itself.
-        let sessionIdValue = sessionId.rawValue
-        let model = modelName
-        let reported = stall.description
-        let reason = Self.stalledStopReasonValue
-        promptLogger.error(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) \(reported, privacy: .public); the prompt ends with \(reason, privacy: .public)"
-        )
+        var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+        metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stall.description)"
+        metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stalledStopReasonValue)"
+        ACPAgentTelemetry.logger(.promptExecution).error(
+            "A generation made no output for the stall bound. The prompt ends.", metadata: metadata)
     }
 
     /// Records the numbers of a prompt whose last submission did not end by
     /// itself. The wire carries the extension stop reason alone
     /// (``truncatedStopReasonValue``, ``endedInReasoningStopReasonValue`` or
-    /// ``repeatedStopReasonValue``), thus this line is the one place that
+    /// ``repeatedStopReasonValue``), thus this record is the one place that
     /// says how full the context was and how many tokens the prompt spent.
     ///
     /// - Parameters:
     ///   - cut: The stop ``cutStop(for:)`` gave.
-    ///   - usage: The summary ``EventProjection/usageSummary`` makes.
-    private func report(cut: PromptStop, usage: String) {
-        // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the prompt itself.
-        let sessionIdValue = sessionId.rawValue
-        let model = modelName
-        let reason = Self.stopReason(for: cut).wireValue
-        promptLogger.error(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) ended with \(reason, privacy: .public): \(usage, privacy: .public)"
-        )
+    ///   - usage: The metadata ``EventProjection/usageMetadata`` makes.
+    private func report(cut: PromptStop, usage: Logger.Metadata) {
+        var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+            .merging(usage) { current, _ in current }
+        metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stopReason(for: cut).wireValue)"
+        ACPAgentTelemetry.logger(.promptExecution).error(
+            "The last submission of the prompt did not end by itself.", metadata: metadata)
     }
 
     /// Records the error a prompt failed on. The wire carries the
-    /// ``unmappedStopReasonValue`` stop reason alone, thus this line is the
-    /// one place that names the cause.
+    /// ``unmappedStopReasonValue`` stop reason alone, thus this record is the
+    /// one place that names the cause. The record holds the type of the
+    /// error and not its message, because a message can hold content.
     ///
-    /// - Parameter message: The description of the error.
-    private func report(failure message: String) {
-        // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture the prompt itself.
-        let sessionIdValue = sessionId.rawValue
-        let model = modelName
-        promptLogger.error(
-            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) failed: \(message, privacy: .public)"
-        )
+    /// - Parameter error: The error the prompt's stream finished with.
+    private func report(failure error: any Error) {
+        var metadata = ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId)
+        metadata[ACPAgentTelemetry.LogMetadataKey.modelRef] = "\(modelName)"
+        ACPAgentTelemetry.logger(.promptExecution).error("The prompt failed.", metadata: metadata)
     }
 
     /// Classifies a prompt error by intent. Router's error enums are
@@ -721,17 +712,31 @@ extension RoutedACPAgent {
     /// - Parameter params: The cancellation notification.
     public func sessionCancel(_ params: CancelSessionNotification) async {
         guard let entry = sessions[params.sessionId], let promptState = entry.activePrompt else {
-            promptLogger.notice(
-                "session/cancel for session \(params.sessionId.rawValue, privacy: .public) with no running prompt; ignored"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).notice(
+                "A session/cancel found no running prompt. The agent ignores it.",
+                metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
             return
         }
         await promptState.noteCancelRequested()
         await entry.activeElicitationRelay?.cancelPendingElicitations()
         let result = await entry.session.cancel()
-        promptLogger.info(
-            "session \(params.sessionId.rawValue, privacy: .public): cancel -> \(String(describing: result), privacy: .public)"
-        )
+        var metadata = ACPAgentTelemetry.sessionMetadata(params.sessionId)
+        metadata[ACPAgentTelemetry.LogMetadataKey.cancelResult] = "\(Self.cancelResultName(result))"
+        ACPAgentTelemetry.logger(.promptExecution).info("The session cancelled its work.", metadata: metadata)
+    }
+
+    /// The name of a cancel result, for the log record of a cancel.
+    ///
+    /// The switch declares no `default`, so a result that Router adds later
+    /// stops the build here until somebody names it.
+    ///
+    /// - Parameter result: What the cancel of the Router session found.
+    /// - Returns: The name of the case.
+    static func cancelResultName(_ result: CancellationResult) -> String {
+        switch result {
+        case .requested: "requested"
+        case .nothingToCancel: "nothingToCancel"
+        }
     }
 
     /// Marks the session closed. The session-close task (plan.md §10.1)

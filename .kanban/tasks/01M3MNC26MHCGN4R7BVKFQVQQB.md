@@ -53,6 +53,43 @@ comments:
   id: 01m3q6c1fafsntgd5kbcyspx0k
   text: 'Note from card ^f9513f2 (not committed yet, in the working tree): `Agent/PromptTurn.swift` is now `Agent/PromptExecution.swift` (type `PromptExecution`). `Agent/TurnState.swift` is now `Agent/PromptState.swift`. The logger `turnLogger` (os.Logger, category "PromptTurn") is now `promptLogger` (category "PromptExecution") in `Agent/PromptState.swift`. When this card moves the logger to swift-log, use the name `promptLogger` and the label "PromptExecution".'
   timestamp: 2026-09-29T18:20:58.730665+00:00
+- actor: claude-code
+  id: 01m3qgajtt9tzc86jqxqycykj4
+  text: |-
+    Picked up again (attempt 2). The two blockers are resolved.
+
+    1. Package pins: Router c49e453 and Extras 3de1179 (Router and Extras moved together, card ^tz867gz is done). The pinned Extras has the `TelemetryTestSupport` product and `TelemetryCapture`. Thus no `swift package update` is necessary.
+    2. Design decision of the user (final): `TelemetryCapture` does not keep the logger label. The test asserts the label of the logger that the agent makes (`ACPAgentTelemetry.logger(.promptExecution).label`), and the test asserts the record content (level, message, metadata) through the capture.
+
+    Name changes since the card was written: `PromptTurn.swift` is `Agent/PromptExecution.swift`. `TurnState.swift` is `Agent/PromptState.swift`. `turnLogger` is `promptLogger`, category "PromptExecution". Thus the label of the cancel record is `FoundationModelsACPAgent.PromptExecution`, not `FoundationModelsACPAgent.PromptTurn`. Commit 66bfd3c added log calls in PromptExecution.swift (the cut stop report) and EventProjection.swift (the repetitionStopped notice). This task moves them too.
+
+    Research:
+    - `promptLogger` call sites: PromptState.swift, PromptExecution.swift, EventProjection.swift, TerminalStream.swift. `sessionLogger` call sites: RoutedACPAgent.swift, SessionSetup.swift. `initializationLogger`: Initialization.swift only. `resumeLogger`: SessionResume.swift only.
+    - The otel-design.md file in the old scratchpad does not exist now. The card text holds the rules.
+    - swift-log takes the message as a non-escaping autoclosure. Thus the "copies for the log line" of the os.Logger code are not necessary now.
+    - Router uses the metadata keys `model.ref`, `tokens.in` and `tokens.out`. Extras uses `tool.name`. The agent uses the same keys for the same values.
+    - Some old messages held content or content risk: `String(describing: event)` of a SessionEvent (an `answered` event holds the answer text), the description of a DiscoveryPrimingFailure (its `underlying` text can hold the prompt), and the description of an error. The new records log the case name or the error type in place of these.
+  timestamp: 2026-09-29T21:14:56.730477+00:00
+- actor: claude-code
+  id: 01m3qgm7tpskmh2s9f0b5znw8j
+  text: |-
+    Progress:
+    - RED 1: `promptExecutionLoggerHasTheModuleLabel` did not compile (`ACPAgentTelemetry` had no `logger`). After `ACPAgentTelemetry.logger(_:)` and `LoggerCategory` were added, it passed.
+    - RED 2: `ignoredCancelOfAnUnknownSessionWritesOneNoticeWithTheSessionIdInMetadata` failed for the expected reason: 0 records with `session.id` in the capture, because the os.Logger record does not go to the capture.
+    - Design: `ACPAgentTelemetry.logger(_ category:)` makes a new swift-log `Logger` at each call, with the label `FoundationModelsACPAgent.<Category>`. Categories: Session, PromptExecution, Initialization, SessionResume. The `SpanName` prefix and the logger label share one private `moduleName` constant. New metadata helpers: `sessionMetadata`, `modelMetadata`, `errorMetadata` (type name only), `caseName(of:)` (enum case without payload). New `LogMetadataKey` keys for the values that the old messages held.
+    - `EventProjection.usageSummary` (a String) becomes `usageMetadata` (tokens.in, tokens.out, context.fill), so the cut stop record carries the numbers as metadata.
+    - `report(failure:)` now takes the error and logs its type, not `String(describing:)` of it.
+    - `sessionCancel` logs the cancel result as a case name (`requested` / `nothingToCancel`) through an exhaustive switch.
+  timestamp: 2026-09-29T21:20:13.142333+00:00
+- actor: claude-code
+  id: 01m3qgzxygpv1pyyhrtka4rbj2
+  text: |-
+    ### implement — changed
+    - evidence: `swift test`: 627 tests in 71 suites passed (625 before, plus 2 new), 1 known issue (the old intentional `withKnownIssue` in HarnessSmokeTests), zero compiler warnings. `swift test --filter SessionSurfaceLoggingTests`: 2 of 2 passed. `swift build --build-tests` in IntegrationTests/: Build complete, no warnings. `rg "promptLogger|sessionLogger|initializationLogger|resumeLogger|usageSummary"` finds nothing.
+    - files: Package.swift; Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift; Sources/FoundationModelsACPAgent/RoutedACPAgent.swift; Sources/FoundationModelsACPAgent/Agent/{PromptState,PromptExecution,EventProjection,TerminalStream,Initialization,SessionResume,SessionSetup}.swift; new Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift.
+    - notes: the stderr log level rule of acp-agent (`TelemetryBootstrap.standardErrorLogLevel = .warning`) is not changed, and its tests pass. The test target also links the swift-log `Logging` product, because the new suite reads `Logger.Level`. The cwd mismatch record of the resume holds no path; the refusal error gives both paths to the client.
+    - next: /review
+  timestamp: 2026-09-29T21:26:36.240686+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
 position_column: doing
@@ -60,16 +97,18 @@ position_ordinal: '80'
 title: 'OTel 3: replace os.Logger with swift-log in the session surface (Session, PromptTurn, Initialization, SessionResume)'
 ---
 ## What
-Design item 2: remove all `os.Logger` use and use `Logging.Logger` (swift-log). This task changes the first 4 of the 11 `os.Logger` sites. OTel 4 and OTel 5 change the other 7. This task also adds the Extras test helper that the later OTel tasks use. Approved design: `/private/tmp/claude-501/-Users-wballard-github-swissarmyhammer/9f4fa2e8-6833-46c6-bb95-5091ae3613fa/scratchpad/otel-design.md`.
+Design item 2: remove all `os.Logger` use and use `Logging.Logger` (swift-log). This task changes the first 4 of the 11 `os.Logger` sites. OTel 4 and OTel 5 change the other 7. This task also adds the Extras test helper that the later OTel tasks use. Approved design: `/private/tmp/claude-501/-Users-wballard-github-swissarmyhammer/9f4fa2e8-6833-46c6-bb95-5091ae3613fa/scratchpad/otel-design.md` (this file does not exist now; the card text holds the rules).
 
-Extras: FoundationModelsExtras OTel A to D are on Extras origin/main (HEAD 70ad74d, 2026-09-28). Run `swift package update FoundationModelsExtras` before you start this task.
+Extras: the pinned Extras (3de1179) has `TelemetryTestSupport`. Router and Extras moved together (card ^tz867gz is done), so no `swift package update` was necessary.
+
+Name changes since the card was written: `PromptTurn.swift` is `Agent/PromptExecution.swift`. `TurnState.swift` is `Agent/PromptState.swift`. `turnLogger` is `promptLogger`, category "PromptExecution".
 
 Sites:
-- [ ] `Sources/FoundationModelsACPAgent/RoutedACPAgent.swift` — `sessionLogger` (category `Session`).
-- [ ] `Sources/FoundationModelsACPAgent/Agent/TurnState.swift` — `turnLogger` (category `PromptTurn`). `PromptTurn.swift` and other files call it; change the call sites too.
-- [ ] `Sources/FoundationModelsACPAgent/Agent/Initialization.swift` — `initializationLogger`.
-- [ ] `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift` — `resumeLogger`.
-- [ ] In `Package.swift`, add the FoundationModelsExtras `TelemetryTestSupport` product (Extras card ^z6jqd9g, 01M3MN8N9P4RPET2V5JZ6JQD9G) to the test target `FoundationModelsACPAgentTests` only.
+- [x] `Sources/FoundationModelsACPAgent/RoutedACPAgent.swift` — `sessionLogger` (category `Session`). Its call site in `Agent/SessionSetup.swift` changed too.
+- [x] `Sources/FoundationModelsACPAgent/Agent/PromptState.swift` — `promptLogger` (category `PromptExecution`). The call sites in `PromptExecution.swift`, `EventProjection.swift` and `TerminalStream.swift` changed too, with the log calls of commit 66bfd3c (the cut stop report and the repetitionStopped notice).
+- [x] `Sources/FoundationModelsACPAgent/Agent/Initialization.swift` — `initializationLogger`.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift` — `resumeLogger`.
+- [x] In `Package.swift`, add the FoundationModelsExtras `TelemetryTestSupport` product (Extras card ^z6jqd9g, 01M3MN8N9P4RPET2V5JZ6JQD9G) to the test target `FoundationModelsACPAgentTests` only.
 
 Rules for each site:
 - Replace `import os` with `import Logging`. The label is `"FoundationModelsACPAgent.<Category>"`, with the same category name as now.
@@ -77,19 +116,18 @@ Rules for each site:
 - Keep the level: `debug` → `.debug`, `info` → `.info`, `notice` → `.notice`, `warning`/`error` → the same level, `fault` → `.critical`.
 - Move each interpolated identifier (session id, method name, command name) into log metadata, with a key from `ACPAgentTelemetry.LogMetadataKey` (OTel 1). The message is a fixed string.
 - No content rule (design item 4): a log message or metadata value must not hold prompt text, response text, tool arguments, tool output or file content. Where a site logs such a value now, log its size or kind in its place.
-- The "turn" to "prompt" rename cards (01M3A32E8EVDZ16ZQ8QF9513F2) can change the names `turnLogger` and `TurnState`. Use the names that are in the code when you do this task.
 
 ## Acceptance Criteria
-- [ ] The 4 files have no `import os`, no `os.Logger`, and no global or `static let` logger.
-- [ ] Each changed log call has a fixed message string and puts identifiers in metadata.
-- [ ] An ignored `session/cancel` for an unknown session writes one `.notice` record with the session id in metadata.
-- [ ] That record has the label `FoundationModelsACPAgent.PromptTurn`. Blocker for this one criterion only: FoundationModelsExtras OTel F ^92q1rms (01M3N95083T1NCMA59E92Q1RMS), "TelemetryCapture keeps the logger label on each log record". Until OTel F is on Extras origin/main, the capture drops the label, so this check cannot run. The rest of this task does not need OTel F.
+- [x] The 4 files have no `import os`, no `os.Logger`, and no global or `static let` logger.
+- [x] Each changed log call has a fixed message string and puts identifiers in metadata.
+- [x] An ignored `session/cancel` for an unknown session writes one `.notice` record with the session id in metadata.
+- [x] The logger of that record has the label `FoundationModelsACPAgent.PromptExecution`. Design decision of the user (final): `TelemetryCapture` does not keep the logger label, so the test asserts the label of the logger that the agent makes (`ACPAgentTelemetry.logger(.promptExecution).label`), and asserts the record content (level, message, metadata) through the capture.
 
 ## Tests
-- [ ] Test rules for all OTel tasks on this board: use `TelemetryCapture` from `TelemetryTestSupport`. It uses task-local `withTracer` and `withMetricsFactory`, and it bootstraps logging one time. Never call `LoggingSystem.bootstrap`, `InstrumentationSystem.bootstrap` or `MetricsSystem.bootstrap` in the test process. Make the agent and the harness inside the capture.
-- [ ] Add `Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift`: in a capture, send `session/cancel` for an unknown session through the harness in `Tests/FoundationModelsACPAgentTestSupport/Harness.swift`, and assert the captured record (level and `session.id` metadata; the label also, when Extras OTel F ^92q1rms is on Extras origin/main).
-- [ ] Run `swift test --filter SessionSurfaceLoggingTests`. Expected: pass.
-- [ ] Run `swift test`. Expected: all tests pass.
+- [x] Test rules for all OTel tasks on this board: use `TelemetryCapture` from `TelemetryTestSupport`. It uses task-local `withTracer` and `withMetricsFactory`, and it bootstraps logging one time. Never call `LoggingSystem.bootstrap`, `InstrumentationSystem.bootstrap` or `MetricsSystem.bootstrap` in the test process. Make the agent and the harness inside the capture.
+- [x] Add `Tests/FoundationModelsACPAgentTests/SessionSurfaceLoggingTests.swift`: in a capture, send `session/cancel` for an unknown session through the harness in `Tests/FoundationModelsACPAgentTestSupport/Harness.swift`, and assert the captured record (level and `session.id` metadata). Assert the label on the logger that the agent makes.
+- [x] Run `swift test --filter SessionSurfaceLoggingTests`. Expected: pass.
+- [x] Run `swift test`. Expected: all tests pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

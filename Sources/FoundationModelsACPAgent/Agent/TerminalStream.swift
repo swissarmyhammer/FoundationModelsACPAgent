@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsMultitool
+import Logging
 
 /// The terminal display projection (plan.md §11.8): the one mapping
 /// from the host-owned `ShellOutputChunkStream` to the wire's
@@ -108,8 +109,9 @@ struct TerminalStream {
         @unknown default:
             // The upstream kind is not frozen: a new case degrades to a
             // log line, never to a broken stream.
-            promptLogger.debug(
-                "run \(event.commandID, privacy: .public): unprojected shell output event")
+            ACPAgentTelemetry.logger(.promptExecution).debug(
+                "The terminal stream does not know a shell output event.",
+                metadata: [ACPAgentTelemetry.LogMetadataKey.toolCallId: "\(event.commandID)"])
         }
     }
 
@@ -157,9 +159,9 @@ struct TerminalStream {
     /// - Parameter commandID: The run whose bytes went away.
     private func replaceOutput(of commandID: String) async {
         guard let stored = snapshot(commandID) else {
-            promptLogger.warning(
-                "run \(commandID, privacy: .public): a gap arrived with no stored record to replace from"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "A gap arrived, but no stored record can replace the output.",
+                metadata: [ACPAgentTelemetry.LogMetadataKey.toolCallId: "\(commandID)"])
             return
         }
         await send(

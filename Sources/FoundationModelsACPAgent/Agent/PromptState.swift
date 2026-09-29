@@ -1,11 +1,6 @@
 import FoundationModelsACP
 import FoundationModelsRouter
-import os
-
-/// The logger of the prompt: the state machine, the update sends, and the
-/// ignored events.
-let promptLogger = Logger(
-    subsystem: RoutedACPAgent.implementation.name, category: "PromptExecution")
+import Logging
 
 /// The consumer of a prompt's `session/update` payloads. The production
 /// sink posts through the bound `AgentSideConnection`; a test sink
@@ -26,9 +21,9 @@ extension AgentSideConnection {
             try await sessionUpdate(
                 UpdateSessionNotification(sessionId: sessionId, update: update))
         } catch {
-            promptLogger.warning(
-                "session/update send failed for session \(sessionId.rawValue, privacy: .public): \(error, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "A session/update send failed.",
+                metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
         }
     }
 }

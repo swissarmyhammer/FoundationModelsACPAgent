@@ -1,12 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
-import os
-
-/// The logger of the resume surface: the cwd pre-check, the restore
-/// reports, and the replay.
-private let resumeLogger = Logger(
-    subsystem: RoutedACPAgent.implementation.name, category: "SessionResume")
+import Logging
 
 /// The replay cursor of one resume (plan.md §7.4): an inclusive position
 /// in the recorded history. `start` is the first variant; a resume from a
@@ -370,9 +365,10 @@ extension RoutedACPAgent {
         let recordedPath = recorded.standardizedFileURL.path
         let requestedPath = workingDirectory.standardizedFileURL.path
         guard recordedPath == requestedPath else {
-            resumeLogger.warning(
-                "session \(sessionId.rawValue, privacy: .public): resume cwd \(requestedPath, privacy: .public) does not equal the recorded \(recordedPath, privacy: .public); refused"
-            )
+            // The record holds no path. The refusal gives both paths to the client.
+            ACPAgentTelemetry.logger(.sessionResume).warning(
+                "The resume cwd does not equal the recorded cwd. The agent refuses the resume.",
+                metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
             throw RequestError.mismatchedWorkingDirectory(
                 id: sessionId, requested: requestedPath, recorded: recordedPath)
         }
@@ -426,14 +422,20 @@ extension RoutedACPAgent {
     ///   - sessionId: The session the rows belong to.
     private func logRestoreReports(of restored: RestoredSession, sessionId: SessionId) {
         for missing in restored.configurationReport.missingTools {
-            resumeLogger.notice(
-                "session \(sessionId.rawValue, privacy: .public): recorded tool \(missing.toolName, privacy: .public) has no supplied instance"
-            )
+            var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+            metadata[ACPAgentTelemetry.LogMetadataKey.toolName] = "\(missing.toolName)"
+            ACPAgentTelemetry.logger(.sessionResume).notice(
+                "A recorded tool has no supplied instance.", metadata: metadata)
         }
         for mismatch in restored.contextMismatches {
-            resumeLogger.notice(
-                "session \(mismatch.session.description, privacy: .public): recorded context \(mismatch.recorded, privacy: .public) resolved as \(mismatch.resolved, privacy: .public)"
-            )
+            let metadata: Logger.Metadata = [
+                ACPAgentTelemetry.LogMetadataKey.sessionId: "\(mismatch.session.description)",
+                ACPAgentTelemetry.LogMetadataKey.recordedContextTokens: "\(mismatch.recorded)",
+                ACPAgentTelemetry.LogMetadataKey.resolvedContextTokens: "\(mismatch.resolved)",
+            ]
+            ACPAgentTelemetry.logger(.sessionResume).notice(
+                "A restored session resolved a context that is different from the recorded context.",
+                metadata: metadata)
         }
     }
 
@@ -492,9 +494,9 @@ extension RoutedACPAgent {
                     additionalDirectories: additionalRoots.map(\.path)))
             return true
         } catch {
-            resumeLogger.error(
-                "session \(sessionId.rawValue, privacy: .public): sessions.jsonl root-set update failed: \(error, privacy: .public)"
-            )
+            ACPAgentTelemetry.logger(.sessionResume).error(
+                "The root-set update of sessions.jsonl failed.",
+                metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
             return false
         }
     }

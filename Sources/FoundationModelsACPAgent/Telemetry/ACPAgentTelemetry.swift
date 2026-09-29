@@ -1,3 +1,5 @@
+import FoundationModelsACP
+import Logging
 import Tracing
 
 /// The telemetry vocabulary of the agent: the name of each span it opens, the
@@ -24,6 +26,10 @@ import Tracing
 /// that backend sends the data. Identifiers, names, counts and sizes are safe.
 /// Content is not safe.
 enum ACPAgentTelemetry {
+    /// The module name. Each span name and each logger label starts with it
+    /// and a dot.
+    private static let moduleName = "FoundationModelsACPAgent"
+
     /// The operation name of each span the agent opens.
     ///
     /// Each name starts with the module prefix, so a reader can find the spans
@@ -31,7 +37,7 @@ enum ACPAgentTelemetry {
     /// client.
     enum SpanName {
         /// The text at the start of each name below.
-        private static let prefix = "FoundationModelsACPAgent."
+        private static let prefix = moduleName + "."
 
         /// One ACP `initialize` request.
         static let initialize = prefix + "initialize"
@@ -155,7 +161,11 @@ enum ACPAgentTelemetry {
     /// ``ACPAgentTelemetry`` applies to the metadata values and to the log
     /// message.
     ///
-    /// OTel 3 and OTel 4 read these keys, so periphery sees no reader yet.
+    /// A key for a value that no span carries uses the key that Router or
+    /// Extras uses for the same value, where one exists.
+    ///
+    /// OTel 4 reads the command, MCP server and elicitation keys, so
+    /// periphery sees no reader of those yet.
     // periphery:ignore
     enum LogMetadataKey {
         /// The ACP session id.
@@ -172,6 +182,168 @@ enum ACPAgentTelemetry {
 
         /// The mode of the elicitation.
         static let elicitationMode = AttributeKey.elicitationMode
+
+        /// The ACP stop reason of a prompt.
+        static let stopReason = AttributeKey.promptStopReason
+
+        /// The type name of an error. Never the error message, because a
+        /// message can hold content.
+        static let errorType = AttributeKey.errorType
+
+        /// The enum case of an error, without its payload, because a payload
+        /// can hold content.
+        static let errorCase = "error.case"
+
+        /// The model reference that a session generates with. Router uses
+        /// the same key.
+        static let modelRef = "model.ref"
+
+        /// The id of a tool call on the wire. A run of a tool has the same
+        /// id: its completion token is the tool call id (plan.md §11.8).
+        static let toolCallId = "tool_call.id"
+
+        /// The name of a tool. Extras uses the same key.
+        static let toolName = "tool.name"
+
+        /// The id of a recorded transcript entry.
+        static let entryId = "transcript.entry_id"
+
+        /// The case of a Router session event, without its payload, because
+        /// a payload can hold content.
+        static let eventKind = "event.kind"
+
+        /// The text of a Router report: a stall or a repetition stop. It
+        /// holds times, counts and settings only.
+        static let routerReport = "router.report"
+
+        /// The prompt tokens of a prompt. Router uses the same key.
+        static let tokensIn = "tokens.in"
+
+        /// The completion tokens of a prompt. Router uses the same key.
+        static let tokensOut = "tokens.out"
+
+        /// The fraction of the context that the last usage report filled, or
+        /// `unknown` when no report gave it.
+        static let contextFill = "context.fill"
+
+        /// The working context of a session, in tokens.
+        static let contextTokens = "context.tokens"
+
+        /// The working context, in tokens, that a restored session was
+        /// recorded at.
+        static let recordedContextTokens = "context.recorded_tokens"
+
+        /// The working context, in tokens, that the restoring profile
+        /// resolved.
+        static let resolvedContextTokens = "context.resolved_tokens"
+
+        /// The fraction of the context at which the compaction starts.
+        static let compactionTriggerFraction = "compaction.trigger_fraction"
+
+        /// The fraction of the context that the compaction goes down to.
+        static let compactionTargetFraction = "compaction.target_fraction"
+
+        /// What a `session/cancel` found to cancel: `requested` or
+        /// `nothingToCancel`.
+        static let cancelResult = "cancel.result"
+
+        /// The name of the ACP client, from its `initialize` request.
+        static let clientName = "client.name"
+
+        /// The version of the ACP client, from its `initialize` request.
+        static let clientVersion = "client.version"
+
+        /// The protocol version that the client sent.
+        static let requestedProtocolVersion = "acp.protocol_version.requested"
+
+        /// The protocol version that the agent answered with.
+        static let answeredProtocolVersion = "acp.protocol_version.answered"
+    }
+
+    /// The text that ``caseName(of:)`` gives for a value that shows no case
+    /// label.
+    private static let unknownCaseName = "unknown"
+
+    /// The name of the enum case of `value`, without its payload.
+    ///
+    /// A log record uses it in place of the description of an event or an
+    /// error, because a payload can hold content: a Router `answered` event
+    /// holds the answer text, for example.
+    ///
+    /// - Parameter value: An enum value.
+    /// - Returns: The case label, or `unknown` for a case with no payload and
+    ///   for a value that is not an enum. A case with no payload shows no
+    ///   label, and its description can be a text of the type.
+    static func caseName(of value: Any) -> String {
+        Mirror(reflecting: value).children.first?.label ?? unknownCaseName
+    }
+
+    /// The metadata of a record about one session: its session id.
+    ///
+    /// - Parameter sessionId: The ACP session id.
+    /// - Returns: The ``LogMetadataKey/sessionId`` value.
+    static func sessionMetadata(_ sessionId: SessionId) -> Logger.Metadata {
+        [LogMetadataKey.sessionId: "\(sessionId.rawValue)"]
+    }
+
+    /// The metadata of a record about the model work of one session: the
+    /// session id and the model reference.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The ACP session id.
+    ///   - modelRef: The model reference that the session generates with.
+    /// - Returns: The ``LogMetadataKey/sessionId`` and
+    ///   ``LogMetadataKey/modelRef`` values.
+    static func modelMetadata(sessionId: SessionId, modelRef: String) -> Logger.Metadata {
+        var metadata = sessionMetadata(sessionId)
+        metadata[LogMetadataKey.modelRef] = "\(modelRef)"
+        return metadata
+    }
+
+    /// The metadata of an error in one session: the session id and the type
+    /// name of the error, never its message.
+    ///
+    /// - Parameters:
+    ///   - error: The error.
+    ///   - sessionId: The ACP session id.
+    /// - Returns: The ``LogMetadataKey/sessionId`` and
+    ///   ``LogMetadataKey/errorType`` values.
+    static func errorMetadata(_ error: any Error, sessionId: SessionId) -> Logger.Metadata {
+        var metadata = sessionMetadata(sessionId)
+        metadata[LogMetadataKey.errorType] = "\(String(reflecting: type(of: error)))"
+        return metadata
+    }
+
+    /// The category of each logger that the agent makes. The label of the
+    /// logger is the module name, a dot and the raw value.
+    enum LoggerCategory: String {
+        /// The session surface: the order rule and the session budget.
+        case session = "Session"
+
+        /// The prompt execution: the prompt state, the update sends, the
+        /// event projection, the terminal stream and the ignored events.
+        case promptExecution = "PromptExecution"
+
+        /// The handshake: the version negotiation and the client identity.
+        case initialization = "Initialization"
+
+        /// The resume surface: the cwd pre-check, the restore reports and the
+        /// root-set update.
+        case sessionResume = "SessionResume"
+    }
+
+    /// Makes a new logger for `category`.
+    ///
+    /// Call it at the log call, and do not keep the result in a global or a
+    /// `static let`. A logger keeps the handler that the logging system gave
+    /// it when it was made. Thus a logger made before the logging bootstrap of
+    /// the executable, or before a `TelemetryCapture` of a test, does not
+    /// write to the backend of that bootstrap or capture.
+    ///
+    /// - Parameter category: The part of the agent that writes the records.
+    /// - Returns: A logger with the label `FoundationModelsACPAgent.<Category>`.
+    static func logger(_ category: LoggerCategory) -> Logger {
+        Logger(label: moduleName + "." + category.rawValue)
     }
 
     /// The tracer that a call opens its span through.

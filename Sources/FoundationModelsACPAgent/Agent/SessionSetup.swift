@@ -4,6 +4,7 @@ import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
 import FoundationModelsSkills
+import Logging
 
 /// Whether a session can accept a new prompt (plan.md §7.1). `idle` means
 /// "ready for a new prompt"; a `session/prompt` that arrives while the
@@ -626,18 +627,16 @@ extension RoutedLLM {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
         // of each generation call, which Router derives from the same number.
-        // A prompt that ends `_truncated` is read against this line.
-        // Copies for the log line: the logger's message is an escaping
-        // autoclosure, which must not capture this model.
-        let context = contextTokens
-        let trigger = compaction.trigger
-        let target = compaction.target
-        // `notice`, not `info`: the unified log keeps `info` in memory only,
-        // thus an `info` line is gone by the time a reader of a long run
-        // looks for it.
-        sessionLogger.notice(
-            "session budget: context=\(context, privacy: .public) trigger=\(trigger, privacy: .public) target=\(target, privacy: .public)"
-        )
+        // A prompt that ends `_truncated` is read against this record.
+        // `notice`, not `info`: a reader of a long run looks for this record
+        // after the run, and a backend often keeps only `notice` and more.
+        ACPAgentTelemetry.logger(.session).notice(
+            "The session has its token budget.",
+            metadata: [
+                ACPAgentTelemetry.LogMetadataKey.contextTokens: "\(contextTokens)",
+                ACPAgentTelemetry.LogMetadataKey.compactionTriggerFraction: "\(compaction.trigger)",
+                ACPAgentTelemetry.LogMetadataKey.compactionTargetFraction: "\(compaction.target)",
+            ])
         return makeSession(
             instructions: instructions,
             workingDirectory: workingDirectory,
