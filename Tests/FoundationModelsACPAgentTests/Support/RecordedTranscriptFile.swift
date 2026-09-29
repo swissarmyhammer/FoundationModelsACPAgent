@@ -86,9 +86,10 @@ enum RecordedTranscriptFile {
     /// The `toolOutput` kind string.
     static let toolOutputKind = "toolOutput"
 
-    /// The envelope field that names the background run a `wait` collects.
-    /// It holds the same value as the `correlationID` of every operation
-    /// event the run posts, so it joins a recorded call to its outcome.
+    /// The field that names a background run in the pending envelope
+    /// that the call which started the run answers with. It holds the
+    /// same value as the `correlationID` of every operation event the run
+    /// posts, so it joins a recorded call to its outcome.
     static let completionTokenKey = "completionToken"
 
     /// How many times a reader unwraps a JSON text that is itself carried

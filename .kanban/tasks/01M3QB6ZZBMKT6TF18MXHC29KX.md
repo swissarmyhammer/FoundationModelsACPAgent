@@ -16,8 +16,24 @@ comments:
     - evidence: plan.md (§11.1), Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift (doc comment only). `swift test`: 615 tests in 70 suites passed (1 known issue, from before this change), zero compiler warnings. `swift build` after the last plan.md reflow: complete. `rg -n "librarian:|sampleGenerator" plan.md` gives no match.
     - next: /review
   timestamp: 2026-09-29T19:56:20.993805+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3qc37w1rx33e1k5zf9f1atx
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (861b330). 0 findings, 0 confirmed, 0 refuted, 7 validator runs attempted, 0 failed. The engine reviewed 1 file. No validator matches plan.md, so the engine did not review it. The .reviewignore file excludes the 4 .kanban files.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T20:01:01.825856+00:00
+- actor: claude-code
+  id: 01m3qc3jrtb16d8whhsb922smq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — plan.md §11.1, MCPComposition.swift (doc comment only)
+    - test: green — swift test 615 tests pass
+    - commit: 861b330
+    - review: clean — zero findings; task moved to done. The orchestrator read the plan.md diff by hand (no Markdown validator) and checked the acceptance items: the rg finds no stale signature.
+  timestamp: 2026-09-29T20:01:12.986833+00:00
+position_column: done
+position_ordinal: fa80
 title: plan.md §11.1 names a stale `makeSessionTools(librarian:sampleGenerator:)` signature
 ---
 ## Why
@@ -30,7 +46,7 @@ Rewrite the §11.1 text for the current signatures and for the call that `ToolCa
 
 ## Acceptance Criteria
 
-- [ ] `rg -n "librarian:|sampleGenerator" plan.md` shows no stale signature.
-- [ ] No code change.
+- [x] `rg -n "librarian:|sampleGenerator" plan.md` shows no stale signature.
+- [x] No code change.
 
 Found by ^f4tye31. #generation-queue

@@ -1,8 +1,20 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9780'
+comments:
+- actor: claude-code
+  id: 01m3qc6qp4qs6c218achanx2sd
+  text: 'Research: no test in Tests/ or IntegrationTests/ uses `ScriptedPassStep.collectingToolCall`. Its only references are in ScriptedModel.swift. Thus the play is dead. Its private parts are also dead after removal: `ScriptedModelError.noRunToCollect`, `completionTokenField`, `SynthesizedTranscript.latestAnswer`, `invokeCollectingTool`, `latestCompletionToken`, `argumentsJSON(collecting:)`. `RecordedTranscriptFile.completionTokenKey` stays; RunCodeSourceTests uses it. No other line in Tests/ or IntegrationTests/ names a `wait` tool.'
+  timestamp: 2026-09-29T20:02:56.324791+00:00
+- actor: claude-code
+  id: 01m3qcah1mk1bxrxma2b0xbv80
+  text: |-
+    ### implement — changed
+    - evidence: ScriptedModel.swift — removed the dead play `ScriptedPassStep.collectingToolCall(name:)` and its private parts: `ScriptedModelError.noRunToCollect`, `completionTokenField`, `SynthesizedTranscript.latestAnswer`, `invokeCollectingTool(named:)`, `latestCompletionToken()`, `argumentsJSON(collecting:)`, the `latestAnswer` write in `invokeTool`, and the `noRunToCollect` line in the `play` Throws doc. RecordedTranscriptFile.swift — `completionTokenKey` doc now tells what the field is (it names the background run in the pending envelope, and equals the `correlationID` of the run's operation events), with no `wait` tool. `rg -n "\`wait\`" Tests IntegrationTests` gives no match. Each other `\bwait\b` hit is the English word. `swift test`: 615 tests in 70 suites pass, 1 known issue (the planned negative check in HarnessSmokeTests, which was already there), zero compiler warnings. `swift build --build-tests` in IntegrationTests/: build complete, zero compiler warnings. Both builds print the SwiftPM build graph line "missing creator for mutated node" for the mlx-swift_Cmlx bundle. That line is not a compiler warning, and this change did not cause it.
+    - next: /review
+  timestamp: 2026-09-29T20:05:00.596779+00:00
+position_column: doing
+position_ordinal: '8180'
 title: Remove the obsolete `wait` tool from the test support doc comments and the ScriptedModel collecting play
 ---
 ## Why
