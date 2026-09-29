@@ -64,6 +64,22 @@ public enum SessionIndexWarning: Equatable, Sendable, CustomStringConvertible {
             return "\(SessionIndex.indexFileName): dropped a torn final line"
         }
     }
+
+    /// Writes the log record of this warning: one `warning` record with a
+    /// fixed message, and the path of the index file in its metadata. The
+    /// record never holds the text of a line, because a line holds the
+    /// content of a record.
+    ///
+    /// - Parameter path: The path of the index file that the read found
+    ///   this warning in.
+    func log(indexFilePath path: String) {
+        switch self {
+        case .tornFinalLine:
+            ACPAgentTelemetry.logger(.transcripts).warning(
+                "The session index dropped a torn final line.",
+                metadata: ACPAgentTelemetry.fileMetadata(path: path))
+        }
+    }
 }
 
 /// Why the index refused to read (plan.md §4.1): damage before the final
@@ -175,10 +191,9 @@ public struct SessionIndex: Sendable {
                 guard position == numberedLines.count - 1 else {
                     throw SessionIndexError.corruptLine(number: numbered.offset + 1)
                 }
-                ACPAgentTelemetry.logger(.transcripts).warning(
-                    "The session index dropped a torn final line.",
-                    metadata: ACPAgentTelemetry.fileMetadata(path: indexFile.path))
-                warnings.append(.tornFinalLine)
+                let warning = SessionIndexWarning.tornFinalLine
+                warning.log(indexFilePath: indexFile.path)
+                warnings.append(warning)
             }
         }
         return SessionIndexReadResult(records: records, warnings: warnings)

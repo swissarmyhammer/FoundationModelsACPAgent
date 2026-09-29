@@ -195,6 +195,26 @@ import Testing
         #expect(record.metadata[pathKey] == .string(fixture.indexFile.path))
     }
 
+    /// The path that the direct log case gives to the warning.
+    private static let loggedIndexPath = "/tmp/SessionIndexTests/sessions.jsonl"
+
+    /// The warning writes its own log record: one `warning` record with the
+    /// fixed message, and the given path of the index file in its metadata.
+    @Test func theTornFinalLineWarningLogsItsFixedMessageWithTheIndexPath() async throws {
+        let records = try await TelemetryCapture.run(forbidding: []) { context in
+            SessionIndexWarning.tornFinalLine.log(indexFilePath: Self.loggedIndexPath)
+            return context.logRecords
+        }
+
+        let pathKey = ACPAgentTelemetry.LogMetadataKey.filePath
+        let pathRecords = records.filter { $0.metadata[pathKey] != nil }
+        #expect(pathRecords.count == 1)
+        let record = try #require(pathRecords.first)
+        #expect(record.level == .warning)
+        #expect(record.metadata[pathKey] == .string(Self.loggedIndexPath))
+        #expect("\(record.message)" == "The session index dropped a torn final line.")
+    }
+
     /// The logger of the transcripts module has the module label and the
     /// category of the transcripts.
     @Test func transcriptsLoggerHasTheModuleLabel() {
