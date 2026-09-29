@@ -25,8 +25,24 @@ comments:
     - evidence: 3 files — plan.md, README.md, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift (a doc comment only). `swift test`: 615 tests in 70 suites passed (1 known issue that was there before), and there are zero compiler warnings. `swift build --build-tests` in IntegrationTests/: Build complete, with zero compiler warnings. The only `warning:` line in each build is the SwiftPM "missing creator for mutated node" message for the mlx bundle, which is not a compiler warning.
     - next: /review
   timestamp: 2026-09-29T19:45:52.156865+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3qbjn5vgg4bbdn3jp2yk7p5
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b4d6977). 0 findings, 0 confirmed, 0 refuted. The engine reviewed 1 file (ToolCatalog.swift). It did not review README.md and plan.md, because no validator matches these files. The .kanban/ files are excluded by .reviewignore. The task had no prior Review Findings section.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T19:51:58.395020+00:00
+- actor: claude-code
+  id: 01m3qbk50q3x4spjhrdq02t7db
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — plan.md, README.md, Tools/ToolCatalog.swift (doc comment)
+    - test: green — swift test 615 tests pass; IntegrationTests build ok
+    - commit: b4d6977
+    - review: clean — zero findings; task moved to done. The engine has no Markdown validator. The orchestrator read the plan.md and README.md diff by hand. The text is correct, except one unclear sentence in §11.1 ("holds the model for each session on it"). Card ^xhc29kx edits §11.1 and gets that sentence.
+  timestamp: 2026-09-29T19:52:14.615646+00:00
+position_column: done
+position_ordinal: f980
 title: Remove the obsolete `wait` tool from plan.md §4.7, §11, §11.1 and README.md
 ---
 ## Why

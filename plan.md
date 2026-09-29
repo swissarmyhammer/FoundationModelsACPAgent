@@ -1421,13 +1421,19 @@ The function returns a `SessionSurface`: the composed tool array for
 down after the session sweep (§10.1, §11.5). **It is `async` because it must
 be.** `withMCP(servers:)` is `async throws` (§2.5). A synchronous function
 cannot call it.
-`MultiTool.Registry.makeSessionTools(librarian:sampleGenerator:)` vends
-**two** tools, in this mount order: `searchTools`, `runCode`. In direct mode
-it vends `runCode` alone. **No `wait` tool is mounted in either mode.** A wait
-inside a submission holds the model for each session on it, so a settled
-background run comes back to the session as mail and starts a new submission
-(§8.0). The catalog appends the standalone `skills` tool (§14.2) to that
-array. Router mounts `ElevatingTool` around each native
+The catalog calls
+`MultiTool.Registry.makeSessionToolsAndStaging(selection:embedder:sampleSession:)`.
+The call vends **two** tools, in this mount order: `searchTools`, `runCode`.
+In direct mode it vends `runCode` alone. The call also vends the
+`RegistryStaging` on which the surface refresher stages a rebuilt registry
+(§11.3, §11.5). `makeSessionTools(selection:embedder:sampleSession:)` takes
+the same parameters and vends only the tools. **No `wait` tool is mounted in
+either mode.** A tool body inside a submission holds the model. Thus it blocks
+each other session that uses the same model. This is why there is no `wait`
+tool. A run that does not settle in its inline grace goes to the background.
+When the run settles, it comes back to the session as mail, and the mail
+starts a new submission (§8.0). The catalog appends the standalone `skills`
+tool (§14.2) to that array. Router mounts `ElevatingTool` around each native
 entry. `ToolInvoker` binds the ambient `ToolContext` around each `tools.*`
 call (Multitool eventplan). We name our construction context
 `CatalogContext`, because Router's `Hosting/` substrate owns the name
@@ -1435,16 +1441,43 @@ call (Multitool eventplan). We name our construction context
 session working directory, the session's additional roots, the decoded config
 section, **and the resolved profile**.
 
-**The profile is load-bearing here, not a convenience.**
-`makeSessionTools(librarian: RoutedLLM?, sampleGenerator: RoutedLLM? = nil)
-throws -> [any Tool]` needs a librarian model, and the host passes
-`profile.flash`. Therefore the catalog receives the resolved profile, not only
-config values. Frontends can register their own capabilities through
-`withCapability(_:)` before the build. Catalog entries also register
-slash-command providers (§14.1, source 2). An entry can pair its capability with a
-`SlashCommandProviding` conformer. The catalog feeds it into the session's
-command registry. The direction rule is absolute: Multitool conforms to the
-leaf's protocol. No code outside this package names this package's types.
+**The profile is load-bearing here, not a convenience.** The signature is:
+
+```swift
+func makeSessionToolsAndStaging(
+    selection: SearchToolsTool.SelectionFactory?,
+    embedder: (any TextEmbedding)? = nil,
+    sampleSession: SearchToolsTool.SessionFactory? = nil
+) throws -> (tools: [any Tool], staging: any RegistryStaging)
+```
+
+- `selection` makes the selection tier of `searchTools` for the ids of the
+  registry. With `nil`, the searcher does retrieval only. The catalog passes
+  `makeSearchSelection(profile:)`. It runs each selection in a guided session
+  on `profile.flash`, the librarian model. This model must not be the model of
+  the session that mounts the tools: `searchTools` is synchronous, and the
+  model queue refuses a wait on the model of the open submission.
+- `embedder` is the embedder that the `searchTools` searcher and the `runCode`
+  did-you-mean ranker use. The catalog passes
+  `ProfileTextEmbedding(embedder: profile.embedding)`. With `nil`, the
+  registry reports `no embedder configured` on each search and ranks by
+  keywords only. The catalog is embedded at the first search, so the call
+  starts no task.
+- `sampleSession` makes the session on which `searchTools` writes a runnable
+  sample snippet. The model of that session also must not be the model of the
+  session that mounts the tools. With `nil`, `searchTools` answers with
+  signatures only. The catalog does not pass this parameter.
+
+Direct mode does not use `selection` or `sampleSession`. The call throws what
+the construction of `SearchToolsTool` throws. The selection runs on
+`profile.flash` and the embedder wraps `profile.embedding`. Therefore the
+catalog receives the resolved profile, not only config values. Frontends can
+register their own capabilities through `withCapability(_:)` before the build.
+Catalog entries also register slash-command providers (§14.1, source 2). An
+entry can pair its capability with a `SlashCommandProviding` conformer. The
+catalog feeds it into the session's command registry. The direction rule is
+absolute: Multitool conforms to the leaf's protocol. No code outside this
+package names this package's types.
 
 ### 11.2 The enable/disable rule
 
