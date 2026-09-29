@@ -101,7 +101,7 @@ struct InterruptTests {
     /// descriptor. The watch waits for that fact and then offers its one
     /// arrival, so order decides the result and no delay does.
     @Test(.timeLimit(.minutes(1)))
-    func aFirstInterruptCancelsTheTurnAndKeepsTheTextThatArrived() async throws {
+    func aFirstInterruptCancelsThePromptAndKeepsTheTextThatArrived() async throws {
         let workspace = makeResolvedDirectory(label: "InterruptTests-first-repo")
         let composed = try await CLICompositionFixture.scripted(
             script: [.textDelta(Self.arrivedText), .hold], label: "InterruptTests-first")
@@ -127,7 +127,7 @@ struct InterruptTests {
     /// `session/cancel` reached the agent before the run ended.
     @Test(.timeLimit(.minutes(1)))
     func theInterruptSendsSessionCancelToTheAgent() async throws {
-        let fixture = try await ScriptedTurnFixture.make(
+        let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.arrivedText), .hold],
             label: "InterruptTests-wire",
             tapsAgentWire: true)
@@ -136,15 +136,15 @@ struct InterruptTests {
                 AgentClientHarness.makePromptRequest(
                     sessionId: fixture.sessionId, text: Self.promptText))
         }
-        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
         await RunPrompt.react(
             to: Self.oneArrival(),
             cancelling: fixture.sessionId,
             over: fixture.harness.connection)
 
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
         let tap = try #require(fixture.harness.agentWireTap)
         let lines = await tap.lines
         let cancels = lines.filter { $0.contains(Self.cancelWireMethod) }
@@ -156,13 +156,13 @@ struct InterruptTests {
     // MARK: - The exit code (cli-plan.md §5.8, §5.9)
 
     /// A cancelled turn exits 4.
-    @Test func aCancelledTurnExitsFour() {
+    @Test func aCancelledPromptExitsFour() {
         #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .cancelled)) == .cancelled)
     }
 
     /// A turn that ran to its end exits 0, so the interrupt code never
     /// leaks into an ordinary run.
-    @Test func aFinishedTurnDoesNotExitFour() {
+    @Test func aFinishedPromptDoesNotExitFour() {
         #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .endTurn)) == .success)
     }
 

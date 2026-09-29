@@ -159,8 +159,8 @@ import Testing
         _ events: [SessionEvent],
         shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
     ) async -> [SessionUpdate] {
-        let (turn, recorder) = makeSinkedTurn(shellSnapshot: shellSnapshot)
-        _ = await turn.drive(events: makeEventStream(events))
+        let (execution, recorder) = makeSinkedExecution(shellSnapshot: shellSnapshot)
+        _ = await execution.drive(events: makeEventStream(events))
         return await recorder.updates
     }
 
@@ -276,7 +276,7 @@ import Testing
     /// A scripted tool turn creates the call with a title, an
     /// `in_progress` status and the parsed raw input, keeps the one
     /// `toolCallId` across the updates, and completes it.
-    @Test func aScriptedToolTurnCreatesWithTitleThenRunsThenCompletes() async throws {
+    @Test func aScriptedToolPromptCreatesWithTitleThenRunsThenCompletes() async throws {
         let updates = await Self.drive([
             .toolCall(
                 id: Self.sdkToolCallId, name: Self.scriptedToolName,
@@ -739,7 +739,7 @@ import Testing
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
         let sessionId = SessionId(rawValue: syntheticSessionIdValue)
         let send: SessionUpdateSink = { update in await connection.post(update, in: sessionId) }
-        let turn = PromptExecution(
+        let execution = PromptExecution(
             sessionId: sessionId,
             promptBlocks: [],
             promptState: PromptStateOwner(send: send),
@@ -747,7 +747,7 @@ import Testing
             firstActivity: nil,
             modelName: syntheticModelName)
 
-        _ = await turn.drive(
+        _ = await execution.drive(
             events: makeEventStream([
                 .toolCall(
                     id: Self.sdkToolCallId, name: Self.scriptedToolName,

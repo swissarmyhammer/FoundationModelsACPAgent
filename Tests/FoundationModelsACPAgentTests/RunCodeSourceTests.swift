@@ -102,15 +102,15 @@ struct RunCodeSourceTests {
     ///   - code: The snippet the scripted call carries.
     ///   - label: The directory label of the calling proof.
     /// - Returns: The recorded lines and events of the session.
-    /// - Throws: Whatever the wiring, the turn, or the recording read
+    /// - Throws: Whatever the wiring, the prompt, or the recording read
     ///   throws.
-    private static func runOneTurn(code: String, label: String) async throws -> RecordedRun {
-        let fixture = try await ScriptedTurnFixture.make(
-            script: try ScriptedTurnFixture.makeToolTurnScript(code: code), label: label)
+    private static func runOnePrompt(code: String, label: String) async throws -> RecordedRun {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: try ScriptedPromptFixture.makeToolPromptScript(code: code), label: label)
         let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
-        _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: fixture.sessionId, count: 1)
         await fixture.close()
@@ -136,7 +136,7 @@ struct RunCodeSourceTests {
         )
         .flatMap { $0.entry?.toolCalls ?? [] }
         let call = try #require(
-            calls.first { $0.toolName == ScriptedTurnFixture.runCodeToolName },
+            calls.first { $0.toolName == ScriptedPromptFixture.runCodeToolName },
             "the recording holds no runCode call")
         let arguments = try #require(
             RecordedTranscriptFile.jsonObject(in: call.argumentsJSON),
@@ -190,8 +190,8 @@ struct RunCodeSourceTests {
     // MARK: - The proofs
 
     @Test("a recorded runCode turn holds the snippet source", .timeLimit(.minutes(1)))
-    func theRecordedTurnHoldsTheSnippetSource() async throws {
-        let run = try await Self.runOneTurn(
+    func theRecordedPromptHoldsTheSnippetSource() async throws {
+        let run = try await Self.runOnePrompt(
             code: Self.workingSnippet, label: "RunCodeSourceTests-source")
 
         let call = try Self.recordedCall(in: run.lines)
@@ -202,7 +202,7 @@ struct RunCodeSourceTests {
     /// line, and the reader can reach the line it names.
     @Test("a failed run reads back its source and its failure", .timeLimit(.minutes(1)))
     func aFailedRunReadsBackItsSourceAndItsFailure() async throws {
-        let run = try await Self.runOneTurn(
+        let run = try await Self.runOnePrompt(
             code: Self.failingSnippet, label: "RunCodeSourceTests-failure")
 
         let call = try Self.recordedCall(in: run.lines)
@@ -224,7 +224,7 @@ struct RunCodeSourceTests {
         let snippet =
             String(repeating: Self.longSnippetLine, count: Self.longSnippetLineCount)
             + Self.workingSnippet
-        let run = try await Self.runOneTurn(code: snippet, label: "RunCodeSourceTests-long")
+        let run = try await Self.runOnePrompt(code: snippet, label: "RunCodeSourceTests-long")
 
         let call = try Self.recordedCall(in: run.lines)
         #expect(!call.source.isEmpty, "the record kept nothing of the snippet")

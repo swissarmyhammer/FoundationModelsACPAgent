@@ -13,7 +13,7 @@ import Testing
 /// through the one generation queue of that entry.
 struct QueuedScriptedFixture {
     /// The wired agent, the harness, and the first session (session A).
-    let base: ScriptedTurnFixture
+    let base: ScriptedPromptFixture
 
     /// The id of the second session (session B), in the same working
     /// directory as session A.
@@ -37,10 +37,10 @@ struct QueuedScriptedFixture {
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
-        script: [ScriptedTurnStep], label: String, workingDirectory: URL? = nil
+        script: [ScriptedPassStep], label: String, workingDirectory: URL? = nil
     ) async throws -> QueuedScriptedFixture {
         let passCounter = ScriptedPassCounter()
-        let base = try await ScriptedTurnFixture.make(
+        let base = try await ScriptedPromptFixture.make(
             loader: StubModelLoader.makeQueuedScriptedLoader(script: script, passCounter: passCounter),
             label: label,
             workingDirectory: workingDirectory)
@@ -74,7 +74,7 @@ struct QueuedScriptedFixture {
         of sessionId: SessionId, count: Int = 1
     ) async throws -> [UpdateSessionNotification] {
         try await Poll.until("idle update \(count) of \(sessionId.rawValue)") {
-            ScriptedTurnFixture.idleCount(in: await updates(of: sessionId)) >= count
+            ScriptedPromptFixture.idleCount(in: await updates(of: sessionId)) >= count
         }
         return await updates(of: sessionId)
     }

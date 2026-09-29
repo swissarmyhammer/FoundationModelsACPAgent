@@ -192,7 +192,7 @@ import Testing
     /// notification, and no session has a pending permission request. The
     /// sandbox is the only gate (plan.md §11.7).
     @Test(.timeLimit(.minutes(1)))
-    func aScriptedToolTurnSendsNoPermissionRequest() async throws {
+    func aScriptedToolPromptSendsNoPermissionRequest() async throws {
         let harness = try await AgentClientHarness.makeRecording()
         let collector = try #require(harness.collector)
         _ = try await harness.connection.initialize(
@@ -204,7 +204,7 @@ import Testing
         let argumentsJSON = try ShellVerbSupport.executeArgumentsJSON(
             command: "printf turn > turn.txt", workingDirectory: root)
         let backend = ScriptedLLMContainer(
-            script: [.toolCall(name: tool.name, argumentsJSON: argumentsJSON), .endTurn]
+            script: [.toolCall(name: tool.name, argumentsJSON: argumentsJSON), .endPass]
         ).makeSession(instructions: nil, tools: [tool])
 
         _ = try await backend.respond(to: "run the command", maxTokens: nil)

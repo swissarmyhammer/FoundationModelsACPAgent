@@ -160,10 +160,10 @@ struct AcpCommandTests {
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-repo")
         let environment = Self.stubEnvironment(configHome: configHome)
 
-        let inProcess = try await ComposedTurnFixture.answerText(
+        let inProcess = try await ComposedPromptFixture.answerText(
             environment: environment, workspace: workspace, prompt: Self.promptText,
             wire: .makeInMemory())
-        let overPipes = try await ComposedTurnFixture.answerText(
+        let overPipes = try await ComposedPromptFixture.answerText(
             environment: environment, workspace: workspace, prompt: Self.promptText,
             wire: .makeStdioPipes())
 
@@ -182,22 +182,22 @@ struct AcpCommandTests {
     /// file, and never `sessions.jsonl`: that index is written on a path
     /// that never touches the recorder.
     @Test(.timeLimit(.minutes(2)))
-    func aTurnOverTheStdioWireRecordsTheSessionTranscript() async throws {
+    func aPromptOverTheStdioWireRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-record-config")
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-record-repo")
         let environment = Self.stubEnvironment(configHome: configHome)
 
-        let turn = try await ComposedTurnFixture.run(
+        let outcome = try await ComposedPromptFixture.run(
             environment: environment, workspace: workspace, prompt: Self.promptText,
             wire: .makeStdioPipes())
 
         let root = try projectRecordingRoot(
             of: workspace, dotfolderName: AgentComposition.dotfolderName)
         let file = RecordedTranscriptFile.fileURL(
-            under: root, sessionId: turn.sessionId.rawValue)
+            under: root, sessionId: outcome.sessionId.rawValue)
         #expect(
             FileManager.default.fileExists(atPath: file.path),
             "no transcript stands at \(file.path)")
-        #expect(!(try RecordedTranscriptFile.lines(under: root, sessionId: turn.sessionId)).isEmpty)
+        #expect(!(try RecordedTranscriptFile.lines(under: root, sessionId: outcome.sessionId)).isEmpty)
     }
 }

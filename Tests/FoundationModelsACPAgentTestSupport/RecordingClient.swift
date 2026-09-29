@@ -4,7 +4,7 @@ import FoundationModelsACPClient
 /// Collects every `session/update` notification in arrival order.
 ///
 /// The container (`ACPSessionState`) is a projection and keeps no
-/// history, so an order proof — turn order, cancellation, replay —
+/// history, so an order proof — prompt order, cancellation, replay —
 /// reads this raw sequence instead (plan.md §20.1).
 public actor UpdateCollector {
     /// The collected notifications, in arrival order.

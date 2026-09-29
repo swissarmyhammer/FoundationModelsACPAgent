@@ -174,13 +174,13 @@ struct EventLineWriterTests {
     ///   - label: The directory label, so a leftover directory says where
     ///     it came from.
     /// - Returns: The stderr text and the stdout bytes of the turn.
-    /// - Throws: Whatever the composition or the turn throws.
-    private static func runScriptedTurn(
+    /// - Throws: Whatever the composition or the prompt throws.
+    private static func runScriptedPrompt(
         at verbosity: EventVerbosity, label: String
     ) async throws -> (standardError: String, standardOutput: Data) {
         let workspace = makeResolvedDirectory(label: "\(label)-repo")
         let composed = try await CLICompositionFixture.scripted(
-            script: toolTurnScript, label: label)
+            script: toolPromptScript, label: label)
         let answer = try AnswerCapture(label: "\(label)-answer")
         let capture = TerminalCapture()
 
@@ -194,13 +194,13 @@ struct EventLineWriterTests {
         return (standardError: capture.text(), standardOutput: try answer.bytes())
     }
 
-    /// The script of a turn that calls one session tool twice and then
+    /// The script of a prompt that calls one session tool twice and then
     /// streams its answer.
-    private static let toolTurnScript: [ScriptedTurnStep] = [
+    private static let toolPromptScript: [ScriptedPassStep] = [
         .toolCall(name: scriptedToolName, argumentsJSON: scriptedToolArguments),
         .toolCall(name: scriptedToolName, argumentsJSON: scriptedToolArguments),
         .textDelta(scriptedAnswer),
-        .endTurn,
+        .endPass,
     ]
 
     // MARK: - The flags select the verbosity (cli-plan.md §5.4)
@@ -381,7 +381,7 @@ struct EventLineWriterTests {
     /// reason stands last. In a pipe, because a person asked to see them.
     @Test(.timeLimit(.minutes(2)))
     func aVerbosePipedRunWritesOneLineForEachEvent() async throws {
-        let streams = try await Self.runScriptedTurn(
+        let streams = try await Self.runScriptedPrompt(
             at: .verbose, label: "EventLineWriterTests-verbose")
 
         let lines = Self.lines(of: streams.standardError)
@@ -405,7 +405,7 @@ struct EventLineWriterTests {
     /// turn that fills the stream under `--verbose`.
     @Test(.timeLimit(.minutes(2)))
     func aPipedRunWithNeitherFlagWritesZeroBytesToStandardError() async throws {
-        let streams = try await Self.runScriptedTurn(
+        let streams = try await Self.runScriptedPrompt(
             at: .normal, label: "EventLineWriterTests-plain")
 
         #expect(streams.standardError.isEmpty)
@@ -418,7 +418,7 @@ struct EventLineWriterTests {
     func standardOutputIsIdenticalAcrossTheFourFlagCombinations() async throws {
         var written: [Data] = []
         for (index, flags) in Self.flagCombinations.enumerated() {
-            let streams = try await Self.runScriptedTurn(
+            let streams = try await Self.runScriptedPrompt(
                 at: EventVerbosity(verbose: flags.verbose, quiet: flags.quiet),
                 label: "EventLineWriterTests-stdout-\(index)")
             written.append(streams.standardOutput)

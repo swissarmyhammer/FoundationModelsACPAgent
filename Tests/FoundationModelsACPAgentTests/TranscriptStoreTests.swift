@@ -255,7 +255,7 @@ import Testing
     }
 
     @Test("a zero-turn session never wrote a transcript, so it does not list")
-    func zeroTurnSessionDoesNotList() async throws {
+    func zeroPromptSessionDoesNotList() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
         let listed = try await Self.makeRecordedSession(in: fixture)

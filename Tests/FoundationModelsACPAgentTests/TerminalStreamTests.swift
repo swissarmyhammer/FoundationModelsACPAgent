@@ -308,14 +308,14 @@ import Testing
     /// - Parameter recorder: The recorder to poll.
     /// - Throws: `CancellationError` when the test is cancelled.
     private static func waitForExit(on recorder: SinkRecorder) async throws {
-        for _ in 0..<ScriptedTurnFixture.maxPollAttempts {
+        for _ in 0..<ScriptedPromptFixture.maxPollAttempts {
             let updates = await recorder.updates
             let exited = terminalUpdates(in: updates).contains { terminal in
                 if case .value = terminal.exitStatus { return true }
                 return false
             }
             if exited { return }
-            try await Task.sleep(for: ScriptedTurnFixture.pollInterval)
+            try await Task.sleep(for: ScriptedPromptFixture.pollInterval)
         }
         Issue.record("the exit update never arrived")
     }
@@ -362,8 +362,8 @@ import Testing
     /// nobody listens to keeps nothing.
     @Test(.timeLimit(.minutes(1)))
     func markingASessionClosedFinishesTheHostOwnedStream() async throws {
-        let fixture = try await ScriptedTurnFixture.make(
-            script: [.endTurn], label: "TerminalStreamTests-close")
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.endPass], label: "TerminalStreamTests-close")
         let stream = try #require(
             await fixture.harness.agent.sessions[fixture.sessionId]?.surface.shellOutput)
         #expect(!stream.isFinished)

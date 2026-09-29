@@ -109,7 +109,7 @@ struct InterruptTests {
     /// not empty, so the chunks that arrived were kept; and not the
     /// whole answer, so the turn really stopped early.
     @Test(.timeLimit(.minutes(3)))
-    func aSignalDuringATurnExitsFourWithTheTextThatArrived() async throws {
+    func aSignalDuringAPromptExitsFourWithTheTextThatArrived() async throws {
         let whole = try await Self.runAgentCLI(signalCount: 0, label: "InterruptTests-whole")
         #expect(whole.exitCode == Self.endTurnExitCode, "stderr: \(whole.standardError)")
 

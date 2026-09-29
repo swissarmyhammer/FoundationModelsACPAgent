@@ -18,8 +18,8 @@ import Synchronization
 //   StubModelLoader (ModelLoader) -> ScriptedLLMContainer
 //     -> ScriptedSessionBackend (LanguageModelSessionBackend)
 
-/// One step of a scripted turn.
-public enum ScriptedTurnStep: Sendable, Equatable {
+/// One step of a scripted pass.
+public enum ScriptedPassStep: Sendable, Equatable {
     /// Streams `text` as one delta.
     case textDelta(String)
 
@@ -31,7 +31,7 @@ public enum ScriptedTurnStep: Sendable, Equatable {
     /// the step before it answered — the `wait` play that names the run
     /// it collects instead of asking for whatever is still running.
     ///
-    /// **Why a scripted turn needs this step.** A `wait` call that names
+    /// **Why a scripted pass needs this step.** A `wait` call that names
     /// no token reads a SNAPSHOT of the runs that have not settled yet,
     /// and a run drops out of that snapshot the moment it settles. So a
     /// no-token play collects a run only while the run is still going,
@@ -45,45 +45,45 @@ public enum ScriptedTurnStep: Sendable, Equatable {
     case collectingToolCall(name: String)
 
     /// Throws the real SDK error `failure` names, so a stop-reason test
-    /// drives the turn owner's error mapping (plan.md §8.2).
+    /// drives the prompt owner's error mapping (plan.md §8.2).
     case fail(ScriptedFailure)
 
-    /// Suspends until the turn's task is cancelled, then throws
-    /// `CancellationError`. A cancellation test holds the turn open with
+    /// Suspends until the pass's task is cancelled, then throws
+    /// `CancellationError`. A cancellation test holds the prompt open with
     /// this step and cancels it from the client end (plan.md §8.6).
     case hold
 
     /// Suspends until the test calls ``ScriptedHold/release()`` on the
-    /// hold, and then plays the next step. When the turn's task is
+    /// hold, and then plays the next step. When the pass's task is
     /// cancelled first, it throws `CancellationError`, as ``hold`` does.
     case holdUntilReleased(ScriptedHold)
 
     /// Writes `text` to the file at `path`, and plays no model output.
     ///
     /// A proof uses it to act BETWEEN two model steps, which is the only
-    /// place a test can act inside a turn: the wire carries a played call
-    /// when the turn's transcript diff goes out, thus nothing of a call is
+    /// place a test can act inside a pass: the wire carries a played call
+    /// when the pass's transcript diff goes out, thus nothing of a call is
     /// observable while the next call runs. The file may be a named pipe,
     /// and a write to one releases a run the step before it is holding.
     case writeFile(path: String, text: String)
 
     /// Plays `steps` in place of this step when the prompt of the pass
     /// contains `marker`, and plays nothing when it does not. An
-    /// ``endTurn`` in `steps` ends the whole pass.
+    /// ``endPass`` in `steps` ends the whole pass.
     ///
     /// Each pass plays the same script. A proof uses this step to give the
     /// passes of one script different plays: each caller prompt carries its
     /// own marker, and an answer that mail starts carries no marker.
-    indirect case onPrompt(containing: String, play: [ScriptedTurnStep])
+    indirect case onPrompt(containing: String, play: [ScriptedPassStep])
 
-    /// Ends the turn. Steps after this one are never emitted.
-    case endTurn
+    /// Ends the pass. Steps after this one are never emitted.
+    case endPass
 }
 
-/// The SDK failure a ``ScriptedTurnStep/fail(_:)`` step throws.
+/// The SDK failure a ``ScriptedPassStep/fail(_:)`` step throws.
 ///
 /// The cases are `Equatable` markers; ``error`` makes the real
-/// `LanguageModelError` value — the macOS 27 vocabulary the turn
+/// `LanguageModelError` value — the macOS 27 vocabulary the prompt
 /// classifier reads — from the public payload initializers.
 public enum ScriptedFailure: Sendable, Equatable {
     /// The context size the scripted overflow reports. The value only
@@ -136,23 +136,23 @@ public actor PromptRecorder {
 /// The failure of a scripted step.
 public enum ScriptedModelError: Error, Equatable {
     /// A `toolCall` step named a tool the session was not handed. The
-    /// turn fails loudly instead of passing while measuring nothing.
+    /// pass fails loudly instead of passing while measuring nothing.
     case unknownTool(String)
 
     /// A `collectingToolCall` step stood after a step whose answer
     /// carried no completion token, so the play has no run to name. The
-    /// turn fails loudly instead of collecting whatever is still
+    /// pass fails loudly instead of collecting whatever is still
     /// running, which is the snapshot read the step exists to avoid.
     case noRunToCollect
 }
 
 /// A session backend that plays a fixed script: text deltas, known
-/// tool calls with fixed arguments, and a turn end.
+/// tool calls with fixed arguments, and a pass end.
 ///
 /// Every generating call plays the same script from the start.
 ///
 /// The synthesized transcript has the shape a real model session's has,
-/// so a recording over it is a recording of a real turn shape (task
+/// so a recording over it is a recording of a real pass shape (task
 /// ^jz016kq):
 ///
 /// - one leading `.instructions` entry, made once and never rewritten,
@@ -163,8 +163,8 @@ public enum ScriptedModelError: Error, Equatable {
 ///   `.toolOutput` entry after it, so Router's transcript diff derives
 ///   the `toolCall` and `toolStatus` session events for the tier-2
 ///   projection proofs (plan.md §8.4, §20.1);
-/// - one `.response` entry after a play that reached the turn end. A
-///   failing or cancelled play appends none, as a real failed turn
+/// - one `.response` entry after a play that reached the pass end. A
+///   failing or cancelled play appends none, as a real failed pass
 ///   records none.
 ///
 /// The entries are SDK `Transcript` values with public initializers,
@@ -206,7 +206,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
 
         /// The text the newest played tool call answered, or `nil`
         /// before the first call answers. A
-        /// ``ScriptedTurnStep/collectingToolCall(name:)`` step reads the
+        /// ``ScriptedPassStep/collectingToolCall(name:)`` step reads the
         /// completion token out of it.
         var latestAnswer: String?
     }
@@ -216,7 +216,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     private let synthesized = Mutex(SynthesizedTranscript())
 
     /// The steps this backend plays, in order.
-    private let script: [ScriptedTurnStep]
+    private let script: [ScriptedPassStep]
 
     /// The tools the session was handed; `toolCall` steps invoke them.
     private let tools: [any Tool]
@@ -256,7 +256,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///   - passCounter: The counter of the plays, or `nil` (the default)
     ///     to count nothing.
     public init(
-        script: [ScriptedTurnStep],
+        script: [ScriptedPassStep],
         tools: [any Tool],
         instructions: String? = nil,
         seededEntries: [Transcript.Entry] = [],
@@ -278,7 +278,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-        try await playTurn(prompt: prompt) { _ in }
+        try await playPass(prompt: prompt) { _ in }
     }
 
     public func respond(
@@ -291,7 +291,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         AsyncThrowingStream { continuation in
             let playback = Task {
                 do {
-                    _ = try await playTurn(prompt: prompt) { continuation.yield($0) }
+                    _ = try await playPass(prompt: prompt) { continuation.yield($0) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -348,22 +348,22 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         Self.scriptedUsage
     }
 
-    /// Plays one whole turn: records the prompt, appends the turn's
-    /// `.prompt` entry, plays the script, and appends the turn's
+    /// Plays one whole pass: records the prompt, appends the pass's
+    /// `.prompt` entry, plays the script, and appends the pass's
     /// `.response` entry.
     ///
     /// A play that throws appends no `.response` entry, because a real
-    /// model session records none for a turn that never answered.
+    /// model session records none for a pass that never answered.
     ///
     /// The pass counter counts the play from its start to its end, also
     /// when the play throws.
     ///
     /// - Parameters:
-    ///   - prompt: The prompt the turn answers.
+    ///   - prompt: The prompt the pass answers.
     ///   - yield: Receives each text delta, in order.
     /// - Returns: The answer text, the deltas joined in order.
     /// - Throws: Whatever ``play(_:prompt:yield:)`` throws.
-    private func playTurn(prompt: String, yield: (String) -> Void) async throws -> String {
+    private func playPass(prompt: String, yield: (String) -> Void) async throws -> String {
         passCounter?.passDidStart()
         defer { passCounter?.passDidEnd() }
         await recorder?.record(prompt: prompt)
@@ -381,7 +381,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// the instructions text, and one tool definition per handed tool.
     ///
     /// The entry is made once, in `init`, and never rewritten. Its
-    /// stability across turns is what task ^jz016kq proves.
+    /// stability across passes is what task ^jz016kq proves.
     ///
     /// - Parameters:
     ///   - instructions: The instructions text, or `nil` for none.
@@ -398,16 +398,16 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 toolDefinitions: tools.map { Transcript.ToolDefinition(tool: $0) }))
     }
 
-    /// Appends the `.prompt` entry of one turn.
+    /// Appends the `.prompt` entry of one pass.
     ///
-    /// - Parameter prompt: The prompt the turn answers.
+    /// - Parameter prompt: The prompt the pass answers.
     private func appendPromptEntry(prompt: String) {
         let entry = Transcript.Entry.prompt(
             Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: prompt))]))
         synthesized.withLock { $0.entries.append(entry) }
     }
 
-    /// Appends the `.response` entry that closes one turn.
+    /// Appends the `.response` entry that closes one pass.
     ///
     /// - Parameter text: The answer text the play produced.
     private func appendResponseEntry(text: String) {
@@ -417,21 +417,21 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     /// Plays `steps`: yields each delta, invokes each scripted tool call,
-    /// plays the steps of each ``ScriptedTurnStep/onPrompt(containing:play:)``
-    /// whose marker `prompt` contains, and stops at the turn end.
+    /// plays the steps of each ``ScriptedPassStep/onPrompt(containing:play:)``
+    /// whose marker `prompt` contains, and stops at the pass end.
     ///
     /// - Parameters:
     ///   - steps: The steps to play, in order.
     ///   - prompt: The prompt the pass answers.
     ///   - yield: Receives each text delta, in order.
-    /// - Returns: `true` when an ``ScriptedTurnStep/endTurn`` step ended
+    /// - Returns: `true` when an ``ScriptedPassStep/endPass`` step ended
     ///   the play, and `false` when the play ran out of steps.
     /// - Throws: ``ScriptedModelError/unknownTool(_:)`` for a tool the
     ///   session was not handed, ``ScriptedModelError/noRunToCollect``
     ///   for a collecting play with no token to name, or the invoked
     ///   tool's own error.
     private func play(
-        _ steps: [ScriptedTurnStep], prompt: String, yield: (String) -> Void
+        _ steps: [ScriptedPassStep], prompt: String, yield: (String) -> Void
     ) async throws -> Bool {
         for step in steps {
             switch step {
@@ -453,7 +453,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 if prompt.contains(marker), try await play(branch, prompt: prompt, yield: yield) {
                     return true
                 }
-            case .endTurn:
+            case .endPass:
                 return true
             }
         }
@@ -474,7 +474,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///
     /// The handle is opened for UPDATING, thus `O_RDWR`. A named pipe
     /// opened that way never waits for the other end, so a step that
-    /// releases a held run through a pipe cannot hang the turn, and the
+    /// releases a held run through a pipe cannot hang the pass, and the
     /// close is still the only writer's close, thus the reading run sees
     /// the end of the stream. A path that holds no file yet is made.
     ///
@@ -609,7 +609,7 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     public var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
 
     /// The script every session plays.
-    public let script: [ScriptedTurnStep]
+    public let script: [ScriptedPassStep]
 
     /// The recorder each session's prompts go to, or `nil` to record
     /// nothing.
@@ -633,7 +633,7 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     ///   - passCounter: The counter of the passes, or `nil` (the default)
     ///     for a model whose calls run directly, with no queue.
     public init(
-        script: [ScriptedTurnStep], recorder: PromptRecorder? = nil,
+        script: [ScriptedPassStep], recorder: PromptRecorder? = nil,
         passCounter: ScriptedPassCounter? = nil
     ) {
         self.script = script
@@ -713,7 +713,7 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
 ///     to record nothing.
 /// - Returns: The loader to inject.
 public func makeScriptedModelLoader(
-    script: [ScriptedTurnStep], recorder: PromptRecorder? = nil
+    script: [ScriptedPassStep], recorder: PromptRecorder? = nil
 ) -> StubModelLoader {
     var loader = StubModelLoader()
     loader.makeLLMContainer = { _ in ScriptedLLMContainer(script: script, recorder: recorder) }

@@ -302,7 +302,7 @@ struct SessionResumeTests {
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         let otherCwd = makeResolvedDirectory(label: "SessionResumeTests-cwd-other")
-        try ScriptedTurnFixture.writeProjectConfig(yaml: sharedRootYAML, under: otherCwd)
+        try ScriptedPromptFixture.writeProjectConfig(yaml: sharedRootYAML, under: otherCwd)
         let requestsBefore = resume.container.backendRequestCount
 
         do {
@@ -434,7 +434,7 @@ struct SessionResumeTests {
 
         // The resumed session answers the next turn.
         try await resume.runPrompt("second question")
-        let texts = ScriptedTurnFixture.agentChunkTexts(in: await resume.fixture.collector.updates)
+        let texts = ScriptedPromptFixture.agentChunkTexts(in: await resume.fixture.collector.updates)
         #expect(texts.contains(ResumeStubBackend.replyPrefix + "second question"))
         await resume.fixture.close()
     }
@@ -500,7 +500,7 @@ struct SessionResumeTests {
         await recorded.close()
         let recordedId = SessionId(rawValue: recorded.id.description)
 
-        try ScriptedTurnFixture.writeProjectConfig(
+        try ScriptedPromptFixture.writeProjectConfig(
             yaml: "tools:\n  shell: false\n", under: resume.fixture.cwd)
         let response = try await resume.fixture.harness.connection.resumeSession(
             ResumeSessionRequest(

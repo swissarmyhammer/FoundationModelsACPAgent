@@ -107,8 +107,8 @@ struct BuiltinCommandsTests {
         ) {
             _ = try await harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: sessionId, text: command))
-            let updates = try await ScriptedTurnFixture.waitForIdle(collector)
-            return (ScriptedTurnFixture.agentText(in: updates), updates)
+            let updates = try await ScriptedPromptFixture.waitForIdle(collector)
+            return (ScriptedPromptFixture.agentText(in: updates), updates)
         }
     }
 
@@ -166,7 +166,7 @@ struct BuiltinCommandsTests {
     /// `/context` before the first model turn streams a line that never
     /// contains the word NaN.
     @Test(.timeLimit(.minutes(1)))
-    func contextBeforeAnyTurnNeverPrintsNaN() async throws {
+    func contextBeforeAnyPromptNeverPrintsNaN() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-context")
         defer { Task { await fixture.close() } }
 
@@ -344,10 +344,10 @@ struct BuiltinCommandsTests {
         for name in Self.builtinNames {
             let fixture = try await Fixture.make(
                 label: "BuiltinCommandsTests-noturn-\(name)",
-                loader: makeScriptedModelLoader(script: [.textDelta(Self.modelSentinel), .endTurn]))
+                loader: makeScriptedModelLoader(script: [.textDelta(Self.modelSentinel), .endPass]))
             let result = try await fixture.runCommand("/\(name)")
             #expect(!result.text.contains(Self.modelSentinel))
-            #expect(ScriptedTurnFixture.idleStopReason(in: result.updates) == .endTurn)
+            #expect(ScriptedPromptFixture.idleStopReason(in: result.updates) == .endTurn)
             await fixture.close()
         }
     }
@@ -371,9 +371,9 @@ enum CompactionStubError: Error, Equatable {
 /// `@unchecked Sendable`: the seed and the two flags are immutable, and the
 /// owning `RoutedSession` actor serializes every call.
 final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Sendable {
-    /// The number of turns the seed transcript holds. More than the fold's
-    /// four-turn recency window, so an old span remains to summarize.
-    private static let seedTurnCount = 8
+    /// The number of passes the seed transcript holds. More than the fold's
+    /// four-pass recency window, so an old span remains to summarize.
+    private static let seedPassCount = 8
 
     /// The number of times the seed phrase repeats in one segment.
     ///
@@ -432,7 +432,7 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
         return loader
     }
 
-    /// The seed transcript: ``seedTurnCount`` prompt/response turns, each
+    /// The seed transcript: ``seedPassCount`` prompt/response passes, each
     /// segment a repeated phrase large enough to keep the recency window over
     /// the fold target.
     ///
@@ -442,7 +442,7 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     static func makeSeedEntries(phraseRepeat: Int) -> [Transcript.Entry] {
         let segmentText = String(repeating: seedPhrase, count: phraseRepeat)
         var entries: [Transcript.Entry] = []
-        for _ in 0..<seedTurnCount {
+        for _ in 0..<seedPassCount {
             entries.append(
                 .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: segmentText))])))
             entries.append(

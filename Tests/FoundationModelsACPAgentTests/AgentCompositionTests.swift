@@ -59,9 +59,9 @@ struct AgentCompositionTests {
         var environment = Self.stubEnvironment
         environment[Self.configHomeVariable] = configHome.path
 
-        let first = try await ComposedTurnFixture.answerText(
+        let first = try await ComposedPromptFixture.answerText(
             environment: environment, workspace: workspace, prompt: Self.promptText)
-        let second = try await ComposedTurnFixture.answerText(
+        let second = try await ComposedPromptFixture.answerText(
             environment: environment, workspace: workspace, prompt: Self.promptText)
 
         #expect(!first.isEmpty)
@@ -85,22 +85,22 @@ struct AgentCompositionTests {
     /// `SessionIndex`, on a path that never touches the recorder, so it
     /// stays correct while every event drops.
     @Test(.timeLimit(.minutes(1)))
-    func theComposedTurnRecordsTheSessionTranscript() async throws {
+    func theComposedPromptRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-record-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-record-repo")
         var environment = Self.stubEnvironment
         environment[Self.configHomeVariable] = configHome.path
 
-        let turn = try await ComposedTurnFixture.run(
+        let outcome = try await ComposedPromptFixture.run(
             environment: environment, workspace: workspace, prompt: Self.promptText)
 
         let root = try Self.recordingRoot(of: workspace)
         let file = RecordedTranscriptFile.fileURL(
-            under: root, sessionId: turn.sessionId.rawValue)
+            under: root, sessionId: outcome.sessionId.rawValue)
         #expect(
             FileManager.default.fileExists(atPath: file.path),
             "no transcript stands at \(file.path)")
-        let lines = try RecordedTranscriptFile.lines(under: root, sessionId: turn.sessionId)
+        let lines = try RecordedTranscriptFile.lines(under: root, sessionId: outcome.sessionId)
         #expect(!lines.isEmpty)
         #expect(lines.contains { $0.kind == TranscriptEvent.Kind.session.rawValue })
     }

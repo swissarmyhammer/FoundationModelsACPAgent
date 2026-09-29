@@ -202,13 +202,13 @@ import Testing
     /// that takes longer comes back as mail when it comes back, and no
     /// proof here scripts a step that waits for it.
     ///
-    /// - Parameter code: The snippet the turn runs.
+    /// - Parameter code: The snippet the prompt runs.
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
-    private static func makeToolTurnScript(code: String) throws -> [ScriptedTurnStep] {
+    private static func makeToolPromptScript(code: String) throws -> [ScriptedPassStep] {
         [
             .toolCall(name: runCodeToolName, argumentsJSON: try runCodeArgumentsJSON(code: code)),
-            .endTurn,
+            .endPass,
         ]
     }
 
@@ -307,15 +307,15 @@ import Testing
     ///   - additionalDirectories: The `session/new` additional roots,
     ///     or `nil` for none.
     ///   - flashContainer: The resident model the flash slot loads, or
-    ///     `nil` to let every slot play the turn script. The
+    ///     `nil` to let every slot play the prompt script. The
     ///     composition proof passes a recording librarian here, because
     ///     `ToolCatalog.sessionSurface` hands `profile.flash` to
     ///     `searchTools`.
     ///   - tapsWire: Whether the harness records the raw wire lines.
-    ///     Only the turn-order proof reads them.
+    ///     Only the prompt-order proof reads them.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
-    private static func runToolTurn(
+    private static func runToolPrompt(
         code: String,
         label: String,
         workingDirectory: URL? = nil,
@@ -324,8 +324,8 @@ import Testing
         additionalDirectories: [AbsolutePath]? = nil,
         flashContainer: (any LoadedLLMContainer)? = nil,
         tapsWire: Bool = false
-    ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
-        let script = try makeToolTurnScript(code: code)
+    ) async throws -> (fixture: ScriptedPromptFixture, updates: [UpdateSessionNotification]) {
+        let script = try makeToolPromptScript(code: code)
         var loader = makeScriptedModelLoader(script: script)
         if let flashContainer {
             let scriptedContainer = loader.makeLLMContainer
@@ -333,7 +333,7 @@ import Testing
                 slot == .flash ? flashContainer : scriptedContainer(slot)
             }
         }
-        let fixture = try await ScriptedTurnFixture.make(
+        let fixture = try await ScriptedPromptFixture.make(
             loader: loader,
             label: label,
             workingDirectory: workingDirectory,
@@ -343,12 +343,12 @@ import Testing
             tapsWire: tapsWire)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.harness.flushPendingChunks()
         return (fixture, updates)
     }
 
-    /// Runs the shared write-then-read-back note turn, with change
+    /// Runs the shared write-then-read-back note prompt, with change
     /// recording on.
     ///
     /// - Parameters:
@@ -356,10 +356,10 @@ import Testing
     ///   - tapsWire: Whether the harness records the raw wire lines.
     /// - Returns: The fixture and the collected sequence at idle.
     /// - Throws: Whatever the wiring or the prompt throws.
-    private static func runNoteTurn(
+    private static func runNotePrompt(
         label: String, tapsWire: Bool = false
-    ) async throws -> (fixture: ScriptedTurnFixture, updates: [UpdateSessionNotification]) {
-        try await runToolTurn(
+    ) async throws -> (fixture: ScriptedPromptFixture, updates: [UpdateSessionNotification]) {
+        try await runToolPrompt(
             code: noteCode,
             label: label,
             projectConfigYAML: recordsChangesConfigYAML,
@@ -517,7 +517,7 @@ import Testing
     /// - Throws: When the session or the call is absent.
     @MainActor
     private static func accumulatedToolCall(
-        of fixture: ScriptedTurnFixture, id: String
+        of fixture: ScriptedPromptFixture, id: String
     ) throws -> ToolCallUpdate {
         let state = try #require(fixture.harness.client.sessions[fixture.sessionId])
         return try #require(state.toolCalls[ToolCallId(rawValue: id)])
@@ -613,7 +613,7 @@ import Testing
     func theCatalogComposesTheSurfaceFromTheLoadedConfiguration() async throws {
         let cwd = makeResolvedDirectory(label: "TierTwoTests-composition-repo")
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
-        try ScriptedTurnFixture.writeProjectConfig(
+        try ScriptedPromptFixture.writeProjectConfig(
             yaml: """
             tools:
               mcp:
@@ -671,14 +671,14 @@ import Testing
         try outsideSecret.write(to: outsideFile, atomically: true, encoding: .utf8)
         let librarianRecorder = PromptRecorder()
 
-        let (fixture, updates) = try await runToolTurn(
+        let (fixture, updates) = try await runToolPrompt(
             code: try compositionCode(
                 insidePath: insideFile.path, outsidePath: outsideFile.path),
             label: "TierTwoTests-composition-session",
             projectConfigYAML: readOnlyFilesConfigYAML,
             additionalDirectories: [AbsolutePath(rawValue: additionalRoot.path)],
             flashContainer: ScriptedLLMContainer(
-                script: [.textDelta(librarianSelectionJSON), .endTurn],
+                script: [.textDelta(librarianSelectionJSON), .endPass],
                 recorder: librarianRecorder))
         let answerText = try snippetAnswerText(in: updates)
         let librarianPrompts = await librarianRecorder.prompts
@@ -708,7 +708,7 @@ import Testing
         // `searchTools` reports the verb that answer named.
         #expect(librarianPrompts.contains { $0.contains(librarianTask) })
         #expect(answerText.contains(executeVerbPath))
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     // MARK: - Proof 3: projection fidelity
@@ -725,7 +725,7 @@ import Testing
     /// `runCode` call's own answer carries the written line.
     @Test(.timeLimit(.minutes(1)))
     func aRealToolCallProjectsAStableUpsertLifecycle() async throws {
-        let (fixture, updates) = try await Self.runNoteTurn(label: "TierTwoTests-projection")
+        let (fixture, updates) = try await Self.runNotePrompt(label: "TierTwoTests-projection")
         let runCodeUpdates = Self.toolCallUpdates(in: updates, for: Self.runCodeCallId)
         let accumulated = try await Self.accumulatedToolCall(of: fixture, id: Self.runCodeCallId)
         let noteURL = fixture.cwd.appendingPathComponent(Self.noteFileName)
@@ -785,8 +785,8 @@ import Testing
     /// `tool_call_update` also satisfies it, and it says nothing about
     /// the update kinds the ordered claim leaves out.
     @Test(.timeLimit(.minutes(1)))
-    func theToolTurnKeepsTheWireOrder() async throws {
-        let (fixture, updates) = try await Self.runNoteTurn(
+    func theToolPromptKeepsTheWireOrder() async throws {
+        let (fixture, updates) = try await Self.runNotePrompt(
             label: "TierTwoTests-order", tapsWire: true)
         let wireTap = try #require(fixture.harness.wireTap)
         let wireLines = await wireTap.lines
@@ -802,8 +802,8 @@ import Testing
         expectOrderedSubsequence(
             [Self.userMessageMarker, "running", "tool_call_update", "idle"], in: markers)
         #expect(markers.first == Self.userMessageMarker)
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
             Issue.record("expected idle as the terminator, got \(updates)")
         }
@@ -821,7 +821,7 @@ import Testing
             return (typeof tools.shell) + "|" + (typeof tools.files);
             """
 
-        let (fixture, updates) = try await Self.runToolTurn(
+        let (fixture, updates) = try await Self.runToolPrompt(
             code: code,
             label: "TierTwoTests-disable",
             projectConfigYAML: "tools:\n  shell: false\n")
@@ -834,7 +834,7 @@ import Testing
         #expect(!updates.contains { $0.update.kind == .terminalOutputChunk })
         #expect(!updates.contains { $0.update.kind == .terminalUpdate })
         #expect(surface?.shellOutput == nil)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     // MARK: - Proof 6: MCP through the shipped ScriptedServer
@@ -869,7 +869,7 @@ import Testing
         let echoPath = "\(Self.mcpServerName).\(ScriptedServer.echoToolName)"
         let prefixedPath = "mcp.\(ScriptedServer.echoToolName)"
 
-        let (fixture, updates) = try await Self.runToolTurn(
+        let (fixture, updates) = try await Self.runToolPrompt(
             code: try Self.mcpCode(echoPath: echoPath, prefixedPath: prefixedPath),
             label: "TierTwoTests-mcp",
             mcpServers: [server])
@@ -906,7 +906,7 @@ import Testing
         // assertion.
         let accumulatedText = try Self.answerText(of: accumulated)
         #expect(accumulatedText.contains(Self.echoPing))
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
 }

@@ -121,10 +121,10 @@ struct RunCommandTests {
     /// produced, and ends on `end_turn`. No subprocess and no pipe: one
     /// process holds the agent connection and the client connection.
     @Test(.timeLimit(.minutes(1)))
-    func aTurnOverTheInProcessPairGivesTheScriptedAnswer() async throws {
+    func aPromptOverTheInProcessPairGivesTheScriptedAnswer() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-turn-repo")
         let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.scriptedAnswer), .endTurn], label: "RunCommandTests-turn")
+            script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-turn")
         let capture = try AnswerCapture(label: "RunCommandTests-turn-answer")
 
         let result = try await RunPrompt.answer(
@@ -143,10 +143,10 @@ struct RunCommandTests {
     /// not one chunk. This is what `acp-agent run "hi" > out.txt` puts
     /// in the file.
     @Test(.timeLimit(.minutes(1)))
-    func theTurnWritesTheScriptedChunksByteForByte() async throws {
+    func thePromptWritesTheScriptedChunksByteForByte() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-bytes-repo")
         let composed = try await CLICompositionFixture.scripted(
-            script: Self.scriptedChunks.map { .textDelta($0) } + [.endTurn],
+            script: Self.scriptedChunks.map { .textDelta($0) } + [.endPass],
             label: "RunCommandTests-bytes")
         let capture = try AnswerCapture(label: "RunCommandTests-bytes-answer")
 
@@ -180,7 +180,7 @@ struct RunCommandTests {
     /// directory of its own — it reads the stored one, because the stored
     /// session already has one and it wins.
     @Test(.timeLimit(.minutes(2)))
-    func resumeRunsTheSecondTurnInTheRecordedSession() async throws {
+    func resumeRunsTheSecondPromptInTheRecordedSession() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-resume-repo")
         let composed = try await Self.resumableComposition(label: "RunCommandTests-resume")
         let first = try AnswerCapture(label: "RunCommandTests-resume-first")
@@ -208,7 +208,7 @@ struct RunCommandTests {
     @Test(.timeLimit(.minutes(1)))
     func resumeOfAnUnlistedSessionIsRefused() async throws {
         let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.scriptedAnswer), .endTurn],
+            script: [.textDelta(Self.scriptedAnswer), .endPass],
             label: "RunCommandTests-unlisted")
         let unlisted = SessionId(rawValue: ULID().ulidString)
         let capture = try AnswerCapture(label: "RunCommandTests-unlisted-answer")

@@ -9,15 +9,15 @@ import Testing
 
 // MARK: - The shared scripted wire fixture (plan.md §20.1)
 //
-// `PromptTurnTests` and `CancellationTests` drive the same wiring: a
+// `PromptExecutionTests` and `CancellationTests` drive the same wiring: a
 // scripted agent, a recording harness, an initialized wire, and one
 // open session. This fixture owns that wiring, the collector waits,
 // and the sequence readers, so a suite adds assertions and does not
 // copy the setup.
 
-/// One wired prompt-turn fixture: a scripted agent, a recording
+/// One wired prompt fixture: a scripted agent, a recording
 /// harness, an initialized wire, and one new session in `cwd`.
-struct ScriptedTurnFixture {
+struct ScriptedPromptFixture {
     /// The number of milliseconds in ``pollInterval``.
     private static let pollIntervalMilliseconds = 20
 
@@ -52,7 +52,7 @@ struct ScriptedTurnFixture {
     /// session.
     ///
     /// - Parameters:
-    ///   - script: The steps the model plays on every turn.
+    ///   - script: The steps the model plays on every pass.
     ///   - label: The directory label of the calling suite, so a
     ///     leftover directory says where it came from.
     ///   - capabilities: The client capabilities `initialize` announces.
@@ -73,7 +73,7 @@ struct ScriptedTurnFixture {
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
-        script: [ScriptedTurnStep],
+        script: [ScriptedPassStep],
         label: String,
         capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
         workingDirectory: URL? = nil,
@@ -81,7 +81,7 @@ struct ScriptedTurnFixture {
         mcpServers: [MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
         tapsAgentWire: Bool = false
-    ) async throws -> ScriptedTurnFixture {
+    ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
             label: label,
@@ -132,7 +132,7 @@ struct ScriptedTurnFixture {
         additionalDirectories: [AbsolutePath]? = nil,
         tapsWire: Bool = false,
         tapsAgentWire: Bool = false
-    ) async throws -> ScriptedTurnFixture {
+    ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
         if let projectConfigYAML {
@@ -154,7 +154,7 @@ struct ScriptedTurnFixture {
                 additionalDirectories: additionalDirectories,
                 mcpServers: mcpServers))
         let collector = try #require(harness.collector)
-        return ScriptedTurnFixture(
+        return ScriptedPromptFixture(
             harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd,
             newSessionConfigOptions: response.configOptions)
     }
@@ -174,21 +174,21 @@ struct ScriptedTurnFixture {
 
     // MARK: - Script builders
 
-    /// The name of the code-mode session tool a scripted tool turn invokes.
+    /// The name of the code-mode session tool a scripted tool prompt invokes.
     static let runCodeToolName = "runCode"
 
-    /// The script of one tool turn: `runCode` with `code`, then the end.
+    /// The script of one tool prompt: `runCode` with `code`, then the end.
     ///
     /// A snippet that settles inside the inline grace of `runCode` answers
     /// in the `runCode` call itself. A longer run comes back as mail when
     /// it comes back, and the script waits for nothing.
     ///
-    /// - Parameter code: The snippet the turn runs.
+    /// - Parameter code: The snippet the prompt runs.
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
-    static func makeToolTurnScript(code: String) throws -> [ScriptedTurnStep] {
+    static func makeToolPromptScript(code: String) throws -> [ScriptedPassStep] {
         let arguments = String(decoding: try JSONEncoder().encode(["code": code]), as: UTF8.self)
-        return [.toolCall(name: runCodeToolName, argumentsJSON: arguments), .endTurn]
+        return [.toolCall(name: runCodeToolName, argumentsJSON: arguments), .endPass]
     }
 
     // MARK: - Waits
@@ -222,7 +222,7 @@ struct ScriptedTurnFixture {
     ///
     /// - Parameters:
     ///   - collector: The collector to poll.
-    ///   - count: The number of turn ends to wait for.
+    ///   - count: The number of prompt ends to wait for.
     /// - Returns: The collected sequence.
     /// - Throws: `CancellationError` when the test is cancelled.
     static func waitForIdle(
@@ -233,7 +233,7 @@ struct ScriptedTurnFixture {
         }
     }
 
-    /// Waits for the running state update that starts a turn.
+    /// Waits for the running state update that starts a prompt.
     ///
     /// - Parameter collector: The collector to poll.
     /// - Throws: `CancellationError` when the test is cancelled.
@@ -247,7 +247,7 @@ struct ScriptedTurnFixture {
     }
 
     /// Polls the agent until the session accepts a new prompt again.
-    /// The idle notification goes out before the agent clears the turn,
+    /// The idle notification goes out before the agent clears the prompt,
     /// so a follow-up prompt waits here first.
     ///
     /// - Parameters:
@@ -268,7 +268,7 @@ struct ScriptedTurnFixture {
 
     /// Polls the client container until the accumulated tool call
     /// carries the settled `completed` status (§8.4, §11.6). The
-    /// settlement rides `runSettled` and can land after the turn's
+    /// settlement rides `runSettled` and can land after the prompt's
     /// idle and after the terminal exit report, so a reader of
     /// `ACPSessionState.toolCalls` waits here first, never sleeps
     /// for it.

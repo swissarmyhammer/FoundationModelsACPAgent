@@ -20,11 +20,11 @@ import Testing
     /// The SDK tool-call id the synthetic tool events carry.
     private static let toolCallId = "call-1"
 
-    /// The kind sequence of one uncancelled scripted turn: the echo,
+    /// The kind sequence of one uncancelled scripted prompt: the echo,
     /// the first-activity info update, `running`, one chunk, and the
     /// `idle` terminator. The no-op cancel tests compare against it, so
     /// a cancel that leaks an update or a state change is visible.
-    private static let uncancelledTurnKinds: [SessionUpdateKind] = [
+    private static let uncancelledPromptKinds: [SessionUpdateKind] = [
         .userMessage, .sessionInfoUpdate, .stateUpdate,
         .agentMessageChunk, .stateUpdate,
     ]
@@ -37,9 +37,9 @@ import Testing
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
-        script: [ScriptedTurnStep]
-    ) async throws -> ScriptedTurnFixture {
-        try await ScriptedTurnFixture.make(script: script, label: "CancellationTests")
+        script: [ScriptedPassStep]
+    ) async throws -> ScriptedPromptFixture {
+        try await ScriptedPromptFixture.make(script: script, label: "CancellationTests")
     }
 
     /// The prompt request with one text block and this suite's text.
@@ -58,24 +58,24 @@ import Testing
     /// JSON-RPC error and never to `refusal` — and the idle update is
     /// strictly the last update: nothing of any kind arrives after it.
     @Test(.timeLimit(.minutes(1)))
-    func cancellingALongRunningTurnMakesIdleCancelledTheLastUpdate() async throws {
+    func cancellingALongRunningPromptMakesIdleCancelledTheLastUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
-        _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         // The agent clears the finished turn after the idle went out,
         // so the collector holds everything the turn sent once the
         // session is available again.
-        try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         let updates = await fixture.collector.updates
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
         let last = try #require(updates.last)
         #expect(
             isIdleState(last.update),
@@ -88,10 +88,10 @@ import Testing
     /// a real answer still ends `idle` with `cancelled`, never
     /// `end_turn`: the client asked to cancel, and the recorded request
     /// wins over the stream's clean finish.
-    @Test func aTurnThatIgnoresCancellationStillEndsIdleCancelled() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        await turn.promptState.noteCancelRequested()
-        let reason = await turn.drive(
+    @Test func aPromptThatIgnoresCancellationStillEndsIdleCancelled() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        await execution.promptState.noteCancelRequested()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .textDelta("a full answer"),
                 makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
@@ -99,7 +99,7 @@ import Testing
         let updates = await recorder.updates
 
         #expect(reason == .cancelled)
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         let idle = try #require(
             idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
         #expect(idle.stopReason == .cancelled)
@@ -109,9 +109,9 @@ import Testing
     /// terminator: a terminal tool status that arrives after the cancel
     /// request is still sent, and it never holds the idle update.
     @Test func postCancelUpdatesGoOutBeforeTheIdleTerminator() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        await turn.promptState.noteCancelRequested()
-        _ = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        await execution.promptState.noteCancelRequested()
+        _ = await execution.drive(
             events: makeEventStream([
                 .toolCall(id: Self.toolCallId, name: "shell", argumentsJSON: "{}"),
                 .toolStatus(id: Self.toolCallId, status: .completed, summary: "done", output: nil),
@@ -143,7 +143,7 @@ import Testing
         hold: ScriptedHold
     ) async throws -> QueuedScriptedFixture {
         let fixture = try await QueuedScriptedFixture.make(
-            script: [.holdUntilReleased(hold), .textDelta("released"), .endTurn],
+            script: [.holdUntilReleased(hold), .textDelta("released"), .endPass],
             label: "CancellationTests-queue")
         let counter = fixture.passCounter
         try await fixture.prompt(fixture.firstSessionId, text: promptText)
@@ -173,14 +173,14 @@ import Testing
 
         hold.release()
         let updatesOfA = try await fixture.waitForIdle(of: sessionA)
-        try await ScriptedTurnFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
         try await fixture.prompt(sessionB, text: Self.promptText)
         let updatesOfB = try await fixture.waitForIdle(of: sessionB, count: 2)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: cancelledUpdatesOfB) == .cancelled)
-        #expect(ScriptedTurnFixture.idleCount(in: updatesOfAWhileHeld) == 0)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: cancelledUpdatesOfB) == .cancelled)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfAWhileHeld) == 0)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
         #expect(idleState(of: updatesOfB.last?.update)?.stopReason == .endTurn)
     }
 
@@ -204,9 +204,9 @@ import Testing
         let updatesOfA = try await fixture.waitForIdle(of: sessionA)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfB) == .cancelled)
-        #expect(ScriptedTurnFixture.idleCount(in: updatesOfAWhileHeld) == 0)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .cancelled)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfAWhileHeld) == 0)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }
 
     // MARK: - An answer that mail starts, and that waits for the model queue (§10.1)
@@ -242,16 +242,16 @@ import Testing
     /// - Parameter hold: The hold of the pass of session A.
     /// - Returns: The script.
     /// - Throws: When the arguments of the `runCode` call cannot be encoded.
-    private static func makeMailScript(hold: ScriptedHold) throws -> [ScriptedTurnStep] {
+    private static func makeMailScript(hold: ScriptedHold) throws -> [ScriptedPassStep] {
         [
             .onPrompt(
                 containing: startRunMarker,
-                play: try ScriptedTurnFixture.makeToolTurnScript(code: pipeReadingSnippet)),
+                play: try ScriptedPromptFixture.makeToolPromptScript(code: pipeReadingSnippet)),
             .onPrompt(
                 containing: holdModelMarker,
-                play: [.holdUntilReleased(hold), .textDelta("released"), .endTurn]),
+                play: [.holdUntilReleased(hold), .textDelta("released"), .endPass]),
             .textDelta("the mail was read"),
-            .endTurn,
+            .endPass,
         ]
     }
 
@@ -272,7 +272,7 @@ import Testing
 
         try await fixture.prompt(sessionB, text: Self.startRunMarker)
         _ = try await fixture.waitForIdle(of: sessionB)
-        try await ScriptedTurnFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
         try await fixture.prompt(sessionA, text: Self.holdModelMarker)
         try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
         try await NamedPipe.write(
@@ -289,8 +289,8 @@ import Testing
         let updatesOfA = try await fixture.waitForIdle(of: sessionA)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleCount(in: updatesOfAWhileHeld) == 0)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfA) == .endTurn)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfAWhileHeld) == 0)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }
 
     // MARK: - The no-op cancels (§8.6, §10.1)
@@ -300,17 +300,17 @@ import Testing
     /// `end_turn`, so the ignored cancel did not leak into it.
     @Test(.timeLimit(.minutes(1)))
     func cancelOfAnIdleSessionIsANoOpWithNoStateChange() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("hello"), .endTurn])
+        let fixture = try await Self.makeFixture(script: [.textDelta("hello"), .endPass])
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
 
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(turnUpdates(in: updates).map(\.update.kind) == Self.uncancelledTurnKinds)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(promptUpdates(in: updates).map(\.update.kind) == Self.uncancelledPromptKinds)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     /// A cancel with an unknown `sessionId` is logged and ignored: it
@@ -318,17 +318,17 @@ import Testing
     /// of any kind goes out for it.
     @Test(.timeLimit(.minutes(1)))
     func cancelOfAnUnknownSessionIdIsIgnoredAndSendsNoUpdate() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("hello"), .endTurn])
+        let fixture = try await Self.makeFixture(script: [.textDelta("hello"), .endPass])
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: SessionId(rawValue: syntheticSessionIdValue)))
 
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(turnUpdates(in: updates).map(\.update.kind) == Self.uncancelledTurnKinds)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(promptUpdates(in: updates).map(\.update.kind) == Self.uncancelledPromptKinds)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     /// A cancel for a closed session is logged and ignored: no error
@@ -337,14 +337,14 @@ import Testing
     /// the collector.
     @Test(.timeLimit(.minutes(1)))
     func cancelOfAClosedSessionIsIgnoredAndSendsNoUpdate() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
         await fixture.harness.agent.markSessionClosed(fixture.sessionId)
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
 
         _ = try await fixture.harness.connection.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
-        #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
+        #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }
 }

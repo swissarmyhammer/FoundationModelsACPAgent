@@ -42,7 +42,7 @@ final class ResumeStubBackend: LanguageModelSessionBackend {
     }
 
     func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-        appendTurn(prompt: prompt)
+        appendPass(prompt: prompt)
     }
 
     func respond(
@@ -53,7 +53,7 @@ final class ResumeStubBackend: LanguageModelSessionBackend {
 
     func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
-            continuation.yield(appendTurn(prompt: prompt))
+            continuation.yield(appendPass(prompt: prompt))
             continuation.finish()
         }
     }
@@ -72,9 +72,9 @@ final class ResumeStubBackend: LanguageModelSessionBackend {
 
     /// Appends the three SDK entries of one turn and returns the reply.
     ///
-    /// - Parameter prompt: The prompt the turn answers.
+    /// - Parameter prompt: The prompt the pass answers.
     /// - Returns: The reply text.
-    private func appendTurn(prompt: String) -> String {
+    private func appendPass(prompt: String) -> String {
         let reply = Self.replyPrefix + prompt
         entries.withLock { current in
             current.append(
@@ -195,15 +195,15 @@ struct RosterNameTool: FoundationModels.Tool {
 /// harness around an agent whose sessions it backs, and the resolved
 /// project recording root.
 struct ResumeSessionFixture {
-    /// The wired scripted-turn fixture.
-    let fixture: ScriptedTurnFixture
+    /// The wired scripted-prompt fixture.
+    let fixture: ScriptedPromptFixture
 
     /// The container every session backend of the agent comes from.
     let container: ResumeRecordingContainer
 
     /// The number of idle updates the fixture has waited for so far.
     /// Each ``runPrompt(_:)`` waits for one more.
-    private var completedTurnCount = 0
+    private var completedPromptCount = 0
 
     /// The default project recording root of the fixture's cwd:
     /// `<cwd>/.<name>/transcripts/`.
@@ -235,7 +235,7 @@ struct ResumeSessionFixture {
         let container = ResumeRecordingContainer()
         var loader = StubModelLoader()
         loader.makeLLMContainer = { _ in container }
-        let fixture = try await ScriptedTurnFixture.make(
+        let fixture = try await ScriptedPromptFixture.make(
             loader: loader,
             label: label,
             workingDirectory: workingDirectory,
@@ -263,10 +263,10 @@ struct ResumeSessionFixture {
     mutating func runPrompt(_ text: String) async throws {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
-        completedTurnCount += 1
-        _ = try await ScriptedTurnFixture.waitForIdle(
-            fixture.collector, count: completedTurnCount)
-        try await ScriptedTurnFixture.waitForAvailability(
+        completedPromptCount += 1
+        _ = try await ScriptedPromptFixture.waitForIdle(
+            fixture.collector, count: completedPromptCount)
+        try await ScriptedPromptFixture.waitForAvailability(
             fixture.harness.agent, fixture.sessionId)
     }
 
@@ -296,13 +296,13 @@ struct ResumeSessionFixture {
     static func waitForRecordedResponses(
         under root: URL, sessionId: SessionId, count: Int
     ) async throws {
-        for _ in 0..<ScriptedTurnFixture.maxPollAttempts {
+        for _ in 0..<ScriptedPromptFixture.maxPollAttempts {
             let responses = try recordedEvents(under: root, sessionId: sessionId)
                 .count { $0.kind == .response }
             if responses >= count {
                 return
             }
-            try await Task.sleep(for: ScriptedTurnFixture.pollInterval)
+            try await Task.sleep(for: ScriptedPromptFixture.pollInterval)
         }
         Issue.record("the recording never reached \(count) response event(s)")
     }

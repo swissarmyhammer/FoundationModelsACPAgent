@@ -185,15 +185,15 @@ import Testing
     /// - Returns: The text the tool call carried to the client.
     /// - Throws: Whatever the wiring or the prompt throws.
     static func runSkillsCall(label: String, argumentsJSON: String) async throws -> String {
-        let fixture = try await ScriptedTurnFixture.make(
-            script: [.toolCall(name: "skills", argumentsJSON: argumentsJSON), .endTurn],
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.toolCall(name: "skills", argumentsJSON: argumentsJSON), .endPass],
             label: "SkillsLibraryTests-\(label)",
             workingDirectory: try Self.makeWorkspace(label: label),
             projectConfigYAML: "tools:\n  shell: false\n  codeContext: false\n")
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: fixture.sessionId, text: "load a skill"))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.harness.flushPendingChunks()
         return Self.toolCallText(in: updates)
     }

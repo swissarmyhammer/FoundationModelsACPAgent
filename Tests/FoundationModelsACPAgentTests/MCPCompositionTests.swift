@@ -438,7 +438,7 @@ import Testing
         }
     }
 
-    @Test func aToolListChangeIsStagedAndAppliesOnlyAtTheNextTurnBoundary() async throws {
+    @Test func aToolListChangeIsStagedAndAppliesOnlyAtTheNextPromptBoundary() async throws {
         // The server runs in process behind a transport factory, so the case
         // holds it and moves its catalog itself. No timer of the server, and
         // so no wall clock, decides what this case reads.

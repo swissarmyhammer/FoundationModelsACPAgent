@@ -8,10 +8,10 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The prompt turn (plan.md §8.1–§8.3, §10.1): the acknowledge-then-notify
-/// order, the `user_message` echo, the turn-state machine, the stop-reason
+/// The prompt execution (plan.md §8.1–§8.3, §10.1): the acknowledge-then-notify
+/// order, the `user_message` echo, the prompt-state machine, the stop-reason
 /// mapping, and the first-activity index record.
-@Suite struct PromptTurnTests {
+@Suite struct PromptExecutionTests {
     // MARK: - Constants
 
     /// The first prompt line. It becomes the session title.
@@ -24,7 +24,7 @@ import Testing
     // MARK: - Harness
     //
     // The wired fixture, the collector waits, and the sequence readers
-    // live in `Support/ScriptedTurnFixture.swift`, shared with
+    // live in `Support/ScriptedPromptFixture.swift`, shared with
     // `CancellationTests`.
 
     /// Wires the shared fixture with this suite's directory label.
@@ -33,9 +33,9 @@ import Testing
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
-        script: [ScriptedTurnStep]
-    ) async throws -> ScriptedTurnFixture {
-        try await ScriptedTurnFixture.make(script: script, label: "PromptTurnTests")
+        script: [ScriptedPassStep]
+    ) async throws -> ScriptedPromptFixture {
+        try await ScriptedPromptFixture.make(script: script, label: "PromptExecutionTests")
     }
 
     /// The prompt request with one text block and this suite's default
@@ -56,7 +56,7 @@ import Testing
     /// - Parameter fixture: The fixture whose session is open.
     /// - Returns: The `sessions.jsonl` index.
     /// - Throws: When the session is not in the agent's table.
-    private static func sessionIndex(of fixture: ScriptedTurnFixture) async throws -> SessionIndex {
+    private static func sessionIndex(of fixture: ScriptedPromptFixture) async throws -> SessionIndex {
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
         return SessionIndex(root: entry.transcriptDirectory.deletingLastPathComponent())
     }
@@ -84,13 +84,13 @@ import Testing
     /// `end_turn`. The echo owns the message identity (§8.3): the agent
     /// chunks ride one different id.
     @Test(.timeLimit(.minutes(1)))
-    func aScriptedTurnStreamsTheAcknowledgeThenNotifyOrder() async throws {
+    func aScriptedPromptStreamsTheAcknowledgeThenNotifyOrder() async throws {
         let fixture = try await Self.makeFixture(script: [
-            .textDelta("Hello "), .textDelta("there."), .endTurn,
+            .textDelta("Hello "), .textDelta("there."), .endPass,
         ])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = turnUpdates(in: try await ScriptedTurnFixture.waitForIdle(fixture.collector))
+        let updates = promptUpdates(in: try await ScriptedPromptFixture.waitForIdle(fixture.collector))
         await fixture.close()
 
         #expect(
@@ -116,8 +116,8 @@ import Testing
         #expect(
             isRunningState(updates[2].update),
             "expected running before the turn output, got \(updates[2])")
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
             Issue.record("expected idle as the terminator")
         }
@@ -134,7 +134,7 @@ import Testing
             try await fixture.harness.connection.prompt(
                 Self.makePromptRequest(sessionId: fixture.sessionId))
         }
-        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
         do {
             _ = try await fixture.harness.connection.prompt(
@@ -147,12 +147,12 @@ import Testing
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         _ = try await first.value
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
         #expect(updates.count { $0.update.kind == .userMessage } == 1)
     }
 
@@ -160,44 +160,44 @@ import Testing
 
     /// A guardrail refusal ends the turn as `idle` with `refusal`.
     @Test(.timeLimit(.minutes(1)))
-    func aGuardrailRefusalEndsTheTurnWithTheRefusalStopReason() async throws {
+    func aGuardrailRefusalEndsThePromptWithTheRefusalStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.fail(.guardrailViolation)])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .refusal)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .refusal)
     }
 
     /// A context overflow ends the turn as `idle` with `max_tokens`.
     @Test(.timeLimit(.minutes(1)))
-    func aContextOverflowEndsTheTurnWithTheMaxTokensStopReason() async throws {
+    func aContextOverflowEndsThePromptWithTheMaxTokensStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.fail(.exceededContextWindow)])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .maxTokens)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .maxTokens)
     }
 
     /// A `session/cancel` during a held turn surfaces as `idle` with
     /// `cancelled`, not as an error (§8.6).
     @Test(.timeLimit(.minutes(1)))
-    func aCancelledTurnEndsIdleWithTheCancelledStopReason() async throws {
+    func aCancelledPromptEndsIdleWithTheCancelledStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("thinking"), .hold])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
     }
 
     /// The `PromptStop` to `StopReason` function is total, including the
@@ -257,8 +257,8 @@ import Testing
         let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.25)
         let second = TokenUsage(tokensIn: 150, tokensOut: 30, contextFill: 0.5)
         let chain = TokenUsage(tokensIn: 250, tokensOut: 50, contextFill: 0.5)
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 makeSubmissionStarted(),
                 .textDelta("first attempt"),
@@ -281,7 +281,7 @@ import Testing
 
         #expect(reason == .endTurn)
         #expect(updates.count { isRunningState($0) } == 1)
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         let idle = try #require(
             idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
         #expect(idle.stopReason == .endTurn)
@@ -293,8 +293,8 @@ import Testing
     /// `textReset` discards the collected text as a whole-message
     /// replace on the same message id, never as another chunk (§8.3).
     @Test func textResetSendsAWholeMessageReplaceOnTheSameMessageId() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        _ = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        _ = await execution.drive(
             events: makeEventStream([
                 .textDelta("draft"), .textReset, .textDelta("final"),
             ]))
@@ -319,8 +319,8 @@ import Testing
     /// still share one message id, and the turn still ends with one
     /// `idle`.
     @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .textDelta("a"),
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
@@ -346,8 +346,8 @@ import Testing
     /// The usage of every `submissionEnded` is summed and reported one
     /// time, before the idle terminator (§8.1).
     @Test func submissionUsageIsSummedIntoOneUsageUpdate() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        _ = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        _ = await execution.drive(
             events: makeEventStream([
                 makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
                 makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
@@ -367,13 +367,13 @@ import Testing
     /// A thrown `CancellationError` maps to the `cancelled` stop reason;
     /// it never escapes as an error and never reads as `refusal` (§8.2).
     @Test func aThrownCancellationBecomesTheCancelledStopReason() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([.textDelta("partial")], throwing: CancellationError()))
         let updates = await recorder.updates
 
         #expect(reason == .cancelled)
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
     }
 
     // MARK: - The no-output turn (§8.2, task ^pez780d)
@@ -381,9 +381,9 @@ import Testing
     /// A turn whose last generate call reached the output token ceiling
     /// ends with the `_truncated` extension stop reason, never with a
     /// bare `end_turn` (task ^bw9qt1z).
-    @Test func aTurnThatEndsAtTheTokenCeilingEndsWithTheTruncatedStopReason() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+    @Test func aPromptThatEndsAtTheTokenCeilingEndsWithTheTruncatedStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 makeSubmissionEnded(
                     TokenUsage(
@@ -394,16 +394,16 @@ import Testing
 
         #expect(reason == .unknown(PromptExecution.truncatedStopReasonValue))
         #expect(
-            ScriptedTurnFixture.idleStopReason(in: updates)
+            ScriptedPromptFixture.idleStopReason(in: updates)
                 == .unknown(PromptExecution.truncatedStopReasonValue))
     }
 
     /// Only the LAST generate call decides: a tool-calling turn that
     /// reached the ceiling in an earlier call, and then completed its
     /// last call, keeps `end_turn`.
-    @Test func anEarlierCeilingDoesNotTruncateATurnWhoseLastCallCompleted() async throws {
-        let (turn, _) = makeSinkedTurn()
-        let reason = await turn.drive(
+    @Test func anEarlierCeilingDoesNotTruncateAPromptWhoseLastCallCompleted() async throws {
+        let (execution, _) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 makeSubmissionEnded(
                     TokenUsage(
@@ -421,26 +421,26 @@ import Testing
     /// A completed turn with no output and a zero-token usage report
     /// ends with the honest `_no_output` extension stop reason, never
     /// with a bare `end_turn`.
-    @Test func aZeroTokenTurnWithNoOutputEndsWithTheNoOutputStopReason() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+    @Test func aZeroTokenPromptWithNoOutputEndsWithTheNoOutputStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
             ]))
         let updates = await recorder.updates
 
         #expect(reason == .unknown(PromptExecution.noOutputStopReasonValue))
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(
-            ScriptedTurnFixture.idleStopReason(in: updates)
+            ScriptedPromptFixture.idleStopReason(in: updates)
                 == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
     /// A turn that streamed text keeps `end_turn`, also when the usage
     /// report is zero: the text is real output.
-    @Test func aZeroTokenTurnWithTextKeepsTheEndTurnStopReason() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+    @Test func aZeroTokenPromptWithTextKeepsTheEndTurnStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .textDelta("real output"),
                 makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
@@ -452,9 +452,9 @@ import Testing
 
     /// A turn that made a tool call keeps `end_turn`, also when the
     /// usage report is zero: the call is real output.
-    @Test func aZeroTokenTurnWithAToolCallKeepsTheEndTurnStopReason() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+    @Test func aZeroTokenPromptWithAToolCallKeepsTheEndTurnStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
@@ -468,7 +468,7 @@ import Testing
     /// A turn that carried an attachment report keeps `end_turn`, also
     /// when the usage report is zero: the report's `tool_call_update`
     /// is real output.
-    @Test func aZeroTokenTurnWithAToolCallReportKeepsTheEndTurnStopReason() async throws {
+    @Test func aZeroTokenPromptWithAToolCallReportKeepsTheEndTurnStopReason() async throws {
         let report = ToolCallReport(
             tool: "files",
             op: "edit file",
@@ -477,8 +477,8 @@ import Testing
             attachments: [
                 ToolCallAttachment(schemaName: "note", contentJSON: #"{"note":"kept"}"#)
             ])
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .toolCallReport(report),
                 makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
@@ -491,29 +491,29 @@ import Testing
     /// A completed turn with no usage report keeps `end_turn`: with no
     /// report there is no zero-token evidence, and the turn must not
     /// invent one.
-    @Test func aTurnWithNoUsageReportKeepsTheEndTurnStopReason() async throws {
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(events: makeEventStream([]))
+    @Test func aPromptWithNoUsageReportKeepsTheEndTurnStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(events: makeEventStream([]))
         _ = await recorder.updates
 
         #expect(reason == .endTurn)
     }
 
-    /// A scripted turn that plays only `.endTurn` makes the live defect
-    /// shape on the wire: the Router turn completes with no output and
+    /// A scripted prompt that plays only `.endPass` makes the live defect
+    /// shape on the wire: the Router pass completes with no output and
     /// a zero-token usage delta. The idle terminator carries
     /// `_no_output`, never a bare `end_turn`.
     @Test(.timeLimit(.minutes(1)))
-    func aScriptedTurnWithNoOutputEndsIdleWithTheNoOutputStopReason() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+    func aScriptedPromptWithNoOutputEndsIdleWithTheNoOutputStopReason() async throws {
+        let fixture = try await Self.makeFixture(script: [.endPass])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(
-            ScriptedTurnFixture.idleStopReason(in: updates)
+            ScriptedPromptFixture.idleStopReason(in: updates)
                 == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
@@ -546,31 +546,31 @@ import Testing
     /// drive loop. The time limit states the bound of the test, so a
     /// hang fails it rather than running to the suite ceiling.
     @Test(.timeLimit(.minutes(1)))
-    func aGenerationWithNoFragmentPastTheBoundEndsTheTurnAsStalled() async throws {
+    func aGenerationWithNoFragmentPastTheBoundEndsThePromptAsStalled() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
         let events = AsyncThrowingStream<SessionEvent, Error> { continuation in
             continuation.yield(.generationStalled(stall))
         }
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(events: events)
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(events: events)
         let updates = await recorder.updates
 
         #expect(reason == .unknown(PromptExecution.stalledStopReasonValue))
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(
-            ScriptedTurnFixture.idleStopReason(in: updates)
+            ScriptedPromptFixture.idleStopReason(in: updates)
                 == .unknown(PromptExecution.stalledStopReasonValue))
     }
 
     /// A stall shorter than the bound is a report and not a bound: the
     /// generation continues, and the turn ends on its own events.
     @Test(.timeLimit(.minutes(1)))
-    func aStallShorterThanTheBoundDoesNotEndTheTurn() async throws {
+    func aStallShorterThanTheBoundDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound - .seconds(1), fragments: 0)
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .generationStalled(stall),
                 .textDelta("late, and real"),
@@ -585,11 +585,11 @@ import Testing
     /// fragment does not end the turn: a slow decode is not a model
     /// that cannot generate.
     @Test(.timeLimit(.minutes(1)))
-    func aStallPastTheBoundAfterAFragmentDoesNotEndTheTurn() async throws {
+    func aStallPastTheBoundAfterAFragmentDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound, fragments: 1)
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .textDelta("a first fragment"),
                 .generationStalled(stall),
@@ -605,11 +605,11 @@ import Testing
     /// count of the report does not count it, so a report of zero
     /// fragments after a tool call is never a model that cannot generate.
     @Test(.timeLimit(.minutes(1)))
-    func aStallPastTheBoundAfterAToolCallDoesNotEndTheTurn() async throws {
+    func aStallPastTheBoundAfterAToolCallDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
                 .generationStalled(stall),
@@ -643,8 +643,8 @@ import Testing
             timeWithoutProgress: interval,
             timeInFlight: queueWait + interval,
             visibility: .fragments(observed: 0), lastProgress: .callStart)
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 makeSubmissionQueued(),
                 makeSubmissionStarted(),
@@ -655,7 +655,7 @@ import Testing
         let updates = await recorder.updates
 
         #expect(reason == .endTurn)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     /// The seconds a real build task took to reach its FIRST observable
@@ -677,11 +677,11 @@ import Testing
     /// fragment count of zero never proves that the model made nothing.
     /// A bound under the measured time therefore ends a healthy turn.
     @Test(.timeLimit(.minutes(1)))
-    func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndTheTurn() async throws {
+    func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: .seconds(Self.measuredSecondsToFirstOutput), fragments: 0)
-        let (turn, recorder) = makeSinkedTurn()
-        let reason = await turn.drive(
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
             events: makeEventStream([
                 .generationStalled(stall),
                 .textDelta("the first output, nine minutes in"),
@@ -766,8 +766,8 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aSessionInAnElicitationHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
-            script: ScriptedTurnFixture.makeToolTurnScript(code: Self.elicitingSnippet),
-            label: "PromptTurnTests-elicitation")
+            script: ScriptedPromptFixture.makeToolPromptScript(code: Self.elicitingSnippet),
+            label: "PromptExecutionTests-elicitation")
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
         let client = fixture.base.harness.client
         _ = try await ElicitationPoll.firstPendingElicitation(
@@ -782,9 +782,9 @@ import Testing
         let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
         try await fixture.closeSessions()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfB) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
         #expect(pendingOfA.count == 1)
-        #expect(ScriptedTurnFixture.idleCount(in: updatesOfA) == 0)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
     }
 
     /// Session A waits in a tool body: a shell read of a named pipe that
@@ -796,10 +796,10 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aSessionInAToolBodyHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
-            script: ScriptedTurnFixture.makeToolTurnScript(code: Self.waitingSnippet),
-            label: "PromptTurnTests-tool-body",
+            script: ScriptedPromptFixture.makeToolPromptScript(code: Self.waitingSnippet),
+            label: "PromptExecutionTests-tool-body",
             workingDirectory: try NamedPipe.makeDirectory(
-                holding: Self.pipeName, label: "PromptTurnTests-pipe-repo"))
+                holding: Self.pipeName, label: "PromptExecutionTests-pipe-repo"))
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
         let counter = fixture.passCounter
         try await Poll.until("the pass of session A starts") { counter.startedCount == 1 }
@@ -808,7 +808,7 @@ import Testing
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
         try await fixture.closeSessions()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfB) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
     }
 
     // MARK: - The unknown-id policy (§10.1)
@@ -817,7 +817,7 @@ import Testing
     /// and sends no `session/update`.
     @Test(.timeLimit(.minutes(1)))
     func anUnknownSessionIdAnswersInvalidParamsAndSendsNoUpdate() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
         let bogus = SessionId(rawValue: syntheticSessionIdValue)
 
         do {
@@ -829,7 +829,7 @@ import Testing
             #expect(Self.dataField("sessionId", of: error) == bogus.rawValue)
         }
 
-        #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
+        #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }
 
@@ -837,7 +837,7 @@ import Testing
     /// hint, because a closed session is resumable, not promptable.
     @Test(.timeLimit(.minutes(1)))
     func aClosedSessionIdAnswersInvalidParamsWithTheResumeHint() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
         await fixture.harness.agent.markSessionClosed(fixture.sessionId)
 
         do {
@@ -849,7 +849,7 @@ import Testing
             #expect(Self.dataField("reason", of: error) == "closed; resume it first")
         }
 
-        #expect(turnUpdates(in: await fixture.collector.updates).isEmpty)
+        #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
         await fixture.close()
     }
 
@@ -860,13 +860,13 @@ import Testing
     /// gains nothing more at the second prompt.
     @Test(.timeLimit(.minutes(1)))
     func theFirstPromptWritesTheIndexRecordWithAOneLineTitle() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endTurn])
+        let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
         let index = try await Self.sessionIndex(of: fixture)
         #expect(try index.read().records.isEmpty)
 
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        let firstTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
 
         let records = try index.read().records
         #expect(records.count == 1)
@@ -874,19 +874,19 @@ import Testing
         #expect(records.first?.title == Self.promptTitleLine)
         #expect(records.first?.cwd == fixture.cwd.path)
 
-        let titles = firstTurn.compactMap { notification -> PatchField<String>? in
+        let titles = firstPrompt.compactMap { notification -> PatchField<String>? in
             if case .sessionInfoUpdate(let info) = notification.update { return info.title }
             return nil
         }
         #expect(titles == [.value(Self.promptTitleLine)])
 
-        try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
-        let secondTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
+        let secondPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
         await fixture.close()
 
         #expect(try index.read().records.count == 1)
-        #expect(secondTurn.count { $0.update.kind == .sessionInfoUpdate } == 1)
+        #expect(secondPrompt.count { $0.update.kind == .sessionInfoUpdate } == 1)
     }
 }

@@ -95,12 +95,12 @@ import Testing
     /// - Throws: Whatever the fixture or the turn throws.
     private static func recordedModelPrompt(blocks: [ContentBlock]) async throws -> String {
         let recorder = PromptRecorder()
-        let fixture = try await ScriptedTurnFixture.make(
-            loader: makeScriptedModelLoader(script: [.endTurn], recorder: recorder),
+        let fixture = try await ScriptedPromptFixture.make(
+            loader: makeScriptedModelLoader(script: [.endPass], recorder: recorder),
             label: "PromptContentTests")
         _ = try await fixture.harness.connection.prompt(
             makePromptRequest(sessionId: fixture.sessionId, blocks: blocks))
-        _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
         return try #require(await recorder.prompts.first)
     }
@@ -532,8 +532,8 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aResourceLinkInsideTheCwdReachesTheScriptedBackend() async throws {
         let recorder = PromptRecorder()
-        let fixture = try await ScriptedTurnFixture.make(
-            loader: makeScriptedModelLoader(script: [.endTurn], recorder: recorder),
+        let fixture = try await ScriptedPromptFixture.make(
+            loader: makeScriptedModelLoader(script: [.endPass], recorder: recorder),
             label: "PromptContentTests")
         let file = try Self.makeFile(in: fixture.cwd, content: Self.insideFileContent)
 
@@ -544,7 +544,7 @@ import Testing
                     .text(TextContent(text: "read the link")),
                     .resourceLink(ResourceLink(name: Self.linkedFileName, uri: Self.fileURI(of: file))),
                 ]))
-        _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
         let prompt = try #require(await recorder.prompts.first)

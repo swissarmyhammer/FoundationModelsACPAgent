@@ -111,12 +111,12 @@ struct ExitCodeTests {
     ///   - label: The directory label, so a leftover directory says where
     ///     it came from.
     ///   - arrivedText: The text that, once it has reached the answer
-    ///     descriptor, offers one `Ctrl-C` to the turn. The default arms
+    ///     descriptor, offers one `Ctrl-C` to the prompt. The default arms
     ///     no watch, so a row that needs no interrupt gets none.
     /// - Returns: The exit code of the finished turn.
-    /// - Throws: Whatever the composition or the turn throws.
+    /// - Throws: Whatever the composition or the prompt throws.
     private static func exitCode(
-        ofTurnPlaying script: [ScriptedTurnStep],
+        ofPromptPlaying script: [ScriptedPassStep],
         label: String,
         interruptedAfter arrivedText: String? = nil
     ) async throws -> AgentExitCode {
@@ -178,7 +178,7 @@ struct ExitCodeTests {
     @Test(.timeLimit(.minutes(1)))
     func aScriptedEndTurnExitsSuccess() async throws {
         let code = try await Self.exitCode(
-            ofTurnPlaying: [.textDelta(Self.answeredText), .endTurn],
+            ofPromptPlaying: [.textDelta(Self.answeredText), .endPass],
             label: "ExitCodeTests-end-turn")
 
         #expect(code == .success)
@@ -189,7 +189,7 @@ struct ExitCodeTests {
     @Test(.timeLimit(.minutes(1)))
     func aScriptedRefusalExitsRefusal() async throws {
         let code = try await Self.exitCode(
-            ofTurnPlaying: [.fail(.guardrailViolation)],
+            ofPromptPlaying: [.fail(.guardrailViolation)],
             label: "ExitCodeTests-refusal")
 
         #expect(code == .refusal)
@@ -201,7 +201,7 @@ struct ExitCodeTests {
     @Test(.timeLimit(.minutes(1)))
     func aScriptedCancellationExitsCancelled() async throws {
         let code = try await Self.exitCode(
-            ofTurnPlaying: [.textDelta(Self.arrivedText), .hold],
+            ofPromptPlaying: [.textDelta(Self.arrivedText), .hold],
             label: "ExitCodeTests-cancelled",
             interruptedAfter: Self.arrivedText)
 
@@ -211,7 +211,7 @@ struct ExitCodeTests {
     /// A turn whose wire ended before an idle update arrived exits 1. The
     /// turn has no outcome to report, and a script must not read that as
     /// a finished answer.
-    @Test func aTurnWithNoStopReasonExitsError() {
+    @Test func aPromptWithNoStopReasonExitsError() {
         #expect(AgentExitCode(prompt: RunPromptResult(stopReason: nil)) == .error)
     }
 

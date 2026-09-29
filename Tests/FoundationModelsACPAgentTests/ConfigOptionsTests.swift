@@ -33,7 +33,7 @@ import Testing
         var loader = StubModelLoader()
         loader.makeLLMContainer = { slot in
             let answer = slot == .flash ? Self.flashAnswer : Self.standardAnswer
-            return ScriptedLLMContainer(script: [.textDelta(answer), .endTurn])
+            return ScriptedLLMContainer(script: [.textDelta(answer), .endPass])
         }
         return loader
     }
@@ -43,8 +43,8 @@ import Testing
     /// - Parameter label: The directory label of the calling test.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
-    private static func makeFixture(label: String) async throws -> ScriptedTurnFixture {
-        try await ScriptedTurnFixture.make(loader: makeSlotLoader(), label: label)
+    private static func makeFixture(label: String) async throws -> ScriptedPromptFixture {
+        try await ScriptedPromptFixture.make(loader: makeSlotLoader(), label: label)
     }
 
     /// The `session/set_config_option` request for the model option.
@@ -193,14 +193,14 @@ import Testing
     /// A set to `flash` answers the complete state showing `flash`, and
     /// the next turn generates on the flash slot's model.
     @Test(.timeLimit(.minutes(1)))
-    func settingFlashSwitchesLaterTurnsToTheFlashSlot() async throws {
+    func settingFlashSwitchesLaterPromptsToTheFlashSlot() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-switch")
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
-        let firstTurn = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(ScriptedTurnFixture.agentText(in: firstTurn).contains(Self.standardAnswer))
-        try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        #expect(ScriptedPromptFixture.agentText(in: firstPrompt).contains(Self.standardAnswer))
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
 
         let response = try await fixture.harness.connection.setSessionConfigOption(
             Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
@@ -211,12 +211,12 @@ import Testing
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
-        let bothTurns = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
-        #expect(ScriptedTurnFixture.agentText(in: bothTurns).contains(Self.flashAnswer))
+        let bothPrompts = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        #expect(ScriptedPromptFixture.agentText(in: bothPrompts).contains(Self.flashAnswer))
 
         // The set response already carried the complete state, so no
         // push follows it.
-        try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
         await fixture.close()
     }
@@ -257,8 +257,8 @@ import Testing
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.selectedSlot == .standard)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "still standard"))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        #expect(ScriptedTurnFixture.agentText(in: updates).contains(Self.standardAnswer))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        #expect(ScriptedPromptFixture.agentText(in: updates).contains(Self.standardAnswer))
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
         await fixture.close()
     }
@@ -281,7 +281,7 @@ import Testing
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
-        let updates = try await ScriptedTurnFixture.waitForUpdates(
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
             of: fixture.collector, toReach: "one config_option_update"
         ) { updates in
             updates.contains { $0.update.kind == .configOptionUpdate }
@@ -294,11 +294,11 @@ import Testing
         #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
 
         // The push reconciled the state, so a second turn pushes nothing.
-        try await ScriptedTurnFixture.waitForAvailability(agent, fixture.sessionId)
+        try await ScriptedPromptFixture.waitForAvailability(agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
-        _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: 2)
-        try await ScriptedTurnFixture.waitForAvailability(agent, fixture.sessionId)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        try await ScriptedPromptFixture.waitForAvailability(agent, fixture.sessionId)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).count == 1)
         await fixture.close()
     }

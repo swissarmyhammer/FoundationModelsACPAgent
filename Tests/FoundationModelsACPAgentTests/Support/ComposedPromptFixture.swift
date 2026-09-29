@@ -5,36 +5,36 @@ import Testing
 
 @testable import acp_agent
 
-/// One turn against an agent the shared `AgentComposition` built
+/// One prompt against an agent the shared `AgentComposition` built
 /// (cli-plan.md §5.10): compose over an environment and a working
 /// directory, drive one prompt through the in-process harness, and give
-/// back the text the turn streamed.
+/// back the text the prompt streamed.
 ///
-/// The composition suite and the `acp` suite both drive a turn this way,
+/// The composition suite and the `acp` suite both drive a prompt this way,
 /// and the `acp` suite drives one over each wire of §4, so the
 /// composition and the drive stand in one place and cannot drift.
-enum ComposedTurnFixture {
-    /// What one composed turn gave: the session it ran in, and the agent
+enum ComposedPromptFixture {
+    /// What one composed prompt gave: the session it ran in, and the agent
     /// text it streamed.
-    struct Turn {
-        /// The session the turn opened and ran in.
+    struct Outcome {
+        /// The session the prompt opened and ran in.
         let sessionId: SessionId
 
         /// The streamed agent text, chunks joined in arrival order.
         let text: String
     }
 
-    /// Composes the agent over `environment`, runs one turn of `prompt`
-    /// in `workspace`, and returns the agent text the turn streamed.
+    /// Composes the agent over `environment`, runs `prompt` as one prompt
+    /// in `workspace`, and returns the agent text the prompt streamed.
     ///
     /// - Parameters:
     ///   - environment: The environment the composition reads.
     ///   - workspace: The session working directory.
-    ///   - prompt: The text of the one turn.
-    ///   - wire: The transport pair the turn runs over. The in-process
+    ///   - prompt: The text of the one prompt.
+    ///   - wire: The transport pair the prompt runs over. The in-process
     ///     pair by default.
     /// - Returns: The streamed agent text, chunks joined in arrival order.
-    /// - Throws: Whatever the composition, the handshake or the turn
+    /// - Throws: Whatever the composition, the handshake or the prompt
     ///   throws.
     static func answerText(
         environment: [String: String],
@@ -47,7 +47,7 @@ enum ComposedTurnFixture {
         ).text
     }
 
-    /// Composes the agent over `environment` and runs one turn of `prompt`
+    /// Composes the agent over `environment` and runs `prompt` as one prompt
     /// in `workspace`.
     ///
     /// `environment` must select the stub model: the fixture asserts the
@@ -57,18 +57,18 @@ enum ComposedTurnFixture {
     /// - Parameters:
     ///   - environment: The environment the composition reads.
     ///   - workspace: The session working directory.
-    ///   - prompt: The text of the one turn.
-    ///   - wire: The transport pair the turn runs over. The in-process
+    ///   - prompt: The text of the one prompt.
+    ///   - wire: The transport pair the prompt runs over. The in-process
     ///     pair by default.
-    /// - Returns: The session the turn ran in, and the text it streamed.
-    /// - Throws: Whatever the composition, the handshake or the turn
+    /// - Returns: The session the prompt ran in, and the text it streamed.
+    /// - Throws: Whatever the composition, the handshake or the prompt
     ///   throws.
     static func run(
         environment: [String: String],
         workspace: URL,
         prompt: String,
         wire: HarnessWire = .makeInMemory()
-    ) async throws -> Turn {
+    ) async throws -> Outcome {
         let composed = try await AgentComposition.compose(
             workingDirectory: workspace, environment: environment)
         #expect(composed.modelSource == .stub)
@@ -79,8 +79,8 @@ enum ComposedTurnFixture {
         let collector = try #require(harness.collector)
         _ = try await harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: prompt))
-        let updates = try await ScriptedTurnFixture.waitForIdle(collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(collector)
         await harness.close()
-        return Turn(sessionId: session.sessionId, text: ScriptedTurnFixture.agentText(in: updates))
+        return Outcome(sessionId: session.sessionId, text: ScriptedPromptFixture.agentText(in: updates))
     }
 }

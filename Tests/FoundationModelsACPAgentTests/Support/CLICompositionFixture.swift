@@ -26,7 +26,7 @@ enum CLICompositionFixture {
     /// - Returns: The composition, over the stub model path.
     /// - Throws: Whatever the agent construction throws.
     static func scripted(
-        script: [ScriptedTurnStep], label: String
+        script: [ScriptedPassStep], label: String
     ) async throws -> AgentComposition.Composed {
         try await make(loader: makeScriptedModelLoader(script: script), label: label)
     }

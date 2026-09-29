@@ -32,18 +32,18 @@ import Testing
     /// second agent must not answer with the first agent's container.
     @Test(.timeLimit(.minutes(1)))
     func twoAgentsInOneProcessEachPlayTheirOwnScript() async throws {
-        let first = try await ScriptedTurnFixture.make(
-            script: [.textDelta(Self.firstAnswer), .endTurn], label: "\(Self.label)-first")
-        let second = try await ScriptedTurnFixture.make(
-            script: [.textDelta(Self.secondAnswer), .endTurn], label: "\(Self.label)-second")
+        let first = try await ScriptedPromptFixture.make(
+            script: [.textDelta(Self.firstAnswer), .endPass], label: "\(Self.label)-first")
+        let second = try await ScriptedPromptFixture.make(
+            script: [.textDelta(Self.secondAnswer), .endPass], label: "\(Self.label)-second")
 
         let firstUpdates = try await Self.promptAndWaitForIdle(of: first)
         let secondUpdates = try await Self.promptAndWaitForIdle(of: second)
         await first.close()
         await second.close()
 
-        #expect(ScriptedTurnFixture.agentText(in: firstUpdates) == Self.firstAnswer)
-        #expect(ScriptedTurnFixture.agentText(in: secondUpdates) == Self.secondAnswer)
+        #expect(ScriptedPromptFixture.agentText(in: firstUpdates) == Self.firstAnswer)
+        #expect(ScriptedPromptFixture.agentText(in: secondUpdates) == Self.secondAnswer)
     }
 
     /// Prompts the fixture's session and waits for the turn to end.
@@ -52,11 +52,11 @@ import Testing
     /// - Returns: The collected notifications of the turn.
     /// - Throws: Whatever the prompt call or the wait throws.
     private static func promptAndWaitForIdle(
-        of fixture: ScriptedTurnFixture
+        of fixture: ScriptedPromptFixture
     ) async throws -> [UpdateSessionNotification] {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: fixture.sessionId, text: promptText))
-        return try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        return try await ScriptedPromptFixture.waitForIdle(fixture.collector)
     }
 }

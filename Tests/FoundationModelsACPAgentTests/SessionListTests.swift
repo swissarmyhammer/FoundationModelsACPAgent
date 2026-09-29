@@ -296,7 +296,7 @@ struct SessionListTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func aZeroTurnSessionFromSessionNewDoesNotList() async throws {
+    func aZeroPromptSessionFromSessionNewDoesNotList() async throws {
         let fixture = try await Self.makeWireFixture()
         let workingDirectory = makeResolvedDirectory(label: "SessionListTests-zero-turn")
         _ = try await fixture.connection.newSession(

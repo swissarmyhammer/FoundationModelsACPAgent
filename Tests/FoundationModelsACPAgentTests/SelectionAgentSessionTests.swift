@@ -25,7 +25,7 @@ struct SelectionAgentSessionTests {
         let selection: SelectionAgentSession
 
         /// The wire fixture that owns the real Router session.
-        let fixture: ScriptedTurnFixture
+        let fixture: ScriptedPromptFixture
     }
 
     /// Opens one scripted session and wraps its Router session in a
@@ -34,8 +34,8 @@ struct SelectionAgentSessionTests {
     /// - Returns: The parent double, the selection session and the fixture.
     /// - Throws: Whatever the fixture construction throws.
     private static func makeParent() async throws -> Parent {
-        let fixture = try await ScriptedTurnFixture.make(
-            script: [.endTurn], label: "SelectionAgentSessionTests")
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.endPass], label: "SelectionAgentSessionTests")
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let routed = CloseCountingRoutedSession(wrapping: session)
         return Parent(routed: routed, selection: SelectionAgentSession(session: routed), fixture: fixture)

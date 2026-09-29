@@ -224,15 +224,15 @@ struct ElicitationRelayTests {
         code: String,
         capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
         label: String
-    ) async throws -> ScriptedTurnFixture {
+    ) async throws -> ScriptedPromptFixture {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         let server = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
                 command: AbsolutePath(rawValue: serverCommand),
                 name: serverName,
                 args: [ServerMode.flagName, ServerMode.loopback.rawValue]))
-        return try await ScriptedTurnFixture.make(
-            script: ScriptedTurnFixture.makeToolTurnScript(code: code),
+        return try await ScriptedPromptFixture.make(
+            script: ScriptedPromptFixture.makeToolPromptScript(code: code),
             label: label,
             capabilities: capabilities,
             mcpServers: [server])
@@ -242,7 +242,7 @@ struct ElicitationRelayTests {
     ///
     /// - Parameter fixture: The wired fixture.
     /// - Throws: Whatever the prompt request throws.
-    private static func prompt(_ fixture: ScriptedTurnFixture) async throws {
+    private static func prompt(_ fixture: ScriptedPromptFixture) async throws {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
     }
@@ -282,12 +282,12 @@ struct ElicitationRelayTests {
                     ScriptedServer.elicitEchoAnswerField: .string(Self.acceptedAnswer)
                 ]))
         }
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         let creates = await Self.recordedCreates(of: fixture)
         await fixture.close()
 
         #expect(creates.count == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         expectOrderedSubsequence(
             ["running", "requires_action", "running", "idle"],
             in: Self.stateMarkers(in: updates))
@@ -309,12 +309,12 @@ struct ElicitationRelayTests {
         await MainActor.run {
             fixture.harness.client.declineElicitation(pending.id)
         }
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         let creates = await Self.recordedCreates(of: fixture)
         await fixture.close()
 
         #expect(creates.count == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         #expect(try encodedWireText(of: updates).contains(Self.declinedResultText))
     }
 
@@ -330,12 +330,12 @@ struct ElicitationRelayTests {
             label: "ElicitationRelayTests-no-capability")
         try await Self.prompt(fixture)
 
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         let creates = await Self.recordedCreates(of: fixture)
         await fixture.close()
 
         #expect(creates.isEmpty)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         #expect(!Self.stateMarkers(in: updates).contains("requires_action"))
         #expect(try encodedWireText(of: updates).contains(Self.declinedResultText))
     }
@@ -351,12 +351,12 @@ struct ElicitationRelayTests {
             label: "ElicitationRelayTests-form-only-url")
         try await Self.prompt(fixture)
 
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         let creates = await Self.recordedCreates(of: fixture)
         await fixture.close()
 
         #expect(creates.isEmpty)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         #expect(!Self.stateMarkers(in: updates).contains("requires_action"))
         #expect(try encodedWireText(of: updates).contains(Self.declinedResultText))
     }
@@ -380,13 +380,13 @@ struct ElicitationRelayTests {
         await MainActor.run {
             fixture.harness.client.acceptElicitation(pending.id)
         }
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         let recorder = try #require(fixture.harness.elicitations)
         let completions = await recorder.completions
         await fixture.close()
 
         #expect(completions.map(\.elicitationId) == [elicitationId])
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         expectOrderedSubsequence(
             ["running", "requires_action", "running", "idle"],
             in: Self.stateMarkers(in: updates))
@@ -410,10 +410,10 @@ struct ElicitationRelayTests {
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
         expectOrderedSubsequence(
             ["requires_action", "running", "idle"],
             in: Self.stateMarkers(in: updates))
@@ -424,7 +424,7 @@ struct ElicitationRelayTests {
     /// - Parameter fixture: The wired fixture.
     /// - Returns: The recorded requests, in arrival order.
     private static func recordedCreates(
-        of fixture: ScriptedTurnFixture
+        of fixture: ScriptedPromptFixture
     ) async -> [CreateElicitationRequest] {
         await fixture.harness.elicitations?.creates ?? []
     }

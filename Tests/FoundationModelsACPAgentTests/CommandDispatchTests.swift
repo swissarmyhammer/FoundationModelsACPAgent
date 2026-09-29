@@ -84,12 +84,12 @@ struct CommandDispatchTests {
         return update.availableCommands.map(\.name)
     }
 
-    /// Whether the collected sequence holds any turn update: a state
+    /// Whether the collected sequence holds any prompt update: a state
     /// update, a user-message echo, or an agent-message chunk.
     ///
     /// - Parameter updates: The collected notifications.
-    /// - Returns: `true` when a turn update is present.
-    private static func holdsATurnUpdate(in updates: [UpdateSessionNotification]) -> Bool {
+    /// - Returns: `true` when a prompt update is present.
+    private static func holdsAPromptUpdate(in updates: [UpdateSessionNotification]) -> Bool {
         updates.contains { notification in
             switch notification.update {
             case .stateUpdate, .userMessage, .agentMessageChunk, .agentMessage:
@@ -105,7 +105,7 @@ struct CommandDispatchTests {
     /// A `/nosuchcmd` prompt gives an error that names the nearest
     /// command, and the model backend is never invoked.
     @Test(.timeLimit(.minutes(1)))
-    func anUnknownCommandRefusesWithANearMissAndNoModelTurn() async throws {
+    func anUnknownCommandRefusesWithANearMissAndNoModelPass() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-unknown",
             providers: [
@@ -129,7 +129,7 @@ struct CommandDispatchTests {
         }
 
         // No model turn ran: no state update, no echo, no message.
-        #expect(!Self.holdsATurnUpdate(in: await fixture.collector.updates))
+        #expect(!Self.holdsAPromptUpdate(in: await fixture.collector.updates))
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
     }
 
@@ -138,7 +138,7 @@ struct CommandDispatchTests {
     /// A `.rendered` provider body is called, and its output reaches
     /// the model turn.
     @Test(.timeLimit(.minutes(1)))
-    func aRenderedBodyOutputReachesTheModelTurn() async throws {
+    func aRenderedBodyOutputReachesTheModelPass() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-rendered",
             providers: [
@@ -150,8 +150,8 @@ struct CommandDispatchTests {
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/render alpha"))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        let texts = ScriptedTurnFixture.agentChunkTexts(in: updates)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains { $0.contains("RENDERED alpha") })
     }
 
@@ -170,8 +170,8 @@ struct CommandDispatchTests {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: fixture.sessionId, text: "/greet alpha beta"))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
-        let texts = ScriptedTurnFixture.agentChunkTexts(in: updates)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains { $0.contains("Hello beta.") })
     }
 
@@ -207,14 +207,14 @@ struct CommandDispatchTests {
             #expect(fields["reason"] != nil)
         }
 
-        #expect(!Self.holdsATurnUpdate(in: await fixture.collector.updates))
+        #expect(!Self.holdsAPromptUpdate(in: await fixture.collector.updates))
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
     }
 
     /// An `.action` command streams its text with no model turn, and
     /// the turn ends idle with `end_turn`.
     @Test(.timeLimit(.minutes(1)))
-    func anActionCommandStreamsWithNoModelTurn() async throws {
+    func anActionCommandStreamsWithNoModelPass() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-action",
             providers: [
@@ -226,14 +226,14 @@ struct CommandDispatchTests {
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
-        let updates = try await ScriptedTurnFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
 
-        let texts = ScriptedTurnFixture.agentChunkTexts(in: updates)
+        let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains("ACTION OUTPUT"))
         // The echo model would stream the prompt back. No chunk carries
         // it, so no model turn ran.
         #expect(!texts.contains { $0.contains("/act") })
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
     // MARK: - The ACP surface (plan.md §14.4)
@@ -247,7 +247,7 @@ struct CommandDispatchTests {
             skillFiles: ["greet": greetSkillMarkdown])
         defer { Task { await fixture.close() } }
 
-        _ = try await ScriptedTurnFixture.waitForUpdates(
+        _ = try await ScriptedPromptFixture.waitForUpdates(
             of: fixture.collector, toReach: "the session-start publication"
         ) { updates in
             updates.contains { Self.commandNames(in: $0)?.contains("greet") == true }
@@ -264,7 +264,7 @@ struct CommandDispatchTests {
                 Goodbye.
                 """,
             under: fixture.cwd.appendingPathComponent(".skills", isDirectory: true))
-        _ = try await ScriptedTurnFixture.waitForUpdates(
+        _ = try await ScriptedPromptFixture.waitForUpdates(
             of: fixture.collector, toReach: "the watched republication"
         ) { updates in
             updates.contains { Self.commandNames(in: $0)?.contains("farewell") == true }

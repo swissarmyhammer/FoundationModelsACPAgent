@@ -35,9 +35,9 @@ struct SessionLifecycleTests {
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
-        script: [ScriptedTurnStep]
-    ) async throws -> ScriptedTurnFixture {
-        try await ScriptedTurnFixture.make(script: script, label: "SessionLifecycleTests")
+        script: [ScriptedPassStep]
+    ) async throws -> ScriptedPromptFixture {
+        try await ScriptedPromptFixture.make(script: script, label: "SessionLifecycleTests")
     }
 
     /// The prompt request with one text block and this suite's text.
@@ -54,7 +54,7 @@ struct SessionLifecycleTests {
     /// `data`, so a client bug is visible instead of a silent success.
     @Test(.timeLimit(.minutes(1)))
     func closeOfAnUnknownSessionIdAnswersInvalidParamsWithTheId() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
         let bogus = SessionId(rawValue: syntheticSessionIdValue)
 
         do {
@@ -73,7 +73,7 @@ struct SessionLifecycleTests {
     /// idempotent, so the session stays closed and no error goes out.
     @Test(.timeLimit(.minutes(1)))
     func aSecondCloseOfAKnownSessionAnswersEmpty() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
 
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
@@ -91,11 +91,11 @@ struct SessionLifecycleTests {
     /// terminator before it answered — and the transcript directory survives
     /// on disk.
     @Test(.timeLimit(.minutes(1)))
-    func closingDuringAnActiveTurnSendsIdleCancelledAndKeepsTheTranscript() async throws {
+    func closingDuringAnActivePromptSendsIdleCancelledAndKeepsTheTranscript() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
         let transcriptDirectory = try #require(
             await fixture.harness.agent.sessions[fixture.sessionId]?.transcriptDirectory)
 
@@ -103,11 +103,11 @@ struct SessionLifecycleTests {
             CloseSessionRequest(sessionId: fixture.sessionId))
 
         let updates = await fixture.collector.updates
-        #expect(ScriptedTurnFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
-        let lastTurnUpdate = try #require(turnUpdates(in: updates).last).update
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
+        let lastPromptUpdate = try #require(promptUpdates(in: updates).last).update
         #expect(
-            isIdleState(lastTurnUpdate),
+            isIdleState(lastPromptUpdate),
             "expected idle(cancelled) as the last turn update, got \(updates)")
         #expect(FileManager.default.fileExists(atPath: transcriptDirectory.path))
         await fixture.close()
@@ -119,7 +119,7 @@ struct SessionLifecycleTests {
     /// close finishes: the session sweep finished every outstanding one.
     @Test(.timeLimit(.minutes(1)))
     func afterCloseAStreamSessionEventsSubscriptionFinishes() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let events = await session.streamSessionEvents()
         let drained = Task {
@@ -138,7 +138,7 @@ struct SessionLifecycleTests {
     /// a run or a submission in the model queue.
     @Test(.timeLimit(.minutes(1)))
     func closingASessionClosesItsDescendants() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let fork = try await session.fork(workingDirectory: nil)
         await fixture.harness.agent.adoptDescendant(fork, of: fixture.sessionId)
@@ -160,8 +160,8 @@ struct SessionLifecycleTests {
     @Test(.timeLimit(.minutes(2)))
     func afterCloseNoSpawnedStdioServerProcessRemains() async throws {
         let serverPath = try Self.copiedServerBinary()
-        let fixture = try await ScriptedTurnFixture.make(
-            script: [.endTurn],
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.endPass],
             label: "SessionLifecycleTests-process",
             projectConfigYAML: Self.mcpConfigYAML(serverCommand: serverPath))
         #expect(try Self.serverProcessExists(matching: serverPath))
@@ -245,12 +245,12 @@ struct SessionLifecycleTests {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedTurnFixture.waitForRunning(fixture.collector)
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
         _ = try await fixture.harness.connection.deleteSession(
             DeleteSessionRequest(sessionId: fixture.sessionId))
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: await fixture.collector.updates) == .cancelled)
+        #expect(ScriptedPromptFixture.idleStopReason(in: await fixture.collector.updates) == .cancelled)
         #expect(await fixture.harness.agent.sessions[fixture.sessionId] == nil)
         await fixture.close()
     }
@@ -259,7 +259,7 @@ struct SessionLifecycleTests {
     /// is not an error.
     @Test(.timeLimit(.minutes(1)))
     func deletingAnUnknownSessionIdSucceeds() async throws {
-        let fixture = try await Self.makeFixture(script: [.endTurn])
+        let fixture = try await Self.makeFixture(script: [.endPass])
 
         _ = try await fixture.harness.connection.deleteSession(
             DeleteSessionRequest(sessionId: SessionId(rawValue: syntheticSessionIdValue)))
@@ -324,11 +324,11 @@ struct SessionLifecycleTests {
     /// - Throws: `CancellationError` when the test is cancelled, or the spawn
     ///   error when `pgrep` cannot run.
     private static func waitForNoServerProcess(matching path: String) async throws {
-        for _ in 0..<ScriptedTurnFixture.maxPollAttempts {
+        for _ in 0..<ScriptedPromptFixture.maxPollAttempts {
             if try !serverProcessExists(matching: path) {
                 return
             }
-            try await Task.sleep(for: ScriptedTurnFixture.pollInterval)
+            try await Task.sleep(for: ScriptedPromptFixture.pollInterval)
         }
         Issue.record("a spawned mcp server process remains after close")
     }

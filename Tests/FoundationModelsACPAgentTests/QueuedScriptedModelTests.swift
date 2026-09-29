@@ -25,7 +25,7 @@ import Testing
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeHeldFixture(hold: ScriptedHold) async throws -> QueuedScriptedFixture {
         try await QueuedScriptedFixture.make(
-            script: [.holdUntilReleased(hold), .textDelta("released"), .endTurn], label: label)
+            script: [.holdUntilReleased(hold), .textDelta("released"), .endPass], label: label)
     }
 
     /// Wires the held fixture, prompts session A, and waits until the pass
@@ -72,7 +72,7 @@ import Testing
         let updates = try await fixture.waitForIdle(of: fixture.firstSessionId)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
         #expect(fixture.passCounter.runningCount == 0)
     }
 
@@ -86,7 +86,7 @@ import Testing
         let updates = try await fixture.waitForIdle(of: fixture.firstSessionId)
         await fixture.close()
 
-        #expect(ScriptedTurnFixture.idleStopReason(in: updates) == .cancelled)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
         #expect(fixture.passCounter.runningCount == 0)
     }
 

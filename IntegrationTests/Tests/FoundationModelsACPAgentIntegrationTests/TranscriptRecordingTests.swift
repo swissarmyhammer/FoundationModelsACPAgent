@@ -54,7 +54,7 @@ struct TranscriptRecordingTests {
     /// The run opens one session, so the root holds one session directory,
     /// and that directory holds the recorded file.
     @Test(.timeLimit(.minutes(2)))
-    func theRunRecordsTheTurnUnderTheProjectTranscriptsRoot() async throws {
+    func theRunRecordsThePromptUnderTheProjectTranscriptsRoot() async throws {
         let workspace = makeResolvedDirectory(label: "TranscriptRecording-repo")
         let configHome = makeResolvedDirectory(label: "TranscriptRecording-config")
 
@@ -101,7 +101,7 @@ struct TranscriptRecordingTests {
         let recordedDirectory = try #require(try Self.sessionDirectories(under: root).first)
         let file = recordedDirectory.appendingPathComponent(
             transcriptFileName, isDirectory: false)
-        let afterFirstTurn = try String(contentsOf: file, encoding: .utf8)
+        let afterFirstPrompt = try String(contentsOf: file, encoding: .utf8)
 
         let resumed = try await Self.runAgent(
             arguments: [
@@ -118,9 +118,9 @@ struct TranscriptRecordingTests {
         #expect(
             try Self.sessionDirectories(under: root).count == sessionsPerRun,
             "the resumed run opened a second session")
-        let afterSecondTurn = try String(contentsOf: file, encoding: .utf8)
+        let afterSecondPrompt = try String(contentsOf: file, encoding: .utf8)
         #expect(
-            afterSecondTurn.count > afterFirstTurn.count,
+            afterSecondPrompt.count > afterFirstPrompt.count,
             "the resumed turn recorded nothing at \(file.path)")
     }
 

@@ -55,41 +55,41 @@ struct TranscriptFidelityTests {
 
     // MARK: - One two-turn run
 
-    /// What one two-turn scripted run left behind.
+    /// What one two-prompt scripted run left behind.
     private struct FidelityRun {
         /// The wire notifications the client collected, in arrival
         /// order.
         let updates: [UpdateSessionNotification]
 
-        /// The session's recorded events after the first turn.
-        let eventsAfterFirstTurn: [TranscriptEvent]
+        /// The session's recorded events after the first prompt.
+        let eventsAfterFirstPrompt: [TranscriptEvent]
 
-        /// The session's recorded events after the second turn.
-        let eventsAfterSecondTurn: [TranscriptEvent]
+        /// The session's recorded events after the second prompt.
+        let eventsAfterSecondPrompt: [TranscriptEvent]
 
         /// The session's recorded lines, read from disk after the
         /// second turn.
         let recordedLines: [RecordedTranscriptLine]
     }
 
-    /// Drives two scripted turns over one session and reads the
+    /// Drives two scripted prompts over one session and reads the
     /// recording after each of them.
     ///
     /// - Parameter label: The directory label of the calling proof.
     /// - Returns: The run's wire notifications and recorded events.
-    /// - Throws: Whatever the wiring, a turn, or the recording read
+    /// - Throws: Whatever the wiring, a prompt, or the recording read
     ///   throws.
-    private static func runTwoTurns(label: String) async throws -> FidelityRun {
+    private static func runTwoPrompts(label: String) async throws -> FidelityRun {
         let script =
-            [ScriptedTurnStep.textDelta(replyText)]
-            + (try ScriptedTurnFixture.makeToolTurnScript(code: snippetCode))
-        let fixture = try await ScriptedTurnFixture.make(script: script, label: label)
+            [ScriptedPassStep.textDelta(replyText)]
+            + (try ScriptedPromptFixture.makeToolPromptScript(code: snippetCode))
+        let fixture = try await ScriptedPromptFixture.make(script: script, label: label)
         let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
 
-        try await driveTurn(fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
+        try await drivePrompt(fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
         let afterFirst = try ResumeSessionFixture.recordedEvents(
             under: root, sessionId: fixture.sessionId)
-        try await driveTurn(fixture, sessionId: fixture.sessionId, ordinal: 2, idleCount: 2, root: root)
+        try await drivePrompt(fixture, sessionId: fixture.sessionId, ordinal: 2, idleCount: 2, root: root)
         let afterSecond = try ResumeSessionFixture.recordedEvents(
             under: root, sessionId: fixture.sessionId)
         let updates = await fixture.collector.updates
@@ -97,8 +97,8 @@ struct TranscriptFidelityTests {
 
         return FidelityRun(
             updates: updates,
-            eventsAfterFirstTurn: afterFirst,
-            eventsAfterSecondTurn: afterSecond,
+            eventsAfterFirstPrompt: afterFirst,
+            eventsAfterSecondPrompt: afterSecond,
             recordedLines: try RecordedTranscriptFile.lines(
                 under: root, sessionId: fixture.sessionId))
     }
@@ -109,14 +109,14 @@ struct TranscriptFidelityTests {
     /// - Parameters:
     ///   - fixture: The wired fixture to drive.
     ///   - sessionId: The session to prompt.
-    ///   - ordinal: The one-based number of the turn in that session.
-    ///   - idleCount: The number of turn ends the collector holds when
-    ///     this turn is over. It counts every session on the wire, and
+    ///   - ordinal: The one-based number of the prompt in that session.
+    ///   - idleCount: The number of prompt ends the collector holds when
+    ///     this prompt is over. It counts every session on the wire, and
     ///     `ordinal` counts one session only.
     ///   - root: The recording root the session records under.
     /// - Throws: Whatever the prompt or a wait throws.
-    private static func driveTurn(
-        _ fixture: ScriptedTurnFixture,
+    private static func drivePrompt(
+        _ fixture: ScriptedPromptFixture,
         sessionId: SessionId,
         ordinal: Int,
         idleCount: Int,
@@ -125,27 +125,27 @@ struct TranscriptFidelityTests {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: sessionId, text: promptText + String(ordinal)))
-        _ = try await ScriptedTurnFixture.waitForIdle(fixture.collector, count: idleCount)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: idleCount)
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: sessionId, count: ordinal)
-        try await ScriptedTurnFixture.waitForAvailability(fixture.harness.agent, sessionId)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, sessionId)
     }
 
     // MARK: - The proofs
 
     @Test("two turns record no divergence while the tool surface is unchanged", .timeLimit(.minutes(1)))
-    func twoTurnsRecordNoDivergence() async throws {
-        let run = try await Self.runTwoTurns(label: "TranscriptFidelityTests-divergence")
+    func twoPromptsRecordNoDivergence() async throws {
+        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-divergence")
 
-        #expect(run.eventsAfterSecondTurn.allSatisfy { $0.kind != .divergence })
+        #expect(run.eventsAfterSecondPrompt.allSatisfy { $0.kind != .divergence })
         // The recording is not empty, so the emptiness of the divergence
         // set is a fact about a real recording.
-        #expect(run.eventsAfterSecondTurn.contains { $0.kind == .response })
+        #expect(run.eventsAfterSecondPrompt.contains { $0.kind == .response })
     }
 
     @Test("one turn records its prompt, its toolCalls with the arguments, and its response", .timeLimit(.minutes(1)))
-    func oneTurnIsRecordedWhole() async throws {
-        let run = try await Self.runTwoTurns(label: "TranscriptFidelityTests-whole")
+    func onePromptIsRecordedWhole() async throws {
+        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-whole")
 
         let prompts = RecordedTranscriptFile.lines(ofKind: Self.promptKind, in: run.recordedLines)
         #expect(prompts.count == 2)
@@ -156,7 +156,7 @@ struct TranscriptFidelityTests {
         )
         .flatMap { $0.entry?.toolCalls ?? [] }
         let runCodeCall = try #require(
-            calls.first { $0.toolName == ScriptedTurnFixture.runCodeToolName })
+            calls.first { $0.toolName == ScriptedPromptFixture.runCodeToolName })
         #expect(runCodeCall.argumentsJSON.contains(Self.snippetCode))
 
         let responses = RecordedTranscriptFile.lines(
@@ -169,7 +169,7 @@ struct TranscriptFidelityTests {
 
     @Test("the runCode call reaches the wire as a tool call update", .timeLimit(.minutes(1)))
     func theRunCodeCallReachesTheWire() async throws {
-        let run = try await Self.runTwoTurns(label: "TranscriptFidelityTests-wire")
+        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-wire")
 
         let creations = run.updates.compactMap { notification -> ToolCallUpdate? in
             guard case .toolCallUpdate(let update) = notification.update,
@@ -178,18 +178,18 @@ struct TranscriptFidelityTests {
             return update
         }
         let creation = try #require(creations.first)
-        #expect(creation.title == .value(ScriptedTurnFixture.runCodeToolName))
+        #expect(creation.title == .value(ScriptedPromptFixture.runCodeToolName))
         #expect(String(describing: creation.rawInput).contains(Self.snippetCode))
     }
 
     @Test("the recorded event count never falls between two reads", .timeLimit(.minutes(1)))
     func theRecordedCountNeverFalls() async throws {
-        let run = try await Self.runTwoTurns(label: "TranscriptFidelityTests-count")
+        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-count")
 
-        #expect(run.eventsAfterSecondTurn.count > run.eventsAfterFirstTurn.count)
+        #expect(run.eventsAfterSecondPrompt.count > run.eventsAfterFirstPrompt.count)
         #expect(
-            run.eventsAfterSecondTurn.prefix(run.eventsAfterFirstTurn.count).map(\.seq)
-                == run.eventsAfterFirstTurn.map(\.seq))
+            run.eventsAfterSecondPrompt.prefix(run.eventsAfterFirstPrompt.count).map(\.seq)
+                == run.eventsAfterFirstPrompt.map(\.seq))
     }
 
     /// The byte-identity proof of the `instructions` entry.
@@ -203,16 +203,16 @@ struct TranscriptFidelityTests {
     @Test("two sessions over one tool surface record byte-identical tool definitions", .timeLimit(.minutes(1)))
     func theInstructionsToolDefinitionsAreByteIdentical() async throws {
         let script =
-            [ScriptedTurnStep.textDelta(Self.replyText)]
-            + (try ScriptedTurnFixture.makeToolTurnScript(code: Self.snippetCode))
-        let fixture = try await ScriptedTurnFixture.make(
+            [ScriptedPassStep.textDelta(Self.replyText)]
+            + (try ScriptedPromptFixture.makeToolPromptScript(code: Self.snippetCode))
+        let fixture = try await ScriptedPromptFixture.make(
             script: script, label: "TranscriptFidelityTests-instructions")
         let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
-        try await Self.driveTurn(
+        try await Self.drivePrompt(
             fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
         let second = try await fixture.harness.connection.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
-        try await Self.driveTurn(
+        try await Self.drivePrompt(
             fixture, sessionId: second.sessionId, ordinal: 1, idleCount: 2, root: root)
         await fixture.close()
 

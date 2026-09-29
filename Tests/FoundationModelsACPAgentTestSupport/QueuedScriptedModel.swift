@@ -206,7 +206,7 @@ extension StubModelLoader {
     ///   - passCounter: The counter of the passes of the `standard` slot.
     /// - Returns: The loader to inject.
     public static func makeQueuedScriptedLoader(
-        script: [ScriptedTurnStep], passCounter: ScriptedPassCounter
+        script: [ScriptedPassStep], passCounter: ScriptedPassCounter
     ) -> StubModelLoader {
         var loader = StubModelLoader()
         loader.makeLLMContainer = { slot in

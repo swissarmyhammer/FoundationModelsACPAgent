@@ -153,7 +153,7 @@ public struct AgentClientHarness: Sendable {
     /// It stands beside ``makeInitializeRequest(protocolVersion:capabilities:)``
     /// because every driver of this harness — the in-process unit suites
     /// and the integration package's spawned-binary suites alike — sends
-    /// its turn through it.
+    /// its prompt through it.
     ///
     /// - Parameters:
     ///   - sessionId: The session to prompt.

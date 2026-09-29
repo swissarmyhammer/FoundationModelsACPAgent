@@ -58,14 +58,14 @@ struct ToolCallingTests {
     /// The pause between two looks at the disk and the wire.
     private static let pollInterval: Duration = .milliseconds(100)
 
-    /// How long a run waits for the turn to end.
+    /// How long a run waits for the prompt to end.
     ///
     /// The first run of a process also loads the model. On 2026-09-27 the
     /// whole gate took 90 seconds with that load. The CI machine is
     /// slower: on 2026-09-21 the skill trigger gate took 76 seconds there,
     /// and 15 seconds on a warm machine. 600 seconds stands clear of both.
     /// The deadline is a guard against a hang, not a budget.
-    private static let turnDeadline: Duration = .seconds(600)
+    private static let promptDeadline: Duration = .seconds(600)
 
     /// The user-layer `config.yaml`. The shell is on, because the gate
     /// needs it. The code context is off, because the gate does not need
@@ -151,7 +151,7 @@ struct ToolCallingTests {
         let stopReason = await Self.waitForIdle(
             collector: collector,
             sessionId: sessionId,
-            deadline: ContinuousClock.now + Self.turnDeadline)
+            deadline: ContinuousClock.now + Self.promptDeadline)
         let elapsed = start.duration(to: ContinuousClock.now)
         await harness.flushPendingChunks()
         let titles = await Self.toolTitles(of: collector, sessionId: sessionId)

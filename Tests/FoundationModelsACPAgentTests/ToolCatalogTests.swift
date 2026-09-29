@@ -137,7 +137,7 @@ import Testing
     /// mount does not reach it.
     @Test func theSessionSurfaceHandsTheProfileEmbedderToSearchTools() async throws {
         let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
-        var loader = makeScriptedModelLoader(script: [.textDelta(Self.flashSelectionJSON), .endTurn])
+        var loader = makeScriptedModelLoader(script: [.textDelta(Self.flashSelectionJSON), .endPass])
         loader.makeEmbeddingContainer = { _ in embedder }
         let context = try await Self.makeContext(loader: loader)
         let catalogBlocks = try await ToolCatalog.makeRegistry(context: context).registry.surface.entries.map(\.block)

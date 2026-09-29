@@ -57,11 +57,11 @@ final class PathRecordingTool: Tool, Sendable {
 
     /// The script every scripted-backend test plays: two deltas, one known
     /// tool call with fixed arguments, and a turn end.
-    static let script: [ScriptedTurnStep] = [
+    static let script: [ScriptedPassStep] = [
         .textDelta(scriptedDeltas[0]),
         .textDelta(scriptedDeltas[1]),
         .toolCall(name: PathRecordingTool.toolName, argumentsJSON: scriptedArgumentsJSON),
-        .endTurn,
+        .endPass,
     ]
 
     // MARK: - Construction and the initialize round trip
@@ -143,10 +143,10 @@ final class PathRecordingTool: Tool, Sendable {
 
     /// The scripted backend, driven directly with no session and no
     /// prompt, emits its scripted deltas in order, performs the known tool
-    /// call with the fixed arguments, and then ends the turn: the stream
+    /// call with the fixed arguments, and then ends the pass: the stream
     /// finishes. No model, no download, no network.
     @Test(.timeLimit(.minutes(1)))
-    func scriptedBackendEmitsDeltasToolCallAndTurnEnd() async throws {
+    func scriptedBackendEmitsDeltasToolCallAndPassEnd() async throws {
         let recorder = PathRecordingTool()
         let loader = makeScriptedModelLoader(script: Self.script)
         let container = try await loader.loadLLM(
@@ -189,12 +189,12 @@ final class PathRecordingTool: Tool, Sendable {
         }
     }
 
-    /// Steps after `.endTurn` are never emitted: the turn ended.
+    /// Steps after `.endPass` are never emitted: the pass ended.
     @Test(.timeLimit(.minutes(1)))
-    func scriptedStepsAfterTheTurnEndAreNotEmitted() async throws {
+    func scriptedStepsAfterThePassEndAreNotEmitted() async throws {
         let trailingDelta = "never emitted"
         let container = ScriptedLLMContainer(
-            script: [.textDelta(Self.scriptedDeltas[0]), .endTurn, .textDelta(trailingDelta)])
+            script: [.textDelta(Self.scriptedDeltas[0]), .endPass, .textDelta(trailingDelta)])
         let backend = container.makeSession(instructions: nil)
 
         let text = try await backend.respond(to: "any prompt", maxTokens: nil)

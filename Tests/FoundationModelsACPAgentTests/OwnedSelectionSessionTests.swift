@@ -31,7 +31,7 @@ struct OwnedSelectionSessionTests {
         let routed: CloseCountingRoutedSession
 
         /// The wire fixture that owns the real Router session.
-        let fixture: ScriptedTurnFixture
+        let fixture: ScriptedPromptFixture
     }
 
     /// Opens one scripted session, forks its Router session, and makes a
@@ -44,8 +44,8 @@ struct OwnedSelectionSessionTests {
     /// - Returns: The factory, the double and the fixture.
     /// - Throws: Whatever the fixture construction or the fork throws.
     private static func makeFactory() async throws -> Factory {
-        let fixture = try await ScriptedTurnFixture.make(
-            script: [.endTurn], label: "OwnedSelectionSessionTests")
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.endPass], label: "OwnedSelectionSessionTests")
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let routed = CloseCountingRoutedSession(
             wrapping: try await session.fork(workingDirectory: nil))

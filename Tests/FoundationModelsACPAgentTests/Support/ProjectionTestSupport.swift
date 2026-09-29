@@ -62,19 +62,19 @@ extension SessionAnswer {
 // MARK: - The synthetic projection fixtures (plan.md §20.1)
 //
 // The projection tests drive `PromptExecution.drive(events:)` with a
-// synthetic event stream and record each update the turn sends. No
-// session and no model is necessary for that. `PromptTurnTests` and
+// synthetic event stream and record each update the prompt sends. No
+// session and no model is necessary for that. `PromptExecutionTests` and
 // `EventProjectionTests` share these fixtures.
 
 /// A well-formed ULID that names no live session. The synthetic tests
-/// run a turn without a session table, so the value never resolves.
+/// run a prompt without a session table, so the value never resolves.
 let syntheticSessionIdValue = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
-/// The model reference a synthetic turn reports. No model stands behind
+/// The model reference a synthetic prompt reports. No model stands behind
 /// a scripted event stream, and the name says so.
 let syntheticModelName = "synthetic-model"
 
-/// A sink that collects every update a turn sends.
+/// A sink that collects every update a prompt sends.
 actor SinkRecorder {
     /// The collected updates, in send order.
     private(set) var updates: [SessionUpdate] = []
@@ -87,18 +87,18 @@ actor SinkRecorder {
     }
 }
 
-/// Makes a turn over a recording sink. The synthetic stream tests
+/// Makes a prompt execution over a recording sink. The synthetic stream tests
 /// drive `drive(events:)` directly and never touch a session.
 ///
 /// - Parameter shellSnapshot: The reader of a settled run's stored
 ///   output; the default finds no run.
-/// - Returns: The turn and the recorder of its updates.
-func makeSinkedTurn(
+/// - Returns: The execution and the recorder of its updates.
+func makeSinkedExecution(
     shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
-) -> (turn: PromptExecution, recorder: SinkRecorder) {
+) -> (execution: PromptExecution, recorder: SinkRecorder) {
     let recorder = SinkRecorder()
     let send: SessionUpdateSink = { update in await recorder.append(update) }
-    let turn = PromptExecution(
+    let execution = PromptExecution(
         sessionId: SessionId(rawValue: syntheticSessionIdValue),
         promptBlocks: [],
         promptState: PromptStateOwner(send: send),
@@ -106,7 +106,7 @@ func makeSinkedTurn(
         firstActivity: nil,
         modelName: syntheticModelName,
         shellSnapshot: shellSnapshot)
-    return (turn, recorder)
+    return (execution, recorder)
 }
 
 /// Makes a finished synthetic stream of `events`.

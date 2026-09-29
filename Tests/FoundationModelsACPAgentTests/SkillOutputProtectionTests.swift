@@ -130,7 +130,7 @@ import Testing
             .toolCall(name: "skills", argumentsJSON: #"{"op": "use skill", "id": "explore"}"#),
             .toolCall(name: "notes", argumentsJSON: #"{"topic": "admin"}"#),
             .textDelta("done"),
-            .endTurn,
+            .endPass,
         ])
         let profile = try await makeStubProfile(
             cacheDirectory: directory.appendingPathComponent("cache", isDirectory: true), loader: loader)
@@ -140,9 +140,9 @@ import Testing
             recordingRoot: directory.appendingPathComponent("recordings", isDirectory: true),
             tools: [StubSkillsTool(), StubNotesTool()],
             compaction: CompactionConfiguration())
-        let turnCount = 6
-        for turn in 0..<turnCount {
-            _ = try await session.respond(to: "turn \(turn)")
+        let requestCount = 6
+        for request in 0..<requestCount {
+            _ = try await session.respond(to: "request \(request)")
         }
 
         let result = try await session.compact(budget: Self.foldBudget)
@@ -162,10 +162,10 @@ import Testing
                 notesOutputs.append(text)
             }
         }
-        #expect(skillOutputs.count == turnCount)
+        #expect(skillOutputs.count == requestCount)
         #expect(skillOutputs.allSatisfy { $0 == Self.skillBody })
         // The fold removed or elided the old notes outputs: fewer than one
         // per turn keep their text. Only the protected skill bodies all stay.
-        #expect(notesOutputs.filter { $0 == Self.notesText }.count < turnCount)
+        #expect(notesOutputs.filter { $0 == Self.notesText }.count < requestCount)
     }
 }
