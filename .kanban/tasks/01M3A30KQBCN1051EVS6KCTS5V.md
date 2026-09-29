@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3q1xc21qbh42a9ywqw87r7z
+  text: |-
+    A finding from ^m0k2vn6 that is in the area of this card (close of a session whose work waits for the model queue).
+
+    Setup: two sessions on one queued scripted model, each in its own working directory. The script is one `runCode` with `tools.shell.execute({ command: "cat release.fifo && rm release.fifo" })`. A's cwd held a named pipe, B's cwd a plain file. B's shell run settled at once and its mail started mail-only answers. Each answer replayed the script, so B looped until `mailOnlyAnswerLimit` (100). The test then wrote A's pipe, so A's shell run settled and A had mail that waited for the queue.
+
+    Observation: `session/close` for A did not return in 60 s. It did not return after B's mail delivery paused either. A's mail answer never got a pass (the log shows no second `runCode` for A).
+
+    I did not find the cause. Examine whether Router `close()`/`drain()` can wait for ever on a session whose mail-started answer waits for a queue place. The cancel/close tests of this card are the place to prove it or to rule it out.
+  timestamp: 2026-09-29T17:03:03.745542+00:00
 depends_on:
 - 01M3A37J8X6VKD5BKYWSJ4HCZD
 position_column: todo

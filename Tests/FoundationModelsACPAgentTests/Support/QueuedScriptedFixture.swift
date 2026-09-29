@@ -32,13 +32,18 @@ struct QueuedScriptedFixture {
     /// - Parameters:
     ///   - script: The steps each pass of each session plays.
     ///   - label: The directory label of the calling suite.
+    ///   - workingDirectory: The working directory of both sessions, or `nil`
+    ///     (the default) to make a fresh one.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
-    static func make(script: [ScriptedTurnStep], label: String) async throws -> QueuedScriptedFixture {
+    static func make(
+        script: [ScriptedTurnStep], label: String, workingDirectory: URL? = nil
+    ) async throws -> QueuedScriptedFixture {
         let passCounter = ScriptedPassCounter()
         let base = try await ScriptedTurnFixture.make(
             loader: StubModelLoader.makeQueuedScriptedLoader(script: script, passCounter: passCounter),
-            label: label)
+            label: label,
+            workingDirectory: workingDirectory)
         let second = try await base.harness.connection.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: base.cwd.path)))
         return QueuedScriptedFixture(
@@ -64,12 +69,26 @@ struct QueuedScriptedFixture {
     /// - Returns: The collected updates of `sessionId`.
     /// - Throws: `CancellationError` when the test is cancelled.
     func waitForIdle(of sessionId: SessionId) async throws -> [UpdateSessionNotification] {
-        let updates = try await ScriptedTurnFixture.waitForUpdates(
-            of: base.collector, toReach: "an idle update of \(sessionId.rawValue)"
-        ) { updates in
-            ScriptedTurnFixture.idleCount(in: Self.updates(of: sessionId, in: updates)) > 0
+        try await Poll.until("an idle update of \(sessionId.rawValue)") {
+            ScriptedTurnFixture.idleCount(in: await updates(of: sessionId)) > 0
         }
-        return Self.updates(of: sessionId, in: updates)
+        return await updates(of: sessionId)
+    }
+
+    /// The updates that `sessionId` sent until now, in arrival order.
+    ///
+    /// - Parameter sessionId: The session to read.
+    /// - Returns: The collected updates of `sessionId`.
+    func updates(of sessionId: SessionId) async -> [UpdateSessionNotification] {
+        await base.collector.updates.filter { $0.sessionId == sessionId }
+    }
+
+    /// The elicitations of `sessionId` that the client did not answer yet.
+    ///
+    /// - Parameter sessionId: The session to read.
+    /// - Returns: The pending elicitations of `sessionId`, in arrival order.
+    func pendingElicitations(of sessionId: SessionId) async -> [PendingElicitation] {
+        await MainActor.run { base.harness.client.pendingElicitations(for: sessionId) }
     }
 
     /// Waits until session A and session B each sent an idle state update.
@@ -85,15 +104,19 @@ struct QueuedScriptedFixture {
         await base.close()
     }
 
-    /// The updates of one session in a collected sequence.
+    /// Closes session A and session B with `session/close`, and then the
+    /// harness wire.
     ///
-    /// - Parameters:
-    ///   - sessionId: The session to keep.
-    ///   - updates: The collected updates of all sessions.
-    /// - Returns: The updates of `sessionId`, in arrival order.
-    private static func updates(
-        of sessionId: SessionId, in updates: [UpdateSessionNotification]
-    ) -> [UpdateSessionNotification] {
-        updates.filter { $0.sessionId == sessionId }
+    /// A close stops each background run of the session and each pending
+    /// elicitation. A test that leaves a run in the background calls this,
+    /// so no work of its sessions continues after the test.
+    ///
+    /// - Throws: Whatever the wire throws.
+    func closeSessions() async throws {
+        for sessionId in [firstSessionId, secondSessionId] {
+            _ = try await base.harness.connection.closeSession(
+                CloseSessionRequest(sessionId: sessionId))
+        }
+        await close()
     }
 }

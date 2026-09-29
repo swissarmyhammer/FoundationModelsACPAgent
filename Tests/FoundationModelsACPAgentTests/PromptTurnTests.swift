@@ -722,6 +722,107 @@ import Testing
         Self.expectRequiresActionThenRunning(in: updates)
     }
 
+    // MARK: - A waiting session holds no model (Router generation-queue.md 5.5)
+    //
+    // The two sessions of each proof use one queued scripted model, thus one
+    // generation queue. Session A waits in a background run: an elicitation
+    // from a `runCode` snippet, or a shell command. `runCode` holds the model
+    // only for its inline grace, and a shell command gives its pending answer
+    // at once. Then the run continues in the background, and the submission
+    // of A ends. The prompt of B must then get the model and end, while A
+    // still waits.
+
+    /// The snippet of the elicitation proof: one question to the person.
+    private static let elicitingSnippet = #"return await elicit("Which colour do you want?");"#
+
+    /// The name of the named pipe that the shell command of the tool-body
+    /// proof reads. Nothing writes the pipe, thus the read waits until the
+    /// session close stops it.
+    private static let pipeName = "wait.fifo"
+
+    /// The snippet of the tool-body proof: one shell read of the named pipe.
+    private static let waitingSnippet =
+        #"return await tools.shell.execute({ command: "cat \#(pipeName)" });"#
+
+    /// The permissions of the named pipe: read and write for the owner.
+    private static let pipePermissions: mode_t = 0o600
+
+    /// Waits until the client holds a pending elicitation of `sessionId`.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session to watch.
+    ///   - fixture: The wired two-session fixture.
+    /// - Returns: The first pending elicitation of `sessionId`.
+    /// - Throws: When no elicitation of `sessionId` reaches the client.
+    private static func waitForPendingElicitation(
+        of sessionId: SessionId, in fixture: QueuedScriptedFixture
+    ) async throws -> PendingElicitation {
+        try await Poll.until("an elicitation of \(sessionId.rawValue) reaches the client") {
+            await !fixture.pendingElicitations(of: sessionId).isEmpty
+        }
+        return try #require(await fixture.pendingElicitations(of: sessionId).first)
+    }
+
+    /// Makes a working directory that holds the named pipe of the tool-body
+    /// proof.
+    ///
+    /// - Returns: The directory.
+    /// - Throws: When the named pipe cannot be made.
+    private static func makeDirectoryWithWaitingPipe() throws -> URL {
+        let directory = makeResolvedDirectory(label: "PromptTurnTests-pipe-repo")
+        let pipe = directory.appendingPathComponent(pipeName)
+        try #require(mkfifo(pipe.path, pipePermissions) == 0, "mkfifo failed with errno \(errno)")
+        return directory
+    }
+
+    /// Session A waits in an elicitation that the client does not answer.
+    /// Session B prompts on the same model, and its prompt ends with
+    /// `end_turn` while A still waits.
+    @Test(.timeLimit(.minutes(1)))
+    func aSessionInAnElicitationHoldsNoModel() async throws {
+        let fixture = try await QueuedScriptedFixture.make(
+            script: ScriptedTurnFixture.makeToolTurnScript(code: Self.elicitingSnippet),
+            label: "PromptTurnTests-elicitation")
+        try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
+        _ = try await Self.waitForPendingElicitation(of: fixture.firstSessionId, in: fixture)
+
+        try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
+        let questionOfB = try await Self.waitForPendingElicitation(
+            of: fixture.secondSessionId, in: fixture)
+        await MainActor.run { fixture.base.harness.client.acceptElicitation(questionOfB.id) }
+        let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
+        let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSessionId)
+        let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
+        try await fixture.closeSessions()
+
+        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfB) == .endTurn)
+        #expect(pendingOfA.count == 1)
+        #expect(ScriptedTurnFixture.idleCount(in: updatesOfA) == 0)
+    }
+
+    /// Session A waits in a tool body: a shell read of a named pipe that
+    /// nothing writes. Session B prompts on the same model, and its prompt
+    /// ends with `end_turn` while the tool body of A still waits.
+    ///
+    /// B plays the same script, thus its own read waits as well. The close of
+    /// each session at the end stops both reads.
+    @Test(.timeLimit(.minutes(1)))
+    func aSessionInAToolBodyHoldsNoModel() async throws {
+        let fixture = try await QueuedScriptedFixture.make(
+            script: ScriptedTurnFixture.makeToolTurnScript(code: Self.waitingSnippet),
+            label: "PromptTurnTests-tool-body",
+            workingDirectory: try Self.makeDirectoryWithWaitingPipe())
+        try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
+        let counter = fixture.passCounter
+        try await Poll.until("the pass of session A starts") { counter.startedCount == 1 }
+
+        try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
+        let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
+        try await fixture.closeSessions()
+
+        #expect(ScriptedTurnFixture.idleStopReason(in: updatesOfB) == .endTurn)
+    }
+
     // MARK: - The unknown-id policy (§10.1)
 
     /// An unknown `sessionId` answers `-32602` with the id in `data`,

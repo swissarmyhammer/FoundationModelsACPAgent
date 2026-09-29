@@ -53,8 +53,31 @@ comments:
     - evidence: `swift test --filter QueuedScriptedModelTests` 4/4 passed (twoSessionsNeverRunTwoPassesAtOnce, releaseEndsAHeldPass, cancelEndsAHeldPass, aSecondSessionWaitsForTheHeldPass); `swift test` 609 tests in 70 suites passed (605 before + 4), 1 known issue (the old intentional one in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); `swift build --package-path IntegrationTests --build-tests` complete. Files: Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift, Tests/FoundationModelsACPAgentTestSupport/QueuedScriptedModel.swift, Tests/FoundationModelsACPAgentTests/Support/QueuedScriptedFixture.swift, Tests/FoundationModelsACPAgentTests/QueuedScriptedModelTests.swift.
     - next: /review. The task stays in doing.
   timestamp: 2026-09-29T16:29:06.255751+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3q04zp1dm9pr5gzw4c2hj8b
+  text: |-
+    ### commit — changed
+    - evidence: 87f3ead test: give the test support a scripted model that goes through the Router generation queue
+    - next: run /test then /review
+  timestamp: 2026-09-29T16:32:16.065386+00:00
+- actor: claude-code
+  id: 01m3q0dy2bqpf3236q3t9szzy2
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (87f3ead). Zero findings: 0 confirmed, 1 refuted, 7 attempted, 0 failed. The .reviewignore rule excluded 4 .kanban files.
+    - next: The task is in done. No work remains.
+  timestamp: 2026-09-29T16:37:09.323593+00:00
+- actor: claude-code
+  id: 01m3q0e5ttfbkh55atezehd117
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files (QueuedScriptedModel.swift, ScriptedModel.swift, QueuedScriptedFixture.swift, QueuedScriptedModelTests.swift)
+    - test: green — swift test 609 tests pass, two runs; IntegrationTests build ok
+    - commit: 87f3ead
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T16:37:17.274198+00:00
+position_column: done
+position_ordinal: f080
 title: Give the test support a scripted model that goes through the Router generation queue
 ---
 ## Why

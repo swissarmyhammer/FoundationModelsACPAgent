@@ -135,7 +135,7 @@ struct SessionLifecycleTests {
 
     /// After close, a descendant the session adopted is closed too: its own
     /// `streamSessionEvents()` subscription finishes, so no orphan fork keeps
-    /// a model gate.
+    /// a run or a submission in the model queue.
     @Test(.timeLimit(.minutes(1)))
     func closingASessionClosesItsDescendants() async throws {
         let fixture = try await Self.makeFixture(script: [.endTurn])
