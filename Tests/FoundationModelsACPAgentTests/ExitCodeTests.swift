@@ -208,6 +208,19 @@ struct ExitCodeTests {
         #expect(code == .cancelled)
     }
 
+    /// Each extension stop reason of a cut prompt exits 1, as `_truncated`
+    /// does: `_ended_in_reasoning` and `_repeated` tell why the answer is
+    /// not complete, and a script must not read either as a finished answer.
+    @Test(
+        arguments: [
+            PromptExecution.truncatedStopReasonValue,
+            PromptExecution.endedInReasoningStopReasonValue,
+            PromptExecution.repeatedStopReasonValue,
+        ])
+    func aCutPromptStopReasonExitsError(wireValue: String) {
+        #expect(AgentExitCode(stopReason: .unknown(wireValue)) == .error)
+    }
+
     /// A prompt whose wire ended before an idle update arrived exits 1. The
     /// prompt has no outcome to report, and a script must not read that as
     /// a finished answer.

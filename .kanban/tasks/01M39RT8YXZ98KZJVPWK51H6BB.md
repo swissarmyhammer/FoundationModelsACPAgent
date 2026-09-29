@@ -56,7 +56,53 @@ comments:
     - test, commit, review: not run
     - next: this task waits for ^tz867gz (adopt the newer Router).
   timestamp: 2026-09-29T02:59:13.939596+00:00
-position_column: todo
+- actor: claude-code
+  id: 01m3qd00f4cbvq4fj0k4hsqpca
+  text: |-
+    Picked up again (2026-09-29). Research:
+
+    - The pinned Router (Package.resolved c49e453) now has `FinishReason.endedInsideReasoning` and `FinishReason.repeatedLines`, `SessionEvent.repetitionStopped(RepetitionStop)`, `RepetitionDetection` (five values now: isEnabled, windowTokens, minimumLineLength, recoveriesPerAnswer, passTokenLimit) and `TranscriptEvent.Kind.repeatedPartRemoval`. The blocker of 2026-09-28 is gone.
+    - Code names now: `PromptExecution` (was `PromptTurn`), `PromptStateOwner`. `EventProjection` keeps `lastFinishReason` from `.submissionEnded`; `endedAtTokenCeiling` reads only `.maxTokens`.
+    - `SessionResume.update(for:)` already puts `.repeatedPartRemoval` in the arm that returns `nil`, beside `.generationCall`. That part of the added scope is done by an earlier card; I add only the replay test if it is missing.
+    - `repetitionStopped` falls into a shared `debug` arm in `EventProjection` with `answered` and others.
+    - Exit code: `_truncated` is `StopReason.unknown`, and `AgentExitCode(stopReason:)` maps `.unknown` to `.error` (exit 1). The new values take the same row: exit 1. No new arm in the switch; a test holds the mapping.
+    - acp-client lives in the FoundationModelsACPClient repository. Its `ExitCode.swift` maps `.unknown` in general, and it names no `_truncated`. The `acp-agent` `EventLineWriter` prints the wire value in general. No change there.
+    - Docs that name `_truncated`: plan.md §8.2, bench/README.md, bench/swebench_acp.py module text.
+
+    Decisions: `_ended_in_reasoning` for `.endedInsideReasoning` (owner decision); `_repeated` for `.repeatedLines`; both exit 1. `repetitionStopped` gets its own `notice` log line with the model and the report text, and no wire message. The host option becomes a new `repetition:` section in `config.yaml` with Router's five property names as keys and Router's defaults.
+  timestamp: 2026-09-29T20:16:44.516045+00:00
+- actor: claude-code
+  id: 01m3qdjnv23148xen49ar151h4
+  text: |-
+    Implementation landed (not committed).
+
+    Stop reasons:
+    - `PromptStop` has two new cases, `endedInReasoning` and `repeated`. `PromptExecution.stopReason(for:)` maps them to `_ended_in_reasoning` (`endedInReasoningStopReasonValue`) and `_repeated` (`repeatedStopReasonValue`).
+    - `PromptExecution.cutStop(for:)` is a total switch over `FinishReason` with no `default`: `.completed` -> nil, `.maxTokens` -> `.truncated`, `.endedInsideReasoning` -> `.endedInReasoning`, `.repeatedLines` -> `.repeated`. A new Router finish reason stops the build there.
+    - `EventProjection.endedAtTokenCeiling` is removed; `lastFinishReason` is now `private(set)` and `drive` reads it through `cutStop(for:)`.
+    - The usage log line is now `report(cut:usage:)`. It names the wire value of the cut stop, thus all three cut stops log `tokensIn`, `tokensOut` and `contextFill`.
+
+    Exit code decision: `_truncated` is `StopReason.unknown` and `AgentExitCode(stopReason:)` maps `.unknown` to `.error`, exit 1. `_ended_in_reasoning` and `_repeated` take the same row, exit 1. The switch did not change (its source-shape test holds six arms). The doc comment of `init(stopReason:)` now names each extension value and its exit 1, and `ExitCodeTests.aCutPromptStopReasonExitsError` holds the three values.
+
+    acp-client (FoundationModelsACPClient repo) maps `.unknown` in general and names no `_truncated`; `EventLineWriter` prints the wire value in general. No change there.
+
+    Added scope:
+    - `repetitionStopped` has its own arm in `EventProjection` and a `notice` log line with the model and `RepetitionStop.description` (counts and settings). No wire message.
+    - New `repetition:` config section (`Configuration/RepetitionConfiguration.swift`): keys `isEnabled`, `windowTokens`, `minimumLineLength`, `recoveriesPerAnswer`, `passTokenLimit` (Router added `passTokenLimit` after the card comment, so five keys, not four), Router defaults when absent. It is key-checked, in `config show` (ConfigurationYAML section order and comment), and `makeBudgetedSession` takes it (new parameter `repetition:`; `session/new` and the model-slot switch pass it).
+    - `repeatedPartRemoval`: `SessionResume` already handled it; the new test `replaySendsNoMessageForARepeatedPartRemovalLine` puts a real-shaped line in a journal and proves the replay.
+
+    Docs: plan.md §2.4 (schema), §8.2 (five extension values), §8.4 table (repetitionStopped row); bench/README.md (stop reason table, `repetition:` keys table); bench/swebench_acp.py module text.
+
+    Note for the next agent: card ^kfqvqqb (OTel 3, in doing) replaces os.Logger in PromptTurn/PromptExecution. The two cards touch the same log calls in `PromptExecution.swift` and `EventProjection.swift`; expect a merge there.
+  timestamp: 2026-09-29T20:26:56.226767+00:00
+- actor: claude-code
+  id: 01m3qdjv3byzqp3mdfweq35e3h
+  text: |-
+    ### implement — changed
+    - evidence: 18 files (17 changed, 1 new). Sources: PromptExecution.swift, EventProjection.swift, SessionSetup.swift, ConfigOptions.swift, AgentConfiguration.swift, ConfigurationYAML.swift, RepetitionConfiguration.swift (new), acp-agent/ExitCode.swift. Tests: PromptExecutionTests, ExitCodeTests, ConfigurationLoaderTests, ConfigShowTests, SessionSetupTests, SessionResumeTests, SkillOutputProtectionTests. Docs: plan.md, bench/README.md, bench/swebench_acp.py. `swift test`: 624 tests in 70 suites passed (1 known issue, from before), no compiler warning (only the swift-build notice "missing creator for mutated node" for the mlx bundle, from before). `swift build --build-tests` in IntegrationTests: complete, no warning. bench unittest: 208 OK.
+    - next: /review
+  timestamp: 2026-09-29T20:27:01.611020+00:00
+position_column: doing
 position_ordinal: '8180'
 title: Map Router's endedInsideReasoning finish reason to an honest ACP stop reason
 ---

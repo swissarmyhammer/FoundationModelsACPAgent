@@ -358,6 +358,60 @@ import Testing
         #expect(budget.toolOutputLimit == Self.configuredToolOutputLimit)
     }
 
+    // MARK: The repetition detection (Router RepetitionDetection)
+
+    /// The non-default `repetition.windowTokens` the detection test writes.
+    private static let configuredWindowTokens = 1024
+
+    /// The non-default `repetition.recoveriesPerAnswer` of the same section.
+    private static let configuredRecoveriesPerAnswer = 1
+
+    /// The slice of the recorded `session.json` sidecar the detection test
+    /// reads: the repetition detection of the configuration envelope.
+    private struct SidecarRepetitionSlice: Decodable {
+        /// The recorded configuration envelope's one read key.
+        struct Configuration: Decodable {
+            /// The recorded repetition detection of the session.
+            let repetitionDetection: RepetitionDetection?
+        }
+
+        /// The configuration envelope, or `nil` for a recording made
+        /// before the envelope existed.
+        let configuration: Configuration?
+    }
+
+    /// A session made with a config `repetition:` section carries that
+    /// detection: `session/new` passes the section to Router, and the
+    /// recorded sidecar holds it.
+    @Test(.timeLimit(.minutes(1)))
+    func sessionNewPassesTheRepetitionSectionToTheSession() async throws {
+        let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
+        let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo-repetition")
+        let dotfolder = cwd.appendingPathComponent(
+            ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)
+        try """
+            repetition:
+              windowTokens: \(Self.configuredWindowTokens)
+              recoveriesPerAnswer: \(Self.configuredRecoveriesPerAnswer)
+            """.write(
+                to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
+                atomically: true, encoding: .utf8)
+        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+
+        let response = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
+
+        let sidecarFile = Self.projectTranscriptsRoot(of: cwd)
+            .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)
+            .appendingPathComponent("session.json")
+        let slice = try JSONDecoder().decode(
+            SidecarRepetitionSlice.self, from: Data(contentsOf: sidecarFile))
+        let detection = try #require(slice.configuration?.repetitionDetection)
+        #expect(detection.windowTokens == Self.configuredWindowTokens)
+        #expect(detection.recoveriesPerAnswer == Self.configuredRecoveriesPerAnswer)
+        #expect(detection.isEnabled == RepetitionDetection.defaultIsEnabled)
+    }
+
     // MARK: The resident profile outlives sessions (§1)
 
     /// The agent holds the profile strongly, so a second sequential

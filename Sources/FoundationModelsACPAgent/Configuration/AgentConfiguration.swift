@@ -42,13 +42,16 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     /// The thresholds of the self-folding session's token budget.
     public var compaction = CompactionConfiguration()
 
+    /// The settings of Router's repetition detector (task ^k51h6bb).
+    public var repetition = RepetitionConfiguration()
+
     /// The sandbox section (§11.7): the extra write grants beyond the
     /// session root set.
     public var sandbox = SandboxConfiguration()
 
     /// The YAML spelling of each top-level section.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case profile, tools, recording, transcripts, compaction, sandbox
+        case profile, tools, recording, transcripts, compaction, repetition, sandbox
     }
 
     /// The builtin configuration: every section at its default.
@@ -69,6 +72,9 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
         compaction =
             try container.decodeIfPresent(CompactionConfiguration.self, forKey: .compaction)
             ?? compaction
+        repetition =
+            try container.decodeIfPresent(RepetitionConfiguration.self, forKey: .repetition)
+            ?? repetition
         sandbox = try container.decodeIfPresent(SandboxConfiguration.self, forKey: .sandbox) ?? sandbox
     }
 }
@@ -92,6 +98,7 @@ extension AgentConfiguration {
         CodingKeys.recording.stringValue: .checked(RecordingConfiguration.knownKeys),
         CodingKeys.transcripts.stringValue: .checked(TranscriptsConfiguration.knownKeys),
         CodingKeys.compaction.stringValue: .checked(CompactionConfiguration.knownKeys),
+        CodingKeys.repetition.stringValue: .checked(RepetitionConfiguration.knownKeys),
         CodingKeys.sandbox.stringValue: .checked(SandboxConfiguration.knownKeys),
     ]
 }

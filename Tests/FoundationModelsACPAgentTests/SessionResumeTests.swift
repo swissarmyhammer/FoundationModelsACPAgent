@@ -173,6 +173,85 @@ struct SessionResumeTests {
             .filter { $0.kind == .divergence }
     }
 
+    // MARK: - The repeated-part journal line
+
+    /// The file name of the journal in the directory of one session.
+    private static let journalFileName = "transcript.jsonl"
+
+    /// The schema name of the one segment that Router writes on a
+    /// `repeatedPartRemoval` event.
+    private static let repeatedPartRemovalSchemaName =
+        "FoundationModelsRouter.RepeatedPartRemovalSegment"
+
+    /// The content of a cut that keeps each entry whole, so the restored
+    /// render is the same as the recorded one.
+    private static let wholeRenderCutJSON = #"{"keptUTF8Lengths":{}}"#
+
+    /// The text Router records on a `repeatedPartRemoval` event.
+    private static let repeatedPartRemovalText = "Repeated part removed from the render: "
+
+    /// The journal keys of a `.response` line that a `repeatedPartRemoval`
+    /// line does not carry.
+    private static let responseOnlyJournalKeys = ["tokensIn", "tokensOut", "ms"]
+
+    /// Puts one `repeatedPartRemoval` line in the journal of `sessionId`,
+    /// directly after its first `.response` line, as Router writes one
+    /// after the entries of a stopped attempt. The line takes the sequence
+    /// number and the time of that response, thus it stands between the
+    /// messages of the first prompt and the messages of the prompts after it.
+    ///
+    /// - Parameters:
+    ///   - root: The recording root that holds the session directory.
+    ///   - sessionId: The session whose journal gets the line.
+    /// - Throws: When the journal cannot be read or written, or holds no
+    ///   `.response` line.
+    private static func insertRepeatedPartRemoval(under root: URL, sessionId: SessionId) throws {
+        let journal = root.appendingPathComponent(sessionId.rawValue, isDirectory: true)
+            .appendingPathComponent(journalFileName)
+        var lines = try String(contentsOf: journal, encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        let responseIndex = try #require(
+            lines.firstIndex { journalKind(of: $0) == TranscriptEvent.Kind.response.rawValue })
+        lines.insert(
+            try repeatedPartRemovalLine(copying: lines[responseIndex]), at: responseIndex + 1)
+        try (lines.joined(separator: "\n") + "\n").write(to: journal, atomically: true, encoding: .utf8)
+    }
+
+    /// The `kind` of one journal line, or `nil` when the line is no JSON
+    /// object.
+    ///
+    /// - Parameter line: The journal line.
+    /// - Returns: The raw kind.
+    private static func journalKind(of line: String) -> String? {
+        let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+        return object?["kind"] as? String
+    }
+
+    /// A `repeatedPartRemoval` journal line made from the identity fields of
+    /// `responseLine`, with the payload Router writes: one structure segment
+    /// that carries the cut.
+    ///
+    /// - Parameter responseLine: The `.response` line whose session, sequence
+    ///   number and time the new line takes.
+    /// - Returns: The new journal line.
+    /// - Throws: When `responseLine` is no JSON object, or an encode fails.
+    private static func repeatedPartRemovalLine(copying responseLine: String) throws -> String {
+        var fields = try #require(
+            JSONSerialization.jsonObject(with: Data(responseLine.utf8)) as? [String: Any])
+        let segment = SegmentPayload.structure(
+            id: UUID().uuidString, schemaName: repeatedPartRemovalSchemaName,
+            contentJSON: wholeRenderCutJSON)
+        let segmentObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(segment))
+        for key in responseOnlyJournalKeys {
+            fields.removeValue(forKey: key)
+        }
+        fields["kind"] = TranscriptEvent.Kind.repeatedPartRemoval.rawValue
+        fields["text"] = repeatedPartRemovalText
+        fields["entry"] = ["entryId": UUID().uuidString, "segments": [segmentObject]]
+        let data = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
     /// A `cwd` string that is not absolute, so the agent must refuse it.
     private static let relativeCwd = "relative/resume"
 
@@ -360,6 +439,38 @@ struct SessionResumeTests {
         let secondUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBetween))
             .map(\.update)
         #expect(Self.replayedMessages(in: secondUpdates) == expected)
+        await resume.fixture.close()
+    }
+
+    /// A journal that holds a `repeatedPartRemoval` line replays no message
+    /// for that line, and replays each recorded message around it. The line
+    /// is Router's record of a cut in its own render after a repetition
+    /// stop: bookkeeping, not a message.
+    @Test(.timeLimit(.minutes(1)))
+    func replaySendsNoMessageForARepeatedPartRemovalLine() async throws {
+        var resume = try await ResumeSessionFixture.make(
+            label: "SessionResumeTests-repeated-part")
+        try await resume.runPrompt("first question")
+        try await resume.runPrompt("second question")
+        let root = try resume.recordingRoot
+        try await ResumeSessionFixture.waitForRecordedResponses(
+            under: root, sessionId: resume.fixture.sessionId, count: 2)
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+        let expected = Self.expectedMessages(
+            from: try ResumeSessionFixture.recordedEvents(
+                under: root, sessionId: resume.fixture.sessionId))
+        try Self.insertRepeatedPartRemoval(under: root, sessionId: resume.fixture.sessionId)
+        let recorded = try ResumeSessionFixture.recordedEvents(
+            under: root, sessionId: resume.fixture.sessionId)
+        #expect(recorded.contains { $0.kind == .repeatedPartRemoval })
+
+        let countBefore = await resume.fixture.collector.updates.count
+        _ = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+        let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
+            .map(\.update)
+
+        #expect(Self.replayedMessages(in: replayUpdates) == expected)
         await resume.fixture.close()
     }
 

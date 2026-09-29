@@ -558,6 +558,45 @@ import Testing
         #expect(loaded.configuration.compaction.hardCeiling == nil)
     }
 
+    /// The `repetition` section decodes its keys into Router's
+    /// `RepetitionDetection`, and a key that is not set keeps Router's
+    /// default.
+    @Test func theRepetitionSectionDecodesAndKeepsRouterDefaults() throws {
+        let fixture = Fixture()
+
+        let loaded = try fixture.loadProjectConfig(
+            """
+            repetition:
+              isEnabled: false
+              windowTokens: \(Self.configuredWindowTokens)
+            """)
+
+        let detection = loaded.configuration.repetition.detection
+        #expect(!detection.isEnabled)
+        #expect(detection.windowTokens == Self.configuredWindowTokens)
+        #expect(detection.minimumLineLength == RepetitionDetection.defaultMinimumLineLength)
+        #expect(detection.recoveriesPerAnswer == RepetitionDetection.defaultRecoveriesPerAnswer)
+        #expect(detection.passTokenLimit == RepetitionDetection.defaultPassTokenLimit)
+    }
+
+    /// With no `repetition` section, the detection is Router's default one.
+    @Test func anAbsentRepetitionSectionGivesRouterDefaultDetection() throws {
+        let loaded = try Fixture().makeLoader().load()
+
+        #expect(loaded.configuration.repetition.detection == RepetitionDetection())
+    }
+
+    /// A key in the `repetition` section that Router does not name is an
+    /// error, as in each other checked section.
+    @Test func anUnknownRepetitionKeyIsAnError() throws {
+        let fixture = Fixture()
+        fixture.writeConfig("repetition:\n  windowSize: 10\n", in: fixture.projectDirectory)
+
+        #expect(throws: ConfigurationError.unknownKey(section: "repetition", key: "windowSize")) {
+            try fixture.makeLoader().load()
+        }
+    }
+
     /// A project `config.yaml` that names a model for each of the three slots
     /// wins over each builtin default (cli-plan.md §7).
     ///
@@ -594,6 +633,10 @@ import Testing
 
     /// The `compaction.toolOutputLimit` the section test writes.
     private static let configuredToolOutputLimit = 4000
+
+    /// The `repetition.windowTokens` the section test writes. It differs
+    /// from Router's default, thus the decode is observable.
+    private static let configuredWindowTokens = 512
 
     /// The `profile.standard` model the override test writes. It differs from
     /// the default, thus the override is observable.

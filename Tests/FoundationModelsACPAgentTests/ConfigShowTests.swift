@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -81,6 +82,27 @@ struct ConfigShowTests {
         #expect(report.standardOutput.contains("recording:"))
         #expect(report.standardOutput.contains("level: \"full\""))
         #expect(report.standardErrorLines.isEmpty)
+    }
+
+    /// With no file in any layer, the report shows the `repetition` section
+    /// with Router's default value for each key, so a person can see and
+    /// edit the settings of the repetition detector.
+    @Test func noFilesShowTheRepetitionSectionWithRouterDefaults() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition")
+
+        let report = try Self.report([], in: fixture)
+
+        #expect(report.standardOutput.contains("repetition:"))
+        #expect(report.standardOutput.contains("isEnabled: \(RepetitionDetection.defaultIsEnabled)"))
+        #expect(report.standardOutput.contains("windowTokens: \(RepetitionDetection.defaultWindowTokens)"))
+        #expect(
+            report.standardOutput.contains(
+                "minimumLineLength: \(RepetitionDetection.defaultMinimumLineLength)"))
+        #expect(
+            report.standardOutput.contains(
+                "recoveriesPerAnswer: \(RepetitionDetection.defaultRecoveriesPerAnswer)"))
+        #expect(
+            report.standardOutput.contains("passTokenLimit: \(RepetitionDetection.defaultPassTokenLimit)"))
     }
 
     /// The report is the merged configuration: a project key shows its

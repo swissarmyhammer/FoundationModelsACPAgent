@@ -212,6 +212,15 @@ import Testing
             PromptExecution.stopReason(for: .noOutput)
                 == .unknown(PromptExecution.noOutputStopReasonValue))
         #expect(
+            PromptExecution.stopReason(for: .truncated)
+                == .unknown(PromptExecution.truncatedStopReasonValue))
+        #expect(
+            PromptExecution.stopReason(for: .endedInReasoning)
+                == .unknown(PromptExecution.endedInReasoningStopReasonValue))
+        #expect(
+            PromptExecution.stopReason(for: .repeated)
+                == .unknown(PromptExecution.repeatedStopReasonValue))
+        #expect(
             PromptExecution.stopReason(
                 for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
                 == .unknown(PromptExecution.stalledStopReasonValue))
@@ -396,6 +405,47 @@ import Testing
         #expect(
             ScriptedPromptFixture.idleStopReason(in: updates)
                 == .unknown(PromptExecution.truncatedStopReasonValue))
+    }
+
+    /// A prompt whose last submission ended inside the reasoning, below the
+    /// ceiling, ends with the `_ended_in_reasoning` extension stop reason.
+    /// A bare `end_turn` would show a cut prompt as a finished one, and
+    /// `_truncated` would say that the ceiling stopped it, which is false.
+    @Test func aPromptThatEndsInsideTheReasoningEndsWithTheEndedInReasoningStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
+            events: makeEventStream([
+                makeSubmissionEnded(
+                    TokenUsage(
+                        tokensIn: 100, tokensOut: 600, contextFill: .nan,
+                        finishReason: .endedInsideReasoning))
+            ]))
+        let updates = await recorder.updates
+
+        #expect(reason == .unknown(PromptExecution.endedInReasoningStopReasonValue))
+        #expect(
+            ScriptedPromptFixture.idleStopReason(in: updates)
+                == .unknown(PromptExecution.endedInReasoningStopReasonValue))
+    }
+
+    /// A prompt whose last submission stopped because it repeated itself,
+    /// with no recovery left, ends with the `_repeated` extension stop
+    /// reason.
+    @Test func aPromptThatEndsOnRepeatedLinesEndsWithTheRepeatedStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
+            events: makeEventStream([
+                makeSubmissionEnded(
+                    TokenUsage(
+                        tokensIn: 100, tokensOut: 2048, contextFill: .nan,
+                        finishReason: .repeatedLines))
+            ]))
+        let updates = await recorder.updates
+
+        #expect(reason == .unknown(PromptExecution.repeatedStopReasonValue))
+        #expect(
+            ScriptedPromptFixture.idleStopReason(in: updates)
+                == .unknown(PromptExecution.repeatedStopReasonValue))
     }
 
     /// Only the LAST generate call decides: a tool-calling prompt that

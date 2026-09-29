@@ -327,13 +327,15 @@ extension RoutedACPAgent {
         // (§11.3), spawned from inside a tool call, never from
         // `session/new`. The budget starts automatic compaction: the
         // fractions come from the `compaction:` section and the limit
-        // from the model's resolved context (plan.md §2.4).
+        // from the model's resolved context (plan.md §2.4). The repetition
+        // detector takes the `repetition:` section.
         let session = residentProfile.standard.makeBudgetedSession(
             instructions: composition.instructions,
             workingDirectory: workingDirectory,
             recordingRoot: composition.transcriptRoot,
             tools: composition.surface.tools,
-            compaction: composition.configuration.compaction)
+            compaction: composition.configuration.compaction,
+            repetition: composition.configuration.repetition)
 
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt task appends it at the first recorded activity,
@@ -608,6 +610,8 @@ extension RoutedLLM {
     ///   - recordingRoot: The per-session recording root.
     ///   - tools: The tools the model can call.
     ///   - compaction: The `compaction:` section the budget derives from.
+    ///   - repetition: The `repetition:` section the repetition detector of
+    ///     the session takes (task ^k51h6bb).
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``).
@@ -616,7 +620,8 @@ extension RoutedLLM {
         workingDirectory: URL,
         recordingRoot: URL,
         tools: [any FoundationModels.Tool],
-        compaction: CompactionConfiguration
+        compaction: CompactionConfiguration,
+        repetition: RepetitionConfiguration
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
@@ -645,6 +650,7 @@ extension RoutedLLM {
                 hardCeiling: compaction.hardCeiling,
                 toolOutputLimit: compaction.toolOutputLimit),
             compactionPrompt: .default,
-            toolOutputProtection: SkillOutputProtection.rule)
+            toolOutputProtection: SkillOutputProtection.rule,
+            repetitionDetection: repetition.detection)
     }
 }

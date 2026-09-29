@@ -233,9 +233,15 @@ files compose". Each other row answers "which layer wins".
 
 **The `AgentConfiguration` schema** contains `profile` (standard/flash/
 embedding slots), `tools` (built-in sections + `mcp`, §11.2), `recording`,
-`transcripts`, `compaction`, and `sandbox` (§11.7). There is **no
+`transcripts`, `compaction`, `repetition`, and `sandbox` (§11.7). There is **no
 `permissions` section**: the sandbox is the only gate, and it has no policy to
 configure (§11.7). The `sandbox` section holds one key, `extraWritePaths`.
+The `repetition` section holds the five settings of Router's
+`RepetitionDetection` under Router's own names: `isEnabled`, `windowTokens`,
+`minimumLineLength`, `recoveriesPerAnswer` and `passTokenLimit`. A key that is
+not set keeps Router's default (true, 2,048, 20, 2 and 16,384), and
+`session/new` and the model-slot switch give the section to each session they
+make (task ^k51h6bb).
 There is **no `instructions` section**. The
 system prompt is a markdown file (§3.1). The context size comes from the
 model. It is not configurable, and this is intentional.
@@ -959,7 +965,7 @@ needs a named owner for this state machine:
 exception and map it.** A Swift `CancellationError` that gets out as a
 JSON-RPC error, or as `refusal`, is the failure that the spec names.
 
-Three extension values stand beside the five. A prompt that completed with no
+Five extension values stand beside the five. A prompt that completed with no
 output and a zero-token usage report stops with `_no_output`, because a bare
 `end_turn` would hide it (task ^pez780d). A prompt the agent ended because the
 generation made no fragment for the whole stall bound stops with `_stalled`
@@ -967,8 +973,15 @@ generation made no fragment for the whole stall bound stops with `_stalled`
 ceiling of the model (`SubmissionEnd.finishReason == .maxTokens`) stops with
 `_truncated`: its answer, its reasoning or its tool call is cut, and
 `max_tokens` is the overflow of the input context, which is a different budget
-(task ^bw9qt1z). All three map to exit code 1 through the §5.8 table of
-`cli-plan.md`, which gives every unknown stop reason that row.
+(task ^bw9qt1z). A prompt whose last submission ended inside the reasoning,
+below the ceiling (`.endedInsideReasoning`), stops with `_ended_in_reasoning`:
+the model or the engine stopped the output, the answer can be empty, and
+`_truncated` would name the wrong cause (task ^k51h6bb). A prompt whose last
+submission Router stopped because it repeated itself, with no recovery left
+(`.repeatedLines`), stops with `_repeated` (task ^k51h6bb). The finish reason
+of the LAST submission decides, and a log line gives the usage numbers of
+each of the three cut stops. All five map to exit code 1 through the §5.8
+table of `cli-plan.md`, which gives every unknown stop reason that row.
 
 ### 8.3 The upsert algebra
 
@@ -1014,7 +1027,8 @@ and its doc comment says a consumer must write a `default` arm. Write one.
 | `elicitationRequested(OperationEvent)` | the elicitation round trip to the client (§16), with `requires_action` around it (§8.2). With no relay, nothing on the wire — a `notice` log line |
 | `submissionEnded(SubmissionEnd)` | nothing on its own. Its usage adds to the one sum of the prompt, and the agent keeps its finish reason. The one `usage_update` goes at the end of the prompt. The `idle` `state_update` comes from the end of our own prompt task, never from this event (§8.1) |
 | `generationCall(GenerationCallUsage)` | nothing on the wire — the usage of one generation call; `submissionEnded` already counts it (§8.0) |
-| `answered(SessionAnswer)` / `answerFailed` / `repetitionStopped` / `mailDeliveryPaused` | nothing on the wire — a `debug` log line. The usage of `answered` is the total of the chain, and the `submissionEnded` sum already counts it |
+| `repetitionStopped(RepetitionStop)` | nothing on the wire — a `notice` log line with the session id, the model name and the report of Router: the counts of the stop and the settings in force. When no recovery is left, the last submission ends with `.repeatedLines`, and the prompt stops with `_repeated` (§8.2) |
+| `answered(SessionAnswer)` / `answerFailed` / `mailDeliveryPaused` | nothing on the wire — a `debug` log line. The usage of `answered` is the total of the chain, and the `submissionEnded` sum already counts it |
 
 **`textReset` means "discard the text accumulated so far".** Therefore it
 cannot ride as a chunk. Send the whole-message form, which replaces

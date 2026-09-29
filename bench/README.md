@@ -139,6 +139,21 @@ so the index is never part of the patch.
 | `tools.codeContext.autoInstall` | `true` | A language server that is absent is installed automatically. |
 | `tools.codeContext.semanticSearch` | `false` | The index then embeds no chunk. Each instance is a new clone, thus each instance makes a new index, and the embedder uses the same GPU as the model. The symbol, call graph, blast radius and language server verbs need no embedding. Only `searchCode` does, and it answers with an error that says the embedding layer is off. |
 
+**The file sets no `repetition:` section, so each run uses Router's
+repetition detector at its defaults.** A reasoning model can write the lines
+that it already wrote again, until the call reaches its ceiling. The detector
+stops such a call and runs a recovery submission. When no recovery is left, the
+turn ends with `_repeated`. Each key is a setting of Router's
+`RepetitionDetection`, and `acp-agent config show` prints the values in force:
+
+| Key | Default | What it does |
+|---|---|---|
+| `repetition.isEnabled` | `true` | `false` stops no call for repetition, and sets no pass token limit |
+| `repetition.windowTokens` | `2048` | the generated tokens that must hold at least one new line |
+| `repetition.minimumLineLength` | `20` | the shortest line, in characters, that counts |
+| `repetition.recoveriesPerAnswer` | `2` | how many times one answer goes on after a stop |
+| `repetition.passTokenLimit` | `16384` | the most output tokens of one generation pass when the caller names no ceiling |
+
 ### Did the model use the skills and the code context?
 
 The transcripts answer this. Each `<id>/<session>/transcript.jsonl` holds one
@@ -372,10 +387,17 @@ for each instance:
 
 **The wire gives the STOP REASON of each turn.** `end_turn`, `max_tokens`,
 `max_turn_requests`, `refusal`, `cancelled`, and the `_error`, `_no_output`,
-`_stalled` and `_truncated` of this agent. `_truncated` says that the last
-generation of the turn reached the output token ceiling of the model, so the
-work of that turn is cut. The one-shot `run` command gave the harness an
-exit code and nothing more. The record of the instance keeps the reason.
+`_stalled`, `_truncated`, `_ended_in_reasoning` and `_repeated` of this agent.
+The last three say that the work of the turn is cut, and they say why:
+
+| Stop reason | The last generation of the turn |
+|---|---|
+| `_truncated` | reached the output token ceiling of the model |
+| `_ended_in_reasoning` | ended inside the reasoning, below the ceiling: the model or the engine stopped it, and the answer can be empty |
+| `_repeated` | wrote the same lines again, and Router stopped it with no recovery left (see the `repetition:` keys in [What the configuration does](#what-the-configuration-does)) |
+
+The one-shot `run` command gave the harness an exit code and nothing more. The
+record of the instance keeps the reason.
 
 **A turn past the limit gets `session/cancel`,** and not a signal. The agent
 answers with the `cancelled` stop reason, and the run goes on with the same

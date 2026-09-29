@@ -67,6 +67,11 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
     /// reason. That is why the mapping is a switch and not a lookup: a
     /// lookup compiles clean and answers nothing at run time.
     ///
+    /// Each extension stop reason of this agent (`_error`, `_no_output`,
+    /// `_stalled`, `_truncated`, `_ended_in_reasoning` and `_repeated`)
+    /// arrives as `.unknown` and exits 1: the prompt did not end with a
+    /// finished answer, and a script must not read it as one.
+    ///
     /// - Parameter stopReason: The stop reason the prompt ended on.
     init(stopReason: StopReason) {
         self = switch stopReason {

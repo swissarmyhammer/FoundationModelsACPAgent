@@ -64,7 +64,9 @@ public enum ConfigurationYAML {
     private static let objCFloatType = "f"
 
     /// The top-level sections, in the order the document emits them.
-    private static let sectionOrder = ["profile", "tools", "recording", "transcripts", "compaction", "sandbox"]
+    private static let sectionOrder = [
+        "profile", "tools", "recording", "transcripts", "compaction", "repetition", "sandbox",
+    ]
 
     /// The comment printed above each top-level section.
     private static let sectionComments: [String: String] = [
@@ -73,6 +75,7 @@ public enum ConfigurationYAML {
         "recording": "How much of each session is recorded: full or off.",
         "transcripts": "Where transcripts are written: project, home or an absolute path.",
         "compaction": "The token-budget thresholds of the self-folding session.",
+        "repetition": "The detector that stops a generate call that repeats itself.",
         "sandbox": "Extra write grants beyond the session root set.",
     ]
 

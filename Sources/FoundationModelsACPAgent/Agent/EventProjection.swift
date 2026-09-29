@@ -121,25 +121,23 @@ struct EventProjection {
     private var tokensOut = 0
 
     /// The finish reason of the last submission of the prompt, or `nil`
-    /// before the first usage report.
-    private var lastFinishReason: FinishReason?
-
-    /// True when the last submission of the prompt stopped at the output
-    /// token ceiling of the model (task ^bw9qt1z). The text, the
-    /// reasoning or the tool call of that generation is cut, so the
-    /// prompt must not read as a normal `end_turn`.
-    var endedAtTokenCeiling: Bool {
-        lastFinishReason == .maxTokens
-    }
+    /// before the first `submissionEnded`.
+    ///
+    /// `PromptExecution.drive` reads it to report the honest stop reason of
+    /// a prompt whose last submission did not end by itself (tasks ^bw9qt1z
+    /// and ^k51h6bb): the text, the reasoning or the tool call of that
+    /// generation is cut, so the prompt must not read as a normal `end_turn`.
+    private(set) var lastFinishReason: FinishReason?
 
     /// The numbers behind a stop reason, for the log of a prompt that
     /// ended cut or empty.
     ///
-    /// A `_truncated` prompt says that the last submission stopped at the
-    /// ceiling, and nothing more. The reader then cannot tell a model that
-    /// reasoned too long in one round from a context that filled up. These
-    /// three numbers name the difference: the tokens the whole prompt fed
-    /// and generated, and how full the context was at the last report.
+    /// A `_truncated`, `_ended_in_reasoning` or `_repeated` prompt says how
+    /// the last submission stopped, and nothing more. The reader then cannot
+    /// tell a model that reasoned too long in one round from a context that
+    /// filled up. These three numbers name the difference: the tokens the
+    /// whole prompt fed and generated, and how full the context was at the
+    /// last report.
     var usageSummary: String {
         let fill = contextFill.isNaN ? "unknown" : String(format: "%.3f", contextFill)
         return "tokensIn=\(tokensIn) tokensOut=\(tokensOut) contextFill=\(fill)"
@@ -290,7 +288,12 @@ struct EventProjection {
         case .submissionQueued:
             // A log line, not a wire message (§8.4).
             reportQueueWait()
-        case .answered, .answerFailed, .repetitionStopped, .mailDeliveryPaused:
+        case .repetitionStopped(let stop):
+            // A log line, not a wire message (§8.4): the stop reason of
+            // the prompt carries the end, and the next submission of a
+            // recovery carries the text.
+            reportRepetitionStop(stop)
+        case .answered, .answerFailed, .mailDeliveryPaused:
             // Router bookkeeping with no ACP counterpart: the stream of
             // the prompt carries the text, the tool calls and the end.
             // The usage of `answered` is the total of the chain. The
@@ -325,6 +328,28 @@ struct EventProjection {
         let model = modelName
         promptLogger.notice(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) runs a submission of another session; this submission waits for a place in the model queue"
+        )
+    }
+
+    /// Records that Router stopped a generate call of the prompt because the
+    /// call repeated itself (task ^k51h6bb).
+    ///
+    /// plan.md §8.4 gives the stop no wire message. The line is a `notice`
+    /// and not a `debug`, because a person who reads the log of a slow or
+    /// cut prompt must learn that the detector stopped a call, with the
+    /// counts of the stop and the settings in force. When no recovery is
+    /// left, the prompt ends with the `_repeated` stop reason, and this line
+    /// is the one place that gives those numbers.
+    ///
+    /// - Parameter stop: The report Router made.
+    private func reportRepetitionStop(_ stop: RepetitionStop) {
+        // Copies for the log line: the logger's message is an escaping
+        // autoclosure, which must not capture the projection itself.
+        let sessionIdValue = sessionId.rawValue
+        let model = modelName
+        let reported = stop.description
+        promptLogger.notice(
+            "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public): \(reported, privacy: .public)"
         )
     }
 

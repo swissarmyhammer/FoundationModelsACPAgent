@@ -43,6 +43,22 @@ enum PromptStop: Equatable, Sendable {
     /// (§8.2's `_` rule; task ^bw9qt1z).
     case truncated
 
+    /// The prompt completed, but the output of its last submission ended
+    /// inside the reasoning, below the output token ceiling: Router's
+    /// `FinishReason` of that submission is `endedInsideReasoning`. The
+    /// model or the engine stopped the output, not the ceiling, and the
+    /// answer can be empty. A bare `end_turn` would show a cut prompt as a
+    /// finished one, and `_truncated` would name the wrong cause. So the arm
+    /// maps to the `_ended_in_reasoning` extension value (§8.2's `_` rule;
+    /// task ^k51h6bb).
+    case endedInReasoning
+
+    /// The prompt completed, but Router stopped its last submission because
+    /// the submission repeated itself and no recovery was left: Router's
+    /// `FinishReason` of that submission is `repeatedLines`. The arm maps to
+    /// the `_repeated` extension value (§8.2's `_` rule; task ^k51h6bb).
+    case repeated
+
     /// The prompt stopped waiting on a generation that made nothing: the
     /// model call produced no fragment at all for the whole
     /// ``PromptExecution/stalledGenerationBound``, so the prompt ended it
@@ -86,6 +102,16 @@ struct PromptExecution: Sendable {
     /// token ceiling stops with, under the same `_`-prefix extension rule
     /// (task ^bw9qt1z).
     static let truncatedStopReasonValue = "_truncated"
+
+    /// The wire value a prompt whose last generation ended inside the
+    /// reasoning, below the ceiling, stops with, under the same `_`-prefix
+    /// extension rule (task ^k51h6bb).
+    static let endedInReasoningStopReasonValue = "_ended_in_reasoning"
+
+    /// The wire value a prompt whose last generation Router stopped for
+    /// repetition stops with, under the same `_`-prefix extension rule
+    /// (task ^k51h6bb).
+    static let repeatedStopReasonValue = "_repeated"
 
     /// The wire value a prompt that ended a stalled generation stops with,
     /// under the same `_`-prefix extension rule (task ^s0bw5cv).
@@ -263,13 +289,13 @@ struct PromptExecution: Sendable {
         if stop == .completed, projection.generatedNothing {
             stop = .noOutput
         }
-        // A completed prompt whose LAST submission stopped at the output
-        // token ceiling is cut, not finished (task ^bw9qt1z). A prompt of
-        // 8192 reasoning tokens and no answer ended as `end_turn` before
-        // Router gave the finish reason.
-        if stop == .completed, projection.endedAtTokenCeiling {
-            stop = .truncated
-            report(truncation: projection.usageSummary)
+        // A completed prompt whose LAST submission did not end by itself is
+        // cut, not finished (tasks ^bw9qt1z and ^k51h6bb). A prompt of 8192
+        // reasoning tokens and no answer ended as `end_turn` before Router
+        // gave the finish reason.
+        if stop == .completed, let cut = Self.cutStop(for: projection.lastFinishReason) {
+            stop = cut
+            report(cut: cut, usage: projection.usageSummary)
         }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
@@ -315,8 +341,30 @@ struct PromptExecution: Sendable {
         case .toolLoopCapped: .maxTurnRequests
         case .noOutput: .unknown(noOutputStopReasonValue)
         case .truncated: .unknown(truncatedStopReasonValue)
+        case .endedInReasoning: .unknown(endedInReasoningStopReasonValue)
+        case .repeated: .unknown(repeatedStopReasonValue)
         case .stalled: .unknown(stalledStopReasonValue)
         case .failed: .unknown(unmappedStopReasonValue)
+        }
+    }
+
+    /// The stop of a completed prompt whose last submission ended with
+    /// `finishReason`, or `nil` when that submission ended by itself.
+    ///
+    /// The switch is total and declares no `default`, so a finish reason
+    /// that Router adds later stops the build here until somebody decides
+    /// its stop reason.
+    ///
+    /// - Parameter finishReason: The finish reason of the last submission,
+    ///   or `nil` when no submission reported one.
+    /// - Returns: The cut stop, or `nil` for a prompt that stays `completed`.
+    static func cutStop(for finishReason: FinishReason?) -> PromptStop? {
+        guard let finishReason else { return nil }
+        switch finishReason {
+        case .completed: return nil
+        case .maxTokens: return .truncated
+        case .endedInsideReasoning: return .endedInReasoning
+        case .repeatedLines: return .repeated
         }
     }
 
@@ -377,18 +425,21 @@ struct PromptExecution: Sendable {
         )
     }
 
-    /// Records the numbers of a prompt that stopped at the output token
-    /// ceiling. The wire carries ``truncatedStopReasonValue`` alone, thus
-    /// this line is the one place that says how full the context was and how
-    /// many tokens the prompt spent.
+    /// Records the numbers of a prompt whose last submission did not end by
+    /// itself. The wire carries the extension stop reason alone
+    /// (``truncatedStopReasonValue``, ``endedInReasoningStopReasonValue`` or
+    /// ``repeatedStopReasonValue``), thus this line is the one place that
+    /// says how full the context was and how many tokens the prompt spent.
     ///
-    /// - Parameter usage: The summary ``EventProjection/usageSummary`` makes.
-    private func report(truncation usage: String) {
+    /// - Parameters:
+    ///   - cut: The stop ``cutStop(for:)`` gave.
+    ///   - usage: The summary ``EventProjection/usageSummary`` makes.
+    private func report(cut: PromptStop, usage: String) {
         // Copies for the log line: the logger's message is an escaping
         // autoclosure, which must not capture the prompt itself.
         let sessionIdValue = sessionId.rawValue
         let model = modelName
-        let reason = Self.truncatedStopReasonValue
+        let reason = Self.stopReason(for: cut).wireValue
         promptLogger.error(
             "session \(sessionIdValue, privacy: .public): model \(model, privacy: .public) ended with \(reason, privacy: .public): \(usage, privacy: .public)"
         )

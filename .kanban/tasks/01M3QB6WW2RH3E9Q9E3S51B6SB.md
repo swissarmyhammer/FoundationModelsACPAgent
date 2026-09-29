@@ -13,8 +13,24 @@ comments:
     - evidence: ScriptedModel.swift — removed the dead play `ScriptedPassStep.collectingToolCall(name:)` and its private parts: `ScriptedModelError.noRunToCollect`, `completionTokenField`, `SynthesizedTranscript.latestAnswer`, `invokeCollectingTool(named:)`, `latestCompletionToken()`, `argumentsJSON(collecting:)`, the `latestAnswer` write in `invokeTool`, and the `noRunToCollect` line in the `play` Throws doc. RecordedTranscriptFile.swift — `completionTokenKey` doc now tells what the field is (it names the background run in the pending envelope, and equals the `correlationID` of the run's operation events), with no `wait` tool. `rg -n "\`wait\`" Tests IntegrationTests` gives no match. Each other `\bwait\b` hit is the English word. `swift test`: 615 tests in 70 suites pass, 1 known issue (the planned negative check in HarnessSmokeTests, which was already there), zero compiler warnings. `swift build --build-tests` in IntegrationTests/: build complete, zero compiler warnings. Both builds print the SwiftPM build graph line "missing creator for mutated node" for the mlx-swift_Cmlx bundle. That line is not a compiler warning, and this change did not cause it.
     - next: /review
   timestamp: 2026-09-29T20:05:00.596779+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3qcmqhwfx7hjzrgh812fbt0
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (546269e) gives 0 findings, 0 confirmed, 0 refuted. 2 files were reviewed. 4 `.kanban/` files were not reviewed because `.reviewignore` excludes them. The task had no earlier review findings. Acceptance: `rg -n "\`wait\`" Tests IntegrationTests` gives no match. `swift test` gives 615 tests in 70 suites that pass, with 1 known issue (the planned negative check in HarnessSmokeTests) and zero compiler warnings. The only `warning:` line is the SwiftPM build graph line "missing creator for mutated node" for the mlx-swift_Cmlx bundle. That line is not a compiler warning. Both acceptance boxes are now checked.
+    - next: none. The task moves to done.
+  timestamp: 2026-09-29T20:10:34.940347+00:00
+- actor: claude-code
+  id: 01m3qcn4t0jb017ges1ydf0zjw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — ScriptedModel.swift, RecordedTranscriptFile.swift
+    - test: green — swift test 615 tests pass
+    - commit: 546269e
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T20:10:48.512764+00:00
+position_column: done
+position_ordinal: fb80
 title: Remove the obsolete `wait` tool from the test support doc comments and the ScriptedModel collecting play
 ---
 ## Why
@@ -29,7 +45,7 @@ Rewrite these places for the mail model. Write in ASD-STE100 Simplified Technica
 
 ## Acceptance Criteria
 
-- [ ] `rg -n "\`wait\`" Tests IntegrationTests` shows no line that tells of a `wait` tool as if it exists.
-- [ ] `swift test` passes with zero compiler warnings.
+- [x] `rg -n "\`wait\`" Tests IntegrationTests` shows no line that tells of a `wait` tool as if it exists.
+- [x] `swift test` passes with zero compiler warnings.
 
 Found by ^f4tye31. #generation-queue
