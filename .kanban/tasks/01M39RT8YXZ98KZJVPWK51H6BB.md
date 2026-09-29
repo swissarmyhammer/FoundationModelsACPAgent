@@ -141,8 +141,24 @@ comments:
     - evidence: 5 files (1 new). Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift, Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift, Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift, Tests/FoundationModelsACPAgentTests/Support/ResumeSessionFixture.swift, Tests/FoundationModelsACPAgentTests/Support/ReplayedMessage.swift (new). `swift test`: 625 tests in 70 suites passed (1 known issue, from before); no compiler warning (only the swift-build notice "missing creator for mutated node" for the mlx bundle, from before). Finding SessionResumeTests.swift:450 checked. Not committed.
     - next: /review
   timestamp: 2026-09-29T20:54:43.845570+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3qfkngvk2956my42s6mzec8
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit f167e2e). The engine gave 1 finding (1 confirmed, 1 refuted). We dropped that finding: `Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift:364` `duplication/duplication` tells us to extract a shared helper from two tests that were there before this commit (`replayFromStartSendsWholeMessageUpsertsWithTheRecordedIds` and `replaySendsNoMessageForARepeatedPartRemovalLine`). The commit changed only the reader call in each test. The review rule drops findings that ask for a refactor of tests that were there before. Zero findings remain. The one prior finding is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-09-29T21:02:25.819096+00:00
+- actor: claude-code
+  id: 01m3qfm15vfpnvrztj92mwdstv
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files (ScriptedModel.swift, PromptExecutionTests.swift, SessionResumeTests.swift, ResumeSessionFixture.swift, ReplayedMessage.swift new)
+    - test: green — swift test 625 tests pass; IntegrationTests build ok
+    - commit: f167e2e
+    - review: clean — zero findings (1 dropped by the rule for tests that already existed); task moved to done
+  timestamp: 2026-09-29T21:02:37.755377+00:00
+position_column: done
+position_ordinal: fc80
 title: Map Router's endedInsideReasoning finish reason to an honest ACP stop reason
 ---
 ## What changed in Router

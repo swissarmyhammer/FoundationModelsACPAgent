@@ -24,6 +24,14 @@ comments:
     - test, commit, review: not run
     - next: a person must decide if a card goes on the FoundationModelsCodeContext board.
   timestamp: 2026-09-29T02:58:41.618326+00:00
+- actor: claude-code
+  id: 01m3qfm4hvah9w8th55h04yga9
+  text: |-
+    ### finish — skipped (stuck for upstream)
+    - The fix is in the FoundationModelsCodeContext package, not in this repository. The card says to take it to the session of FoundationModelsCodeContext.
+    - On 2026-09-29 no FoundationModelsCodeContext session runs (ListAgents shows only a peer session of this repository). The rule for this project is: no local overrides of a sibling package.
+    - next: a person starts a FoundationModelsCodeContext session, or tells the orchestrator to change that repository. The acceptance test on the card (the 166-line file) stays the same.
+  timestamp: 2026-09-29T21:02:41.211600+00:00
 position_column: todo
 position_ordinal: '80'
 title: grepCode returns the outermost symbol, so a hit in one method gives back the whole class
