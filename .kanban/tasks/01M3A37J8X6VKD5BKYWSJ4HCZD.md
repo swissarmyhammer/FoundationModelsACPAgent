@@ -23,8 +23,38 @@ comments:
     - test, commit, review: not run
     - next: this task waits for ^tz867gz (adopt the newer Router). A person must decide the order.
   timestamp: 2026-09-28T22:23:27.959337+00:00
-position_column: todo
-position_ordinal: '8980'
+- actor: claude-code
+  id: 01m3pz9f06cnpg0pjmxqma0yrv
+  text: |-
+    Picked up again on Router main c49e453 (the new Router is now adopted). Research result and decision:
+
+    - The Router design (`generation-queue.md` section 5.3) and the Router source now give a public seam for a stub container. `LoadedLLMContainer.submitting(to:)` is a public protocol requirement. The Router calls it one time for each hold (`ModelHold.generationContainer()`), with the one `GenerationQueue` of the pool entry. `LanguageModelSessionBackend.generationQueue` is a public protocol requirement with a default of `nil`. When a backend names a queue, the session submits each whole SDK call of the backend to that queue as one item (`RoutedSessionActor.ownSubmissionTarget`, `runCancellableModelCall`).
+    - A container that keeps the default `submitting(to:)` gets no queue (the case of `ScriptedLLMContainer` now). This is the "decision of ^8csj2hw step 4": the consumer stub opts in.
+    - The queue item is one submission (one whole SDK call), not one executor pass. For the scripted backend, one generating call is one play of the script. Thus in this test support one "pass" is one generating call of a scripted backend, and the Router runs it as one item of the pool-entry queue.
+    - Decision: do NOT build an executor-level model (the Router test helper `ScriptedToolCallingModel` drives `MLXFoundationModelsSessionBackend`, which is not public to this package). Use the public seam: `ScriptedSessionBackend` names an optional `generationQueue`, and a scripted container that opts in overrides `submitting(to:)` to keep the pool-entry queue. The existing `ScriptedLLMContainer` default stays unqueued, so the 605 existing tests keep their behavior.
+    - `GenerationQueue.waitingCount` (public, in FoundationModelsExtras) tells a test that a second submission waits, with no fixed wait.
+  timestamp: 2026-09-29T16:17:14.246035+00:00
+- actor: claude-code
+  id: 01m3pzz6afg7y2dshn0tnnnwxh
+  text: |-
+    Implementation landed (not committed).
+
+    What was made:
+    - `Tests/FoundationModelsACPAgentTestSupport/QueuedScriptedModel.swift` (new): `ScriptedHold` (a hold that ends on `release()` or on cancel; a continuation, no timer), `ScriptedPassCounter` (`startedCount`, `runningCount`, `maximumRunningCount`, and `waitingCount`, which reads `GenerationQueue.waitingCount` of the pool-entry queue), and `StubModelLoader.makeQueuedScriptedLoader(script:passCounter:)`.
+    - `Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift`: new step `ScriptedTurnStep.holdUntilReleased(ScriptedHold)`; `ScriptedSessionBackend` names an optional `generationQueue` and counts each play on an optional pass counter (forks and replaced transcripts keep both, through one `makeSibling` helper); `ScriptedLLMContainer` takes an optional `passCounter` and, only when it has one, overrides `submitting(to:)` to keep the queue of the pool entry. With no counter, the container keeps the old behavior (no queue), so the existing tests do not change.
+    - `Tests/FoundationModelsACPAgentTests/Support/QueuedScriptedFixture.swift` (new): one agent, two ACP sessions in one working directory over the queued model.
+    - `Tests/FoundationModelsACPAgentTests/QueuedScriptedModelTests.swift` (new): the four tests of the card, each with `.timeLimit(.minutes(1))`. No fixed wait: each wait is `Poll.until` of a fact under a deadline.
+
+    Discovery: the stub profile resolves the `standard` and the `flash` slot as two different pool entries, thus two different queues. The Router calls `submitting(to:)` for the standard hold and then for the flash hold. On the first try the counter kept the last queue (flash), and `waitingCount` read the wrong queue: the two queue tests timed out. The fix: the queued loader gives the pass counter (and thus the queue) only to the container of the `standard` slot, which the ACP sessions prompt. The flash container runs each call directly.
+
+    TDD record: RED 1 = compile failure (no API). RED 2 = with the hold and the counter but no `submitting(to:)` override, `twoSessionsNeverRunTwoPassesAtOnce` failed with `maximumRunningCount == 2`, and `aSecondSessionWaitsForTheHeldPass` timed out. GREEN after the override.
+
+    ### implement — changed
+    - evidence: `swift test --filter QueuedScriptedModelTests` 4/4 passed (twoSessionsNeverRunTwoPassesAtOnce, releaseEndsAHeldPass, cancelEndsAHeldPass, aSecondSessionWaitsForTheHeldPass); `swift test` 609 tests in 70 suites passed (605 before + 4), 1 known issue (the old intentional one in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); `swift build --package-path IntegrationTests --build-tests` complete. Files: Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift, Tests/FoundationModelsACPAgentTestSupport/QueuedScriptedModel.swift, Tests/FoundationModelsACPAgentTests/Support/QueuedScriptedFixture.swift, Tests/FoundationModelsACPAgentTests/QueuedScriptedModelTests.swift.
+    - next: /review. The task stays in doing.
+  timestamp: 2026-09-29T16:29:06.255751+00:00
+position_column: doing
+position_ordinal: '8180'
 title: Give the test support a scripted model that goes through the Router generation queue
 ---
 ## Why
@@ -48,14 +78,14 @@ The decision of Router card `01M39ZNAJWMVZ291SCH8CSJ2HW` step 4 (read its commen
 
 ## Acceptance Criteria
 
-- [ ] With two sessions on the fixture, the maximum number of passes that run at the same time is 1.
-- [ ] A held pass ends when the test calls `release()`, and it ends on cancel.
-- [ ] While session A holds a pass, a prompt on session B starts no pass (the counter shows it).
+- [x] With two sessions on the fixture, the maximum number of passes that run at the same time is 1.
+- [x] A held pass ends when the test calls `release()`, and it ends on cancel.
+- [x] While session A holds a pass, a prompt on session B starts no pass (the counter shows it).
 
 ## Tests
 
-- [ ] `Tests/FoundationModelsACPAgentTests/QueuedScriptedModelTests.swift`: `twoSessionsNeverRunTwoPassesAtOnce`, `releaseEndsAHeldPass`, `cancelEndsAHeldPass`, `aSecondSessionWaitsForTheHeldPass`. Each with a timeout.
-- [ ] Run `swift test --filter QueuedScriptedModelTests`, then `swift test`. All pass. Read the real test names in the output.
+- [x] `Tests/FoundationModelsACPAgentTests/QueuedScriptedModelTests.swift`: `twoSessionsNeverRunTwoPassesAtOnce`, `releaseEndsAHeldPass`, `cancelEndsAHeldPass`, `aSecondSessionWaitsForTheHeldPass`. Each with a timeout.
+- [x] Run `swift test --filter QueuedScriptedModelTests`, then `swift test`. All pass. Read the real test names in the output.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #generation-queue #tests

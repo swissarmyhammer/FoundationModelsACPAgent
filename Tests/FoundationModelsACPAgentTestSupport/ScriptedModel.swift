@@ -53,6 +53,11 @@ public enum ScriptedTurnStep: Sendable, Equatable {
     /// this step and cancels it from the client end (plan.md §8.6).
     case hold
 
+    /// Suspends until the test calls ``ScriptedHold/release()`` on the
+    /// hold, and then plays the next step. When the turn's task is
+    /// cancelled first, it throws `CancellationError`, as ``hold`` does.
+    case holdUntilReleased(ScriptedHold)
+
     /// Writes `text` to the file at `path`, and plays no model output.
     ///
     /// A proof uses it to act BETWEEN two model steps, which is the only
@@ -215,6 +220,16 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// test does not observe the prompt.
     private let recorder: PromptRecorder?
 
+    /// The generation queue of the pool entry of this backend's model, or
+    /// `nil`. When it is set, the Router session submits each generating
+    /// call of this backend to it as one item, so one play of the script
+    /// waits for its place in the queue.
+    public let generationQueue: GenerationQueue?
+
+    /// The counter each play of the script is counted on, or `nil` when
+    /// the test does not count the passes.
+    private let passCounter: ScriptedPassCounter?
+
     /// Creates a backend that plays `script` against `tools`.
     ///
     /// - Parameters:
@@ -227,17 +242,25 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///     a fresh session.
     ///   - recorder: The recorder each received prompt goes to, or
     ///     `nil` to record nothing.
+    ///   - generationQueue: The generation queue of the pool entry, or
+    ///     `nil` (the default) for a backend whose calls run directly.
+    ///   - passCounter: The counter of the plays, or `nil` (the default)
+    ///     to count nothing.
     public init(
         script: [ScriptedTurnStep],
         tools: [any Tool],
         instructions: String? = nil,
         seededEntries: [Transcript.Entry] = [],
-        recorder: PromptRecorder? = nil
+        recorder: PromptRecorder? = nil,
+        generationQueue: GenerationQueue? = nil,
+        passCounter: ScriptedPassCounter? = nil
     ) {
         self.script = script
         self.tools = tools
         self.instructions = instructions
         self.recorder = recorder
+        self.generationQueue = generationQueue
+        self.passCounter = passCounter
         let opening =
             seededEntries.isEmpty
             ? [Self.instructionsEntry(instructions: instructions, tools: tools)]
@@ -270,12 +293,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
 
     public func makeFork() -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(
-            script: script,
-            tools: tools,
-            instructions: instructions,
-            seededEntries: transcriptEntries(),
-            recorder: recorder)
+        makeSibling(seededEntries: transcriptEntries())
     }
 
     /// Makes a backend that continues from `transcript`, not from this
@@ -289,12 +307,24 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// - Parameter transcript: The transcript the new backend starts from.
     /// - Returns: A backend with this script, these tools and `transcript`.
     public func replacingTranscript(_ transcript: Transcript) -> any LanguageModelSessionBackend {
+        makeSibling(seededEntries: Array(transcript))
+    }
+
+    /// Makes a backend with this script, these tools, this recorder, this
+    /// queue and this counter, that starts from `seededEntries`. A fork and
+    /// a replaced transcript thus stay on the queue of the model.
+    ///
+    /// - Parameter seededEntries: The transcript the new backend starts from.
+    /// - Returns: The new backend.
+    private func makeSibling(seededEntries: [Transcript.Entry]) -> ScriptedSessionBackend {
         ScriptedSessionBackend(
             script: script,
             tools: tools,
             instructions: instructions,
-            seededEntries: Array(transcript),
-            recorder: recorder)
+            seededEntries: seededEntries,
+            recorder: recorder,
+            generationQueue: generationQueue,
+            passCounter: passCounter)
     }
 
     public func transcriptEntries() -> [Transcript.Entry] {
@@ -316,12 +346,17 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// A play that throws appends no `.response` entry, because a real
     /// model session records none for a turn that never answered.
     ///
+    /// The pass counter counts the play from its start to its end, also
+    /// when the play throws.
+    ///
     /// - Parameters:
     ///   - prompt: The prompt the turn answers.
     ///   - yield: Receives each text delta, in order.
     /// - Returns: The answer text, the deltas joined in order.
     /// - Throws: Whatever ``playScript(yield:)`` throws.
     private func playTurn(prompt: String, yield: (String) -> Void) async throws -> String {
+        passCounter?.passDidStart()
+        defer { passCounter?.passDidEnd() }
         await recorder?.record(prompt: prompt)
         appendPromptEntry(prompt: prompt)
         var text = ""
@@ -393,6 +428,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
                 throw failure.error
             case .hold:
                 try await Self.holdUntilCancelled()
+            case .holdUntilReleased(let hold):
+                try await hold.waitForRelease()
             case .writeFile(let path, let text):
                 try Self.write(text: text, toFileAt: path)
             case .endTurn:
@@ -556,39 +593,89 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     /// nothing.
     public var recorder: PromptRecorder?
 
+    /// The counter of the passes of this model, or `nil`. A container with
+    /// a counter is the queued scripted model: its backends name the
+    /// generation queue of the pool entry.
+    public let passCounter: ScriptedPassCounter?
+
+    /// The generation queue of the pool entry that each backend names, or
+    /// `nil` before the Router gives one.
+    private var generationQueue: GenerationQueue?
+
     /// Creates a container whose every session plays `script`.
     ///
     /// - Parameters:
     ///   - script: The script every session plays.
     ///   - recorder: The recorder each session's prompts go to, or `nil`
     ///     (the default) to record nothing.
-    public init(script: [ScriptedTurnStep], recorder: PromptRecorder? = nil) {
+    ///   - passCounter: The counter of the passes, or `nil` (the default)
+    ///     for a model whose calls run directly, with no queue.
+    public init(
+        script: [ScriptedTurnStep], recorder: PromptRecorder? = nil,
+        passCounter: ScriptedPassCounter? = nil
+    ) {
         self.script = script
         self.recorder = recorder
+        self.passCounter = passCounter
+    }
+
+    /// Gives a copy of this container whose backends name `queue`, the
+    /// generation queue of the pool entry, when this container has a pass
+    /// counter. The Router calls it one time for each hold. A container
+    /// with no counter keeps the protocol default: no queue, and each call
+    /// runs directly.
+    ///
+    /// - Parameter queue: The generation queue of the pool entry.
+    /// - Returns: The container whose backends name `queue`, or this
+    ///   container when it has no pass counter.
+    public func submitting(to queue: GenerationQueue) -> any LoadedLLMContainer {
+        guard let passCounter else { return self }
+        passCounter.adopt(queue: queue)
+        var copy = self
+        copy.generationQueue = queue
+        return copy
     }
 
     public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(
-            script: script, tools: [], instructions: instructions, recorder: recorder)
+        makeBackend(tools: [], instructions: instructions)
     }
 
     public func makeSession(
         instructions: String?, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(
-            script: script, tools: tools, instructions: instructions, recorder: recorder)
+        makeBackend(tools: tools, instructions: instructions)
     }
 
     public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        ScriptedSessionBackend(
-            script: script, tools: [], seededEntries: Array(transcript), recorder: recorder)
+        makeBackend(tools: [], seededEntries: Array(transcript))
     }
 
     public func makeSession(
         transcript: Transcript, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
+        makeBackend(tools: tools, seededEntries: Array(transcript))
+    }
+
+    /// Makes one backend of this container: this script, this recorder,
+    /// this queue and this counter.
+    ///
+    /// - Parameters:
+    ///   - tools: The tools of the session.
+    ///   - instructions: The session instructions, or `nil` for none.
+    ///   - seededEntries: The transcript a restored session starts from,
+    ///     or empty for a fresh session.
+    /// - Returns: The backend.
+    private func makeBackend(
+        tools: [any Tool], instructions: String? = nil, seededEntries: [Transcript.Entry] = []
+    ) -> any LanguageModelSessionBackend {
         ScriptedSessionBackend(
-            script: script, tools: tools, seededEntries: Array(transcript), recorder: recorder)
+            script: script,
+            tools: tools,
+            instructions: instructions,
+            seededEntries: seededEntries,
+            recorder: recorder,
+            generationQueue: generationQueue,
+            passCounter: passCounter)
     }
 }
 

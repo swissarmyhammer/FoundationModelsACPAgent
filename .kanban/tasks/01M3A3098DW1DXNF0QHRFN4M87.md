@@ -80,8 +80,24 @@ comments:
     - evidence: 4 files — Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift, Tests/FoundationModelsACPAgentTests/CancellationTests.swift. `swift test`: 605 tests in 69 suites pass, 0 failures (1 known issue: the `withKnownIssue` self-check in HarnessSmokeTests, which was there before). No compiler warning; the only `warning:` line is the SwiftPM mlx bundle "missing creator" line, which was there before. The finding is `- [x]`.
     - next: /test, /commit, then /review. Not committed. The task stays in `doing`.
   timestamp: 2026-09-29T16:10:18.379583+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3pz4x0k6dzkdv7gf9znr8gn
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (7ca2adf). 0 findings, 0 confirmed, 0 refuted. 7 pairs attempted, 0 failed. The prior finding (2026-09-29 11:01) is checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-09-29T16:14:44.755217+00:00
+- actor: claude-code
+  id: 01m3pz54ayn215f3fjkcv1c78d
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 test files (make prefix on the submission event factories, 22 call sites)
+    - test: green — swift test 605 tests pass; IntegrationTests build ok
+    - commit: 7ca2adf
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-29T16:14:52.254070+00:00
+position_column: done
+position_ordinal: ef80
 title: Do not stop a prompt as _stalled while its request waits for a place in the model queue
 ---
 ## Why
