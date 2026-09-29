@@ -747,22 +747,6 @@ import Testing
     /// The permissions of the named pipe: read and write for the owner.
     private static let pipePermissions: mode_t = 0o600
 
-    /// Waits until the client holds a pending elicitation of `sessionId`.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The session to watch.
-    ///   - fixture: The wired two-session fixture.
-    /// - Returns: The first pending elicitation of `sessionId`.
-    /// - Throws: When no elicitation of `sessionId` reaches the client.
-    private static func waitForPendingElicitation(
-        of sessionId: SessionId, in fixture: QueuedScriptedFixture
-    ) async throws -> PendingElicitation {
-        try await Poll.until("an elicitation of \(sessionId.rawValue) reaches the client") {
-            await !fixture.pendingElicitations(of: sessionId).isEmpty
-        }
-        return try #require(await fixture.pendingElicitations(of: sessionId).first)
-    }
-
     /// Makes a working directory that holds the named pipe of the tool-body
     /// proof.
     ///
@@ -784,12 +768,14 @@ import Testing
             script: ScriptedTurnFixture.makeToolTurnScript(code: Self.elicitingSnippet),
             label: "PromptTurnTests-elicitation")
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
-        _ = try await Self.waitForPendingElicitation(of: fixture.firstSessionId, in: fixture)
+        let client = fixture.base.harness.client
+        _ = try await ElicitationPoll.firstPendingElicitation(
+            of: fixture.firstSessionId, on: client)
 
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        let questionOfB = try await Self.waitForPendingElicitation(
-            of: fixture.secondSessionId, in: fixture)
-        await MainActor.run { fixture.base.harness.client.acceptElicitation(questionOfB.id) }
+        let questionOfB = try await ElicitationPoll.firstPendingElicitation(
+            of: fixture.secondSessionId, on: client)
+        await MainActor.run { client.acceptElicitation(questionOfB.id) }
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
         let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSessionId)
         let updatesOfA = await fixture.updates(of: fixture.firstSessionId)

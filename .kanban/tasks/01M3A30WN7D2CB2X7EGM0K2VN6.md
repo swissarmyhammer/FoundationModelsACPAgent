@@ -48,6 +48,44 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/SessionLifecycleTests.swift, Tests/FoundationModelsACPAgentTests/Support/QueuedScriptedFixture.swift; `swift test --filter PromptTurnTests` 33 pass; `swift test` 611 tests in 70 suites pass (1 known issue, the existing withKnownIssue of HarnessSmokeTests); no compiler warning; `rg -n "model gate|Router gate|opens Router" Sources Tests` gives no result.
     - next: /review. The card stays in doing.
   timestamp: 2026-09-29T17:03:15.056557+00:00
+- actor: claude-code
+  id: 01m3q2a0xvb3v85m777e6hgrjs
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 2d7ecb5). 1 finding, 1 confirmed, 0 refuted. Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift:757 (reuse/reuse).
+    - next: Move `waitForPendingElicitation` to Tests/FoundationModelsACPAgentTests/Support/ as one shared helper. Make PromptTurnTests and ElicitationRelayTests use it. Then do the review again.
+  timestamp: 2026-09-29T17:09:58.331913+00:00
+- actor: claude-code
+  id: 01m3q2abxk6cbhhvyytzkgk02m
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files (SessionSetup.swift, PromptTurnTests.swift, SessionLifecycleTests.swift, QueuedScriptedFixture.swift)
+    - test: green — swift test 611 tests pass; IntegrationTests build ok
+    - commit: 2d7ecb5
+    - review: findings — Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift:757
+  timestamp: 2026-09-29T17:10:09.587775+00:00
+- actor: claude-code
+  id: 01m3q2gqw9rw6qpf8j512p7gbg
+  text: |-
+    Review finding corrected: `waitForPendingElicitation` duplicated a helper in ElicitationRelayTests.swift.
+
+    Changes:
+    - New `Tests/FoundationModelsACPAgentTests/Support/ElicitationPoll.swift`: the enum `ElicitationPoll` with `pendingElicitations(of:on:)` (the one MainActor read of `SwiftUIACPClient.pendingElicitations(for:)`) and `firstPendingElicitation(of:on:sourceLocation:)` (a `Poll.until` wait, then `#require` on the first pending elicitation). No hard wait.
+    - `PromptTurnTests.swift`: removed the private `waitForPendingElicitation`; `aSessionInAnElicitationHoldsNoModel` calls `ElicitationPoll.firstPendingElicitation` two times.
+    - `ElicitationRelayTests.swift`: removed the private `waitForPendingElicitation` (a `maxPollAttempts` / `Task.sleep` loop with the same filter); its four callers call `ElicitationPoll.firstPendingElicitation` directly.
+    - `QueuedScriptedFixture.pendingElicitations(of:)` now uses `ElicitationPoll.pendingElicitations(of:on:)`, so no other copy of the MainActor read stays in Tests.
+
+    The ElicitationRelayTests wait moves from the `ScriptedTurnFixture` loop (500 x 20 ms = 10 s) to `Poll.until` (30 s deadline, 50 ms interval).
+
+    Results: `swift test`: 611 tests in 70 suites pass, 1 known issue (the existing `withKnownIssue` of HarnessSmokeTests). The four ElicitationRelayTests round trips and the two PromptTurnTests proofs pass. No compiler warning. The only `warning:` line is the SwiftPM note "missing creator for mutated node ... mlx-swift_Cmlx.bundle" from the mlx dependency.
+  timestamp: 2026-09-29T17:13:38.441276+00:00
+- actor: claude-code
+  id: 01m3q2gte5za3v7y3m244qtmpk
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Tests/FoundationModelsACPAgentTests/Support/ElicitationPoll.swift (new), Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift, Tests/FoundationModelsACPAgentTests/ElicitationRelayTests.swift, Tests/FoundationModelsACPAgentTests/Support/QueuedScriptedFixture.swift; `swift test` 611 tests in 70 suites pass (1 known issue, the existing withKnownIssue of HarnessSmokeTests); no compiler warning; review finding PromptTurnTests.swift:757 flipped to [x].
+    - next: /review. The card stays in doing. Not committed.
+  timestamp: 2026-09-29T17:13:41.061892+00:00
 depends_on:
 - 01M3A37J8X6VKD5BKYWSJ4HCZD
 position_column: doing
@@ -91,3 +129,12 @@ Router card `01M39ZP766H4S63AR4R44Y6BA4` on Router `main`.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #generation-queue
+
+## Review Findings (2026-09-29 12:06)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/PromptTurnTests.swift:757` `reuse/reuse` — Function `waitForPendingElicitation` duplicates an existing test helper with 0.92 similarity. An identical function already exists in ElicitationRelayTests.swift; both test files are reinventing the same poll-and-filter pattern instead of sharing it. Move `waitForPendingElicitation` to Tests/FoundationModelsACPAgentTests/Support/ as a shared helper function so both PromptTurnTests and ElicitationRelayTests can call the same implementation.

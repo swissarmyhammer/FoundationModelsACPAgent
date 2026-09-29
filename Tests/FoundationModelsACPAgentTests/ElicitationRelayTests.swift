@@ -247,29 +247,6 @@ struct ElicitationRelayTests {
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
     }
 
-    /// Polls the client until the session holds a pending elicitation.
-    ///
-    /// - Parameter fixture: The wired fixture.
-    /// - Returns: The first pending elicitation.
-    /// - Throws: When no elicitation reaches the client in time.
-    private static func waitForPendingElicitation(
-        in fixture: ScriptedTurnFixture
-    ) async throws -> PendingElicitation {
-        for _ in 0..<ScriptedTurnFixture.maxPollAttempts {
-            let pending = await MainActor.run {
-                fixture.harness.client.pendingElicitations(for: fixture.sessionId)
-            }
-            if let first = pending.first {
-                return first
-            }
-            try await Task.sleep(for: ScriptedTurnFixture.pollInterval)
-        }
-        return try #require(
-            await MainActor.run {
-                fixture.harness.client.pendingElicitations(for: fixture.sessionId)
-            }.first)
-    }
-
     // MARK: - The form round trip
 
     /// A tool that elicits in form mode produces one `elicitation/create`
@@ -281,7 +258,8 @@ struct ElicitationRelayTests {
             code: Self.formSnippet, label: "ElicitationRelayTests-form-accept")
         try await Self.prompt(fixture)
 
-        let pending = try await Self.waitForPendingElicitation(in: fixture)
+        let pending = try await ElicitationPoll.firstPendingElicitation(
+            of: fixture.sessionId, on: fixture.harness.client)
         #expect(pending.request.message == ScriptedServer.elicitEchoMessage)
         if case .form(let form) = pending.request.mode {
             #expect(form.requestedSchema.required == [ScriptedServer.elicitEchoAnswerField])
@@ -325,7 +303,8 @@ struct ElicitationRelayTests {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.formSnippet, label: "ElicitationRelayTests-form-decline")
         try await Self.prompt(fixture)
-        let pending = try await Self.waitForPendingElicitation(in: fixture)
+        let pending = try await ElicitationPoll.firstPendingElicitation(
+            of: fixture.sessionId, on: fixture.harness.client)
 
         await MainActor.run {
             fixture.harness.client.declineElicitation(pending.id)
@@ -392,7 +371,8 @@ struct ElicitationRelayTests {
             code: Self.urlSnippet, label: "ElicitationRelayTests-url-accept")
         try await Self.prompt(fixture)
 
-        let pending = try await Self.waitForPendingElicitation(in: fixture)
+        let pending = try await ElicitationPoll.firstPendingElicitation(
+            of: fixture.sessionId, on: fixture.harness.client)
         #expect(pending.request.message == ScriptedServer.elicitURLMessage)
         #expect(pending.url?.absoluteString == ScriptedServer.elicitURLLink)
         let elicitationId = try #require(pending.elicitationId)
@@ -425,7 +405,8 @@ struct ElicitationRelayTests {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.urlSnippet, label: "ElicitationRelayTests-cancel")
         try await Self.prompt(fixture)
-        _ = try await Self.waitForPendingElicitation(in: fixture)
+        _ = try await ElicitationPoll.firstPendingElicitation(
+            of: fixture.sessionId, on: fixture.harness.client)
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))

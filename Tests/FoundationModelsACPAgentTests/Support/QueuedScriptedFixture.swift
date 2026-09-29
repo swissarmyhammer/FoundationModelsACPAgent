@@ -88,7 +88,7 @@ struct QueuedScriptedFixture {
     /// - Parameter sessionId: The session to read.
     /// - Returns: The pending elicitations of `sessionId`, in arrival order.
     func pendingElicitations(of sessionId: SessionId) async -> [PendingElicitation] {
-        await MainActor.run { base.harness.client.pendingElicitations(for: sessionId) }
+        await ElicitationPoll.pendingElicitations(of: sessionId, on: base.harness.client)
     }
 
     /// Waits until session A and session B each sent an idle state update.
