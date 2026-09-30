@@ -23,6 +23,41 @@ comments:
     - follow-up: ^rcy24zj (the Extras `TelemetryCapture` does not read span events, recorded errors or the status).
     - next: /review
   timestamp: 2026-09-30T01:03:02.962438+00:00
+- actor: claude-code
+  id: 01m3qxqbj32erysntckf0hygfz
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit 1e1f9b9); 1 finding, 1 confirmed, 0 refuted — Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift:368 (code-hygiene/idioms-swift, ReplaceForEachWithForLoop). The file is new in this commit, so the rule that drops refactors of existing tests does not apply.
+    - next: Replace each `.forEach { ... }` in TelemetryContentSafetyTests.swift with a for-in loop. Then commit and review again.
+  timestamp: 2026-09-30T01:09:06.755190+00:00
+- actor: claude-code
+  id: 01m3qxqqdkeyeyq19rwxdh9a3w
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — TelemetryContentSafetyTests.swift (new), ScriptedPromptFixture.swift, ACPAgentTelemetry.swift
+    - test: green — swift test 667 tests pass
+    - commit: 1e1f9b9
+    - review: findings — Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift:368
+  timestamp: 2026-09-30T01:09:18.899843+00:00
+- actor: claude-code
+  id: 01m3qy0jw6tbbpdtankwxfbvf0
+  text: |-
+    Correction of the finding ReplaceForEachWithForLoop (TelemetryContentSafetyTests.swift:368).
+
+    - `SpanAttributes` (swift-distributed-tracing) is not a `Sequence`. Its only public walk is `forEach(_:)`. Thus a `for`-in loop over it does not compile, and each walk of it must call `forEach`.
+    - Fix: the file does not walk the attributes. The new `attributeText(of:)` returns `String(describing: attributes)`, one text that holds each key and each value. `detailTexts(of:)` uses that text for each event and each recorded error. This also removes the `var` accumulator and the `swiftformat:disable:next preferForLoop` comment.
+    - The fix depends on the default description of `SpanAttributes`, which names each key and value. A new test `spanDetailReaderSeesEachAttribute()` proves this, so a later description that hides the values makes the test fail.
+    - TDD: RED — the new test did not compile (`attributeText` did not exist). GREEN — `swift test --filter TelemetryContentSafetyTests`: 2 tests passed.
+    - The other files of commit 1e1f9b9 (ACPAgentTelemetry.swift, ScriptedPromptFixture.swift) contain no `.forEach`.
+    - Note: the Extras `TelemetryCapture.attributePlaces(of:)` has the same `forEach` walk. It is in the Extras repository, thus it is not in the scope of this card.
+  timestamp: 2026-09-30T01:14:09.158017+00:00
+- actor: claude-code
+  id: 01m3qy0ntsazbtmz35h9699y6h
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift (no `.forEach`; new `attributeText(of:)` and test `spanDetailReaderSeesEachAttribute()`). `swift test --filter TelemetryContentSafetyTests`: 2 tests passed. `swift test`: exit 0, 668 tests (667 before + 1 new; count from `swift test list`), 1 known issue as before. Zero compiler warnings (only the SwiftPM "missing creator for mutated node" line of the mlx-swift bundle). Finding flipped to [x]. Not committed.
+    - next: /test, /commit, /review
+  timestamp: 2026-09-30T01:14:12.185119+00:00
 depends_on:
 - 01M3MNC26MHCGN4R7BVKFQVQQB
 - 01M3MNF2Y6B98SQ03420B65G02
@@ -60,3 +95,12 @@ The model is `FoundationModelsRouter/Sources/FoundationModelsRouter/Tracing/Rout
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 
 #otel
+
+## Review Findings (2026-09-29 20:04)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift:368` `code-hygiene/idioms-swift` — ReplaceForEachWithForLoop: replace use of '.forEach { ... }' with for-in loop.

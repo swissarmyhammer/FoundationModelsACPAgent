@@ -164,6 +164,22 @@ import Tracing
         }
     }
 
+    /// The key of the probe attribute of the span-detail reader test.
+    private static let probeAttributeKey = "tcs.probe"
+
+    /// The value of the probe attribute of the span-detail reader test.
+    private static let probeAttributeValue = "tcs-probe-attribute-value-4e9a07"
+
+    /// The reader of the span details sees the key and the value of each
+    /// attribute, so a text of the client in an event or an error attribute
+    /// cannot hide from ``leaksInSpanDetails(of:)``.
+    @Test func spanDetailReaderSeesEachAttribute() {
+        let text = Self.attributeText(of: [Self.probeAttributeKey: .string(Self.probeAttributeValue)])
+
+        #expect(text.contains(Self.probeAttributeKey))
+        #expect(text.contains(Self.probeAttributeValue))
+    }
+
     // MARK: - The driven paths
 
     /// Drives each path that carries content, from `initialize` to the close
@@ -351,23 +367,20 @@ import Tracing
     /// - Parameter span: The span.
     /// - Returns: The texts.
     private static func detailTexts(of span: FinishedInMemorySpan) -> [String] {
-        let eventTexts = span.events.flatMap { [$0.name] + attributeTexts(of: $0.attributes) }
-        let errorTexts = span.errors.flatMap { [String(describing: $0.error)] + attributeTexts(of: $0.attributes) }
+        let eventTexts = span.events.flatMap { [$0.name, attributeText(of: $0.attributes)] }
+        let errorTexts = span.errors.flatMap { [String(describing: $0.error), attributeText(of: $0.attributes)] }
         return eventTexts + errorTexts + [span.status?.message].compactMap(\.self)
     }
 
-    /// The text of each attribute, as `<key> = <value>`.
+    /// One text that holds the key and the value of each attribute.
+    ///
+    /// `SpanAttributes` is not a `Sequence`, thus no `for` loop walks it. Its
+    /// description names each key and each value, thus the text needs no walk.
+    /// ``spanDetailReaderSeesEachAttribute()`` proves that the text holds them.
     ///
     /// - Parameter attributes: The attributes.
-    /// - Returns: The texts.
-    private static func attributeTexts(of attributes: SpanAttributes) -> [String] {
-        // `SpanAttributes` is not a `Sequence`: `forEach` is its only walk of
-        // the attributes, thus the walk collects them into an array.
-        var texts: [String] = []
-        // swiftformat:disable:next preferForLoop  SpanAttributes is not a Sequence, thus no for loop compiles
-        attributes.forEach { key, value in
-            texts.append("\(key) = \(value)")
-        }
-        return texts
+    /// - Returns: The text.
+    private static func attributeText(of attributes: SpanAttributes) -> String {
+        String(describing: attributes)
     }
 }
