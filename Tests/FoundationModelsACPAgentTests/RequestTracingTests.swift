@@ -185,12 +185,15 @@ import Tracing
         }
     }
 
-    /// A prompt writes one "enter" record when it starts.
+    /// A prompt writes one "enter" record when it starts. The record carries
+    /// the trace id and the span id of the prompt span.
     @Test(.timeLimit(.minutes(1)))
-    func promptWritesOneEnterRecord() async throws {
+    func promptWritesOneEnterRecordWithTheIdsOfItsSpan() async throws {
         let run = try await Self.runOnePrompt()
 
-        #expect(run.enterRecordCount(forSpanNamed: ACPAgentTelemetry.SpanName.prompt) == 1)
+        let promptSpan = try Self.requireOneServerSpan(
+            named: ACPAgentTelemetry.SpanName.prompt, method: Self.sessionPromptMethod, in: run)
+        try run.expectOneEnterRecord(withTheIdsOf: promptSpan)
     }
 
     /// `initialize` records one server span with its ACP method.
@@ -203,7 +206,8 @@ import Tracing
     }
 
     /// `session/new` records one server span with its ACP method and the id
-    /// of the new session, and writes one "enter" record when it starts.
+    /// of the new session, and writes one "enter" record when it starts. The
+    /// record carries the trace id and the span id of the span.
     @Test(.timeLimit(.minutes(1)))
     func sessionNewRecordsOneServerSpanAndOneEnterRecord() async throws {
         let run = try await Self.runOnePrompt()
@@ -211,7 +215,7 @@ import Tracing
         let span = try Self.requireOneServerSpan(
             named: ACPAgentTelemetry.SpanName.sessionNew, method: Self.sessionNewMethod, in: run)
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.sessionId) == .string(run.sessionId))
-        #expect(run.enterRecordCount(forSpanNamed: ACPAgentTelemetry.SpanName.sessionNew) == 1)
+        try run.expectOneEnterRecord(withTheIdsOf: span)
     }
 
     /// `session/cancel` records one server span with its ACP method and the
@@ -226,8 +230,9 @@ import Tracing
     }
 
     /// `session/resume` records one server span with its ACP method, and
-    /// writes one "enter" record when it starts. A resume of a session that
-    /// no recording holds throws, and the span records the type of the error.
+    /// writes one "enter" record with the trace id and the span id of the
+    /// span when it starts. A resume of a session that no recording holds
+    /// throws, and the span records the type of the error.
     @Test(.timeLimit(.minutes(1)))
     func sessionResumeRecordsOneServerSpanAndOneEnterRecord() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
@@ -246,7 +251,7 @@ import Tracing
             named: ACPAgentTelemetry.SpanName.sessionResume, method: Self.sessionResumeMethod, in: run)
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.sessionId) == .string(run.sessionId))
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.errorType) == .string(Self.requestErrorTypeName))
-        #expect(run.enterRecordCount(forSpanNamed: ACPAgentTelemetry.SpanName.sessionResume) == 1)
+        try run.expectOneEnterRecord(withTheIdsOf: span)
     }
 
     /// A prompt for an unknown session throws. Its span records the error and

@@ -171,8 +171,8 @@ import Tracing
 
     /// One elicitation round trip records one elicitation span with the mode
     /// and the outcome. The "enter" record of the span is there before the
-    /// answer comes. No span and no log record holds the message or the
-    /// answer.
+    /// answer comes, and it carries the trace id and the span id of the span.
+    /// No span and no log record holds the message or the answer.
     @Test(.timeLimit(.minutes(1)))
     func elicitationRoundTripRecordsOneElicitationSpanAndAnEnterRecordBeforeTheAnswer() async throws {
         let forbidden = [Self.acceptedAnswer, ScriptedServer.elicitEchoMessage]
@@ -202,6 +202,7 @@ import Tracing
         #expect(
             elicitationSpan.attributes.get(ACPAgentTelemetry.AttributeKey.elicitationOutcome)
                 == .string(Self.acceptOutcome))
+        try run.expectOneEnterRecord(withTheIdsOf: elicitationSpan)
     }
 
     /// The client MCP server that runs the loopback `mcp-test-server`, whose
@@ -221,7 +222,8 @@ import Tracing
 
     /// `session/new` with one config MCP server records one connect span with
     /// the server name and the transport, as a child of the `session/new`
-    /// span, and writes an "enter" record for it.
+    /// span, and writes one "enter" record with the trace id and the span id
+    /// of the connect span.
     @Test(.timeLimit(.minutes(1)))
     func sessionNewRecordsOneConnectSpanForAConfigServer() async throws {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
@@ -247,7 +249,7 @@ import Tracing
         #expect(
             connectSpan.attributes.get(ACPAgentTelemetry.AttributeKey.mcpServerTransport)
                 == .string(Self.stdioTransport))
-        #expect(run.enterRecordCount(forSpanNamed: ACPAgentTelemetry.SpanName.mcpConnect) == 1)
+        try run.expectOneEnterRecord(withTheIdsOf: connectSpan)
     }
 
     /// A server that cannot connect records its connect span with the error
