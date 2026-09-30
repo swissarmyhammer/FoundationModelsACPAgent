@@ -27,6 +27,38 @@ comments:
     - evidence: 3 files — Tests/FoundationModelsACPAgentTests/Support/TracedRun.swift, Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift, Tests/FoundationModelsACPAgentTests/AgentSpanTests.swift. `swift test --filter "RequestTracingTests|AgentSpanTests"`: 16/16 pass (red run: 5 expected failures with the ids removed). `swift test`: 661 tests in 74 suites pass, 1 existing known issue (HarnessSmokeTests), 0 compiler warnings.
     - next: /review. The task stays in doing.
   timestamp: 2026-09-30T00:13:50.128495+00:00
+- actor: claude-code
+  id: 01m3qty5mr2xt8dew4s0ykdr9x
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (aff1740). 1 finding, 1 confirmed, 0 refuted. Tests/FoundationModelsACPAgentTests/Support/TracedRun.swift:73 (swift/idioms).
+    - next: Obey the finding in the Review Findings section of 2026-09-29 19:14, then do the review again. The task stays in review.
+  timestamp: 2026-09-30T00:20:24.344506+00:00
+- actor: claude-code
+  id: 01m3qtyjdj36qacz4gb7ja88q1
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — TracedRun.swift, RequestTracingTests.swift, AgentSpanTests.swift
+    - test: green — swift test 661 tests pass
+    - commit: aff1740
+    - review: findings — Tests/FoundationModelsACPAgentTests/Support/TracedRun.swift:73
+  timestamp: 2026-09-30T00:20:37.426070+00:00
+- actor: claude-code
+  id: 01m3qv4h3qg8rva7y6m83p3ngq
+  text: |-
+    Finding of 2026-09-29 19:14 (TracedRun.swift, `swift/idioms`):
+    - `expectOneEnterRecord(withTheIdsOf:)` now uses `.compactMap(Self.identity(of:))`, so the identities are `[SpanIdentity]`.
+    - `compactMap` drops a record that has no ids or bad ids. Thus the check now also expects exactly one "enter" record (`records.count == 1`) before it compares the identities with `[spanIdentity]`. A record with no ids gives one record and zero identities, and the check fails.
+    - The file has no other `map` over an optional result.
+    - Red run (one time): I disabled the id block in `RequestTracing.startRequestSpan` (`if false, let identity = ...`). `swift test --filter RequestTracingTests`: `promptWritesOneEnterRecordWithTheIdsOfItsSpan` failed with `recordIdentities → []`. I undid the edit. `RequestTracing.swift` has no diff, and the `.build/checkouts/FoundationModelsExtras` checkout is clean.
+  timestamp: 2026-09-30T00:23:52.695311+00:00
+- actor: claude-code
+  id: 01m3qv4k1cvzdfzdeta6pkz4gn
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/TracedRun.swift. Red run: `swift test --filter RequestTracingTests` 1 expected failure with the ids removed. `swift test`: 661 tests in 74 suites pass, 1 existing known issue, 0 compiler warnings.
+    - next: /review. The task stays in doing.
+  timestamp: 2026-09-30T00:23:54.668145+00:00
 depends_on:
 - 01M3MNF3HX2STG00W3GBT21BAS
 - 01M3MNF9A7FRPJJ3JZA503GB5G
@@ -56,3 +88,12 @@ FoundationModelsExtras OTel E ^wts388b is on Extras origin/main (6c399a4, 2026-0
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 
 #otel
+
+## Review Findings (2026-09-29 19:14)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/TracedRun.swift:73` `swift/idioms` — Using `map(Self.identity(of:))` where `identity(of:)` returns `SpanIdentity?` creates `[SpanIdentity?]`, but line 74 compares it to `[spanIdentity]` (type `[SpanIdentity]`). This is a type mismatch. Use `compactMap` to unwrap and filter nil values. Change `.map(Self.identity(of:))` to `.compactMap(Self.identity(of:))` on line 73 to produce `[SpanIdentity]` that matches the expected type in the comparison.

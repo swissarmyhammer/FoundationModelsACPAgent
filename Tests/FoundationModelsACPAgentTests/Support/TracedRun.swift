@@ -61,6 +61,10 @@ struct TracedRun {
     /// trace id and the span id of `span` in its `trace.id` and `span.id`
     /// metadata.
     ///
+    /// The identities drop a record that has no ids or bad ids. Thus the
+    /// check also expects exactly one record, so that such a record fails
+    /// the check.
+    ///
     /// - Parameters:
     ///   - span: The span that the record must point to.
     ///   - sourceLocation: The source location that each issue names.
@@ -70,7 +74,9 @@ struct TracedRun {
     ) throws {
         let spanIdentity = try #require(
             SpanIdentity(traceID: span.traceID, spanID: span.spanID), sourceLocation: sourceLocation)
-        let recordIdentities = enterRecords(forSpanNamed: span.operationName).map(Self.identity(of:))
+        let records = enterRecords(forSpanNamed: span.operationName)
+        #expect(records.count == 1, "\(span.operationName)", sourceLocation: sourceLocation)
+        let recordIdentities = records.compactMap(Self.identity(of:))
         #expect(recordIdentities == [spanIdentity], "\(span.operationName)", sourceLocation: sourceLocation)
     }
 
