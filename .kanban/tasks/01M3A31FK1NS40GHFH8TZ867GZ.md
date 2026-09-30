@@ -10,6 +10,10 @@ comments:
   id: 01m3a3p0rw2wzhcazfthhmgn0r
   text: 'Decision (user, 2026-09-24): the Router agent works only in the Router, so this task owns all changes in this repository for the rename. A comment on Router card 01M3A1F0KE9P9QPEVHXF33Q8GW tells the Router agent not to edit this repository. The Coordination section of this task is thus settled.'
   timestamp: 2026-09-24T16:23:52.348157+00:00
+- actor: claude-code
+  id: 01m3pmak5ase9w61fny84j4sbt
+  text: 'Information from the swissarmyhammer-05 session (2026-09-29): FoundationModelsRouter origin/main f497700 has the Router OTel work A to F, has green CI, and builds with the current Extras (which has the public ModelRef). Router 2a79f92 was red on origin: do not pin to it. When this task moves the Router pin, f497700 or later is a candidate. That also unblocks the Extras pin for ^kfqvqqb and the other OTel tasks. The user has not decided the order of this work yet.'
+  timestamp: 2026-09-29T13:05:36.938480+00:00
 depends_on:
 - 01M3A30KQBCN1051EVS6KCTS5V
 - 01M3A30WN7D2CB2X7EGM0K2VN6
