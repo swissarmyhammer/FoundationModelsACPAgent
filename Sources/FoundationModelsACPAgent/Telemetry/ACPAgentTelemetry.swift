@@ -113,7 +113,8 @@ enum ACPAgentTelemetry {
         /// The text at the start of each name below.
         private static let prefix = "foundation_models_acp_agent."
 
-        /// A counter: one for each prompt that ended.
+        /// A counter: one for each prompt that ended or that the agent
+        /// refused.
         static let prompts = prefix + "prompts"
 
         /// A timer: the duration of each prompt.
@@ -122,7 +123,8 @@ enum ACPAgentTelemetry {
         /// A gauge: the number of sessions that are open now.
         static let activeSessions = prefix + "active_sessions"
 
-        /// A counter: one for each slash command that ran.
+        /// A counter: one for each slash command that the agent ran or
+        /// refused.
         static let commands = prefix + "commands"
 
         /// A counter: one for each MCP server connection that failed.
@@ -134,9 +136,6 @@ enum ACPAgentTelemetry {
     /// The "No content" rule of ``ACPAgentTelemetry`` applies. Each dimension
     /// also has a small, known set of values, because each different value
     /// makes a different time series.
-    ///
-    /// OTel 9 reads these keys, so periphery sees no reader yet.
-    // periphery:ignore
     enum MetricDimension {
         /// The ACP stop reason of a prompt.
         static let stopReason = "stop_reason"

@@ -59,11 +59,27 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/TracedRun.swift. Red run: `swift test --filter RequestTracingTests` 1 expected failure with the ids removed. `swift test`: 661 tests in 74 suites pass, 1 existing known issue, 0 compiler warnings.
     - next: /review. The task stays in doing.
   timestamp: 2026-09-30T00:23:54.668145+00:00
+- actor: claude-code
+  id: 01m3qvbdhazzxa73qz8rtwsp08
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (56390a4). 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. 1 file reviewed. The engine did not review 2 .kanban files (.reviewignore). All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-09-30T00:27:38.410388+00:00
+- actor: claude-code
+  id: 01m3qvbn7hef7g72mr7m66kmbj
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — TracedRun.swift
+    - test: green — swift test 661 tests pass
+    - commit: 56390a4
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-30T00:27:46.289157+00:00
 depends_on:
 - 01M3MNF3HX2STG00W3GBT21BAS
 - 01M3MNF9A7FRPJJ3JZA503GB5G
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8480
 title: 'OTel 6b: add the enter record id checks of OTel 6 and OTel 8'
 ---
 ## What

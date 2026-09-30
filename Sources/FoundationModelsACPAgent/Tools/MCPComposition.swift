@@ -327,6 +327,10 @@ enum MCPComposition {
     /// span and the record never carry the command arguments, an `env`
     /// value, a `headers` value or the URL.
     ///
+    /// A connect that throws also adds one to the `mcp_connect_failures`
+    /// counter (``AgentMetrics``), with the transport and never the server
+    /// name.
+    ///
     /// - Parameters:
     ///   - entry: The entry to connect.
     ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded —
@@ -339,16 +343,22 @@ enum MCPComposition {
         entry: MCPServerConfiguration,
         spawnedProcesses: inout [StdioServerProcess]
     ) async throws -> FoundationModelsMultitool.MCPServer {
-        try await AgentTracing.withEnteredSpan(
-            ACPAgentTelemetry.SpanName.mcpConnect,
-            logger: ACPAgentTelemetry.logger(.mcpComposition),
-            attributes: { attributes in
-                attributes[ACPAgentTelemetry.AttributeKey.mcpServerName] = entry.name
-                attributes[ACPAgentTelemetry.AttributeKey.mcpServerTransport] = transportName(of: entry.transport)
-            },
-            metadata: [ACPAgentTelemetry.LogMetadataKey.mcpServerName: "\(entry.name)"]
-        ) { _ in
-            try await connectToReady(entry: entry, spawnedProcesses: &spawnedProcesses)
+        let transport = transportName(of: entry.transport)
+        do {
+            return try await AgentTracing.withEnteredSpan(
+                ACPAgentTelemetry.SpanName.mcpConnect,
+                logger: ACPAgentTelemetry.logger(.mcpComposition),
+                attributes: { attributes in
+                    attributes[ACPAgentTelemetry.AttributeKey.mcpServerName] = entry.name
+                    attributes[ACPAgentTelemetry.AttributeKey.mcpServerTransport] = transport
+                },
+                metadata: [ACPAgentTelemetry.LogMetadataKey.mcpServerName: "\(entry.name)"]
+            ) { _ in
+                try await connectToReady(entry: entry, spawnedProcesses: &spawnedProcesses)
+            }
+        } catch {
+            AgentMetrics.recordMCPConnectFailure(transport: transport)
+            throw error
         }
     }
 

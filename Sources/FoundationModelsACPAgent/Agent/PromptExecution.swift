@@ -587,12 +587,17 @@ extension RoutedACPAgent {
     /// a child of it. The span ends with the prompt stop reason after that
     /// work, or with the error when the prompt is refused.
     ///
+    /// The prompt also adds one to the `prompts` counter and records its
+    /// duration (``PromptMeasurement``), with the stop reason, or with
+    /// `error` when the prompt is refused.
+    ///
     /// - Parameter params: The prompt request.
     /// - Returns: The empty acceptance.
     /// - Throws: The order rule's error, `unknownSession` (§10.1),
     ///   `closedSession` (§10.1), `busySession` (§7.1), or a command
     ///   refusal (§14.3).
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
+        let measurement = PromptMeasurement()
         let span = RequestTracing.startRequestSpan(
             ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
             sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.promptExecution))
@@ -600,15 +605,17 @@ extension RoutedACPAgent {
             let response = try await ServiceContext.withValue(span.context) {
                 try await acceptPrompt(params)
             }
-            endSpanAfterPrompt(span, sessionId: params.sessionId)
+            endTelemetryAfterPrompt(span: span, measurement: measurement, sessionId: params.sessionId)
             return response
         } catch {
             RequestTracing.endRequestSpan(span, throwing: error)
+            measurement.record(stopReason: nil)
             throw error
         }
     }
 
-    /// Ends the span of an accepted prompt after the work of the prompt.
+    /// Ends the span and the measurement of an accepted prompt after the
+    /// work of the prompt.
     ///
     /// The prompt registered its work with `afterRespondingToCurrentRequest`
     /// during the acceptance, and the connection runs the registered work in
@@ -618,11 +625,14 @@ extension RoutedACPAgent {
     ///
     /// - Parameters:
     ///   - span: The span of the prompt.
+    ///   - measurement: The measurement of the prompt.
     ///   - sessionId: The session of the prompt.
-    private func endSpanAfterPrompt(_ span: any Span, sessionId: SessionId) {
+    private func endTelemetryAfterPrompt(span: any Span, measurement: PromptMeasurement, sessionId: SessionId) {
         let owner = sessions[sessionId]?.activePrompt
         boundConnection?.afterRespondingToCurrentRequest {
-            RequestTracing.endPromptSpan(span, stopReason: await owner?.stopReason)
+            let stopReason = await owner?.stopReason
+            RequestTracing.endPromptSpan(span, stopReason: stopReason)
+            measurement.record(stopReason: stopReason)
         }
     }
 
@@ -812,10 +822,14 @@ extension RoutedACPAgent {
     /// `finish()`, and the finish ends the terminal projection's
     /// consumer loop.
     ///
+    /// A closed session is no longer open, so the mark records the
+    /// `active_sessions` gauge again.
+    ///
     /// - Parameter sessionId: The session to mark.
     func markSessionClosed(_ sessionId: SessionId) {
         sessions[sessionId]?.isClosed = true
         sessions[sessionId]?.surface.shellOutput?.finish()
+        recordActiveSessions()
     }
 
     /// Clears the finished prompt, so the session accepts a new prompt.

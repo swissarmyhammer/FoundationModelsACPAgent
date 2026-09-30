@@ -227,6 +227,11 @@ extension RoutedACPAgent {
     /// span ends, in the context of the prompt span, so each Router
     /// submission span of the prompt stays a child of the prompt span.
     ///
+    /// The dispatch also adds one to the `commands` counter
+    /// (``AgentMetrics``), with the kind of the command and the outcome: `ok`,
+    /// or `refused` for a refusal. The counter never carries the command
+    /// name.
+    ///
     /// - Parameters:
     ///   - command: The parsed command.
     ///   - params: The prompt request the command arrived in.
@@ -241,18 +246,25 @@ extension RoutedACPAgent {
         entry: ActiveSession,
         connection: AgentSideConnection
     ) async throws -> PromptResponse {
-        let work = try await AgentTracing.withSpan(ACPAgentTelemetry.SpanName.command) { span in
-            span.attributes[ACPAgentTelemetry.AttributeKey.commandName] = command.name
-            guard let registered = await entry.commands.command(named: command.name) else {
-                throw RequestError.unknownCommand(
-                    name: command.name,
-                    suggestions: await entry.commands.nearMisses(to: command.name))
+        let kind = await entry.commands.kind(ofCommandNamed: command.name)
+        let work: CommandWork
+        do {
+            work = try await AgentTracing.withSpan(ACPAgentTelemetry.SpanName.command) { span in
+                span.attributes[ACPAgentTelemetry.AttributeKey.commandName] = command.name
+                guard let registered = await entry.commands.command(named: command.name) else {
+                    throw RequestError.unknownCommand(
+                        name: command.name,
+                        suggestions: await entry.commands.nearMisses(to: command.name))
+                }
+                span.attributes[ACPAgentTelemetry.AttributeKey.commandKind] = kind?.rawValue
+                return try await resolveCommand(
+                    registered, command: command, params: params, entry: entry, connection: connection)
             }
-            span.attributes[ACPAgentTelemetry.AttributeKey.commandKind] =
-                await entry.commands.kind(ofCommandNamed: command.name)?.rawValue
-            return try await resolveCommand(
-                registered, command: command, params: params, entry: entry, connection: connection)
+        } catch {
+            AgentMetrics.recordCommand(kind: kind, outcome: .refused)
+            throw error
         }
+        AgentMetrics.recordCommand(kind: kind, outcome: .ok)
         switch work {
         case .action(let execution):
             let sessionId = params.sessionId

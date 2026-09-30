@@ -62,6 +62,17 @@ public actor RoutedACPAgent: Agent {
     /// transcript directory, and idle/busy state.
     var sessions: [SessionId: ActiveSession] = [:]
 
+    /// Records the number of open sessions in the `active_sessions` gauge
+    /// (``AgentMetrics``).
+    ///
+    /// A closed session stays in ``sessions`` so that it stays resumable, so
+    /// the count reads the entries that are not closed. Call it each time a
+    /// session is added (`session/new`, `session/resume`), closed
+    /// (`session/close`, `session/delete`) or removed.
+    func recordActiveSessions() {
+        AgentMetrics.recordActiveSessions(sessions.values.count { !$0.isClosed })
+    }
+
     /// The registered linked `SlashCommandProviding` conformers
     /// (plan.md §14.1, source 2), in registration order. They join
     /// every later session's command registry, after the catalog's own

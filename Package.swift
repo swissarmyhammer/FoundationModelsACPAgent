@@ -253,6 +253,12 @@ private let nooraVersion: Version = "0.57.0"
 /// The one product of `nooraPackage` the agent CLI links.
 private let nooraProduct = Target.Dependency.product(name: nooraPackage, package: nooraPackage)
 
+/// The test metrics product of `metricsPackage`. Only the unit test target
+/// links it: the agent metrics suite reads the values of each metric from the
+/// `TestMetrics` factory of a `TelemetryCapture`.
+private let metricsTestKitProduct = Target.Dependency.product(
+    name: "MetricsTestKit", package: metricsPackage)
+
 /// The telemetry test helper of Extras: `TelemetryCapture`, which gives the
 /// code under test an in-memory tracer, log handler and metrics factory, and
 /// which bootstraps the logging system one time for each process. Only the
@@ -434,7 +440,9 @@ let package = Package(
         // telemetry suites also link the Extras telemetry test helper — see
         // `telemetryTestSupportProduct` — swift-log, whose record types
         // they read, and the span API with the in-memory tracer, whose span
-        // kinds and span ids they read — see `inMemoryTracingProduct`.
+        // kinds and span ids they read — see `inMemoryTracingProduct` — and
+        // the test metrics kit, whose metric values they read — see
+        // `metricsTestKitProduct`.
         //
         // `acp-print` and the live-loader products are NOT here: the
         // suites that spawn a built binary or load a real model live in
@@ -452,6 +460,7 @@ let package = Package(
                 loggingProduct,
                 tracingProduct,
                 inMemoryTracingProduct,
+                metricsTestKitProduct,
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct]
         ),

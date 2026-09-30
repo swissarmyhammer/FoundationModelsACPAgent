@@ -450,6 +450,7 @@ extension RoutedACPAgent {
             activePrompt: nil,
             activeElicitationRelay: nil,
             indexRecorded: indexRecorded)
+        recordActiveSessions()
 
         // The command set publishes after the response, and again on
         // every registry change (plan.md §14.4).

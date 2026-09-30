@@ -467,6 +467,7 @@ extension RoutedACPAgent {
         guard let existing = sessions.removeValue(forKey: sessionId) else {
             return
         }
+        recordActiveSessions()
         existing.surface.shellOutput?.finish()
         await existing.surface.shutdown()
     }

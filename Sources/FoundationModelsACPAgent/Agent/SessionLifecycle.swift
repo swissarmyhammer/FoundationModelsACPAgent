@@ -53,6 +53,7 @@ extension RoutedACPAgent {
             roots.append(entry.transcriptDirectory.deletingLastPathComponent())
             await tearDownSession(params.sessionId, entry: entry)
             sessions.removeValue(forKey: params.sessionId)
+            recordActiveSessions()
         }
         removeSessionTree(ulidString: rootId.ulidString, from: roots)
         return DeleteSessionResponse()
