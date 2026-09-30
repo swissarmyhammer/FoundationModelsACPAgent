@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsMultitool
 import Logging
 import MCP
+import Tracing
 
 /// Errors thrown while the MCP composition connects a server.
 enum MCPCompositionError: Error, CustomStringConvertible, Equatable {
@@ -308,7 +309,23 @@ enum MCPComposition {
             servers: servers, processes: processes, refusals: roster.refusals)
     }
 
+    /// The ``ACPAgentTelemetry/AttributeKey/mcpServerTransport`` value of a
+    /// stdio server.
+    private static let stdioTransportName = "stdio"
+
+    /// The ``ACPAgentTelemetry/AttributeKey/mcpServerTransport`` value of an
+    /// http server.
+    private static let httpTransportName = "http"
+
     /// Connects one entry and waits until the server is `.ready`.
+    ///
+    /// The connect runs in one MCP connect span (``AgentTracing``), a child
+    /// of the span of the request that composes the session. The span
+    /// carries the server name and the transport, and a connect that throws
+    /// records the error on it. A slow server can hold the connect for a
+    /// long time, so the span writes one "enter" record when it opens. The
+    /// span and the record never carry the command arguments, an `env`
+    /// value, a `headers` value or the URL.
     ///
     /// - Parameters:
     ///   - entry: The entry to connect.
@@ -319,6 +336,43 @@ enum MCPComposition {
     /// - Throws: What the process construction, the connect, or the ready
     ///   wait throws.
     private static func connect(
+        entry: MCPServerConfiguration,
+        spawnedProcesses: inout [StdioServerProcess]
+    ) async throws -> FoundationModelsMultitool.MCPServer {
+        try await AgentTracing.withEnteredSpan(
+            ACPAgentTelemetry.SpanName.mcpConnect,
+            logger: ACPAgentTelemetry.logger(.mcpComposition),
+            attributes: { attributes in
+                attributes[ACPAgentTelemetry.AttributeKey.mcpServerName] = entry.name
+                attributes[ACPAgentTelemetry.AttributeKey.mcpServerTransport] = transportName(of: entry.transport)
+            },
+            metadata: [ACPAgentTelemetry.LogMetadataKey.mcpServerName: "\(entry.name)"]
+        ) { _ in
+            try await connectToReady(entry: entry, spawnedProcesses: &spawnedProcesses)
+        }
+    }
+
+    /// The name of the transport of one entry, for the connect span.
+    ///
+    /// - Parameter transport: The transport of the entry.
+    /// - Returns: `stdio` or `http`.
+    private static func transportName(of transport: MCPServerConfiguration.Transport) -> String {
+        switch transport {
+        case .stdio: stdioTransportName
+        case .http: httpTransportName
+        }
+    }
+
+    /// Connects one entry and waits until the server is `.ready`: the work
+    /// of ``connect(entry:spawnedProcesses:)`` in the connect span.
+    ///
+    /// - Parameters:
+    ///   - entry: The entry to connect.
+    ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded.
+    /// - Returns: The connected server.
+    /// - Throws: What the process construction, the connect, or the ready
+    ///   wait throws.
+    private static func connectToReady(
         entry: MCPServerConfiguration,
         spawnedProcesses: inout [StdioServerProcess]
     ) async throws -> FoundationModelsMultitool.MCPServer {

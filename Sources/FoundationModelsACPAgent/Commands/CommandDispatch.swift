@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
+import Tracing
 
 /// One parsed leading slash command of a prompt request (plan.md
 /// §14.3): the bare name, the raw argument text, and the content
@@ -217,6 +218,15 @@ extension RoutedACPAgent {
     /// model prompt; an `.action` streams its text with no model call. An
     /// unknown name refuses with near-miss suggestions.
     ///
+    /// The dispatch runs in one command span (``AgentTracing``), a child of
+    /// the prompt span. The span covers the registry lookup, the refusals,
+    /// the template expansion and the render. It carries the command name
+    /// and, for a registered command, its ``CommandKind``. It never carries
+    /// the argument text or the expanded text. A refusal records the error on
+    /// the span. The work after the `{}` response is scheduled after the
+    /// span ends, in the context of the prompt span, so each Router
+    /// submission span of the prompt stays a child of the prompt span.
+    ///
     /// - Parameters:
     ///   - command: The parsed command.
     ///   - params: The prompt request the command arrived in.
@@ -231,31 +241,67 @@ extension RoutedACPAgent {
         entry: ActiveSession,
         connection: AgentSideConnection
     ) async throws -> PromptResponse {
-        guard let registered = await entry.commands.command(named: command.name) else {
-            throw RequestError.unknownCommand(
-                name: command.name,
-                suggestions: await entry.commands.nearMisses(to: command.name))
-        }
-        switch registered.body {
-        case .action(let action):
-            guard command.attachments.isEmpty else {
-                throw RequestError.actionCommandAttachments(name: command.name)
+        let work = try await AgentTracing.withSpan(ACPAgentTelemetry.SpanName.command) { span in
+            span.attributes[ACPAgentTelemetry.AttributeKey.commandName] = command.name
+            guard let registered = await entry.commands.command(named: command.name) else {
+                throw RequestError.unknownCommand(
+                    name: command.name,
+                    suggestions: await entry.commands.nearMisses(to: command.name))
             }
-            let (owner, send) = beginPrompt(params: params, connection: connection)
-            let execution = ActionCommandExecution(
-                promptBlocks: params.prompt,
-                promptState: owner,
-                send: send,
-                action: action,
-                invocation: SlashCommand.Invocation(
-                    arguments: command.arguments,
-                    workingDirectory: entry.workingDirectory))
+            span.attributes[ACPAgentTelemetry.AttributeKey.commandKind] =
+                await entry.commands.kind(ofCommandNamed: command.name)?.rawValue
+            return try await resolveCommand(
+                registered, command: command, params: params, entry: entry, connection: connection)
+        }
+        switch work {
+        case .action(let execution):
             let sessionId = params.sessionId
             connection.afterRespondingInCurrentServiceContext {
                 await execution.run()
                 await self.promptFinished(sessionId: sessionId)
             }
             return PromptResponse()
+        case .modelPrompt(let text, let owner, let send):
+            return scheduleModelPrompt(
+                overridePrompt: text,
+                params: params, entry: entry, connection: connection, owner: owner, send: send)
+        }
+    }
+
+    /// Resolves one registered command into the work that runs after the
+    /// `{}` response: the refusal checks, the template expansion or the
+    /// render, and the busy mark of the session.
+    ///
+    /// - Parameters:
+    ///   - registered: The registered command that the name selected.
+    ///   - command: The parsed command.
+    ///   - params: The prompt request the command arrived in.
+    ///   - entry: The session's table entry.
+    ///   - connection: The bound connection to notify through.
+    /// - Returns: The work of the command.
+    /// - Throws: `actionCommandAttachments` or `commandExpansionFailed`.
+    private func resolveCommand(
+        _ registered: SlashCommand,
+        command: ParsedCommand,
+        params: PromptRequest,
+        entry: ActiveSession,
+        connection: AgentSideConnection
+    ) async throws -> CommandWork {
+        switch registered.body {
+        case .action(let action):
+            guard command.attachments.isEmpty else {
+                throw RequestError.actionCommandAttachments(name: command.name)
+            }
+            let (owner, send) = beginPrompt(params: params, connection: connection)
+            return .action(
+                ActionCommandExecution(
+                    promptBlocks: params.prompt,
+                    promptState: owner,
+                    send: send,
+                    action: action,
+                    invocation: SlashCommand.Invocation(
+                        arguments: command.arguments,
+                        workingDirectory: entry.workingDirectory)))
         case .prompt(let template):
             let expandedText: String
             do {
@@ -264,10 +310,9 @@ extension RoutedACPAgent {
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
             let (owner, send) = beginPrompt(params: params, connection: connection)
-            return scheduleModelPrompt(
-                overridePrompt: CommandDispatch.modelPrompt(
-                    expandedText: expandedText, attachments: command.attachments),
-                params: params, entry: entry, connection: connection, owner: owner, send: send)
+            return .modelPrompt(
+                text: CommandDispatch.modelPrompt(expandedText: expandedText, attachments: command.attachments),
+                owner: owner, send: send)
         case .rendered(let render):
             // Mark the session busy before the async render, so a
             // concurrent prompt is refused instead of racing this one.
@@ -282,10 +327,26 @@ extension RoutedACPAgent {
                 await promptFinished(sessionId: params.sessionId)
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
-            return scheduleModelPrompt(
-                overridePrompt: CommandDispatch.modelPrompt(
-                    expandedText: renderedText, attachments: command.attachments),
-                params: params, entry: entry, connection: connection, owner: owner, send: send)
+            return .modelPrompt(
+                text: CommandDispatch.modelPrompt(expandedText: renderedText, attachments: command.attachments),
+                owner: owner, send: send)
         }
     }
+}
+
+/// The work of one resolved command prompt: what runs after the `{}`
+/// response. The session is already busy for it.
+private enum CommandWork: Sendable {
+    /// An `.action` command: its closure streams the text, with no model
+    /// call.
+    case action(ActionCommandExecution)
+
+    /// A `.prompt` or `.rendered` command: a normal recorded model prompt
+    /// over the expanded or rendered text.
+    ///
+    /// - Parameters:
+    ///   - text: The model prompt.
+    ///   - owner: The prompt-state owner that marks the session busy.
+    ///   - send: The sink every update of the prompt goes to.
+    case modelPrompt(text: String, owner: PromptStateOwner, send: SessionUpdateSink)
 }

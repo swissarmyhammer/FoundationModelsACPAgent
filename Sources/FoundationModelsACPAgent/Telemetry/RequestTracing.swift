@@ -53,7 +53,7 @@ enum RequestTracing {
             spanName, context: parentContext(meta: meta), ofKind: .server
         ) { span in
             span.updateAttributes { describeRequest(&$0, method: method, sessionId: sessionId) }
-            return try await recordingErrorType(on: span, body)
+            return try await AgentTracing.recordingErrorType(on: span, body)
         }
     }
 
@@ -93,7 +93,7 @@ enum RequestTracing {
                 attributes: { describeRequest(&$0, method: method, sessionId: sessionId) },
                 metadata: requestMetadata(method: method, sessionId: sessionId)
             ) { span in
-                try await recordingErrorType(on: span, body)
+                try await AgentTracing.recordingErrorType(on: span, body)
             }
         }
     }
@@ -147,7 +147,7 @@ enum RequestTracing {
     static func endRequestSpan(_ span: any Span, throwing error: any Error) {
         span.recordError(error)
         span.setStatus(SpanStatus(code: .error))
-        recordErrorType(of: error, on: span)
+        AgentTracing.recordErrorType(of: error, on: span)
         span.end()
     }
 
@@ -164,35 +164,6 @@ enum RequestTracing {
             span.attributes[ACPAgentTelemetry.AttributeKey.promptStopReason] = stopReason.wireValue
         }
         span.end()
-    }
-
-    /// Runs `body`, and puts the type name of the error on `span` when `body`
-    /// throws.
-    ///
-    /// - Parameters:
-    ///   - span: The span of the request.
-    ///   - body: The work of the request.
-    /// - Returns: The value of `body`.
-    /// - Throws: The error of `body`.
-    private nonisolated(nonsending) static func recordingErrorType<Output>(
-        on span: any Span,
-        _ body: nonisolated(nonsending) (any Span) async throws -> Output
-    ) async rethrows -> Output {
-        do {
-            return try await body(span)
-        } catch {
-            recordErrorType(of: error, on: span)
-            throw error
-        }
-    }
-
-    /// Puts the type name of `error` on `span`, never the error message.
-    ///
-    /// - Parameters:
-    ///   - error: The error of the request.
-    ///   - span: The span of the request.
-    private static func recordErrorType(of error: any Error, on span: any Span) {
-        span.attributes[ACPAgentTelemetry.AttributeKey.errorType] = ACPAgentTelemetry.errorTypeName(of: error)
     }
 
     /// Writes the attributes that name one request: its ACP method, and its

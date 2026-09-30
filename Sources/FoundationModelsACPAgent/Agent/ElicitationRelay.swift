@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Logging
+import Tracing
 
 /// The consumer of one live elicitation request event. The production
 /// handler is the bound ``ElicitationRelay``; a synthetic projection test
@@ -78,6 +79,13 @@ actor ElicitationRelay {
     /// trip inside the prompt's `awaitingUser`, and the answer delivery
     /// through `session.respond(elicitationId:response:)`.
     ///
+    /// The relay of a request runs in one elicitation span
+    /// (``AgentTracing``). The span carries the mode and the outcome:
+    /// `accept`, `decline` or `cancel`. A decline of the relay itself is a
+    /// `decline` outcome too. The span waits for the user, so it writes one
+    /// "enter" record when it opens. The span and the record never carry
+    /// the message, the schema or the answer content.
+    ///
     /// - Parameters:
     ///   - event: The `.elicitation` operation event the session posted.
     ///   - session: The Router session the answer goes back to.
@@ -99,33 +107,65 @@ actor ElicitationRelay {
                 metadata: metadata)
             return
         }
+        // `TracedCall.run` is not `rethrows`. This body does not throw, thus
+        // `try?` discards no error.
+        try? await AgentTracing.withEnteredSpan(
+            ACPAgentTelemetry.SpanName.elicitation,
+            logger: ACPAgentTelemetry.logger(.elicitationRelay),
+            attributes: { $0[ACPAgentTelemetry.AttributeKey.elicitationMode] = request.mode.rawValue },
+            metadata: elicitationMetadata(request.elicitationId.ulidString)
+        ) { span in
+            let outcome = await relayRequest(
+                request, toolCallId: event.correlationID, on: session, promptState: promptState)
+            span.attributes[ACPAgentTelemetry.AttributeKey.elicitationOutcome] = outcome.rawValue
+        }
+    }
+
+    /// Relays one elicitation request: the work of
+    /// ``relay(_:on:promptState:)`` in the elicitation span.
+    ///
+    /// - Parameters:
+    ///   - request: The request the tool posted.
+    ///   - toolCallId: The run's completion token.
+    ///   - session: The Router session the answer goes back to.
+    ///   - promptState: The prompt-state owner that pairs `requires_action`
+    ///     with `running` around the wait.
+    /// - Returns: How the elicitation ended: the action of the answer that
+    ///   went to Router.
+    private func relayRequest(
+        _ request: ElicitationRequest,
+        toolCallId: String,
+        on session: any RoutedSession,
+        promptState: PromptStateOwner
+    ) async -> ElicitationResponse.Action {
         let elicitationId = request.elicitationId.ulidString
         guard supports(request.mode) else {
             await decline(
                 elicitationId: elicitationId, mode: request.mode, on: session,
                 reason: .unsupportedMode)
-            return
+            return .decline
         }
         guard
             let wireRequest = Self.wireRequest(
-                for: request, sessionId: sessionId, toolCallId: event.correlationID)
+                for: request, sessionId: sessionId, toolCallId: toolCallId)
         else {
             await decline(
                 elicitationId: elicitationId, mode: request.mode, on: session,
                 reason: .missingPayload)
-            return
+            return .decline
         }
         guard beginURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId) else {
             await decline(
                 elicitationId: elicitationId, mode: request.mode, on: session,
                 reason: .duplicateURLElicitationId)
-            return
+            return .decline
         }
-        await promptState.awaitingUser {
+        let outcome = await promptState.awaitingUser {
             await self.deliverRoundTrip(
                 wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
         }
         endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
+        return outcome
     }
 
     /// Answers every round trip still in flight with `cancel`, so each
@@ -160,12 +200,13 @@ actor ElicitationRelay {
     ///   - elicitationId: The pending elicitation's id.
     ///   - mode: The mode of the request.
     ///   - session: The Router session the answer goes back to.
+    /// - Returns: The action of the answer that went to Router.
     private func deliverRoundTrip(
         _ wireRequest: CreateElicitationRequest,
         elicitationId: String,
         mode: ElicitationMode,
         on session: any RoutedSession
-    ) async {
+    ) async -> ElicitationResponse.Action {
         let answer = await clientAnswer(to: wireRequest, elicitationId: elicitationId, mode: mode)
         let delivery = await session.respond(elicitationId: elicitationId, response: answer)
         switch delivery {
@@ -182,6 +223,7 @@ actor ElicitationRelay {
                 "Router gave an unknown delivery result for an elicitation answer.",
                 metadata: elicitationMetadata(elicitationId))
         }
+        return answer.action
     }
 
     /// Sends the create and suspends until the client answers or

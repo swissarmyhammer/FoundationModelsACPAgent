@@ -38,6 +38,10 @@ actor CommandRegistry {
     /// winner keeps the loser's position.
     private(set) var commands: [SlashCommand] = []
 
+    /// The kind of each merged command, keyed by the command name. The
+    /// merge fills it with ``commands``.
+    private var kinds: [String: CommandKind] = [:]
+
     /// The consumer of each merged-set publication, or `nil` before
     /// ``beginPublishing(_:)``.
     private var publisher: (@Sendable ([SlashCommand]) async -> Void)?
@@ -96,6 +100,15 @@ actor CommandRegistry {
         commands.first { $0.name == name }
     }
 
+    /// The kind of the merged command with `name`, or `nil` when no source
+    /// offers it.
+    ///
+    /// - Parameter name: The bare command name, no leading slash.
+    /// - Returns: The kind of the winning command, or `nil`.
+    func kind(ofCommandNamed name: String) -> CommandKind? {
+        kinds[name]
+    }
+
     /// The number of near-miss suggestions an unknown command names.
     private static let maxSuggestions = 3
 
@@ -137,11 +150,13 @@ actor CommandRegistry {
 
     // MARK: - The merge (plan.md §14.1)
 
-    /// Rebuilds ``commands`` from the builtins and the current provider
-    /// sets. Logs every collision win and every reserved-name drop.
+    /// Rebuilds ``commands`` and the kind of each command from the builtins
+    /// and the current provider sets. Logs every collision win and every
+    /// reserved-name drop.
     private func merge() {
         var positions: [String: Int] = [:]
         var merged: [SlashCommand] = []
+        var mergedKinds: [String: CommandKind] = [:]
         for builtin in builtins {
             guard positions[builtin.name] == nil else {
                 ACPAgentTelemetry.logger(.commands).error(
@@ -151,9 +166,10 @@ actor CommandRegistry {
             }
             positions[builtin.name] = merged.count
             merged.append(builtin)
+            mergedKinds[builtin.name] = .builtin
         }
         let reservedNames = Set(positions.keys)
-        for set in providerSets {
+        for (provider, set) in zip(providers, providerSets) {
             for command in set {
                 if reservedNames.contains(command.name) {
                     ACPAgentTelemetry.logger(.commands).notice(
@@ -170,9 +186,11 @@ actor CommandRegistry {
                     positions[command.name] = merged.count
                     merged.append(command)
                 }
+                mergedKinds[command.name] = CommandKind(of: command, from: provider)
             }
         }
         commands = merged
+        kinds = mergedKinds
     }
 
     /// The metadata of a record about one command of the merge: the command
@@ -238,6 +256,48 @@ actor CommandRegistry {
             previousRow = currentRow
         }
         return previousRow[rightCharacters.count]
+    }
+}
+
+// MARK: - The command kind
+
+/// The kind of one merged slash command: where it came from, and, for a
+/// command of a linked provider, what its body does.
+///
+/// The raw value is the value of the ``ACPAgentTelemetry/AttributeKey/commandKind``
+/// span attribute. It is part of the observable surface of the agent, so
+/// change a raw value only as a deliberate break.
+enum CommandKind: String, Sendable {
+    /// A built-in command of the agent (plan.md §14.1, source 1).
+    case builtin
+
+    /// A command of the skills source (plan.md §14.1, source 3).
+    case skill
+
+    /// A command of a linked provider whose text goes to the model as a
+    /// prompt: a `.prompt` template or a `.rendered` body.
+    case promptTemplate = "prompt_template"
+
+    /// A command of a linked provider that streams its own text and makes
+    /// no model call: an `.action` body.
+    case action
+
+    /// The kind of a command that a later source gave.
+    ///
+    /// - Parameters:
+    ///   - command: The command.
+    ///   - provider: The source that gave the command.
+    init(of command: SlashCommand, from provider: any SlashCommandProviding) {
+        if provider is SkillCommandSource {
+            self = .skill
+            return
+        }
+        switch command.body {
+        case .action:
+            self = .action
+        case .prompt, .rendered:
+            self = .promptTemplate
+        }
     }
 }
 

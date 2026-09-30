@@ -71,10 +71,7 @@ enum ACPAgentTelemetry {
     /// key: a key names an identifier, a name, a count or a size, and never
     /// the content of the client.
     ///
-    /// The log metadata keys read some of these keys. OTel 8 reads the
-    /// elicitation outcome key and the MCP server transport key, so periphery
-    /// sees no reader of those yet. Each of those keys has its own ignore
-    /// marker.
+    /// The log metadata keys read some of these keys.
     enum AttributeKey {
         /// The ACP method of the request, for example `session/prompt`.
         static let acpMethod = "acp.method"
@@ -88,21 +85,19 @@ enum ACPAgentTelemetry {
         /// The name of the slash command, without the leading `/`.
         static let commandName = "command.name"
 
-        /// The kind of the slash command: built-in, or from a layer.
+        /// The kind of the slash command: a ``CommandKind`` raw value.
         static let commandKind = "command.kind"
 
         /// The mode of the elicitation: `form` or `url`.
         static let elicitationMode = "elicitation.mode"
 
         /// How the elicitation ended: accept, decline or cancel.
-        // periphery:ignore
         static let elicitationOutcome = "elicitation.outcome"
 
         /// The configured name of the MCP server.
         static let mcpServerName = "mcp.server.name"
 
         /// The transport of the MCP server: `stdio` or `http`.
-        // periphery:ignore
         static let mcpServerTransport = "mcp.server.transport"
 
         /// The type name of the error that ended the work. Never the error

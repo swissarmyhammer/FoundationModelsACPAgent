@@ -168,6 +168,36 @@ struct CommandRegistryTests {
         #expect(rendered.contains("Hello beta."))
     }
 
+    // MARK: - The command kind
+
+    /// Each merged command has the kind of its source: a builtin is
+    /// `builtin`, a skill is `skill`, and a linked provider command is
+    /// `action` or `prompt_template` by its body. A name that no source
+    /// offers has no kind.
+    @Test(.timeLimit(.minutes(1)))
+    func eachMergedCommandHasTheKindOfItsSource() async throws {
+        let root = makeResolvedDirectory(label: "CommandRegistryTests-kinds")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeSkillFixture(id: "greet", markdown: greetSkillMarkdown, under: root)
+        let provider = StubCommandProvider(commandSet: [
+            SlashCommand(name: "deploy", description: "a template", body: .prompt(template: "x")),
+            makeRenderedCommand(name: "render", prefix: ""),
+            makeActionCommand(name: "act", output: "ACT"),
+        ])
+        let registry = CommandRegistry(
+            builtins: [makeActionCommand(name: "status", output: "STATUS")],
+            providers: [provider, SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
+            workingDirectory: root)
+        await registry.load()
+
+        #expect(await registry.kind(ofCommandNamed: "status") == .builtin)
+        #expect(await registry.kind(ofCommandNamed: "greet") == .skill)
+        #expect(await registry.kind(ofCommandNamed: "deploy") == .promptTemplate)
+        #expect(await registry.kind(ofCommandNamed: "render") == .promptTemplate)
+        #expect(await registry.kind(ofCommandNamed: "act") == .action)
+        #expect(await registry.kind(ofCommandNamed: "nosuchcommand") == nil)
+    }
+
     // MARK: - Pushed updates (plan.md §14.4)
 
     /// A provider update replaces that provider's set, re-merges, and
