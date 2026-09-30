@@ -25,6 +25,15 @@ import Tracing
 /// backend that the executable bootstrapped, and the agent cannot know where
 /// that backend sends the data. Identifiers, names, counts and sizes are safe.
 /// Content is not safe.
+///
+/// `TelemetryContentSafetyTests` proves this rule. It puts a unique marker in
+/// the prompt text, the model response, the tool arguments, the tool output,
+/// the slash-command arguments, the elicitation answer, an MCP `env` value, an
+/// MCP `headers` value, a `config.yaml` value and the content of two
+/// instructions files. It then drives the agent over the wire in a
+/// `TelemetryCapture` of FoundationModelsExtras, and fails when a span name,
+/// a span attribute, a span event, a recorded error, a log message, a log
+/// metadata value, a metric name or a metric dimension holds a marker.
 enum ACPAgentTelemetry {
     /// The module name. Each span name and each logger label starts with it
     /// and a dot.

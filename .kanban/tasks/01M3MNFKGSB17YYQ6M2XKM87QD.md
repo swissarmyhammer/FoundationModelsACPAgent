@@ -1,4 +1,28 @@
 ---
+comments:
+- actor: claude-code
+  id: 01m3qxbwkf8pze8c2a9gqzw65h
+  text: |-
+    Research and implementation notes.
+
+    - The pinned FoundationModelsExtras (3de1179) already contains 70ad74d and the `TelemetryTestSupport` product. Thus `swift package update FoundationModelsExtras` was not necessary, and Package.resolved has no change.
+    - `TelemetryCapture` of Extras reads span names, span attributes, log messages, log metadata values, metric names and metric dimensions. It does NOT read span events, recorded errors or the span status. swift-otel exports `span.recordError(error)` as an `exception` event with `exception.message = String(describing: error)`, and `withSpan` and `TracedCall.run` call `recordError` on each error. Thus the new test also reads the events, the recorded errors (as their description) and the status message of each span.
+    - The capture sees only records of its own task tree. Router and Extras write their log records and metrics in the detached task of a Router session, thus those do not come to the capture. The Router tracer is given explicitly, thus the Router spans and the Extras tool span `FoundationModelsExtras.tool` do come to the capture. The Router and Extras content-safety tests prove their own logs and metrics.
+    - Driven paths: initialize; session/new with a config MCP server (the loopback `mcp-test-server` with a marked `env` value), an unknown `config.yaml` section with a marked value, an `AGENTS.md` with marked content, and a project `Instructions.md` whose bytes are not UTF-8 and hold a marker (this writes the `file.path` warning); one prompt with a marked text that runs two `runCode` calls (marked arguments; an output that the snippet joins at run time, so the output marker is not in the arguments; and the eliciting loopback tool), a marked elicitation answer, and a marked model response; `/help` with marked arguments; one held prompt with a marked text that the client cancels; a session/new with a client http MCP server with a marked `headers` value at a port where nothing listens (the connect fails, so `mcp_connect_failures` and an error span are recorded); session/close.
+    - The test expects the span names initialize, sessionNew, prompt, command, elicitation, mcpConnect, cancel and `FoundationModelsExtras.tool`; the metrics prompts, prompt_duration, active_sessions, commands and mcp_connect_failures; and the log metadata keys client.name, config.section, file.path, elicitation.id and cancel.result. Thus an empty capture cannot pass.
+    - The file path is logged on purpose (`file.path`, an identifier), thus the markers are in the file content and not in the path.
+    - Red check (one time): a temporary `span.attributes["red.check"] = "\(params.prompt)"` and a span event with the prompt in `prompt(_:)` made the test fail with 4 issues (the capture found the prompt text, the command arguments and the cancelled prompt text on the attribute; the span-detail check found the event). The temporary lines are removed.
+    - Leaks found: none. No production change for leaks was necessary.
+    - Shared helper: `ScriptedPromptFixture.makeRunCodeCall(code:)` now gives one `runCode` step; `makeToolPromptScript(code:)` uses it.
+  timestamp: 2026-09-30T01:02:50.991543+00:00
+- actor: claude-code
+  id: 01m3qxc89j9fhvt4w6mq6tn5hf
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift (new), Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift (`makeRunCodeCall(code:)`), Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift (doc comment names the proof). `swift test --filter TelemetryContentSafetyTests`: 1 test passed; red check with the prompt in a span attribute and an event: failed with 4 issues, then reverted. `swift test`: 667 tests in 76 suites passed (1 known issue, as before). `swift build --build-tests` in the root and in IntegrationTests/: zero compiler warnings (only the SwiftPM "missing creator for mutated node" note of the mlx-swift bundle, which is not from this change). Leaks found: none.
+    - follow-up: ^rcy24zj (the Extras `TelemetryCapture` does not read span events, recorded errors or the status).
+    - next: /review
+  timestamp: 2026-09-30T01:03:02.962438+00:00
 depends_on:
 - 01M3MNC26MHCGN4R7BVKFQVQQB
 - 01M3MNF2Y6B98SQ03420B65G02
@@ -6,8 +30,8 @@ depends_on:
 - 01M3MNF3HX2STG00W3GBT21BAS
 - 01M3MNF9A7FRPJJ3JZA503GB5G
 - 01M3MNF9KBQQ13EQQPFBFCX8KF
-position_column: todo
-position_ordinal: '9480'
+position_column: doing
+position_ordinal: '80'
 title: 'OTel 10: content-safety test for all spans, logs and metrics of the agent'
 ---
 ## What
@@ -15,22 +39,22 @@ Design items 4 and 5: prove the no-content rule for all telemetry of this packag
 
 The model is `FoundationModelsRouter/Sources/FoundationModelsRouter/Tracing/RouterTracing.swift` and its `SpanContentSafetyTests`: drive real work with fixture content, read every recorded value, and fail when a value carries a piece of that content.
 
-- [ ] OTel 3 already adds `TelemetryTestSupport` to the test target. Use its `TelemetryCapture` with the test rules in OTel 3 (no `LoggingSystem.bootstrap`, `InstrumentationSystem.bootstrap` or `MetricsSystem.bootstrap`; make the agent inside the capture).
-- [ ] Include the Extras tool-call span `FoundationModelsExtras.tool` (names in `ExtrasTelemetry.swift`): the tool-argument and tool-output fixtures must not appear on it.
-- [ ] Add `Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift`. Use one set of unique fixture strings for: the prompt text, the command arguments, the model response (through `ScriptedModel`), a tool argument and a tool output, an elicitation answer, an MCP server `env` value and `headers` value, and a file content read by `InstructionsAssembler`.
-- [ ] Drive, with the recorders of the helper: initialize, session/new with one config MCP server, one prompt with a tool call, one slash command with arguments, one elicitation round trip, session/cancel and session/close.
-- [ ] Give all recorded spans, log records and metrics to the helper, and assert that no recorded value contains a fixture string.
-- [ ] Update the doc comment of `ACPAgentTelemetry` (OTel 1) to name this test as the proof of the rule, as `RouterTracing` does.
+- [x] OTel 3 already adds `TelemetryTestSupport` to the test target. Use its `TelemetryCapture` with the test rules in OTel 3 (no `LoggingSystem.bootstrap`, `InstrumentationSystem.bootstrap` or `MetricsSystem.bootstrap`; make the agent inside the capture).
+- [x] Include the Extras tool-call span `FoundationModelsExtras.tool` (names in `ExtrasTelemetry.swift`): the tool-argument and tool-output fixtures must not appear on it.
+- [x] Add `Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift`. Use one set of unique fixture strings for: the prompt text, the command arguments, the model response (through `ScriptedModel`), a tool argument and a tool output, an elicitation answer, an MCP server `env` value and `headers` value, and a file content read by `InstructionsAssembler`.
+- [x] Drive, with the recorders of the helper: initialize, session/new with one config MCP server, one prompt with a tool call, one slash command with arguments, one elicitation round trip, session/cancel and session/close.
+- [x] Give all recorded spans, log records and metrics to the helper, and assert that no recorded value contains a fixture string.
+- [x] Update the doc comment of `ACPAgentTelemetry` (OTel 1) to name this test as the proof of the rule, as `RouterTracing` does.
 
 ## Acceptance Criteria
-- [ ] The test drives each path that OTel 3 to OTel 9 instrumented, and each of those paths records at least one span, log record or metric (the test asserts this, so an empty recorder cannot pass).
-- [ ] No recorded span attribute, log message, log metadata value or metric dimension contains a fixture string.
-- [ ] If a later change puts the prompt text in a span attribute, this test fails (check this one time in the red step of `/tdd`).
+- [x] The test drives each path that OTel 3 to OTel 9 instrumented, and each of those paths records at least one span, log record or metric (the test asserts this, so an empty recorder cannot pass).
+- [x] No recorded span attribute, log message, log metadata value or metric dimension contains a fixture string.
+- [x] If a later change puts the prompt text in a span attribute, this test fails (check this one time in the red step of `/tdd`).
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift` as above.
-- [ ] Run `swift test --filter TelemetryContentSafetyTests`. Expected: pass.
-- [ ] Run `swift test`. Expected: all tests pass.
+- [x] `Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift` as above.
+- [x] Run `swift test --filter TelemetryContentSafetyTests`. Expected: pass.
+- [x] Run `swift test`. Expected: all tests pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

@@ -30,11 +30,27 @@ comments:
     - evidence: `swift test --filter AgentMetricsTests` 5/5 pass; `swift test` 666 tests in 75 suites pass (1 known issue is the existing deliberate one in HarnessSmokeTests); no compiler warnings (the only build line is the existing SwiftPM "missing creator for mutated node" note on the mlx-swift_Cmlx bundle); `swift build --build-tests` in IntegrationTests/ completes. Files: Package.swift, Sources/FoundationModelsACPAgent/Telemetry/AgentMetrics.swift (new), Telemetry/ACPAgentTelemetry.swift, RoutedACPAgent.swift, Agent/PromptExecution.swift, Agent/SessionSetup.swift, Agent/SessionLifecycle.swift, Agent/SessionResume.swift, Commands/CommandDispatch.swift, Tools/MCPComposition.swift, Tests/FoundationModelsACPAgentTests/AgentMetricsTests.swift (new).
     - next: /review
   timestamp: 2026-09-30T00:41:31.191105+00:00
+- actor: claude-code
+  id: 01m3qwp2mvs81fvmwhe0w166dv
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit e9ebcab). 11 files reviewed. Findings 0, confirmed 0, refuted 2, attempted 7, failed 0. The task had no prior review findings.
+    - next: The task is in done. No work remains.
+  timestamp: 2026-09-30T00:50:56.283574+00:00
+- actor: claude-code
+  id: 01m3qwpa6p6s469gt1v97ct24h
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 11 files (2 new)
+    - test: green — swift test 666 tests pass; IntegrationTests build ok
+    - commit: e9ebcab
+    - review: clean — zero findings; task moved to done
+  timestamp: 2026-09-30T00:51:04.022594+00:00
 depends_on:
 - 01M3MNAKQT4H82BNG84PE7PD6X
 - 01M3MNC26MHCGN4R7BVKFQVQQB
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8580
 title: 'OTel 9: metrics for prompts, active sessions, commands and MCP connect failures'
 ---
 ## What

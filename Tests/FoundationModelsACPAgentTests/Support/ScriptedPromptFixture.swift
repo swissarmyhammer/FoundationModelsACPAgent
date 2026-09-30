@@ -197,8 +197,17 @@ struct ScriptedPromptFixture {
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
     static func makeToolPromptScript(code: String) throws -> [ScriptedPassStep] {
+        [try makeRunCodeCall(code: code), .endPass]
+    }
+
+    /// The step of one `runCode` call with `code`.
+    ///
+    /// - Parameter code: The snippet the call runs.
+    /// - Returns: The tool-call step.
+    /// - Throws: The arguments-encoding error.
+    static func makeRunCodeCall(code: String) throws -> ScriptedPassStep {
         let arguments = String(decoding: try JSONEncoder().encode(["code": code]), as: UTF8.self)
-        return [.toolCall(name: runCodeToolName, argumentsJSON: arguments), .endPass]
+        return .toolCall(name: runCodeToolName, argumentsJSON: arguments)
     }
 
     // MARK: - Waits
