@@ -126,27 +126,37 @@ import Testing
     // MARK: The profile embedder
 
     /// The mount ranks with the profile's embedding handle: the first
-    /// `searchTools` call embeds every catalog block in one batch. With
-    /// no embedder on the mount, the profile's embedder receives nothing
-    /// and the search is keyword-only.
+    /// `searchTools` call embeds the embedded text of every catalog entry
+    /// (`renderEmbeddedText(from:)`) in one batch. With no embedder on the
+    /// mount, the profile's embedder receives nothing and the search is
+    /// keyword-only.
     ///
     /// The catalog batch is the only batch. The mount also gives a
     /// librarian, thus the searcher runs in `.auto` mode with a selection
     /// tier, and `MetadataSearcher.search(intent:limit:)` sends the query
     /// to that tier. Only the retrieval tier embeds a query, and this
     /// mount does not reach it.
+    ///
+    /// The `codeContext:` section is off. The code context is a different
+    /// consumer of the same embedder: each `CodeContext` embeds one probe
+    /// text to learn the vector length, and its index pass runs in the
+    /// background. With the section on, those batches would come in at
+    /// no known time, between the batches of `searchTools`.
     @Test func theSessionSurfaceHandsTheProfileEmbedderToSearchTools() async throws {
         let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
         var loader = makeScriptedModelLoader(script: [.textDelta(Self.flashSelectionJSON), .endPass])
         loader.makeEmbeddingContainer = { _ in embedder }
-        let context = try await Self.makeContext(loader: loader)
-        let catalogBlocks = try await ToolCatalog.makeRegistry(context: context).registry.surface.entries.map(\.block)
+        let context = try await Self.makeContext(loader: loader) { configuration in
+            configuration.tools.codeContext = .disabled
+        }
+        let catalogTexts = try await ToolCatalog.makeRegistry(context: context).registry.surface.entries
+            .map { entry in entry.renderEmbeddedText(from: entry.block) }
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
         let searchTools = try #require(surface.tools.compactMap { $0 as? SearchToolsTool }.first)
         _ = try await searchTools.call(arguments: SearchToolsArguments(task: Self.embedderTask))
 
-        #expect(embedder.batches == [catalogBlocks])
+        #expect(embedder.batches == [catalogTexts])
     }
 
     // MARK: The built surface

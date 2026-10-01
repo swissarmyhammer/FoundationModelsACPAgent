@@ -4,8 +4,10 @@ import FoundationModelsRouter
 /// Presents a Router embedding handle as the `TextEmbedding` the code
 /// context package embeds with.
 ///
-/// The two protocols have the same shape, so this type forwards both
-/// members and adds nothing: no batching and no error mapping. Multitool
+/// `TextEmbedding` declares one member, `embed(_:)`. This type forwards it
+/// and adds nothing: no batching and no error mapping. `TextEmbedding`
+/// declares no vector length, because each vector carries its own length.
+/// Thus this type does not read the `dimension` of the handle. Multitool
 /// holds an adapter of the same shape for its own searcher; each consumer
 /// keeps its own.
 struct ProfileTextEmbedding: FoundationModelsCodeContext.TextEmbedding {
@@ -19,10 +21,8 @@ struct ProfileTextEmbedding: FoundationModelsCodeContext.TextEmbedding {
         self.embedder = embedder
     }
 
-    /// The length of every vector the handle answers.
-    var dimension: Int { embedder.dimension }
-
-    /// Embeds each text into one `dimension`-length vector, in order.
+    /// Embeds each text into one vector, in order. All the vectors have the
+    /// same length.
     ///
     /// - Parameter texts: The texts to embed.
     /// - Returns: One vector per text, in the same order.

@@ -409,11 +409,37 @@ public enum ToolCatalog {
     ///   the catalog context.
     /// - Returns: The selection factory that `searchTools` calls.
     static func makeSearchSelection(profile: LanguageModelProfile) -> SearchToolsTool.SelectionFactory {
+        makeSearchSelection(makingEach: { grammar, instructions in
+            profile.flash.makeGuidedSession(grammar: grammar, instructions: instructions)
+        })
+    }
+
+    /// Makes one guided Router session for the selection tier of
+    /// `searchTools`, from the id grammar of the catalog and the
+    /// instructions that the tier gives. The tier awaits it, and an error
+    /// comes out of the search that asked for the session.
+    typealias GuidedSessionMaker =
+        @Sendable (_ grammar: Grammar, _ instructions: String) async throws -> any RoutedSession
+
+    /// Makes the selection tier of `searchTools` over one session maker:
+    /// for each catalog, one id grammar, and each session of the tier a
+    /// session that `makeSession` makes under that grammar.
+    ///
+    /// The configuration takes the async throwing factory of
+    /// `SelectionConfig(model:)`. Each session goes through
+    /// ``OwnedSelectionSession``, so the tier closes each session when it
+    /// drops it.
+    ///
+    /// - Parameter makeSession: Makes each guided session of the tier.
+    /// - Returns: The selection factory that `searchTools` calls.
+    static func makeSearchSelection(
+        makingEach makeSession: @escaping GuidedSessionMaker
+    ) -> SearchToolsTool.SelectionFactory {
         { ids in
             let grammar = Grammar.jsonSchema(try SelectionTier.idEnumSchema(ids: ids))
             return SelectionConfig(
                 model: OwnedSelectionSession.factory(makingEach: { instructions in
-                    profile.flash.makeGuidedSession(grammar: grammar, instructions: instructions)
+                    try await makeSession(grammar, instructions)
                 }))
         }
     }

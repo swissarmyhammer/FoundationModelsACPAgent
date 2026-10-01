@@ -55,9 +55,10 @@ final class OwnedSelectionSession: AgentSession {
         }
     }
 
-    /// Makes a session factory for the skills selection tier. Each session
-    /// that the factory gives owns the Router session that `makeSession`
-    /// makes, and closes it when the tier drops it.
+    /// Makes a synchronous session factory for the skills selection tier.
+    /// `SkillsTool.make(registry:session:)` takes a synchronous factory. Each
+    /// session that the factory gives owns the Router session that
+    /// `makeSession` makes, and closes it when the tier drops it.
     ///
     /// - Parameter makeSession: Makes a new Router session for one request.
     /// - Returns: The factory that the selection tier calls.
@@ -65,6 +66,23 @@ final class OwnedSelectionSession: AgentSession {
         makingEach makeSession: @escaping @Sendable (Request) -> any RoutedSession
     ) -> @Sendable (Request) -> any AgentSession {
         { request in OwnedSelectionSession(owning: makeSession(request)) }
+    }
+
+    /// Makes an async throwing session factory, in the shape that
+    /// `SelectionConfig(model:)` takes. Each session that the factory gives
+    /// owns the Router session that `makeSession` makes, and closes it when
+    /// the tier drops it.
+    ///
+    /// The tier awaits the factory, so `makeSession` can wait, for example
+    /// while a model loads. An error of `makeSession` comes out of the
+    /// search that asked for the session, and no session is made.
+    ///
+    /// - Parameter makeSession: Makes a new Router session for one request.
+    /// - Returns: The factory that the selection tier awaits.
+    static func factory<Request>(
+        makingEach makeSession: @escaping @Sendable (Request) async throws -> any RoutedSession
+    ) -> @Sendable (Request) async throws -> any AgentSession {
+        { request in OwnedSelectionSession(owning: try await makeSession(request)) }
     }
 
     /// Sends `prompt` to the Router session and answers with its complete
