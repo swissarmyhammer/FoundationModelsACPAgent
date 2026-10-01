@@ -1,865 +1,182 @@
 # bench — SWE-bench for `acp-agent`
 
-[SWE-bench](https://www.swebench.com/) gives each agent a real GitHub issue
-and a real repository. The agent must change the code. The official harness
-then runs the tests of the project. An instance is **resolved** when the
-tests pass.
+This directory runs [SWE-bench](https://www.swebench.com/) Lite against the
+`acp-agent` binary of this package. The agent gets a real issue and a real
+repository, and it must change the code. An instance is **resolved** when the
+tests of the project pass.
 
-This directory runs SWE-bench against the `acp-agent` binary of this package.
+The work has two steps, because the two steps fail in different ways:
 
-## Two steps
-
-The work is two scripts, because the two steps fail in different ways.
-
-| Step | Script | What it needs | What it makes |
+| Step | Script | Needs | Makes |
 |---|---|---|---|
 | Make the patches | `swebench_run.py` | the agent, git, uv, network | `preds.jsonl` |
 | Give the score | `swebench_score.py` | docker | a score report |
 
-The agent run is long. The docker run is short, but it can run out of memory.
-So the predictions stay on disk, and you can score them again at any time.
+## Run it
 
-## The command line
-
-Do all of this from the root of the package, and not from this directory.
+Run the commands from the root of the package. `uv` gets the Python
+dependencies of each script.
 
 ```bash
-cd /path/to/FoundationModelsACPAgent
-
-# 0. Build the agent. The scripts find this binary with no help.
 swift build -c release
-
-# 1. Make the patches. Start with 3, and keep a record.
 uv run bench/swebench_run.py bench/preds.jsonl --sample 3 2>&1 | tee bench/run.log
-
-# 2. Give the score. Docker must run.
 uv run bench/swebench_score.py bench/preds.jsonl
 ```
 
-`uv` gets the Python dependencies of each script, at the versions the script
-pins. There is nothing to install by hand.
+- **One instance:** use `-i psf__requests-2317 --verbose`. That repository is
+  small, and `--verbose` shows the session events of the agent.
+- **The code context with skills run:** add
+  `--agent-config bench/code-context.config.yaml`, and give the run its own
+  predictions file, for example `bench/preds.code-context.jsonl`. The run
+  writes that file into each clone as `.acp-agent/config.yaml`. The agent
+  then mounts the `code-context` branch of the skills marketplace and the
+  `tools.code_context` group.
+- **A new commit of a sibling package:** run `swift package update` before the
+  build. `swift build` alone keeps the pinned revisions.
+- **The binary:** the scripts look for the release build, then the debug
+  build, then `PATH`. The first line of the output names the binary that
+  they found.
 
-**Write the results into `bench/`.** The `.gitignore` of this directory keeps
-`preds*.jsonl`, `*.runs.jsonl`, `*.log`, the score reports, `*.transcripts/`
-and `logs/` out of git. A results file at the root of the package is not
-ignored, and it makes the working tree dirty.
+Write the results into `bench/`, where `.gitignore` keeps them out of git.
+`2>&1` is necessary, because an interrupt or a Python error goes to standard
+error.
 
-**Each run records what each instance cost.** Beside the predictions, the run
-writes `bench/preds.runs.jsonl` with one row for each instance. Read
-[The record of a run](#the-record-of-a-run).
+## Options
 
-**Each instance keeps its agent transcripts.** The agent writes its session
-transcripts into the temporary repository, and the run removes that
-repository. So `swebench_run.py` copies them into
-`bench/preds.transcripts/<instance_id>/` before the repository goes. Read them
-to see each model round of an instance, for example to find why one round was
-slow.
-
-### One problem only
-
-```bash
-uv run bench/swebench_run.py bench/preds.jsonl -i psf__requests-2317 --verbose
-uv run bench/swebench_score.py bench/preds.jsonl
-```
-
-`psf__requests-2317` is a good first choice: the repository is small, so the
-clone and the docker image are both quick. `--verbose` puts the session
-events of the agent on the console, so you can see what it does.
-
-The choice reads `-i` too. An id of the 121 instances that this machine cannot
-build is left out, and the run says why. Add `--all` to do that instance.
-
-### If you do not build
-
-The scripts look for the release build, then the debug build, then the PATH.
-So a debug build works:
-
-```bash
-uv run bench/swebench_run.py bench/preds.jsonl --limit 3
-```
-
-But a debug build is much slower than a release build for MLX inference. For
-a true number, build the release.
-
-The first line of the output says which binary it found. Read it.
-
-### The code context with skills run
-
-This run gives the agent the `code-context` branch of the skills marketplace
-and the `tools.code_context` group of Multitool. Read
-[What the agent gets](#what-the-agent-gets).
-
-```bash
-swift package update      # ONLY when a sibling package has a new commit
-swift build -c release
-uv run bench/swebench_run.py bench/preds.code-context.jsonl --limit 16 \
-  --agent-config bench/code-context.config.yaml 2>&1 | tee bench/run.code-context.log
-uv run bench/swebench_score.py bench/preds.code-context.jsonl
-```
-
-**Give this run a predictions file of its own.** The predictions file says
-which instances are done. A run that writes into the `bench/preds.jsonl` of a
-different configuration finds those instances there, and it does none of them
-again. With a file of its own, the run also keeps its record in
-`bench/preds.code-context.runs.jsonl` and its transcripts in
-`bench/preds.code-context.transcripts/`, and the two scores stay apart.
-
-`--limit 16` with no `--sample` takes the first 16 of the instances that this
-machine can build, in the order of the split. The same command with no
-`--agent-config` and a different predictions file does the same 16 instances,
-so you can compare the two scores.
-
-**A rebuild alone does not take a new commit of a sibling package.**
-`Package.resolved` pins one revision of Skills, Router, Multitool and
-CodeContext, and `swift build` keeps that pin. A run that must have a new
-sibling commit needs `swift package update` first, and then the release build.
-The first line of the run log names the binary; compare its time with the time
-of your build.
-
-**Remove the transcripts of a stopped run before you read the new ones.** The
-run replaces the folder of each instance that it finishes, so a folder of an
-instance that this run has not reached is left from an older run. Remove
-`bench/preds.code-context.transcripts/` before the run, or compare the time of
-each folder with the start of the run.
-
-The first session of a machine fetches the branch into
-`~/.cache/skills/marketplaces`. Each later session asks the remote for its head
-only. The agent writes its code context index into `.code-context/` in the
-clone. That directory ignores itself, and the patch holds tracked files only,
-so the index is never part of the patch.
-
-### What the configuration does
-
-`bench/code-context.config.yaml` sets two sections:
-
-| Key | Value | Why |
-|---|---|---|
-| `tools.skills.marketplaces[0].url` | the HTTPS URL of `swissarmyhammer/skills` | A marketplace supports HTTPS only. The SSH form gives `unreachable`, because the skills package builds no SSH transport. |
-| `tools.skills.marketplaces[0].ref` | `code-context` | That branch holds the five skills whose one requirement is the `tools.code_context` verbs. |
-| `tools.codeContext.autoInstall` | `true` | A language server that is absent is installed automatically. |
-| `tools.codeContext.semanticSearch` | `false` | The index then embeds no chunk. Each instance is a new clone, thus each instance makes a new index, and the embedder uses the same GPU as the model. The symbol, call graph, blast radius and language server verbs need no embedding. Only `searchCode` does, and it answers with an error that says the embedding layer is off. |
-
-**The file sets no `repetition:` section, so each run uses Router's
-repetition detector at its defaults.** A reasoning model can write the lines
-that it already wrote again, until the call reaches its ceiling. The detector
-stops such a call and runs a recovery submission. When no recovery is left, the
-turn ends with `_repeated`. Each key is a setting of Router's
-`RepetitionDetection`, and `acp-agent config show` prints the values in force:
-
-| Key | Default | What it does |
-|---|---|---|
-| `repetition.isEnabled` | `true` | `false` stops no call for repetition, and sets no pass token limit |
-| `repetition.windowTokens` | `2048` | the generated tokens that must hold at least one new line |
-| `repetition.minimumLineLength` | `20` | the shortest line, in characters, that counts |
-| `repetition.recoveriesPerAnswer` | `2` | how many times one answer goes on after a stop |
-| `repetition.passTokenLimit` | `16384` | the most output tokens of one generation pass when the caller names no ceiling |
-
-### Did the model use the skills and the code context?
-
-The transcripts answer this. Each `<id>/<session>/transcript.jsonl` holds one
-JSON object per line. A line with `"kind": "toolCalls"` holds the calls of one
-round, and a line with `"kind": "toolOutput"` holds one answer.
-
-- **The skills:** look for a call with `"toolName": "skills"`. Its
-  `argumentsJSON` names the operation: `search skill` finds the skills of the
-  task, and `use skill` loads one. A turn that never calls `use skill` never
-  got the instructions of a skill.
-- **The code context:** the verbs stand in the code of each `runCode` call.
-  Count `tools.code_context.` in the `argumentsJSON` of the `runCode` calls.
-  `tools.files.` and `tools.shell.` count the other two groups.
-- **What the model was offered:** a `"kind": "instructions"` line holds the
-  tool definitions of the session. The `skills` definition holds the catalog
-  of the skills, and the `id` parameter holds the enum of their ids.
-
-A live run writes only the `toolOutput` lines of the turn that runs now. The
-calls and the instructions of an instance are in the copied transcript, after
-that instance ends.
-
-### The fast answer to the same question
-
-A SWE-bench run takes hours to tell you that the model never loaded a skill.
-The skill trigger gate proves the path in about 20 seconds, and CI runs it on
-every push as part of the integration package:
-
-```bash
-swift test --package-path IntegrationTests --filter SkillTriggerTests
-```
-
-It opens a real session on the shipped standard model
-(`mlx-community/Qwen3.8-27B-mxfp4`), with the skills library of
-`Tests/Fixtures/skills/`, and decodes greedy, so every run gives the same
-decision. The one gate sample asks for "your skill for writing release notes".
-It names no skill, no id and no tool, thus the model must read the catalog in
-the description of the `skills` tool and load the right one of two skills.
-The run stops at that call:
-
-```
-SKILL TRIGGER load-release-notes expected=fixture-release-notes rate=1.0 loaded=[fixture-release-notes] skillsCalls=[1] toolsSeen=["skills"] seconds=[14]
-```
-
-**Does the model look for a skill when the task does not ask for one?** The
-other samples of the dataset measure that, and you run them by name. The
-shipped model does it, but it first runs code and searches the tools, thus
-each sample takes two to three minutes:
-
-```bash
-ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes \
-swift test --package-path IntegrationTests --filter SkillTriggerTests
-```
-
-| Sample | Shipped model, greedy, 2026-09-21 |
-|---|---|
-| `understand-parser` | loaded after 198 s |
-| `release-notes` | loaded after 201 s |
-
-`swebench-issue` is written as a bug report, with none of the words of the
-skill description. That is the condition of the SWE-bench run of 2026-09-19.
-`ACP_AGENT_SKILL_TRIGGER_MODEL` pins another model, and
-`ACP_AGENT_SKILL_TRIGGER_REPEATS` runs each sample more than one time.
-
-**A rejected tool call goes back to the model.** Before Router `d19f64a`, a
-`runCode` call with JSON that was not valid made MLX reject the call, and the
-rejection ended the whole turn with `_error`. With
-`mlx-community/Qwen3-4B-Instruct-2507-4bit`, `release-notes` and `who-calls`
-failed that way in every run. Router now gives the rejection back to the model
-in a retry, at most two times. With the same model, `release-notes` now loads
-its skill after 17 seconds, and `who-calls` ends normally.
-
-A pass here and no `use skill` call in a SWE-bench transcript is a useful
-split: the delivery of the skills works, and the issue text of that instance
-did not reach the model as a task that fits a skill.
-
-### The full split
-
-```bash
-uv run bench/swebench_run.py bench/preds.jsonl 2>&1 | tee bench/run.log
-uv run bench/swebench_score.py bench/preds.jsonl
-```
-
-Measure the time of 3 instances on your machine before you do this. The
-SWE-bench_Lite split is 300 instances.
-
-### The options
-
-Each script has `--help`. These are the options you will use:
+Each script has `--help`. These are the options that you will use:
 
 | Option | Script | What it does |
 |---|---|---|
 | `--sample N` | run | a random sample of N instances, in the ratio of the split |
-| `--seed S` | run | the seed of that sample (default 0), so a run can be done again |
-| `--all` | run | do every instance, and not the 179 that run here |
+| `--seed S` | run | the seed of the sample (default 0) |
 | `--limit N` | run | the first N of the instances that are left |
-| `-i ID ID` | run | these instance ids only |
-| `--force` | run | do every instance again, and write over the file |
-| `--agent PATH` | run | a different agent binary |
+| `-i ID ...` | run | these instance ids only |
+| `--all` | run | also the instances that this machine cannot build |
+| `--force` | run | do every instance again |
 | `--timeout SECONDS` | run | the limit of one instance (default 3000) |
-| `--oldest-python VERSION` | run | the Python to try for the instances that want 3.6 |
-| `--agent-config FILE` | run | a `config.yaml` of the agent, written into the project layer of each clone; `bench/code-context.config.yaml` mounts the `code-context` branch of the skills marketplace and states the code context capability |
-| `--verbose` | run | write one line for each session event of the agent |
-| `--instance-ids ID` | score | score these ids only |
+| `--agent PATH` | run | a different agent binary |
+| `--agent-config FILE` | run | a `config.yaml` for the agent in each clone |
+| `--oldest-python VERSION` | run | the Python to try for an instance that wants 3.6 |
+| `--verbose` | run | one line for each session event of the agent |
+| `--instance-ids ID ...` | score | score these ids only |
 | `--max-workers N` | score | how many docker workers run together |
 
-## What to expect
+## What a run does
 
-* **A run does 179 of the 300 instances.** This machine cannot build the
-  other 121, so the run leaves them out before it starts and it says why.
-  Read [Which instances a run does](#which-instances-a-run-does).
-* **A short run is a fair sample.** `--sample 10` gives ten instances, with
-  each repository in the ratio of the split. `--limit 10` gives the first ten
-  of the split, which are astropy instances.
-* **The limit of one instance is 3000 seconds, which is 50 minutes**
-  (`--timeout`). Three instances can thus be two and a half hours. An agent
-  that goes past the limit is stopped, but the run KEEPS the patch of that
-  instance. Read
-  [A patch that the watchdog stopped](#a-patch-that-the-watchdog-stopped) and
-  [Where the limit comes from](#where-the-limit-comes-from).
-* **The run continues.** The predictions file says which instances are done.
-  If you stop the run with `Ctrl-C`, start the same command again and it
-  continues. `--force` does them all again.
-* **One agent process serves the whole run.** The models load one time, when
-  the first instance starts. Read
-  [One agent, and one session for each instance](#one-agent-and-one-session-for-each-instance).
-* **The first score of a repository builds a docker image.** This is slow,
-  and it is emulated on Apple Silicon. Later instances of the same
-  repository use the image again.
+- **It does 179 of the 300 instances.** It leaves out the others before it
+  starts, and it gives the reason: 77 want Python 3.6, which `uv` does not
+  build for arm64, and 44 have a `pre_install` that is written for linux.
+  `--all` does all 300.
+- **It continues after a stop.** The predictions file says which instances
+  are done. Give the same command again. `--force` does them all again.
+- **One agent process serves the whole run.** The harness is a client of
+  `acp-agent acp`. The models load one time, and each instance gets its own
+  session. An instance that goes past the time limit gets `session/cancel`.
+- **It builds the Python environment of each instance before the agent
+  starts.** The environment is `<clone>/.venv`, from the spec of the
+  `swebench` package. The `.venv/bin` folder is first on the `PATH` of the
+  agent. The agent also gets a clean environment, without the variables of
+  the harness.
+- **The patch is `git diff <base_commit>`** of the tracked files. The patch of
+  an instance that the watchdog stopped is kept, with `"truncated": true`.
+- **It keeps the transcripts** of each instance in
+  `bench/preds.transcripts/<instance_id>/`.
 
-Each script writes its messages to standard output, and it makes no log
-file. `2>&1 | tee run.log` keeps a record of a long run. The `2>&1` is
-necessary: `tee` reads standard output only, and an interrupt or a Python
-error goes to standard error. The run of 2026-09-18 stopped after 22 seconds,
-and its log had no line that said why.
-
-**A line is a message and its fields.** The message says what happened, and
-each value stands after a name of its own:
+Each line of the output is a message and its fields, so that `grep
+instance=<id> run.log` gives the whole history of one instance:
 
 ```
 09:12:31 done instance=django__django-11099 number=3 of=5 files=2 added=14 removed=3 seconds=812
 ```
 
-A person reads that line, and a machine reads it too:
-`grep instance=django__django-11099 run.log` gives the whole story of one
-instance.
+### The record of a run
 
-**The score step writes the same shape**, so the two scripts of one run read
-the same way:
+Beside the predictions, the run writes `bench/preds.runs.jsonl`, with one row
+for each instance. Each row has the same fields. A step that did not run gives
+`null`.
 
-```
-09:44:02 the score: resolved of evaluated resolved=2 evaluated=3 percent_of_evaluated=66.7 submitted=5 percent_of_submitted=40.0
-09:44:02 these instances did NOT run, and the cause is a build error instances=1 ids=astropy__astropy-14182
-```
-
-A group of ids stands in ONE field. A comma and no space separates two ids
-there, because a space ends a field and `grep ids=` must find the whole group.
-
-The agent uses local models. Read the memory conditions in the
-[README of the package](../README.md) first.
-
-## Which instances a run does
-
-**A run does the instances this machine can build, and it leaves the others
-out before it starts.** The dataset is in alphabetical order, so the old
-`--limit 16` always gave the same 16 astropy and django instances. This
-machine can build none of those 16: 12 want Python 3.6, and 4 need `apt-get`.
-That run made no patch, and its numbers said nothing about the agent.
-
-| Condition | Instances |
+| Field | What it is |
 |---|---|
-| The spec wants Python 3.6, and `uv` has no 3.6 and no 3.7 build for arm64 | 77 |
-| The spec has a `pre_install`, which is written for linux | 44 |
-| **The instances that run on this mac** | **179** |
+| `seconds`, `clone_seconds`, `agent_seconds`, `env_seconds` | the wall time of the instance and of each step |
+| `stop_reason` | why the agent stopped the prompt, for example `end_turn`, `cancelled`, `_truncated`, `_ended_in_reasoning` or `_repeated` |
+| `timed_out` | whether the watchdog stopped the agent |
+| `exit_code` | the exit code of an agent process that ended in this instance; usually `null` |
+| `patch_bytes`, `patch_files` | the size of the patch |
+| `transcript_path` | where the transcripts are |
+| `env_status`, `env_python`, `env_exit_code`, `env_reason` | what the environment step did: `built`, `failed` or `unsupported`, and why |
 
-The two groups do not intersect. Read
-[What this machine cannot build](#what-this-machine-cannot-build) for the
-reason of each group.
+An instance whose environment did not build gets a record row, but no
+prediction row. Thus it is not part of the score.
 
-The run writes one line for each reason, with the count of its instances:
+### Did the model use the tools?
 
-```
-09:12:31 left out: this machine cannot build these instances instances=44 reason=the spec has a `pre_install`, and those commands are written for linux: `apt-get`, or a `sed -i` in the form of GNU
-```
+A tool that the agent mounts is not always a tool that the model uses. Read
+the transcripts before you read the score. In
+`<id>/<session>/transcript.jsonl`:
 
-`--all` turns the choice off, and the run then does all 300 instances. Each
-instance that does not build then gets a record row with `env_status` and
-`env_reason`, and no prediction row.
+- a call with `"toolName": "skills"` and `use skill` loaded a skill;
+- `tools.code_context.` in the arguments of a `runCode` call is a code context
+  call;
+- a `"kind": "instructions"` line shows the tools that the model was offered.
 
-### A fair sample
+## The score
 
-`--sample N` takes a random sample of N of the instances that are left, and it
-gives each repository the places its size earns. django holds 114 of the 300
-instances of the split, so it holds about 38 places of each 100 of a sample.
+The score is **resolved / evaluated**. An instance that docker could not build
+is reported in a group of its own, and it is not part of the divisor. Each
+score run writes `preds.jsonl.score.<run id>.json` beside the predictions,
+with the counts `submitted`, `evaluated`, `resolved`, `unresolved` and
+`errored`, and the ids of each group in `resolved_ids`, `unresolved_ids` and
+`errored_ids`. A report from before 2026-09-12 has a list at `errored`. In
+such a report, read `errored_ids`.
+
+The score step runs `docker info` first, and it stops if docker does not
+answer. `--run-id` must be a name: letters, digits, dot, dash and underscore.
+
+| Exit code | What it means |
+|---|---|
+| 0 | a score was made |
+| 2 | the command line is not valid |
+| 3 | the docker daemon does not answer |
+| 4 | docker ran, and no instance was evaluated |
+
+## The skill trigger gate
+
+A SWE-bench run takes hours to show that the model loaded no skill. The skill
+trigger gate shows it in about 20 seconds, on the shipped standard model.
+CI runs the gate on every push:
 
 ```bash
-uv run bench/swebench_run.py bench/preds.jsonl --sample 10           # seed 0
-uv run bench/swebench_run.py bench/preds.jsonl --sample 10 --seed 7
+swift test --package-path IntegrationTests --filter SkillTriggerTests
 ```
 
-The seed is the whole state of the choice. The same seed gives the same
-instances, so a run can be done again, and each run writes its seed in the
-log. The default seed is 0.
+`ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes` runs the
+slower samples, where the task does not ask for a skill.
+`ACP_AGENT_SKILL_TRIGGER_MODEL` and `ACP_AGENT_SKILL_TRIGGER_REPEATS` set the
+model and the number of runs. With the shipped model, greedy, on
+2026-09-21: `understand-parser` loaded its skill after 198 s, and
+`release-notes` after 201 s.
 
-The sample stays in the order of the split, so the log of a run reads in that
-order. `--limit N` then takes the first N of the answer.
-
-`swebench_select.py` makes the choice, and `test_swebench_select.py` holds the
-proofs.
-
-## One agent, and one session for each instance
-
-The run started `acp-agent run` for each instance. The agent resolves its
-profile and loads its local models when it starts, so a run of 179 instances
-loaded them 179 times. That is minutes of each instance, and hours of a run.
-
-So the harness is the CLIENT of `acp-agent acp` now. It starts ONE process
-for the whole run, and it drives the wire itself:
-
-```
-start `acp-agent acp`  ---------->  load the models (ONE time)
-initialize             ---------->
-for each instance:
-  session/new(cwd)     ---------->  a session in the clone of the instance
-  session/prompt       ---------->  {} at once
-                       <----------  session/update ... (the whole turn)
-                       <----------  session/update: idle, stopReason
-  session/close        ---------->  free the tree of that instance
-```
-
-`swebench_acp.py` speaks that wire, and its module comment says how.
-
-**The wire gives the STOP REASON of each turn.** `end_turn`, `max_tokens`,
-`max_turn_requests`, `refusal`, `cancelled`, and the `_error`, `_no_output`,
-`_stalled`, `_truncated`, `_ended_in_reasoning` and `_repeated` of this agent.
-The last three say that the work of the turn is cut, and they say why:
-
-| Stop reason | The last generation of the turn |
-|---|---|
-| `_truncated` | reached the output token ceiling of the model |
-| `_ended_in_reasoning` | ended inside the reasoning, below the ceiling: the model or the engine stopped it, and the answer can be empty |
-| `_repeated` | wrote the same lines again, and Router stopped it with no recovery left (see the `repetition:` keys in [What the configuration does](#what-the-configuration-does)) |
-
-The one-shot `run` command gave the harness an exit code and nothing more. The
-record of the instance keeps the reason.
-
-**A turn past the limit gets `session/cancel`,** and not a signal. The agent
-answers with the `cancelled` stop reason, and the run goes on with the same
-process. A process that does not answer is stopped, and the instance after it
-gets a new one.
-
-**`--verbose` reads those session events HERE.** `acp-agent acp` takes no
-option of its own, because it writes the events of a session to its client.
-
-### What the agent gets
-
-The agent gets the problem statement of the instance, and nothing more. With
-no `--agent-config`, the agent has its default tools and no marketplace skill.
-This is the simple test.
-
-`--agent-config bench/code-context.config.yaml` is the "code context with
-skills" test. The run writes that file to `.acp-agent/config.yaml` in each
-clone. The agent then mounts the `code-context` branch of the
-`swissarmyhammer/skills` marketplace in its stand-alone `skills` tool, and the
-`tools.code_context` group in Multitool. Compare the two numbers. Read
-[What the configuration does](#what-the-configuration-does) for each key, and
-[Did the model use the skills and the code context?](#did-the-model-use-the-skills-and-the-code-context)
-to read the answer out of the transcripts.
-
-**A tool that the agent mounts is not a tool that the model uses.** In the run
-of 2026-09-19 the model got the catalog of the skills in the tool description,
-it searched for a skill, and it then made 0 `tools.code_context` calls and
-loaded no skill. So read the transcripts of a run before you read its score:
-the score alone does not say whether the tools reached the work.
-
-The prompt goes over the wire as one text content block. So no shell quote
-and no argument length can change the text of the problem.
-
-### A clean environment
-
-The agent gets a clean environment, and not the environment of the harness.
-
-`uv run` makes an ephemeral environment for `swebench_run.py`, and it sets
-`VIRTUAL_ENV` and the first entries of `PATH` to that environment. A child
-process that gets the same environment finds the Python of the HARNESS. In
-the run of 2026-09-11 the agent found it, and it then tried to install
-packages in the cache of `uv`. That work is not the task of the instance.
-
-So `swebench_env.py` makes the environment of the agent:
-
-* it removes `VIRTUAL_ENV`, every `UV_*` variable, `PYTHONPATH` and
-  `PYTHONHOME`;
-* it removes each `PATH` entry below the environment of the harness, and
-  below the cache of `uv`;
-* it keeps `HOME`, `USER`, `TMPDIR`, `LANG` and the directories of the
-  system.
-
-Each instance writes a log line with the Python that the agent gets:
-
-```
-09:12:31 the environment of the agent instance=django__django-11099 number=3 of=5 python3=/usr/bin/python3 PATH=...
-```
-
-## The environment of the instance
-
-**The run builds the Python environment of each instance, before the agent
-starts.** A SWE-bench repository does not import from a source checkout, so
-without this step the agent cannot run one test of the instance.
-
-In the run of 2026-09-11 the agent had to do that work itself, and it was the
-largest cost of the run: 219 of 707 tool calls were about pip, uv, virtual
-environments or absent modules. For `astropy__astropy-6938` it was 37 of 80
-calls, and the agent never got a working environment. Its transcripts hold
-lines such as:
-
-```
-ModuleNotFoundError: No module named 'erfa'
-ImportError: You appear to be trying to import astropy from within a source
-checkout
-```
-
-So `swebench_venv.py` does it now. For each instance it:
-
-* reads the environment of that repository and version from
-  `MAP_REPO_VERSION_TO_SPECS`, which the `swebench` package publishes;
-* makes `<clone>/.venv` with `uv venv --seed --python <the version of the
-  spec>`;
-* installs the `pip_packages` of the spec with the Python of that
-  environment;
-* installs the `packages` of the spec when that value is a word list of conda
-  names, such as `mpmath flake8` for sympy or `pytest` for requests. 105
-  instances of the Lite split have such a list, and NONE of them names pytest
-  in its `pip_packages`, so the list is where their test tools come from. The
-  value is read with `shlex.split`, because four scikit-learn instances quote
-  each name: `'numpy==1.19.2' 'scipy==1.5.2'`;
-* installs the requirements file of the repository, when the spec names one.
-  The file is NOT `requirements.txt` at the root: `MAP_REPO_TO_REQS_PATHS`
-  says where it stands, and django keeps its file at
-  `tests/requirements/py3.txt`. The clone already holds it, so this asks for
-  no network;
-* runs the `install` command of the spec, for example
-  `python -m pip install -e .`;
-* puts `<clone>/.venv/bin` FIRST on the `PATH` of the agent.
-
-Django builds in 12 seconds this way, and `./tests/runtests.py` then runs in
-the clone with no more work.
-
-**The word list is where 105 instances get pytest.** Measured on this machine
-on 2026-09-12, with a real build of `psf__requests-2317`, whose `packages` is
-the word list `pytest` and whose `pip_packages` names nothing:
-
-```
-status built python 3.9 seconds 3.9
-import requests -> ok
-python -m pytest --version -> pytest 8.4.2
-```
-
-Before that list was installed the same build gave `No module named pytest`,
-so the environment imported the package and could run no test of the
-instance.
-
-**A conda name is not always a name of PyPI.** Each name of the Lite split is
-on PyPI, but the table is published data, so pip can refuse a name of a later
-split. The build then stops at that command, as it stops at every command
-that fails: the record row of the instance holds `env_status` `failed`, the
-exit code, a reason with the whole pip command in it, and the last lines of
-what pip wrote. `environment.yml` is the one value the build passes over, for
-the 27 instances that name it, because pip cannot read a conda file.
-
-**The clone of every instance stands at the same path.** The run makes ONE
-working root, and the clone is always `<root>/repo`. So `<root>/repo/.venv/bin`
-is a constant entry of the PATH, and the one agent process gets it when it
-starts.
-
-That is necessary, and not a convenience. The agent gives each shell child
-the whole environment of its own PROCESS, with the arguments of the tool call
-on top. There is no environment for each session, and the agent reads no
-`.venv` below a session directory. So a PATH that changed with the instance
-could not reach the tests of the instance.
-
-Each instance removes the clone and clones again into the same path. Nothing
-of one instance reaches the next one: the agent builds the configuration, the
-instructions, the `AGENTS.md` assembly, the tool catalog and the sandbox
-again at every `session/new`, from the directory of THAT session.
-
-**Each path of the published table stands in the clone.**
-`MAP_REPO_TO_REQS_PATHS` comes from the `swebench` package, and each path of it
-becomes a path of this machine. So `swebench_venv.py` has one gate,
-`checked_clone_path`, and every path goes through it. A path with a `..` part,
-or an absolute path, would name a file OUTSIDE the clone, and the step refuses
-it:
-
-```
-the path '../../etc/hostname' of the published table does not stand in the
-clone /var/folders/.../repo. A path of that table names a file OF the
-repository, so it is relative to the clone and it holds no `..` part.
-```
-
-### What this machine cannot build
-
-The agent uses local models, so it runs on the mac and not in a linux
-container. Two groups of the Lite split do not build here: 77 instances want
-Python 3.6, which `uv` does not build for arm64, and 44 instances have a
-`pre_install`, which is written for linux. The table of the counts stands in
-[Which instances a run does](#which-instances-a-run-does), and a run leaves
-both groups out before it starts.
-
-A `pre_install` holds `apt-get`, or a `sed -i 's/x/y/' file` in the form of GNU
-that the `sed` of macOS does not accept, so no option answers that group.
-`--oldest-python 3.8` gives the first group a Python to try, and the record of
-each instance then says which Python it got.
-
-**An instance that does not build gets NO prediction row.** A failed
-environment is not a failure of the agent, and it must not be part of the
-score. The instance gets a record row with `env_status` and `env_reason`, so
-a reader of the run knows why it was left out. A later run does that instance
-again, because the predictions file is what says which instances are done.
-
-### The tests of the harness
+## The tests of the harness
 
 ```bash
 python3 -m unittest discover --start-directory bench --pattern 'test_*.py'
 ```
 
-That command runs every test of this directory. One file runs alone too:
-
-```bash
-uv run bench/test_swebench_env.py
-python3 bench/test_swebench_prediction.py
-```
-
-The tests of the clean environment start a real child process with that
-environment, and they read what the process can see. The tests of the
-prediction and of the record read the two rows that a run writes for each
-instance. The tests of docker and of the environment of an instance give the module a
-stand-in for `subprocess.run`, so they start no daemon, they make no virtual
-environment, and they give the same answer on each machine. That stand-in
-stands in `test_fixtures.py`, so there is one copy of it. The tests of the
-choice give the module a table of specs of their own, so they read no dataset
-and no published table. The tests of the
-long-lived agent give the client a stand-in wire with a script of answers, so
-they start no agent, they load no model and they open no pipe. All of them need the standard library only, so `python3` runs
-them with no help. The `bench` job of CI runs
-the discovery command on each push, so it finds a new `test_*.py` file with
-no change to the workflow.
-
-## How the patch is made
-
-The patch is `git diff <base_commit>` in the cloned repository.
-
-* It is **not** `git diff HEAD`. The agent can commit its change. A diff
-  against the base commit finds the change in both conditions.
-* It reports **tracked files only**. So the `.acp-agent` directory the agent
-  writes, with its transcripts, is out of the patch. Never `git add -A`
-  first: that puts the whole directory in the patch, and the harness then
-  cannot apply it.
-
-### A patch that the watchdog stopped
-
-**The run keeps the patch in all conditions.** An agent that goes past the
-time limit is stopped, and the row of that instance keeps the diff that the
-tree held at that moment. The row carries one name more:
-
-```json
-{"instance_id": "...", "model_name_or_path": "...", "model_patch": "...", "truncated": true}
-```
-
-The predictions file is the durable record of a run. A row that holds the work
-is better than a row that holds nothing, because you can score it again later.
-So the run step keeps the work, and **the score step decides what to do with
-it**: score the truncated rows with the others, or leave them out with
-`--instance-ids`. Nothing is decided for you, and nothing is thrown away.
-
-A stopped tree can hold the correct answer. In the run of 2026-09-11 the
-watchdog stopped `astropy__astropy-14182` at the limit of one hour, and the
-tree held the two correct files for that issue:
-
-```
- M astropy/io/ascii/rst.py
- M astropy/io/ascii/tests/test_rst.py
-```
-
-The harness of that day recorded an empty patch, and the work was lost.
-
-Two notes for a reader of the file:
-
-* A row with no `truncated` name is a row of an agent that finished, or a row
-  of a run before this change. So read the name with `get`, and not with `[]`.
-* The summary of a run still counts the instances that went past the limit.
-  The count is the `too slow` line of the table.
-
-### Where the limit comes from
-
-`DEFAULT_TIMEOUT_S` is 3000 seconds. The figure comes from the 16 transcripts
-of the run of 2026-09-11, on an Apple Silicon machine with
-`mlx-community/Qwen3.8-27B-mxfp4`.
-
-| Group | Instances | The longest of the group |
-|---|---|---|
-| Finished on their own | 14 | 2628 s |
-| Stopped by the watchdog at 3600 s | 2 | 3600 s |
-
-Both of the stopped instances were building a Python environment when the
-watchdog stopped them. The run builds that environment BEFORE the turn of the
-agent starts now, so that work is no longer in this budget. 3000 s is above
-every instance that finished, and it is below the hour that the environment
-work made necessary.
-
-**The figure is true for one machine, one model and one date.** A different
-model, a different quantization or a different machine makes it wrong. Do not
-trust this sentence: read the run instead. Each run writes `seconds` for each
-instance in [the record of a run](#the-record-of-a-run), and the `too slow`
-line of the summary counts the instances that reached the limit. If that line
-is not zero, the limit binds and `--timeout` raises it.
-
-## The record of a run
-
-A run writes `bench/preds.runs.jsonl` beside the predictions, with one row for
-each instance it did. The predictions file says WHAT the agent made. This file
-says what the instance COST.
-
-```json
-{"instance_id": "astropy__astropy-14182", "seconds": 3612.4, "clone_seconds": 24.1,
- "agent_seconds": 3584.2, "exit_code": null, "stop_reason": "cancelled",
- "timed_out": true, "patch_bytes": 1842,
- "patch_files": 2, "transcript_path": "bench/preds.transcripts/astropy__astropy-14182",
- "env_status": "built", "env_python": "3.9", "env_seconds": 61.5,
- "env_exit_code": null, "env_reason": null}
-```
-
-| Field | What it is |
-|---|---|
-| `instance_id` | the instance |
-| `seconds` | the wall time of the instance |
-| `clone_seconds` | the time of the clone and the checkout |
-| `agent_seconds` | the time of the turn of the agent |
-| `exit_code` | the exit code of an agent process that ENDED in this instance |
-| `stop_reason` | why the agent stopped the turn |
-| `timed_out` | whether the watchdog stopped it |
-| `patch_bytes` | the size of the patch |
-| `patch_files` | the count of files in the patch |
-| `transcript_path` | where the transcripts are |
-| `env_status` | what the environment step did: `built`, `failed` or `unsupported` |
-| `env_python` | the Python version of the environment |
-| `env_seconds` | the time of the environment step |
-| `env_exit_code` | the exit code of the build command that failed |
-| `env_reason` | why the instance did not run |
-
-Three notes for a reader of the file:
-
-* **Each row carries all fifteen names.** A step that did not run gives
-  `null`. An instance that failed in the clone thus has `null` for
-  `clone_seconds`, `agent_seconds` and `stop_reason`, and its row still has
-  the same shape as every other row.
-* **`exit_code` is `null` for almost every row.** One process serves the
-  whole run, so an instance that ended with the agent alive has no exit code
-  of its own. The name holds the code of a process that DIED in that
-  instance.
-* **A row goes to disk when its instance ends.** A run of many hours can stop
-  at any instance, and the rows of the instances that are complete stay.
-* **An instance that failed also gets a row.** The count of the instances in
-  this file is thus the count of the instances the run did.
-
-Before this file, the durations went to standard output alone, and a run kept
-them only if you added `| tee`. The run of 2026-09-11 kept no log, and to find
-why the instances were slow all of the time data had to be built again from
-the transcripts.
-
-## What the score means
-
-The score is **resolved / evaluated**, and not resolved / sent.
-
-An instance that did not run, because docker could not build its image, is
-reported alone. It is never part of the divisor. A memory failure is not an
-agent failure. The score script does each such instance one more time,
-alone, with a clean build, before it reports.
-
-Each score run writes `preds.jsonl.score.<run id>.json` beside the
-predictions.
-
-### What a score report holds
-
-```json
-{"run_id": "score_20260912_090000", "predictions": "bench/preds.jsonl",
- "submitted": 3, "evaluated": 2, "resolved": 1, "unresolved": 1, "errored": 1,
- "resolved_ids": ["django__django-10914"],
- "unresolved_ids": ["psf__requests-2317"],
- "errored_ids": ["astropy__astropy-14182"],
- "resolved_pct_of_evaluated": 50.0, "resolved_pct_of_submitted": 33.3,
- "wall_minutes": 12.5}
-```
-
-| Field | What it is |
-|---|---|
-| `run_id` | the run id of the harness |
-| `predictions` | the predictions file that the run scored |
-| `submitted` | how many instances the run sent to the harness |
-| `evaluated` | how many instances ran |
-| `resolved` | how many instances passed their tests |
-| `unresolved` | how many instances ran and did not pass |
-| `errored` | how many instances did not run |
-| `resolved_ids` | the ids of the instances that passed |
-| `unresolved_ids` | the ids of the instances that ran and did not pass |
-| `errored_ids` | the ids of the instances that did not run |
-| `resolved_pct_of_evaluated` | the score: resolved of evaluated |
-| `resolved_pct_of_submitted` | resolved of sent |
-| `wall_minutes` | the wall time of the run |
-
-**Each group gives a count, and the ids of a group stand in the `_ids` name
-of that group.** A reader thus reads the four groups the same way.
-
-**A report of a run before 2026-09-12 holds a LIST at `errored`.** Those
-reports gave the ids there, and the same ids again at `errored_ids`, so a
-reader who took `errored` for a count got a list. If you hold such a file,
-read `errored_ids` for the ids, and count them for the number. No step of
-this harness reads `errored`, so no other name of an older report changed.
-
-### Docker must run, and the step proves it first
-
-**The score step asks the daemon before it does any other work.** A daemon
-that does not answer stops the step at once:
-
-```
-08:08:42 the docker endpoint variable=DOCKER_HOST endpoint=unix:///Users/you/.docker/run/docker.sock
-docker does not answer. The score step needs a docker daemon that runs,
-because the SWE-bench harness builds an image for each instance.
-the endpoint it tried: unix:///Users/you/.docker/run/docker.sock
-start docker, and then give this command again.
-```
-
-The message names the endpoint, because that is the fact a person needs: a
-daemon that is stopped and an endpoint that is wrong read the same way
-without it.
-
-The question is `docker info`, and not `docker context inspect`. The context
-reads the configuration of docker, and it answers with a path although no
-daemon runs. The score run of 2026-09-11 asked the context, pointed at a
-socket that was not there, and wrote this:
-
-```json
-"submitted": 16, "evaluated": 0, "resolved": 0, "errored": [ ... all 16 ... ]
-```
-
-That report reads like a failure of the agent. Docker was the cause.
-
-That file also shows the older shape: `errored` holds the ids in it. A run of
-today writes a count there, and the ids at `errored_ids`.
-
-**A run that evaluated no instance writes no report.** No file is better than
-a file that says `"resolved": 0` when the agent was never asked.
-
-### The run id is a name
-
-`--run-id` becomes part of two paths: the name of the report file, and the
-directory of the logs of the harness. So a run id is a NAME: a letter or a
-digit, and then letters, digits, dot, dash and underline. A run id such as
-`../../etc/hostname` would write outside the directory of the predictions,
-and the step refuses it before the harness starts:
-
-```
-the run id '../../etc/hostname' is not a name. A run id begins with a letter
-or a digit, and after that it holds letters, digits, dot, dash and underline
-only, because it becomes part of the path of the report.
-```
-
-### The exit codes of the score step
-
-| Code | What it means |
-|---|---|
-| 0 | a score was made, and the report is beside the predictions |
-| 2 | the command line is not valid: the predictions file is absent, it holds no instance to score, or the run id is not a name |
-| 3 | the docker daemon does not answer |
-| 4 | docker ran, and no instance was evaluated. There is no score |
+The tests use only the standard library. They start no agent and no docker
+daemon. The `bench` job of CI runs this command on each push.
 
 ## Files
 
-```
-swebench_run.py              makes preds.jsonl with the agent — read it top to bottom
-swebench_score.py            gives the score of a preds.jsonl with docker
-swebench_common.py           the console and the log line the two scripts share
-swebench_event.py            the shape of one line: a message and its fields
-swebench_acp.py              the one long-lived agent of a run, over ACP
-swebench_env.py              the clean environment that the process of the agent gets
-swebench_prediction.py       the prediction row that a run makes for one instance
-swebench_record.py           the record row that a run makes for one instance
-swebench_venv.py             the Python environment that a run builds for one instance
-swebench_select.py           which instances a run does, and the fair sample
-swebench_docker.py           the question that the score step asks docker first
-swebench_report.py           the report that a score run writes, and when it does not
-test_swebench_acp.py         the tests of that agent and that wire
-test_swebench_env.py         the tests of that environment
-test_swebench_prediction.py  the tests of that prediction row
-test_swebench_record.py      the tests of that record row
-test_swebench_venv.py        the tests of that environment
-test_swebench_select.py      the tests of that choice and that sample
-test_swebench_docker.py      the tests of that question to docker
-test_swebench_report.py      the tests of that report
-test_swebench_event.py       the tests of that line
-test_swebench_log_lines.py   the proof that no log call of a script holds an f-string
-test_fixtures.py             the stand-in for subprocess.run that the tests share
-code-context.config.yaml     the agent configuration of the code context with skills run
-.gitignore                   keeps the run results out of git
-```
-
-## Where it came from
-
-The two scripts started as the `sah` A/B harness in the `bench` repository of
-the same organization. The parts that are the same are the repository setup,
-the patch capture, and the docker score. The parts that changed are the agent
-command, and the removal of the second arm.
+| File | What it holds |
+|---|---|
+| `swebench_run.py` | makes `preds.jsonl` with the agent |
+| `swebench_score.py` | gives the score of a predictions file with docker |
+| `swebench_acp.py` | the one long-lived agent of a run, over ACP |
+| `swebench_select.py` | which instances a run does, and the sample |
+| `swebench_venv.py` | the Python environment of one instance |
+| `swebench_env.py` | the clean environment of the agent process |
+| `swebench_prediction.py`, `swebench_record.py` | the two rows of each instance |
+| `swebench_docker.py`, `swebench_report.py` | the docker check and the score report |
+| `swebench_common.py`, `swebench_event.py` | the console and the log line |
+| `test_*.py`, `test_fixtures.py` | the tests, and their shared stand-in for `subprocess.run` |
+| `code-context.config.yaml` | the agent configuration of the code context run |

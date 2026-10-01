@@ -56,7 +56,7 @@ var skillTriggerRepeats: Int {
 /// bar is that rule.
 ///
 /// The measured history of the rates stands in `bench/README.md`, under
-/// "The fast answer to the same question".
+/// "The skill trigger gate".
 let skillTriggerFloor = 0.5
 
 // MARK: - The host
