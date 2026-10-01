@@ -80,39 +80,6 @@ private let rankerDependencyName = "FoundationModelsRanker"
 /// depends on the wire and Extras only, so no cycle is possible.
 private let clientDependencyName = "FoundationModelsACPClient"
 
-/// The MLX-backed model package Router itself builds on, declared by the
-/// exact URL Router declares — `https://github.com/swissarmyhammer/` plus
-/// this name — because a second location for one package identity makes
-/// the resolve fail. The example executable links two of its products to
-/// construct a live `LiveModelLoader` through the `#hubDownloader()` and
-/// `#huggingFaceTokenizerLoader()` macros. The resolved graph already
-/// carries all of mlx-swift-lm transitively through Router, so this
-/// declaration adds linking only, no new compilation.
-private let mlxPackage = "mlx-swift-lm"
-
-/// The `mlxPackage` branch, matching Router's own declaration: `stable`
-/// is a published snapshot, not a working copy.
-private let mlxStableBranch = "stable"
-
-/// The Hugging Face Hub client package. The `#hubDownloader()` macro
-/// expands to code that references `HuggingFace.HubClient`, so the
-/// example target must link it. The version floor mirrors Router's.
-private let huggingFacePackage = "swift-huggingface"
-
-/// The Swift Transformers tokenizer package, paired with
-/// `huggingFacePackage`: the `#huggingFaceTokenizerLoader()` macro
-/// expansion references `Tokenizers.AutoTokenizer`.
-private let transformersPackage = "swift-transformers"
-
-/// The products the example's live-loader construction links, beside the
-/// library and the wire — see `mlxPackage`.
-private let liveLoaderProducts: [Target.Dependency] = [
-    .product(name: "MLXLMCommon", package: mlxPackage),
-    .product(name: "MLXHuggingFace", package: mlxPackage),
-    .product(name: "HuggingFace", package: huggingFacePackage),
-    .product(name: "Tokenizers", package: transformersPackage),
-]
-
 /// The name of the agent CLI (cli-plan.md §2, §5): the product, AND the
 /// tier-3 stdio fixture — `acp-agent acp` serves ACP over stdio. The
 /// nested `IntegrationTests` package declares this product, so SwiftPM
@@ -352,11 +319,6 @@ let package = Package(
         // The sdk fork, by the same URL Multitool declares — see
         // `mcpSDKPackage`.
         .package(url: "https://github.com/swissarmyhammer/\(mcpSDKPackage).git", branch: mainBranch),
-        // The live-loader packages of the example executable — see
-        // `mlxPackage`, `huggingFacePackage` and `transformersPackage`.
-        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: mlxStableBranch),
-        .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
-        .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
         // The parser of the agent CLI — see `argumentParserPackage`.
         makeApplePackage(name: argumentParserPackage, from: argumentParserVersionFloor),
         // The telemetry APIs of the library — see `telemetryAPIProducts`.
@@ -380,8 +342,10 @@ let package = Package(
         // The agent CLI (cli-plan.md §5, §8): the ArgumentParser subcommand
         // tree over `AgentComposition`, and the tier-3 fixture. It links
         // the library, the wire and Router directly for what it imports,
-        // the client package and the parser (cli-plan.md §8), and the
-        // live-loader products for the real model path. The deterministic
+        // and the client package and the parser (cli-plan.md §8). Router
+        // gives the real model path: `LiveModelLoader()` loads each model
+        // through the Extras `MLXModelLoader`, so this target links no MLX
+        // or Hugging Face product of its own. The deterministic
         // path `ACP_AGENT_STUB_MODEL=1` selects is the library's own
         // `EchoModel`, never the test support: that target links the
         // `Testing` framework, and a product that carried it would not
@@ -400,7 +364,7 @@ let package = Package(
                 otelProduct,
                 serviceLifecycleProduct,
                 loggingProduct,
-            ] + liveLoaderProducts,
+            ],
             path: "Sources/\(agentExecutableName)"
         ),
         // The one-shot client CLI (plan.md §20.2). It links ONLY the
@@ -444,10 +408,9 @@ let package = Package(
         // the test metrics kit, whose metric values they read — see
         // `metricsTestKitProduct`.
         //
-        // `acp-print` and the live-loader products are NOT here: the
-        // suites that spawn a built binary or load a real model live in
-        // the nested `IntegrationTests` package, which declares them
-        // itself.
+        // `acp-print` is NOT here: the suites that spawn a built binary or
+        // load a real model live in the nested `IntegrationTests` package,
+        // which declares what they need itself.
         .testTarget(
             name: testTargetName,
             dependencies: [

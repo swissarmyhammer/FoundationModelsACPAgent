@@ -6,11 +6,7 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
 import FoundationModelsRouterTestSupport
-import HuggingFace
-import MLXHuggingFace
-import MLXLMCommon
 import Testing
-import Tokenizers
 
 // MARK: - The tool calling gate
 
@@ -126,9 +122,7 @@ struct ToolCallingTests {
         ).load().configuration
         let router = Router(
             recordingsDir: makeResolvedDirectory(label: "ToolCalling-recordings"),
-            loader: LiveModelLoader(
-                downloader: #hubDownloader(),
-                tokenizerLoader: #huggingFaceTokenizerLoader()),
+            loader: LiveModelLoader(),
             samplingMode: .greedy)
         let agent = try await RoutedACPAgent(
             name: DotfolderName(AgentClientHarness.dotfolderName),

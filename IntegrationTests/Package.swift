@@ -48,35 +48,11 @@ private let clientDependencyName = "FoundationModelsACPClient"
 /// against the agent binary standing next to it.
 private let clientExecutableName = "acp-client"
 
-/// The runtime (plan.md §1). The skill trigger suite builds a live router,
-/// and Router's test-support product carries `MetalLibraryTestBootstrap`.
+/// The runtime (plan.md §1). The skill trigger suite and the tool calling
+/// suite build a live router over `LiveModelLoader()`, which loads each
+/// model through the Extras `MLXModelLoader`. Router's test-support product
+/// carries `MetalLibraryTestBootstrap`.
 private let routerDependencyName = "FoundationModelsRouter"
-
-/// The MLX-backed model package, declared by the exact URL Router
-/// declares, because a second location for one package identity makes the
-/// resolve fail.
-private let mlxPackage = "mlx-swift-lm"
-
-/// The `mlxPackage` branch, matching Router's own declaration.
-private let mlxStableBranch = "stable"
-
-/// The Hugging Face Hub client package. The `#hubDownloader()` macro
-/// expands to code that references `HuggingFace.HubClient`.
-private let huggingFacePackage = "swift-huggingface"
-
-/// The Swift Transformers tokenizer package, paired with
-/// `huggingFacePackage`: the `#huggingFaceTokenizerLoader()` macro
-/// expansion references `Tokenizers.AutoTokenizer`.
-private let transformersPackage = "swift-transformers"
-
-/// The products the live-loader construction of the skill trigger suite
-/// links.
-private let liveLoaderProducts: [Target.Dependency] = [
-    .product(name: "MLXLMCommon", package: mlxPackage),
-    .product(name: "MLXHuggingFace", package: mlxPackage),
-    .product(name: "HuggingFace", package: huggingFacePackage),
-    .product(name: "Tokenizers", package: transformersPackage),
-]
 
 /// SwiftPM manifest for the integration suites of FoundationModelsACPAgent.
 ///
@@ -103,9 +79,6 @@ let package = Package(
         .package(url: "\(swissArmyHammerOrgURL)\(wireDependencyName).git", branch: mainBranch),
         .package(url: "\(swissArmyHammerOrgURL)\(clientDependencyName).git", branch: mainBranch),
         .package(url: "\(swissArmyHammerOrgURL)\(routerDependencyName).git", branch: mainBranch),
-        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: mlxStableBranch),
-        .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
-        .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
     ],
     targets: [
         .testTarget(
@@ -121,7 +94,7 @@ let package = Package(
                 .product(name: routerDependencyName, package: routerDependencyName),
                 .product(
                     name: "\(routerDependencyName)TestSupport", package: routerDependencyName),
-            ] + liveLoaderProducts,
+            ],
             path: "Tests/\(integrationTargetName)"
         )
     ]

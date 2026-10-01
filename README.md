@@ -15,10 +15,6 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgent
 import FoundationModelsRouter
-import HuggingFace
-import MLXHuggingFace
-import MLXLMCommon
-import Tokenizers
 
 // The one choice a frontend makes. It roots ~/.config/acp-agent/ for the
 // user layer, <cwd>/.acp-agent/ for the project layer, and the transcripts.
@@ -29,10 +25,7 @@ let configuration = try ConfigurationLoader(name: name, workingDirectory: cwd)
     .load().configuration
 
 // Real models: the configured weights download on first use and stay resident.
-let router = Router(
-    loader: LiveModelLoader(
-        downloader: #hubDownloader(),
-        tokenizerLoader: #huggingFaceTokenizerLoader()))
+let router = Router(loader: LiveModelLoader())
 
 let agent = try await RoutedACPAgent(
     name: name, router: router, configuration: configuration)

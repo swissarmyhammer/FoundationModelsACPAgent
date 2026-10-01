@@ -2,10 +2,6 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgent
 import FoundationModelsRouter
-import HuggingFace
-import MLXHuggingFace
-import MLXLMCommon
-import Tokenizers
 
 /// The composition every subcommand shares (cli-plan.md §5.10, plan.md
 /// §20.2): the dotfolder name, the configuration stack, the router over
@@ -70,9 +66,10 @@ enum AgentComposition {
 
     /// Which model path the router resolves the profile through.
     enum ModelSource: Equatable {
-        /// `LiveModelLoader` over the Hub downloader and tokenizer macros:
-        /// the configured models download on first use and load as
-        /// resident weights. Nothing here is scripted or stubbed.
+        /// `LiveModelLoader`, which loads each model through the Extras
+        /// `MLXModelLoader`: the configured models download on first use
+        /// and load as resident weights. Nothing here is scripted or
+        /// stubbed.
         case live
 
         /// The library's deterministic `EchoModel` path: every session
@@ -239,6 +236,11 @@ enum AgentComposition {
     /// Each session then names its own root, and Router records the
     /// session to `<root>/<sessionId>/`.
     ///
+    /// The live loader takes no progress callback. The callback of its
+    /// init receives only the loads of the Extras model pool. A router load
+    /// gives its download bytes to the `ResolutionProgress` of the resolve,
+    /// and the download bar of cli-plan.md §5.7 observes that object.
+    ///
     /// - Parameters:
     ///   - modelSource: The model path to build the router over.
     ///   - chunkDelay: The pause a stub answer puts between two chunks,
@@ -257,11 +259,7 @@ enum AgentComposition {
     ) throws -> Router {
         switch modelSource {
         case .live:
-            Router(
-                recordingsDir: recordingsDirectory,
-                loader: LiveModelLoader(
-                    downloader: #hubDownloader(),
-                    tokenizerLoader: #huggingFaceTokenizerLoader()))
+            Router(recordingsDir: recordingsDirectory, loader: LiveModelLoader())
         case .stub:
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),

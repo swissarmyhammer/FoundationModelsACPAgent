@@ -5,11 +5,7 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
 import FoundationModelsRouterTestSupport
-import HuggingFace
-import MLXHuggingFace
-import MLXLMCommon
 import Testing
-import Tokenizers
 
 // MARK: - The selection
 
@@ -96,9 +92,7 @@ actor SkillTriggerHost {
         ).load().configuration
         let router = Router(
             recordingsDir: makeResolvedDirectory(label: "SkillTrigger-recordings"),
-            loader: LiveModelLoader(
-                downloader: #hubDownloader(),
-                tokenizerLoader: #huggingFaceTokenizerLoader()),
+            loader: LiveModelLoader(),
             // Greedy decoding makes a run repeatable (read the suite).
             samplingMode: .greedy)
         let agent = try await RoutedACPAgent(
