@@ -99,8 +99,17 @@ comments:
     - review: not done on d6182ee yet. The work is handed off to the CodeContext session (foundationmodelscodecontext-45): full swift test and a review of d6182ee, then it sends the final sha.
     - next: move the CodeContext pin in this repo, change the skills text (follow-up items), then the review gate.
   timestamp: 2026-10-01T14:31:45.600069+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3vy7e6e725fjbgm696m39xd
+  text: |-
+    ### finish iteration 4 — clean
+    - review: clean — the CodeContext session (foundationmodelscodecontext-45) verified d6182ee: full swift test 738 tests in 68 suites, 0 failures; review of innermostMatches(of:) found no problems. The review engine cannot review a sibling repo, so this verification is the gate.
+    - pin: FoundationModelsCodeContext d6182ee in Package.resolved and IntegrationTests/Package.resolved (both gitignored); ACPAgent swift test: 669 passed, 1 known issue
+    - skills: cd92aad pushed to origin code-context (code-context/SKILL.md, explore/SKILL.md)
+    - next: done
+  timestamp: 2026-10-01T14:34:51.470903+00:00
+position_column: done
+position_ordinal: ff8c80
 title: grepCode returns the outermost symbol, so a hit in one method gives back the whole class
 ---
 ## What happens
@@ -129,8 +138,8 @@ Thus the index knows the method as its own symbol, and `grepCode` reports the co
 The skills (swissarmyhammer/skills, branch `code-context`, commit 0bf6baa) now send a name to `searchSymbol` or `getSymbol`, say that a `grepCode` hit is the whole outermost symbol, and name `tools.files.grep` as the verb for exact lines. This card stays open for the package fix; take it to the session of FoundationModelsCodeContext.
 
 ## Follow-up after the CodeContext push
-- [ ] Push the CodeContext fix to origin main, and move the FoundationModelsCodeContext pin in this repo.
-- [ ] Change the skills text (swissarmyhammer/skills, branch `code-context`: `skills/code-context/SKILL.md:56` and `skills/explore/SKILL.md:61`). A `grepCode` hit is now the innermost symbol that holds the match, not the whole outermost symbol.
+- [x] Push the CodeContext fix to origin main, and move the FoundationModelsCodeContext pin in this repo. (origin/main d6182ee; both Package.resolved files resolve d6182ee; swift test 669 passed)
+- [x] Change the skills text (swissarmyhammer/skills, branch `code-context`: `skills/code-context/SKILL.md:56` and `skills/explore/SKILL.md:61`). A `grepCode` hit is now the innermost symbol that holds the match, not the whole outermost symbol. (skills cd92aad, pushed to origin code-context)
 
 ## Acceptance
 
@@ -144,6 +153,6 @@ On the 166-line file above, `grepCode({ pattern: "def _save_table" })` answers w
 - [x] Doc comments in `GrepCode.swift` (`run(...)`, `innermostMatches(of:)`, `nestingKey(of:)`, `GrepCodeMatch.matches`) and the commit message describe ordering by line only. Change them to describe byte-range ownership, in ASD-STE100. — Fixed in a57743f: those doc comments, the `GrepCodeMatch` and `GrepCodeResult.matches` docs, the `grep code` operation description and docs/tools.md now describe ownership by byte range; the a57743f commit message describes it too.
 
 ## Review Findings (2026-10-01 verifier, CodeContext a57743f)
-- [ ] `Sources/FoundationModelsCodeContext/Ops/GrepCode.swift` `innermostMatches(of:)` (line 277; owners dictionary at line 279) and `ChunkHit.filePositions` (line 353): the code does not check that the byte range of a chunk holds the match start, but the doc comments (lines 123 and 260) say that it does. A zero-length match at the end of the chunk text has the absolute position `endByte`, which is outside `[startByte, endByte)`, and that chunk can still own it. Repro: `class A:\n    def f(self):\n        return x\n\n    y = 1\n` (`A.f` = `[13,42)`, `A` = `[0,53)`). Pattern `\b` gives byte 42 to `A.f`, not to `A`. Pattern `$` gives `A` a result at 53, which no chunk holds. Fix: choose the owner of a position only from the hits where `startByte <= byte < endByte`. Decision (orchestrator): a position that no reporting chunk holds is dropped, as "a match in no symbol gives no result" says. Write that rule in the doc comments of `run` and `innermostMatches(of:)`. Add a `GrepCodeTests` test with the fixture above and pattern `\b`: the class, not the method, owns the boundary at the method's `endByte`.
+- [x] `Sources/FoundationModelsCodeContext/Ops/GrepCode.swift` `innermostMatches(of:)` (line 277; owners dictionary at line 279) and `ChunkHit.filePositions` (line 353): the code does not check that the byte range of a chunk holds the match start, but the doc comments (lines 123 and 260) say that it does. A zero-length match at the end of the chunk text has the absolute position `endByte`, which is outside `[startByte, endByte)`, and that chunk can still own it. Repro: `class A:\n    def f(self):\n        return x\n\n    y = 1\n` (`A.f` = `[13,42)`, `A` = `[0,53)`). Pattern `\b` gives byte 42 to `A.f`, not to `A`. Pattern `$` gives `A` a result at 53, which no chunk holds. Fix: choose the owner of a position only from the hits where `startByte <= byte < endByte`. Decision (orchestrator): a position that no reporting chunk holds is dropped, as "a match in no symbol gives no result" says. Write that rule in the doc comments of `run` and `innermostMatches(of:)`. Add a `GrepCodeTests` test with the fixture above and pattern `\b`: the class, not the method, owns the boundary at the method's `endByte`. — Fixed in CodeContext d6182ee: the owners use only positions where `startByte <= byte < endByte` (`ChunkHit.holds`); a position that no hit holds is dropped; a chunk with no positions is dropped. Test `grepCodeGivesAZeroLengthMatchAtTheEndOfAMethodToTheClass`.
 
 #upstream #code-context
