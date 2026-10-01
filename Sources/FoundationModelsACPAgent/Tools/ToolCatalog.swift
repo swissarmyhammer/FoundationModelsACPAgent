@@ -409,7 +409,10 @@ public enum ToolCatalog {
     ///   the catalog context.
     /// - Returns: The selection factory that `searchTools` calls.
     static func makeSearchSelection(profile: LanguageModelProfile) -> SearchToolsTool.SelectionFactory {
-        makeSearchSelection(makingEach: { grammar, instructions in
+        // `makeGuidedSession` is sync and does not throw, so the closure has
+        // no `try await`. It is marked `async throws` to show the type of
+        // `GuidedSessionMaker`.
+        makeSearchSelection(makingEach: { grammar, instructions async throws in
             profile.flash.makeGuidedSession(grammar: grammar, instructions: instructions)
         })
     }

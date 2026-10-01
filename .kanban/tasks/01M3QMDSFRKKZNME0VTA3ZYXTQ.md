@@ -33,8 +33,15 @@ comments:
     - gap: the card item "RecordingEmbedding.swift and other doubles: remove `dimension`" cannot compile, because the Extras `PooledEmbedding` (c5ca65a) requires `dimension` of each `LoadedEmbeddingContainer`. A person must drop this item or add upstream work. Push and CI are left to the commit step.
     - next: a person decides the `dimension` item; then /review.
   timestamp: 2026-10-01T13:20:51.975133+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m3vtk12xc5j6s66y6t1tk3p9
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit d7ec875), local backend. 1 finding, 1 confirmed, 0 refuted. Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:412 (swift/concurrency).
+    - next: Do the open item in "## Review Findings (2026-10-01 08:21)". Apply the fix to all closures in ToolCatalog.swift that go to an async throws factory. Then run the review again. The task stays in the review column.
+  timestamp: 2026-10-01T13:31:16.957881+00:00
+position_column: review
+position_ordinal: '80'
 title: Adopt the async selection factory and the TextEmbedding without dimension
 ---
 **Wait for:** FoundationModelsRanker tasks 01M3QMD9KJ8T723R02085BEFYY ("Remove dimension from TextEmbedding") and 01M3QMD9X40XA640Z9CXCREQAM ("Async session factory…") on the Ranker board: done and pushed.
@@ -60,3 +67,12 @@ title: Adopt the async selection factory and the TextEmbedding without dimension
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #model-pool
+
+## Review Findings (2026-10-01 08:21)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:412` `swift/concurrency` — Closure passed to `makeSearchSelection(makingEach:)` expects an `async throws` closure (`GuidedSessionMaker`), but the closure is not marked `async throws` and the call to `makeGuidedSession` lacks `try await`. Mark the closure `async throws` and add `try await` before the call: `makeSearchSelection(makingEach: { grammar, instructions in try await profile.flash.makeGuidedSession(grammar: grammar, instructions: instructions) })`. Fixed: the closure is now marked `async throws`. Router `makeGuidedSession` (GuidedGeneration.swift:153) is sync and does not throw, so `try await` before it gives two compiler warnings ("no calls to throwing functions occur within 'try'" and "no 'async' operations occur within 'await'"). Thus the call has no `try await`, and a comment states why.
