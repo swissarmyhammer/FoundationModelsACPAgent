@@ -35,10 +35,17 @@ comments:
     - evidence: `swift test` (root): 669 tests in 77 suites passed, 0 failures, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests); no compiler warning (only the known "missing creator ... mlx-swift_Cmlx.bundle" line). `swift build --build-tests` in IntegrationTests/: Build complete, no warning. Files: Sources/FoundationModelsACPAgent/Telemetry/AgentTracing.swift, Sources/FoundationModelsACPAgent/Telemetry/RequestTracing.swift, Sources/FoundationModelsACPAgent/Commands/CommandDispatch.swift (doc), Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift (doc), Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift, Tests/FoundationModelsACPAgentTests/AgentSpanTests.swift, Tests/FoundationModelsACPAgentTests/RequestTracingTests.swift, Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift; Package.resolved and IntegrationTests/Package.resolved (gitignored) at Extras 50fd4a5.
     - next: review
   timestamp: 2026-10-01T13:50:40.329485+00:00
+- actor: claude-code
+  id: 01m3vw7mkh9y8b9h5m5tjgqyjs
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 7cf7df9), backend local. 0 findings, 0 confirmed, 0 refuted. 8 files reviewed, 0 failed. The .reviewignore rule excluded 4 .kanban/ files. The task has no earlier review findings.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-01T14:00:00.881038+00:00
 depends_on:
 - 01M3QYS1Y5K4WBGTN73Z7ZAQG4
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ff8b80
 title: 'After the Extras pin moves to b837e56: adopt the safe error record of TracedCall.run in the agent'
 ---
 ## Why
