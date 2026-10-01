@@ -11,6 +11,10 @@ comments:
   text: 'Decision (user, 2026-09-24): the Router agent works only in the Router, so this task owns all changes in this repository for the rename. A comment on Router card 01M3A1F0KE9P9QPEVHXF33Q8GW tells the Router agent not to edit this repository. The Coordination section of this task is thus settled.'
   timestamp: 2026-09-24T16:23:52.348157+00:00
 - actor: claude-code
+  id: 01m3pmak5ase9w61fny84j4sbt
+  text: 'Information from the swissarmyhammer-05 session (2026-09-29): FoundationModelsRouter origin/main f497700 has the Router OTel work A to F, has green CI, and builds with the current Extras (which has the public ModelRef). Router 2a79f92 was red on origin: do not pin to it. When this task moves the Router pin, f497700 or later is a candidate. That also unblocks the Extras pin for ^kfqvqqb and the other OTel tasks. The user has not decided the order of this work yet.'
+  timestamp: 2026-09-29T13:05:36.938480+00:00
+- actor: claude-code
   id: 01m3q415e6rvq6k4c24r92b8pc
   text: 'Research 2026-09-29. Commit 4ac665b did most of this card. The rg check found 6 stale doc comment lines only (5 in EventProjection.swift, 1 in PromptTurn.swift). It found no code symbol. The Router contract (Session/SessionEvent.swift): an overflow retry sends two submissionStarted/submissionEnded pairs and a `.compaction` between them. Each submissionEnded carries the usage of its own submission only. `generationCall` carries the usage of one generation call, and submissionEnded already sums these. `answered(SessionAnswer)` comes after the last submissionEnded, and its `usage` is the TOTAL of the chain. So the answered usage must never go into the sum. EventProjection already ignores `answered` and `generationCall`, and TurnStateOwner.turnDidStart has a `didStart` guard, so one prompt sends one `running`. The earlier retry test used a NaN context fill and asserted NO usage_update, so it did not prove the sum. The Router design card for each pass (01M3A1F89ZRFMCGTNPBNJDP02P) is settled on main: MCPCompositionTests uses submissionWillBegin, and the build and tests pass.'
   timestamp: 2026-09-29T17:40:05.190853+00:00
