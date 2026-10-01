@@ -2,11 +2,10 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
-import InMemoryTracing
+import FoundationModelsExtras
 import MCPTestServer
 import TelemetryTestSupport
 import Testing
-import Tracing
 
 @testable import FoundationModelsACPAgent
 
@@ -20,19 +19,25 @@ import Tracing
 /// `initialize`, a `session/new` with a config MCP server, an `AGENTS.md` and
 /// an `Instructions.md` that is not text, one prompt with two tool calls and an
 /// elicitation round trip, one slash command with arguments, one prompt that
-/// the client cancels, a `session/new` with an http MCP server that cannot
-/// connect, and `session/close`. Each text of the client is a marker that
-/// cannot occur by chance.
+/// the client cancels, one slash command whose render fails, a `session/new`
+/// with an http MCP server that cannot connect, and `session/close`. Each
+/// text of the client is a marker that cannot occur by chance.
 ///
-/// The capture reads each span name and attribute, each log message and
-/// metadata value and each metric name and dimension, and records an issue
-/// for each one that holds a marker. The capture does not read the events,
-/// the recorded errors and the status of a span, thus the suite reads them
-/// too: a tracing backend exports a recorded error as an `exception` event
-/// that holds the description of the error. Nothing here names a record to
-/// check. Thus a later change that adds a span, a log record or a metric on
-/// these paths must obey the rule, with no change to this file. The suite also
-/// expects the records of each path, so an empty capture cannot pass.
+/// Two errors hold a marker in their description: the render error of the
+/// failing command (the command span and the prompt request span see it),
+/// and the connect error of the http MCP server, whose URL holds a marker
+/// (the MCP connect span and the `session/new` request span see it). A
+/// tracing backend exports a recorded error as an `exception` event that
+/// holds the description of the error, thus these errors prove that no span
+/// records an error description.
+///
+/// The capture reads each span name, attribute, event, recorded error and
+/// status message, each log message, metadata value and error, and each
+/// metric name and dimension, and records an issue for each one that holds a
+/// marker. Nothing here names a record to check. Thus a later change that
+/// adds a span, a log record or a metric on these paths must obey the rule,
+/// with no change to this file. The suite also expects the records of each
+/// path, so an empty capture cannot pass.
 ///
 /// The Router sessions get the tracer of the capture explicitly, because
 /// their work runs in a detached task. For the same reason, the log records
@@ -93,8 +98,19 @@ import Tracing
     /// The name of the http MCP server.
     private static let httpServerName = "remote"
 
+    /// The path of ``unreachableServerURL``. The description of the connect
+    /// error holds it.
+    private static let unreachableServerPath = "tcs-mcp-url-path-b93e1f"
+
     /// An http URL where no server listens, so the connect fails.
-    private static let unreachableServerURL = "http://127.0.0.1:9/mcp"
+    private static let unreachableServerURL = "http://127.0.0.1:9/\(unreachableServerPath)"
+
+    /// The name of the slash command whose render fails.
+    private static let failingCommandName = "fail"
+
+    /// The argument text of the slash command whose render fails. The
+    /// description of the render error holds it.
+    private static let failingCommandArguments = "tcs-failing-command-arguments-4c7d2a"
 
     /// The name of the header that holds ``headerValue``.
     private static let headerName = "Authorization"
@@ -106,7 +122,7 @@ import Tracing
     private static let unknownSectionName = "tcs_unknown_section"
 
     /// The number of prompts that the suite sends.
-    private static let promptCount = 3
+    private static let promptCount = 4
 
     /// The name of the span of one mounted tool call. FoundationModelsExtras
     /// keeps its vocabulary internal, thus the suite writes the name.
@@ -122,7 +138,7 @@ import Tracing
         [
             toolPromptText, cancelledPromptText, responseText, toolArgument, toolOutput, commandArguments,
             elicitationAnswer, ScriptedServer.elicitEchoMessage, envValue, headerValue, configValue,
-            agentsFileContent, unreadableFileContent,
+            agentsFileContent, unreadableFileContent, unreachableServerPath, failingCommandArguments,
         ]
     }
 
@@ -160,24 +176,7 @@ import Tracing
             #expect(Self.expectedSpanNames.subtracting(context.spans.map(\.operationName)) == [])
             #expect(Self.expectedMetricNames.subtracting(context.metricRecords.map(\.label)) == [])
             #expect(Self.expectedLogMetadataKeys.subtracting(context.logRecords.flatMap(\.metadata.keys)) == [])
-            #expect(Self.leaksInSpanDetails(of: context.spans) == [])
         }
-    }
-
-    /// The key of the probe attribute of the span-detail reader test.
-    private static let probeAttributeKey = "tcs.probe"
-
-    /// The value of the probe attribute of the span-detail reader test.
-    private static let probeAttributeValue = "tcs-probe-attribute-value-4e9a07"
-
-    /// The reader of the span details sees the key and the value of each
-    /// attribute, so a text of the client in an event or an error attribute
-    /// cannot hide from ``leaksInSpanDetails(of:)``.
-    @Test func spanDetailReaderSeesEachAttribute() {
-        let text = Self.attributeText(of: [Self.probeAttributeKey: .string(Self.probeAttributeValue)])
-
-        #expect(text.contains(Self.probeAttributeKey))
-        #expect(text.contains(Self.probeAttributeValue))
     }
 
     // MARK: - The driven paths
@@ -191,23 +190,49 @@ import Tracing
     private static func driveEachContentPath(in context: TelemetryCapture.Context) async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: try makeScript(), label: fixtureLabel, workingDirectory: try makeWorkingDirectory(),
-            projectConfigYAML: try makeConfigYAML(), tracer: context.tracer)
+            projectConfigYAML: try makeConfigYAML(), tracer: context.tracer,
+            commandProviders: [StubCommandProvider(commandSet: [failingCommand])])
         try await runToolPrompt(on: fixture)
         try await runPrompt(on: fixture, text: "/\(helpCommandName) \(commandArguments)")
         try await runCancelledPrompt(on: fixture)
+        await runFailingCommand(on: fixture)
         try await Poll.until("each prompt span ended") {
             context.spans.count { $0.operationName == ACPAgentTelemetry.SpanName.prompt } == promptCount
         }
-        await #expect(throws: (any Error).self) {
-            _ = try await fixture.harness.connection.newSession(
-                NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), mcpServers: [httpServer]))
-        }
+        await connectUnreachableServer(on: fixture)
         _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
         await fixture.close()
     }
 
     /// The name of the built-in command that lists the commands.
     private static let helpCommandName = "help"
+
+    /// Sends the slash command whose render fails, and expects the refusal.
+    /// The description of the refusal holds the argument text, as the
+    /// description of the render error does.
+    ///
+    /// - Parameter fixture: The fixture of the run.
+    private static func runFailingCommand(on fixture: ScriptedPromptFixture) async {
+        let refusal = await #expect(throws: RequestError.self) {
+            _ = try await fixture.harness.connection.prompt(
+                AgentClientHarness.makePromptRequest(
+                    sessionId: fixture.sessionId, text: "/\(failingCommandName) \(failingCommandArguments)"))
+        }
+        #expect(String(describing: refusal).contains(failingCommandArguments))
+    }
+
+    /// Sends a `session/new` with the http MCP server where no server
+    /// listens, and expects the failure. The description of the failure holds
+    /// the path of the URL, as the description of the connect error does.
+    ///
+    /// - Parameter fixture: The fixture of the run.
+    private static func connectUnreachableServer(on fixture: ScriptedPromptFixture) async {
+        let failure = await #expect(throws: (any Error).self) {
+            _ = try await fixture.harness.connection.newSession(
+                NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), mcpServers: [httpServer]))
+        }
+        #expect(String(describing: failure).contains(unreachableServerPath))
+    }
 
     /// Sends the prompt that runs the two tool calls, answers the
     /// elicitation of the second call, and waits until the prompt ends.
@@ -345,42 +370,21 @@ import Tracing
                 headers: [HTTPHeader(name: headerName, value: headerValue)]))
     }
 
-    // MARK: - The span details
-
-    /// Each span detail that holds a text of the client, as
-    /// `<span>: <detail>`.
-    ///
-    /// - Parameter spans: The spans of the run.
-    /// - Returns: The details that hold a forbidden text.
-    private static func leaksInSpanDetails(of spans: [FinishedInMemorySpan]) -> [String] {
-        spans.flatMap { span in
-            detailTexts(of: span)
-                .filter { text in forbiddenContent.contains { text.contains($0) } }
-                .map { "\(span.operationName): \($0)" }
-        }
+    /// The slash command whose render throws a ``RenderFailure`` with the
+    /// argument text of the invocation.
+    private static var failingCommand: SlashCommand {
+        SlashCommand(
+            name: failingCommandName,
+            description: "fails to render",
+            body: .rendered { invocation in
+                throw RenderFailure(arguments: invocation.arguments)
+            })
     }
+}
 
-    /// The texts of the places of a span that the capture does not read: the
-    /// name and each attribute of each event, the description and each
-    /// attribute of each recorded error, and the status message.
-    ///
-    /// - Parameter span: The span.
-    /// - Returns: The texts.
-    private static func detailTexts(of span: FinishedInMemorySpan) -> [String] {
-        let eventTexts = span.events.flatMap { [$0.name, attributeText(of: $0.attributes)] }
-        let errorTexts = span.errors.flatMap { [String(describing: $0.error), attributeText(of: $0.attributes)] }
-        return eventTexts + errorTexts + [span.status?.message].compactMap(\.self)
-    }
-
-    /// One text that holds the key and the value of each attribute.
-    ///
-    /// `SpanAttributes` is not a `Sequence`, thus no `for` loop walks it. Its
-    /// description names each key and each value, thus the text needs no walk.
-    /// ``spanDetailReaderSeesEachAttribute()`` proves that the text holds them.
-    ///
-    /// - Parameter attributes: The attributes.
-    /// - Returns: The text.
-    private static func attributeText(of attributes: SpanAttributes) -> String {
-        String(describing: attributes)
-    }
+/// The error of the slash command whose render fails. Its description holds
+/// the argument text of the invocation.
+private struct RenderFailure: Error {
+    /// The argument text of the invocation.
+    let arguments: String
 }

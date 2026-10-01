@@ -321,8 +321,9 @@ enum MCPComposition {
     ///
     /// The connect runs in one MCP connect span (``AgentTracing``), a child
     /// of the span of the request that composes the session. The span
-    /// carries the server name and the transport, and a connect that throws
-    /// records the error on it. A slow server can hold the connect for a
+    /// carries the server name and the transport. A connect that throws gives
+    /// the span the error status and the type of the error, never the
+    /// description of the error. A slow server can hold the connect for a
     /// long time, so the span writes one "enter" record when it opens. The
     /// span and the record never carry the command arguments, an `env`
     /// value, a `headers` value or the URL.

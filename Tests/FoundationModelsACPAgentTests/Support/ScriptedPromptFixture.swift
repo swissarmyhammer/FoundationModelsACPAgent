@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
 import Tracing
@@ -74,6 +75,8 @@ struct ScriptedPromptFixture {
     ///   - tracer: The tracer of each Router session, or `nil` to read
     ///     `InstrumentationSystem.tracer` at call time. A suite that
     ///     captures the Router spans gives the tracer of its capture.
+    ///   - commandProviders: The command providers that the agent gets
+    ///     before `session/new`, so the session has their commands.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -85,7 +88,8 @@ struct ScriptedPromptFixture {
         mcpServers: [MCPServer]? = nil,
         additionalDirectories: [AbsolutePath]? = nil,
         tapsAgentWire: Bool = false,
-        tracer: (any Tracer)? = nil
+        tracer: (any Tracer)? = nil,
+        commandProviders: [any SlashCommandProviding] = []
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
@@ -96,7 +100,8 @@ struct ScriptedPromptFixture {
             mcpServers: mcpServers,
             additionalDirectories: additionalDirectories,
             tapsAgentWire: tapsAgentWire,
-            tracer: tracer)
+            tracer: tracer,
+            commandProviders: commandProviders)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -128,6 +133,8 @@ struct ScriptedPromptFixture {
     ///     §5.9 cancel proof needs it.
     ///   - tracer: The tracer of each Router session, or `nil` to read
     ///     `InstrumentationSystem.tracer` at call time.
+    ///   - commandProviders: The command providers that the agent gets
+    ///     before `session/new`, so the session has their commands.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -140,7 +147,8 @@ struct ScriptedPromptFixture {
         additionalDirectories: [AbsolutePath]? = nil,
         tapsWire: Bool = false,
         tapsAgentWire: Bool = false,
-        tracer: (any Tracer)? = nil
+        tracer: (any Tracer)? = nil,
+        commandProviders: [any SlashCommandProviding] = []
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -154,6 +162,7 @@ struct ScriptedPromptFixture {
             userDirectory: userDirectory,
             loader: loader,
             tracer: tracer)
+        await agent.registerCommandProviders(commandProviders)
         let harness = await AgentClientHarness.makeRecording(
             agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
         _ = try await harness.connection.initialize(

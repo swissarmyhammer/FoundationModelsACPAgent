@@ -141,10 +141,12 @@ import Tracing
                 == .string(Self.builtinCommandKind))
     }
 
-    /// An unknown command records its command span with the error and the
-    /// type of the error.
+    /// An unknown command gives its command span the error status and the
+    /// type of the error. The span records no error, because a tracing
+    /// backend exports the description of a recorded error, and a
+    /// description can hold content.
     @Test(.timeLimit(.minutes(1)))
-    func unknownCommandRecordsTheErrorOnItsCommandSpan() async throws {
+    func unknownCommandRecordsTheErrorTypeOnItsCommandSpan() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
             await #expect(throws: RequestError.self) {
@@ -157,7 +159,7 @@ import Tracing
         }
 
         let commandSpan = try Self.requireOneSpan(named: ACPAgentTelemetry.SpanName.command, in: run)
-        #expect(commandSpan.errors.count == 1)
+        #expect(commandSpan.errors.isEmpty)
         #expect(commandSpan.status?.code == .error)
         #expect(
             commandSpan.attributes.get(ACPAgentTelemetry.AttributeKey.errorType)
@@ -252,11 +254,11 @@ import Tracing
         try run.expectOneEnterRecord(withTheIdsOf: connectSpan)
     }
 
-    /// A server that cannot connect records its connect span with the error
+    /// A server that cannot connect gives its connect span the error status
     /// and the type of the error, as a child of the `session/new` span that
-    /// fails.
+    /// fails. The span records no error.
     @Test(.timeLimit(.minutes(1)))
-    func serverThatFailsToConnectRecordsTheErrorOnItsConnectSpan() async throws {
+    func serverThatFailsToConnectRecordsTheErrorTypeOnItsConnectSpan() async throws {
         let brokenServer = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
                 command: AbsolutePath(rawValue: Self.relativeServerCommand), name: Self.brokenServerName))
@@ -271,7 +273,7 @@ import Tracing
         }
 
         let connectSpan = try Self.requireOneSpan(named: ACPAgentTelemetry.SpanName.mcpConnect, in: run)
-        #expect(connectSpan.errors.count == 1)
+        #expect(connectSpan.errors.isEmpty)
         #expect(connectSpan.status?.code == .error)
         #expect(connectSpan.attributes.get(ACPAgentTelemetry.AttributeKey.errorType) != nil)
         #expect(

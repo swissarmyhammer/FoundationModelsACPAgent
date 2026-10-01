@@ -222,8 +222,9 @@ extension RoutedACPAgent {
     /// the prompt span. The span covers the registry lookup, the refusals,
     /// the template expansion and the render. It carries the command name
     /// and, for a registered command, its ``CommandKind``. It never carries
-    /// the argument text or the expanded text. A refusal records the error on
-    /// the span. The work after the `{}` response is scheduled after the
+    /// the argument text or the expanded text. A refusal gives the span the
+    /// error status and the type of the error, never the description of the
+    /// error. The work after the `{}` response is scheduled after the
     /// span ends, in the context of the prompt span, so each Router
     /// submission span of the prompt stays a child of the prompt span.
     ///

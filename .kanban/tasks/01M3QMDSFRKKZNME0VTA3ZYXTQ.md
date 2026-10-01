@@ -40,8 +40,24 @@ comments:
     - evidence: review sha HEAD~1..HEAD (commit d7ec875), local backend. 1 finding, 1 confirmed, 0 refuted. Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:412 (swift/concurrency).
     - next: Do the open item in "## Review Findings (2026-10-01 08:21)". Apply the fix to all closures in ToolCatalog.swift that go to an async throws factory. Then run the review again. The task stays in the review column.
   timestamp: 2026-10-01T13:31:16.957881+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3vtnxz297kpvgy9007k8kxs
+  text: |-
+    ### finish iteration 2 — changed
+    - implement: changed — ToolCatalog.swift: the closure is marked async throws; no try await, because makeGuidedSession is sync and does not throw (try await would give two compiler warnings)
+    - test: green — swift build --build-tests: 0 compiler warnings; swift test --filter "SearchSelection|ToolCatalog": 16 passed
+    - commit: 9b1b609
+    - review: next (HEAD~1..HEAD)
+  timestamp: 2026-10-01T13:32:52.066792+00:00
+- actor: claude-code
+  id: 01m3vtyx0md7y5gtzdgqhn5vym
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 9b1b609), local backend. 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. The engine reviewed 1 file. The .reviewignore rule excluded 2 .kanban files. The 1 prior finding (ToolCatalog.swift:412) is checked.
+    - next: Push to origin main and do the CI check, as the Decision section tells.
+  timestamp: 2026-10-01T13:37:46.004350+00:00
+position_column: done
+position_ordinal: ff8a80
 title: Adopt the async selection factory and the TextEmbedding without dimension
 ---
 **Wait for:** FoundationModelsRanker tasks 01M3QMD9KJ8T723R02085BEFYY ("Remove dimension from TextEmbedding") and 01M3QMD9X40XA640Z9CXCREQAM ("Async session factory…") on the Ranker board: done and pushed.

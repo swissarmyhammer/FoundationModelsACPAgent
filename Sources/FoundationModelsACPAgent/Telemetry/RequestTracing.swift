@@ -7,9 +7,11 @@ import Tracing
 /// OpenTelemetry design, items 1, 3, 4, 7 and 8).
 ///
 /// Each span has the kind `.server`, and it carries the ACP method and, when
-/// the request names one, the ACP session id. A request that throws records
-/// the error on its span, and the span carries the type name of the error,
-/// never its message. The span name and each attribute come from
+/// the request names one, the ACP session id. A request that throws gives
+/// its span the error status and the type of the error, never its
+/// description. The span records no error with `recordError`, because a
+/// tracing backend exports the description of a recorded error, and a
+/// description can hold content. The span name and each attribute come from
 /// ``ACPAgentTelemetry``, and the "No content" rule of that type applies.
 ///
 /// The span opens through ``ACPAgentTelemetry/tracer(explicit:)`` when the
@@ -41,7 +43,8 @@ enum RequestTracing {
     ///   - body: The work of the request. It gets the open span, and it runs
     ///     on the actor of the caller.
     /// - Returns: The value of `body`.
-    /// - Throws: The error of `body`. The span records it first.
+    /// - Throws: The error of `body`. The span gets the error status and the
+    ///   error type first.
     nonisolated(nonsending) static func withRequestSpan<Output>(
         _ spanName: String,
         method: String,
@@ -49,11 +52,9 @@ enum RequestTracing {
         meta: JSONValue?,
         _ body: nonisolated(nonsending) (any Span) async throws -> Output
     ) async rethrows -> Output {
-        try await ACPAgentTelemetry.tracer(explicit: nil).withSpan(
-            spanName, context: parentContext(meta: meta), ofKind: .server
-        ) { span in
+        try await AgentTracing.withSpan(spanName, context: parentContext(meta: meta), ofKind: .server) { span in
             span.updateAttributes { describeRequest(&$0, method: method, sessionId: sessionId) }
-            return try await AgentTracing.recordingErrorType(on: span, body)
+            return try await body(span)
         }
     }
 
@@ -63,7 +64,9 @@ enum RequestTracing {
     ///
     /// `TracedCall.run` of FoundationModelsExtras opens the span and writes
     /// the record, so the record holds the trace id and the span id of the
-    /// span when the tracer gives them.
+    /// span when the tracer gives them. When `body` throws, `TracedCall.run`
+    /// gives the span the error status and the `error.type` of the error, and
+    /// records no error. Thus this method writes no `error.type` itself.
     ///
     /// - Parameters:
     ///   - spanName: The name of the span.
@@ -75,7 +78,8 @@ enum RequestTracing {
     ///   - body: The work of the request. It gets the open span, and it runs
     ///     on the actor of the caller.
     /// - Returns: The value of `body`.
-    /// - Throws: The error of `body`. The span records it first.
+    /// - Throws: The error of `body`. The span gets the error status and the
+    ///   error type first.
     nonisolated(nonsending) static func withEnteredRequestSpan<Output>(
         _ spanName: String,
         method: String,
@@ -91,10 +95,9 @@ enum RequestTracing {
                 tracer: ACPAgentTelemetry.tracer(explicit: nil),
                 logger: logger,
                 attributes: { describeRequest(&$0, method: method, sessionId: sessionId) },
-                metadata: requestMetadata(method: method, sessionId: sessionId)
-            ) { span in
-                try await AgentTracing.recordingErrorType(on: span, body)
-            }
+                metadata: requestMetadata(method: method, sessionId: sessionId),
+                body
+            )
         }
     }
 
@@ -134,20 +137,20 @@ enum RequestTracing {
         return span
     }
 
-    /// Records `error` on the span of a request that failed, and ends the
-    /// span.
+    /// Ends the span of a request that failed.
     ///
-    /// The span records the error and the error status, as `withSpan` does,
-    /// and it carries the type name of the error.
+    /// The span gets the error status and the type name of the error, as
+    /// ``AgentTracing/withSpan(_:context:ofKind:_:)`` gives it. The span
+    /// records no error with `recordError`, because a tracing backend exports
+    /// the description of a recorded error, and a description can hold
+    /// content.
     ///
     /// - Parameters:
     ///   - span: The span that ``startRequestSpan(_:method:sessionId:meta:logger:)``
     ///     opened.
     ///   - error: The error of the request.
     static func endRequestSpan(_ span: any Span, throwing error: any Error) {
-        span.recordError(error)
-        span.setStatus(SpanStatus(code: .error))
-        AgentTracing.recordErrorType(of: error, on: span)
+        AgentTracing.recordFailure(of: error, on: span)
         span.end()
     }
 

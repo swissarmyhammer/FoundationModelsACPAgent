@@ -254,10 +254,12 @@ import Tracing
         try run.expectOneEnterRecord(withTheIdsOf: span)
     }
 
-    /// A prompt for an unknown session throws. Its span records the error and
-    /// the type of the error, and the span ends.
+    /// A prompt for an unknown session throws. Its span gets the error status
+    /// and the type of the error, and the span ends. The span records no
+    /// error, because a tracing backend exports the description of a
+    /// recorded error, and a description can hold content.
     @Test(.timeLimit(.minutes(1)))
-    func promptForAnUnknownSessionRecordsTheErrorOnItsSpan() async throws {
+    func promptForAnUnknownSessionRecordsTheErrorTypeOnItsSpan() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
             await #expect(throws: RequestError.self) {
@@ -271,7 +273,7 @@ import Tracing
 
         let span = try Self.requireOneServerSpan(
             named: ACPAgentTelemetry.SpanName.prompt, method: Self.sessionPromptMethod, in: run)
-        #expect(span.errors.count == 1)
+        #expect(span.errors.isEmpty)
         #expect(span.status?.code == .error)
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.errorType) == .string(Self.requestErrorTypeName))
         #expect(span.attributes.get(ACPAgentTelemetry.AttributeKey.sessionId) == .string(run.sessionId))
