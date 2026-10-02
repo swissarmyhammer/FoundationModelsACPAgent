@@ -123,6 +123,21 @@ import Testing
         }
     }
 
+    /// The prompt response names the user message (ACP
+    /// schema-v2.0.0-alpha.7): its `messageId` is the id of the one
+    /// `user_message` echo that reaches the client.
+    @Test(.timeLimit(.minutes(1)))
+    func thePromptResponseNamesTheEchoedUserMessage() async throws {
+        let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
+        let response = try await fixture.harness.connection.prompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
+
+        let echoIds = updates.compactMap { userMessageEcho(of: $0.update)?.messageId }
+        #expect(echoIds == [response.messageId])
+    }
+
     // MARK: - The busy refusal (§7.1)
 
     /// A second `session/prompt` during a running prompt answers a client
@@ -688,8 +703,8 @@ import Testing
     /// session records a `repeatedPartRemoval` event in its journal: Router's
     /// text, and a cut of the one reasoning entry that keeps each new
     /// reasoning line one time. A resume of that session replays each
-    /// recorded message, and sends no message for the `repeatedPartRemoval`
-    /// event.
+    /// message that the client saw live, with its live id, and sends no
+    /// message for the `repeatedPartRemoval` event.
     @Test(.timeLimit(.minutes(1)))
     func aRepetitionStopRecordsARepeatedPartRemovalThatAResumeReplays() async throws {
         let (fixture, stopReason, events) = try await Self.runRepeatingPrompt()
@@ -702,13 +717,15 @@ import Testing
         #expect(Array(cut.keptUTF8Lengths.values) == [newLines.utf8.count])
 
         await fixture.harness.agent.markSessionClosed(fixture.sessionId)
+        let live = ReplayedMessage.live(in: await fixture.collector.updates.map(\.update))
         let countBefore = await fixture.collector.updates.count
         _ = try await fixture.harness.connection.resumeSession(
             ResumeSessionRequest(
                 cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId,
                 replayFrom: .start(ReplayFromStart())))
         let replayUpdates = Array(await fixture.collector.updates.dropFirst(countBefore)).map(\.update)
-        #expect(ReplayedMessage.replayed(in: replayUpdates) == ReplayedMessage.expected(from: events))
+        #expect(!live.isEmpty)
+        #expect(ReplayedMessage.replayed(in: replayUpdates) == live)
         await fixture.close()
     }
 

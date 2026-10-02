@@ -75,8 +75,9 @@ extension RoutedACPAgent {
 
     /// Runs the full §10.1 teardown of one session: cancel the running prompt,
     /// run the session sweep, close every descendant, finish the shell stream,
-    /// and shut the MCP servers down — in that order. The entry stays in the
-    /// table, marked closed, so the session is still resumable.
+    /// shut the MCP servers down, and write the retained history to its file
+    /// — in that order. The entry stays in the table, marked closed, so the
+    /// session is still resumable.
     ///
     /// It is idempotent: a session already closed has released its resources,
     /// so this returns at once.
@@ -114,6 +115,9 @@ extension RoutedACPAgent {
         // stops the attached `SurfaceRefresher` first.
         markSessionClosed(sessionId)
         await entry.surface.shutdown()
+        // The retained history goes to its file last, with each update that
+        // came after the last prompt, so a new process resumes it whole.
+        writeHistory(of: sessionId)
     }
 
     // MARK: - The disk removal (plan.md §10.2)

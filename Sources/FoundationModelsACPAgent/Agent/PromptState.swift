@@ -9,7 +9,7 @@ typealias SessionUpdateSink = @Sendable (SessionUpdate) async -> Void
 
 extension AgentSideConnection {
     /// Sends one `session/update` for `sessionId`. A send failure is
-    /// logged and dropped: the prompt already returned `{}` (plan.md §8.1),
+    /// logged and dropped: the prompt already returned its response (plan.md §8.1),
     /// so no prompt error can become a JSON-RPC error, and a closed
     /// connection has no reader to correct.
     ///

@@ -234,9 +234,9 @@ struct StdioContractTests {
         let session = try await connection.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
 
-        // Subscribe before the prompt: updates with no subscriber are
-        // dropped by the router.
-        let updates = connection.updates(for: session.sessionId)
+        // Subscribe before the prompt, so the stream holds each update of
+        // the prompt in order.
+        let updates = connection.subscribe(to: session.sessionId).updates
         _ = try await connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: session.sessionId, text: Self.promptText))

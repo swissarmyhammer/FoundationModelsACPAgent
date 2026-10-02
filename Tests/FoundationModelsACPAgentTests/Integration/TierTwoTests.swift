@@ -552,37 +552,45 @@ import Testing
         return decoded as? [String: Any]
     }
 
-    /// The index of the `{}` acknowledgement of `session/prompt` in the
-    /// recorded wire lines.
+    /// The `messageId` key of a `session/prompt` result and of a
+    /// `user_message` update.
+    private static let messageIdKey = "messageId"
+
+    /// The index of the acknowledgement of `session/prompt` in the
+    /// recorded wire lines, and the user-message id that it names.
     ///
-    /// `PromptResponse` declares one optional `_meta`, so the
-    /// acknowledgement encodes as an empty result object. `initialize`
-    /// and `session/new` each answer a filled result, so an empty
-    /// result names the prompt acknowledgement alone.
+    /// `PromptResponse` holds the required `messageId` and one optional
+    /// `_meta` (ACP schema-v2.0.0-alpha.7), so the acknowledgement encodes
+    /// as a result object with the `messageId` key alone. `initialize` and
+    /// `session/new` each answer other keys, so this result names the
+    /// prompt acknowledgement alone.
     ///
     /// - Parameter lines: The recorded wire lines, in wire order.
-    /// - Returns: The index, or `nil` when no such line arrived.
-    private static func acknowledgementIndex(in lines: [String]) -> Int? {
-        lines.firstIndex { line in
-            guard let result = decodedObject(of: line)?["result"] as? [String: Any] else {
-                return false
-            }
-            return result.isEmpty
+    /// - Returns: The index and the id, or `nil` when no such line arrived.
+    private static func acknowledgement(in lines: [String]) -> (index: Int, messageId: String)? {
+        for (index, line) in lines.enumerated() {
+            guard let result = decodedObject(of: line)?["result"] as? [String: Any],
+                result.count == 1, let messageId = result[messageIdKey] as? String
+            else { continue }
+            return (index, messageId)
         }
+        return nil
     }
 
     /// The index of the first `user_message` notification in the
-    /// recorded wire lines.
+    /// recorded wire lines, and its `messageId`.
     ///
     /// - Parameter lines: The recorded wire lines, in wire order.
-    /// - Returns: The index, or `nil` when no echo arrived.
-    private static func userMessageIndex(in lines: [String]) -> Int? {
-        lines.firstIndex { line in
+    /// - Returns: The index and the id, or `nil` when no echo arrived.
+    private static func userMessage(in lines: [String]) -> (index: Int, messageId: String?)? {
+        for (index, line) in lines.enumerated() {
             guard let params = decodedObject(of: line)?["params"] as? [String: Any],
-                let update = params["update"] as? [String: Any]
-            else { return false }
-            return update["sessionUpdate"] as? String == userMessageMarker
+                let update = params["update"] as? [String: Any],
+                update["sessionUpdate"] as? String == userMessageMarker
+            else { continue }
+            return (index, update[messageIdKey] as? String)
         }
+        return nil
     }
 
     // MARK: - Proof 1: composition
@@ -768,8 +776,8 @@ import Testing
 
     // MARK: - Proof 4: prompt order
 
-    /// The tool prompt keeps §8.1's order on the wire: the `{}` response
-    /// acknowledges first, then `user_message`, `running`, the tool
+    /// The tool prompt keeps §8.1's order on the wire: the response that
+    /// names the user message acknowledges first, then `user_message`, `running`, the tool
     /// updates, and one `idle(end_turn)` as the terminator.
     ///
     /// The acknowledgement is read on the BYTES, through the harness
@@ -792,11 +800,13 @@ import Testing
         let wireLines = await wireTap.lines
         await fixture.close()
 
-        // §8.1's MUST: the `{}` acknowledgement of `session/prompt`
-        // stands on the wire before the `user_message` echo.
-        let acknowledgementIndex = try #require(Self.acknowledgementIndex(in: wireLines))
-        let echoIndex = try #require(Self.userMessageIndex(in: wireLines))
-        #expect(acknowledgementIndex < echoIndex)
+        // §8.1's MUST: the acknowledgement of `session/prompt` stands on
+        // the wire before the `user_message` echo, and both name the same
+        // user message.
+        let acknowledgement = try #require(Self.acknowledgement(in: wireLines))
+        let echo = try #require(Self.userMessage(in: wireLines))
+        #expect(acknowledgement.index < echo.index)
+        #expect(echo.messageId == acknowledgement.messageId)
 
         let markers = updates.compactMap(Self.orderMarker(of:))
         expectOrderedSubsequence(

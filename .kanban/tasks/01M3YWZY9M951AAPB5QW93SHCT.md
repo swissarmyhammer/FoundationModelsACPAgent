@@ -10,6 +10,22 @@ comments:
   id: 01m3z0n09cyp1na8bx5eek2t7m
   text: 'Upstream fixed (FoundationModelsACP ^jd4740x, main 4ccc130): runAll() takes and clears the closures in one lock; a closure added after runAll() started is DROPPED with a warning ("Connection: dropped work deferred for request <id>: ..."); if the connection closes while the handler runs, dispatchRequest calls discardAll() and releases the closures. insertUserMessage uses the same hooks: call it on the handler''s own task, not a child task. Our weak captures are now not necessary but harmless. Done when: the pin moves past 4ccc130 (with ^hkr6ykz) and AgentReleaseTests still passes; also check that no code of ours adds a response hook from a child task, because such work is now dropped.'
   timestamp: 2026-10-02T19:14:56.428152+00:00
+- actor: claude-code
+  id: 01m3z95d03deagk3ngj0r4gndv
+  text: |-
+    Check after the move of the pin to FoundationModelsACP e14d853 (done in the work of ^hkr6ykz).
+
+    Result: AgentReleaseTests passes. All three tests pass in the serial run (`swift test --no-parallel`), and the full suite passes with 721 tests in 81 suites.
+
+    No code of ours adds a response hook from a child task. Each call of `afterRespondingToCurrentRequest`, `afterRespondingInCurrentServiceContext` and `insertUserMessage` runs synchronously in the handler of a request:
+    - `SessionSetup.publishAvailableCommands`: in the `session/new` and `session/resume` handlers, through `activateSession`.
+    - `PromptExecution.scheduleModelPrompt`: `insertUserMessage` runs before the deferred work of the prompt is registered, in the `session/prompt` handler.
+    - `PromptExecution.endTelemetryAfterPrompt`: in the `session/prompt` handler.
+    - `CommandDispatch` `.action` case: `insertUserMessage` and then `afterRespondingInCurrentServiceContext`, in the `session/prompt` handler.
+    - `RequestTracing`: in the handler that it wraps.
+
+    Finding: the new history sink holds the agent and the connection weakly. Before, the sink of the terminal projection held the connection strongly, and that kept the agent alive. Now the agent of a test that does not close its session goes when the test ends. A session that mounts an MCP server then releases its `SurfaceRefresher` while the watch task runs, and the Multitool debug assertion stops the process (`SurfaceRefresher.swift:136`). `ScriptedPromptFixture.close()` now sends `session/close` for each session before it closes the wire. Production has the same gap: no upstream hook tells the agent that its connection closed, so a host that drops the connection without `session/close` gets the assertion in a debug build.
+  timestamp: 2026-10-02T21:43:42.339038+00:00
 position_column: todo
 position_ordinal: '8180'
 title: 'Report upstream: FoundationModelsACP ResponseHooks keeps each deferred closure after it ran, through the task-local that child tasks inherit'

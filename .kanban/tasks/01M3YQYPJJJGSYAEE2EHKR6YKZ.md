@@ -37,7 +37,60 @@ comments:
 
     The response-hook fix ^jd4740x (same hooks) is upstream's next task; our weak captures stay until then.
   timestamp: 2026-10-02T18:54:26.564564+00:00
-position_column: todo
+- actor: claude-code
+  id: 01m3z5k2frd4nqykk3j5my84a2
+  text: |-
+    Picked up. Research (FoundationModelsACP e14d853, Router c5ebd440):
+    - Only one compile error in the library at the new pin: `PromptResponse()` in PromptExecution.scheduleModelPrompt (CommandDispatch has the same call). FoundationModelsACPClient 108e2d6 builds against e14d853 (`swift build --target FoundationModelsACPClient` is green).
+    - The live user_message echo uses a new random id (`EventProjection.makeMessageId()`), and so do the live agent messages and thoughts. The resume replay (SessionReplay) uses the first segment id of each Router journal entry. Thus the live id and the replay id are different today, also in the same process.
+    - The journal replay cannot give the live ids: Router takes the prompt as a plain String and makes its own segment ids; no SessionEvent reports the prompt entry; `.entryRecorded` comes after the text deltas that already carried the live agent message id. Thus the ids must be journaled by the agent.
+    - Design chosen: one `SessionHistory` (a Mutex around `SessionMergeEngine`) for each session in `ActiveSession`. Each session/update that the agent sends for the session goes through it (the update sink of the prompt, the terminal stream, the command publisher, the config-option push), and the new/resume responses seed it. The prompt calls `insertUserMessage(_:into:)` on it. The agent writes the history as a JSON file in the session transcript directory (`<root>/<sessionId>/`, which session/delete removes) at the end of each prompt and at session/close. On resume the history comes from the table entry (same process), else from the file (new process), else from the Router journal (a session recorded before this change). The replay sends the history transcript, the usage and the session info; the response gives the fresh command list and config options.
+  timestamp: 2026-10-02T20:41:16.025+00:00
+- actor: claude-code
+  id: 01m3z70fzz4zw4632zr3n55avs
+  text: |-
+    Owner decision (relayed from the FoundationModelsACP session, 2026-10-02), which changes the resume design of this card:
+    1. A Router compaction (manual /compact or auto) changes only the model context. Do not remove or rewrite anything in the ACP history; earlier messages keep their IDs and content in the SessionMergeEngine.
+    2. The retained history for session/resume is the FULL engine transcript (`transcriptUpdates` / `stateUpdates`). Do not build the replay from the Router transcript or journal: after a fold it holds a summary in place of the original messages, and those have no ACP IDs.
+    Consequence: a resume in a new process must have the content of the engine. The agent persists the engine of each session and rebuilds it from that file on session/resume, then replays it. The simplest durable form that keeps the IDs is chosen and documented in plan.md. The replay path from the Router journal (SessionReplay) is replaced by the engine replay; the Router journal stays only for the restore of the model context.
+    Not in this card: compaction reporting (compaction_update / compaction_summary_chunk from the upstream unstable types); those types are not on main yet, and a separate card takes them.
+    Effect on the design of my first comment: the fallback "else from the Router journal" is removed. A session with no history file (an earlier build recorded it) replays no message.
+  timestamp: 2026-10-02T21:06:04.415863+00:00
+- actor: claude-code
+  id: 01m3z95qpbytmhqhf2vvvh8y95
+  text: |-
+    Implementation (step: implement). Not committed. The task stays in doing.
+
+    Design of the resume and the ids (the owner decision):
+    - Each `ActiveSession` has one `SessionMergeEngine` (`history`). Each `session/update` of the session goes into the engine first, then onto the wire (`historySink`, which holds the agent and the connection weakly). The `user_message` echo goes in through `insertUserMessage(_:messageId:into:)`, in the request handler. The new and resume responses seed the engine.
+    - The engine goes to `<transcript directory>/session-history.json` at the end of each prompt and at `session/close`.
+    - A resume takes the engine of the table entry, else reads the file, else uses an empty engine. There is no replay from the Router journal. The Router journal only restores the model context.
+    - The replay sends `transcriptUpdates + stateUpdates`. Each message keeps the id that the client saw live, also in a new process.
+    - An `available_commands_update` goes out only when the list differs from the list in the engine.
+    - plan.md §7.4, §8.1, §8.5, §11.6, §14.4, §17 and §20.1 tell the design.
+
+    Wire changes:
+    - `PromptResponse.messageId`: the model prompt and the slash commands. Our own echo is removed.
+    - `ToolCallUpdate.name` on the first update: the tool call, the settlement and the report.
+    - `availableCommands` in `NewSessionResponse` and `ResumeSessionResponse`.
+    - The extension stop reasons do not change.
+
+    Other changes:
+    - The deprecated `updates(for:)` is replaced by `subscribe(to:).updates` in RunPrompt, acp-print and the tier-3 support.
+    - `ScriptedPromptFixture.close()` now sends `session/close` for each session (see the comment on ^w93shct).
+    - `TierTwoTests.theToolPromptKeepsTheWireOrder` now reads the `{messageId}` acknowledgement and checks that the echo has the same id.
+    - `AgentMetricsTests` reads the gauge before the close.
+    - The bench comments now say `{messageId}`. The bench reads only the `result` object, so its code does not change.
+    - FoundationModelsACPClient 108e2d6 builds against e14d853. There is no blocker.
+
+    Evidence:
+    - `swift build -c release`: complete. The only warnings come from the C++ sources of the mlx-swift checkout.
+    - `swift test`: 721 tests in 81 suites pass.
+    - `swift build --package-path IntegrationTests --build-tests`: complete. The ignored `IntegrationTests/Package.resolved` was stale (FoundationModelsACP acf7700, Multitool c56729b). I aligned it with the root pins (e14d853, abe79da). The root `Package.resolved` does not change. The live tests were not run.
+
+    New tests: the prompt and slash-command responses name the echoed message; three `name` tests; the new and resume responses hold the command list; replay with the live ids; a new agent replays with the ids of the earlier agent; no retained history gives no replay; the history file round trip.
+  timestamp: 2026-10-02T21:43:53.291632+00:00
+position_column: doing
 position_ordinal: '80'
 title: 'Adopt ACP schema-v2.0.0-alpha.7: PromptResponse.messageId (required), ToolCallUpdate.name, availableCommands in new/resume, ID-stable replay'
 ---

@@ -19,7 +19,7 @@ now: one process for the run, and one session for each instance.
                            <----------  the version and the capabilities
     for each instance:
       session/new(cwd)     ---------->  open a session in the clone
-      session/prompt       ---------->  {} at once
+      session/prompt       ---------->  {messageId} at once
                            <----------  session/update ... (the whole turn)
                            <----------  session/update: idle, stopReason
       session/close        ---------->  free the tree of that instance
@@ -52,7 +52,7 @@ of THAT session.
 
 A SPEAKER OF ACP MUST BE FULL DUPLEX
 
-`session/prompt` answers `{}` at once, and the whole turn arrives after it as
+`session/prompt` answers `{messageId}` at once, and the whole turn arrives after it as
 `session/update` notifications on the same wire. A client written as
 "write one frame, then read one frame" stops for ever on the first
 notification. So every read of this module goes through one loop that serves
@@ -571,8 +571,8 @@ class Connection:
         """Read frames until the turn of one session goes idle.
 
         - session_id: the session of the turn.
-        - identifier: the id of the `session/prompt` request, whose `{}`
-          answer arrives on this same wire and in no fixed order.
+        - identifier: the id of the `session/prompt` request, whose
+          `{messageId}` answer arrives on this same wire and in no fixed order.
         - deadline: when to stop waiting, on the monotonic clock.
 
         Gives the stop reason of the turn.

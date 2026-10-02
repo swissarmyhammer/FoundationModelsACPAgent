@@ -104,7 +104,7 @@ enum RequestTracing {
     /// Opens the server span of one ACP request whose work goes on after its
     /// handler returns, and writes one "enter" log record.
     ///
-    /// A `session/prompt` returns `{}` at once, and its model work runs after
+    /// A `session/prompt` returns its response at once, and its model work runs after
     /// that response. Thus its span must stay open after the handler returns,
     /// and a closure helper such as `TracedCall.run` cannot hold it. The caller
     /// ends the span: with ``endRequestSpan(_:throwing:)`` when the request

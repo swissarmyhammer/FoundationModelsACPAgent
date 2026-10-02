@@ -10,8 +10,9 @@ import Testing
 
 /// The `session/resume` wire surface (plan.md §7.4, §8.3, §10.1): the cwd
 /// equality pre-check, the restore with freshly assembled instructions,
-/// the root-set replacement, the missing-tool report, and replay as
-/// whole-message upserts keyed by the recorded ids.
+/// the root-set replacement, the missing-tool report, the command list of
+/// the response, and replay of the retained history as whole-message
+/// upserts keyed by the ids that the client saw live.
 ///
 /// Every round trip records through a real routed session over
 /// ``ResumeStubBackend`` and resumes over the same wire the client
@@ -86,83 +87,16 @@ struct SessionResumeTests {
             .filter { $0.kind == .divergence }
     }
 
-    // MARK: - The repeated-part journal line
-
-    /// The file name of the journal in the directory of one session.
-    private static let journalFileName = "transcript.jsonl"
-
-    /// The content of a cut that keeps each entry whole, so the restored
-    /// render is the same as the recorded one.
-    private static let wholeRenderCutJSON = #"{"keptUTF8Lengths":{}}"#
-
-    /// The journal keys of a `.response` line that a `repeatedPartRemoval`
-    /// line does not carry.
-    private static let responseOnlyJournalKeys = ["tokensIn", "tokensOut", "ms"]
-
-    /// Puts one `repeatedPartRemoval` line in the journal of `sessionId`,
-    /// directly after its first `.response` line, as Router writes one
-    /// after the entries of a stopped attempt. The line takes the sequence
-    /// number and the time of that response, thus it stands between the
-    /// messages of the first prompt and the messages of the prompts after it.
-    ///
-    /// - Parameters:
-    ///   - root: The recording root that holds the session directory.
-    ///   - sessionId: The session whose journal gets the line.
-    /// - Throws: When the journal cannot be read or written, or holds no
-    ///   `.response` line.
-    private static func insertRepeatedPartRemoval(under root: URL, sessionId: SessionId) throws {
-        let journal = root.appendingPathComponent(sessionId.rawValue, isDirectory: true)
-            .appendingPathComponent(journalFileName)
-        var lines = try String(contentsOf: journal, encoding: .utf8)
-            .split(separator: "\n").map(String.init)
-        let responseIndex = try #require(
-            lines.firstIndex { journalKind(of: $0) == TranscriptEvent.Kind.response.rawValue })
-        lines.insert(
-            try repeatedPartRemovalLine(copying: lines[responseIndex]), at: responseIndex + 1)
-        try (lines.joined(separator: "\n") + "\n").write(to: journal, atomically: true, encoding: .utf8)
-    }
-
-    /// The `kind` of one journal line, or `nil` when the line is no JSON
-    /// object.
-    ///
-    /// - Parameter line: The journal line.
-    /// - Returns: The raw kind.
-    private static func journalKind(of line: String) -> String? {
-        let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
-        return object?["kind"] as? String
-    }
-
-    /// A `repeatedPartRemoval` journal line made from the identity fields of
-    /// `responseLine`, with the payload Router writes: one structure segment
-    /// that carries the cut.
-    ///
-    /// - Parameter responseLine: The `.response` line whose session, sequence
-    ///   number and time the new line takes.
-    /// - Returns: The new journal line.
-    /// - Throws: When `responseLine` is no JSON object, or an encode fails.
-    private static func repeatedPartRemovalLine(copying responseLine: String) throws -> String {
-        var fields = try #require(
-            JSONSerialization.jsonObject(with: Data(responseLine.utf8)) as? [String: Any])
-        let segment = SegmentPayload.structure(
-            id: UUID().uuidString, schemaName: ResumeSessionFixture.repeatedPartRemovalSchemaName,
-            contentJSON: wholeRenderCutJSON)
-        let segmentObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(segment))
-        for key in responseOnlyJournalKeys {
-            fields.removeValue(forKey: key)
-        }
-        fields["kind"] = TranscriptEvent.Kind.repeatedPartRemoval.rawValue
-        fields["text"] = ResumeSessionFixture.repeatedPartRemovalText
-        fields["entry"] = ["entryId": UUID().uuidString, "segments": [segmentObject]]
-        let data = try JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys])
-        return String(decoding: data, as: UTF8.self)
-    }
-
     /// A `cwd` string that is not absolute, so the agent must refuse it.
     private static let relativeCwd = "relative/resume"
 
     /// An `additionalDirectories` entry that is not absolute, so the
     /// agent must refuse it too.
     private static let relativeAdditionalDirectory = "relative/extra"
+
+    /// The name of the builtin `/help` command, which each command list
+    /// holds.
+    private static let builtinHelpCommandName = "help"
 
     // MARK: - The absolute-cwd rule (plan.md §7.1, §7.4)
 
@@ -308,22 +242,25 @@ struct SessionResumeTests {
 
     // MARK: - Replay as whole-message upserts (plan.md §7.4, §8.3)
 
+    /// The replay sends the retained history of the session: each message
+    /// that the client saw live, as one whole-message upsert with the id it
+    /// had live (ACP schema-v2.0.0-alpha.7). The user message keeps the id
+    /// that the prompt response named.
     @Test(.timeLimit(.minutes(1)))
-    func replayFromStartSendsWholeMessageUpsertsWithTheRecordedIds() async throws {
+    func replayFromStartSendsWholeMessageUpsertsWithTheLiveIds() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-replay")
-        try await resume.runPrompt("first question")
-        try await resume.runPrompt("second question")
-        let root = try resume.recordingRoot
-        try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 2)
+        let firstPrompt = try await resume.runPrompt("first question")
+        let secondPrompt = try await resume.runPrompt("second question")
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-        let expected = ReplayedMessage.expected(
-            from: try ResumeSessionFixture.recordedEvents(
-                under: root, sessionId: resume.fixture.sessionId))
+        let expected = ReplayedMessage.live(in: await resume.fixture.collector.updates.map(\.update))
         #expect(expected.count == 6)
-        #expect(expected.map(\.kind).prefix(3) == [.user, .thought, .agent])
+        // The stub streams the reply of a pass before its reasoning.
+        #expect(expected.map(\.kind).prefix(3) == [.user, .agent, .thought])
         #expect(expected.first?.text == "first question")
+        #expect(
+            expected.filter { $0.kind == .user }.map(\.id)
+                == [firstPrompt.messageId.rawValue, secondPrompt.messageId.rawValue])
 
         let countBefore = await resume.fixture.collector.updates.count
         let response = try await resume.fixture.harness.connection.resumeSession(
@@ -347,35 +284,70 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    /// A journal that holds a `repeatedPartRemoval` line replays no message
-    /// for that line, and replays each recorded message around it. The line
-    /// is Router's record of a cut in its own render after a repetition
-    /// stop: bookkeeping, not a message.
+    /// A new agent over the same project resumes a session that an earlier
+    /// agent ran, and replays each message with the id that the earlier
+    /// agent gave it. The earlier agent wrote the retained history beside
+    /// the transcript, so the ids do not come from the Router journal.
     @Test(.timeLimit(.minutes(1)))
-    func replaySendsNoMessageForARepeatedPartRemovalLine() async throws {
-        var resume = try await ResumeSessionFixture.make(
-            label: "SessionResumeTests-repeated-part")
-        try await resume.runPrompt("first question")
-        try await resume.runPrompt("second question")
-        let root = try resume.recordingRoot
-        try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 2)
-        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
-        let expected = ReplayedMessage.expected(
-            from: try ResumeSessionFixture.recordedEvents(
-                under: root, sessionId: resume.fixture.sessionId))
-        try Self.insertRepeatedPartRemoval(under: root, sessionId: resume.fixture.sessionId)
+    func aNewAgentReplaysTheMessagesWithTheIdsOfTheEarlierAgent() async throws {
+        var first = try await ResumeSessionFixture.make(label: "SessionResumeTests-new-agent")
+        try await first.runPrompt("first question")
+        try await first.runPrompt("second question")
+        let expected = ReplayedMessage.live(in: await first.fixture.collector.updates.map(\.update))
+        _ = try await first.fixture.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: first.fixture.sessionId))
+        await first.fixture.close()
+
+        let second = try await ResumeSessionFixture.make(
+            label: "SessionResumeTests-new-agent-second", workingDirectory: first.fixture.cwd)
+        let countBefore = await second.fixture.collector.updates.count
+        _ = try await second.fixture.harness.connection.resumeSession(
+            first.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+        let replayUpdates = Array(await second.fixture.collector.updates.dropFirst(countBefore))
+            .map(\.update)
+
+        #expect(expected.count == 6)
+        #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
+        await second.fixture.close()
+    }
+
+    /// A session that has no retained history (an earlier build recorded
+    /// it: a Router journal and no history file) replays no message. The
+    /// Router journal serves only the restore of the model context: its
+    /// messages have no ACP ids, and after a compaction it holds a summary
+    /// in place of the messages that it folded.
+    @Test(.timeLimit(.minutes(1)))
+    func aSessionWithNoRetainedHistoryReplaysNoMessage() async throws {
+        let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-no-history")
+        let recordedId = try await resume.recordSessionOutsideTheAgent(prompts: ["first question"])
         let recorded = try ResumeSessionFixture.recordedEvents(
-            under: root, sessionId: resume.fixture.sessionId)
-        #expect(recorded.contains { $0.kind == .repeatedPartRemoval })
+            under: try resume.recordingRoot, sessionId: recordedId)
+        #expect(recorded.contains { $0.kind == .prompt })
 
         let countBefore = await resume.fixture.collector.updates.count
         _ = try await resume.fixture.harness.connection.resumeSession(
-            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+            ResumeSessionRequest(
+                cwd: AbsolutePath(rawValue: resume.fixture.cwd.path), sessionId: recordedId,
+                replayFrom: .start(ReplayFromStart())))
         let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
             .map(\.update)
 
-        #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
+        #expect(ReplayedMessage.replayed(in: replayUpdates).isEmpty)
+        await resume.fixture.close()
+    }
+
+    /// The resume response holds the command list of the resumed session
+    /// (ACP schema-v2.0.0-alpha.7), as the `session/new` response does.
+    @Test(.timeLimit(.minutes(1)))
+    func theResumeResponseHoldsTheCommandList() async throws {
+        var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-commands")
+        try await resume.runPrompt("one prompt before the resume")
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        let response = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest())
+
+        #expect((response.availableCommands ?? []).map(\.name).contains(Self.builtinHelpCommandName))
         await resume.fixture.close()
     }
 

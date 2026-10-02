@@ -1,14 +1,13 @@
 import FoundationModelsACP
-import FoundationModelsRouter
 
 // MARK: - The replay readers (plan.md §7.4, §8.3)
 //
-// A `session/resume` with `replayFrom` sends each recorded message as one
-// whole-message upsert. `SessionResumeTests` and `PromptExecutionTests`
-// compare those upserts with the recorded events, so the two readers live
-// here, one time.
+// A `session/resume` with `replayFrom` sends each kept message as one
+// whole-message upsert. `SessionResumeTests`, `PromptExecutionTests` and
+// `SessionHistoryTests` compare those upserts with the live messages, so
+// the readers live here, one time.
 
-/// One replayed message, as both the recording and the wire show it.
+/// One replayed message, as both the live stream and the replay show it.
 struct ReplayedMessage: Equatable {
     /// Which whole-message form carried it.
     let kind: Kind
@@ -29,34 +28,6 @@ struct ReplayedMessage: Equatable {
 
         /// An `agent_thought` upsert.
         case thought
-    }
-
-    /// The messages replay is expected to send for `events`: one row per
-    /// recorded `.prompt`, `.reasoning`, and `.response` event, keyed by
-    /// the recorded first segment id.
-    ///
-    /// - Parameter events: The session's recorded events, in order.
-    /// - Returns: The expected messages, in order.
-    static func expected(from events: [TranscriptEvent]) -> [ReplayedMessage] {
-        events.compactMap { event in
-            let kind: Kind
-            switch event.kind {
-            case .prompt:
-                kind = .user
-            case .reasoning:
-                kind = .thought
-            case .response:
-                kind = .agent
-            default:
-                return nil
-            }
-            guard let segments = event.entry?.segments,
-                case .text(let id, let content) = segments.first
-            else {
-                return nil
-            }
-            return ReplayedMessage(kind: kind, id: id, text: content)
-        }
     }
 
     /// The whole-message upserts in a raw update sequence.
@@ -81,6 +52,47 @@ struct ReplayedMessage: Equatable {
         }
     }
 
+    /// The messages that a live update sequence carries: one row for each
+    /// message, in the order of first appearance. The chunks of one message
+    /// join into one text, and a whole-message update replaces the text.
+    /// A replay that keeps the live ids sends these messages.
+    ///
+    /// - Parameter updates: The live raw updates.
+    /// - Returns: The messages, in the order of first appearance.
+    static func live(in updates: [SessionUpdate]) -> [ReplayedMessage] {
+        updates.compactMap(livePiece(of:)).reduce(into: []) { messages, piece in
+            let message = piece.message
+            guard let index = messages.firstIndex(where: { $0.kind == message.kind && $0.id == message.id })
+            else {
+                messages.append(message)
+                return
+            }
+            let text = piece.replaces ? message.text : messages[index].text + message.text
+            messages[index] = ReplayedMessage(kind: message.kind, id: message.id, text: text)
+        }
+    }
+
+    /// The part of one message that one live update carries, or `nil` for
+    /// an update that carries no message.
+    ///
+    /// - Parameter update: The live update.
+    /// - Returns: The message part, and whether it replaces the text that
+    ///   came before (a whole-message update) or adds to it (a chunk).
+    private static func livePiece(of update: SessionUpdate) -> (message: ReplayedMessage, replaces: Bool)? {
+        switch update {
+        case .userMessageChunk(let chunk):
+            return (ReplayedMessage(kind: .user, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false)
+        case .agentMessageChunk(let chunk):
+            return (ReplayedMessage(kind: .agent, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false)
+        case .agentThoughtChunk(let chunk):
+            return (
+                ReplayedMessage(kind: .thought, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false
+            )
+        default:
+            return replayed(in: [update]).first.map { ($0, true) }
+        }
+    }
+
     /// The joined text of a whole-message content patch.
     ///
     /// - Parameter content: The message's content patch.
@@ -89,11 +101,17 @@ struct ReplayedMessage: Equatable {
         guard case .value(let blocks)? = content else {
             return ""
         }
-        return blocks.compactMap { block in
-            if case .text(let text) = block {
-                return text.text
-            }
-            return nil
-        }.joined()
+        return blocks.map(text(of:)).joined()
+    }
+
+    /// The text of one content block.
+    ///
+    /// - Parameter block: The content block.
+    /// - Returns: The text of a text block; empty for every other block.
+    private static func text(of block: ContentBlock) -> String {
+        guard case .text(let text) = block else {
+            return ""
+        }
+        return text.text
     }
 }

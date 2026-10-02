@@ -244,7 +244,9 @@ extension RoutedACPAgent {
 
     /// Records the option state the client last saw, so the divergence
     /// check compares against the true announced baseline. `session/new`
-    /// and `session/set_config_option` record what they answered.
+    /// and `session/set_config_option` record what they answered. The
+    /// retained history of the session keeps the same state, so a resume
+    /// replays the options that the client saw.
     ///
     /// - Parameters:
     ///   - options: The complete state that was announced.
@@ -253,6 +255,7 @@ extension RoutedACPAgent {
         _ options: [SessionConfigOption], for sessionId: SessionId
     ) {
         sessions[sessionId]?.announcedConfigOptions = options
+        recordInHistory(.configOptionUpdate(ConfigOptionUpdate(configOptions: options)), of: sessionId)
     }
 
     /// Pushes one `config_option_update` when the announced state

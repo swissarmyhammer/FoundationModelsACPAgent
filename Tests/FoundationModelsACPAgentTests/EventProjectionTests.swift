@@ -306,6 +306,43 @@ import Testing
         #expect(texts(in: completion.content) == ["done", "file text"])
     }
 
+    /// The creating update of an SDK tool call names the tool for a program
+    /// (ACP schema-v2.0.0-alpha.7 `ToolCallUpdate.name`), beside the title
+    /// for a person. The later updates leave the name unchanged.
+    @Test func theCreatingToolCallUpdateNamesTheTool() async throws {
+        let updates = await Self.drive([
+            .toolCall(
+                id: Self.sdkToolCallId, name: Self.scriptedToolName,
+                argumentsJSON: Self.scriptedArgumentsJSON),
+            .toolStatus(id: Self.sdkToolCallId, status: .completed, summary: "done", output: nil),
+        ])
+        let calls = toolCallUpdates(in: updates)
+
+        #expect(calls.map(\.name) == [.value(Self.scriptedToolName), .unchanged])
+    }
+
+    /// A run settlement can create the wire call of a run, so it names the
+    /// tool that posted the run.
+    @Test func aRunSettlementNamesTheToolOfTheRun() async throws {
+        let event = Self.makeOperationEvent(outcome: .succeeded)
+        let updates = await Self.drive([.runSettled(event)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        #expect(call.name == .value(event.tool))
+    }
+
+    /// An attachment report can create the wire call of a run, so it names
+    /// the tool of the call.
+    @Test func aToolCallReportNamesTheToolOfTheCall() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON)
+        ])
+        let updates = await Self.drive([.toolCallReport(report)])
+        let call = try #require(toolCallUpdates(in: updates).first)
+
+        #expect(call.name == .value(Self.reportedToolName))
+    }
+
     /// A failed tool status reports `failed`.
     @Test func aFailedToolStatusReportsFailed() async throws {
         let updates = await Self.drive([

@@ -99,9 +99,6 @@ enum CommandDispatch {
 /// text streams as agent-message chunks. There is no model prompt, and
 /// there are no transcript entries beyond what the action records.
 struct ActionCommandExecution: Sendable {
-    /// The prompt's content blocks, echoed as the `user_message`.
-    let promptBlocks: [ContentBlock]
-
     /// The prompt-state owner of the session.
     let promptState: PromptStateOwner
 
@@ -114,14 +111,11 @@ struct ActionCommandExecution: Sendable {
     /// The invocation the action runs with.
     let invocation: SlashCommand.Invocation
 
-    /// Runs the prompt: the echo, `running`, the streamed chunks, and one
-    /// `idle` with the stop reason. A stream error is classified the
-    /// same way a model prompt's error is (plan.md §8.2).
+    /// Runs the prompt: `running`, the streamed chunks, and one `idle` with
+    /// the stop reason. The `user_message` echo went out before this work.
+    /// A stream error is classified the same way a model prompt's error is
+    /// (plan.md §8.2).
     func run() async {
-        await send(
-            .userMessage(
-                UserMessage(
-                    messageId: EventProjection.makeMessageId(), content: .value(promptBlocks))))
         await promptState.promptDidStart()
         let messageId = EventProjection.makeMessageId()
         var stop = PromptStop.completed
@@ -224,9 +218,11 @@ extension RoutedACPAgent {
     /// and, for a registered command, its ``CommandKind``. It never carries
     /// the argument text or the expanded text. A refusal gives the span the
     /// error status and the type of the error, never the description of the
-    /// error. The work after the `{}` response is scheduled after the
-    /// span ends, in the context of the prompt span, so each Router
-    /// submission span of the prompt stays a child of the prompt span.
+    /// error. The work after the response is scheduled after the span ends,
+    /// in the context of the prompt span, so each Router submission span of
+    /// the prompt stays a child of the prompt span. A command prompt names
+    /// its user message as a plain prompt does (ACP schema-v2.0.0-alpha.7):
+    /// the echo of the command text goes out first, after the response.
     ///
     /// The dispatch also adds one to the `commands` counter
     /// (``AgentMetrics``), with the kind of the command and the outcome: `ok`,
@@ -238,7 +234,7 @@ extension RoutedACPAgent {
     ///   - params: The prompt request the command arrived in.
     ///   - entry: The session's table entry.
     ///   - connection: The bound connection to notify through.
-    /// - Returns: The empty acceptance.
+    /// - Returns: The response that names the user message.
     /// - Throws: `unknownCommand`, `actionCommandAttachments`, or
     ///   `commandExpansionFailed`.
     func dispatchCommand(
@@ -269,11 +265,12 @@ extension RoutedACPAgent {
         switch work {
         case .action(let execution):
             let sessionId = params.sessionId
+            let messageId = insertUserMessage(params, through: connection)
             connection.afterRespondingInCurrentServiceContext {
                 await execution.run()
                 await self.promptFinished(sessionId: sessionId)
             }
-            return PromptResponse()
+            return PromptResponse(messageId: messageId)
         case .modelPrompt(let text, let owner, let send):
             return scheduleModelPrompt(
                 overridePrompt: text,
@@ -282,7 +279,7 @@ extension RoutedACPAgent {
     }
 
     /// Resolves one registered command into the work that runs after the
-    /// `{}` response: the refusal checks, the template expansion or the
+    /// response: the refusal checks, the template expansion or the
     /// render, and the busy mark of the session.
     ///
     /// - Parameters:
@@ -308,7 +305,6 @@ extension RoutedACPAgent {
             let (owner, send) = beginPrompt(params: params, connection: connection)
             return .action(
                 ActionCommandExecution(
-                    promptBlocks: params.prompt,
                     promptState: owner,
                     send: send,
                     action: action,
@@ -347,8 +343,8 @@ extension RoutedACPAgent {
     }
 }
 
-/// The work of one resolved command prompt: what runs after the `{}`
-/// response. The session is already busy for it.
+/// The work of one resolved command prompt: what runs after the response.
+/// The session is already busy for it.
 private enum CommandWork: Sendable {
     /// An `.action` command: its closure streams the text, with no model
     /// call.

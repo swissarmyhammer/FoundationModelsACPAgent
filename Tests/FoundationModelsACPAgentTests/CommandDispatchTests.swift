@@ -30,6 +30,9 @@ struct CommandDispatchTests {
         /// The session working directory.
         let cwd: URL
 
+        /// The command names that the `session/new` response announced.
+        let announcedCommandNames: [String]
+
         /// Closes the harness wire.
         func close() async {
             await harness.close()
@@ -68,7 +71,8 @@ struct CommandDispatchTests {
                 NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
             let collector = try #require(harness.collector)
             return Fixture(
-                harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd)
+                harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd,
+                announcedCommandNames: (response.availableCommands ?? []).map(\.name))
         }
     }
 
@@ -236,22 +240,41 @@ struct CommandDispatchTests {
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
+    /// The response to a slash command names the user message of the
+    /// command (ACP schema-v2.0.0-alpha.7): its `messageId` is the id of the
+    /// one `user_message` echo that reaches the client.
+    @Test(.timeLimit(.minutes(1)))
+    func aSlashCommandResponseNamesTheEchoedUserMessage() async throws {
+        let fixture = try await Fixture.make(
+            label: "CommandDispatchTests-message-id",
+            providers: [
+                StubCommandProvider(commandSet: [
+                    makeActionCommand(name: "act", output: "ACTION OUTPUT")
+                ])
+            ])
+        defer { Task { await fixture.close() } }
+
+        let response = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+
+        let echoIds = updates.compactMap { userMessageEcho(of: $0.update)?.messageId }
+        #expect(echoIds == [response.messageId])
+    }
+
     // MARK: - The ACP surface (plan.md §14.4)
 
-    /// The collector receives `available_commands_update` after
-    /// `session/new`, and again after a skill file changes on disk.
+    /// The `session/new` response holds the first command list (ACP
+    /// schema-v2.0.0-alpha.7), so no `available_commands_update` repeats
+    /// it. A skill file that changes on disk then publishes the new list.
     @Test(.timeLimit(.minutes(1)))
-    func availableCommandsPublishAtSessionStartAndOnASkillChange() async throws {
+    func theNewSessionResponseHoldsTheCommandListAndASkillChangePublishesTheNext() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-publish",
             skillFiles: ["greet": greetSkillMarkdown])
         defer { Task { await fixture.close() } }
 
-        _ = try await ScriptedPromptFixture.waitForUpdates(
-            of: fixture.collector, toReach: "the session-start publication"
-        ) { updates in
-            updates.contains { Self.commandNames(in: $0)?.contains("greet") == true }
-        }
+        #expect(fixture.announcedCommandNames.contains("greet"))
 
         // A new skill file on the watched root republishes the set.
         try writeSkillFixture(
@@ -264,10 +287,14 @@ struct CommandDispatchTests {
                 Goodbye.
                 """,
             under: fixture.cwd.appendingPathComponent(".skills", isDirectory: true))
-        _ = try await ScriptedPromptFixture.waitForUpdates(
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
             of: fixture.collector, toReach: "the watched republication"
         ) { updates in
             updates.contains { Self.commandNames(in: $0)?.contains("farewell") == true }
         }
+        // The first publication is the new list: none repeated the list of
+        // the response.
+        let publications = updates.compactMap(Self.commandNames(in:))
+        #expect(publications.first?.contains("farewell") == true)
     }
 }

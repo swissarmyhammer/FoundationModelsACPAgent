@@ -114,9 +114,9 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
         let cwd = AbsolutePath(rawValue: FileManager.default.currentDirectoryPath)
         let session = try await connection.newSession(NewSessionRequest(cwd: cwd))
 
-        // Subscribe before the prompt: an update with no subscriber is
-        // dropped by the connection's router.
-        let updates = connection.updates(for: session.sessionId)
+        // Subscribe before the prompt, so the stream holds each update of
+        // the prompt in order.
+        let updates = connection.subscribe(to: session.sessionId).updates
         let answer = Task { await streamAnswer(from: updates) }
         do {
             _ = try await connection.prompt(

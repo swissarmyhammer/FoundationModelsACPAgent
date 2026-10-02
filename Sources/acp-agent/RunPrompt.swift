@@ -168,9 +168,9 @@ enum RunPrompt {
         terminatedBy terminate: TerminationHandler.Installer
     ) async throws -> RunPromptResult {
         let sessionId = try await open(session, over: connection)
-        // Subscribe before the prompt: an update with no subscriber is
-        // dropped by the connection's router.
-        let updates = connection.updates(for: sessionId)
+        // Subscribe before the prompt, so the stream holds each update of
+        // the prompt in order.
+        let updates = connection.subscribe(to: sessionId).updates
         let collector = Task {
             try await collect(from: updates, into: writer, reporting: events)
         }

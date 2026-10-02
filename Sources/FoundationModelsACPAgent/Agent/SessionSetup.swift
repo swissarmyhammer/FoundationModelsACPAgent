@@ -103,6 +103,14 @@ struct ActiveSession: Sendable {
     /// writes it, deferred from `session/new` by §9's zero-prompt rule.
     var indexRecorded = false
 
+    /// The retained history of the session (plan.md §7.4, §8.3): each
+    /// `session/update` that the agent sent for the session, merged, with
+    /// its id. The `session/new` or `session/resume` response seeds it. A
+    /// compaction changes only the model context, never this history.
+    /// `session/resume` replays it, and ``SessionHistoryFile`` keeps it on
+    /// disk for a new process.
+    var history = SessionMergeEngine()
+
     /// Whether the session can accept a new prompt. Derived, so the
     /// stored prompt reference stays the one source of the busy state.
     var availability: SessionAvailability {
@@ -110,6 +118,24 @@ struct ActiveSession: Sendable {
             return .closed
         }
         return activePrompt == nil ? .idle : .busy
+    }
+
+    /// Inserts the prompt of `request` as the user message of the session:
+    /// the history gets the `user_message` echo at once, and the connection
+    /// sends the echo after the response to the current request.
+    ///
+    /// Call it in the handler of the `session/prompt` request, after each
+    /// check that can refuse the prompt and before the prompt defers its
+    /// work, so the echo goes out first.
+    ///
+    /// - Parameters:
+    ///   - request: The prompt request.
+    ///   - connection: The connection that sends the echo.
+    /// - Returns: The id of the user message, for the prompt response.
+    mutating func insertUserMessage(
+        _ request: PromptRequest, through connection: AgentSideConnection
+    ) -> MessageId {
+        connection.insertUserMessage(request, into: &history)
     }
 }
 
@@ -292,6 +318,21 @@ struct SessionComposition {
     let transcriptRoot: URL
 }
 
+/// What one mount of a session announces in the `session/new` or
+/// `session/resume` response (ACP schema-v2.0.0-alpha.7): the session id,
+/// the first command list, and the first config-option list. A later
+/// `available_commands_update` or `config_option_update` replaces a list.
+struct SessionActivation {
+    /// The ACP session id: the root Router session's ULID.
+    let sessionId: SessionId
+
+    /// The merged command set of the session registry, as the wire list.
+    let availableCommands: [AvailableCommand]
+
+    /// The config-option list (plan.md §15).
+    let configOptions: [SessionConfigOption]
+}
+
 extension RoutedACPAgent {
     /// Creates one root Router session for `params.cwd` (plan.md §7.1).
     ///
@@ -309,8 +350,8 @@ extension RoutedACPAgent {
     /// - Parameter params: The request: the absolute `cwd`, the ordered
     ///   `additionalDirectories`, and the client's session-scoped
     ///   `mcpServers` (§7.2, §7.3).
-    /// - Returns: The response carrying the new sessionId and the
-    ///   `configOptions` list.
+    /// - Returns: The response carrying the new sessionId, the
+    ///   `availableCommands` list and the `configOptions` list.
     /// - Throws: The order rule's invalid-request error,
     ///   `RequestError.invalidParams` for a relative cwd, or whatever the
     ///   composition pipeline throws.
@@ -329,8 +370,8 @@ extension RoutedACPAgent {
     /// ``newSession(_:)``.
     ///
     /// - Parameter params: The `session/new` request.
-    /// - Returns: The response carrying the new sessionId and the
-    ///   `configOptions` list.
+    /// - Returns: The response carrying the new sessionId, the
+    ///   `availableCommands` list and the `configOptions` list.
     /// - Throws: The errors that ``newSession(_:)`` names.
     private func createSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
         try requireInitialized(before: ACPMethod.sessionNew)
@@ -369,16 +410,21 @@ extension RoutedACPAgent {
             composition: composition,
             workingDirectory: workingDirectory,
             additionalRoots: additionalRoots,
-            indexRecorded: false)
+            indexRecorded: false,
+            history: SessionMergeEngine())
 
-        return NewSessionResponse(
-            sessionId: activation.sessionId, configOptions: activation.configOptions)
+        let response = NewSessionResponse(
+            sessionId: activation.sessionId,
+            availableCommands: activation.availableCommands,
+            configOptions: activation.configOptions)
+        sessions[activation.sessionId]?.history.seed(from: response)
+        return response
     }
 
     /// Mounts one made or restored Router session into the agent (plan.md
     /// §7.1, §7.4): the project-registry record, the command registry with
-    /// its bound builtin context, the table entry, the command-set
-    /// publication, and the terminal projection.
+    /// its bound builtin context, the table entry with its retained
+    /// history, the command-set publication, and the terminal projection.
     ///
     /// - Parameters:
     ///   - session: The root Router session to mount.
@@ -388,15 +434,19 @@ extension RoutedACPAgent {
     ///     in wire order.
     ///   - indexRecorded: Whether the `sessions.jsonl` record already
     ///     exists, so the first prompt knows whether to append it (§9).
-    /// - Returns: The session id and the announced `configOptions` list.
+    ///   - history: The retained history of the session: empty for a new
+    ///     session, the kept history for a resumed one.
+    /// - Returns: The session id, and the command list and the
+    ///   config-option list that the response announces.
     /// - Throws: Whatever the project-registry record throws.
     func activateSession(
         _ session: any RoutedSession,
         composition: SessionComposition,
         workingDirectory: URL,
         additionalRoots: [URL],
-        indexRecorded: Bool
-    ) async throws -> (sessionId: SessionId, configOptions: [SessionConfigOption]) {
+        indexRecorded: Bool,
+        history: SessionMergeEngine
+    ) async throws -> SessionActivation {
         // Register the cwd (plan.md §4.5).
         try ProjectRegistry(directory: composition.userLayerRoot)
             .recordSessionStart(workingDirectory: workingDirectory)
@@ -449,22 +499,27 @@ extension RoutedACPAgent {
             announcedConfigOptions: configOptions,
             activePrompt: nil,
             activeElicitationRelay: nil,
-            indexRecorded: indexRecorded)
+            indexRecorded: indexRecorded,
+            history: history)
         recordActiveSessions()
 
-        // The command set publishes after the response, and again on
-        // every registry change (plan.md §14.4).
+        // The response announces the first command list, and each registry
+        // change after it publishes the new list (plan.md §14.4).
         publishAvailableCommands(from: commands, sessionId: sessionId)
 
         startTerminalProjection(over: composition.surface, sessionId: sessionId)
 
-        return (sessionId, configOptions)
+        return SessionActivation(
+            sessionId: sessionId,
+            availableCommands: CommandRegistry.availableCommands(for: await commands.commands),
+            configOptions: configOptions)
     }
 
     /// Starts the session's terminal projection (plan.md §11.8): the
     /// one consumer loop over the host-owned shell output stream,
-    /// posting each terminal update through the bound connection. A
-    /// session with no shell mount, or an agent with no bound
+    /// posting each terminal update through the bound connection and
+    /// keeping it in the retained history (``historySink(for:connection:)``).
+    /// A session with no shell mount, or an agent with no bound
     /// connection, starts nothing. The loop ends when
     /// ``markSessionClosed(_:)`` finishes the stream.
     ///
@@ -475,9 +530,7 @@ extension RoutedACPAgent {
         guard let shellOutput = surface.shellOutput, let connection = boundConnection else {
             return
         }
-        TerminalStream.start(over: shellOutput) { update in
-            await connection.post(update, in: sessionId)
-        }
+        TerminalStream.start(over: shellOutput, send: historySink(for: sessionId, connection: connection))
     }
 
     /// Resolves the per-cwd configuration one session request starts from
@@ -599,24 +652,25 @@ extension RoutedACPAgent {
         return providers
     }
 
-    /// Publishes the session's command set at session start and on
-    /// every registry change (plan.md §14.4): the initial publication
-    /// goes out after the `session/new` response, and each provider
-    /// update republishes through the same sink.
+    /// Publishes each change of the session's command set (plan.md §14.4):
+    /// the `session/new` or `session/resume` response announces the first
+    /// list (ACP schema-v2.0.0-alpha.7), and the registry starts to publish
+    /// after that response. A publication sends an
+    /// `available_commands_update` only when its list differs from the
+    /// list that the client has (``publishCommandList(_:of:through:)``),
+    /// so no update repeats the list of the response.
     ///
-    /// The two closures keep the connection and the registry weakly, as
-    /// the agent keeps the connection (task `^173qn8n`):
+    /// The closures keep the agent, the connection and the registry weakly,
+    /// as the agent keeps the connection (task `^173qn8n`):
     ///
     /// - The registry keeps the sink for the life of the session entry. A
     ///   strong reference to the connection would keep the connection, and
     ///   through it the agent and its models, after the connection closed.
-    /// - The connection keeps the deferred work in the response hooks of
-    ///   the request, a task-local value. Each task that the request
-    ///   handler starts gets a copy of that value, and the skills watcher
-    ///   that `session/new` starts lives on. Thus the deferred work lives
-    ///   on after it ran. A strong reference to the registry would keep the
-    ///   registry, its builtins, the session they read and the models of
-    ///   the profile.
+    /// - Upstream, the connection releases the deferred work after it ran.
+    ///   The skills watcher that `session/new` starts lives on, so a strong
+    ///   reference to the registry would still keep the registry, its
+    ///   builtins, the session they read and the models of the profile for
+    ///   as long as the publisher lives.
     ///
     /// The session entry keeps the registry for as long as it publishes.
     ///
@@ -625,15 +679,33 @@ extension RoutedACPAgent {
     ///   - sessionId: The session the updates belong to.
     func publishAvailableCommands(from commands: CommandRegistry, sessionId: SessionId) {
         guard let connection = boundConnection else { return }
-        connection.afterRespondingToCurrentRequest { [weak connection, weak commands] in
-            await commands?.beginPublishing { [weak connection] commandSet in
-                await connection?.post(
-                    .availableCommandsUpdate(
-                        AvailableCommandsUpdate(
-                            availableCommands: CommandRegistry.availableCommands(for: commandSet))),
-                    in: sessionId)
+        connection.afterRespondingToCurrentRequest { [weak self, weak connection, weak commands] in
+            await commands?.beginPublishing { [weak self, weak connection] commandSet in
+                guard let connection else { return }
+                await self?.publishCommandList(
+                    CommandRegistry.availableCommands(for: commandSet), of: sessionId, through: connection)
             }
         }
+    }
+
+    /// Sends one `available_commands_update` with `list`, and keeps it in
+    /// the retained history, when `list` differs from the list that the
+    /// client has. The history holds that list: the response seeded it,
+    /// and each update after the response changed it.
+    ///
+    /// - Parameters:
+    ///   - list: The new command list.
+    ///   - sessionId: The session the list belongs to.
+    ///   - connection: The bound connection that sends the update.
+    private func publishCommandList(
+        _ list: [AvailableCommand], of sessionId: SessionId, through connection: AgentSideConnection
+    ) async {
+        guard let entry = sessions[sessionId], entry.history.availableCommands != list else {
+            return
+        }
+        let update = SessionUpdate.availableCommandsUpdate(AvailableCommandsUpdate(availableCommands: list))
+        recordInHistory(update, of: sessionId)
+        await connection.post(update, in: sessionId)
     }
 }
 

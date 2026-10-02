@@ -59,9 +59,9 @@ struct SpawnedAgentPromptDrive {
         let initialized = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
         let session = try await connection.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-        // Subscribe before the prompt: the router drops an update that has no
-        // subscriber.
-        let updates = connection.updates(for: session.sessionId)
+        // Subscribe before the prompt, so the stream holds each update of
+        // the prompt in order.
+        let updates = connection.subscribe(to: session.sessionId).updates
         _ = try await connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))
         let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)

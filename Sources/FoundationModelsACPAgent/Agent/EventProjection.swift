@@ -444,14 +444,15 @@ struct EventProjection {
 
     /// Sends the creating `tool_call_update`: v2 has no create
     /// variant, so the first update with an unseen `toolCallId` is the
-    /// creation. It carries the title and says `in_progress` — the
-    /// call already runs, and `pending` is the default a creating
-    /// update must not leave in place.
+    /// creation. It carries the tool name twice: as the `name` for a
+    /// program (ACP schema-v2.0.0-alpha.7), and as the title for a
+    /// person. It says `in_progress` — the call already runs, and
+    /// `pending` is the default a creating update must not leave in place.
     ///
     /// - Parameters:
     ///   - id: Apple's `Transcript.ToolCall.id`, passed through
     ///     unchanged.
-    ///   - name: The tool name; the creation's title.
+    ///   - name: The tool name; the creation's name and title.
     ///   - argumentsJSON: The call's arguments, the structured
     ///     per-call record `rawInput` parses from.
     private func projectToolCall(id: String, name: String, argumentsJSON: String) async {
@@ -469,6 +470,7 @@ struct EventProjection {
             .toolCallUpdate(
                 ToolCallUpdate(
                     toolCallId: ToolCallId(rawValue: id),
+                    name: .value(name),
                     rawInput: rawInput,
                     status: .value(.inProgress),
                     title: .value(name))))
@@ -542,7 +544,9 @@ struct EventProjection {
 
     // MARK: - The settlement (§8.4, §11.6)
 
-    /// Sends the terminal `tool_call_update` of a settled run.
+    /// Sends the terminal `tool_call_update` of a settled run. The `op`
+    /// rides as the title and the tool as the `name`, because a settlement
+    /// can be the creation of the wire call of a run.
     ///
     /// The envelope is read defensively: the "outcome is non-nil if
     /// and only if the kind is `.completed`" rule is a doc comment
@@ -585,6 +589,7 @@ struct EventProjection {
                 ToolCallUpdate(
                     toolCallId: ToolCallId(rawValue: operationEvent.correlationID),
                     content: items.isEmpty ? .unchanged : .value(items),
+                    name: .value(operationEvent.tool),
                     status: .value(status),
                     title: .value(operationEvent.op))))
     }
@@ -595,8 +600,9 @@ struct EventProjection {
     /// update keys on the run's `correlationID` — its
     /// `completionToken`, its `toolCallId` — carries each attached
     /// document as one content item in call order, and puts the parsed
-    /// documents in `rawOutput`. The `op` rides as the title, because
-    /// this update can be the creation of the wire call.
+    /// documents in `rawOutput`. The `op` rides as the title and the
+    /// tool as the `name`, because this update can be the creation of the
+    /// wire call.
     ///
     /// The update claims no status: the report records what the call
     /// attached, not how the call ended, and the terminal claim
@@ -629,6 +635,7 @@ struct EventProjection {
                     toolCallId: ToolCallId(rawValue: report.correlationID),
                     content: .value(documents.map(Self.textItem)),
                     locations: locations.isEmpty ? .unchanged : .value(locations),
+                    name: .value(report.tool),
                     rawOutput: Self.rawOutputPatch(fromDocuments: documents),
                     title: .value(report.op))))
     }

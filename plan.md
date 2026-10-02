@@ -867,16 +867,37 @@ the wire. The last one wins.
 - **`ReplayFrom` is an inclusive cursor.** `start` is only its first variant.
   Write the replay path with the cursor as the parameter. Do not hardcode
   replay-everything. A resume from a message id is the clear next variant.
-- **Replay comes from Router's full recorded history** (the conversation that
-  the user had). **The live session comes from the newest compaction
-  checkpoint** (the model's work transcript). These are two different
+- **Replay comes from the retained ACP history of the session, not from the
+  Router journal** (owner decision, task ^hkr6ykz). Each session has one
+  `SessionMergeEngine` (FoundationModelsACP). Each `session/update` that the
+  agent sends for the session goes into this engine first, with its
+  `messageId`. The `user_message` echo goes in through
+  `insertUserMessage(_:messageId:into:)`. The new or resume response seeds
+  the engine.
+- **The agent keeps the engine on disk** in
+  `<transcript directory>/session-history.json`, at the end of each prompt and
+  at `session/close`. A resume takes the engine of the live table entry. If
+  there is no entry, it reads the file. If there is no file (a session that an
+  earlier build recorded), the history is empty and the replay sends no
+  message. Thus an id is the same before and after a resume, also in a new
+  process.
+- **The replay sends the full engine**: `transcriptUpdates` then
+  `stateUpdates` (the command list, the config options, the usage, the session
+  info, the state). The replay does not send a new `messageId`.
+- **The live session comes from the newest compaction checkpoint** of the
+  Router journal (the model's work transcript). The Router journal is only for
+  the restore of the model context. Its messages have no ACP ids, and after a
+  compaction it holds a summary in place of the folded messages. **A
+  compaction does not change the ACP history.** These are two different
   transcripts, intentionally.
 - A resume of a deleted session fails naturally. The transcript is gone
   (§10.2).
 
-**`configOptions` rides both responses.** `NewSessionResponse` and
-`ResumeSessionResponse` each carry it. That is the list's primary announcement
-(§15).
+**`configOptions` and `availableCommands` ride both responses.**
+`NewSessionResponse` and `ResumeSessionResponse` each carry them (ACP
+schema-v2.0.0-alpha.7). That is the primary announcement of each list (§14.4,
+§15). An `available_commands_update` goes out only when the list changes from
+the list that the client has.
 
 ### 7.5 `session/fork`
 
@@ -891,7 +912,7 @@ new machinery. Do not build it against the unstable schema.
 This plan uses these names with one meaning each. The other sections refer
 to this section.
 
-- **Prompt**: the agent unit. One `session/prompt`, from its `{}` response to
+- **Prompt**: the agent unit. One `session/prompt`, from its response to
   its `idle` + `stopReason` (§8.1). The agent runs one prompt for each session
   at a time (§7.1). `PromptExecution` runs it, and `PromptStateOwner` owns its
   state (§8.2).
@@ -926,17 +947,23 @@ to this section.
 
 ### 8.1 The prompt: acknowledge, then notify
 
-`session/prompt` returns `{}` **immediately** at acceptance. The output of the
-prompt (§8.0) comes as notifications. **The order is important**: send the
-`{}` response *first*, then `user_message`, then `state_update: running`, then
-the output of the prompt, then `idle` + `stopReason`. The wire package supplies the primitive:
-`AgentSideConnection.afterRespondingToCurrentRequest(_:)` delays work until
-the `{}` went out. Use it. Do not use a detached task that races the response.
+`session/prompt` returns `{messageId}` **immediately** at acceptance (ACP
+schema-v2.0.0-alpha.7: `PromptResponse.messageId` is required). The output of
+the prompt (§8.0) comes as notifications. **The order is important**: send the
+response *first*, then `user_message`, then `state_update: running`, then the
+output of the prompt, then `idle` + `stopReason`. The wire package supplies the
+primitives: `AgentSideConnection.insertUserMessage(_:messageId:into:)` gives
+the id of the user message, puts the echo into the session history (§7.4) and
+sends the echo after the response. `afterRespondingToCurrentRequest(_:)`
+delays the other work until the response went out. Call both in the request
+handler, never from a child task. Do not use a detached task that races the
+response.
 
-The handler dispatches slash commands (§14.3) before all of this. **The prompt
-echo is a MUST**: "the Agent MUST report where the user message was inserted
-in session history". That update is the source of truth for the agent-owned
-`messageId`. A `user_message_chunk` stream also satisfies the rule.
+The handler dispatches slash commands (§14.3) before all of this. A slash
+command response names a `messageId` too. **The prompt echo is a MUST**: "the
+Agent MUST report where the user message was inserted in session history".
+That update has the same `messageId` as the response, and it is the source of
+truth for the agent-owned `messageId`.
 
 **`submissionEnded` is not the end of the prompt.** One prompt can make more
 than one submission (§8.0). A prompt that retries after a recovered overflow
@@ -1236,8 +1263,9 @@ and it only grows. What compaction emits:
   journal as the checkpoint, reachable through the transcript (§19.1). It is
   not a chat message.
 
-Replay (§7.4) is consistent for free: it replays the full history, and
-checkpoint entries are not messages, so replay does not emit them. This also
+Replay (§7.4) is consistent for free: it replays the retained ACP history,
+which holds only what the client saw live. A compaction does not write to it,
+so replay does not emit a checkpoint. This also
 removes the old upstream ask on Router (`CompactionResult` message identity):
 we never need to know which messages a fold touched, because we never touch
 them on the wire.
@@ -1784,6 +1812,10 @@ The shared-outcome decision changes terminal status only. The
 v2 has no `tool_call` create. `tool_call_update` is an upsert. The first
 update with a new `toolCallId` is the creation.
 
+- **The creating update sets `name`** (ACP schema-v2.0.0-alpha.7): the name
+  of the tool that the model called, for example `files.read`. The `title` is
+  for a person. The `name` is for a program.
+
 - **`status` defaults to `pending`** when a creating update omits it. A call
   that already runs must say `in_progress`. If not, the client shows it as
   queued.
@@ -2146,7 +2178,9 @@ session:
 At each registry change (a new skill, an edited template), the per-session
 command set publishes again: CLI autocomplete, app palette. The conformance
 sends **`available_commands_update`**. To advertise is a MAY. The list can
-change at any time in a session. `commandUpdates` feeds it. `AvailableCommand`
+change at any time in a session. `commandUpdates` feeds it. The
+`session/new` and `session/resume` responses carry the first list
+(`availableCommands`, §7.4), so the first update is the first change. `AvailableCommand`
 requires `name` + `description`. `input` is optional. The text variant
 requires `hint` (the argument hint goes there, §14.2). Custom input types MUST
 start with `_`.
@@ -2345,7 +2379,7 @@ for logs. The client can capture, forward, or ignore it.
 **Consumers**: external clients speak ndJSON over stdio (`<cli> acp`; the
 production CLI and the ACP agent are the same binary). The Mac app uses
 `InMemoryTransport.pair()` in-process (§19). The connection is full duplex,
-not request/response: `session/prompt` returns `{}` immediately, and the full
+not request/response: `session/prompt` returns `{messageId}` immediately, and the full
 prompt output arrives as notifications on the same pipe (§8.1).
 
 **The wire package already does these** (do not build them again): frame
@@ -2572,8 +2606,8 @@ these:
    root set, and get a refusal, from the client end.
 3. **Projection**: a real tool call becomes a correct `tool_call_update`: a
    stable `toolCallId`, `in_progress` → `completed`, filled `locations`,
-   `rawInput`/`rawOutput`, and the `title` on the first report.
-4. **Prompt order**: `{}` → `user_message` → `running` → tool updates →
+   `rawInput`/`rawOutput`, and the `title` and `name` on the first report.
+4. **Prompt order**: `{messageId}` → `user_message` (the same id) → `running` → tool updates →
    `idle(end_turn)` (§8.1).
 5. **Enable/disable**: `shell: false` in the project config means that no
    shell tool reaches the session. We confirm this from the client end.

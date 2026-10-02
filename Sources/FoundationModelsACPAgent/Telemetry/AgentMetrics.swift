@@ -78,7 +78,7 @@ enum AgentMetrics {
 /// The measurement of one prompt: the `prompts` counter and the
 /// `prompt_duration` timer, from the request in to the stop reason out.
 ///
-/// The work of a prompt goes on after the `{}` response, and the connection
+/// The work of a prompt goes on after the prompt response, and the connection
 /// runs that work outside the task of the request handler. A task-local
 /// metrics factory, such as the factory of a `TelemetryCapture`, does not reach
 /// that work. Thus the measurement reads the factory when the request starts,

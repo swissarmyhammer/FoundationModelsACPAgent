@@ -266,15 +266,40 @@ struct ResumeSessionFixture {
     /// accepts the next prompt.
     ///
     /// - Parameter text: The prompt text.
+    /// - Returns: The prompt response, which names the user message.
     /// - Throws: Whatever the wire call or the waits throw.
-    mutating func runPrompt(_ text: String) async throws {
-        _ = try await fixture.harness.connection.prompt(
+    @discardableResult
+    mutating func runPrompt(_ text: String) async throws -> PromptResponse {
+        let response = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
         completedPromptCount += 1
         _ = try await ScriptedPromptFixture.waitForIdle(
             fixture.collector, count: completedPromptCount)
         try await ScriptedPromptFixture.waitForAvailability(
             fixture.harness.agent, fixture.sessionId)
+        return response
+    }
+
+    /// Records one root session through the resident profile of the agent,
+    /// and not through the agent: the recording has a Router journal and no
+    /// retained history, as a session that an earlier build recorded.
+    ///
+    /// - Parameter prompts: The prompts the session answers, in order.
+    /// - Returns: The id of the recorded session.
+    /// - Throws: Whatever the recording root or a prompt throws.
+    func recordSessionOutsideTheAgent(prompts: [String]) async throws -> SessionId {
+        let recorded = fixture.harness.agent.residentProfile.standard.makeSession(
+            instructions: "recorded instructions",
+            workingDirectory: fixture.cwd,
+            recordingRoot: try recordingRoot,
+            tools: [],
+            budget: nil,
+            compactionPrompt: .default)
+        for prompt in prompts {
+            _ = try await recorded.respond(to: prompt)
+        }
+        await recorded.close()
+        return SessionId(rawValue: recorded.id.description)
     }
 
     /// The recorded events of one session under `root`, in merged order.

@@ -130,19 +130,22 @@ import Testing
     /// `active_sessions` value is 1. No dimension holds a session id.
     @Test(.timeLimit(.minutes(1)))
     func twoNewSessionsAndOneCloseLeaveOneActiveSession() async throws {
-        let metrics = try await TelemetryCapture.run(forbidding: []) { context in
+        let lastValue = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeFixture(context: context)
             let second = try await fixture.harness.connection.newSession(
                 NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
             _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
             Self.expectNoSessionIdDimension(fixture.sessionId, in: context)
             Self.expectNoSessionIdDimension(second.sessionId, in: context)
+            // Read the gauge before the fixture closes: its close closes the
+            // second session too.
+            let gauge = try context.metricsFactory.expectGauge(ACPAgentTelemetry.MetricName.activeSessions)
+            let lastValue = gauge.lastValue
             await fixture.close()
-            return context.metricsFactory
+            return lastValue
         }
 
-        let gauge = try metrics.expectGauge(ACPAgentTelemetry.MetricName.activeSessions)
-        #expect(gauge.lastValue == Self.oneOpenSession)
+        #expect(lastValue == Self.oneOpenSession)
     }
 
     // MARK: - Slash commands

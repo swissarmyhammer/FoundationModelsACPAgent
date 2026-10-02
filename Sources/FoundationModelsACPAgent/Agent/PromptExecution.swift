@@ -93,13 +93,16 @@ struct FirstActivity: Sendable {
     let record: SessionIndexRecord
 }
 
-/// The execution of one prompt: one ACP `session/prompt`, from the `{}`
-/// response to its one `idle` terminator (plan.md §8.1–§8.3).
+/// The execution of one prompt: one ACP `session/prompt`, from the
+/// response that names the user message to its one `idle` terminator
+/// (plan.md §8.1–§8.3).
 ///
-/// The prompt runs after the `{}` response went out, on the request's own
-/// dispatch task through `afterRespondingToCurrentRequest`. It sends the
-/// `user_message` echo, writes the first-activity index record, drives
-/// the session's event stream, and ends with one `idle` state update.
+/// The prompt runs after the response went out, on the request's own
+/// dispatch task through `afterRespondingToCurrentRequest`. The
+/// `user_message` echo goes out before it, through the same response hooks
+/// (``RoutedACPAgent/insertUserMessage(_:through:)``). The prompt writes the
+/// first-activity index record, drives the session's event stream, and
+/// ends with one `idle` state update.
 struct PromptExecution: Sendable {
     /// The wire value an unmapped prompt failure stops with, under the
     /// `_`-prefix extension rule (plan.md §18).
@@ -184,7 +187,8 @@ struct PromptExecution: Sendable {
     /// The id of the session this prompt runs in.
     let sessionId: SessionId
 
-    /// The prompt's content blocks, echoed as the `user_message`.
+    /// The prompt's content blocks. A plain prompt folds them into the
+    /// model prompt; the `user_message` echo carries them verbatim.
     let promptBlocks: [ContentBlock]
 
     /// The prompt-state owner of the session.
@@ -226,18 +230,14 @@ struct PromptExecution: Sendable {
     /// bound to the prompt's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
-    /// Runs the prompt: the echo, the first-activity record, and the
-    /// session's event stream to completion (plan.md §8.1). A plain
-    /// prompt folds through `PromptContent` (§12); an expanded command
-    /// keeps its override text (§14.3). The echo always carries the
-    /// original blocks verbatim.
+    /// Runs the prompt: the first-activity record, and the session's event
+    /// stream to completion (plan.md §8.1). A plain prompt folds through
+    /// `PromptContent` (§12); an expanded command keeps its override text
+    /// (§14.3). The `user_message` echo went out before this work, and it
+    /// always carries the original blocks verbatim.
     ///
     /// - Parameter session: The Router session that generates the answer.
     func run(session: any RoutedSession) async {
-        await send(
-            .userMessage(
-                UserMessage(
-                    messageId: EventProjection.makeMessageId(), content: .value(promptBlocks))))
         await recordFirstActivity()
         let prompt: String
         if let modelPrompt {
@@ -750,13 +750,15 @@ extension RequestError {
 
 extension RoutedACPAgent {
     /// Accepts one prompt (plan.md §8.1): validates the session,
-    /// marks it busy, defers the prompt to run after the `{}` response
-    /// through `afterRespondingToCurrentRequest`, and returns `{}` at
-    /// once. Never a detached task that races the response.
+    /// marks it busy, inserts the user message, defers the prompt to run
+    /// after the response through `afterRespondingToCurrentRequest`, and
+    /// returns at once a response that names the user message (ACP
+    /// schema-v2.0.0-alpha.7). Never a detached task that races the
+    /// response.
     ///
     /// The prompt runs in one server span, from the request in to the stop
     /// reason out, and it writes one "enter" record when it starts
-    /// (``RequestTracing``). The work after the `{}` response runs in the
+    /// (``RequestTracing``). The work after the response runs in the
     /// context of the span, so each Router submission span of the prompt is
     /// a child of it. The span ends with the prompt stop reason after that
     /// work, or with the error when the prompt is refused.
@@ -766,7 +768,7 @@ extension RoutedACPAgent {
     /// `error` when the prompt is refused.
     ///
     /// - Parameter params: The prompt request.
-    /// - Returns: The empty acceptance.
+    /// - Returns: The response that names the user message.
     /// - Throws: The order rule's error, `unknownSession` (§10.1),
     ///   `closedSession` (§10.1), `busySession` (§7.1), or a command
     ///   refusal (§14.3).
@@ -810,11 +812,10 @@ extension RoutedACPAgent {
         }
     }
 
-    /// Accepts one prompt: the work of ``prompt(_:)`` before the `{}`
-    /// response.
+    /// Accepts one prompt: the work of ``prompt(_:)`` before the response.
     ///
     /// - Parameter params: The prompt request.
-    /// - Returns: The empty acceptance.
+    /// - Returns: The response that names the user message.
     /// - Throws: The errors that ``prompt(_:)`` names.
     private func acceptPrompt(_ params: PromptRequest) async throws -> PromptResponse {
         try requireInitialized(before: ACPMethod.sessionPrompt)
@@ -849,8 +850,9 @@ extension RoutedACPAgent {
     }
 
     /// Marks the session busy for one prompt: builds the update sink over
-    /// `connection` and installs a fresh prompt-state owner as the
-    /// session's active prompt.
+    /// `connection`, which also keeps each update in the retained history
+    /// (``historySink(for:connection:)``), and installs a fresh prompt-state
+    /// owner as the session's active prompt.
     ///
     /// - Parameters:
     ///   - params: The prompt request.
@@ -860,17 +862,18 @@ extension RoutedACPAgent {
         params: PromptRequest, connection: AgentSideConnection
     ) -> (owner: PromptStateOwner, send: SessionUpdateSink) {
         let sessionId = params.sessionId
-        let send: SessionUpdateSink = { update in
-            await connection.post(update, in: sessionId)
-        }
+        let send = historySink(for: sessionId, connection: connection)
         let owner = PromptStateOwner(send: send)
         sessions[sessionId]?.activePrompt = owner
         return (owner, send)
     }
 
-    /// Defers one model prompt to run after the `{}` response through
-    /// `afterRespondingToCurrentRequest`, and returns `{}` at once.
-    /// Never a detached task that races the response (plan.md §8.1).
+    /// Inserts the user message of one model prompt, defers the prompt to
+    /// run after the response through `afterRespondingToCurrentRequest`, and
+    /// returns at once a response that names the user message. Never a
+    /// detached task that races the response (plan.md §8.1). The echo of the
+    /// user message is deferred first, so it goes out before the prompt
+    /// work.
     ///
     /// - Parameters:
     ///   - overridePrompt: The expanded command text that replaces the
@@ -882,7 +885,7 @@ extension RoutedACPAgent {
     ///   - owner: The prompt-state owner ``beginPrompt(params:connection:)``
     ///     installed.
     ///   - send: The sink every update of the prompt goes to.
-    /// - Returns: The empty acceptance.
+    /// - Returns: The response that names the user message.
     func scheduleModelPrompt(
         overridePrompt: String?,
         params: PromptRequest,
@@ -892,6 +895,7 @@ extension RoutedACPAgent {
         send: @escaping SessionUpdateSink
     ) -> PromptResponse {
         let sessionId = params.sessionId
+        let messageId = insertUserMessage(params, through: connection)
         // The reader of a settled run's stored output (plan.md §11.8):
         // the same host-owned stream the terminal projection consumes.
         let shellOutput = entry.surface.shellOutput
@@ -927,7 +931,7 @@ extension RoutedACPAgent {
             await execution.run(session: session)
             await self.promptFinished(sessionId: sessionId)
         }
-        return PromptResponse()
+        return PromptResponse(messageId: messageId)
     }
 
     /// Stops the session's running prompt (plan.md §8.6): records the
@@ -1008,13 +1012,16 @@ extension RoutedACPAgent {
 
     /// Clears the finished prompt, so the session accepts a new prompt.
     /// Runs after the prompt's `idle` went out, so a second prompt's
-    /// `running` can never pass the first prompt's terminator. It then
-    /// reconciles the config-option state (plan.md §15): a prompt that ran
-    /// on a model the announced options do not show pushes one
-    /// `config_option_update`, after the prompt's terminator.
+    /// `running` can never pass the first prompt's terminator. It first
+    /// writes the retained history of the session (``writeHistory(of:)``),
+    /// so a new process can resume the session with the messages of this
+    /// prompt. It then reconciles the config-option state (plan.md §15): a
+    /// prompt that ran on a model the announced options do not show pushes
+    /// one `config_option_update`, after the prompt's terminator.
     ///
     /// - Parameter sessionId: The session whose prompt finished.
     func promptFinished(sessionId: SessionId) async {
+        writeHistory(of: sessionId)
         sessions[sessionId]?.activePrompt = nil
         // The relay goes with the prompt: a pending round trip holds the
         // drive loop, so a finished prompt has none left.

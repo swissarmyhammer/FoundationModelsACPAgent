@@ -45,8 +45,18 @@ struct ScriptedPromptFixture {
     /// (plan.md §15), for the config-options assertions.
     let newSessionConfigOptions: [SessionConfigOption]?
 
-    /// Closes the harness wire.
+    /// Closes each session of the agent with `session/close`, then closes
+    /// the harness wire.
+    ///
+    /// The agent keeps its connection weakly, so the agent goes when the
+    /// test ends. `session/close` stops the MCP servers of each session and
+    /// their `SurfaceRefresher` first (plan.md §10.1, §11.5). Without it, the
+    /// refresher of a session that mounts a server goes while its watch
+    /// task runs, and Multitool stops the debug build.
     func close() async {
+        for sessionId in await harness.agent.sessions.keys {
+            _ = try? await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))
+        }
         await harness.close()
     }
 
