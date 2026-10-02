@@ -106,8 +106,33 @@ comments:
     - evidence: `swift build` complete.
     - next: commit, review again.
   timestamp: 2026-10-02T22:06:37.483376+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3zafgtg3fzzq0k35sw5649a
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 40 files (alpha.7 adoption, SessionHistory, resume from the engine)
+    - test: green — swift test 721 tests in 81 suites; release build; IntegrationTests build (reported by implement)
+    - commit: 9aa6f1a
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:162
+  timestamp: 2026-10-02T22:06:42.512578+00:00
+- actor: claude-code
+  id: 01m3zaty4z4e9ydfqz9pgaszxq
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c24d231): 0 findings, 0 confirmed, 0 refuted, 7 validator runs, 0 failed. 1 file reviewed (Sources/FoundationModelsACPAgent/Agent/SessionResume.swift). 2 .kanban files excluded by .reviewignore. The one prior finding (SessionResume.swift seed(from:)) is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-02T22:12:56.607970+00:00
+- actor: claude-code
+  id: 01m3zavaws17ngtayeeyagg6dr
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — SessionResume.swift (comment naming the upstream seed(from:))
+    - test: green — swift build complete
+    - commit: c24d231
+    - review: clean — 0 findings, prior item checked
+  timestamp: 2026-10-02T22:13:09.657256+00:00
+position_column: done
+position_ordinal: ff9180
 title: 'Adopt ACP schema-v2.0.0-alpha.7: PromptResponse.messageId (required), ToolCallUpdate.name, availableCommands in new/resume, ID-stable replay'
 ---
 ## Why
