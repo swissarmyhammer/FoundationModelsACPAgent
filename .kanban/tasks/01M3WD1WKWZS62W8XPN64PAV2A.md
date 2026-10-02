@@ -82,8 +82,24 @@ comments:
     - changed tests of task 01M3A30WN7D2CB2X7EGM0K2VN6: `closeEndsAMailStartedAnswerThatWaitsForTheModelQueue` (B's prompt now waits; the close ends it with idle(cancelled)); `aSessionInAToolBodyHoldsNoModel` (B plays no background run; A's prompt sends no idle while its read waits). `aSessionInAnElicitationHoldsNoModel` needed no change.
     - next: /review
   timestamp: 2026-10-02T04:35:14.296750+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3xey8tmf7mhg3ekrr155c81
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (aeaccf6). 14 validator runs, 0 failed, 0 skipped. Counts: 0 findings, 0 confirmed, 0 refuted. 8 files reviewed. Not reviewed: 2 files in .kanban/ (ignore rule), plan.md (no validator matches). No prior Review Findings sections.
+    - next: none. The task is in done.
+  timestamp: 2026-10-02T04:46:11.284843+00:00
+- actor: claude-code
+  id: 01m3xeykpb6dq03jnf4m19nb74
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 9 files (after Router ^bm6tpe3 c5ebd44 added RoutedSession.awaitIdle)
+    - test: green — swift build -c release 0 warnings; swift test 684 tests in 78 suites (reported by implement)
+    - commit: aeaccf6
+    - review: clean — review sha HEAD~1..HEAD, 0 findings
+  timestamp: 2026-10-02T04:46:22.411603+00:00
+position_column: done
+position_ordinal: ff8e80
 title: The turn ends while a backgrounded runCode is in flight, so its result never reaches the model
 ---
 ## Problem
