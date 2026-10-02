@@ -41,8 +41,22 @@ comments:
     - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/WebToolTests.swift:178 (code-hygiene/disallowed-constructs-swift, no_direct_standard_out_logs)
     - next: remove the print/debugPrint/dump call from WebToolTests.swift (and each other such call in that file), then review again
   timestamp: 2026-10-02T15:37:33.884172+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3ymwv3tk8nwysevcqmtvb36
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f2a3d2a). 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 1 file reviewed. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-02T15:49:30.362763+00:00
+- actor: claude-code
+  id: 01m3ymx2a84bkmczk7aw5xmxd3
+  text: |-
+    ### finish iteration 2 — clean
+    - iteration 1: implement changed (20 files), test green (707 tests / 79 suites), commit 9a331b5, review findings (WebToolTests.swift:178)
+    - iteration 2: implement changed (WebToolTests.swift: mirror in place of dump), test green (WebToolTests 14/14), commit f2a3d2a, review clean
+  timestamp: 2026-10-02T15:49:37.736714+00:00
+position_column: done
+position_ordinal: ff8f80
 title: 'Mount the Multitool web capability by default: keyless search with no setup, and an API key in config or the environment selects a keyed provider'
 ---
 ## Why
