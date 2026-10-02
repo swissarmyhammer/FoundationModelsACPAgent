@@ -26,8 +26,32 @@ comments:
 
     Finding: the new history sink holds the agent and the connection weakly. Before, the sink of the terminal projection held the connection strongly, and that kept the agent alive. Now the agent of a test that does not close its session goes when the test ends. A session that mounts an MCP server then releases its `SurfaceRefresher` while the watch task runs, and the Multitool debug assertion stops the process (`SurfaceRefresher.swift:136`). `ScriptedPromptFixture.close()` now sends `session/close` for each session before it closes the wire. Production has the same gap: no upstream hook tells the agent that its connection closed, so a host that drops the connection without `session/close` gets the assertion in a debug build.
   timestamp: 2026-10-02T21:43:42.339038+00:00
-position_column: todo
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m3zbd86nk8f31hgsm72yghpf
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (15c3183) gave 0 findings, 0 confirmed, 0 refuted. The 4 changed files are in `.kanban/`, and `.reviewignore` excludes them. No prior `## Review Findings` section is on the card.
+    - Criterion 1: Package.resolved pins FoundationModelsACP at e14d853. 4ccc130 is an ancestor of e14d853. The comment of 2026-10-02 21:43 records that AgentReleaseTests passes.
+    - Criterion 2: I read each call site of `afterRespondingToCurrentRequest`, `afterRespondingInCurrentServiceContext` and `insertUserMessage` in Sources/. Each one runs synchronously on the task of the request handler. No call site is in a `Task {}`, a `Task.detached` or a task group:
+      - SessionSetup.publishAvailableCommands: called from activateSession. newSession and resumeSession call activateSession in `RequestTracing.withEnteredRequestSpan`. That function runs its body inline through `ServiceContext.withValue` and `TracedCall.run` with a `nonisolated(nonsending)` body.
+      - PromptExecution.endTelemetryAfterPrompt: called directly in `prompt(_:)`.
+      - PromptExecution.scheduleModelPrompt (insertUserMessage, then afterRespondingInCurrentServiceContext): called from acceptPrompt and from the `.modelPrompt` case of dispatchCommand. Both run in `prompt(_:)` in `ServiceContext.withValue`.
+      - CommandDispatch `.action` case (insertUserMessage, then afterRespondingInCurrentServiceContext): called from acceptPrompt.
+      - RequestTracing.afterRespondingInCurrentServiceContext and SessionHistory/SessionSetup.insertUserMessage: wrappers. They run on the task of the caller.
+      - The `Task {}` sites in Sources/ (OwnedSelectionSession, ProbeTimeout, TerminalStream, ElicitationRelay, PromptExecution idleWait, SessionFollowUp, BuiltinCommands, CommandRegistry) do not call these APIs.
+    - next: none. The card is in done.
+  timestamp: 2026-10-02T22:22:56.725850+00:00
+- actor: claude-code
+  id: 01m3zbdsd6z1yceqasam0aqabb
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: no-change — the checks ran in the work of ^hkr6ykz (comment of 2026-10-02 21:43); the pin is at e14d853, after 4ccc130
+    - test: green — AgentReleaseTests passes; swift test 721 tests in 81 suites (recorded on ^hkr6ykz)
+    - commit: 15c3183 (kanban only)
+    - review: clean — 0 findings; criterion 2 confirmed by reading each call site
+  timestamp: 2026-10-02T22:23:14.342536+00:00
+position_column: done
+position_ordinal: ff9280
 title: 'Report upstream: FoundationModelsACP ResponseHooks keeps each deferred closure after it ran, through the task-local that child tasks inherit'
 ---
 ## Problem

@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3zbdvv66azfsrfshmhb933c
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — blocked on upstream FoundationModelsACP ^k55fg8a (Unstable compaction types) and ^zj1wfec (engine keeps a compaction entry); not on main yet, and the owner decides when they run
+    - next: when that session sends the commit and the final type names, move the pin and run /implement on this card
+  timestamp: 2026-10-02T22:23:16.838651+00:00
 position_column: todo
 position_ordinal: '8280'
 title: Report each Router compaction as an ACP compaction entry, and keep the full ACP history across a compaction

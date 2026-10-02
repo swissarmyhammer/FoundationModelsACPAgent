@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3zax8bf4bsthatphgrjknc9
+  text: 'Upstream confirmed and carded (FoundationModelsACP, 2026-10-02). `Connection.shutDown()` already runs on end of input, transport error and explicit close, but `AgentSideConnection` does not expose it. Proposed: `public var closed: ConnectionCloseReason { get async }` with `.endOfInput`, `.transportFailed(any Error)`, `.closedLocally`, on both AgentSideConnection and ClientSideConnection; it fires exactly once for all three paths, every waiter (also a late one) gets the same reason, and only after every inbound handler task has ended. The final name can change. Not started; the owner decides when it runs. Blocked until that session sends the commit.'
+  timestamp: 2026-10-02T22:14:12.591093+00:00
+- actor: claude-code
+  id: 01m3zbdxb4egjty4xy5z75qc87
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — blocked on the upstream FoundationModelsACP "connection closed" signal (proposed `closed: ConnectionCloseReason`); carded there, not started, the owner decides when it runs
+    - next: when that session sends the commit and the final name, move the pin and run /implement on this card
+  timestamp: 2026-10-02T22:23:18.372204+00:00
 position_column: todo
 position_ordinal: '8380'
 title: A connection that drops without session/close leaves its sessions open, and a debug build stops on a Multitool assertion
