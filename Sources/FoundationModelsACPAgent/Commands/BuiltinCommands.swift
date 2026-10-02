@@ -23,8 +23,32 @@ final class BuiltinCommandContext: Sendable {
         /// The session's transcript directory `/status` names.
         let transcriptDirectory: URL
 
-        /// The session's command registry `/help` lists.
-        let registry: CommandRegistry
+        /// The session's command registry `/help` lists, or `nil` after the
+        /// release of the registry.
+        ///
+        /// The registry keeps the builtins, and each builtin keeps this
+        /// context, so a strong reference here would make a cycle. That
+        /// cycle would keep ``session``, and with it the models of the
+        /// profile, after the agent went (task `^173qn8n`). The session entry
+        /// of the agent keeps the registry.
+        weak var registry: CommandRegistry?
+
+        /// Makes the late-bound references.
+        ///
+        /// - Parameters:
+        ///   - session: The live root session.
+        ///   - sessionId: The ACP session id.
+        ///   - transcriptDirectory: The session's transcript directory.
+        ///   - registry: The session's command registry.
+        init(
+            session: any RoutedSession, sessionId: SessionId, transcriptDirectory: URL,
+            registry: CommandRegistry
+        ) {
+            self.session = session
+            self.sessionId = sessionId
+            self.transcriptDirectory = transcriptDirectory
+            self.registry = registry
+        }
     }
 
     /// The session working directory `/status` names and `/config export
@@ -402,11 +426,11 @@ enum BuiltinCommands {
     /// - Parameter context: The session context.
     /// - Returns: The command list.
     private static func helpText(context: BuiltinCommandContext) async -> String {
-        guard let binding = context.binding else {
+        guard let registry = context.binding?.registry else {
             return "No commands are registered."
         }
         var lines = ["Available commands:"]
-        for command in await binding.registry.commands {
+        for command in await registry.commands {
             let hint = command.argumentHint.map { " \($0)" } ?? ""
             lines.append("/\(command.name)\(hint) — \(command.description)")
         }

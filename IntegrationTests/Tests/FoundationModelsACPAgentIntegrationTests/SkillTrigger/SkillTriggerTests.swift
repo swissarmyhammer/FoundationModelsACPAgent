@@ -4,7 +4,6 @@ import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
-import FoundationModelsRouterTestSupport
 import Testing
 
 // MARK: - The selection
@@ -58,63 +57,6 @@ var skillTriggerRepeats: Int {
 /// The measured history of the rates stands in `bench/README.md`, under
 /// "The skill trigger gate".
 let skillTriggerFloor = 0.5
-
-// MARK: - The host
-
-/// The one composed agent of a live run: the real models load one time, and
-/// every sample runs its own session against them.
-actor SkillTriggerHost {
-    /// The made subject, or `nil` before the first sample.
-    private var subject: SkillTriggerSubject?
-
-    /// The subject of this run, made at the first call.
-    ///
-    /// - Returns: The shared subject.
-    /// - Throws: Whatever the configuration load, the router, the agent or
-    ///   the handshake throws.
-    func makeSubject() async throws -> SkillTriggerSubject {
-        if let subject {
-            return subject
-        }
-        // Under `swift test`, mlx-swift does not find its shader library
-        // beside the test binary. Router's bootstrap symlinks it once per
-        // process, and it must run before the first model load.
-        _ = MetalLibraryTestBootstrap.ensureColocatedMetallib
-        let userDirectory = makeResolvedDirectory(label: "SkillTrigger-user")
-        try SkillTriggerSubject.userConfigYAML.write(
-            to: userDirectory.appendingPathComponent(ConfigurationLoader.configFileName),
-            atomically: true, encoding: .utf8)
-        let configuration = try ConfigurationLoader(
-            name: DotfolderName(AgentClientHarness.dotfolderName),
-            workingDirectory: userDirectory,
-            userDirectory: userDirectory,
-            environment: [:]
-        ).load().configuration
-        let router = Router(
-            recordingsDir: makeResolvedDirectory(label: "SkillTrigger-recordings"),
-            loader: LiveModelLoader(),
-            // Greedy decoding makes a run repeatable (read the suite).
-            samplingMode: .greedy)
-        let agent = try await RoutedACPAgent(
-            name: DotfolderName(AgentClientHarness.dotfolderName),
-            router: router,
-            configuration: configuration,
-            userDirectory: userDirectory,
-            environment: [:])
-        let harness = await AgentClientHarness.makeRecording(agent: agent)
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        guard let collector = harness.collector else {
-            preconditionFailure("makeRecording always wires a collector")
-        }
-        let made = SkillTriggerSubject(
-            harness: harness, collector: collector, userDirectory: userDirectory)
-        subject = made
-        return made
-    }
-}
-
-/// The host of the gated suite.
-let skillTriggerHost = SkillTriggerHost()
 
 // MARK: - The report
 
@@ -171,6 +113,11 @@ struct SkillTriggerRate: Sendable {
 /// nothing about the code. Greedy, a red gate is a change of the code, of a
 /// description or of the instructions.
 ///
+/// **It gives its models back.** The suite makes its agent in the test, and
+/// closes it at the end. The models then leave the model pool of the process,
+/// so the next live-model suite has the whole memory budget
+/// (``ProcessModelPool``).
+///
 /// Run the gate with:
 ///
 /// ```sh
@@ -180,16 +127,12 @@ struct SkillTriggerRate: Sendable {
     .serialized,
     .timeLimit(.minutes(15)))
 struct SkillTriggerTests {
-    /// Runs the selected samples and asserts the bar for each one.
+    /// Runs the selected samples and asserts the bar for each one, then
+    /// asserts that the models left the pool.
     @Test("A live model loads the skill that fits the task")
     func aLiveModelLoadsTheSkillThatFitsTheTask() async throws {
-        let subject = try await skillTriggerHost.makeSubject()
-        for sample in skillTriggerSamples {
-            var runs: [SkillTriggerRun] = []
-            for _ in 0..<skillTriggerRepeats {
-                runs.append(try await subject.run(sample: sample))
-            }
-            let rate = SkillTriggerRate(sample: sample, runs: runs)
+        for rate in try await Self.measureSelectedSamples() {
+            let sample = rate.sample
             // The rate is the result of this suite, thus it goes to the
             // reader whether the bar passes or fails.
             print("SKILL TRIGGER \(rate.line)")
@@ -200,5 +143,45 @@ struct SkillTriggerTests {
                 """
             #expect(rate.rate >= skillTriggerFloor, message)
         }
+        let resident = await ProcessModelPool.residentModelsAfterRelease()
+        #expect(
+            resident.isEmpty,
+            "the suite keeps models resident, so the next live-model suite cannot resolve: \(ProcessModelPool.describe(resident))")
+    }
+
+    /// Makes the subject, drives each selected sample, and closes the
+    /// subject, also when a run throws. The real models load one time, and
+    /// each sample runs its own session against them. At the return no
+    /// reference to the agent stays, so the pool can evict its models.
+    ///
+    /// - Returns: The rate of each selected sample, in report order.
+    /// - Throws: Whatever the subject or a run throws.
+    private static func measureSelectedSamples() async throws -> [SkillTriggerRate] {
+        let subject = try await SkillTriggerSubject.make()
+        do {
+            let rates = try await rates(of: subject)
+            await subject.close()
+            return rates
+        } catch {
+            await subject.close()
+            throw error
+        }
+    }
+
+    /// Drives each selected sample ``skillTriggerRepeats`` times.
+    ///
+    /// - Parameter subject: The live subject.
+    /// - Returns: The rate of each selected sample, in report order.
+    /// - Throws: Whatever a run throws.
+    private static func rates(of subject: SkillTriggerSubject) async throws -> [SkillTriggerRate] {
+        var rates: [SkillTriggerRate] = []
+        for sample in skillTriggerSamples {
+            var runs: [SkillTriggerRun] = []
+            for _ in 0..<skillTriggerRepeats {
+                runs.append(try await subject.run(sample: sample))
+            }
+            rates.append(SkillTriggerRate(sample: sample, runs: runs))
+        }
+        return rates
     }
 }

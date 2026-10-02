@@ -88,12 +88,27 @@ public actor RoutedACPAgent: Agent {
         commandProviders.append(contentsOf: providers)
     }
 
+    /// A weak reference to the bound wire connection.
+    ///
+    /// The connection keeps this agent strongly: its factory built the
+    /// agent, and it serves each inbound call to it. A strong reference
+    /// back would make a cycle that a closed connection never breaks. The
+    /// agent would then live on, and keep the hold of each model of
+    /// ``residentProfile`` in the model pool of the process (task
+    /// `^173qn8n`). The caller of `AgentSideConnection.init` keeps the
+    /// connection for as long as it serves.
+    private struct ConnectionReference {
+        /// The bound connection, or `nil` before the bind and after the
+        /// release of the connection.
+        weak var connection: AgentSideConnection?
+    }
+
     /// The bound wire connection, or `nil` before ``bind(connection:)``.
     ///
     /// A `Mutex` holds it outside actor isolation, because the
     /// connection factory closure is synchronous and binds during
     /// `AgentSideConnection` construction.
-    private nonisolated let connectionHolder = Mutex<AgentSideConnection?>(nil)
+    private nonisolated let connectionHolder = Mutex(ConnectionReference())
 
     /// Binds the wire connection this agent notifies through.
     ///
@@ -102,14 +117,19 @@ public actor RoutedACPAgent: Agent {
     /// connection's `afterRespondingToCurrentRequest(_:)` (plan.md §8.1).
     /// Call it from the `AgentSideConnection` factory closure.
     ///
+    /// The agent keeps the connection weakly, so the caller that made the
+    /// connection keeps it for as long as it serves. When the caller lets
+    /// the connection go, the agent goes too, and gives back its models.
+    ///
     /// - Parameter connection: The connection around this agent.
     public nonisolated func bind(connection: AgentSideConnection) {
-        connectionHolder.withLock { $0 = connection }
+        connectionHolder.withLock { $0.connection = connection }
     }
 
-    /// The bound connection, or `nil` before ``bind(connection:)``.
+    /// The bound connection, or `nil` before ``bind(connection:)`` and
+    /// after the release of the connection.
     nonisolated var boundConnection: AgentSideConnection? {
-        connectionHolder.withLock { $0 }
+        connectionHolder.withLock { $0.connection }
     }
 
     /// Creates an agent for the dotfolder `name` and resolves the

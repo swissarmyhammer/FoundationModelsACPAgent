@@ -124,8 +124,36 @@ struct SkillTriggerSubject {
     /// The recorder of the notification sequence.
     let collector: UpdateCollector
 
-    /// The user layer root, which holds the transcripts.
-    let userDirectory: URL
+    /// Composes the live agent of a run and opens the wire to it.
+    ///
+    /// The agent resolves its profile here, thus the real models load here.
+    /// The caller closes the subject with ``close()`` at the end of the run,
+    /// and keeps no reference to it after that.
+    ///
+    /// - Returns: The subject.
+    /// - Throws: Whatever the composition (``LiveAgent``) or the handshake
+    ///   throws.
+    static func make() async throws -> SkillTriggerSubject {
+        let harness = try await LiveAgent.makeHarness(
+            label: "SkillTrigger", userConfigYAML: userConfigYAML)
+        do {
+            _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        } catch {
+            await harness.close()
+            throw error
+        }
+        guard let collector = harness.collector else {
+            preconditionFailure("makeRecording always wires a collector")
+        }
+        return SkillTriggerSubject(harness: harness, collector: collector)
+    }
+
+    /// Closes the wire to the agent. After the last reference to the subject
+    /// goes, no reference to the agent stays, and the agent gives back the
+    /// hold of each model of its profile.
+    func close() async {
+        await harness.close()
+    }
 
     /// The skills library of the root package.
     ///

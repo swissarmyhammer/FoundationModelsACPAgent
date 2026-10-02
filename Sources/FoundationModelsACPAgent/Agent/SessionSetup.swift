@@ -604,14 +604,30 @@ extension RoutedACPAgent {
     /// goes out after the `session/new` response, and each provider
     /// update republishes through the same sink.
     ///
+    /// The two closures keep the connection and the registry weakly, as
+    /// the agent keeps the connection (task `^173qn8n`):
+    ///
+    /// - The registry keeps the sink for the life of the session entry. A
+    ///   strong reference to the connection would keep the connection, and
+    ///   through it the agent and its models, after the connection closed.
+    /// - The connection keeps the deferred work in the response hooks of
+    ///   the request, a task-local value. Each task that the request
+    ///   handler starts gets a copy of that value, and the skills watcher
+    ///   that `session/new` starts lives on. Thus the deferred work lives
+    ///   on after it ran. A strong reference to the registry would keep the
+    ///   registry, its builtins, the session they read and the models of
+    ///   the profile.
+    ///
+    /// The session entry keeps the registry for as long as it publishes.
+    ///
     /// - Parameters:
     ///   - commands: The session's loaded registry.
     ///   - sessionId: The session the updates belong to.
     func publishAvailableCommands(from commands: CommandRegistry, sessionId: SessionId) {
         guard let connection = boundConnection else { return }
-        connection.afterRespondingToCurrentRequest {
-            await commands.beginPublishing { commandSet in
-                await connection.post(
+        connection.afterRespondingToCurrentRequest { [weak connection, weak commands] in
+            await commands?.beginPublishing { [weak connection] commandSet in
+                await connection?.post(
                     .availableCommandsUpdate(
                         AvailableCommandsUpdate(
                             availableCommands: CommandRegistry.availableCommands(for: commandSet))),

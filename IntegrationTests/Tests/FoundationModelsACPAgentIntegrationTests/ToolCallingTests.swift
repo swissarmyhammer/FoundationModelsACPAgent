@@ -5,7 +5,6 @@ import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
-import FoundationModelsRouterTestSupport
 import Testing
 
 // MARK: - The tool calling gate
@@ -28,6 +27,12 @@ import Testing
 /// generation that still runs on the MLX queue when the process exits
 /// crashes it after the test passed. So the test lets the prompt end, calls
 /// Router's `drain()` through ``SessionDrain``, and closes the session.
+///
+/// **It starts and ends on an empty model pool.** The suite runs in the same
+/// process as the other live-model suites, and each one resolves into the
+/// one model pool of the process. The gate requires an empty pool before it
+/// resolves, and it expects an empty pool after it lets its agent go
+/// (``ProcessModelPool``).
 ///
 /// **It is repeatable because it decodes greedy.** The same model and the
 /// same code give the same tool calls in every run. Thus a red gate is a
@@ -106,60 +111,21 @@ struct ToolCallingTests {
 
     @Test("The shipped model writes a file and runs a shell command")
     func theShippedModelWritesAFileAndRunsAShellCommand() async throws {
-        // Under `swift test`, mlx-swift does not find its shader library
-        // beside the test binary. Router's bootstrap symlinks it once per
-        // process, and it must run before the first model load.
-        _ = MetalLibraryTestBootstrap.ensureColocatedMetallib
-        let userDirectory = makeResolvedDirectory(label: "ToolCalling-user")
-        try Self.userConfigYAML.write(
-            to: userDirectory.appendingPathComponent(ConfigurationLoader.configFileName),
-            atomically: true, encoding: .utf8)
-        let configuration = try ConfigurationLoader(
-            name: DotfolderName(AgentClientHarness.dotfolderName),
-            workingDirectory: userDirectory,
-            userDirectory: userDirectory,
-            environment: [:]
-        ).load().configuration
-        let router = Router(
-            recordingsDir: makeResolvedDirectory(label: "ToolCalling-recordings"),
-            loader: LiveModelLoader(),
-            samplingMode: .greedy)
-        let agent = try await RoutedACPAgent(
-            name: DotfolderName(AgentClientHarness.dotfolderName),
-            router: router,
-            configuration: configuration,
-            userDirectory: userDirectory,
-            environment: [:])
-        let harness = await AgentClientHarness.makeRecording(agent: agent)
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        let collector = try #require(harness.collector)
-
+        let residentBefore = await ProcessModelPool.residentModelsAfterRelease()
+        try #require(
+            residentBefore.isEmpty,
+            "an earlier suite keeps models resident, so the profile cannot resolve: \(ProcessModelPool.describe(residentBefore))")
         let workspace = makeResolvedDirectory(label: "ToolCalling-workspace")
-        let session = try await harness.connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-        let sessionId = session.sessionId
-        let start = ContinuousClock.now
-        _ = try await harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(
-                sessionId: sessionId, text: Self.prompt(workspace: workspace)))
-        let stopReason = await Self.waitForIdle(
-            collector: collector,
-            sessionId: sessionId,
-            deadline: ContinuousClock.now + Self.promptDeadline)
-        let elapsed = start.duration(to: ContinuousClock.now)
-        await harness.flushPendingChunks()
-        let titles = await Self.toolTitles(of: collector, sessionId: sessionId)
-        let drained = try await SessionDrain.drainAndClose(sessionId, in: harness)
-        await harness.close()
-        #expect(drained, "the session still had work \(SessionDrain.deadline) after the prompt")
+        let run = try await Self.runPrompt(in: workspace)
+        #expect(run.drained, "the session still had work \(SessionDrain.deadline) after the prompt")
 
         // The report goes to the reader whether the gate passes or fails.
         let report =
-            "TOOL CALLING seconds=\(elapsed.components.seconds) "
-            + "stop=\(stopReason.map { "\($0)" } ?? "none") tools=\(titles)"
+            "TOOL CALLING seconds=\(run.elapsed.components.seconds) "
+            + "stop=\(run.stopReason.map { "\($0)" } ?? "none") tools=\(run.toolTitles)"
         print(report)
 
-        #expect(stopReason == .endTurn, "the prompt did not end with end_turn: \(report)")
+        #expect(run.stopReason == .endTurn, "the prompt did not end with end_turn: \(report)")
 
         let probe = workspace.appendingPathComponent(Self.probeFileName)
         let probeData = try #require(
@@ -181,6 +147,79 @@ struct ToolCallingTests {
         #expect(
             hashText.hasPrefix(expectedHash),
             "\(Self.hashFileName) holds \"\(hashText)\", not \(expectedHash): \(report)")
+
+        let residentAfter = await ProcessModelPool.residentModelsAfterRelease()
+        #expect(
+            residentAfter.isEmpty,
+            "the gate keeps models resident, so the next live-model suite cannot resolve: \(ProcessModelPool.describe(residentAfter))")
+    }
+
+    // MARK: - The run
+
+    /// What the run of the prompt observed.
+    private struct PromptRun {
+        /// The stop reason of the prompt, or `nil` when the deadline passed.
+        let stopReason: StopReason?
+
+        /// The time from the prompt request to its end.
+        let elapsed: Duration
+
+        /// The title of every tool call the wire carried, in wire order.
+        let toolTitles: [String]
+
+        /// Whether the session drain completed inside its deadline.
+        let drained: Bool
+    }
+
+    /// Composes the live agent, sends the prompt, waits for its end, and
+    /// drains and closes the session and the wire. At the return no
+    /// reference to the agent stays, so the pool can evict its models
+    /// (``ProcessModelPool``).
+    ///
+    /// - Parameter workspace: The session working directory.
+    /// - Returns: What the run observed.
+    /// - Throws: Whatever the configuration load, the agent, the handshake,
+    ///   the session or the prompt throws.
+    private static func runPrompt(in workspace: URL) async throws -> PromptRun {
+        let harness = try await LiveAgent.makeHarness(
+            label: "ToolCalling", userConfigYAML: userConfigYAML)
+        do {
+            let run = try await prompt(over: harness, in: workspace)
+            await harness.close()
+            return run
+        } catch {
+            await harness.close()
+            throw error
+        }
+    }
+
+    /// Opens a session, sends the prompt, waits for its end, and drains and
+    /// closes the session.
+    ///
+    /// - Parameters:
+    ///   - harness: The wired harness of the live agent.
+    ///   - workspace: The session working directory.
+    /// - Returns: What the run observed.
+    /// - Throws: Whatever the handshake, the session or the prompt throws.
+    private static func prompt(over harness: AgentClientHarness, in workspace: URL) async throws -> PromptRun {
+        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        let collector = try #require(harness.collector)
+        let session = try await harness.connection.newSession(
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+        let sessionId = session.sessionId
+        let start = ContinuousClock.now
+        _ = try await harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(
+                sessionId: sessionId, text: prompt(workspace: workspace)))
+        let stopReason = await waitForIdle(
+            collector: collector,
+            sessionId: sessionId,
+            deadline: ContinuousClock.now + promptDeadline)
+        let elapsed = start.duration(to: ContinuousClock.now)
+        await harness.flushPendingChunks()
+        let titles = await toolTitles(of: collector, sessionId: sessionId)
+        let drained = try await SessionDrain.drainAndClose(sessionId, in: harness)
+        return PromptRun(stopReason: stopReason, elapsed: elapsed, toolTitles: titles, drained: drained)
     }
 
     // MARK: - Waiting
