@@ -1,0 +1,68 @@
+---
+assignees:
+- claude-code
+comments:
+- actor: claude-code
+  id: 01m3wrcpea5qqqpykcmjwtysz9
+  text: |-
+    Research done.
+    - The release build fails at PromptExecution.cutStop (no arm for .reasoningTokenLimit). EventProjection.project gives a warning: .reasoningStopped falls into @unknown default.
+    - Router dafb88af..8821ccc changes no TranscriptEvent file. No new TranscriptEvent.Kind, so item 5 needs no code.
+    - The ^k51h6bb pattern (66bfd3c) touches: PromptStop case + wire value constant, stopReason and cutStop switches, ExitCode doc list, EventProjection report func, RepetitionConfiguration keys + detection, tests in PromptExecutionTests / ExitCodeTests / ConfigShowTests / ConfigurationLoaderTests, bench/README.md tables, the swebench_acp.py doc string, and plan.md.
+    - reasoningTokenLimit decode plan: absent key gives Router's default 8192; YAML null gives nil (no limit); 0 goes to Router, which also reads 0 as no limit. A nil value encodes as absent, and ConfigurationYAML.completed writes it back as null, so config show / config init keep the round trip exact. LayeredYAMLDocument merge lets a null in a higher layer replace a lower value.
+  timestamp: 2026-10-01T22:12:06.730067+00:00
+- actor: claude-code
+  id: 01m3wyswrj53p964tw7jck398c
+  text: |-
+    Implementation landed (not committed).
+    - New stop: PromptStop.reasoningLimit, wire value `_reasoning_limit` (PromptExecution.reasoningLimitStopReasonValue). cutStop(for: .reasoningTokenLimit) gives it; stopReason(for:) maps it. Exit code: the `.unknown` row, exit 1 (same group as `_repeated`); ExitCodeTests parameter list holds it.
+    - EventProjection: `.reasoningStopped` has its own arm. reportRepetitionStop became reportRouterStop(_:message:), shared by the repetition and the reasoning arms, so no second copy of the log code. A notice record with router.report = ReasoningStop.description (reasoning tokens, limit, pass finish reason, recovery, settings).
+    - RepetitionConfiguration: comparesLineShapes (default true), shortLineRepeatThreshold (default 8), reasoningTokenLimit (default 8192). Absent key = Router default. `reasoningTokenLimit: null` = nil = no limit; `0` passes to Router, which also reads 0 as no limit. config show prints a nil limit as `null` (ConfigurationYAML.completed), which loads back as nil.
+    - TranscriptEvent.Kind: no new kind in Router dafb88af..8821ccc, so no switch changed.
+    - Docs: plan.md §2.4, §8.2 and the §8.4 event table; swebench_acp.py doc string; bench/README.md `stop_reason` row.
+
+    DEVIATION, needs a person to confirm: item 4 asks to add rows to the `repetition:` table and the stop reason table of bench/README.md. Commit ec59837 (2026-10-01 14:39Z, before this card) cut both tables out of that README on purpose ("the README now gives how to run, the options, what a run does, the record and the score fields..."). I did not put the tables back. I added `_reasoning_limit` to the `stop_reason` field row, the one stop reason list left in that README, and I documented the three keys in plan.md §2.4. I tried to ask the user through the question tool two times, and both times the user could not read the question. If the tables must come back, that is a small doc follow-up.
+
+    What did not work: the question tool cuts off the question text in the user's display, so a question with options cannot reach the user from this session.
+  timestamp: 2026-10-02T00:04:10.642996+00:00
+- actor: claude-code
+  id: 01m3wyt15tx3acwv0x8j8sezxb
+  text: |-
+    ### implement — changed
+    - evidence: 13 files — Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift, Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Sources/FoundationModelsACPAgent/Configuration/RepetitionConfiguration.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Sources/acp-agent/ExitCode.swift, Tests/FoundationModelsACPAgentTests/{PromptExecutionTests,EventProjectionTests,ExitCodeTests,ConfigurationLoaderTests,ConfigShowTests}.swift, bench/README.md, bench/swebench_acp.py, plan.md. `swift build -c release`: Build complete, 0 errors, 0 warnings. `swift test`: 677 tests in 77 suites passed, 1 known issue (the deliberate withKnownIssue in HarnessSmokeTests). The one build warning, SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle, also shows on the baseline without these changes (checked with git stash). RED seen first for the 7 runtime tests (unknown key errors, missing config show lines, no notice record); the PromptStop tests were RED as a compile failure.
+    - next: /review. A person must confirm the bench/README.md table deviation (see the comment above).
+  timestamp: 2026-10-02T00:04:15.162517+00:00
+position_column: doing
+position_ordinal: '80'
+title: 'Adopt Router''s reasoning limit and line-shape detector: map reasoningTokenLimit, project reasoningStopped, expose the three new repetition settings'
+---
+## Why
+
+Router `dafb88af` (^ez2g5gw) and `fd4ed82b` (^hm9trt5), pinned at Router `8821ccc`, add API that the agent must adopt. The release build now fails:
+
+```
+PromptExecution.swift:365:9: error: switch must be exhaustive
+```
+
+These Router cards come from the SWE-bench run of 2026-10-01: `django__django-13447` (a loop of short counting lines) and `django__django-14016` (reasoning with no end) each ended with an empty patch after a 16,384-token pass.
+
+## What Router added
+
+- `FinishReason.reasoningTokenLimit`: a pass reasoned past `RepetitionDetection.reasoningTokenLimit` and no recovery was left.
+- `SessionEvent.reasoningStopped(ReasoningStop)`: the reasoning watch stopped a pass, or a pass ended inside its reasoning. Fields: `reasoningTokens`, `limit: Int?`, `passFinishReason`, `detection`, `recovery: Int?` (nil = no recovery left, the answer ends).
+- `RepetitionDetection` settings: `comparesLineShapes: Bool` (default true), `shortLineRepeatThreshold: Int` (default 8), `reasoningTokenLimit: Int?` (default 8,192; nil = no limit). Read the doc comments in `.build/checkouts/FoundationModelsRouter/Sources/FoundationModelsRouter/Session/RepetitionDetection.swift`, `FinishReason.swift`, `ReasoningStop.swift`.
+
+## What to do
+
+1. `PromptExecution.cutStop(for:)`: map `.reasoningTokenLimit` to a new `PromptStop` case, with a new ACP stop reason value `_reasoning_limit`, beside `_truncated`, `_ended_in_reasoning` and `_repeated`. Map it in the stop reason switch, in `Sources/acp-agent/ExitCode.swift` (the same code group as `_repeated`), and in each other total switch over `PromptStop` or `FinishReason` in `Sources` and `Tests`.
+2. `EventProjection`: handle `.reasoningStopped` as `.repetitionStopped` is handled: a log line with its numbers (reasoning tokens, limit, pass finish reason, recovery). Do not let it fall into `@unknown default`.
+3. `config.yaml`: add the three keys to the `repetition:` section, with Router's defaults when a key is absent: `repetition.comparesLineShapes`, `repetition.shortLineRepeatThreshold`, `repetition.reasoningTokenLimit` (a value of `0` or `null` gives no limit; state which). Pass them into `RepetitionDetection` in `makeBudgetedSession`. Show them in `config show`. Add them to the codec tests.
+4. `bench/README.md`: add the three keys to the `repetition:` table, and add `_reasoning_limit` to the stop reason table ("a pass reasoned past `repetition.reasoningTokenLimit`, and no recovery was left").
+5. Any `switch` over `TranscriptEvent.Kind` (SessionResume and others): handle a new kind if Router added one in these commits.
+
+## Tests
+
+- `cutStop(for: .reasoningTokenLimit)` gives the new stop, and the wire value is `_reasoning_limit`; its exit code is in the table.
+- A config with the three keys decodes into `RepetitionDetection` with those values; a config without them gives Router's defaults.
+- `config show` prints the three values.
+- The full unit suite passes: `swift test`. The release build passes: `swift build -c release`. #bench

@@ -28,9 +28,9 @@ THE STOP REASON
 
 `acp-agent run` gave the harness an exit code and nothing more. The wire
 gives the STOP REASON of each turn: `end_turn`, `max_tokens`,
-`max_turn_requests`, `refusal`, `cancelled`, and the six that this agent
-adds -- `_error`, `_no_output`, `_stalled`, `_truncated`, `_ended_in_reasoning`
-and `_repeated`. A reason is a free string, so
+`max_turn_requests`, `refusal`, `cancelled`, and the seven that this agent
+adds -- `_error`, `_no_output`, `_stalled`, `_truncated`, `_ended_in_reasoning`,
+`_repeated` and `_reasoning_limit`. A reason is a free string, so
 this module never refuses one it does not know, and the record of the
 instance keeps whatever the agent said.
 

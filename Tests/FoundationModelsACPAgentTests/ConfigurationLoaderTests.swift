@@ -623,6 +623,52 @@ import Testing
         #expect(detection.passTokenLimit == RepetitionDetection.defaultPassTokenLimit)
     }
 
+    /// The line-shape and reasoning keys of the `repetition` section decode
+    /// into Router's `RepetitionDetection` (task ^7fsfw7y).
+    @Test func theLineShapeAndReasoningKeysDecodeIntoTheDetection() throws {
+        let loaded = try Fixture().loadProjectConfig(
+            """
+            repetition:
+              comparesLineShapes: false
+              shortLineRepeatThreshold: \(Self.configuredShortLineRepeatThreshold)
+              reasoningTokenLimit: \(Self.configuredReasoningTokenLimit)
+            """)
+
+        let detection = loaded.configuration.repetition.detection
+        #expect(!detection.comparesLineShapes)
+        #expect(detection.shortLineRepeatThreshold == Self.configuredShortLineRepeatThreshold)
+        #expect(detection.reasoningTokenLimit == Self.configuredReasoningTokenLimit)
+    }
+
+    /// A `repetition` section without the line-shape and reasoning keys keeps
+    /// Router's default for each of them. An absent `reasoningTokenLimit` is
+    /// Router's limit, not "no limit".
+    @Test func absentLineShapeAndReasoningKeysKeepRouterDefaults() throws {
+        let loaded = try Fixture().loadProjectConfig(
+            """
+            repetition:
+              windowTokens: \(Self.configuredWindowTokens)
+            """)
+
+        let detection = loaded.configuration.repetition.detection
+        #expect(detection.comparesLineShapes == RepetitionDetection.defaultComparesLineShapes)
+        #expect(
+            detection.shortLineRepeatThreshold == RepetitionDetection.defaultShortLineRepeatThreshold)
+        #expect(detection.reasoningTokenLimit == RepetitionDetection.defaultReasoningTokenLimit)
+    }
+
+    /// `repetition.reasoningTokenLimit: null` gives a detection with no
+    /// reasoning token limit.
+    @Test func aNullReasoningTokenLimitGivesNoLimit() throws {
+        let loaded = try Fixture().loadProjectConfig(
+            """
+            repetition:
+              reasoningTokenLimit: null
+            """)
+
+        #expect(loaded.configuration.repetition.detection.reasoningTokenLimit == nil)
+    }
+
     /// With no `repetition` section, the detection is Router's default one.
     @Test func anAbsentRepetitionSectionGivesRouterDefaultDetection() throws {
         let loaded = try Fixture().makeLoader().load()
@@ -681,6 +727,14 @@ import Testing
     /// The `repetition.windowTokens` the section test writes. It differs
     /// from Router's default, thus the decode is observable.
     private static let configuredWindowTokens = 512
+
+    /// The `repetition.shortLineRepeatThreshold` the line-shape test writes.
+    /// It differs from Router's default, thus the decode is observable.
+    private static let configuredShortLineRepeatThreshold = 3
+
+    /// The `repetition.reasoningTokenLimit` the line-shape test writes. It
+    /// differs from Router's default, thus the decode is observable.
+    private static let configuredReasoningTokenLimit = 4096
 
     /// The `profile.standard` model the override test writes. It differs from
     /// the default, thus the override is observable.

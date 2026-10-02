@@ -61,6 +61,15 @@ enum PromptStop: Equatable, Sendable {
     /// the `_repeated` extension value (§8.2's `_` rule; task ^k51h6bb).
     case repeated
 
+    /// The prompt completed, but Router stopped its last submission because
+    /// one pass reasoned past the reasoning token limit of the repetition
+    /// detection, and no recovery was left: Router's `FinishReason` of that
+    /// submission is `reasoningTokenLimit`. The model reasoned and did not
+    /// act. The output token ceiling did not stop it, so `_truncated` would
+    /// name the wrong cause. The arm maps to the `_reasoning_limit`
+    /// extension value (§8.2's `_` rule; task ^7fsfw7y).
+    case reasoningLimit
+
     /// The prompt stopped waiting on a generation that made nothing: the
     /// model call produced no fragment at all for the whole
     /// ``PromptExecution/stalledGenerationBound``, so the prompt ended it
@@ -114,6 +123,11 @@ struct PromptExecution: Sendable {
     /// repetition stops with, under the same `_`-prefix extension rule
     /// (task ^k51h6bb).
     static let repeatedStopReasonValue = "_repeated"
+
+    /// The wire value a prompt whose last generation Router stopped at the
+    /// reasoning token limit stops with, under the same `_`-prefix extension
+    /// rule (task ^7fsfw7y).
+    static let reasoningLimitStopReasonValue = "_reasoning_limit"
 
     /// The wire value a prompt that ended a stalled generation stops with,
     /// under the same `_`-prefix extension rule (task ^s0bw5cv).
@@ -292,9 +306,9 @@ struct PromptExecution: Sendable {
             stop = .noOutput
         }
         // A completed prompt whose LAST submission did not end by itself is
-        // cut, not finished (tasks ^bw9qt1z and ^k51h6bb). A prompt of 8192
-        // reasoning tokens and no answer ended as `end_turn` before Router
-        // gave the finish reason.
+        // cut, not finished (tasks ^bw9qt1z, ^k51h6bb and ^7fsfw7y). A
+        // prompt of 8192 reasoning tokens and no answer ended as `end_turn`
+        // before Router gave the finish reason.
         if stop == .completed, let cut = Self.cutStop(for: projection.lastFinishReason) {
             stop = cut
             report(cut: cut, usage: projection.usageMetadata)
@@ -345,6 +359,7 @@ struct PromptExecution: Sendable {
         case .truncated: .unknown(truncatedStopReasonValue)
         case .endedInReasoning: .unknown(endedInReasoningStopReasonValue)
         case .repeated: .unknown(repeatedStopReasonValue)
+        case .reasoningLimit: .unknown(reasoningLimitStopReasonValue)
         case .stalled: .unknown(stalledStopReasonValue)
         case .failed: .unknown(unmappedStopReasonValue)
         }
@@ -367,6 +382,7 @@ struct PromptExecution: Sendable {
         case .maxTokens: return .truncated
         case .endedInsideReasoning: return .endedInReasoning
         case .repeatedLines: return .repeated
+        case .reasoningTokenLimit: return .reasoningLimit
         }
     }
 
@@ -425,9 +441,10 @@ struct PromptExecution: Sendable {
 
     /// Records the numbers of a prompt whose last submission did not end by
     /// itself. The wire carries the extension stop reason alone
-    /// (``truncatedStopReasonValue``, ``endedInReasoningStopReasonValue`` or
-    /// ``repeatedStopReasonValue``), thus this record is the one place that
-    /// says how full the context was and how many tokens the prompt spent.
+    /// (``truncatedStopReasonValue``, ``endedInReasoningStopReasonValue``,
+    /// ``repeatedStopReasonValue`` or ``reasoningLimitStopReasonValue``),
+    /// thus this record is the one place that says how full the context was
+    /// and how many tokens the prompt spent.
     ///
     /// - Parameters:
     ///   - cut: The stop ``cutStop(for:)`` gave.

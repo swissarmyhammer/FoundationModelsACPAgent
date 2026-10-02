@@ -125,16 +125,18 @@ struct EventProjection {
     /// before the first `submissionEnded`.
     ///
     /// `PromptExecution.drive` reads it to report the honest stop reason of
-    /// a prompt whose last submission did not end by itself (tasks ^bw9qt1z
-    /// and ^k51h6bb): the text, the reasoning or the tool call of that
-    /// generation is cut, so the prompt must not read as a normal `end_turn`.
+    /// a prompt whose last submission did not end by itself (tasks ^bw9qt1z,
+    /// ^k51h6bb and ^7fsfw7y): the text, the reasoning or the tool call of
+    /// that generation is cut, so the prompt must not read as a normal
+    /// `end_turn`.
     private(set) var lastFinishReason: FinishReason?
 
     /// The numbers behind a stop reason, as log metadata, for the record of a
     /// prompt that ended cut or empty.
     ///
-    /// A `_truncated`, `_ended_in_reasoning` or `_repeated` prompt says how
-    /// the last submission stopped, and nothing more. The reader then cannot
+    /// A `_truncated`, `_ended_in_reasoning`, `_repeated` or
+    /// `_reasoning_limit` prompt says how the last submission stopped, and
+    /// nothing more. The reader then cannot
     /// tell a model that reasoned too long in one round from a context that
     /// filled up. These three numbers name the difference: the tokens the
     /// whole prompt fed and generated, and how full the context was at the
@@ -319,7 +321,13 @@ struct EventProjection {
             // A log line, not a wire message (§8.4): the stop reason of
             // the prompt carries the end, and the next submission of a
             // recovery carries the text.
-            reportRepetitionStop(stop)
+            reportRouterStop(
+                stop, message: "Router stopped a generate call, because the call repeated itself.")
+        case .reasoningStopped(let stop):
+            // A log line, not a wire message (§8.4), as for a repetition
+            // stop (task ^7fsfw7y).
+            reportRouterStop(
+                stop, message: "Router stopped a pass, because the pass reasoned and did not act.")
         case .answered, .answerFailed, .mailDeliveryPaused:
             // Router bookkeeping with no ACP counterpart: the stream of
             // the prompt carries the text, the tool calls and the end.
@@ -352,22 +360,28 @@ struct EventProjection {
             metadata: ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName))
     }
 
-    /// Records that Router stopped a generate call of the prompt because the
-    /// call repeated itself (task ^k51h6bb).
+    /// Records that Router stopped a generation of the prompt: a generate
+    /// call that repeated itself (``RepetitionStop``, task ^k51h6bb), or a
+    /// pass that reasoned and did not act (``ReasoningStop``, task ^7fsfw7y).
     ///
     /// plan.md §8.4 gives the stop no wire message. The record is a `notice`
     /// and not a `debug`, because a person who reads the log of a slow or
-    /// cut prompt must learn that the detector stopped a call, with the
-    /// counts of the stop and the settings in force. When no recovery is
-    /// left, the prompt ends with the `_repeated` stop reason, and this record
-    /// is the one place that gives those numbers.
+    /// cut prompt must learn that Router stopped a generation, with the
+    /// numbers of the stop and the settings in force. A repetition stop
+    /// gives its line counts. A reasoning stop gives its reasoning tokens,
+    /// the limit, the finish reason of the pass and the recovery. When no
+    /// recovery is left, the prompt ends with the `_repeated` or the
+    /// `_reasoning_limit` stop reason, and this record is the one place that
+    /// gives those numbers.
     ///
-    /// - Parameter stop: The report Router made.
-    private func reportRepetitionStop(_ stop: RepetitionStop) {
+    /// - Parameters:
+    ///   - stop: The report Router made. Its description holds counts and
+    ///     settings only, never content.
+    ///   - message: The message of the record, which names the kind of stop.
+    private func reportRouterStop(_ stop: some CustomStringConvertible, message: Logger.Message) {
         var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
         metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stop.description)"
-        ACPAgentTelemetry.logger(.promptExecution).notice(
-            "Router stopped a generate call, because the call repeated itself.", metadata: metadata)
+        ACPAgentTelemetry.logger(.promptExecution).notice(message, metadata: metadata)
     }
 
     /// Sends the one `usage_update` of the prompt, from the summed

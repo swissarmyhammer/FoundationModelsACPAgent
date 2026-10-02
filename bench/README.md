@@ -98,7 +98,7 @@ for each instance. Each row has the same fields. A step that did not run gives
 | Field | What it is |
 |---|---|
 | `seconds`, `clone_seconds`, `agent_seconds`, `env_seconds` | the wall time of the instance and of each step |
-| `stop_reason` | why the agent stopped the prompt, for example `end_turn`, `cancelled`, `_truncated`, `_ended_in_reasoning` or `_repeated` |
+| `stop_reason` | why the agent stopped the prompt, for example `end_turn`, `cancelled`, `_truncated`, `_ended_in_reasoning`, `_repeated` or `_reasoning_limit` (a pass reasoned past `repetition.reasoningTokenLimit`, and no recovery was left) |
 | `timed_out` | whether the watchdog stopped the agent |
 | `exit_code` | the exit code of an agent process that ended in this instance; usually `null` |
 | `patch_bytes`, `patch_files` | the size of the patch |

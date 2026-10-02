@@ -34,6 +34,9 @@ struct ConfigShowTests {
     /// reports as a warning.
     private static let permissionsYAML = "permissions:\n  allow: []\n"
 
+    /// A project `config.yaml` that turns the reasoning token limit off.
+    private static let noReasoningLimitYAML = "repetition:\n  reasoningTokenLimit: null\n"
+
     /// The document `--json --source` writes.
     private struct AnnotatedDocument: Decodable {
         let configuration: AgentConfiguration
@@ -103,6 +106,39 @@ struct ConfigShowTests {
                 "recoveriesPerAnswer: \(RepetitionDetection.defaultRecoveriesPerAnswer)"))
         #expect(
             report.standardOutput.contains("passTokenLimit: \(RepetitionDetection.defaultPassTokenLimit)"))
+    }
+
+    /// With no file in any layer, the report shows the line-shape and
+    /// reasoning keys of the `repetition` section with Router's default value
+    /// for each one (task ^7fsfw7y).
+    @Test func noFilesShowTheLineShapeAndReasoningKeysWithRouterDefaults() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition-reasoning")
+
+        let report = try Self.report([], in: fixture)
+
+        #expect(
+            report.standardOutput.contains(
+                "comparesLineShapes: \(RepetitionDetection.defaultComparesLineShapes)"))
+        #expect(
+            report.standardOutput.contains(
+                "shortLineRepeatThreshold: \(RepetitionDetection.defaultShortLineRepeatThreshold)"))
+        #expect(
+            report.standardOutput.contains(
+                "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
+    }
+
+    /// A `repetition.reasoningTokenLimit: null` shows as `null`, the value
+    /// that loads back as "no limit", and not as Router's default limit.
+    @Test func aNullReasoningTokenLimitShowsAsNull() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-reasoning-null")
+        try fixture.writeProjectConfig(Self.noReasoningLimitYAML)
+
+        let report = try Self.report([], in: fixture)
+
+        #expect(report.standardOutput.contains("reasoningTokenLimit: null"))
+        #expect(
+            !report.standardOutput.contains(
+                "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
     }
 
     /// The report is the merged configuration: a project key shows its

@@ -221,6 +221,9 @@ import Testing
             PromptExecution.stopReason(for: .repeated)
                 == .unknown(PromptExecution.repeatedStopReasonValue))
         #expect(
+            PromptExecution.stopReason(for: .reasoningLimit)
+                == .unknown(PromptExecution.reasoningLimitStopReasonValue))
+        #expect(
             PromptExecution.stopReason(
                 for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
                 == .unknown(PromptExecution.stalledStopReasonValue))
@@ -446,6 +449,35 @@ import Testing
         #expect(
             ScriptedPromptFixture.idleStopReason(in: updates)
                 == .unknown(PromptExecution.repeatedStopReasonValue))
+    }
+
+    /// Router's `reasoningTokenLimit` finish reason cuts the prompt with the
+    /// `reasoningLimit` stop, and that stop goes on the wire as
+    /// `_reasoning_limit` (task ^7fsfw7y).
+    @Test func theReasoningTokenLimitFinishReasonCutsWithTheReasoningLimitStop() {
+        #expect(PromptExecution.cutStop(for: .reasoningTokenLimit) == .reasoningLimit)
+        #expect(PromptExecution.reasoningLimitStopReasonValue == "_reasoning_limit")
+    }
+
+    /// A prompt whose last submission reasoned past the reasoning token limit
+    /// of the repetition detection, with no recovery left, ends with the
+    /// `_reasoning_limit` extension stop reason. `_truncated` would say that
+    /// the output token ceiling stopped it, which is false.
+    @Test func aPromptThatEndsAtTheReasoningTokenLimitEndsWithTheReasoningLimitStopReason() async throws {
+        let (execution, recorder) = makeSinkedExecution()
+        let reason = await execution.drive(
+            events: makeEventStream([
+                makeSubmissionEnded(
+                    TokenUsage(
+                        tokensIn: 100, tokensOut: RepetitionDetection.defaultReasoningTokenLimit,
+                        contextFill: .nan, finishReason: .reasoningTokenLimit))
+            ]))
+        let updates = await recorder.updates
+
+        #expect(reason == .unknown(PromptExecution.reasoningLimitStopReasonValue))
+        #expect(
+            ScriptedPromptFixture.idleStopReason(in: updates)
+                == .unknown(PromptExecution.reasoningLimitStopReasonValue))
     }
 
     /// Only the LAST generate call decides: a tool-calling prompt that

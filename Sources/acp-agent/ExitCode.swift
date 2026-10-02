@@ -68,9 +68,9 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
     /// lookup compiles clean and answers nothing at run time.
     ///
     /// Each extension stop reason of this agent (`_error`, `_no_output`,
-    /// `_stalled`, `_truncated`, `_ended_in_reasoning` and `_repeated`)
-    /// arrives as `.unknown` and exits 1: the prompt did not end with a
-    /// finished answer, and a script must not read it as one.
+    /// `_stalled`, `_truncated`, `_ended_in_reasoning`, `_repeated` and
+    /// `_reasoning_limit`) arrives as `.unknown` and exits 1: the prompt did
+    /// not end with a finished answer, and a script must not read it as one.
     ///
     /// - Parameter stopReason: The stop reason the prompt ended on.
     init(stopReason: StopReason) {

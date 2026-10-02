@@ -205,8 +205,8 @@ enum ACPAgentTelemetry {
         /// a payload can hold content.
         static let eventKind = "event.kind"
 
-        /// The text of a Router report: a stall or a repetition stop. It
-        /// holds times, counts and settings only.
+        /// The text of a Router report: a stall, a repetition stop or a
+        /// reasoning stop. It holds times, counts and settings only.
         static let routerReport = "router.report"
 
         /// The prompt tokens of a prompt. Router uses the same key.

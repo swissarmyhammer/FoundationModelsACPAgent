@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import FoundationModelsRouter
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -485,6 +486,30 @@ import Testing
         ])
 
         #expect(updates.map(\.kind) == [.stateUpdate])
+    }
+
+    /// A reasoning stop sends nothing on the wire, and writes one `notice`
+    /// record that carries Router's report of the stop: the reasoning tokens,
+    /// the limit, the finish reason of the pass and the recovery (task
+    /// ^7fsfw7y). Without its own arm the event falls into the
+    /// `@unknown default`, which writes a `debug` record with no report.
+    @Test func aReasoningStopWritesOneNoticeWithRouterReport() async throws {
+        let stop = ReasoningStop(
+            reasoningTokens: RepetitionDetection.defaultReasoningTokenLimit,
+            limit: RepetitionDetection.defaultReasoningTokenLimit,
+            passFinishReason: .reasoningTokenLimit,
+            detection: RepetitionDetection(),
+            recovery: nil)
+
+        let (updates, records) = try await TelemetryCapture.run(forbidding: []) { context in
+            (await Self.drive([.reasoningStopped(stop)]), context.logRecords)
+        }
+
+        let reportKey = ACPAgentTelemetry.LogMetadataKey.routerReport
+        let stopRecords = records.filter { $0.metadata[reportKey] == .string(stop.description) }
+        #expect(updates.map(\.kind) == [.stateUpdate])
+        #expect(stopRecords.count == 1)
+        #expect(stopRecords.first?.level == .notice)
     }
 
     // MARK: - The attachment report (§8.4, §11.6)
