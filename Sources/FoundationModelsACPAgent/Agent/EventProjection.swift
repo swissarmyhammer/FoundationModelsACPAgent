@@ -168,6 +168,18 @@ struct EventProjection {
     /// (task ^pez780d).
     private var sawUsageReport = false
 
+    /// Whether an `answered` event sends its reply as one agent message
+    /// (task ^64pav2a). `PromptExecution.drive` sets it for the session
+    /// events that come after the caller answer. An answer that mail
+    /// starts gives its reply whole and streams no text delta, so the
+    /// reply is the only carrier of its text. The caller stream streams its
+    /// text, so its `answered` sends nothing.
+    var projectsWholeReplies = false
+
+    /// Whether a text delta arrived since the last end of an answer. An
+    /// answer that streamed its text does not send its reply again.
+    private var streamedTextInAnswer = false
+
     /// Whether the prompt generated nothing: no observable output, while
     /// at least one `submissionEnded` arrived and the summed output tokens
     /// are zero. `PromptExecution.drive` reads it to report the honest
@@ -222,6 +234,7 @@ struct EventProjection {
             await promptState.promptDidStart()
         case .textDelta(let text):
             sawOutput = true
+            streamedTextInAnswer = true
             let messageId = agentMessageId ?? Self.makeMessageId()
             agentMessageId = messageId
             await send(
@@ -328,14 +341,13 @@ struct EventProjection {
             // stop (task ^7fsfw7y).
             reportRouterStop(
                 stop, message: "Router stopped a pass, because the pass reasoned and did not act.")
-        case .answered, .answerFailed, .mailDeliveryPaused:
-            // Router bookkeeping with no ACP counterpart: the stream of
-            // the prompt carries the text, the tool calls and the end.
-            // The usage of `answered` is the total of the chain. The
-            // `submissionEnded` sum above already counts these tokens, so
-            // the projection does not add them again.
-            ACPAgentTelemetry.logger(.promptExecution).debug(
-                "The projection sends nothing for a Router event.", metadata: eventMetadata(event))
+        case .answered(let answer):
+            await projectReply(of: answer)
+        case .answerFailed, .mailDeliveryPaused:
+            // Router bookkeeping with no ACP counterpart: the drive of the
+            // prompt reads the end of an answer for the stop reason.
+            streamedTextInAnswer = false
+            reportUnsentEvent(event)
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a
@@ -343,6 +355,37 @@ struct EventProjection {
             ACPAgentTelemetry.logger(.promptExecution).debug(
                 "The projection does not know a Router event.", metadata: eventMetadata(event))
         }
+    }
+
+    /// Sends the reply of `answer` as one agent message when the reply is
+    /// the only carrier of the answer text (``projectsWholeReplies``, task
+    /// ^64pav2a). An answer that streamed its text, and an empty reply,
+    /// send nothing. The usage of `answer` is the total of the chain, and
+    /// the `submissionEnded` sum already counts it, so the projection does
+    /// not add it again.
+    ///
+    /// - Parameter answer: The final answer of one chain of submissions.
+    private mutating func projectReply(of answer: SessionAnswer) async {
+        let streamedText = streamedTextInAnswer
+        streamedTextInAnswer = false
+        guard projectsWholeReplies, !streamedText, !answer.reply.isEmpty else {
+            reportUnsentEvent(.answered(answer))
+            return
+        }
+        sawOutput = true
+        await send(
+            .agentMessageChunk(
+                ContentChunk(content: .text(TextContent(text: answer.reply)), messageId: Self.makeMessageId())))
+    }
+
+    /// Records a Router event that the projection does not send. The record
+    /// is a `debug`, because the event is bookkeeping with no ACP
+    /// counterpart.
+    ///
+    /// - Parameter event: The event.
+    private func reportUnsentEvent(_ event: SessionEvent) {
+        ACPAgentTelemetry.logger(.promptExecution).debug(
+            "The projection sends nothing for a Router event.", metadata: eventMetadata(event))
     }
 
     /// Records that a submission of the prompt waits for a place in the

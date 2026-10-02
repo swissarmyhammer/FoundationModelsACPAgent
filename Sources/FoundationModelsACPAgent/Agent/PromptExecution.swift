@@ -246,7 +246,10 @@ struct PromptExecution: Sendable {
             prompt = await PromptContent.modelPrompt(
                 from: promptBlocks, resolver: contentResolver)
         }
-        await drive(events: session.streamEvents(to: prompt, maxTokens: nil))
+        // The subscription comes before the caller stream, so it holds each
+        // event of the prompt (task ^64pav2a).
+        let followUp = await SessionFollowUp.subscribing(to: session)
+        await drive(events: session.streamEvents(to: prompt, maxTokens: nil), followUp: followUp)
     }
 
     /// Drives one event stream to completion and closes the prompt: each
@@ -259,11 +262,20 @@ struct PromptExecution: Sendable {
     /// ^s0bw5cv. Leaving `events` cancels the Router stream, which is that
     /// surface's own contract, so the guard needs no second call.
     ///
-    /// - Parameter events: The prompt's event stream.
+    /// The caller stream ends while a background run of its answer is open
+    /// (task ^64pav2a). So when it ends by itself, the prompt then reads
+    /// `followUp` until the session has no more work
+    /// (``followSession(_:after:awaitingIdle:projection:)``). The stop reason then comes
+    /// from the last answer of the session.
+    ///
+    /// - Parameters:
+    ///   - events: The prompt's event stream.
+    ///   - followUp: The session-scoped events and the idle wait of the
+    ///     prompt, or `nil` for a drive that ends with `events`.
     /// - Returns: The stop reason the idle update carried.
     @discardableResult
     func drive<Events: AsyncSequence>(
-        events: Events
+        events: Events, followUp: SessionFollowUp? = nil
     ) async -> StopReason where Events.Element == SessionEvent {
         var projection = EventProjection(
             sessionId: sessionId,
@@ -272,25 +284,14 @@ struct PromptExecution: Sendable {
             modelName: modelName,
             shellSnapshot: shellSnapshot,
             relayElicitation: relayElicitation)
-        var stop = PromptStop.completed
-        do {
-            for try await event in events {
-                await projection.project(event)
-                guard case .generationStalled(let stall) = event,
-                    Self.endsPrompt(stall, sawOutput: projection.sawOutput)
-                else {
-                    continue
-                }
-                stop = .stalled(stall)
-                report(stall)
-                break
-            }
-        } catch {
-            stop = Self.classify(error)
-            if case .failed = stop {
-                report(failure: error)
-            }
+        let sessionEvents = followUp.map { SessionEventBuffer.reading($0.events) }
+        let callerEnd = await driveCallerStream(events, projection: &projection)
+        var stop = callerEnd.stop
+        if let followUp, let sessionEvents, let answerEnd = callerEnd.answerEnd, stop == .completed {
+            stop = await followSession(
+                sessionEvents, after: answerEnd, awaitingIdle: followUp.awaitIdle, projection: &projection)
         }
+        sessionEvents?.close()
         // A cancelled prompt does not always throw (§8.6): model work that
         // never checks for cancellation runs to completion. The recorded
         // request still ends the prompt as cancelled.
@@ -317,6 +318,162 @@ struct PromptExecution: Sendable {
         let reason = Self.stopReason(for: stop)
         await promptState.promptDidEnd(reason: reason)
         return reason
+    }
+
+    // MARK: - The caller stream and the session follow-up (task ^64pav2a)
+
+    /// What the caller stream of a prompt ended with.
+    private struct CallerStreamEnd {
+        /// Why the caller stream stopped.
+        let stop: PromptStop
+
+        /// The `answered` or `answerFailed` event of the caller answer, or
+        /// `nil` when the stream gave none.
+        let answerEnd: SessionEvent?
+    }
+
+    /// Projects each event of the caller stream, and classifies its end.
+    ///
+    /// - Parameters:
+    ///   - events: The caller stream of the prompt.
+    ///   - projection: The projection of the prompt.
+    /// - Returns: The stop of the stream, and the end of the caller answer.
+    private func driveCallerStream<Events: AsyncSequence>(
+        _ events: Events, projection: inout EventProjection
+    ) async -> CallerStreamEnd where Events.Element == SessionEvent {
+        var answerEnd: SessionEvent?
+        do {
+            for try await event in events {
+                await projection.project(event)
+                if Self.endsAnswer(event) {
+                    answerEnd = event
+                }
+                guard case .generationStalled(let stall) = event,
+                    Self.endsPrompt(stall, sawOutput: projection.sawOutput)
+                else {
+                    continue
+                }
+                report(stall)
+                return CallerStreamEnd(stop: .stalled(stall), answerEnd: answerEnd)
+            }
+        } catch {
+            let stop = Self.classify(error)
+            if case .failed = stop {
+                report(failure: error)
+            }
+            return CallerStreamEnd(stop: stop, answerEnd: answerEnd)
+        }
+        return CallerStreamEnd(stop: .completed, answerEnd: answerEnd)
+    }
+
+    /// Projects the session events that come after the caller answer, until
+    /// the session has no more work, and gives the stop of the prompt.
+    ///
+    /// The session stream also carries each event of the caller answer, in
+    /// the same order, so the projection skips each event up to the end of
+    /// the caller answer. After that come the settlements of the background
+    /// runs, and the answers that their mail starts.
+    ///
+    /// The idle wait runs in its own task. When it returns, the session
+    /// stream holds each event of the work, so the task closes the copy
+    /// of the stream, and the projection ends after the last event. A
+    /// `session/cancel` cancels the wait at once, and the projection sends
+    /// nothing more.
+    ///
+    /// - Parameters:
+    ///   - sessionEvents: The copy of the session stream of the prompt.
+    ///   - callerEnd: The end of the caller answer.
+    ///   - awaitIdle: The wait for the end of the work of the session.
+    ///   - projection: The projection of the prompt.
+    /// - Returns: The stop of the last answer, or `cancelled` when the wait
+    ///   ended before the session was idle.
+    private func followSession(
+        _ sessionEvents: SessionEventBuffer,
+        after callerEnd: SessionEvent,
+        awaitingIdle awaitIdle: @escaping @Sendable () async -> Bool,
+        projection: inout EventProjection
+    ) async -> PromptStop {
+        let idleWait = Task {
+            let idle = await awaitIdle()
+            sessionEvents.close()
+            return idle
+        }
+        await promptState.onCancelRequest { idleWait.cancel() }
+        projection.projectsWholeReplies = true
+        let lastAnswerEnd = await withTaskCancellationHandler {
+            await projectSessionEvents(sessionEvents.events, after: callerEnd, projection: &projection)
+        } onCancel: {
+            idleWait.cancel()
+        }
+        guard await idleWait.value else {
+            return .cancelled
+        }
+        return stop(afterAnswerEnd: lastAnswerEnd)
+    }
+
+    /// Projects each session event after `callerEnd`, until the copy of the
+    /// session stream ends or `session/cancel` asks the prompt to stop.
+    ///
+    /// - Parameters:
+    ///   - events: The copy of the session stream of the prompt.
+    ///   - callerEnd: The end of the caller answer.
+    ///   - projection: The projection of the prompt.
+    /// - Returns: The end of the last answer after the caller answer, or
+    ///   `nil` when no answer ended after it.
+    private func projectSessionEvents(
+        _ events: AsyncStream<SessionEvent>, after callerEnd: SessionEvent, projection: inout EventProjection
+    ) async -> SessionEvent? {
+        var isPastCallerAnswer = false
+        var lastAnswerEnd: SessionEvent?
+        for await event in events {
+            guard isPastCallerAnswer else {
+                isPastCallerAnswer = event == callerEnd
+                continue
+            }
+            if await promptState.cancelRequested {
+                break
+            }
+            await projection.project(event)
+            if Self.endsAnswer(event) {
+                lastAnswerEnd = event
+            }
+        }
+        return lastAnswerEnd
+    }
+
+    /// The stop of a prompt whose last answer ended with `answerEnd`. A
+    /// failed answer stops the prompt with its failure. Else the prompt
+    /// is `completed`, and the finish reason of its last submission can
+    /// still cut it (``cutStop(for:)``).
+    ///
+    /// - Parameter answerEnd: The end of the last answer after the caller
+    ///   answer, or `nil` when no answer ended after it.
+    /// - Returns: The stop.
+    private func stop(afterAnswerEnd answerEnd: SessionEvent?) -> PromptStop {
+        guard case .answerFailed(let failure) = answerEnd else {
+            return .completed
+        }
+        switch failure.reason {
+        case .cancelled:
+            return .cancelled
+        case .error(let description):
+            report(failure: failure)
+            return .failed(message: description)
+        }
+    }
+
+    /// Whether `event` ends an answer: `answered` or `answerFailed`.
+    ///
+    /// - Parameter event: The session event.
+    /// - Returns: Whether the event ends an answer.
+    static func endsAnswer(_ event: SessionEvent) -> Bool {
+        if case .answered = event {
+            return true
+        }
+        if case .answerFailed = event {
+            return true
+        }
+        return false
     }
 
     // MARK: - The first activity (plan.md §9)

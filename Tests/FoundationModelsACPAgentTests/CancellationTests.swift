@@ -212,10 +212,12 @@ import Testing
     // MARK: - An answer that mail starts, and that waits for the model queue (§10.1)
     //
     // The prompt of session B starts a shell read of a named pipe in the
-    // background, and ends. Then session A holds the model. The test writes
-    // the pipe, thus the shell run of B settles, and its mail starts an answer
-    // of B. That answer has no caller prompt, and it waits for a queue place
-    // behind A. A close of B must answer, and must not wait for A.
+    // background. Its caller answer ends, and the prompt waits for the
+    // background run (task ^64pav2a). Then session A holds the model. The
+    // test writes the pipe, thus the shell run of B settles, and its mail
+    // starts an answer of B. That answer has no caller prompt, and it waits
+    // for a queue place behind A. A close of B must end the prompt of B with
+    // `cancelled` and answer, and must not wait for A.
 
     /// The marker of the prompt of session B. Its pass starts the background
     /// run.
@@ -257,7 +259,9 @@ import Testing
 
     /// A `session/close` for a session whose mail-started answer waits for a
     /// place in the model queue answers while the other session still holds
-    /// the model. After the release, the holding session completes.
+    /// the model. The prompt of that session waited for the mail answer, so
+    /// the close ends it with `cancelled`. After the release, the holding
+    /// session completes.
     @Test(.timeLimit(.minutes(1)))
     func closeEndsAMailStartedAnswerThatWaitsForTheModelQueue() async throws {
         let hold = ScriptedHold()
@@ -271,8 +275,12 @@ import Testing
         let counter = fixture.passCounter
 
         try await fixture.prompt(sessionB, text: Self.startRunMarker)
-        _ = try await fixture.waitForIdle(of: sessionB)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
+        try await Poll.until("the runCode call of session B gave its pending answer") {
+            await fixture.updates(of: sessionB).contains { notification in
+                guard case .toolCallUpdate(let update) = notification.update else { return false }
+                return update.status == .value(.completed)
+            }
+        }
         try await fixture.prompt(sessionA, text: Self.holdModelMarker)
         try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
         try await NamedPipe.write(
@@ -283,12 +291,15 @@ import Testing
 
         _ = try await fixture.base.harness.connection.closeSession(
             CloseSessionRequest(sessionId: sessionB))
+        let updatesOfB = await fixture.updates(of: sessionB)
         let updatesOfAWhileHeld = await fixture.updates(of: sessionA)
 
         hold.release()
         let updatesOfA = try await fixture.waitForIdle(of: sessionA)
         await fixture.close()
 
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfB) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .cancelled)
         #expect(ScriptedPromptFixture.idleCount(in: updatesOfAWhileHeld) == 0)
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }

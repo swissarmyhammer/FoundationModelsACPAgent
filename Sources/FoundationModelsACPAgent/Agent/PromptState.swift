@@ -58,6 +58,10 @@ actor PromptStateOwner {
     /// goes out.
     private var endWaiters: [CheckedContinuation<Void, Never>] = []
 
+    /// The handlers that ``noteCancelRequested()`` runs, one time each
+    /// (``onCancelRequest(_:)``).
+    private var cancelHandlers: [@Sendable () -> Void] = []
+
     /// Creates the owner over `send`.
     ///
     /// - Parameter send: The sink every state update goes to.
@@ -128,9 +132,30 @@ actor PromptStateOwner {
 
     /// Records that `session/cancel` asked this prompt to stop. The
     /// prompt reads it at the end, because a cancelled prompt does not
-    /// always throw (plan.md §8.6).
+    /// always throw (plan.md §8.6). It also runs each handler that
+    /// ``onCancelRequest(_:)`` registered.
     func noteCancelRequested() {
         cancelRequested = true
+        let handlers = cancelHandlers
+        cancelHandlers = []
+        for handler in handlers {
+            handler()
+        }
+    }
+
+    /// Runs `handler` when `session/cancel` asks this prompt to stop: at
+    /// once when the request is already recorded, else at the request. A
+    /// prompt that waits for the work of its session (task ^64pav2a)
+    /// registers the cancel of that wait here, so the cancel ends the wait
+    /// at once.
+    ///
+    /// - Parameter handler: The work to run at the request.
+    func onCancelRequest(_ handler: @escaping @Sendable () -> Void) {
+        guard !cancelRequested else {
+            handler()
+            return
+        }
+        cancelHandlers.append(handler)
     }
 
     /// Sends `state_update: running`.

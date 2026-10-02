@@ -131,6 +131,13 @@ actor CloseCountingRoutedSession: RoutedSession {
 
     /// Sends the call to the real session.
     ///
+    /// - Returns: Whether the real session became idle.
+    func awaitIdle() async -> Bool {
+        await wrapped.awaitIdle()
+    }
+
+    /// Sends the call to the real session.
+    ///
     /// - Parameter message: The id of the message to take back.
     /// - Returns: The result of the real session.
     func cancel(message: MessageID) async -> MessageCancellationResult {

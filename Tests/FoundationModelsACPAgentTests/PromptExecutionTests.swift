@@ -955,6 +955,13 @@ import Testing
     private static let waitingSnippet =
         #"return await tools.shell.execute({ command: "cat \#(pipeName)" });"#
 
+    /// The marker of the prompt of session A in the tool-body proof. Its
+    /// pass starts the shell read.
+    private static let waitingMarker = "Read the pipe"
+
+    /// The text that the pass of session B plays in the tool-body proof.
+    private static let answerText = "answered"
+
     /// Session A waits in an elicitation that the client does not answer.
     /// Session B prompts on the same model, and its prompt ends with
     /// `end_turn` while A still waits.
@@ -986,24 +993,34 @@ import Testing
     /// nothing writes. Session B prompts on the same model, and its prompt
     /// ends with `end_turn` while the tool body of A still waits.
     ///
-    /// B plays the same script, thus its own read waits as well. The close of
-    /// each session at the end stops both reads.
+    /// The prompt of A waits for its background read (task ^64pav2a), so it
+    /// sends no `idle`. B starts no read, so its prompt ends after its own
+    /// answer. The close of each session at the end stops the read of A and
+    /// ends the prompt of A.
     @Test(.timeLimit(.minutes(1)))
     func aSessionInAToolBodyHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
-            script: ScriptedPromptFixture.makeToolPromptScript(code: Self.waitingSnippet),
+            script: [
+                .onPrompt(
+                    containing: Self.waitingMarker,
+                    play: try ScriptedPromptFixture.makeToolPromptScript(code: Self.waitingSnippet)),
+                .textDelta(Self.answerText),
+                .endPass,
+            ],
             label: "PromptExecutionTests-tool-body",
             workingDirectory: try NamedPipe.makeDirectory(
                 holding: Self.pipeName, label: "PromptExecutionTests-pipe-repo"))
-        try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
+        try await fixture.prompt(fixture.firstSessionId, text: Self.waitingMarker)
         let counter = fixture.passCounter
         try await Poll.until("the pass of session A starts") { counter.startedCount == 1 }
 
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
+        let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
         try await fixture.closeSessions()
 
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
     }
 
     // MARK: - The unknown-id policy (§10.1)

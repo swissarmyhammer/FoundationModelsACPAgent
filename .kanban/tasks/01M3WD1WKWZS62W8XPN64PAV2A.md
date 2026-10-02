@@ -62,6 +62,26 @@ comments:
     - test: green on new pins (Router 8821ccc, Multitool ef905bf, CodeContext e9f60bd) — swift test 677 tests / 77 suites
     - next: Router session asked (2026-10-02) for `RoutedSession.awaitIdle() async -> Bool`; when pushed, move the Router pin and run /implement ^64pav2a again
   timestamp: 2026-10-02T01:39:54.378954+00:00
+- actor: claude-code
+  id: 01m3xdrwekn10vacy8ace25cmh
+  text: |-
+    ### Research on Router c5ebd44 (awaitIdle)
+
+    - `streamSessionEvents()` gets each event of the caller answer too, in the same order (`answerEventSink` sends each event to the caller sink and to the session fan-out in one call). So the follow-up skips the session events up to and including the caller `answered`/`answerFailed` (equal by `SessionEvent ==`), and projects only the events after it. No duplicates.
+    - A mail-delivery answer runs with the `.reply` reader: it streams NO `textDelta`. Its text is only in `answered(SessionAnswer).reply`. So the projection must send that reply as one `agent_message_chunk` for the answers after the caller answer (`EventProjection.projectsWholeReplies`).
+    - `awaitIdle()` true => the end of the last answer is already in the session stream, and no new event comes. A session stream never ends while the session lives, so the drain uses a forwarder task (`SessionEventBuffer`): cancelling a task that iterates an `AsyncStream` still gives the buffered events, then nil. The cancel also drops the Router subscription (one per prompt, closed in every path).
+    - `session/cancel` does NOT stop a background run (Router `cancel()` contract), and the mail stays in the outbox, so `awaitIdle` would not return. `PromptStateOwner.onCancelRequest(_:)` cancels the wait task at once; `awaitIdle` then returns false.
+    - The terminal stream (`TerminalStream`, session-level) sends its own `tool_call_update(in_progress)`, `terminal_update` and output chunks for a shell run. These can come after the `idle` of a prompt; they are not prompt updates. The new wire tests allow only those after the idle.
+  timestamp: 2026-10-02T04:25:46.195678+00:00
+- actor: claude-code
+  id: 01m3xea77rvyv2xcqv7bnmp7n3
+  text: |-
+    ### implement — changed
+    - evidence: `swift build -c release` complete, 0 warnings. `swift build --build-tests` has 1 SwiftPM line only ("missing creator for mutated node" of the mlx-swift_Cmlx bundle in .build, not a source warning). `swift test`: 684 tests in 78 suites pass, 1 known issue (HarnessSmokeTests self-check).
+    - files: Sources/FoundationModelsACPAgent/Agent/SessionFollowUp.swift (new: SessionFollowUp, SessionEventBuffer), Agent/PromptExecution.swift (run subscribes before streamEvents; drive -> driveCallerStream + followSession + projectSessionEvents + stop(afterAnswerEnd:)), Agent/EventProjection.swift (projectsWholeReplies: a mail answer reply goes out as one agent_message_chunk), Agent/PromptState.swift (onCancelRequest), Tests/.../PromptFollowUpTests.swift (new: 3 wire proofs + 4 synthetic proofs), Tests/.../Support/CloseCountingRoutedSession.swift (awaitIdle), Tests/.../CancellationTests.swift and PromptExecutionTests.swift (the two ^2vn6 tests moved to the new contract), plan.md §8.1, §8.4 table, §8.6.
+    - changed tests of task 01M3A30WN7D2CB2X7EGM0K2VN6: `closeEndsAMailStartedAnswerThatWaitsForTheModelQueue` (B's prompt now waits; the close ends it with idle(cancelled)); `aSessionInAToolBodyHoldsNoModel` (B plays no background run; A's prompt sends no idle while its read waits). `aSessionInAnElicitationHoldsNoModel` needed no change.
+    - next: /review
+  timestamp: 2026-10-02T04:35:14.296750+00:00
 position_column: doing
 position_ordinal: '80'
 title: The turn ends while a backgrounded runCode is in flight, so its result never reaches the model

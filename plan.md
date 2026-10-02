@@ -945,6 +945,21 @@ the `idle` update must key on the end of our own prompt task, not on a
 `submissionEnded` event. Sum the usage of every `submissionEnded` of the
 prompt. Report that sum one time. Send `idle` one time.
 
+**The end of the caller stream is not the end of the prompt either** (task
+^64pav2a). Router's `streamEvents(to:maxTokens:)` ends while a background run
+of the answer is open, for example a `runCode` snippet that gave `pending:
+true`. The result of the run comes back as mail, and the answer that the mail
+starts is visible only on `streamSessionEvents()`. So the prompt takes one
+`streamSessionEvents()` subscription before the caller stream starts. When the
+caller stream ends by itself, the prompt projects the session events after the
+caller answer (the session stream carries the caller events too, so the
+prompt skips them up to the caller `answered`), until
+`RoutedSession.awaitIdle()` returns. The stop reason then comes from the LAST
+answer: its finish reason (§8.2), or its `answerFailed`. A mail answer gives
+its reply whole, with no `textDelta`, so the prompt sends that reply as one
+`agent_message_chunk`. `session/cancel` and `session/close` end the wait at
+once (§8.6).
+
 ### 8.2 The state machine
 
 `state_update` carries `running` / `idle` / `requires_action`. The conformance
@@ -1038,7 +1053,7 @@ and its doc comment says a consumer must write a `default` arm. Write one.
 | `generationCall(GenerationCallUsage)` | nothing on the wire — the usage of one generation call; `submissionEnded` already counts it (§8.0) |
 | `repetitionStopped(RepetitionStop)` | nothing on the wire — a `notice` log line with the session id, the model name and the report of Router: the counts of the stop and the settings in force. When no recovery is left, the last submission ends with `.repeatedLines`, and the prompt stops with `_repeated` (§8.2) |
 | `reasoningStopped(ReasoningStop)` | nothing on the wire — a `notice` log line with the session id, the model name and the report of Router: the reasoning tokens, the limit, the finish reason of the pass, the recovery and the settings in force. When no recovery is left, the last submission ends with `.reasoningTokenLimit`, and the prompt stops with `_reasoning_limit` (§8.2) |
-| `answered(SessionAnswer)` / `answerFailed` / `mailDeliveryPaused` | nothing on the wire — a `debug` log line. The usage of `answered` is the total of the chain, and the `submissionEnded` sum already counts it |
+| `answered(SessionAnswer)` / `answerFailed` / `mailDeliveryPaused` | nothing on the wire — a `debug` log line — with one exception: the `answered` of an answer after the caller answer (§8.1) that streamed no text sends its `reply` as one `agent_message_chunk`. The usage of `answered` is the total of the chain, and the `submissionEnded` sum already counts it |
 
 **`textReset` means "discard the text accumulated so far".** Therefore it
 cannot ride as a chunk. Send the whole-message form, which replaces
@@ -1262,6 +1277,12 @@ Thus `session/cancel` and `session/close` give `idle(cancelled)` at once, also
 when a submission of another session holds the model. The waiting submission
 never runs. The submission of the other session continues, and a later prompt
 of the cancelled session puts its submission in the queue as usual.
+
+A prompt that waits for a background run of its session (§8.1) ends at once
+too. `cancel()` does not stop a background run, and the mail of the run stays
+in the outbox, so `awaitIdle()` would not return. The prompt-state owner
+therefore cancels the task of the wait at the cancel request, and the prompt
+sends no update after the `idle(cancelled)`.
 
 **A cancelled prompt does not always throw.** It **usually** surfaces a
 `CancellationError`, and we must catch that error and map it to
