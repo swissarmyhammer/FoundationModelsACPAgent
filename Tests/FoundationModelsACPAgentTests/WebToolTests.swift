@@ -174,8 +174,10 @@ import Testing
     /// No string form of a configured key shows the value.
     @Test func aConfiguredSecretShowsNoValue() {
         let secret = ConfiguredSecret(Self.configuredKey)
-        var dumped = ""
-        dump(WebToolOptions(apiKeys: [.kagi: secret]), to: &dumped)
+        // The children of the mirror are what a reflection tool reads.
+        let dumped = Mirror(reflecting: WebToolOptions(apiKeys: [.kagi: secret])).children
+            .map { String(reflecting: $0.value) }
+            .joined(separator: "\n")
 
         #expect(String(describing: secret) == ConfiguredSecret.redactedForm)
         #expect(String(reflecting: secret) == ConfiguredSecret.redactedForm)

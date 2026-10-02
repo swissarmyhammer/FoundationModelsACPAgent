@@ -34,7 +34,14 @@ comments:
     - evidence: 20 files. New: Sources/FoundationModelsACPAgent/Configuration/ConfiguredSecret.swift, Sources/FoundationModelsACPAgent/Tools/WebComposition.swift, Tests/FoundationModelsACPAgentTests/WebToolTests.swift. Changed: ToolSectionCodec.swift, ConfigurationLoader.swift, ConfigurationYAML.swift, CatalogContext.swift, ToolCatalog.swift, ToolsDoctor.swift, BuiltinCommands.swift, acp-agent/ConfigCommand.swift, acp-agent/DoctorCommand.swift, ToolCatalogTests.swift, ToolsDoctorTests.swift, ConfigShowTests.swift, BuiltinCommandsTests.swift, README.md, plan.md, bench/README.md, bench/code-context.config.yaml. `swift build -c release`: complete, 0 warnings. `swift test`: 707 tests in 79 suites passed (1 known issue, the deliberate negative in HarnessSmokeTests). No test sends a request. Package.resolved not changed; the Multitool c56729b update needed no fix.
     - next: /review
   timestamp: 2026-10-02T15:20:30.757886+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m3ym6zdw6x86apj7c9aae6h3
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/WebToolTests.swift:178 (code-hygiene/disallowed-constructs-swift, no_direct_standard_out_logs)
+    - next: remove the print/debugPrint/dump call from WebToolTests.swift (and each other such call in that file), then review again
+  timestamp: 2026-10-02T15:37:33.884172+00:00
+position_column: review
 position_ordinal: '80'
 title: 'Mount the Multitool web capability by default: keyless search with no setup, and an API key in config or the environment selects a keyed provider'
 ---
@@ -75,3 +82,18 @@ Multitool already has the provider logic (`.build/checkouts/FoundationModelsMult
 - `config show` with a key set: the output does not contain the key value.
 - No test makes a network call.
 - `swift build -c release` with no warnings, and `swift test` passes. #tools
+
+## Review Findings (2026-10-02 10:21)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 16 file(s) reviewed, 8 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 4 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `bench/README.md` — no validator matches this file
+> - `bench/code-context.config.yaml` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/WebToolTests.swift:178` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
