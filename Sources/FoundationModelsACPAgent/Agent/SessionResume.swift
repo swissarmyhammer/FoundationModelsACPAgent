@@ -159,6 +159,9 @@ extension RoutedACPAgent {
             availableCommands: activation.availableCommands,
             configOptions: activation.configOptions,
             meta: Self.missingToolsMeta(of: restored.configurationReport))
+        // `SessionMergeEngine.seed(from:)` is the FoundationModelsACP method
+        // that records the commands and the options of the response, so the
+        // state part of a later replay holds them.
         sessions[params.sessionId]?.history.seed(from: response)
         return response
     }

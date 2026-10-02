@@ -90,7 +90,23 @@ comments:
 
     New tests: the prompt and slash-command responses name the echoed message; three `name` tests; the new and resume responses hold the command list; replay with the live ids; a new agent replays with the ids of the earlier agent; no retained history gives no replay; the history file round trip.
   timestamp: 2026-10-02T21:43:53.291632+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m3zaczsgt6gacj07vm00yz8q
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 1 finding (1 confirmed, 1 refuted) — Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:162 `completeness/inverse-operation-coverage`
+    - next: correct the open item in the `## Review Findings (2026-10-02 16:44)` section, then review again. The task stays in review.
+  timestamp: 2026-10-02T22:05:19.536120+00:00
+- actor: claude-code
+  id: 01m3zafbxbv8ptp8vwv5sanmsj
+  text: |-
+    ### implement — changed (finding of 2026-10-02 16:44)
+    - The finding says that `seed(from:)` is not implemented. It is: `public mutating func seed(from response: ResumeSessionResponse) -> [Change]` at `.build/checkouts/FoundationModelsACP/Sources/FoundationModelsACP/Session/SessionMergeEngine.swift:166` (pin e14d853). Seeding is necessary (it records availableCommands and configOptions into the state part of a later replay), so the call stays, and a second `seed(from:)` in our extension would clash with the upstream method.
+    - Change: a comment at the call names the upstream method and its purpose, so a reader of this file sees where it comes from.
+    - evidence: `swift build` complete.
+    - next: commit, review again.
+  timestamp: 2026-10-02T22:06:37.483376+00:00
+position_column: review
 position_ordinal: '80'
 title: 'Adopt ACP schema-v2.0.0-alpha.7: PromptResponse.messageId (required), ToolCallUpdate.name, availableCommands in new/resume, ID-stable replay'
 ---
@@ -123,3 +139,15 @@ The FoundationModelsACP session (2026-10-02) moves the package to ACP schema-v2.
 - The first update of a tool call holds `name`.
 - `session/new` and `session/resume` responses hold `availableCommands`.
 - A resumed session replays the kept messages with their original IDs. #upstream
+
+## Review Findings (2026-10-02 16:44)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 26 file(s) reviewed, 7 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:162` `completeness/inverse-operation-coverage` — The code calls `.seed(from: response)` on a SessionMergeEngine object, but this method is not implemented anywhere in the changes. SessionMergeEngine has read operations (`replayUpdates`) but no corresponding write/initialization operation to seed history from a response. Add a `.seed(from:)` method to the SessionMergeEngine extension in SessionHistory.swift that initializes or updates the history with data from the ResumeSessionResponse, or remove the call at line 162 if seeding is not required.
