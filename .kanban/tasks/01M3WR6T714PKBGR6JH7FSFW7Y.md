@@ -32,8 +32,25 @@ comments:
     - evidence: 13 files — Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift, Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Sources/FoundationModelsACPAgent/Configuration/RepetitionConfiguration.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Sources/acp-agent/ExitCode.swift, Tests/FoundationModelsACPAgentTests/{PromptExecutionTests,EventProjectionTests,ExitCodeTests,ConfigurationLoaderTests,ConfigShowTests}.swift, bench/README.md, bench/swebench_acp.py, plan.md. `swift build -c release`: Build complete, 0 errors, 0 warnings. `swift test`: 677 tests in 77 suites passed, 1 known issue (the deliberate withKnownIssue in HarnessSmokeTests). The one build warning, SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle, also shows on the baseline without these changes (checked with git stash). RED seen first for the 7 runtime tests (unknown key errors, missing config show lines, no notice record); the PromptStop tests were RED as a compile failure.
     - next: /review. A person must confirm the bench/README.md table deviation (see the comment above).
   timestamp: 2026-10-02T00:04:15.162517+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3x3p8v9p6t74nrfhxzdfb1a
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (8814016). 0 findings, 0 confirmed, 0 refuted. 16 pairs attempted, 0 failed. 11 files reviewed. The .kanban files are excluded by .reviewignore. No validator matches bench/README.md and plan.md.
+    - note: The tool rule code-hygiene/dead-code-python failed. Vulture scanned the .build checkouts and stopped with FileNotFoundError. Thus this rule did not examine bench/swebench_acp.py.
+    - next: The task is in done.
+  timestamp: 2026-10-02T01:29:34.825289+00:00
+- actor: claude-code
+  id: 01m3x3pjdryncxq8jwex6xrrz2
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 13 files
+    - test: green — swift build -c release 0 warnings; swift test 677 tests in 77 suites (reported by implement)
+    - commit: 8814016
+    - review: clean — review sha HEAD~1..HEAD, 0 findings
+  timestamp: 2026-10-02T01:29:44.632959+00:00
+position_column: done
+position_ordinal: ff8d80
 title: 'Adopt Router''s reasoning limit and line-shape detector: map reasoningTokenLimit, project reasoningStopped, expose the three new repetition settings'
 ---
 ## Why
