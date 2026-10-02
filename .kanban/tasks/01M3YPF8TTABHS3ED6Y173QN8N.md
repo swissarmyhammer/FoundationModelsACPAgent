@@ -51,8 +51,15 @@ comments:
     - evidence: review sha HEAD~1..HEAD (eb1893c); 3 findings, 3 confirmed, 0 refuted — SkillTriggerTests.swift:177, SkillTriggerTests.swift:179, Support/ProcessModelPool.swift:29
     - next: implement the 3 open items in the "Review Findings (2026-10-02 13:51)" section, then review again. Green CI after push is the last step of the card.
   timestamp: 2026-10-02T19:19:18.032838+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3z4xdbv1kq5cz13ta9d5ht8
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (fa650d1). 2 files reviewed, 7 validator runs, 0 findings, 0 failed. The 3 findings of 2026-10-02 13:51 are checked.
+    - next: The task is in done. The orchestrator must push and make sure that the CI Integration job is green.
+  timestamp: 2026-10-02T20:29:26.267158+00:00
+position_column: done
+position_ordinal: ff9080
 title: 'CI is red: the ToolCallingTests integration gate cannot resolve the "coding" profile on the CI machine'
 ---
 ## Problem
