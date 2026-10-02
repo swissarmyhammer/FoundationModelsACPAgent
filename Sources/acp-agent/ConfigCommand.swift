@@ -39,7 +39,7 @@ extension AcpAgentCommand {
             into selection: LayerSelection, of stack: DotfolderStack, overwrites: Bool
         ) throws -> URL {
             try LayerFileWriter.write(
-                try ConfigurationYAML.documentText(for: AgentConfiguration()),
+                try ConfigurationYAML.documentText(for: AgentConfiguration(), secrets: .omitted),
                 named: ConfigurationLoader.configFileName,
                 into: selection, of: stack, overwrites: overwrites)
         }
@@ -120,13 +120,25 @@ extension AcpAgentCommand {
                     workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
                 ).load()
                 return CommandReport(
-                    standardOutput: try documentText(for: loaded),
+                    standardOutput: try documentText(for: loaded, environment: environment),
                     standardErrorLines: loaded.warnings.map(\.description))
             }
 
             /// The document the flags select: YAML, or JSON under `--json`,
-            /// each with the layer of every key under `--source`.
-            private func documentText(for loaded: LoadedConfiguration) throws -> String {
+            /// each with the layer of every key under `--source`. The YAML
+            /// ends with one comment line that names the web search
+            /// providers in force. The JSON is the bare tree, because JSON
+            /// holds no comment.
+            ///
+            /// - Parameters:
+            ///   - loaded: The merged configuration and its sources.
+            ///   - environment: The process environment, which selects the
+            ///     keyed web search providers.
+            /// - Returns: The document text.
+            /// - Throws: The encoding error.
+            private func documentText(
+                for loaded: LoadedConfiguration, environment: [String: String]
+            ) throws -> String {
                 if asJSON {
                     return try annotatesSource
                         ? Self.jsonText(
@@ -136,6 +148,28 @@ extension AcpAgentCommand {
                 }
                 return try ConfigurationYAML.documentText(
                     for: loaded.configuration, annotation: annotatesSource ? .sources(loaded.sources) : .none)
+                    + Self.webProvidersComment(for: loaded.configuration, environment: environment)
+            }
+
+            /// The comment line that names the web search providers in
+            /// force, in the order to try, or says that the web tool is off.
+            /// A provider name holds no key, thus the line shows no key.
+            ///
+            /// - Parameters:
+            ///   - configuration: The merged configuration.
+            ///   - environment: The process environment.
+            /// - Returns: The comment line, newline-terminated.
+            private static func webProvidersComment(
+                for configuration: AgentConfiguration, environment: [String: String]
+            ) -> String {
+                guard
+                    let names = WebComposition.providerNames(
+                        section: configuration.tools.web, processEnvironment: environment)
+                else {
+                    return "# tools.web is off: no search provider is in force.\n"
+                }
+                return "# tools.web search providers in force, in order: "
+                    + names.joined(separator: ", ") + "\n"
             }
 
             /// The JSON text of `document`: pretty, keys sorted, slashes

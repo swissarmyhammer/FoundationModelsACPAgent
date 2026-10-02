@@ -5,7 +5,8 @@ import FoundationModelsMultitool
 /// The `doctor` component of the sandbox and the tools (cli-plan.md §5.12,
 /// the Sandbox and Tools rows): the seatbelt sandbox starts, each
 /// `sandbox.extraWritePaths` entry is on disk, the shell store directory
-/// can be written, and each configured MCP server answers.
+/// can be written, the web tool names its search providers, and each
+/// configured MCP server answers.
 ///
 /// The component takes the resolved configuration and an injected
 /// ``ToolsProber``, so a unit test starts no confined command and no MCP
@@ -55,6 +56,12 @@ public struct ToolsDoctor: Doctorable {
     /// The check that states the shell tool is off.
     private static let shellToolCheckName = "the shell tool"
 
+    /// The check that states the web tool and its search providers.
+    private static let webToolCheckName = "the web tool"
+
+    /// The text between the provider names of the web row.
+    private static let providerSeparator = ", "
+
     /// The check that states the mcp tool is off.
     private static let mcpToolCheckName = "the mcp tool"
 
@@ -86,6 +93,14 @@ public struct ToolsDoctor: Doctorable {
         + LoadedConfiguration.keyPathSeparator
         + ShellToolOptions.CodingKeys.storeDirectory.stringValue
 
+    /// The dotted key path that turns the web tool off.
+    private static let webEnabledKey =
+        AgentConfiguration.CodingKeys.tools.stringValue
+        + LoadedConfiguration.keyPathSeparator
+        + ToolsConfiguration.CodingKeys.web.stringValue
+        + LoadedConfiguration.keyPathSeparator
+        + WebToolOptions.CodingKeys.enabled.stringValue
+
     /// The dotted key path of the mcp section a fix names.
     private static let mcpKey =
         AgentConfiguration.CodingKeys.tools.stringValue
@@ -108,6 +123,10 @@ public struct ToolsDoctor: Doctorable {
     /// How long one prober call may take, in seconds.
     public let timeoutSeconds: Double
 
+    /// The process environment that the web row reads the API keys from.
+    /// The row names the providers that the keys select, and never a key.
+    private let environment: [String: String]
+
     // MARK: - Doctorable
 
     /// What this component is called in the doctor report.
@@ -124,24 +143,28 @@ public struct ToolsDoctor: Doctorable {
     ///   - prober: How the checks reach the world.
     ///   - timeoutSeconds: How long one prober call may take. The default
     ///     is ``probeTimeoutSeconds``.
+    ///   - environment: The process environment that the web row reads the
+    ///     API keys from. The default is the environment of the process.
     public init(
         configuration: AgentConfiguration, workingDirectory: URL, prober: any ToolsProber,
-        timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds
+        timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.configuration = configuration
         self.workingDirectory = workingDirectory
         self.prober = prober
         self.timeoutSeconds = timeoutSeconds
+        self.environment = environment
     }
 
     /// Reports the sandbox, then one finding per extra write path, then the
-    /// shell, then the MCP servers.
+    /// shell, then the web tool, then the MCP servers.
     ///
     /// - Returns: The findings, in that order.
     public func runHealthChecks() async -> [HealthCheck] {
         await [sandboxCheck()]
             + configuration.sandbox.extraWritePaths.map(Self.check(ofExtraWritePath:))
-            + [shellCheck()]
+            + [shellCheck(), webCheck()]
             + mcpChecks()
     }
 
@@ -219,6 +242,30 @@ public struct ToolsDoctor: Doctorable {
     private static func storeFix(naming directory: URL) -> String {
         "make \(directory.path) writable, or set \(storeDirectoryKey) in "
             + "\(ConfigurationLoader.configFileName) to a directory that can be written"
+    }
+
+    // MARK: - The web tool
+
+    /// The finding of the web section: the search providers in force, by
+    /// name and in order, or one row that says disabled.
+    ///
+    /// The row sends no request. The providers come from the configured
+    /// keys and the process environment, and a provider name holds no key.
+    ///
+    /// - Returns: That one finding.
+    private func webCheck() -> HealthCheck {
+        guard
+            let names = WebComposition.providerNames(
+                section: configuration.tools.web, processEnvironment: environment)
+        else {
+            return DisabledSectionCheck.check(
+                name: Self.webToolCheckName, key: Self.webEnabledKey, category: Self.category)
+        }
+        return .ok(
+            name: Self.webToolCheckName,
+            message: "on; the search providers in order: "
+                + names.joined(separator: Self.providerSeparator),
+            category: Self.category)
     }
 
     // MARK: - The MCP servers

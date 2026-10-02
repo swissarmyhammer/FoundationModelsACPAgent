@@ -1545,6 +1545,11 @@ own option type. An unknown key in it is an error (§2.4). An `enabled:` key
 would force each package to carry a flag that only this layer wants. The codec
 first checks for a scalar `false`. Then it decodes the mapping.
 
+**One exception: `web:` also takes `enabled:`** (task ^ba231ka). The body of
+`tools.web` is this layer's own option type (`WebToolOptions`), not a
+package option type, so `tools.web.enabled: false` costs no package a flag.
+`web: false` turns the tool off too, by the shared rule.
+
 - Disabling is per-tool, one at a time. There is no `tools: false` switch and
   no `only:` allowlist. A config that silently removed the full roster would
   be too easy to write by accident.
@@ -1578,6 +1583,7 @@ both:**
 | `files` | `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)` — **shipped** | nothing | `files:` |
 | `shell` | `withShell(storeDirectory:sandbox:outputChunkStream:)` — **shipped** | nothing | `shell:` |
 | `mcp` | `withMCP(servers:)` — **shipped** | nothing; the ACP tunnel is unstable-gated (§11.5) | `mcp:` (plus ACP's per-session `mcpServers`) |
+| `web` | `withWeb(configuration:)` — **shipped**; the configuration is `WebConfiguration.fromEnvironment(_:)` over the process environment with the `apiKeys` merged over it | nothing | `web:` (`enabled`, `apiKeys`) |
 | skills → `/id` commands | `SkillsRegistry` as a `SlashCommandProviding` conformer — **shipped in Skills** | nothing | `skills:` |
 | skills → model access | the standalone `skills` tool, appended to the tool array — **shipped in Skills** | nothing | `skills:` |
 
@@ -1656,6 +1662,21 @@ it today. (The two integration gaps: §14.2.)
   removed too, and the snippet globals `status()` and `cancel()` replace
   them. There is no `wait()` global: a settled run comes back to the session
   as mail (§8.0).
+- **`web`**: on by default (task ^ba231ka). The verbs are `tools.web.search`
+  and `tools.web.fetch`. **They are not in the seatbelt sandbox**: they run in
+  the agent process through `URLSession`. Multitool's `WebAddressGuard`
+  refuses private and local addresses. With no key, the providers are
+  `braveHTML`, then `duckDuckGoHTML`. A key adds its keyed provider before
+  them, in Multitool's table order: `braveAPI` (`BRAVE_SEARCH_API_KEY`, else
+  `BRAVE_API_KEY`), `tavily` (`TAVILY_API_KEY`), `exa` (`EXA_API_KEY`),
+  `serper` (`SERPER_API_KEY`), `kagi` (`KAGI_API_KEY`), `searxng`
+  (`SEARXNG_URL`). The keys come from the process environment, and from the
+  `tools.web.apiKeys` map (`brave`, `tavily`, `exa`, `serper`, `kagi`,
+  `searxngURL`), which is merged over the environment: a configured key wins.
+  There is no provider-order setting. No key value shows: `config show`,
+  `/config`, `doctor`, logs and spans show `<redacted>` or the provider name,
+  and `/config export` writes no key. A SWE-bench run sets
+  `tools.web.enabled: false`, because a web search can find the upstream fix.
 - **`mcp`**: dynamic. The tools that it gives depend on what the servers
   advertise. Connection completes before `buildRegistry()` (§7.3). A late
   server, a reconnect, or a `tools/list_changed` starts a registry rebuild

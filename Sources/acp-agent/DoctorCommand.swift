@@ -138,7 +138,7 @@ extension AcpAgentCommand {
                     name: loader.name, workingDirectory: workingDirectory),
                 ToolsDoctor(
                     configuration: outcome.configuration, workingDirectory: workingDirectory,
-                    prober: prober),
+                    prober: prober, environment: environment),
                 RuntimeDoctor(
                     configuration: outcome.configuration, workingDirectory: workingDirectory,
                     environment: environment),

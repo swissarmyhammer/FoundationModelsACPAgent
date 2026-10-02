@@ -4,8 +4,8 @@ import FoundationModelsRouter
 
 /// What each builder call of the tool catalog needs (plan.md §11.1): the
 /// session working directory, the session's additional roots, the decoded
-/// configuration, the resolved profile, and the client's per-session MCP
-/// servers.
+/// configuration, the resolved profile, the client's per-session MCP
+/// servers, and the process environment.
 ///
 /// The name is `CatalogContext` because Router's `Hosting/` substrate owns
 /// the name `ToolContext`.
@@ -38,6 +38,11 @@ public struct CatalogContext: Sendable {
     /// is committed (§4.3). `session/resume` supplies the list again.
     public let clientMCPServers: [FoundationModelsACP.MCPServer]
 
+    /// The process environment that the web capability reads its API keys
+    /// from (task ^ba231ka). The keys of `tools.web.apiKeys` are put in over
+    /// it, so a configured key wins.
+    public let environment: [String: String]
+
     /// Makes a catalog context.
     ///
     /// - Parameters:
@@ -48,17 +53,21 @@ public struct CatalogContext: Sendable {
     ///   - profile: The resolved profile, retained by this context.
     ///   - clientMCPServers: The client-supplied per-session MCP servers,
     ///     in wire order. Defaults to none.
+    ///   - environment: The environment that the web capability reads its
+    ///     API keys from. Defaults to the environment of the process.
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
         configuration: AgentConfiguration,
         profile: LanguageModelProfile,
-        clientMCPServers: [FoundationModelsACP.MCPServer] = []
+        clientMCPServers: [FoundationModelsACP.MCPServer] = [],
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
         self.configuration = configuration
         self.profile = profile
         self.clientMCPServers = clientMCPServers
+        self.environment = environment
     }
 }

@@ -17,6 +17,9 @@
 #   symbol, call graph, blast radius and language server verbs need no
 #   embedding. Only `searchCode` does, and with this key it answers with an
 #   error that says the embedding layer is off.
+# - `web` is the Multitool group `tools.web` (search and fetch). It is on by
+#   default, and this run sets `enabled: false`. A web search can find the
+#   upstream fix of the issue, and the score must measure the agent alone.
 #
 # No `compaction.toolOutputLimit`. A cap on a tool result keeps the first N
 # tokens and drops the rest before the model reads it: a file read loses its
@@ -36,3 +39,5 @@ tools:
   codeContext:
     autoInstall: true
     semanticSearch: false
+  web:
+    enabled: false

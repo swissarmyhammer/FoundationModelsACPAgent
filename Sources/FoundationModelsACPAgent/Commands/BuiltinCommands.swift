@@ -133,6 +133,12 @@ enum BuiltinCommands {
     /// The one-line usage `/config` prints for a malformed export.
     private static let configUsage = "Usage: /config export home|project"
 
+    /// The note that each export confirmation carries: the export writes no
+    /// API key, so that no key goes into a file that can be committed.
+    private static let omittedKeysNote =
+        " The file holds no tools.web.apiKeys value. Keep each key in the layer"
+        + " that sets it, or in the environment."
+
     /// The multiplier that changes a `0...1` fill fraction into a percent.
     private static let percentScale = 100.0
 
@@ -377,11 +383,12 @@ enum BuiltinCommands {
     ) -> String {
         let destination = layer.destination(in: context)
         do {
-            let text = try ConfigurationYAML.documentText(for: context.configuration)
+            let text = try ConfigurationYAML.documentText(
+                for: context.configuration, secrets: .omitted)
             try FileManager.default.createDirectory(
                 at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             try text.write(to: destination, atomically: true, encoding: .utf8)
-            return "Wrote the effective configuration to \(destination.path)."
+            return "Wrote the effective configuration to \(destination.path).\(omittedKeysNote)"
         } catch {
             return "Could not write the configuration: \(error)"
         }

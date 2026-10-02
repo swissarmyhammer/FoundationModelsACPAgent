@@ -294,6 +294,28 @@ struct BuiltinCommandsTests {
         #expect(reloaded.configuration.recording.level == .off)
     }
 
+    /// `/config export project` writes no API key value: the file holds
+    /// an empty `apiKeys` map, and the confirmation says that the export
+    /// wrote no key.
+    @Test(.timeLimit(.minutes(1)))
+    func configExportWritesNoAPIKeyValue() async throws {
+        let keyValue = "export-key-value"
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-export-key",
+            projectConfigYAML: "tools:\n  web:\n    apiKeys:\n      kagi: \(keyValue)\n")
+        defer { Task { await fixture.close() } }
+
+        let result = try await fixture.runCommand("/config export project")
+
+        let configFile = fixture.cwd
+            .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+            .appendingPathComponent(ConfigurationLoader.configFileName)
+        let written = try String(contentsOf: configFile, encoding: .utf8)
+        #expect(!written.contains(keyValue))
+        #expect(written.contains("apiKeys: {}"))
+        #expect(result.text.contains("tools.web.apiKeys"))
+    }
+
     /// The emitted YAML round-trips a non-default configuration — a read-only
     /// files body, an stdio `mcp` server with args and env, extra sandbox
     /// write paths and a changed compaction trigger — back through the loader

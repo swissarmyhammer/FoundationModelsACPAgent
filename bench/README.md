@@ -30,7 +30,9 @@ uv run bench/swebench_score.py bench/preds.jsonl
   predictions file, for example `bench/preds.code-context.jsonl`. The run
   writes that file into each clone as `.acp-agent/config.yaml`. The agent
   then mounts the `code-context` branch of the skills marketplace and the
-  `tools.code_context` group.
+  `tools.code_context` group. The file also sets `tools.web.enabled: false`:
+  a web search can find the upstream fix of the issue, and the score must
+  measure the agent alone.
 - **A new commit of a sibling package:** run `swift package update` before the
   build. `swift build` alone keeps the pinned revisions.
 - **The binary:** the scripts look for the release build, then the debug

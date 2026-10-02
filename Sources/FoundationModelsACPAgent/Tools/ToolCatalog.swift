@@ -191,7 +191,10 @@ public enum ToolCatalog {
     /// `files` is confined to the session root set through
     /// `withFiles(root:additionalRoots:)` (§11.4), `shell` runs under a
     /// `SeatbeltSandbox` over the same root set — the sandbox is the only
-    /// gate (§11.7); there is no policy and no permission layer — and
+    /// gate (§11.7); there is no policy and no permission layer — `web`
+    /// mounts `tools.web.search` and `tools.web.fetch` with the providers
+    /// that the process environment and `tools.web.apiKeys` select (see
+    /// ``WebComposition``), and
     /// `mcp` composes the config-derived servers with the client's
     /// per-session ones (§7.3, §11.5), connects each one, and records the
     /// spawned subprocesses in the builder's pool. `codeContext` opens and
@@ -230,6 +233,7 @@ public enum ToolCatalog {
                 rootSet: [context.workingDirectory] + context.additionalRoots,
                 outputChunkStream: stream)
         }
+        WebComposition.compose(into: builder, context: context)
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,
             clientServers: context.clientMCPServers)

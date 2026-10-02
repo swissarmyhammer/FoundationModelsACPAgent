@@ -7,7 +7,8 @@ import FoundationModelsSkills
 /// The option type of one mapping-bodied `tools:` entry (plan.md §11.2).
 /// The body is the tool package's own option type — there is no `enabled:`
 /// key, because `false` sits outside the body — and `init()` is the
-/// defaults an enabling shape (`absent`, `{}`, null, `true`) gives.
+/// defaults an enabling shape (`absent`, `{}`, null, `true`) gives. The one
+/// exception is ``WebToolOptions``, whose body also takes `enabled:`.
 public protocol ToolSectionOptions: Codable, Equatable, Sendable {
     /// The defaults the tool gets when the config enables it without a body.
     init()
@@ -225,6 +226,167 @@ public struct CodeContextToolOptions: ToolSectionOptions, KeyCheckedSection {
     }
 }
 
+/// The name of one key of the `tools.web.apiKeys` map. Each name selects one
+/// keyed search provider of the Multitool web capability (task ^ba231ka).
+///
+/// The cases are in the order of the Multitool provider table. The agent
+/// does not set the provider order: a key only adds its provider, and
+/// Multitool puts the providers in its table order.
+public enum WebAPIKeyName: String, CaseIterable, Hashable, Sendable {
+    /// The Brave Search API.
+    case brave
+    /// The Tavily search API.
+    case tavily
+    /// The Exa search API.
+    case exa
+    /// The Serper search API.
+    case serper
+    /// The Kagi search API.
+    case kagi
+    /// The base URL of a SearXNG instance that the user runs. It is not a
+    /// key, but it selects a provider in the same way.
+    case searxngURL
+
+    /// The environment variable that Multitool reads for this provider. A
+    /// configured value is put into the environment under this name, and it
+    /// wins over the process environment.
+    public var environmentVariable: String {
+        switch self {
+        case .brave: "BRAVE_SEARCH_API_KEY"
+        case .searxngURL: "SEARXNG_URL"
+        case .tavily, .exa, .serper, .kagi: rawValue.uppercased() + "_API_KEY"
+        }
+    }
+
+    /// Each valid key name, in the provider table order. An error that
+    /// refuses an unknown name lists them.
+    public static var validNames: [String] {
+        allCases.map(\.rawValue)
+    }
+}
+
+/// The `tools.web:` body (task ^ba231ka): whether the web capability mounts,
+/// and the API keys that select keyed search providers.
+///
+/// ```yaml
+/// tools:
+///   web:
+///     enabled: true
+///     apiKeys:
+///       tavily: tvly-...
+/// ```
+///
+/// The web section is the one tool body with an `enabled:` key, so that a
+/// config can say `tools.web.enabled: false`. The scalar `web: false` of the
+/// shared codec turns the tool off too.
+///
+/// No form of this type shows a key value: each key is a
+/// ``ConfiguredSecret``. An encoder that sets
+/// ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` gets an empty
+/// `apiKeys` map.
+public struct WebToolOptions: ToolSectionOptions, KeyCheckedSection {
+    /// Whether the web capability mounts.
+    public var enabled: Bool
+
+    /// The configured API keys, by provider key name.
+    public var apiKeys: [WebAPIKeyName: ConfiguredSecret]
+
+    /// The YAML spelling of each key.
+    public enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled, apiKeys
+    }
+
+    /// Makes options.
+    ///
+    /// - Parameters:
+    ///   - enabled: Whether the web capability mounts. The default is `true`.
+    ///   - apiKeys: The configured API keys. The default is none, thus the
+    ///     keys come from the process environment alone.
+    public init(enabled: Bool = true, apiKeys: [WebAPIKeyName: ConfiguredSecret] = [:]) {
+        self.enabled = enabled
+        self.apiKeys = apiKeys
+    }
+
+    /// The defaults: on, with no configured key.
+    public init() {
+        self.init(enabled: true)
+    }
+
+    /// Decodes each present key and keeps the default for each absent one.
+    /// A key name of `apiKeys` that is not a ``WebAPIKeyName`` is an error
+    /// that names the valid names.
+    public init(from decoder: any Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? enabled
+        let named =
+            try container.decodeIfPresent([String: ConfiguredSecret].self, forKey: .apiKeys) ?? [:]
+        apiKeys = try Dictionary(
+            uniqueKeysWithValues: named.map { name, secret in
+                guard let keyName = WebAPIKeyName(rawValue: name) else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .apiKeys, in: container,
+                        debugDescription: ConfigurationError.unknownMapKey(
+                            section: Self.apiKeysSection, key: name, validKeys: WebAPIKeyName.validNames
+                        ).description)
+                }
+                return (keyName, secret)
+            })
+    }
+
+    /// Encodes `enabled`, and each key name with the redacted form of its
+    /// value. With ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` set,
+    /// the `apiKeys` map is empty.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabled, forKey: .enabled)
+        let written = encoder.omitsConfiguredSecrets ? [:] : apiKeys
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: written.map { ($0.key.rawValue, $0.value) }),
+            forKey: .apiKeys)
+    }
+
+    /// The dotted section of the `apiKeys` map, such as an error names.
+    static var apiKeysSection: String {
+        ToolsConfiguration.dottedSection(ToolsConfiguration.CodingKeys.web.stringValue)
+            + LoadedConfiguration.keyPathSeparator + CodingKeys.apiKeys.stringValue
+    }
+
+    /// The process environment with each configured key put in under the
+    /// variable of its provider. A configured key wins over the process
+    /// environment for the same variable.
+    ///
+    /// - Parameter processEnvironment: The environment of the process.
+    /// - Returns: The environment that the web capability reads its keys
+    ///   from.
+    public func environment(mergedOver processEnvironment: [String: String]) -> [String: String] {
+        processEnvironment.merging(
+            apiKeys.map { ($0.key.environmentVariable, $0.value.value) }
+        ) { _, configured in configured }
+    }
+}
+
+extension WebToolOptions: CustomStringConvertible {
+    /// Whether the tool is on, and the configured key names. It never
+    /// shows a key value.
+    public var description: String {
+        let names = WebAPIKeyName.allCases.filter { apiKeys[$0] != nil }.map(\.rawValue)
+        return "WebToolOptions(enabled: \(enabled), apiKeys: [\(names.joined(separator: ", "))])"
+    }
+}
+
+extension ToolSection where Options == WebToolOptions {
+    /// The options of a web section that mounts the capability, or `nil`
+    /// when the section is off by either shape: `web: false`, or
+    /// `web: {enabled: false}`.
+    public var mountedOptions: WebToolOptions? {
+        guard case .enabled(let options) = self, options.enabled else {
+            return nil
+        }
+        return options
+    }
+}
+
 // MARK: - The mcp entry
 
 /// One config-derived MCP server entry (plan.md §7.3, §11.5): a name and
@@ -378,12 +540,16 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
     /// The code context capability's entry.
     public var codeContext = ToolSection<CodeContextToolOptions>.enabled(CodeContextToolOptions())
 
+    /// The web capability's entry: `tools.web.search` and
+    /// `tools.web.fetch`, with the keyless providers when no key is set.
+    public var web = ToolSection<WebToolOptions>.enabled(WebToolOptions())
+
     /// The mcp entry — the one list-bodied section.
     public var mcp = MCPToolSection.enabled(servers: [])
 
     /// The YAML spelling of each tool key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case files, shell, skills, codeContext, mcp
+        case files, shell, skills, codeContext, web, mcp
     }
 
     /// The default roster: every built-in on, with its defaults.
@@ -407,6 +573,7 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
             try container.decodeIfPresent(
                 ToolSection<CodeContextToolOptions>.self, forKey: .codeContext)
             ?? codeContext
+        web = try container.decodeIfPresent(ToolSection<WebToolOptions>.self, forKey: .web) ?? web
         mcp = try container.decodeIfPresent(MCPToolSection.self, forKey: .mcp) ?? mcp
     }
 }
@@ -420,6 +587,7 @@ extension ToolsConfiguration {
         CodingKeys.shell.stringValue: ShellToolOptions.knownKeys,
         CodingKeys.skills.stringValue: SkillsToolOptions.knownKeys,
         CodingKeys.codeContext.stringValue: CodeContextToolOptions.knownKeys,
+        CodingKeys.web.stringValue: WebToolOptions.knownKeys,
     ]
 
     /// The key checks of the `tools:` body (plan.md §11.2), run by the
@@ -458,7 +626,31 @@ extension ToolsConfiguration {
         }
         try ConfigurationError.checkKeys(
             of: body, against: bodyKeys, section: dottedSection(name))
+        if name == CodingKeys.web.stringValue {
+            try checkAPIKeyNames(inBody: body)
+        }
         return nil
+    }
+
+    /// Checks each key of the `apiKeys` map of a `web:` body against the
+    /// provider key names. A body or a map that is not a mapping has no
+    /// keys to check: the decode reports its shape error.
+    ///
+    /// - Parameter body: The `web:` body.
+    /// - Throws: `ConfigurationError.unknownMapKey` for the first key, in
+    ///   key order, that names no provider. The error lists the valid names.
+    private static func checkAPIKeyNames(inBody body: YAMLValue) throws {
+        guard case .dictionary(let keys) = body,
+            case .dictionary(let names)? = keys[WebToolOptions.CodingKeys.apiKeys.stringValue]
+        else {
+            return
+        }
+        let unknown = names.keys.sorted().first { WebAPIKeyName(rawValue: $0) == nil }
+        if let unknown {
+            throw ConfigurationError.unknownMapKey(
+                section: WebToolOptions.apiKeysSection, key: unknown,
+                validKeys: WebAPIKeyName.validNames)
+        }
     }
 
     /// Checks each mapping entry of an `mcp:` server list against the

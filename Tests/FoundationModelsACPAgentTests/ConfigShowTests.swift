@@ -37,6 +37,12 @@ struct ConfigShowTests {
     /// A project `config.yaml` that turns the reasoning token limit off.
     private static let noReasoningLimitYAML = "repetition:\n  reasoningTokenLimit: null\n"
 
+    /// The API key value that ``webKeyYAML`` sets.
+    private static let webKeyValue = "show-configured-key"
+
+    /// A project `config.yaml` that sets a Tavily key.
+    private static let webKeyYAML = "tools:\n  web:\n    apiKeys:\n      tavily: \(webKeyValue)\n"
+
     /// The document `--json --source` writes.
     private struct AnnotatedDocument: Decodable {
         let configuration: AgentConfiguration
@@ -51,16 +57,20 @@ struct ConfigShowTests {
     /// - Parameters:
     ///   - arguments: The arguments after `config show`.
     ///   - fixture: The two-layer tree the report reads.
+    ///   - extraEnvironment: Variables added to `fixture`'s environment,
+    ///     such as an API key of a search provider.
     /// - Returns: The report.
     /// - Throws: The parse or load error.
     private static func report(
-        _ arguments: [String], in fixture: ConfigCommandFixture
+        _ arguments: [String], in fixture: ConfigCommandFixture,
+        extraEnvironment: [String: String] = [:]
     ) throws -> CommandReport {
         let show = try #require(
             try AcpAgentCommand.parseAsRoot(
                 ["config", "show", "--cwd", fixture.workspace.path] + arguments)
                 as? AcpAgentCommand.Config.Show)
-        return try show.report(environment: fixture.environment)
+        return try show.report(
+            environment: fixture.environment.merging(extraEnvironment) { _, extra in extra })
     }
 
     /// The lines of `text` that carry a mapping key: not a comment, not a
@@ -267,6 +277,45 @@ struct ConfigShowTests {
         #expect(document.sources["recording"] == "project")
         #expect(document.sources["compaction.trigger"] == "builtin")
         #expect(document.sources["tools.shell"] == "builtin")
+    }
+
+    // MARK: - The web keys
+
+    /// A configured API key never shows: neither the YAML nor the JSON
+    /// holds the value.
+    @Test(arguments: [[], ["--json"], ["--source"]])
+    func aConfiguredAPIKeyNeverShows(arguments: [String]) throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-key")
+        try fixture.writeProjectConfig(Self.webKeyYAML)
+
+        let report = try Self.report(arguments, in: fixture)
+
+        #expect(!report.standardOutput.contains(Self.webKeyValue))
+        #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
+    }
+
+    /// The YAML report names the search providers in force, in order, and
+    /// the provider of a configured key is first.
+    @Test func theReportNamesTheProvidersInForce() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-providers")
+        try fixture.writeProjectConfig(Self.webKeyYAML)
+
+        let report = try Self.report([], in: fixture)
+
+        #expect(report.standardOutput.contains("tavily, braveHTML, duckDuckGoHTML"))
+    }
+
+    /// A key in the environment changes the providers in force, and the
+    /// report never shows its value.
+    @Test func anEnvironmentKeyChangesTheProvidersAndNeverShows() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-environment")
+        let environmentKey = "show-environment-key"
+
+        let report = try Self.report(
+            [], in: fixture, extraEnvironment: ["EXA_API_KEY": environmentKey])
+
+        #expect(report.standardOutput.contains("exa, braveHTML, duckDuckGoHTML"))
+        #expect(!report.standardOutput.contains(environmentKey))
     }
 
     // MARK: - stderr

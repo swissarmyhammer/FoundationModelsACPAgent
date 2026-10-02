@@ -20,9 +20,15 @@ struct ToolsDoctorTests {
     private static let oneFinding = 1
 
     /// The number of rows a roster with the shell tool off reports: the
-    /// sandbox row and the shell row. The `mcp:` default names no server,
-    /// so it adds none.
-    private static let disabledShellRowCount = 2
+    /// sandbox row, the shell row and the web row. The `mcp:` default names
+    /// no server, so it adds none.
+    private static let disabledShellRowCount = 3
+
+    /// The name of the web row.
+    private static let webRowName = "the web tool"
+
+    /// The configuration key a disabled web row names.
+    private static let webEnabledKey = "tools.web.enabled"
 
     /// The timeout a test that proves the timeout injects, in seconds. It
     /// is far below ``timeoutCeilingSeconds``, so the assertion on the
@@ -68,16 +74,29 @@ struct ToolsDoctorTests {
     ///   - workingDirectory: The directory `--cwd` names.
     ///   - prober: The scripted prober.
     ///   - timeoutSeconds: How long one prober call may take.
+    ///   - environment: The process environment the web row reads the API
+    ///     keys from. The default is empty, thus no test reads a key of the
+    ///     machine that runs it.
     /// - Returns: The component.
     private static func doctor(
         configuration: AgentConfiguration,
         workingDirectory: URL,
         prober: StubToolsProber = StubToolsProber(),
-        timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds
+        timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds,
+        environment: [String: String] = [:]
     ) -> ToolsDoctor {
         ToolsDoctor(
             configuration: configuration, workingDirectory: workingDirectory, prober: prober,
-            timeoutSeconds: timeoutSeconds)
+            timeoutSeconds: timeoutSeconds, environment: environment)
+    }
+
+    /// The web row of `checks`.
+    ///
+    /// - Parameter checks: The findings of one run.
+    /// - Returns: The one finding whose name is ``webRowName``.
+    /// - Throws: When no finding has that name.
+    private static func webRow(in checks: [HealthCheck]) throws -> HealthCheck {
+        try #require(checks.first { $0.name == webRowName })
     }
 
     /// The findings of `checks` that carry `status`.
@@ -188,8 +207,8 @@ struct ToolsDoctorTests {
     }
 
     /// `tools.shell: false` gives one `.ok` row that says disabled, and no
-    /// store-directory check runs: the roster reports the sandbox row and
-    /// that one row, and nothing else.
+    /// store-directory check runs: the roster reports the sandbox row, that
+    /// one row and the web row, and nothing else.
     @Test func aDisabledShellSectionSaysDisabledAndChecksNoStore() async {
         let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-shellOff")
         var configuration = AgentConfiguration()
@@ -202,6 +221,55 @@ struct ToolsDoctorTests {
         #expect(checks.count == Self.disabledShellRowCount)
         #expect(checks.allSatisfy { $0.status == .ok })
         #expect(checks.contains { $0.message.contains(Self.disabledWord) })
+    }
+
+    // MARK: - The web tool
+
+    /// With no key, the web row passes and names the keyless providers in
+    /// order. The row sends no request.
+    @Test func theWebRowNamesTheKeylessProvidersInOrder() async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-webKeyless")
+
+        let checks = await Self.doctor(
+            configuration: AgentConfiguration(), workingDirectory: workspace
+        ).runHealthChecks()
+
+        let row = try Self.webRow(in: checks)
+        #expect(row.status == .ok)
+        #expect(row.message.contains("braveHTML, duckDuckGoHTML"))
+    }
+
+    /// A key in the environment puts its provider first in the row, and the
+    /// row never shows the key value.
+    @Test func theWebRowNamesAKeyedProviderAndNoKeyValue() async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-webKeyed")
+        let keyValue = "doctor-key-value"
+
+        let checks = await Self.doctor(
+            configuration: AgentConfiguration(), workingDirectory: workspace,
+            environment: ["TAVILY_API_KEY": keyValue]
+        ).runHealthChecks()
+
+        let row = try Self.webRow(in: checks)
+        #expect(row.message.contains("tavily, braveHTML, duckDuckGoHTML"))
+        #expect(!checks.contains { $0.message.contains(keyValue) })
+    }
+
+    /// `tools.web.enabled: false` gives one `.ok` row that says disabled
+    /// and names the key.
+    @Test func aWebSectionThatIsNotEnabledSaysDisabled() async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-webOff")
+        var configuration = AgentConfiguration()
+        configuration.tools.web = .enabled(WebToolOptions(enabled: false))
+
+        let checks = await Self.doctor(
+            configuration: configuration, workingDirectory: workspace
+        ).runHealthChecks()
+
+        let row = try Self.webRow(in: checks)
+        #expect(row.status == .ok)
+        #expect(row.message.contains(Self.disabledWord))
+        #expect(row.message.contains(Self.webEnabledKey))
     }
 
     // MARK: - The MCP servers

@@ -110,6 +110,7 @@ is on by default. Set its config section to `false` to set it off.
 | `shell` | The `tools.shell.*` verbs, under a Seatbelt sandbox over the root set | `tools.shell` |
 | `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
 | `codeContext` | The `tools.code_context.*` verbs — symbol lookup, call graph, blast radius and the language server operations — over an index of the session working directory | `tools.codeContext` |
+| `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
 
 `tools.codeContext` has two keys. `autoInstall` (default `true`) says whether a
@@ -121,6 +122,41 @@ model; with `false`, the index calls no model, each other verb works, and
 `searchCode` answers with an error that says the embedding layer is off. The
 first index pass runs after the session starts, thus `session/new` does not
 wait for it.
+
+`tools.web` searches with no setup. With no API key, the providers are the
+keyless result pages of Brave (`braveHTML`), then DuckDuckGo
+(`duckDuckGoHTML`). An API key adds its provider before them. The agent reads
+the keys from its process environment, and from the `tools.web.apiKeys` map:
+
+| `apiKeys` key | Environment variable | Provider |
+|---|---|---|
+| `brave` | `BRAVE_SEARCH_API_KEY` (or `BRAVE_API_KEY`) | `braveAPI` |
+| `tavily` | `TAVILY_API_KEY` | `tavily` |
+| `exa` | `EXA_API_KEY` | `exa` |
+| `serper` | `SERPER_API_KEY` | `serper` |
+| `kagi` | `KAGI_API_KEY` | `kagi` |
+| `searxngURL` | `SEARXNG_URL` (a base URL, not a key) | `searxng` |
+
+The order to try is the order of this table, then `braveHTML`, then
+`duckDuckGoHTML`. The first provider that gives results wins. A key in
+`config.yaml` wins over the environment variable of the same provider. An
+empty value is not a key. Another `apiKeys` key is an error that names the
+valid keys.
+
+```yaml
+tools:
+  web:
+    enabled: true
+    apiKeys:
+      tavily: tvly-...
+```
+
+Set `enabled: false` (or `web: false`) to set the web tool off. No key value
+shows: `config show`, `/config`, `doctor` and the logs show `<redacted>` or
+the provider name only, and `/config export` writes no key. `config show`
+ends with one comment line that names the providers in force, and `doctor`
+has one row for them. The web verbs run in the agent process, not in the
+shell sandbox; they refuse private and local addresses.
 
 The `tools.skills.marketplaces` list names remote skill marketplaces. Each entry
 has a `url`, and optionally a `ref` (a branch or a tag), a `sha`, a `path`, an

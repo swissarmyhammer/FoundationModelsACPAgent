@@ -39,6 +39,15 @@ import Testing
     /// The noun the shell capability owns on the surface.
     private static let shellNoun = "shell"
 
+    /// The noun the web capability owns on the surface.
+    private static let webNoun = "web"
+
+    /// The surface path of the web search verb.
+    private static let webSearchPath = "web.search"
+
+    /// The surface path of the web fetch verb.
+    private static let webFetchPath = "web.fetch"
+
     /// The task the embedder proof gives the mounted `searchTools`.
     private static let embedderTask = "read one text file from the workspace"
 
@@ -67,6 +76,9 @@ import Testing
     ///   - additionalRoots: The session's additional roots, in order.
     ///   - loader: The loader the stub profile resolves through. The
     ///     default vends the echo containers.
+    ///   - environment: The process environment the web capability reads
+    ///     its API keys from. The default is empty, thus no test reads a
+    ///     key of the machine that runs it.
     ///   - configure: The mutation that shapes the configuration under
     ///     test. The default keeps every section at its default.
     /// - Returns: The context under test.
@@ -75,6 +87,7 @@ import Testing
     private static func makeContext(
         additionalRoots: [URL] = [],
         loader: StubModelLoader = StubModelLoader(),
+        environment: [String: String] = [:],
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
@@ -85,7 +98,8 @@ import Testing
             configuration: configuration,
             profile: try await makeStubProfile(
                 cacheDirectory: try makeTemporaryDirectory(label: "cache"),
-                loader: loader))
+                loader: loader),
+            environment: environment)
     }
 
     /// Invokes `tools.files.read` on `path` and decodes the wire result
@@ -298,6 +312,32 @@ import Testing
         let prefix = "\(ToolCatalog.codeContextGroupName)."
         #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(prefix) })
         #expect(built.codeContextStop == nil)
+    }
+
+    // MARK: The web group
+
+    /// With no configuration and an empty environment, the surface has the
+    /// two web verbs. The capability sends no request when it mounts.
+    @Test func aDefaultRegistryMountsTheWebVerbs() async throws {
+        let context = try await Self.makeContext(environment: [:])
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        let paths = registry.surface.entries.map(\.path)
+        #expect(paths.contains(Self.webSearchPath))
+        #expect(paths.contains(Self.webFetchPath))
+    }
+
+    /// `tools.web.enabled: false` mounts no web verb.
+    @Test func aWebSectionThatIsNotEnabledMountsNoWebVerb() async throws {
+        let context = try await Self.makeContext(environment: [:]) { configuration in
+            configuration.tools.web = .enabled(WebToolOptions(enabled: false))
+        }
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        #expect(!registry.surface.entries.contains { $0.group == Self.webNoun })
+        #expect(registry.surface.entries.contains { $0.path == Self.readVerbPath })
     }
 
     // MARK: The skills registry

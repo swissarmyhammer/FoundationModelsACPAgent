@@ -14,7 +14,9 @@ import FoundationModelsExtras
 ///
 /// The text round-trips through ``ConfigurationLoader``: it names only
 /// schema keys, and it names every one of them, so the loader reads it
-/// back to the same configuration.
+/// back to the same configuration. The one exception is a
+/// ``ConfiguredSecret``, such as an API key: no document shows its value
+/// (see ``SecretForm``).
 ///
 /// The value tree comes from the configuration's own `Codable` encoding, so
 /// the per-tool codecs (a disabled tool as `false`, the `mcp:` server list, a
@@ -37,6 +39,22 @@ public enum ConfigurationYAML {
         /// (cli-plan.md §5.11), from the loader's per-key source map. A
         /// key with no entry names `builtin`.
         case sources([String: DotfolderStack.Source])
+    }
+
+    /// How the document holds each ``ConfiguredSecret``, such as an API key
+    /// of `tools.web.apiKeys`.
+    public enum SecretForm: Equatable, Sendable {
+        /// Each secret key shows, and its value shows as
+        /// ``ConfiguredSecret/redactedForm``. This is the form a person
+        /// reads: `/config` and `config show`.
+        case redacted
+
+        /// No secret shows: a map of secrets is empty. This is the form of
+        /// a document that goes into a layer file: `/config export` and
+        /// `config init`. An empty map in a higher layer keeps the keys of
+        /// the lower layers, because the layers merge by key, thus the
+        /// export does not change the effective configuration.
+        case omitted
     }
 
     /// One emitted line: its text, and the dotted key path of the key it
@@ -88,13 +106,16 @@ public enum ConfigurationYAML {
     /// - Parameters:
     ///   - configuration: The configuration to render.
     ///   - annotation: What each key line carries after its value.
+    ///   - secrets: How the document holds each secret. The default,
+    ///     ``SecretForm/redacted``, is the form a person reads.
     /// - Returns: The YAML document, newline-terminated.
     /// - Throws: ``EmitError/notAMapping`` when the encoded configuration is
     ///   not a mapping, or a `JSONEncoder`/`JSONSerialization` error.
     public static func documentText(
-        for configuration: AgentConfiguration, annotation: KeyAnnotation = .none
+        for configuration: AgentConfiguration, annotation: KeyAnnotation = .none,
+        secrets: SecretForm = .redacted
     ) throws -> String {
-        try lines(of: configuration)
+        try lines(of: configuration, secrets: secrets)
             .map { annotated(line: $0, with: annotation) }
             .joined(separator: "\n") + "\n"
     }
@@ -107,7 +128,7 @@ public enum ConfigurationYAML {
     /// - Returns: The dotted key paths.
     /// - Throws: What ``documentText(for:annotation:)`` throws.
     public static func keyPaths(of configuration: AgentConfiguration) throws -> [String] {
-        try lines(of: configuration).compactMap(\.keyPath)
+        try lines(of: configuration, secrets: .redacted).compactMap(\.keyPath)
     }
 
     /// The text of `line` with `annotation` applied: the layer comment
@@ -132,12 +153,18 @@ public enum ConfigurationYAML {
     /// The lines of the document: the header, then each section under its
     /// comment.
     ///
-    /// - Parameter configuration: The configuration to render.
+    /// - Parameters:
+    ///   - configuration: The configuration to render.
+    ///   - secrets: How the document holds each secret.
     /// - Returns: The lines, in document order.
     /// - Throws: ``EmitError/notAMapping`` when the encoded configuration is
     ///   not a mapping, or a `JSONEncoder`/`JSONSerialization` error.
-    private static func lines(of configuration: AgentConfiguration) throws -> [Line] {
-        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(configuration))
+    private static func lines(of configuration: AgentConfiguration, secrets: SecretForm) throws
+        -> [Line]
+    {
+        let encoder = JSONEncoder()
+        encoder.userInfo[.omitsConfiguredSecrets] = secrets == .omitted
+        let encoded = try JSONSerialization.jsonObject(with: encoder.encode(configuration))
         guard let sections = encoded as? [String: Any] else {
             throw EmitError.notAMapping
         }

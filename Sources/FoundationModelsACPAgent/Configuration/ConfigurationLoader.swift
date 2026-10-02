@@ -9,6 +9,11 @@ public enum ConfigurationError: Error, Equatable, Sendable, CustomStringConverti
     case documentNotAMapping
     /// A known section holds a key it does not decode.
     case unknownKey(section: String, key: String)
+    /// A map whose keys are a closed set holds a key that is not in the
+    /// set, such as a provider name of `tools.web.apiKeys` that no provider
+    /// has. The error lists the valid keys, because a person cannot see
+    /// them in the document.
+    case unknownMapKey(section: String, key: String, validKeys: [String])
 
     /// A human-readable reason that names the section and the key.
     public var description: String {
@@ -17,6 +22,9 @@ public enum ConfigurationError: Error, Equatable, Sendable, CustomStringConverti
             return "\(ConfigurationLoader.configFileName): the document must be a mapping of sections"
         case .unknownKey(let section, let key):
             return "\(ConfigurationLoader.configFileName): unknown key \"\(key)\" in section \"\(section)\""
+        case .unknownMapKey(let section, let key, let validKeys):
+            return "\(ConfigurationLoader.configFileName): unknown key \"\(key)\" in section \"\(section)\"; "
+                + "the valid keys are \(validKeys.joined(separator: ", "))"
         }
     }
 }
