@@ -19,14 +19,20 @@ import FoundationModelsExtras
 /// reference to the agent goes, each hold goes, and the pool evicts the models
 /// in its admission queue.
 enum ProcessModelPool {
-    /// The pause between two looks at the pool.
-    private static let pollInterval: Duration = .milliseconds(100)
+    /// The pause between two looks at the pool, in milliseconds.
+    private static let pollIntervalMilliseconds = 100
 
-    /// How long a look waits for the pool to evict the last model. An
-    /// eviction is a job in the admission queue, and it frees the memory of
-    /// a loaded model, so it is short. The deadline is a guard against a
-    /// model that stays, not a budget.
-    static let deadline: Duration = .seconds(60)
+    /// The pause between two looks at the pool.
+    private static let pollInterval: Duration = .milliseconds(pollIntervalMilliseconds)
+
+    /// How long a look waits for the pool to evict the last model, in
+    /// seconds. An eviction is a job in the admission queue, and it frees
+    /// the memory of a loaded model, so it is short. The deadline is a guard
+    /// against a model that stays, not a budget.
+    private static let deadlineSeconds = 60
+
+    /// How long a look waits for the pool to evict the last model.
+    static let deadline: Duration = .seconds(deadlineSeconds)
 
     /// Waits until the pool of the process holds no model, or until
     /// ``deadline``.

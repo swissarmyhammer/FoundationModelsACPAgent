@@ -174,14 +174,28 @@ struct SkillTriggerTests {
     /// - Returns: The rate of each selected sample, in report order.
     /// - Throws: Whatever a run throws.
     private static func rates(of subject: SkillTriggerSubject) async throws -> [SkillTriggerRate] {
-        var rates: [SkillTriggerRate] = []
-        for sample in skillTriggerSamples {
-            var runs: [SkillTriggerRun] = []
-            for _ in 0..<skillTriggerRepeats {
-                runs.append(try await subject.run(sample: sample))
-            }
-            rates.append(SkillTriggerRate(sample: sample, runs: runs))
+        try await skillTriggerSamples.asyncMap { sample in
+            SkillTriggerRate(
+                sample: sample,
+                runs: try await (0..<skillTriggerRepeats).asyncMap { _ in
+                    try await subject.run(sample: sample)
+                })
         }
-        return rates
+    }
+}
+
+extension Collection {
+    /// The results of `transform` for each element, in order. Each call
+    /// ends before the next one starts, so the live runs never overlap.
+    ///
+    /// - Parameter transform: The work for one element.
+    /// - Returns: The results, in the order of the elements.
+    /// - Throws: The first error that `transform` throws.
+    fileprivate func asyncMap<Result>(
+        _ transform: (Element) async throws -> Result
+    ) async rethrows -> [Result] {
+        guard let first else { return [] }
+        let head = try await transform(first)
+        return try await [head] + dropFirst().asyncMap(transform)
     }
 }

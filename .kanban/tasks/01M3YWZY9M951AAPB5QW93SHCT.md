@@ -1,6 +1,15 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3yzb21xjsavqffwnjstcfw6
+  text: 'Upstream confirmed (FoundationModelsACP session, 2026-10-02): carded there as ^jd4740x, with the proposed fix (take and clear in one lock, Connection.swift:28). It also covers an append after runAll(): the closure runs at once or is dropped with a warning, never kept. Tests use a weak reference while a child task is alive. Order there: ^rpc6wrp (insertUserMessage helper, in review), then ^jd4740x. They will send the commit when pushed; then move the pin and confirm AgentReleaseTests still passes.'
+  timestamp: 2026-10-02T18:52:01.981801+00:00
+- actor: claude-code
+  id: 01m3z0n09cyp1na8bx5eek2t7m
+  text: 'Upstream fixed (FoundationModelsACP ^jd4740x, main 4ccc130): runAll() takes and clears the closures in one lock; a closure added after runAll() started is DROPPED with a warning ("Connection: dropped work deferred for request <id>: ..."); if the connection closes while the handler runs, dispatchRequest calls discardAll() and releases the closures. insertUserMessage uses the same hooks: call it on the handler''s own task, not a child task. Our weak captures are now not necessary but harmless. Done when: the pin moves past 4ccc130 (with ^hkr6ykz) and AgentReleaseTests still passes; also check that no code of ours adds a response hook from a child task, because such work is now dropped.'
+  timestamp: 2026-10-02T19:14:56.428152+00:00
 position_column: todo
 position_ordinal: '8180'
 title: 'Report upstream: FoundationModelsACP ResponseHooks keeps each deferred closure after it ran, through the task-local that child tasks inherit'

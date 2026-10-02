@@ -16,6 +16,27 @@ comments:
     - Pattern to copy: `acp-test-agent` makes a new `MessageId` for each prompt, returns it in the response, then echoes the prompt as a `user_message` update with the same ID.
     NOT on main yet: the helper (^rpc6wrp) and the merge engine (^2npy0da). Do changes 1 to 3 now with our own ID code, as acp-test-agent does. Leave change 4 (ID-stable replay from the engine) and the move to the helper for a later card when they are pushed.
   timestamp: 2026-10-02T17:37:25.189045+00:00
+- actor: claude-code
+  id: 01m3yzff840nm5x3d1zjxq8mxn
+  text: |-
+    Fully unblocked (FoundationModelsACP session, 2026-10-02): helper and merge engine are on main at 4a84db6. Do all five changes in one card now; do not write our own ID code.
+
+    Helper (Connection/AgentSideConnection.swift), synchronous:
+    - `@discardableResult public func insertUserMessage(_ request: PromptRequest, messageId: MessageId? = nil) -> MessageId`
+    - `@discardableResult public func insertUserMessage(_ request: PromptRequest, messageId: MessageId? = nil, into history: inout SessionMergeEngine) -> MessageId`
+    - Use: `return PromptResponse(messageId: connection.insertUserMessage(params, into: &history))`. It makes the ID (or uses ours), applies the user_message to the engine at once, and sends the echo AFTER the response through the current request's response hooks. Call it only INSIDE a request handler (debug asserts; release logs and sends no echo). A failed echo is logged.
+    - Our current echo of the user message must go (the helper sends it); check that no test expects the old order or a second echo.
+
+    Engine (Session/SessionMergeEngine.swift), `public struct SessionMergeEngine: Hashable, Sendable`:
+    - `apply(_ update: SessionUpdate) -> Change`, `seed(from: NewSessionResponse)`, `seed(from: ResumeSessionResponse)`, `reset()`, `entry(withID:)`.
+    - State: `entries: [SessionEntry]`, `availableCommands`, `configOptions`, `usage`, `agentState`, `sessionInfo`.
+    - Replay: `transcriptUpdates` and `stateUpdates` ([SessionUpdate]); each entry keeps its ID. Send these on session/resume as the retained history.
+    - `SessionEntry.ID`: userMessage / agentMessage / agentThought (MessageId), toolCall, terminal, plan, unidentified(position:).
+
+    Design to decide in implement: keep one engine per session in the session entry (actor-owned), apply every session/update the agent sends to it (one choke point: the update sink), and seed it from the new/resume response. On resume, the engine must be rebuilt from the Router journal (the process may be new), thus check whether the journal replay that SessionResume does now can feed the engine with the same IDs, or whether the IDs must be journaled. The ID of each message must be the same before and after a resume.
+
+    The response-hook fix ^jd4740x (same hooks) is upstream's next task; our weak captures stay until then.
+  timestamp: 2026-10-02T18:54:26.564564+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Adopt ACP schema-v2.0.0-alpha.7: PromptResponse.messageId (required), ToolCallUpdate.name, availableCommands in new/resume, ID-stable replay'

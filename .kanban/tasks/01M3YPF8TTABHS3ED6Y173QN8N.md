@@ -44,7 +44,14 @@ comments:
     - tests: AgentReleaseTests RED (agent and Router session outlived the closed connection) then GREEN (3/3). SkillTriggerTests pool check RED (3 models resident) then GREEN. `swift build -c release`: no warnings. `swift test`: 710 tests pass (one earlier run crashed with SIGPIPE and two runs failed doctor timing ceilings at load average ~100; 4 later runs green; baseline main 4/4 green at load ~80 — load flakiness). `swift test --package-path IntegrationTests --no-parallel`: 29 tests in 11 suites pass. `--filter ToolCallingTests`: pass (201 s).
     - next: /review; after the commit and push, confirm the CI Integration job is green (card step 3). Upstream card ^w93shct records the FoundationModelsACP ResponseHooks change.
   timestamp: 2026-10-02T18:50:59.057742+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m3z0wzrg8z3tmgj1z7xd030k
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (eb1893c); 3 findings, 3 confirmed, 0 refuted — SkillTriggerTests.swift:177, SkillTriggerTests.swift:179, Support/ProcessModelPool.swift:29
+    - next: implement the 3 open items in the "Review Findings (2026-10-02 13:51)" section, then review again. Green CI after push is the last step of the card.
+  timestamp: 2026-10-02T19:19:18.032838+00:00
+position_column: review
 position_ordinal: '80'
 title: 'CI is red: the ToolCallingTests integration gate cannot resolve the "coding" profile on the CI machine'
 ---
@@ -72,3 +79,14 @@ Earlier red runs (2026-09-23 to 2026-09-29) may have other causes; read one of t
 1. Find the cause: why the budget is 176359 bytes, why the 27B standard model is "unsized" there, and why SkillTriggerTests (same model) resolves and this test does not (for example, the order of the tests, a flash model in the profile, the profile name "coding", or the size data of an absent download).
 2. Fix it in the correct place. If the cause is in Router's resolution or memory budget, record it as a Router card with the evidence and, if the CI log is the only evidence, reproduce it locally first. If the cause is in this test's configuration, fix the test.
 3. Prove it: run the test locally (`swift test --package-path IntegrationTests --filter ToolCallingTests`), push, and confirm the CI Integration job is green. #tests
+
+## Review Findings (2026-10-02 13:51)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/SkillTrigger/SkillTriggerTests.swift:177` `swift/immutability` — Mutable accumulator `var rates` is filled via `append()` in a loop instead of using a functional approach with `map`/`compactMap`. This requires a reader to trace the entire loop body to understand the final value. Use async map/reduce with structured concurrency, such as `withThrowingTaskGroup`, or restructure to use a functional approach that clearly expresses the transformation intent.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/SkillTrigger/SkillTriggerTests.swift:179` `swift/immutability` — Mutable accumulator `var runs` is filled via `append()` in a loop instead of using a functional approach with `map`/`compactMap`. Restructure to use a collection-building approach such as `withThrowingTaskGroup` or similar structured concurrency pattern that expresses the intent functionally.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/ProcessModelPool.swift:29` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
