@@ -119,6 +119,10 @@ enum RunPrompt {
         await agentConnection.close()
         clientEnd.close()
         agentEnd.close()
+        // The run sends no `session/close`, so the agent closes the session
+        // itself after the connection closed. The process must not exit
+        // before that close wrote the history and stopped the MCP servers.
+        await composed.waitForConnectionTeardown()
         return try outcome.get()
     }
 

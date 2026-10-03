@@ -257,12 +257,17 @@ public struct AgentClientHarness: Sendable {
     /// Closes both ends of the wire, ends the tap, and releases the
     /// transport pair. A pipe wire holds descriptors, so the release is
     /// what gives them back.
+    ///
+    /// Then it waits until the agent closed each session that is still
+    /// open (plan.md §10.1). Thus that teardown ends inside the test that
+    /// made the sessions, and does not run beside a later test.
     public func close() async {
         await connection.close()
         await agentConnection.close()
         wireTap?.stop()
         agentWireTap?.stop()
         wire.close()
+        await agent.waitForConnectionTeardown()
     }
 
     /// The wiring every factory shares: the agent with its connection

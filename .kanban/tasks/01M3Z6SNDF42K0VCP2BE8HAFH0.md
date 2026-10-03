@@ -9,6 +9,22 @@ comments:
     - implement: stuck — blocked on upstream FoundationModelsACP ^k55fg8a (Unstable compaction types) and ^zj1wfec (engine keeps a compaction entry); not on main yet, and the owner decides when they run
     - next: when that session sends the commit and the final type names, move the pin and run /implement on this card
   timestamp: 2026-10-02T22:23:16.838651+00:00
+- actor: claude-code
+  id: 01m40vyjc25zpfhgz387q7whps
+  text: |-
+    Unblocked: FoundationModelsACP main 60854b6 has the unstable compaction and notice types and the engine support (^k55fg8a, ^zj1wfec).
+    ```swift
+    let update = Unstable.CompactionUpdate(compactionId: id, status: .inProgress /* later .completed / .failed / .cancelled */,
+                                           summary: .value(blocks) /* or .unchanged */, error: .unchanged, meta: .unchanged)
+    let wire = try SessionUpdate(Unstable.SessionUpdate.compactionUpdate(update))
+    // send `wire` as a normal session/update, and apply it to the SessionMergeEngine
+    ```
+    - Stream the summary with `Unstable.SessionUpdate.compactionSummaryChunk(Unstable.CompactionSummaryChunk(compactionId:content:meta:))` after the in_progress update and before the terminal update.
+    - Optional live message: `Unstable.SessionUpdate.notice(Unstable.Notice(severity: .info, title: ..., description: ...))`; the engine returns `Change.notice` and does not store or replay it.
+    - The engine keeps the compaction as an entry `SessionEntry.ID.compaction(id)` at a fixed position; `transcriptUpdates` replays it with its final status and summary. Keep replaying from the engine, never the Router transcript.
+    - Check the exact initializer labels in `Sources/FoundationModelsACP/Generated/Unstable.Models.generated.swift`.
+    Start after ^56jbp35 (one implementer in this tree at a time); move the pin to 60854b6 or later first.
+  timestamp: 2026-10-03T12:31:15.842152+00:00
 position_column: todo
 position_ordinal: '8280'
 title: Report each Router compaction as an ACP compaction entry, and keep the full ACP history across a compaction

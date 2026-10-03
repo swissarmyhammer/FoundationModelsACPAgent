@@ -48,11 +48,12 @@ struct ScriptedPromptFixture {
     /// Closes each session of the agent with `session/close`, then closes
     /// the harness wire.
     ///
-    /// The agent keeps its connection weakly, so the agent goes when the
-    /// test ends. `session/close` stops the MCP servers of each session and
-    /// their `SurfaceRefresher` first (plan.md §10.1, §11.5). Without it, the
-    /// refresher of a session that mounts a server goes while its watch
-    /// task runs, and Multitool stops the debug build.
+    /// The agent also closes each open session itself when the connection
+    /// closes (plan.md §10.1, task `^56jbp35`), so this explicit
+    /// `session/close` is not necessary to stop the MCP servers and their
+    /// `SurfaceRefresher`. It stays because it is harmless, and because it
+    /// ends each session on the request path that a client uses.
+    /// `ConnectionCloseTests` proves the close with no `session/close`.
     func close() async {
         for sessionId in await harness.agent.sessions.keys {
             _ = try? await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))

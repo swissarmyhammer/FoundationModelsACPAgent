@@ -7,9 +7,10 @@ import FoundationModelsACP
 /// `acp` mode needs the report. plan.md §17 gives a stdio agent no
 /// teardown handshake: the client closes stdin, the agent's read of
 /// stdin ends, and the process is finished. `AgentSideConnection`
-/// consumes the inbound stream itself and tells its agent nothing about
-/// the end, so the end is observable only in front of the connection —
-/// here.
+/// consumes the inbound stream itself. Its `closed` value comes only
+/// after each inbound handler ended, so a prompt that still runs holds
+/// that value back. The end of stdin itself is observable only in front
+/// of the connection — here.
 ///
 /// This wrapper reads nothing and records nothing. It forwards, so the
 /// connection behind it reads the same chunks, in the same order, that

@@ -159,6 +159,27 @@ struct RunCommandTests {
         #expect(try capture.bytes() == Data(Self.scriptedChunks.joined().utf8))
     }
 
+    /// The run closes its connection with no `session/close`, so the agent
+    /// closes the session of the prompt itself (plan.md §10.1). The run
+    /// returns only after that close, so the process does not exit before
+    /// the agent wrote the history and stopped the MCP servers.
+    @Test(.timeLimit(.minutes(1)))
+    func theRunReturnsAfterTheAgentClosedTheSessionOfThePrompt() async throws {
+        let workspace = makeResolvedDirectory(label: "RunCommandTests-teardown-repo")
+        let composed = try await CLICompositionFixture.scripted(
+            script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-teardown")
+        let capture = try AnswerCapture(label: "RunCommandTests-teardown-answer")
+
+        _ = try await RunPrompt.answer(
+            of: composed,
+            in: .new(workingDirectory: workspace),
+            prompt: Self.promptText,
+            into: capture.writer)
+
+        let sessionId = try await Self.oneSessionId(of: composed)
+        #expect(await composed.agent.sessions[sessionId]?.isClosed == true)
+    }
+
     /// `acp-agent run "<prompt>"` runs the whole prompt and writes the
     /// answer to the descriptor. The stub model answers with the prompt
     /// it received, so the bytes carry the prompt.

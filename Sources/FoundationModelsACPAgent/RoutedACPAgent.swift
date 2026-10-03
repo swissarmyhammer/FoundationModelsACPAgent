@@ -118,12 +118,44 @@ public actor RoutedACPAgent: Agent {
     /// Call it from the `AgentSideConnection` factory closure.
     ///
     /// The agent keeps the connection weakly, so the caller that made the
-    /// connection keeps it for as long as it serves. When the caller lets
-    /// the connection go, the agent goes too, and gives back its models.
+    /// connection keeps it for as long as it serves.
+    ///
+    /// The bind also starts the teardown task. It waits for
+    /// `AgentSideConnection.closed`, then it closes each open session as
+    /// `session/close` does (``closeOpenSessions(after:)``), and then it
+    /// ends. Thus a client that goes away with no `session/close` (the end
+    /// of the input, a failed input stream, or a local close) leaves no
+    /// session open. The task holds this agent strongly until its end: a
+    /// weak hold can find the agent already gone, and then no session
+    /// closes. The hold adds no lifetime, because the read loop of the
+    /// connection already keeps this agent until the loop ends, and `closed`
+    /// fires at the end of that loop. After the task ends, the agent goes
+    /// when its caller lets it go, and gives back its models.
     ///
     /// - Parameter connection: The connection around this agent.
     public nonisolated func bind(connection: AgentSideConnection) {
         connectionHolder.withLock { $0.connection = connection }
+        // Never wait for `closed` in an inbound handler: the value waits
+        // for each handler to end. This task is not a handler.
+        let teardown = Task {
+            await closeOpenSessions(after: await connection.closed)
+        }
+        connectionTeardown.withLock { $0 = teardown }
+    }
+
+    /// The teardown task of the latest bound connection, or `nil` before
+    /// ``bind(connection:)``. See ``bind(connection:)``.
+    private nonisolated let connectionTeardown = Mutex<Task<Void, Never>?>(nil)
+
+    /// Waits until the agent closed its open sessions after the close of
+    /// the latest bound connection. Returns at once before
+    /// ``bind(connection:)``.
+    ///
+    /// A host that ends the process after the connection closed calls this
+    /// first, so the teardown can write the history of each session and
+    /// stop the MCP servers before the exit.
+    public nonisolated func waitForConnectionTeardown() async {
+        await connectionTeardown.withLock { $0 }?.value
     }
 
     /// The bound connection, or `nil` before ``bind(connection:)`` and

@@ -240,6 +240,11 @@ enum ACPAgentTelemetry {
         /// `nothingToCancel`.
         static let cancelResult = "cancel.result"
 
+        /// Why the connection closed: `endOfInput`, `transportFailed` or
+        /// `closedLocally`. It is the case name of `ConnectionCloseReason`,
+        /// without the error of a failed transport.
+        static let connectionCloseReason = "connection.close_reason"
+
         /// The name of the ACP client, from its `initialize` request.
         static let clientName = "client.name"
 
@@ -394,7 +399,8 @@ enum ACPAgentTelemetry {
         /// root-set update.
         case sessionResume = "SessionResume"
 
-        /// The session lifecycle: the disk removals of a delete.
+        /// The session lifecycle: the disk removals of a delete, and the
+        /// close of the open sessions after the connection closed.
         case sessionLifecycle = "SessionLifecycle"
 
         /// The elicitation relay: the round trips, the declines and the

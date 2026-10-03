@@ -1431,6 +1431,20 @@ reason. Use those, never a bare integer.
 `MCPServerPool.shutdownAll()` (§11.5). A pool shutdown before the sweep drops
 the transports that the settling runs still need.
 
+**A connection that ends with no `session/close` closes its sessions too.**
+A client can go away with no `session/close`: it closes stdin, its input
+stream fails, or the host closes the connection. `RoutedACPAgent.bind(connection:)`
+starts one task that waits for `AgentSideConnection.closed`, logs the close
+reason, and runs this teardown for each open session: the shell stream
+finishes, the MCP servers shut down, and `session-history.json` is written.
+The task holds the agent strongly until it ends. That adds no lifetime: the
+read loop of the connection already holds the agent, and `closed` fires at the
+end of that loop. A weak hold can find the agent already gone, and then the
+`SurfaceRefresher` of a mounted MCP server is released while its watch task
+runs. `run` and `acp` call `waitForConnectionTeardown()` before the process
+exits. The wait for `closed` is never in an inbound handler, because `closed`
+waits for each handler to end.
+
 ### 10.2 `session/delete`
 
 **It is capability-gated. We advertise it. It is a real delete, not a

@@ -129,6 +129,18 @@ enum AgentComposition {
                 return agent
             }
         }
+
+        /// Waits until ``agent`` closed its open sessions after the close of
+        /// the connection that ``serve(over:logger:)`` made.
+        ///
+        /// Neither `run` nor `acp` sends `session/close`: the client closes
+        /// the wire, and the agent closes each open session itself
+        /// (plan.md §10.1). A mode calls this after the connection closed
+        /// and before the process exits, so the agent can write the history
+        /// of each session and stop its MCP servers.
+        func waitForConnectionTeardown() async {
+            await agent.waitForConnectionTeardown()
+        }
     }
 
     /// The process working directory, as a directory URL. It roots the

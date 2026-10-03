@@ -71,6 +71,52 @@ extension RoutedACPAgent {
         sessions[sessionId]?.descendants.append(descendant)
     }
 
+    // MARK: - The close of the connection (plan.md §10.1)
+
+    /// Closes each open session after the bound connection closed, as
+    /// `session/close` closes one (plan.md §10.1: "so does agent shutdown").
+    ///
+    /// The teardown task of ``bind(connection:)`` calls it when
+    /// `AgentSideConnection.closed` gives its reason. A client can go away
+    /// with no `session/close`: it closes its end of the wire, its input
+    /// stream fails, or the host closes the connection. Each open session
+    /// then gets the full teardown here: the shell stream finishes, the MCP
+    /// servers shut down, and `session-history.json` is written. A session
+    /// already closed is skipped. One `notice` record names the reason.
+    ///
+    /// The connection already ended each inbound handler when `closed`
+    /// gives its reason, so no handler runs beside this teardown.
+    ///
+    /// - Parameter reason: Why the connection closed.
+    func closeOpenSessions(after reason: ConnectionCloseReason) async {
+        var metadata: Logger.Metadata = [
+            ACPAgentTelemetry.LogMetadataKey.connectionCloseReason: "\(Self.connectionCloseReasonName(reason))"
+        ]
+        if case .transportFailed(let error) = reason {
+            metadata[ACPAgentTelemetry.LogMetadataKey.errorType] =
+                "\(ACPAgentTelemetry.errorTypeName(of: error))"
+        }
+        ACPAgentTelemetry.logger(.sessionLifecycle).notice(
+            "The connection closed. The agent closes each open session.", metadata: metadata)
+        for (sessionId, entry) in sessions where !entry.isClosed {
+            await tearDownSession(sessionId, entry: entry)
+        }
+    }
+
+    /// The name of a close reason, for the log record of a connection close.
+    /// The error of a failed transport is not in the name, because an error
+    /// message can hold content.
+    ///
+    /// - Parameter reason: Why the connection closed.
+    /// - Returns: `endOfInput`, `transportFailed` or `closedLocally`.
+    static func connectionCloseReasonName(_ reason: ConnectionCloseReason) -> String {
+        switch reason {
+        case .endOfInput: "endOfInput"
+        case .transportFailed: "transportFailed"
+        case .closedLocally: "closedLocally"
+        }
+    }
+
     // MARK: - The teardown (plan.md §10.1)
 
     /// Runs the full §10.1 teardown of one session: cancel the running prompt,
