@@ -686,15 +686,17 @@ import Testing
 
     // MARK: - Compaction (§8.5)
 
-    /// A compaction sends one `usage_update` — the meter drops to the
-    /// post-fold size — and no message update.
-    @Test func aCompactionSendsOneUsageUpdateAndNoMessageUpdate() async throws {
+    /// A compaction sends its compaction entry, then one `usage_update` —
+    /// the meter drops to the post-fold size — and no message update. The
+    /// entry is the UNSTABLE `compaction_update`, which the stable union
+    /// carries as its `unknown` case (`CompactionReportTests` reads it).
+    @Test func aCompactionSendsItsEntryAndOneUsageUpdateAndNoMessageUpdate() async throws {
         let updates = await Self.drive([.compaction(Self.makeFoldResult())])
 
-        #expect(updates.map(\.kind) == [.usageUpdate, .stateUpdate])
+        #expect(updates.map(\.kind) == [.unknown, .usageUpdate, .stateUpdate])
         let usage = try #require(
-            usageReport(of: updates.first),
-            "expected the usage update first, got \(updates)")
+            updates.lazy.compactMap(usageReport(of:)).first,
+            "expected one usage update, got \(updates)")
         #expect(usage.used == Self.tokensAfterFold)
         #expect(usage.size == Self.tokensBeforeFold)
     }

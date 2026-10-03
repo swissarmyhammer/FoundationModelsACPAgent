@@ -141,6 +141,25 @@ extension RoutedACPAgent {
         }
     }
 
+    /// The history sink of a session over the connection that is bound when
+    /// each update goes out (``historySink(for:connection:)``).
+    ///
+    /// A part of the session that lives longer than one request keeps this
+    /// sink, such as the compaction report of `/compact`
+    /// (``CompactionReporter``). An update that goes out while no connection
+    /// is bound goes nowhere: no client is there to see it.
+    ///
+    /// - Parameter sessionId: The session the updates belong to.
+    /// - Returns: The sink.
+    nonisolated func boundHistorySink(for sessionId: SessionId) -> SessionUpdateSink {
+        { [weak self] update in
+            guard let self, let connection = boundConnection else {
+                return
+            }
+            await historySink(for: sessionId, connection: connection)(update)
+        }
+    }
+
     /// Inserts the prompt of `params` as the user message of its session
     /// (ACP schema-v2.0.0-alpha.7): the retained history gets the
     /// `user_message` echo at once, and the connection sends the echo after

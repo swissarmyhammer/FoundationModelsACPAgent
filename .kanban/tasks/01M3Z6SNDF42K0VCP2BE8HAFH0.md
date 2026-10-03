@@ -25,8 +25,40 @@ comments:
     - Check the exact initializer labels in `Sources/FoundationModelsACP/Generated/Unstable.Models.generated.swift`.
     Start after ^56jbp35 (one implementer in this tree at a time); move the pin to 60854b6 or later first.
   timestamp: 2026-10-03T12:31:15.842152+00:00
-position_column: todo
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m40z2ca49rada8z45e51f5ac
+  text: |-
+    Research (implement, picked up):
+    - Router at the pinned revision gives NO "compaction started" event. `SessionEvent.compaction(CompactionResult)` is the only compaction event. It comes after an automatic compaction (proactive fold, reactive overflow retry, compaction yield) is done. A failure or a cancel of an automatic compaction throws out of the answer with no event and no compaction id. A shortfall comes as `CompactionResult.shortfall`.
+    - Manual `/compact` (BuiltinCommands.compactReport) calls `RoutedSession.compact()`; it emits no SessionEvent. The agent can see the start, the result, the shortfall, a thrown failure and a CancellationError there.
+    - Router gives the summary whole (`CompactionResult.summary: String?`), never in parts. Thus the summary goes on the completed update; no `compaction_summary_chunk`.
+    - The single choke point is `RoutedACPAgent.historySink(for:connection:)`: it applies each update to the SessionMergeEngine of the session, then posts it. EventProjection.send is that sink. The `/compact` action has no sink today, so the builtin context binding needs one.
+    - Plan: one `CompactionReporter` (Agent layer) makes and sends the `compaction_update` and the `usage_update`. Automatic: terminal update keyed by `result.id` (no in_progress, because Router shows no start). Manual: own ULID id, in_progress before `compact()`, then completed / failed (shortfall reason or error) / cancelled.
+    - IntegrationTests/Package.resolved pins FoundationModelsACP 284e002; root pins 60854b6. Align it.
+  timestamp: 2026-10-03T13:25:46.436338+00:00
+- actor: claude-code
+  id: 01m4100yxhczf2h8q8r7n26y9g
+  text: |-
+    Implementation landed (not committed):
+    - New `Sources/FoundationModelsACPAgent/Agent/CompactionReporter.swift`: makes each UNSTABLE `compaction_update` through `SessionUpdate(Unstable.SessionUpdate.compactionUpdate(...))`. `reportStart` = in_progress; `reportEnd(with: result)` = completed with the summary as one text block, then `usage_update` (size = max(before, after), used = after); a shortfall = failed with `shortfallReason` (moved here from BuiltinCommands); `reportEnd(throwing:)` = cancelled for CancellationError, else failed with the error text. An encode failure asserts and logs.
+    - EventProjection `.compaction(result)` (automatic) now calls `reportAutomaticCompaction` keyed by `result.id`. Behavior change: a shortfall no longer sends a `usage_update` (the meter did not move).
+    - `/compact`: `BuiltinCommandContext.Binding.compactionReporter`; the agent makes a ULID compaction id, sends in_progress before `compact()`, then the terminal update. The streamed text report is unchanged.
+    - Choke point: new `RoutedACPAgent.boundHistorySink(for:)` reads the bound connection at send time and delegates to `historySink(for:connection:)`, which applies to the SessionMergeEngine first. So session-history.json and a resume replay the compaction entry.
+    - Tests: `CompactionReportTests` (8): automatic completed + usage; automatic shortfall failed, no usage; manual in_progress then completed + usage; manual shortfall failed with the reason; manual summarizer failure failed; cancel = cancelled; earlier messages keep id and content in the engine; new agent resumes from session-history.json and replays the compaction entry (completed, summary, same id) and the earlier messages. `EventProjectionTests.aCompactionSendsOneUsageUpdate...` renamed and updated: the kinds are now [unknown (the compaction_update), usageUpdate, stateUpdate].
+    - plan.md: §7.4 replay bullet, §8.4 table row, §8.5 rewritten, §14.1 and §14.3 /compact lines.
+    - IntegrationTests/Package.resolved (gitignored): FoundationModelsACP 284e002 -> 60854b6.
+    - Discovery / gap: Router gives no start, failure or cancel event for an AUTOMATIC compaction. An automatic entry thus has only its terminal update, and an automatic failure or cancel shows only as the prompt stop reason. Filed ^fhwk6sn (#upstream) to ask Router for those events.
+    - Process note: one plan.md edit was made with a python one-off through the shell (the files tool echo of plan.md is too large); the next agent should use the files tool edit op, which works (only its echo overflows).
+  timestamp: 2026-10-03T13:42:28.529232+00:00
+- actor: claude-code
+  id: 01m410126dewf9y27y3g8p7nyv
+  text: |-
+    ### implement — changed
+    - evidence: `swift build -c release` complete, 0 warnings, 0 errors; `swift test` 733 tests in 83 suites passed (1 known issue, the existing HarnessSmokeTests withKnownIssue); `swift build --package-path IntegrationTests --build-tests` complete (only the existing SwiftPM "missing creator for mutated node" mlx bundle note). Files: Sources/FoundationModelsACPAgent/Agent/CompactionReporter.swift (new), Agent/EventProjection.swift, Agent/SessionHistory.swift, Agent/SessionSetup.swift, Commands/BuiltinCommands.swift, Tests/FoundationModelsACPAgentTests/CompactionReportTests.swift (new), Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift, plan.md, IntegrationTests/Package.resolved (gitignored).
+    - next: /review
+  timestamp: 2026-10-03T13:42:31.885104+00:00
+position_column: doing
+position_ordinal: '80'
 title: Report each Router compaction as an ACP compaction entry, and keep the full ACP history across a compaction
 ---
 ## Why

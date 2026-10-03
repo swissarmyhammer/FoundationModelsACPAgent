@@ -33,6 +33,10 @@ final class BuiltinCommandContext: Sendable {
         /// of the agent keeps the registry.
         weak var registry: CommandRegistry?
 
+        /// The report of each `/compact` on the wire and in the retained
+        /// history of the session (plan.md §8.5).
+        let compactionReporter: CompactionReporter
+
         /// Makes the late-bound references.
         ///
         /// - Parameters:
@@ -40,14 +44,16 @@ final class BuiltinCommandContext: Sendable {
         ///   - sessionId: The ACP session id.
         ///   - transcriptDirectory: The session's transcript directory.
         ///   - registry: The session's command registry.
+        ///   - compactionReporter: The report of each `/compact`.
         init(
             session: any RoutedSession, sessionId: SessionId, transcriptDirectory: URL,
-            registry: CommandRegistry
+            registry: CommandRegistry, compactionReporter: CompactionReporter
         ) {
             self.session = session
             self.sessionId = sessionId
             self.transcriptDirectory = transcriptDirectory
             self.registry = registry
+            self.compactionReporter = compactionReporter
         }
     }
 
@@ -256,48 +262,50 @@ enum BuiltinCommands {
     /// compaction, thus the report says so and names the reason, instead of
     /// "Compacted" beside two equal token counts.
     ///
+    /// The fold also shows as one compaction entry (plan.md §8.5): the
+    /// `in_progress` update before the fold, then `completed` with the
+    /// summary, `failed` with the reason, or `cancelled`, all under one id
+    /// (``CompactionReporter``). The streamed text stays the report a person
+    /// reads.
+    ///
     /// - Parameter context: The session context.
     /// - Returns: The report, or the failure.
     private static func compactReport(context: BuiltinCommandContext) async -> String {
         guard let binding = context.binding else {
             return "No active session to compact."
         }
+        let reporter = binding.compactionReporter
+        let compactionId = CompactionReporter.makeCompactionId()
+        await reporter.reportStart(of: compactionId)
+        let result: CompactionResult
         do {
-            let result = try await binding.session.compact()
-            if let shortfall = result.shortfall {
-                return """
-                    The session was not compacted: \(shortfallReason(shortfall))
-                    tokens: \(result.tokensBefore)
-                    """
-            }
-            let model = result.summarizerModel ?? noSummarizerModel
-            return """
-                Compacted the session.
-                tokens before: \(result.tokensBefore)
-                tokens after: \(result.tokensAfter)
-                summarizer model: \(model)
-                """
+            result = try await binding.session.compact()
         } catch {
+            await reporter.reportEnd(of: compactionId, throwing: error)
             return "Compaction failed: \(error)"
         }
+        await reporter.reportEnd(of: compactionId, with: result)
+        return reportText(of: result)
     }
 
-    /// The reason a fold left the context as it was, in words a user reads.
+    /// The text of the `/compact` report for a fold that returned `result`.
     ///
-    /// - Parameter shortfall: The reason Router gave.
-    /// - Returns: One sentence.
-    static func shortfallReason(_ shortfall: CompactionShortfall) -> String {
-        switch shortfall {
-        case .targetLeavesNoRoomForSummary(let allowed):
-            return "the fold target leaves no room for a summary (\(allowed) tokens)."
-        case .inputFillsSummarizerWindow(let input, let window):
-            return
-                "the text to summarize (\(input) tokens) does not fit the window of any summarizer (\(window) tokens)."
-        case .summaryDidNotShrinkContext(let snapshot):
-            return "the summary did not make the context smaller (\(snapshot) tokens), so it was discarded."
-        @unknown default:
-            return "\(shortfall)."
+    /// - Parameter result: The result of the fold.
+    /// - Returns: The report.
+    private static func reportText(of result: CompactionResult) -> String {
+        if let shortfall = result.shortfall {
+            return """
+                The session was not compacted: \(CompactionReporter.shortfallReason(shortfall))
+                tokens: \(result.tokensBefore)
+                """
         }
+        let model = result.summarizerModel ?? noSummarizerModel
+        return """
+            Compacted the session.
+            tokens before: \(result.tokensBefore)
+            tokens after: \(result.tokensAfter)
+            summarizer model: \(model)
+            """
     }
 
     // MARK: - /context (plan.md §14.1)

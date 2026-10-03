@@ -476,7 +476,9 @@ extension RoutedACPAgent {
                 session: session,
                 sessionId: sessionId,
                 transcriptDirectory: session.recordingDirectory,
-                registry: commands))
+                registry: commands,
+                compactionReporter: CompactionReporter(
+                    sessionId: sessionId, send: boundHistorySink(for: sessionId))))
 
         // The first announcement of the config-option list (plan.md
         // §15): one select over the profile's chat slots, defaulting to

@@ -883,7 +883,10 @@ the wire. The last one wins.
   process.
 - **The replay sends the full engine**: `transcriptUpdates` then
   `stateUpdates` (the command list, the config options, the usage, the session
-  info, the state). The replay does not send a new `messageId`.
+  info, the state). The replay does not send a new `messageId`. Each
+  compaction is one entry of the engine (`SessionEntry.ID.compaction(id)`), at
+  the position of its first update, and the replay sends it as one
+  `compaction_update` with its final status and summary (§8.5).
 - **The live session comes from the newest compaction checkpoint** of the
   Router journal (the model's work transcript). The Router journal is only for
   the restore of the model context. Its messages have no ACP ids, and after a
@@ -1069,7 +1072,7 @@ and its doc comment says a consumer must write a `default` arm. Write one.
 | `toolStatus(id:status:summary:output:)` | `tool_call_update` (`running` → `in_progress`) — `output: [SegmentPayload]?` is the fourth parameter; map it to the call's content |
 | `toolInvocation(ToolInvocationRecord)` | `tool_call_update` — the settled record for the call |
 | `entryRecorded(id:kind:)` | nothing on the wire — a recording fact (§4) |
-| `compaction(CompactionResult)` | `usage_update` — the context meter drops; no message change (§8.5) |
+| `compaction(CompactionResult)` | one UNSTABLE `compaction_update` keyed by the result's `id`: `completed` with the summary, then a `usage_update` (the context meter drops); or `failed` with the shortfall reason. No message change (§8.5) |
 | `discoveryPrimingFailed(DiscoveryPrimingFailure)` | nothing on the wire — log it |
 | `generationStalled(GenerationStall)` | nothing on the wire — log it, and read it as the stalled-generation guard below |
 | `submissionQueued(SubmissionID)` | nothing on the wire — a `notice` log line with the session id and the model name: the submission waits for a place in the model queue, because the model runs a submission of another session (§8.0). It is not a stall (see the guard below) |
@@ -1252,23 +1255,48 @@ touched or removed)". Reconstruction gives two views over the one journal:
 and `.restore` (the newest checkpoint plus the entries after it — the model's
 working transcript). Only the model's in-memory working set is non-monotonic.
 
-**Decision: the wire keeps the same shape — compaction changes no
-user-visible message.** We send no upserts that clear or rewrite folded
-messages. The session history that a client shows is the full conversation,
-and it only grows. What compaction emits:
+**Decision (owner, task ^e8hafh0): a compaction changes only the model
+context.** We send no upserts that clear or rewrite folded messages. The ACP
+history keeps each message with its id, and it only grows. A compaction shows
+as one more entry: the UNSTABLE `compaction_update` of FoundationModelsACP
+(`Unstable.CompactionUpdate`, sent as `SessionUpdate(Unstable.SessionUpdate
+.compactionUpdate(...))`). `CompactionReporter` makes each update. What a
+compaction emits:
 
-- **`usage_update`** with the new `used` size. The visible effect is that the
-  context meter drops.
-- Nothing else. The fold summary is model-context material. It stays in the
-  journal as the checkpoint, reachable through the transcript (§19.1). It is
-  not a chat message.
+- **`compaction_update`**, an upsert keyed by one `compactionId` for each
+  compaction. The first update fixes the position of the entry. The status is
+  `in_progress` at the start, then one terminal status:
+  - `completed`, with the retained `summary` as one text block. Router gives
+    the summary whole, never in parts, thus no `compaction_summary_chunk`
+    goes out.
+  - `failed`, with the reason in `error`. A `CompactionShortfall` (the
+    compaction left the context as it was) is a failure, and its reason is
+    the error text.
+  - `cancelled`, when a cancellation stopped the compaction.
+- **`usage_update`** with the new `used` size, after a `completed` update. The
+  visible effect is that the context meter drops. A failed or cancelled
+  compaction did not change the context, thus it sends none.
+- No `notice`: the entry carries everything that a client shows.
 
-Replay (§7.4) is consistent for free: it replays the retained ACP history,
-which holds only what the client saw live. A compaction does not write to it,
-so replay does not emit a checkpoint. This also
-removes the old upstream ask on Router (`CompactionResult` message identity):
-we never need to know which messages a fold touched, because we never touch
-them on the wire.
+The two kinds of compaction differ in what Router shows:
+
+- **Automatic** (the budget: the proactive fold, the overflow retry, the
+  compaction yield). Router reports only the result, as the
+  `compaction(CompactionResult)` session event, after the compaction is done.
+  The entry thus has one update: the terminal one, keyed by the result's `id`.
+  A failure or a cancel of an automatic compaction throws out of the answer
+  with no compaction id, so it shows as the stop reason of the prompt, not as
+  an entry.
+- **Manual** (`/compact`, §14.1). The agent calls `compact()` itself, so it
+  makes its own id, sends `in_progress` before the call, and the terminal
+  update after it.
+
+Each of these updates goes through the history sink of the session, the one
+choke point that also applies the update to the `SessionMergeEngine` (§7.4).
+Thus `session-history.json` keeps the compaction entry, and a resume replays
+it with its final status and summary, in a new process too. The replay never
+comes from the Router journal. We never need to know which messages a fold
+touched, because we never touch them on the wire.
 
 ### 8.6 Cancellation (`session/cancel`)
 
@@ -2028,7 +2056,8 @@ The later source wins at a name collision (logged). Builtin names are
 reserved. Nothing replaces them.
 
 1. **Builtins**: this package's `.action` closures that capture the session.
-   `/compact` (do compaction now), `/context` (fill, tokens, resolved context;
+   `/compact` (do compaction now; one compaction entry on the wire, §8.5),
+   `/context` (fill, tokens, resolved context;
    we keep it for CLI ergonomics; the app binds `usage_update` in place of it,
    §8.4), `/memory` (print the assembled instructions with source headers),
    `/status` (session id, cwd, model/profile, transcript path), `/config`
@@ -2176,7 +2205,8 @@ session:
   usual, recorded model prompt.
 - **`.action` commands** stream output. There is no model call. There are no
   transcript entries other than what the action records (`/compact` its
-  `CompactionSegment`; `/help` nothing).
+  `CompactionSegment` in the Router journal and its compaction entry in the
+  ACP history, §8.5; `/help` nothing).
 - **An unknown `/name`** gives an error with near matches. It is never a model
   prompt. Frontends escape a literal leading slash.
 - **A command can arrive with other content attached.** (The spec permits

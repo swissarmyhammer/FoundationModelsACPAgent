@@ -526,20 +526,15 @@ struct EventProjection {
 
     // MARK: - Compaction (§8.5)
 
-    /// Sends the compaction's one `usage_update`: the meter drops to
-    /// the post-fold size. No message update clears or rewrites
-    /// anything — the journal only ever appends.
+    /// Sends the compaction entry of an automatic compaction: one
+    /// `compaction_update` with the final status, and the `usage_update`
+    /// of a completed compaction (``CompactionReporter``). No message
+    /// update clears or rewrites anything: a compaction changes only the
+    /// model context.
     ///
     /// - Parameter result: The fold's result.
     private func projectCompaction(_ result: CompactionResult) async {
-        // The fold's own estimates are the only sizes it carries. The
-        // pre-fold estimate stands in for the context size, so the
-        // visible effect is the meter dropping to the post-fold size.
-        await send(
-            .usageUpdate(
-                UsageUpdate(
-                    size: max(result.tokensBefore, result.tokensAfter),
-                    used: result.tokensAfter)))
+        await CompactionReporter(sessionId: sessionId, send: send).reportAutomaticCompaction(result)
     }
 
     // MARK: - The settlement (§8.4, §11.6)
