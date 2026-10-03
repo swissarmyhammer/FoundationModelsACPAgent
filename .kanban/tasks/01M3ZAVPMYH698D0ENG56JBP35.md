@@ -59,8 +59,24 @@ comments:
     - evidence: 12 files — Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Sources/acp-agent/AgentComposition.swift, Sources/acp-agent/AcpCommand.swift, Sources/acp-agent/RunPrompt.swift, Sources/acp-agent/InboundEndTransport.swift, Tests/FoundationModelsACPAgentTests/ConnectionCloseTests.swift (new, 3 tests), Tests/FoundationModelsACPAgentTests/RunCommandTests.swift (+1 test), Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift (doc), Tests/FoundationModelsACPAgentTestSupport/Harness.swift, plan.md §10.1; gitignored IntegrationTests/Package.resolved FoundationModelsACP pin moved e14d853 -> 284e002. `swift build -c release`: complete, 0 warnings. `swift test`: 725 tests in 82 suites passed (1 known issue, as at HEAD). `swift build --package-path IntegrationTests --build-tests`: complete (only the third-party mlx Metal header warnings of the checkout). Design: a teardown task started at bind holds the agent strongly until `closed` returns; no leak, because the read loop already holds the agent until `closed` fires.
     - next: /review
   timestamp: 2026-10-03T13:15:17.550448+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m40yv7hrgchsvfscxptbgrft
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (d9b644a); 0 findings, 0 confirmed, 0 refuted; 7 validator runs, 0 failed. 11 files reviewed. Not reviewed: 4 .kanban files (.reviewignore) and plan.md (no validator matches).
+    - next: none. The task moved to done.
+  timestamp: 2026-10-03T13:21:52.184720+00:00
+- actor: claude-code
+  id: 01m40yvfq60tkae2v76mjhspnn
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 12 files (teardown task on `closed`, run/acp wait, harness wait, ConnectionCloseTests)
+    - test: green — swift test 725 tests in 82 suites; release build 0 warnings; IntegrationTests build (reported by implement)
+    - commit: d9b644a
+    - review: clean — 0 findings
+  timestamp: 2026-10-03T13:22:00.550341+00:00
+position_column: done
+position_ordinal: ff9380
 title: A connection that drops without session/close leaves its sessions open, and a debug build stops on a Multitool assertion
 ---
 ## Problem
