@@ -57,8 +57,25 @@ comments:
     - evidence: `swift build -c release` complete, 0 warnings, 0 errors; `swift test` 733 tests in 83 suites passed (1 known issue, the existing HarnessSmokeTests withKnownIssue); `swift build --package-path IntegrationTests --build-tests` complete (only the existing SwiftPM "missing creator for mutated node" mlx bundle note). Files: Sources/FoundationModelsACPAgent/Agent/CompactionReporter.swift (new), Agent/EventProjection.swift, Agent/SessionHistory.swift, Agent/SessionSetup.swift, Commands/BuiltinCommands.swift, Tests/FoundationModelsACPAgentTests/CompactionReportTests.swift (new), Tests/FoundationModelsACPAgentTests/EventProjectionTests.swift, plan.md, IntegrationTests/Package.resolved (gitignored).
     - next: /review
   timestamp: 2026-10-03T13:42:31.885104+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m410cf39ezerkwbys6cry9e7
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2ece010). 0 findings, 0 confirmed, 0 refuted. 7 files attempted, 0 failed. Not reviewed: 4 .kanban files (from .reviewignore) and plan.md (no validator matches this file).
+    - next: none. The task is in done.
+  timestamp: 2026-10-03T13:48:45.545405+00:00
+- actor: claude-code
+  id: 01m410cqq2w3rbdyndvy6qhc13
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 9 files (CompactionReporter, history sink, manual and automatic paths, 8 tests, plan.md)
+    - test: green — swift test 733 tests in 83 suites; release build 0 warnings; IntegrationTests build (reported by implement)
+    - commit: 2ece010
+    - review: clean — 0 findings
+    - open upstream: automatic start / failure / cancel events, tracked on ^fhwk6sn (Router ^k1gepqc)
+  timestamp: 2026-10-03T13:48:54.370064+00:00
+position_column: done
+position_ordinal: ff9480
 title: Report each Router compaction as an ACP compaction entry, and keep the full ACP history across a compaction
 ---
 ## Why

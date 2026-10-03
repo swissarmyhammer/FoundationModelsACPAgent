@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4102b1yzs8y03jr5t0y2419
+  text: Carded on the FoundationModelsRouter board as ^k1gepqc (2026-10-03), written with `sah tool kanban` because no Router session was running. It asks for `compactionStarted(id, reason)` before an automatic compaction and `compactionFailed(id, .failed(error) | .cancelled)`, with the same id as `CompactionResult.id`. Blocked until Router pushes it.
+  timestamp: 2026-10-03T13:43:13.726024+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Report upstream: Router gives no start, failure or cancel event for an automatic compaction'
