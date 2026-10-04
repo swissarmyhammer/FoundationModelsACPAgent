@@ -51,6 +51,10 @@ comments:
     - review: clean — no findings
     - next: push, then verify CI and check the last subtask
   timestamp: 2026-10-04T20:45:05.329413+00:00
+- actor: claude-code
+  id: 01m44c9p4ac0fwm8h5e25dysxp
+  text: 'CI verified: run 37233304615 on 00dc759. Build & test: success. Integration: success.'
+  timestamp: 2026-10-04T21:14:40.650766+00:00
 position_column: done
 position_ordinal: ff9680
 title: 'Adopt FoundationModelsACPClient 85c1ddd: replace SwiftUIACPClient and ACPSessionState with ConnectionModel and SessionModel'
@@ -70,6 +74,6 @@ CI resolves the sibling packages from main. FoundationModelsACPClient 85c1ddd (c
 - [x] Read the new `ConnectionModel` and `SessionModel` API in the client checkout. Replace each use of the removed types. Keep the behavior of the tests the same.
 - [x] Update the doc comments that name the removed types.
 - [x] `swift build -c release` with no warnings from this package. `swift test --no-parallel` green. `swift build --package-path IntegrationTests --build-tests` green.
-- [ ] After the push, CI Build & test and Integration are green.
+- [x] After the push, CI Build & test and Integration are green.
 
 #upstream
