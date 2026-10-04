@@ -45,8 +45,24 @@ comments:
     - evidence: 4 tracked files — Sources/FoundationModelsACPAgent/Agent/CompactionReporter.swift, Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Tests/FoundationModelsACPAgentTests/CompactionReportTests.swift (+4 tests, 12 in the suite), plan.md §8.5; plus the gitignored IntegrationTests/Package.resolved (Router c5ebd440 -> 63ed8fb8). `swift build -c release`: complete, 0 warnings from this package (only the third-party mlx Metal header warnings of the checkout). `swift test --filter CompactionReportTests`: 12 passed. `swift test --no-parallel`: 737 tests in 83 suites passed (1 known issue, as at HEAD). Parallel `swift test`: 737 tests, 4 failed on the 60 s time limit (SessionResumeTests x2, CompactionReportTests.aResumeReplaysTheCompactionEntryAndTheEarlierMessages, BuiltinCommandsTests.noBuiltinInvokesTheModelBackend); HEAD with no source change fails the same 4 (733 tests). Filed ^vjaka1g. `swift build --package-path IntegrationTests --build-tests`: complete.
     - next: /review
   timestamp: 2026-10-04T19:26:39.902047+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m446bgzqqn266035rrchbc5s
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (dc223ad). 0 findings, 0 confirmed, 0 refuted. 7 validator runs completed, 0 failed. 3 files reviewed. Not reviewed: 4 .kanban files (.reviewignore rule) and plan.md (no validator matches it).
+    - next: none. The task is in done.
+  timestamp: 2026-10-04T19:30:49.463316+00:00
+- actor: claude-code
+  id: 01m446bscedpnz575m2qk7j5k5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — CompactionReporter.swift, EventProjection.swift, CompactionReportTests.swift, plan.md §8.5
+    - test: green — swift test --no-parallel, 737 passed (parallel timeouts also occur at HEAD under load: ^vjaka1g)
+    - commit: dc223ad
+    - review: clean — no findings
+  timestamp: 2026-10-04T19:30:58.062258+00:00
+position_column: done
+position_ordinal: ff9580
 title: 'Report upstream: Router gives no start, failure or cancel event for an automatic compaction'
 ---
 ## Why
