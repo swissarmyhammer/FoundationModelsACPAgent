@@ -24,6 +24,27 @@ enum ComposedPromptFixture {
         let text: String
     }
 
+    /// The environment variable that roots the user configuration layer,
+    /// injected so no composition touches the real home directory.
+    private static let configHomeVariable = "XDG_CONFIG_HOME"
+
+    /// The environment a suite composes the CLI agent over: the stub model,
+    /// the user layer rooted at `configHome`, and the defaults layer of
+    /// `StubAgentDefaultsLayer`, which turns the code context off for each
+    /// session.
+    ///
+    /// - Parameter configHome: The directory the user layer roots under.
+    /// - Returns: The environment.
+    /// - Throws: The write error of the defaults layer.
+    static func makeStubEnvironment(configHome: URL) throws -> [String: String] {
+        try StubAgentDefaultsLayer.makeEnvironment(
+            name: AgentComposition.dotfolderName,
+            base: [
+                AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue,
+                configHomeVariable: configHome.path,
+            ])
+    }
+
     /// Composes the agent over `environment`, runs `prompt` as one prompt
     /// in `workspace`, and returns the agent text the prompt streamed.
     ///

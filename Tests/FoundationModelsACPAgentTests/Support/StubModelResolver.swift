@@ -20,37 +20,24 @@ struct StubModelResolver: ModelResolver {
     /// timeout, which is what makes that timeout fire.
     var silentReferences: Set<String> = []
 
+    /// The gate that holds the answer of each reference in
+    /// ``silentReferences``. The test opens it after the doctor returned.
+    let lateAnswers = LateAnswerGate()
+
     /// Answers one lookup from ``namedLookups``, ``lookup`` and
     /// ``silentReferences``.
     ///
     /// - Parameter reference: The model reference to look up.
-    /// - Returns: The scripted answer, or an answer that comes far too
-    ///   late, when the reference is in ``silentReferences``.
+    /// - Returns: The scripted answer, or, when the reference is in
+    ///   ``silentReferences``, an answer that comes only after the test
+    ///   opens ``lateAnswers``. A doctor whose timeout works reports
+    ///   ``ModelLookup/noAnswer`` before that, and drops the late answer.
     func lookUp(_ reference: ModelRef) async -> ModelLookup {
         let text = reference.stringValue
         if silentReferences.contains(text) {
-            return await Self.answerTooLate()
+            await lateAnswers.wait()
+            return .found(downloadBytes: 0)
         }
         return namedLookups[text] ?? lookup
     }
-
-    /// Waits ``lateAnswerSeconds``, which is far past any timeout a test
-    /// injects, and then answers.
-    ///
-    /// So a doctor whose timeout works reports ``ModelLookup/noAnswer``
-    /// long before this returns, and a doctor whose timeout does not work
-    /// waits the whole time and fails the elapsed-time assertion.
-    ///
-    /// The wait ends early when the doctor cancels the lookup. The answer
-    /// that then comes back arrives after the timeout has already settled,
-    /// so it is dropped — and no task is left suspended for ever.
-    ///
-    /// - Returns: The late answer.
-    private static func answerTooLate() async -> ModelLookup {
-        try? await Task.sleep(for: .seconds(lateAnswerSeconds))
-        return .found(downloadBytes: 0)
-    }
-
-    /// How long a lookup of a silent reference waits, in seconds.
-    private static let lateAnswerSeconds = 60.0
 }

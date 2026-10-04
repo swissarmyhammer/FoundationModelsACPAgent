@@ -77,13 +77,8 @@ struct ProfileDoctorTests {
     private static let unreachableReason = "the host could not be reached"
 
     /// The timeout a test that proves the timeout injects, in seconds. It
-    /// is far below ``timeoutCeilingSeconds``, so the assertion on the
-    /// elapsed time cannot pass by accident.
+    /// is short, so the test does not wait long for the timeout to fire.
     private static let shortTimeoutSeconds = 0.2
-
-    /// The bound the elapsed time of a run against a resolver that does
-    /// not answer in time must stay under, in seconds.
-    private static let timeoutCeilingSeconds = 2.0
 
     // MARK: - Helpers
 
@@ -228,20 +223,24 @@ struct ProfileDoctorTests {
     }
 
     /// A resolver that does not answer in time gives one `.warning`, and
-    /// the run ends inside the named timeout instead of hanging.
-    @Test func aResolverThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
+    /// the run ends at the named timeout instead of hanging.
+    ///
+    /// The proof is by order: the silent lookup answers only after the test
+    /// opens its gate, and the test opens the gate after the run returned.
+    /// A run that waited for the lookup would never return, and the time
+    /// limit would fail the test.
+    @Test(.timeLimit(.minutes(1)))
+    func aResolverThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
         let reference = ProfileConfiguration.defaultStandard[0]
         let resolver = StubModelResolver(silentReferences: [reference.stringValue])
-        let start = ContinuousClock.now
 
         let checks = await Self.doctor(
             resolver: resolver, timeoutSeconds: Self.shortTimeoutSeconds
         ).runHealthChecks()
-        let elapsed = ContinuousClock.now - start
+        await resolver.lateAnswers.open()
 
         let warnings = Self.findings(.warning, in: checks)
         let warning = try #require(warnings.first)
-        #expect(elapsed < .seconds(Self.timeoutCeilingSeconds))
         #expect(warnings.count == Self.oneFinding)
         #expect(warning.message.contains(reference.stringValue))
         #expect(warning.fix != nil)

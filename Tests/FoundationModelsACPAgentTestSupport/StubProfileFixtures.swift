@@ -20,9 +20,12 @@ import Tracing
 /// resolution downloads nothing and touches no network. The one test
 /// agent factory: every suite constructs through it.
 ///
-/// The agent's environment is empty on purpose, so a session never reads
-/// the real process environment; a suite that composes sessions injects
-/// `userDirectory` so nothing touches the real home directory either.
+/// The agent's environment does not come from the process, so a session
+/// never reads the real process environment; a suite that composes
+/// sessions injects `userDirectory` so nothing touches the real home
+/// directory either. The environment holds one key only: the defaults
+/// layer of ``StubAgentDefaultsLayer``, which turns the code context off
+/// for each session of the agent.
 ///
 /// - Parameters:
 ///   - name: The bare dotfolder name to construct the agent with.
@@ -39,8 +42,9 @@ import Tracing
 ///     captures the Router spans gives the tracer of its capture — see
 ///     ``EchoModel/makeRouter(cacheDirectory:recordingsDirectory:loader:tracer:)``.
 /// - Returns: The constructed agent.
-/// - Throws: `DotfolderNameError` when `name` is refused, or
-///   `ProfileResolutionError` when the stub resolution fails.
+/// - Throws: `DotfolderNameError` when `name` is refused,
+///   `ProfileResolutionError` when the stub resolution fails, or the
+///   write error of the defaults layer.
 public func makeStubAgent(
     name: String,
     cacheDirectory: URL,
@@ -58,7 +62,54 @@ public func makeStubAgent(
         name: DotfolderName(name),
         router: router,
         userDirectory: userDirectory,
-        environment: [:])
+        environment: StubAgentDefaultsLayer.makeEnvironment(name: name))
+}
+
+// MARK: - The defaults layer of a stub agent
+
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:)``
+/// gives each agent: the lowest layer of the configuration stack, below the
+/// user layer and the project layer.
+///
+/// Its `config.yaml` turns the code context off. A code context starts an
+/// FSEvents stream for its workspace, and fseventsd registers the streams
+/// of the whole machine one at a time. On a loaded machine one registration
+/// takes 0.1 s to 0.3 s, and ten registrations at the same time take more
+/// than 9 s. Thus in a parallel run each fixture waited for the code
+/// contexts of all the other fixtures, and a test that made two or more
+/// fixtures waited two or more times (task `^vjaka1g`). No unit test reads
+/// the code context through an agent: `ToolCatalogTests` tests it through
+/// `ToolCatalog`. A test that needs it through an agent turns it on in its
+/// project layer, which is higher than this layer.
+///
+/// A suite that composes the CLI agent through `AgentComposition` gives the
+/// same layer to the environment of that composition.
+public enum StubAgentDefaultsLayer {
+    /// The `config.yaml` of the layer.
+    static let configYAML = "tools:\n  codeContext: false\n"
+
+    /// The suffix of the environment key that `DotfolderStack` reads the
+    /// defaults layer root from: `<NAME>_DEFAULTS_DIR`, with the dotfolder
+    /// name in upper case.
+    static let environmentKeySuffix = "_DEFAULTS_DIR"
+
+    /// Writes the layer into a fresh directory, and returns `base` with the
+    /// key that names that directory as the defaults layer root of `name`.
+    ///
+    /// - Parameters:
+    ///   - name: The bare dotfolder name of the agent.
+    ///   - base: The environment the agent reads otherwise. Empty by default.
+    /// - Returns: `base`, with the defaults layer key added.
+    /// - Throws: The directory-creation or write error.
+    public static func makeEnvironment(
+        name: String, base: [String: String] = [:]
+    ) throws -> [String: String] {
+        let root = makeResolvedDirectory(label: "StubAgentDefaultsLayer")
+        try ConfigFileFixture.write(configYAML, in: root)
+        var environment = base
+        environment[name.uppercased() + environmentKeySuffix] = root.path
+        return environment
+    }
 }
 
 /// Resolves a profile over the stub models, resident and generation-free.

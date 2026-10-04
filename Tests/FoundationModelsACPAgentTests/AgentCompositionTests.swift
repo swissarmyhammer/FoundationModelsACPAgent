@@ -17,10 +17,6 @@ struct AgentCompositionTests {
     /// it received, so the answer text carries it.
     private static let promptText = "echo this back"
 
-    /// The environment variable that roots the user configuration layer,
-    /// injected so the composition never touches the real home directory.
-    private static let configHomeVariable = "XDG_CONFIG_HOME"
-
     /// The environment that selects the stub model, and nothing else.
     private static let stubEnvironment = [
         AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue
@@ -56,8 +52,7 @@ struct AgentCompositionTests {
     func theStubCompositionEchoesByteIdenticalText() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-repo")
-        var environment = Self.stubEnvironment
-        environment[Self.configHomeVariable] = configHome.path
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
         let first = try await ComposedPromptFixture.answerText(
             environment: environment, workspace: workspace, prompt: Self.promptText)
@@ -88,8 +83,7 @@ struct AgentCompositionTests {
     func theComposedPromptRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-record-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-record-repo")
-        var environment = Self.stubEnvironment
-        environment[Self.configHomeVariable] = configHome.path
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
         let outcome = try await ComposedPromptFixture.run(
             environment: environment, workspace: workspace, prompt: Self.promptText)
@@ -116,8 +110,7 @@ struct AgentCompositionTests {
     func theComposedRouterRecordsThroughItsResidentProfile() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-router-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-router-repo")
-        var environment = Self.stubEnvironment
-        environment[Self.configHomeVariable] = configHome.path
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
         let composed = try await AgentComposition.compose(
             workingDirectory: workspace, environment: environment)
         let root = try Self.recordingRoot(of: workspace)

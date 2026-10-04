@@ -31,13 +31,8 @@ struct ToolsDoctorTests {
     private static let webEnabledKey = "tools.web.enabled"
 
     /// The timeout a test that proves the timeout injects, in seconds. It
-    /// is far below ``timeoutCeilingSeconds``, so the assertion on the
-    /// elapsed time cannot pass by accident.
+    /// is short, so the test does not wait long for the timeout to fire.
     private static let shortTimeoutSeconds = 0.2
-
-    /// The bound the elapsed time of a run against a prober that does not
-    /// answer in time must stay under, in seconds.
-    private static let timeoutCeilingSeconds = 2.0
 
     /// The word a disabled tool section reports, so a person sees why the
     /// tool is absent.
@@ -310,21 +305,25 @@ struct ToolsDoctorTests {
     }
 
     /// A prober that does not answer in time gives one `.warning`, and the
-    /// run ends inside the named timeout instead of hanging.
-    @Test func aProberThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
+    /// run ends at the named timeout instead of hanging.
+    ///
+    /// The proof is by order: the silent probe answers only after the test
+    /// opens its gate, and the test opens the gate after the run returned.
+    /// A run that waited for the probe would never return, and the time
+    /// limit would fail the test.
+    @Test(.timeLimit(.minutes(1)))
+    func aProberThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
         let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-mcpSilent")
         let prober = StubToolsProber(silentServers: [Self.serverName])
-        let start = ContinuousClock.now
 
         let checks = await Self.doctor(
             configuration: Self.configurationWithOneServer(), workingDirectory: workspace,
             prober: prober, timeoutSeconds: Self.shortTimeoutSeconds
         ).runHealthChecks()
-        let elapsed = ContinuousClock.now - start
+        await prober.lateAnswers.open()
 
         let warnings = Self.findings(.warning, in: checks)
         let warning = try #require(warnings.first)
-        #expect(elapsed < .seconds(Self.timeoutCeilingSeconds))
         #expect(warnings.count == Self.oneFinding)
         #expect(warning.message.contains(Self.serverName))
         #expect(warning.fix != nil)

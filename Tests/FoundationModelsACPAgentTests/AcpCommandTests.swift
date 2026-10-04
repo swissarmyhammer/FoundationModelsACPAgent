@@ -17,21 +17,15 @@ import Testing
 /// in-process pair and the `acp` mode's stdio pipes give one text. And a
 /// prompt over the stdio wire records its transcript, because both modes
 /// compose one router (§4.1).
+///
+/// One more proof is about the stub environment that the suites compose
+/// over: a session of it starts no code context.
 struct AcpCommandTests {
     // MARK: - Constants
 
     /// The prompt of the same-answer comparison. The echo model answers
     /// with the prompt it received, so the answer text carries it.
     private static let promptText = "echo this over both wires"
-
-    /// The environment variable that roots the user configuration layer,
-    /// injected so no composition touches the real home directory.
-    private static let configHomeVariable = "XDG_CONFIG_HOME"
-
-    /// The environment that selects the stub model, and nothing else.
-    private static let stubEnvironment = [
-        AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue
-    ]
 
     /// The `compaction.toolOutputLimit` of the directory the process
     /// starts in. No session may resolve this one.
@@ -66,17 +60,6 @@ struct AcpCommandTests {
             "compaction:\n  toolOutputLimit: \(limit)\n",
             in: directory.appendingPathComponent(
                 ".\(AgentComposition.dotfolderName)", isDirectory: true))
-    }
-
-    /// The stub environment with its user layer rooted at a throwaway
-    /// directory.
-    ///
-    /// - Parameter configHome: The directory the user layer roots under.
-    /// - Returns: The environment.
-    private static func stubEnvironment(configHome: URL) -> [String: String] {
-        var environment = stubEnvironment
-        environment[configHomeVariable] = configHome.path
-        return environment
     }
 
     // MARK: - The stdin-EOF lifecycle (plan.md §17)
@@ -121,7 +104,7 @@ struct AcpCommandTests {
         try Self.writeToolOutputLimit(Self.startDirectoryLimit, under: startDirectory)
         try Self.writeToolOutputLimit(Self.firstRepositoryLimit, under: firstRepository)
         try Self.writeToolOutputLimit(Self.secondRepositoryLimit, under: secondRepository)
-        let environment = Self.stubEnvironment(configHome: configHome)
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
         // Load one: the start-up load, keyed by the directory the process
         // started in. `acp` passes `processWorkingDirectory` here.
@@ -148,6 +131,29 @@ struct AcpCommandTests {
         #expect(secondEntry.configuration.compaction.toolOutputLimit == Self.secondRepositoryLimit)
     }
 
+    /// A session of the composed agent over the stub environment starts no
+    /// code context. A code context starts an FSEvents stream, and fseventsd
+    /// registers the streams of the whole machine one at a time, so each one
+    /// that a unit suite starts makes the parallel run wait (task
+    /// `^vjaka1g`).
+    @Test(.timeLimit(.minutes(1)))
+    func aSessionOverTheStubEnvironmentStartsNoCodeContext() async throws {
+        let configHome = makeResolvedDirectory(label: "AcpCommandTests-no-code-context-config")
+        let workspace = makeResolvedDirectory(label: "AcpCommandTests-no-code-context-repo")
+        let composed = try await AgentComposition.compose(
+            workingDirectory: workspace,
+            environment: try ComposedPromptFixture.makeStubEnvironment(configHome: configHome))
+        let agent = composed.agent
+        _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
+
+        let session = try await agent.newSession(
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+        let entry = try #require(await agent.sessions[session.sessionId])
+
+        #expect(entry.surface.codeContextStop == nil)
+        _ = try await agent.closeSession(CloseSessionRequest(sessionId: session.sessionId))
+    }
+
     // MARK: - The same answer over either wire (cli-plan.md §4, §9)
 
     /// One prompt, one scripted model, two transports: the in-process
@@ -158,7 +164,7 @@ struct AcpCommandTests {
     func bothWiresGiveTheSameAnswer() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-config")
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-repo")
-        let environment = Self.stubEnvironment(configHome: configHome)
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
         let inProcess = try await ComposedPromptFixture.answerText(
             environment: environment, workspace: workspace, prompt: Self.promptText,
@@ -185,7 +191,7 @@ struct AcpCommandTests {
     func aPromptOverTheStdioWireRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-record-config")
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-record-repo")
-        let environment = Self.stubEnvironment(configHome: configHome)
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
         let outcome = try await ComposedPromptFixture.run(
             environment: environment, workspace: workspace, prompt: Self.promptText,

@@ -1,12 +1,13 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
-import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Synchronization
 import Testing
+
+@testable import FoundationModelsACPAgent
 
 /// The arguments of ``PathRecordingTool``: one file path.
 @Generable
@@ -39,8 +40,8 @@ final class PathRecordingTool: Tool, Sendable {
 }
 
 /// The shared harness of plan.md §20.1: construction, the `initialize`
-/// round trip from the client end, the coalescing flush, the scripted
-/// backend, and the assertion helpers.
+/// round trip from the client end, the session of the stub agent, the
+/// coalescing flush, the scripted backend, and the assertion helpers.
 @Suite struct HarnessSmokeTests {
     /// The deltas the scripted pass streams, in order.
     static let scriptedDeltas = ["Let me look. ", "Reading the file now."]
@@ -97,6 +98,22 @@ final class PathRecordingTool: Tool, Sendable {
         }
         #expect(pendingPermissionCounts.allSatisfy { $0 == 0 })
         await harness.close()
+    }
+
+    // MARK: - The stub agent
+
+    /// A session of the stub agent starts no code context. A code context
+    /// registers an FSEvents stream, and fseventsd registers the streams of
+    /// the whole machine one at a time. Thus each code context that a unit
+    /// fixture starts makes each other fixture of a parallel run wait.
+    @Test(.timeLimit(.minutes(1)))
+    func aStubAgentSessionStartsNoCodeContext() async throws {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.endPass], label: "HarnessSmokeTests-no-code-context")
+        let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+
+        #expect(entry.surface.codeContextStop == nil)
+        await fixture.close()
     }
 
     // MARK: - The coalescing flush

@@ -23,6 +23,10 @@ struct StubToolsProber: ToolsProber {
     /// doctor's timeout, which is what makes that timeout fire.
     var silentServers: Set<String> = []
 
+    /// The gate that holds the answer of each server in ``silentServers``.
+    /// The test opens it after the doctor returned.
+    let lateAnswers = LateAnswerGate()
+
     /// Answers the sandbox probe from ``sandbox``.
     ///
     /// - Parameter options: The write confinement, which this stub reads
@@ -36,32 +40,15 @@ struct StubToolsProber: ToolsProber {
     /// ``silentServers``.
     ///
     /// - Parameter entry: The server entry to probe.
-    /// - Returns: The scripted answer, or an answer that comes far too
-    ///   late, when the entry's name is in ``silentServers``.
+    /// - Returns: The scripted answer, or, when the entry's name is in
+    ///   ``silentServers``, an answer that comes only after the test opens
+    ///   ``lateAnswers``. A doctor whose timeout works reports
+    ///   ``ProbeOutcome/timedOut`` before that, and drops the late answer.
     func startMCPServer(_ entry: MCPServerConfiguration) async -> ProbeOutcome {
         if silentServers.contains(entry.name) {
-            return await Self.answerTooLate()
+            await lateAnswers.wait()
+            return .answered
         }
         return namedServers[entry.name] ?? server
     }
-
-    /// Waits ``lateAnswerSeconds``, which is far past any timeout a test
-    /// injects, and then answers.
-    ///
-    /// So a doctor whose timeout works reports ``ProbeOutcome/timedOut``
-    /// long before this returns, and a doctor whose timeout does not work
-    /// waits the whole time and fails the elapsed-time assertion.
-    ///
-    /// The wait ends early when the doctor cancels the probe. The answer
-    /// that then comes back arrives after the timeout has already settled,
-    /// so it is dropped — and no task is left suspended for ever.
-    ///
-    /// - Returns: The late answer.
-    private static func answerTooLate() async -> ProbeOutcome {
-        try? await Task.sleep(for: .seconds(lateAnswerSeconds))
-        return .answered
-    }
-
-    /// How long a probe of a silent server waits, in seconds.
-    private static let lateAnswerSeconds = 60.0
 }
