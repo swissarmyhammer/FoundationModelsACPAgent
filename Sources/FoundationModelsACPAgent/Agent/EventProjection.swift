@@ -269,8 +269,12 @@ struct EventProjection {
                 "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
         case .entryRecorded(let id, let kind):
             closeMessage(recordedEntryId: id, kind: kind)
+        case .compactionStarted(let start):
+            await compactionReporter.reportAutomaticStart(start)
         case .compaction(let result):
-            await projectCompaction(result)
+            await compactionReporter.reportAutomaticCompaction(result)
+        case .compactionFailed(let failure):
+            await compactionReporter.reportAutomaticFailure(failure)
         case .discoveryPrimingFailed(let failure):
             var metadata = ACPAgentTelemetry.errorMetadata(failure, sessionId: sessionId)
             metadata[ACPAgentTelemetry.LogMetadataKey.errorCase] = "\(ACPAgentTelemetry.caseName(of: failure))"
@@ -526,15 +530,17 @@ struct EventProjection {
 
     // MARK: - Compaction (§8.5)
 
-    /// Sends the compaction entry of an automatic compaction: one
-    /// `compaction_update` with the final status, and the `usage_update`
-    /// of a completed compaction (``CompactionReporter``). No message
+    /// The reporter of the automatic compactions of the prompt
+    /// (``CompactionReporter``). Router reports each automatic compaction
+    /// with `compactionStarted`, then `compaction` or `compactionFailed`
+    /// with the same id. The reporter sends the `in_progress` update, then
+    /// the terminal update, keyed by that id, and the `usage_update` of a
+    /// completed compaction. It sends them through ``send``, the history
+    /// sink, thus the retained history keeps the final status. No message
     /// update clears or rewrites anything: a compaction changes only the
     /// model context.
-    ///
-    /// - Parameter result: The fold's result.
-    private func projectCompaction(_ result: CompactionResult) async {
-        await CompactionReporter(sessionId: sessionId, send: send).reportAutomaticCompaction(result)
+    private var compactionReporter: CompactionReporter {
+        CompactionReporter(sessionId: sessionId, send: send)
     }
 
     // MARK: - The settlement (§8.4, §11.6)

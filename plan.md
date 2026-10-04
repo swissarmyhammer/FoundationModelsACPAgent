@@ -1278,18 +1278,23 @@ compaction emits:
   compaction did not change the context, thus it sends none.
 - No `notice`: the entry carries everything that a client shows.
 
-The two kinds of compaction differ in what Router shows:
+The two kinds of compaction differ in who gives the id:
 
 - **Automatic** (the budget: the proactive fold, the overflow retry, the
-  compaction yield). Router reports only the result, as the
-  `compaction(CompactionResult)` session event, after the compaction is done.
-  The entry thus has one update: the terminal one, keyed by the result's `id`.
-  A failure or a cancel of an automatic compaction throws out of the answer
-  with no compaction id, so it shows as the stop reason of the prompt, not as
-  an entry.
+  compaction yield, the stop at the output ceiling). Router reports each one
+  with session events that carry one id (Router task ^k1gepqc, task
+  ^fhwk6sn). `compactionStarted(CompactionStart)` comes before the compaction
+  runs, and the agent sends `in_progress`. Then one terminal event comes:
+  `compaction(CompactionResult)` gives `completed` (or `failed` for a
+  shortfall), and `compactionFailed(CompactionFailure)` gives `cancelled` for
+  the `.cancelled` outcome or `failed` with the error text for the
+  `.failed(String)` outcome. A failed or cancelled automatic compaction thus
+  shows as an entry with its final status, beside the stop reason of the
+  prompt.
 - **Manual** (`/compact`, §14.1). The agent calls `compact()` itself, so it
   makes its own id, sends `in_progress` before the call, and the terminal
-  update after it.
+  update after it. Router sends no compaction event for `compact()`, thus no
+  update of the entry goes out two times.
 
 Each of these updates goes through the history sink of the session, the one
 choke point that also applies the update to the `SessionMergeEngine` (§7.4).

@@ -12,9 +12,10 @@ import Testing
 /// earlier message with its id, and a resume replays the compaction entry
 /// from the retained history.
 ///
-/// The automatic proofs drive the projection with a synthetic `compaction`
-/// event. The manual proofs drive `/compact` over the wire against the seeded
-/// ``CompactionStubBackend``, so Router runs a real fold.
+/// The automatic proofs drive the projection with synthetic Router events:
+/// `compactionStarted`, then `compaction` or `compactionFailed` with the same
+/// id (task ^fhwk6sn). The manual proofs drive `/compact` over the wire against
+/// the seeded ``CompactionStubBackend``, so Router runs a real fold.
 struct CompactionReportTests {
     // MARK: - The scripted values
 
@@ -23,6 +24,9 @@ struct CompactionReportTests {
 
     /// The summary of the synthetic automatic compaction.
     private static let automaticSummary = "The model read three files and fixed one test."
+
+    /// The error text of the synthetic automatic compaction that failed.
+    private static let automaticFailureText = "summarizerUnavailable"
 
     /// The context size before the synthetic compaction, in tokens.
     private static let tokensBefore = 900
@@ -114,9 +118,44 @@ struct CompactionReportTests {
     /// - Parameter result: The compaction result the event carries.
     /// - Returns: The updates the prompt sent, in order.
     private static func project(_ result: CompactionResult) async -> [SessionUpdate] {
+        await project([.compaction(result)])
+    }
+
+    /// Projects synthetic Router events and returns what they sent.
+    ///
+    /// - Parameter events: The events to project, in order.
+    /// - Returns: The updates the prompt sent, in order.
+    private static func project(_ events: [SessionEvent]) async -> [SessionUpdate] {
         let (execution, recorder) = makeSinkedExecution()
-        _ = await execution.drive(events: makeEventStream([.compaction(result)]))
+        _ = await execution.drive(events: makeEventStream(events))
         return await recorder.updates
+    }
+
+    /// The `compactionStarted` event of the synthetic automatic compaction.
+    ///
+    /// - Returns: The event.
+    private static func makeAutomaticStart() -> SessionEvent {
+        .compactionStarted(CompactionStart(id: automaticCompactionId, reason: .triggerReached))
+    }
+
+    /// The `compactionFailed` event of the synthetic automatic compaction.
+    ///
+    /// - Parameter outcome: How the compaction ended.
+    /// - Returns: The event.
+    private static func makeAutomaticFailure(_ outcome: CompactionFailure.Outcome) -> SessionEvent {
+        .compactionFailed(
+            CompactionFailure(id: automaticCompactionId, reason: .triggerReached, outcome: outcome))
+    }
+
+    /// The completed result of the synthetic automatic compaction, with its
+    /// summary.
+    ///
+    /// - Returns: The result.
+    private static func makeAutomaticResult() -> CompactionResult {
+        CompactionResult(
+            id: automaticCompactionId, summary: automaticSummary,
+            tokensBefore: tokensBefore, tokensAfter: tokensAfter,
+            stagesApplied: [Summarization.stageName])
     }
 
     /// Wires an agent over the seeded compaction backend and opens one
@@ -162,18 +201,59 @@ struct CompactionReportTests {
         return (response, notifications.map(\.update))
     }
 
-    // MARK: - Automatic compaction (Router's compaction event)
+    /// Projects synthetic Router events through the history sink of the
+    /// session of `fixture`, the sink that a prompt of the session sends
+    /// through. Each update goes into the retained history and to the client.
+    ///
+    /// - Parameters:
+    ///   - events: The events to project, in order.
+    ///   - fixture: The wired fixture.
+    private static func projectThroughHistory(_ events: [SessionEvent], of fixture: ScriptedPromptFixture) async {
+        let send = fixture.harness.agent.boundHistorySink(for: fixture.sessionId)
+        let execution = PromptExecution(
+            sessionId: fixture.sessionId,
+            promptBlocks: [],
+            promptState: PromptStateOwner(send: send),
+            send: send,
+            firstActivity: nil,
+            modelName: syntheticModelName,
+            shellSnapshot: { _ in nil })
+        _ = await execution.drive(events: makeEventStream(events))
+    }
+
+    /// Closes the session of `first`, which writes its history file, and
+    /// resumes the session in a new agent over the same working directory.
+    ///
+    /// - Parameters:
+    ///   - first: The fixture of the earlier agent.
+    ///   - label: The directory label of the new agent.
+    /// - Returns: The updates that the resume replayed, in order.
+    /// - Throws: Whatever the close, the construction or the resume throws.
+    private static func closeAndResume(
+        _ first: ScriptedPromptFixture, label: String
+    ) async throws -> [SessionUpdate] {
+        _ = try await first.harness.connection.closeSession(CloseSessionRequest(sessionId: first.sessionId))
+        await first.close()
+
+        let second = try await makeFixture(label: label, workingDirectory: first.cwd)
+        let countBefore = await second.collector.updates.count
+        _ = try await second.harness.connection.resumeSession(
+            ResumeSessionRequest(
+                cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
+                replayFrom: .start(ReplayFromStart())))
+        let replay = Array(await second.collector.updates.dropFirst(countBefore)).map(\.update)
+        await second.close()
+        return replay
+    }
+
+    // MARK: - Automatic compaction (Router's compaction events)
 
     /// An automatic compaction that applied a summary sends one completed
     /// `compaction_update` keyed by Router's compaction id, with the summary,
     /// and then the `usage_update` with the new context use.
     @Test(.timeLimit(.minutes(1)))
     func anAutomaticCompactionSendsOneCompletedEntryWithItsSummary() async throws {
-        let updates = await Self.project(
-            CompactionResult(
-                id: Self.automaticCompactionId, summary: Self.automaticSummary,
-                tokensBefore: Self.tokensBefore, tokensAfter: Self.tokensAfter,
-                stagesApplied: [Summarization.stageName]))
+        let updates = await Self.project(Self.makeAutomaticResult())
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.count == 1)
@@ -206,6 +286,53 @@ struct CompactionReportTests {
         let reason = try #require(patchValue(compaction.error))
         #expect(reason.contains(Self.windowShortfallWords))
         #expect(reason.contains("\(Self.shortfallInputTokens)"))
+        #expect(updates.compactMap(usageReport(of:)).isEmpty)
+    }
+
+    /// An automatic compaction that Router announced sends `in_progress` at
+    /// the start, then `completed` with the summary under the same id, then
+    /// the `usage_update` with the new context use.
+    @Test(.timeLimit(.minutes(1)))
+    func anAutomaticCompactionSendsInProgressThenCompletedUnderOneId() async throws {
+        let updates = await Self.project([Self.makeAutomaticStart(), .compaction(Self.makeAutomaticResult())])
+
+        let compactions = Self.compactionUpdates(in: updates)
+        #expect(compactions.map(\.status) == [.inProgress, .completed])
+        #expect(compactions.allSatisfy { $0.compactionId.rawValue == Self.automaticCompactionId })
+        let completed = try #require(compactions.last)
+        #expect(Self.summaryText(of: completed.summary) == Self.automaticSummary)
+        let usage = try #require(updates.compactMap(usageReport(of:)).first)
+        #expect(usage.used == Self.tokensAfter)
+    }
+
+    /// An automatic compaction that failed sends `in_progress`, then `failed`
+    /// under the same id, with the error text Router gave. The context did
+    /// not change, so no `usage_update` goes out.
+    @Test(.timeLimit(.minutes(1)))
+    func anAutomaticFailureSendsFailedWithTheErrorText() async throws {
+        let updates = await Self.project([
+            Self.makeAutomaticStart(), Self.makeAutomaticFailure(.failed(Self.automaticFailureText)),
+        ])
+
+        let compactions = Self.compactionUpdates(in: updates)
+        #expect(compactions.map(\.status) == [.inProgress, .failed])
+        #expect(compactions.allSatisfy { $0.compactionId.rawValue == Self.automaticCompactionId })
+        let failed = try #require(compactions.last)
+        #expect(patchValue(failed.error) == Self.automaticFailureText)
+        #expect(updates.compactMap(usageReport(of:)).isEmpty)
+    }
+
+    /// An automatic compaction that a cancel stopped sends `in_progress`, then
+    /// `cancelled` under the same id, with no error and no `usage_update`.
+    @Test(.timeLimit(.minutes(1)))
+    func anAutomaticCancelSendsCancelled() async throws {
+        let updates = await Self.project([Self.makeAutomaticStart(), Self.makeAutomaticFailure(.cancelled)])
+
+        let compactions = Self.compactionUpdates(in: updates)
+        #expect(compactions.map(\.status) == [.inProgress, .cancelled])
+        #expect(compactions.allSatisfy { $0.compactionId.rawValue == Self.automaticCompactionId })
+        let cancelled = try #require(compactions.last)
+        #expect(patchValue(cancelled.error) == nil)
         #expect(updates.compactMap(usageReport(of:)).isEmpty)
     }
 
@@ -325,17 +452,8 @@ struct CompactionReportTests {
         let (_, liveUpdates) = try await Self.runPrompt("/compact", on: first, count: 2)
         let earlier = ReplayedMessage.live(in: liveUpdates)
         let liveCompaction = try #require(Self.compactionUpdates(in: liveUpdates).last)
-        _ = try await first.harness.connection.closeSession(CloseSessionRequest(sessionId: first.sessionId))
-        await first.close()
 
-        let second = try await Self.makeFixture(
-            label: "CompactionReportTests-resume-second", workingDirectory: first.cwd)
-        let countBefore = await second.collector.updates.count
-        _ = try await second.harness.connection.resumeSession(
-            ResumeSessionRequest(
-                cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
-                replayFrom: .start(ReplayFromStart())))
-        let replay = Array(await second.collector.updates.dropFirst(countBefore)).map(\.update)
+        let replay = try await Self.closeAndResume(first, label: "CompactionReportTests-resume-second")
 
         #expect(ReplayedMessage.replayed(in: replay) == earlier)
         let replayed = Self.compactionUpdates(in: replay)
@@ -344,6 +462,27 @@ struct CompactionReportTests {
         #expect(compaction.compactionId == liveCompaction.compactionId)
         #expect(compaction.status == .completed)
         #expect(Self.summaryText(of: compaction.summary) == Self.summaryText(of: liveCompaction.summary))
-        await second.close()
+    }
+
+    /// The updates of an automatic compaction go through the history sink of
+    /// the session. Thus a new agent that resumes the session replays one
+    /// compaction entry with the final status: `failed` with the error text,
+    /// not the earlier `in_progress`.
+    @Test(.timeLimit(.minutes(1)))
+    func aResumeReplaysTheFinalStatusOfAnAutomaticCompaction() async throws {
+        let first = try await Self.makeFixture(label: "CompactionReportTests-automatic-resume")
+        try await Self.runPrompt(Self.earlierPrompt, on: first, count: 1)
+        await Self.projectThroughHistory(
+            [Self.makeAutomaticStart(), Self.makeAutomaticFailure(.failed(Self.automaticFailureText))],
+            of: first)
+
+        let replay = try await Self.closeAndResume(first, label: "CompactionReportTests-automatic-resume-second")
+
+        let replayed = Self.compactionUpdates(in: replay)
+        #expect(replayed.count == 1)
+        let compaction = try #require(replayed.first)
+        #expect(compaction.compactionId.rawValue == Self.automaticCompactionId)
+        #expect(compaction.status == .failed)
+        #expect(patchValue(compaction.error) == Self.automaticFailureText)
     }
 }

@@ -53,13 +53,38 @@ struct CompactionReporter: Sendable {
         }
     }
 
-    /// Reports an automatic compaction: Router ran it inside an answer and
-    /// gave only its result. Router reports no start, thus the first update
-    /// of the entry is the terminal one, keyed by the id of the result.
+    /// Reports the start of an automatic compaction, which Router runs inside
+    /// an answer: the `in_progress` update, keyed by the id that Router gave.
+    /// The result or the failure of the same compaction carries the same id.
+    ///
+    /// - Parameter start: The start that Router reported.
+    func reportAutomaticStart(_ start: CompactionStart) async {
+        await reportStart(of: Unstable.CompactionId(rawValue: start.id))
+    }
+
+    /// Reports the result of an automatic compaction: the terminal update of
+    /// the entry that ``reportAutomaticStart(_:)`` opened, keyed by the id of
+    /// the result.
     ///
     /// - Parameter result: The result of the compaction.
     func reportAutomaticCompaction(_ result: CompactionResult) async {
         await reportEnd(of: Unstable.CompactionId(rawValue: result.id), with: result)
+    }
+
+    /// Reports an automatic compaction that did not complete: `cancelled` for
+    /// a cancel, and `failed` with the error text that Router gave for each
+    /// other failure. The context did not change, thus no `usage_update` goes
+    /// out.
+    ///
+    /// - Parameter failure: The failure that Router reported.
+    func reportAutomaticFailure(_ failure: CompactionFailure) async {
+        let compactionId = Unstable.CompactionId(rawValue: failure.id)
+        switch failure.outcome {
+        case .cancelled:
+            await reportCancel(of: compactionId)
+        case .failed(let reason):
+            await reportFailure(of: compactionId, reason: reason)
+        }
     }
 
     /// Reports that a compaction started: the `in_progress` update.
@@ -107,6 +132,14 @@ struct CompactionReporter: Sendable {
             await reportFailure(of: compactionId, reason: String(describing: error))
             return
         }
+        await reportCancel(of: compactionId)
+    }
+
+    /// Reports a compaction that a cancel stopped: the `cancelled` update,
+    /// with no error.
+    ///
+    /// - Parameter compactionId: The id of the compaction.
+    private func reportCancel(of compactionId: Unstable.CompactionId) async {
         await post(.compactionUpdate(Unstable.CompactionUpdate(compactionId: compactionId, status: .cancelled)))
     }
 
