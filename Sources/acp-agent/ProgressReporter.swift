@@ -157,8 +157,8 @@ extension ResolutionProgress: ResolutionProgressReading {
 /// inside the construction of the agent, so nothing can drive a bar after
 /// that construction returns. The caller makes the progress object first,
 /// hands it to the composition, and hands the same object here; the poll
-/// task starts before the `await` of the composition and is cancelled
-/// after it.
+/// task starts before the `await` of the composition. After it, the poll
+/// is cancelled, and the reporter waits until the poll has stopped.
 ///
 /// **The bar is erased before the answer.** The resolution ends before the
 /// prompt opens the wire, so the drawing is over before the first answer
@@ -199,6 +199,15 @@ struct ProgressReporter: Sendable {
 
     /// Runs `work`, and draws `progress` beside a bar while it runs.
     ///
+    /// The poll is a child task of a task group. When `work` ends, the group
+    /// cancels the poll and waits for it, so every draw of the poll ends
+    /// before the bar draws its completion line and before this function
+    /// returns. A poll that is cancelled between its read and its draw still
+    /// draws one time, so a cancel alone does not end the drawing. A draw
+    /// after the return can reach a destination that the caller already
+    /// closed, and Noora's renderer is not safe to use from two tasks at
+    /// the same time.
+    ///
     /// - Parameters:
     ///   - progress: The progress object the resolution writes. It must
     ///     already be the one the resolution reports into, because the poll
@@ -212,9 +221,11 @@ struct ProgressReporter: Sendable {
     ) async throws -> Value {
         let interval = pollInterval
         return try await renderer.progressBar(message: Self.startMessage) { report in
-            let polling = Task { await Self.poll(progress, every: interval, into: report) }
-            defer { polling.cancel() }
-            return try await work()
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { await Self.poll(progress, every: interval, into: report) }
+                defer { group.cancelAll() }
+                return try await work()
+            }
         }
     }
 

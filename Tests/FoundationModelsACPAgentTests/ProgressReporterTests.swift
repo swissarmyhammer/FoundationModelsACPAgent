@@ -63,6 +63,16 @@ import Testing
     /// the test, and not hold the suite open.
     private static let scriptDeadline = Swift.Duration.seconds(5)
 
+    /// The line of the one read of ``LateReadProgress``.
+    private static let lateLabel = "late read"
+
+    /// How long the one read of ``LateReadProgress`` holds the main thread
+    /// after it tells the work to return, in seconds. It is much longer
+    /// than the steps from the end of the work to the return of
+    /// `report(on:)`, so a reporter that does not wait for its poll returns
+    /// before the read ends.
+    private static let lateReadDelay: TimeInterval = 0.2
+
     // MARK: - The two rows of the §5.7 table
 
     /// A run whose destination is a terminal writes the phase, the slot and
@@ -153,6 +163,40 @@ import Testing
 
         #expect(await progress.readCount >= Self.script.count)
         #expect(await progress.wasAlwaysReadOnTheMainThread)
+    }
+
+    // MARK: - Every draw ends before the report returns
+
+    /// The last draw of the poll lands before `report(on:)` returns.
+    ///
+    /// The one read of ``LateReadProgress`` tells the work to return, and
+    /// then holds the main thread for ``lateReadDelay``. The work thus ends
+    /// while that read is still open. A reporter that does not wait for its
+    /// poll returns first and draws later: at the same time as the
+    /// completion line of the bar, and into a destination that the caller
+    /// can already have closed. A draw into a pipe with no read end raises
+    /// `SIGPIPE`, which ends the whole test process.
+    @Test func theLastDrawLandsBeforeTheReportReturns() async throws {
+        let capture = TerminalCapture()
+        let (readStarts, readStarted) = AsyncStream<Void>.makeStream()
+        let progress = await LateReadProgress(
+            snapshot: ResolutionSnapshot(
+                label: Self.lateLabel,
+                fraction: Self.readyFraction,
+                bytes: TerminalRenderer.ByteProgress(
+                    completed: Self.totalBytes, total: Self.totalBytes),
+                isFinished: true),
+            delay: Self.lateReadDelay,
+            readStarted: readStarted)
+        let reporter = ProgressReporter(
+            renderer: TerminalRenderer(destination: capture.destination, isTerminal: true),
+            pollInterval: Self.pollInterval)
+
+        try await reporter.report(on: progress) {
+            for await _ in readStarts { break }
+        }
+
+        #expect(capture.text().contains(Self.lateLabel))
     }
 
     // MARK: - Helpers
@@ -268,4 +312,44 @@ import Testing
 
     /// Whether every snapshot of the script has been handed out.
     var isExhausted: Bool { readCount >= script.count }
+}
+
+/// A stand-in for Router's `ResolutionProgress` whose read is slow.
+///
+/// Each read first tells ``readStarted`` that it began. It then holds the
+/// main thread for ``delay``, and only then gives back its snapshot. A test
+/// whose work returns on that signal thus has a read that is still open
+/// when the work ends, and the draw of that read comes after the end of
+/// the work.
+@MainActor final class LateReadProgress: ResolutionProgressReading {
+    /// The snapshot each read gives back.
+    private let snapshot: ResolutionSnapshot
+
+    /// How long each read holds the main thread, in seconds.
+    private let delay: TimeInterval
+
+    /// The signal each read sends when it begins.
+    private let readStarted: AsyncStream<Void>.Continuation
+
+    /// Creates a slow progress over one snapshot.
+    ///
+    /// - Parameters:
+    ///   - snapshot: The snapshot each read gives back.
+    ///   - delay: How long each read holds the main thread, in seconds.
+    ///   - readStarted: The signal each read sends when it begins.
+    init(
+        snapshot: ResolutionSnapshot,
+        delay: TimeInterval,
+        readStarted: AsyncStream<Void>.Continuation
+    ) {
+        self.snapshot = snapshot
+        self.delay = delay
+        self.readStarted = readStarted
+    }
+
+    var resolutionSnapshot: ResolutionSnapshot {
+        readStarted.yield()
+        Thread.sleep(forTimeInterval: delay)
+        return snapshot
+    }
 }
