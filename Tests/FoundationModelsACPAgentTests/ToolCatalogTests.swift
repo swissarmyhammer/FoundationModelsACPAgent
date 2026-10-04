@@ -79,8 +79,14 @@ import Testing
     ///   - environment: The process environment the web capability reads
     ///     its API keys from. The default is empty, thus no test reads a
     ///     key of the machine that runs it.
+    ///   - keepsCodeContext: `true` keeps the default `codeContext:`
+    ///     section. Each registry build then starts a `CodeContext`, and
+    ///     the test must call `codeContextStop` before it ends. The
+    ///     default `false` turns the section off, thus a test that does
+    ///     not test the code context starts none.
     ///   - configure: The mutation that shapes the configuration under
-    ///     test. The default keeps every section at its default.
+    ///     test. It runs after the `codeContext:` section is set. The
+    ///     default keeps every other section at its default.
     /// - Returns: The context under test.
     /// - Throws: Whatever the directory creation or the profile resolve
     ///   throws.
@@ -88,9 +94,13 @@ import Testing
         additionalRoots: [URL] = [],
         loader: StubModelLoader = StubModelLoader(),
         environment: [String: String] = [:],
+        keepsCodeContext: Bool = false,
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
+        if !keepsCodeContext {
+            configuration.tools.codeContext = .disabled
+        }
         configure(&configuration)
         return CatalogContext(
             workingDirectory: try makeTemporaryDirectory(label: "work"),
@@ -120,11 +130,13 @@ import Testing
     // MARK: The session tools
 
     @Test func aDefaultContextMountsTheFourSessionTools() async throws {
-        let context = try await Self.makeContext()
+        let context = try await Self.makeContext(keepsCodeContext: true)
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
         #expect(surface.tools.map(\.name) == Self.defaultToolNames)
+        let stop = try #require(surface.codeContextStop)
+        await stop()
     }
 
     @Test func aDisabledSkillsSectionAppendsNoSkillsTool() async throws {
@@ -176,13 +188,15 @@ import Testing
     // MARK: The built surface
 
     @Test func aDefaultRegistrySurfacesTheFilesAndShellNouns() async throws {
-        let context = try await Self.makeContext()
+        let context = try await Self.makeContext(keepsCodeContext: true)
 
-        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+        let built = try await ToolCatalog.makeRegistry(context: context)
 
-        let paths = registry.surface.entries.map(\.path)
+        let paths = built.registry.surface.entries.map(\.path)
         #expect(paths.contains(Self.readVerbPath))
         #expect(paths.contains(Self.executeVerbPath))
+        let stop = try #require(built.codeContextStop)
+        await stop()
     }
 
     @Test func aDisabledShellSectionYieldsNoShellNamespace() async throws {
@@ -241,7 +255,7 @@ import Testing
     /// session tools. Multitool gives each operation of the three fused
     /// tools its own verb in the `tools.code_context` group.
     @Test func aDefaultRegistryMountsTheCodeContextGroup() async throws {
-        let context = try await Self.makeContext()
+        let context = try await Self.makeContext(keepsCodeContext: true)
 
         let built = try await ToolCatalog.makeRegistry(context: context)
 
@@ -267,7 +281,7 @@ import Testing
     func theCatalogDoesNotWaitForTheCodeContextIndex() async throws {
         var loader = StubModelLoader()
         loader.makeEmbeddingContainer = { _ in NeverAnsweringEmbeddingContainer() }
-        let context = try await Self.makeContext(loader: loader)
+        let context = try await Self.makeContext(loader: loader, keepsCodeContext: true)
         try "func answer() -> Int { 42 }\n".write(
             to: context.workingDirectory.appendingPathComponent("Answer.swift"),
             atomically: true, encoding: .utf8)
@@ -319,13 +333,15 @@ import Testing
     /// With no configuration and an empty environment, the surface has the
     /// two web verbs. The capability sends no request when it mounts.
     @Test func aDefaultRegistryMountsTheWebVerbs() async throws {
-        let context = try await Self.makeContext(environment: [:])
+        let context = try await Self.makeContext(environment: [:], keepsCodeContext: true)
 
-        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+        let built = try await ToolCatalog.makeRegistry(context: context)
 
-        let paths = registry.surface.entries.map(\.path)
+        let paths = built.registry.surface.entries.map(\.path)
         #expect(paths.contains(Self.webSearchPath))
         #expect(paths.contains(Self.webFetchPath))
+        let stop = try #require(built.codeContextStop)
+        await stop()
     }
 
     /// `tools.web.enabled: false` mounts no web verb.

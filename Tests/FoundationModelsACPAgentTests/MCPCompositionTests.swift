@@ -94,6 +94,10 @@ import Testing
     /// Makes a catalog context over a fresh working directory and a stub
     /// profile.
     ///
+    /// The `codeContext:` section is off. This suite does not test the
+    /// code context, and each registry build with the section on starts a
+    /// `CodeContext` that runs until the test process ends.
+    ///
     /// - Parameters:
     ///   - clientServers: The client-supplied per-session servers.
     ///   - configure: The mutation that shapes the configuration under
@@ -106,6 +110,7 @@ import Testing
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
+        configuration.tools.codeContext = .disabled
         configure(&configuration)
         return CatalogContext(
             workingDirectory: try makeTemporaryDirectory(label: "work"),

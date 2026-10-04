@@ -1,7 +1,33 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+comments:
+- actor: claude-code
+  id: 01m44ftxjz5f9qqj143whqzg6f
+  text: |-
+    Picked up. Research:
+    - The registry builds that start a CodeContext and never stop it: ToolCatalogTests.makeContext (default AgentConfiguration), TerminalStreamTests.makeBuiltRegistry and the disabled half of theCatalogBuildsTheStreamOnlyWhenShellIsEnabled, SandboxCompositionTests.makeRegistry, MultiRootConfinementTests.aShellCommandWritesIntoTheAdditionalRoot, MCPCompositionTests.makeContext, TierTwoTests.theCatalogComposesTheSurfaceFromTheLoadedConfiguration. SkillsLibraryTests already sets codeContext = .disabled.
+    - Baseline full parallel `swift test` on this machine: 739 tests, 83 suites, 8.866 s. The tests of the card took 2.2 s to 4.1 s; the slowest test was aSessionInAnElicitationHoldsNoModel at 8.857 s.
+    - Plan for ToolCatalogTests: makeContext turns the code context off by default; the tests that assert the default registry (aDefault...) and the code context tests keep the default section and call codeContextStop.
+  timestamp: 2026-10-04T22:16:31.071468+00:00
+- actor: claude-code
+  id: 01m44gcnyb66gwebpfz5cf13q5
+  text: |-
+    Implementation landed (tests only, no production code changed).
+    - ToolCatalogTests.makeContext has a new parameter `keepsCodeContext: Bool = false`. The default turns `codeContext:` off before `configure` runs. Five tests keep the default section and stop it with `codeContextStop`: aDefaultContextMountsTheFourSessionTools (through `surface.codeContextStop`), aDefaultRegistrySurfacesTheFilesAndShellNouns, aDefaultRegistryMountsTheCodeContextGroup, theCatalogDoesNotWaitForTheCodeContextIndex, aDefaultRegistryMountsTheWebVerbs. semanticSearchOffCallsNoEmbedder turns the section on through `configure` and stops it.
+    - TerminalStreamTests (helper and the disabled half), SandboxCompositionTests.makeRegistry, MultiRootConfinementTests.aShellCommandWritesIntoTheAdditionalRoot, MCPCompositionTests.makeContext: `configuration.tools.codeContext = .disabled`.
+    - TierTwoTests.theCatalogComposesTheSurfaceFromTheLoadedConfiguration: the project config YAML now holds `codeContext: false`, so the proof still composes from the loaded configuration.
+    Measurement: the full parallel run did not get faster on this machine (8.866 s before, 8.868 s after). The tests of the card take 2.4 s to 4.1 s after the change. The run time comes from other tests (aSessionInAnElicitationHoldsNoModel 8.8 s).
+    Discovery: the first `swift test --no-parallel` run stopped on SIGPIPE (signal 13) in ProgressReporterTests.theReporterReadsTheProgressOnTheMainActor. That test does not build a registry. The second serial run was green. Recorded as ^xj2arek.
+  timestamp: 2026-10-04T22:26:13.067589+00:00
+- actor: claude-code
+  id: 01m44gcs6pfqe0tv62h8e97fff
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift, TerminalStreamTests.swift, SandboxCompositionTests.swift, MultiRootConfinementTests.swift, MCPCompositionTests.swift, Integration/TierTwoTests.swift. `swift build -c release` complete, 0 warnings from this package. Parallel `swift test`: 739 tests in 83 suites passed after 8.868 s (1 known issue, as before); slowest aSessionInAnElicitationHoldsNoModel 8.766 s, threePageWalkSeesEverySessionOnceAcrossTwoProjects 4.956 s, closeEndsAMailStartedAnswerThatWaitsForTheModelQueue 4.511 s, noBuiltinInvokesTheModelBackend 4.510 s. `swift test --no-parallel`: first run SIGPIPE in ProgressReporterTests (filed ^xj2arek), second run 739 tests passed after 53.786 s. `swift build --package-path IntegrationTests --build-tests` complete.
+    - next: /review
+  timestamp: 2026-10-04T22:26:16.406223+00:00
+position_column: doing
 position_ordinal: '80'
 title: Direct ToolCatalog unit tests start a code context they do not need, and never stop it
 ---

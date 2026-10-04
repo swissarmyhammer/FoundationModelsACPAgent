@@ -265,6 +265,10 @@ import Testing
     /// shell section enabled and the store redirected to a throwaway
     /// directory.
     ///
+    /// The `codeContext:` section is off. This suite does not test the
+    /// code context, and each build with the section on starts a
+    /// `CodeContext` that runs until the test process ends.
+    ///
     /// - Parameter workingDirectory: The session working directory.
     /// - Returns: The built registry.
     /// - Throws: Whatever the catalog build throws.
@@ -272,6 +276,7 @@ import Testing
         workingDirectory: URL
     ) async throws -> ToolCatalog.BuiltRegistry {
         var configuration = AgentConfiguration()
+        configuration.tools.codeContext = .disabled
         configuration.tools.shell = .enabled(
             ShellToolOptions(storeDirectory: makeResolvedDirectory(named: "store")))
         let context = CatalogContext(
@@ -290,6 +295,7 @@ import Testing
         #expect(enabled.shellOutput != nil)
 
         var configuration = AgentConfiguration()
+        configuration.tools.codeContext = .disabled
         configuration.tools.shell = .disabled
         let context = CatalogContext(
             workingDirectory: Self.makeResolvedDirectory(named: "disabled"),

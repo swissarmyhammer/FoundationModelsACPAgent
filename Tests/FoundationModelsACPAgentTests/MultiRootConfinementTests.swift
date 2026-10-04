@@ -221,7 +221,11 @@ struct MultiRootConfinementTests {
     func aShellCommandWritesIntoTheAdditionalRoot() async throws {
         let cwd = Self.makeResolvedDirectory(named: "shell-cwd")
         let additionalRoot = Self.makeResolvedDirectory(named: "shell-extra")
+        // This case does not test the code context, and a build with the
+        // section on starts a `CodeContext` that runs until the test
+        // process ends.
         var configuration = AgentConfiguration()
+        configuration.tools.codeContext = .disabled
         configuration.tools.shell = .enabled(
             ShellToolOptions(storeDirectory: Self.makeResolvedDirectory(named: "shell-store")))
         let context = CatalogContext(

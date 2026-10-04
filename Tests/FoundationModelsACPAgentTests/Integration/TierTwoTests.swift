@@ -653,9 +653,13 @@ import Testing
     func theCatalogComposesTheSurfaceFromTheLoadedConfiguration() async throws {
         let cwd = makeResolvedDirectory(label: "TierTwoTests-composition-repo")
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
+        // The config turns the code context off. This proof does not test
+        // it, and a build with the section on starts a `CodeContext` that
+        // runs until the test process ends.
         try ScriptedPromptFixture.writeProjectConfig(
             yaml: """
             tools:
+              codeContext: false
               mcp:
                 - name: \(Self.mcpServerName)
                   command: \(serverCommand)

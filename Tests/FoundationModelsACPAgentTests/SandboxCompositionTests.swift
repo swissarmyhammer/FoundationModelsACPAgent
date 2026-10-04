@@ -39,12 +39,17 @@ import Testing
     /// Builds the registry the catalog composes over `workingDirectory`,
     /// with the shell store redirected into a throwaway directory.
     ///
+    /// The `codeContext:` section is off. This suite does not test the
+    /// code context, and each build with the section on starts a
+    /// `CodeContext` that runs until the test process ends.
+    ///
     /// - Parameter workingDirectory: The session working directory — the
     ///   root set's first member.
     /// - Returns: The built registry.
     /// - Throws: Whatever the catalog build throws.
     private static func makeRegistry(workingDirectory: URL) async throws -> MultiTool.Registry {
         var configuration = AgentConfiguration()
+        configuration.tools.codeContext = .disabled
         configuration.tools.shell = .enabled(
             ShellToolOptions(storeDirectory: makeResolvedDirectory(named: "store")))
         let context = CatalogContext(

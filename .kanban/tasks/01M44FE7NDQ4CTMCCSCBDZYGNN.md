@@ -1,8 +1,13 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+comments:
+- actor: claude-code
+  id: 01m44fpf8xtx4bmh3jj3cc9pew
+  text: 'Reported upstream: FoundationModelsCodeContext board, task 01M44FP5NA6QPK1SRAZDD74EXK ("Watcher.start() calls FSEventStreamStart on a Swift cooperative thread, and fseventsd serializes the starts"), written with `sah tool kanban` on 2026-10-04 because no CodeContext session runs. It holds the evidence and asks for: the start off the cooperative pool, a public seam to inject or turn off the FileEventSource, a test, and a push. This repository needs no change now: ^vjaka1g turned the code context off in the stub fixtures. When upstream pushes, move the CodeContext pin.'
+  timestamp: 2026-10-04T22:14:05.341786+00:00
+position_column: done
+position_ordinal: ff9880
 title: 'Report upstream: CodeContext Watcher.start() calls FSEventStreamStart on a Swift cooperative thread'
 ---
 ## Why
