@@ -44,7 +44,7 @@ import Testing
     /// The client driver (plan.md §20.1): the test target links
     /// `FoundationModelsACPClient`, and the library target never does.
     @Test func testTargetLinksTheClientDriver() {
-        #expect(String(describing: SwiftUIACPClient.self) == "SwiftUIACPClient")
+        #expect(String(describing: ConnectionModel.self) == "ConnectionModel")
     }
 
     /// This package: the `Agent` conformance the library target exports.

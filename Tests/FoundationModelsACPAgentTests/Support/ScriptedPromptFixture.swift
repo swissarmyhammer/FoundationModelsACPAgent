@@ -38,11 +38,18 @@ struct ScriptedPromptFixture {
     /// The id of the one open session.
     let sessionId: SessionId
 
+    /// The observable model of the one open session. The connection model
+    /// of the harness opened it, so the router of the model gives each
+    /// elicitation of the session to it.
+    let session: SessionModel
+
     /// The session working directory.
     let cwd: URL
 
     /// The `configOptions` list the `session/new` response announced
-    /// (plan.md §15), for the config-options assertions.
+    /// (plan.md §15), for the config-options assertions. The response
+    /// seeds the list into ``session``, and the fixture reads it there
+    /// when `session/new` returns.
     let newSessionConfigOptions: [SessionConfigOption]?
 
     /// Closes each session of the agent with `session/close`, then closes
@@ -178,15 +185,16 @@ struct ScriptedPromptFixture {
             agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
         _ = try await harness.connection.initialize(
             AgentClientHarness.makeInitializeRequest(capabilities: capabilities))
-        let response = try await harness.connection.newSession(
+        let session = try await harness.client.newSession(
             NewSessionRequest(
                 cwd: AbsolutePath(rawValue: cwd.path),
                 additionalDirectories: additionalDirectories,
                 mcpServers: mcpServers))
+        let (sessionId, configOptions) = await MainActor.run { (session.sessionId, session.configOptions) }
         let collector = try #require(harness.collector)
         return ScriptedPromptFixture(
-            harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd,
-            newSessionConfigOptions: response.configOptions)
+            harness: harness, collector: collector, sessionId: sessionId, session: session, cwd: cwd,
+            newSessionConfigOptions: configOptions)
     }
 
     /// Writes `yaml` as the project-layer `config.yaml` of `cwd`, the
@@ -305,31 +313,25 @@ struct ScriptedPromptFixture {
         Issue.record("the session never returned to idle availability")
     }
 
-    /// Polls the client container until the accumulated tool call
-    /// carries the settled `completed` status (§8.4, §11.6). The
-    /// settlement rides `runSettled` and can land after the prompt's
-    /// idle and after the terminal exit report, so a reader of
-    /// `ACPSessionState.toolCalls` waits here first, never sleeps
-    /// for it.
+    /// Polls the session model until it applied the idle state update
+    /// that ends a prompt.
     ///
-    /// - Parameters:
-    ///   - client: The client container under test.
-    ///   - sessionId: The session to read.
-    ///   - id: The `toolCallId` to watch.
+    /// The collector and the session model read the same updates on two
+    /// paths: the collector gets each one from the served `Client`, and
+    /// the model reads its own subscription. When the collector holds the
+    /// idle update, the model can still be behind. The agent sends the
+    /// idle update last in a prompt, so after the model applied it, the
+    /// model holds each earlier update of the prompt. A reader of
+    /// ``session`` waits here first, and never sleeps for it.
+    ///
     /// - Throws: `CancellationError` when the test is cancelled.
-    static func waitForCompletedToolCall(
-        of client: SwiftUIACPClient, sessionId: SessionId, id: ToolCallId
-    ) async throws {
-        for _ in 0..<maxPollAttempts {
-            let status = await MainActor.run {
-                client.sessions[sessionId]?.toolCalls[id]?.status
+    func waitForSessionModelIdle() async throws {
+        try await Poll.until("the session model applied the idle state update") {
+            await MainActor.run {
+                guard case .idle = session.agentState else { return false }
+                return true
             }
-            if status == .value(.completed) {
-                return
-            }
-            try await Task.sleep(for: pollInterval)
         }
-        Issue.record("the tool call \(id.rawValue) never settled to the completed status")
     }
 
     // MARK: - Readers

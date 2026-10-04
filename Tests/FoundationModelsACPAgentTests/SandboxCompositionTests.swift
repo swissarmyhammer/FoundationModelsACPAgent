@@ -213,7 +213,7 @@ import Testing
         #expect(try String(contentsOf: written, encoding: .utf8) == "prompt")
         #expect(await collector.updates.isEmpty)
         let pendingPermissionCounts = await MainActor.run {
-            harness.client.sessions.values.map(\.pendingPermissionRequests.count)
+            harness.client.openSessions.values.map(\.pendingPermissions.count)
         }
         #expect(pendingPermissionCounts.allSatisfy { $0 == 0 })
         await harness.close()

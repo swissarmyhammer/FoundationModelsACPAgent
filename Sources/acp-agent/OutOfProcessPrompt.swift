@@ -93,11 +93,11 @@ enum OutOfProcessPrompt {
         terminatedBy terminate: TerminationHandler.Installer = TerminationHandler.unwatched
     ) async throws -> RunPromptResult {
         let agent = try AgentProcess(command: command, arguments: [acpSubcommand])
-        let client = await SwiftUIACPClient()
+        let model = await ConnectionModel()
         // `.disabled` and never stdout: the answer of the prompt owns file
         // descriptor 1 (§5.6). The child writes its own diagnostics to the
         // stderr it inherits.
-        let connection = await client.connect(over: agent.transport)
+        let connection = await model.connect(over: agent.transport)
         // Swift has no asynchronous `defer`, and the child must be reaped
         // on the failing path as well, so the outcome is held here and
         // rethrown after the teardown.

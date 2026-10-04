@@ -53,8 +53,8 @@ struct SpawnedAgentPromptDrive {
             .merging([TierThreeFixture.configHomeVariable: configHome.path]) { _, home in home }
         let agent = try SpawnedACPAgent.start(workspace: workspace, environment: childEnvironment)
         let tap = InboundTapTransport(wrapping: agent.transport)
-        let client = await SwiftUIACPClient()
-        let connection = await client.connect(over: tap)
+        let model = await ConnectionModel()
+        let connection = await model.connect(over: tap)
 
         let initialized = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
         let session = try await connection.newSession(

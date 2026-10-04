@@ -184,12 +184,11 @@ import Tracing
                 mcpServers: [try Self.loopbackServer()])
             _ = try await fixture.harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.elicitationPromptText))
-            let pending = try await ElicitationPoll.firstPendingElicitation(
-                of: fixture.sessionId, on: fixture.harness.client)
+            let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
             let enterRecordsBeforeAnswer = TracedRun(sessionId: fixture.sessionId.rawValue, context: context)
                 .enterRecordCount(forSpanNamed: ACPAgentTelemetry.SpanName.elicitation)
             await MainActor.run {
-                fixture.harness.client.acceptElicitation(
+                fixture.session.acceptElicitation(
                     pending.id,
                     content: .object([ScriptedServer.elicitEchoAnswerField: .string(Self.acceptedAnswer)]))
             }

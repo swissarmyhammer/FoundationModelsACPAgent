@@ -19,12 +19,20 @@ struct QueuedScriptedFixture {
     /// directory as session A.
     let secondSessionId: SessionId
 
+    /// The observable model of the second session (session B).
+    let secondSession: SessionModel
+
     /// The counter of the passes of the model of both sessions.
     let passCounter: ScriptedPassCounter
 
     /// The id of the first session (session A).
     var firstSessionId: SessionId {
         base.sessionId
+    }
+
+    /// The observable model of the first session (session A).
+    var firstSession: SessionModel {
+        base.session
     }
 
     /// Wires an agent over a queued scripted model, and opens two sessions.
@@ -44,10 +52,11 @@ struct QueuedScriptedFixture {
             loader: StubModelLoader.makeQueuedScriptedLoader(script: script, passCounter: passCounter),
             label: label,
             workingDirectory: workingDirectory)
-        let second = try await base.harness.connection.newSession(
+        let second = try await base.harness.client.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: base.cwd.path)))
         return QueuedScriptedFixture(
-            base: base, secondSessionId: second.sessionId, passCounter: passCounter)
+            base: base, secondSessionId: await second.sessionId, secondSession: second,
+            passCounter: passCounter)
     }
 
     /// Sends one text prompt to `sessionId`. The agent acknowledges the
@@ -87,12 +96,13 @@ struct QueuedScriptedFixture {
         await base.collector.updates.filter { $0.sessionId == sessionId }
     }
 
-    /// The elicitations of `sessionId` that the client did not answer yet.
+    /// The elicitations of `session` that the client did not answer yet.
     ///
-    /// - Parameter sessionId: The session to read.
-    /// - Returns: The pending elicitations of `sessionId`, in arrival order.
-    func pendingElicitations(of sessionId: SessionId) async -> [PendingElicitation] {
-        await ElicitationPoll.pendingElicitations(of: sessionId, on: base.harness.client)
+    /// - Parameter session: The session model to read: ``firstSession``
+    ///   or ``secondSession``.
+    /// - Returns: The pending elicitations of the session, in arrival order.
+    func pendingElicitations(of session: SessionModel) async -> [PendingElicitation] {
+        await ElicitationPoll.pendingElicitations(in: session)
     }
 
     /// Waits until session A and session B each sent an idle state update.

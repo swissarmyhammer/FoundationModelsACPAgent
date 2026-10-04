@@ -988,16 +988,13 @@ import Testing
             script: ScriptedPromptFixture.makeToolPromptScript(code: Self.elicitingSnippet),
             label: "PromptExecutionTests-elicitation")
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
-        let client = fixture.base.harness.client
-        _ = try await ElicitationPoll.firstPendingElicitation(
-            of: fixture.firstSessionId, on: client)
+        _ = try await ElicitationPoll.firstPendingElicitation(in: fixture.firstSession)
 
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        let questionOfB = try await ElicitationPoll.firstPendingElicitation(
-            of: fixture.secondSessionId, on: client)
-        await MainActor.run { client.acceptElicitation(questionOfB.id) }
+        let questionOfB = try await ElicitationPoll.firstPendingElicitation(in: fixture.secondSession)
+        await MainActor.run { fixture.secondSession.acceptElicitation(questionOfB.id) }
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
-        let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSessionId)
+        let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSession)
         let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
         try await fixture.closeSessions()
 

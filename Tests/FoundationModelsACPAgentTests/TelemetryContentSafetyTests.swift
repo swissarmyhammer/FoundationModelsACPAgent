@@ -241,10 +241,9 @@ import Testing
     /// - Throws: Whatever the prompt or a wait throws.
     private static func runToolPrompt(on fixture: ScriptedPromptFixture) async throws {
         try await runPrompt(on: fixture, text: toolPromptText) {
-            let pending = try await ElicitationPoll.firstPendingElicitation(
-                of: fixture.sessionId, on: fixture.harness.client)
+            let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
             await MainActor.run {
-                fixture.harness.client.acceptElicitation(
+                fixture.session.acceptElicitation(
                     pending.id,
                     content: .object([ScriptedServer.elicitEchoAnswerField: .string(elicitationAnswer)]))
             }

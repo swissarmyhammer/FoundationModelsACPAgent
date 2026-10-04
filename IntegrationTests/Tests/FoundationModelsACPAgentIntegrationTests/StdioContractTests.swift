@@ -220,8 +220,8 @@ struct StdioContractTests {
         let agent = try AgentProcess(
             command: command.path, arguments: [TierThreeFixture.acpSubcommand])
         let tap = InboundTapTransport(wrapping: agent.transport)
-        let client = await SwiftUIACPClient()
-        let connection = await client.connect(over: tap)
+        let model = await ConnectionModel()
+        let connection = await model.connect(over: tap)
 
         // `acp-agent acp` starts and answers `initialize` over stdio —
         // asserted here, not by hand. The await also covers the agent's

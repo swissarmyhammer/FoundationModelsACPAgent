@@ -2397,7 +2397,7 @@ completion. `CreateElicitationRequest` is `{ message, mode }`, where `mode`
 is the flattened form/url payload. `CreateElicitationResponse` is a
 `JSONValue` typealias today, so the relay decodes `action` and `content`
 itself. The client sibling's M7 is done too, so a tier-2 test drives both
-ends with `SwiftUIACPClient.acceptElicitation(_:content:)` and
+ends with `SessionModel.acceptElicitation(_:content:)` and
 `declineElicitation(_:)` (§20.1).
 
 **Router gives a host no public live signal that an elicitation is
@@ -2587,24 +2587,33 @@ deterministic against statistical, defect against measurement.
 
 **The client driver is the sibling `FoundationModelsACPClient`. Do not write
 a test client.** The package shipped: its board shows M0–M7 done, and its
-README documents the shape below. `SwiftUIACPClient` is the `Client`
-conformance. It is `@MainActor` and `@Observable`, it does not import SwiftUI,
-and a headless test can use it. `connect(over:logger:)` takes any
-`ACPTransport` and returns the `ClientSideConnection` that drives the agent.
-One `ACPSessionState` per session holds the projection: the ordered
-`entries`, `toolCalls` keyed by `toolCallId`, `turnState`, `lastStopReason`,
-`availableCommands`, `configOptions`, `title`, `updatedAt` and `usage`.
-**That state is the primary assertion surface.** It is the same projection
-that the Mac app binds to. A test that passes against it proves what the app
-shows.
+README documents the shape below. There are two models. A
+`ConnectionModel` holds one connection: its state, the capabilities of the
+agent and the open sessions. A `SessionModel` holds one session. Both are
+`@MainActor` and `@Observable`, they do not import SwiftUI, and a headless
+test can use them. `ConnectionModel.connect(over:logger:bufferLimits:client:)`
+takes any `ACPTransport` and returns the `ClientSideConnection` that drives
+the agent. The served `Client` is the router of the model, and the `client`
+closure can put a wrapper in front of it.
+
+A `SessionModel` exists only for a session that the connection model opened
+itself, with `newSession(_:)` or `resumeSession(_:)`. It reads the updates of
+its session from its own subscription and holds the projection: the ordered
+`transcript` of observable entries (a tool call is a `ToolCallEntry`),
+`agentState`, `availableCommands`, `configOptions`, `sessionInfo`, `usage`,
+`pendingPermissions` and `pendingElicitations`. **That state is the primary
+assertion surface.** It is the same projection that the Mac app binds to. A
+test that passes against it proves what the app shows. The router answers a
+permission request or an elicitation of a session with no session model at
+once, with the cancel answer of the spec.
 
 ```swift
 let (clientEnd, agentEnd) = InMemoryTransport.pair()
 let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
-let client = SwiftUIACPClient(coalescingCadence: cadence, clock: testClock)
-let connection = await client.connect(over: clientEnd)
-// drive:  connection.initialize(_:) → connection.newSession(_:) → connection.prompt(_:)
-// assert: client.session(for: id).turnState, .toolCalls, .entries — after flushPendingChunks()
+let model = ConnectionModel(coalescingCadence: cadence, clock: testClock)
+let connection = await model.connect(over: clientEnd)
+// drive:  connection.initialize(_:) → model.newSession(_:) → connection.prompt(_:)
+// assert: session.agentState, .transcript — after flushPendingChunks()
 ```
 
 Every level above a plain unit test uses this same wiring. The rules:
@@ -2612,18 +2621,20 @@ Every level above a plain unit test uses this same wiring. The rules:
 - **Inject the clock.** The client coalesces chunks on a cadence. A test that
   asserts text must call `flushPendingChunks()` or step the injected clock.
   Never sleep.
-- **Arrival order is not in the state.** The container is a projection.
-  `turnState` is a scalar and keeps no history. A proof that asserts order —
+- **Arrival order is not in the state.** A session model is a projection.
+  `agentState` is a scalar and keeps no history. A proof that asserts order —
   the prompt order (§8.1), cancellation (§8.6), replay upserts (§7.4) — needs
-  the raw notification sequence. For those, the harness wraps the client in
-  a ten-line forwarding recorder: it appends each `UpdateSessionNotification`
-  to an `UpdateCollector`, then forwards it to
-  `SwiftUIACPClient.sessionUpdate(_:)`. Build that path with
-  `ClientSideConnection(stream: clientEnd) { _ in recorder }`, because
-  `connect(over:)` binds the client itself. Both views see one stream, so a
-  test can assert order on the collector and final state on the container.
-- **`requestPermission` is pending state on the client.** We never send it
-  (§11.7). A test asserts that `pendingPermissionRequests` stays empty.
+  the raw notification sequence. For those, the harness puts a ten-line
+  forwarding recorder in front of the router of the connection model: it
+  appends each `UpdateSessionNotification` to an `UpdateCollector`, then
+  forwards it to the router. Build that path with the `client` closure of
+  `ConnectionModel.connect(over:client:)`. The session model reads the same
+  updates from its own subscription, so a test can assert order on the
+  collector and final state on the session model. The two paths are not in
+  step: a test that reads the session model after an idle in the collector
+  first waits until the session model applied that idle.
+- **`requestPermission` is pending state on the session model.** We never
+  send it (§11.7). A test asserts that `pendingPermissions` stays empty.
 - **Tier 3 spawns through `AgentProcess(command:arguments:)`.** It spawns the
   built `acp-agent` in its own process group and vends `transport`. `command`
   must be an absolute path. Hand the transport to `connect(over:)`. Teardown
@@ -2770,8 +2781,9 @@ headless-usable by design.) The rules:
 **The upstream gate is cleared.** `FoundationModelsACPClient` shipped; its
 board shows M0–M7 done (§21). The shapes above are real: `AgentProcess`
 spawns the agent in its own process group and vends `transport`;
-`SwiftUIACPClient.connect(over:)` returns the connection;
-`client.session(for:)` carries the streamed `entries`. Build `acp-agent`
+`ConnectionModel.connect(over:)` returns the connection;
+`ConnectionModel.newSession(_:)` gives the `SessionModel` that carries the
+streamed `transcript`. Build `acp-agent`
 first, because `acp-print` spawns it. The same client package is the driver
 for every level above unit (§20.1), so `acp-print` and the stdio contract test share
 one spawn-and-connect path.
@@ -2813,7 +2825,7 @@ ToolCallingTests`.
 | `7kgq5dw` → `enzjy0q` | FoundationModelsACP | schema re-vendor to `schema-v2.0.0-alpha.3` (elicitation stable), generated `elicitation/*` types, `ClientCapabilities.elicitation`, and the `createElicitation` / `elicitationComplete` entry points on both connections (§16) | **done** — verified 2026-09-01 |
 | — | FoundationModelsRouter | a **public live signal for a pending elicitation** (§16): a `SessionEvent` case on `streamSessionEvents()` that carries the `.elicitation` `OperationEvent`, or a public `RoutedSession.pendingElicitations()` read with a wakeup. Today the answer side is public and the request side is not: `SessionMailbox.pendingElicitationIds()` and `SessionOutbox.pending()` are internal, and `TranscriptEvent.operationEvents` is a recorded read | **open** — to file; the relay (board `2z6qtqy`) waits on it, and the interim declines with a reason |
 | `kdvsjmj` | FoundationModelsACP | `mcp/*` tunnel payload types (§11.5) | **closed without code** — verified 2026-09-01: `mcp/connect`, `mcp/message` and `mcp/disconnect` are still only routing names in `acp-v2.meta.unstable.json`, the published v2 pages name only `stdio` and `http`, and the wire task was closed by decision. Re-file when upstream stabilizes `mcp/*`. Our stance is unchanged: do not build the tunnel |
-| — | FoundationModelsACPClient | the Client-role container (`SwiftUIACPClient`, `ACPSessionState`) plus the stdio transport with agent-process ownership (`AgentProcess`) — the client driver for every level above unit (§20.1) and for `Examples/acp-print` (§20.2) | **shipped** — M0–M7 done on its board, verified 2026-09-01; our test target depends on it, the library never does |
+| — | FoundationModelsACPClient | the Client-role models (`ConnectionModel`, `SessionModel`) plus the stdio transport with agent-process ownership (`AgentProcess`) — the client driver for every level above unit (§20.1) and for `Examples/acp-print` (§20.2) | **shipped** — M0–M7 done on its board, verified 2026-09-01; our test target depends on it, the library never does |
 | `ke41yth` | FoundationModelsRouter | per-session recording root, flat `<root>/<sessionId>/` layout (§4.1) | **landed** |
 | `kh01tv2` | FoundationModelsRouter | pooled, reference-counted model residency → per-project profiles (§7.1) | **landed** |
 | — | FoundationModelsRouter | submission cancellation that reaches the model call: `RoutedSession.cancel() -> CancellationResult` (`.requested` / `.nothingToCancel`), `drain()`, `ToolContext.cancel(completionToken:)` (§8.0, §8.6) | **landed** — an in-flight MCP call still cannot be forced to stop |

@@ -52,14 +52,17 @@ func logToStandardError(_ message: String) {
 /// A completing newline follows the answer when the last chunk does not
 /// end with one, so a shell prompt does not glue onto the answer.
 ///
-/// - Parameter updates: The session's update stream, subscribed before
+/// The stream also holds a marker for each request of the session that
+/// finished. A marker is not a `session/update`, so the loop skips it.
+///
+/// - Parameter stream: The session's update stream, subscribed before
 ///   the prompt.
 /// - Returns: The stop reason, or `nil` when the stream ended with no
 ///   idle update — the connection died before the turn ended.
-func streamAnswer(from updates: AsyncStream<SessionUpdate>) async -> StopReason? {
+func streamAnswer(from stream: AsyncStream<SessionStreamEvent>) async -> StopReason? {
     var wroteText = false
     var endedWithNewline = false
-    for await update in updates {
+    for await case .update(let update) in stream {
         switch update {
         case .agentMessageChunk(let chunk):
             guard case .text(let content) = chunk.content else { break }
@@ -99,8 +102,8 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
     do {
         let agent = try AgentProcess(command: agentCommand, arguments: ["acp"])
         defer { agent.shutdown() }
-        let client = SwiftUIACPClient()
-        let connection = await client.connect(over: agent.transport, logger: .standardError)
+        let model = ConnectionModel()
+        let connection = await model.connect(over: agent.transport, logger: .standardError)
 
         _ = try await connection.initialize(
             InitializeRequest(

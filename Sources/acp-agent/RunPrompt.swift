@@ -100,8 +100,8 @@ enum RunPrompt {
     ) async throws -> RunPromptResult {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agentConnection = await composed.serve(over: agentEnd)
-        let client = await SwiftUIACPClient()
-        let connection = await client.connect(over: clientEnd)
+        let model = await ConnectionModel()
+        let connection = await model.connect(over: clientEnd)
         // Swift has no asynchronous `defer`, and the wire must come down
         // on the failing path as well, so the outcome is held here and
         // rethrown after the teardown.
@@ -174,9 +174,9 @@ enum RunPrompt {
         let sessionId = try await open(session, over: connection)
         // Subscribe before the prompt, so the stream holds each update of
         // the prompt in order.
-        let updates = connection.subscribe(to: sessionId).updates
+        let stream = connection.subscribe(to: sessionId).updates
         let collector = Task {
-            try await collect(from: updates, into: writer, reporting: events)
+            try await collect(from: stream, into: writer, reporting: events)
         }
         // The watch is armed here, with a session open and the collector
         // reading: a `session/cancel` that reached the agent before the
@@ -344,8 +344,11 @@ enum RunPrompt {
     /// line goes out first, so the update that ends the prompt is reported
     /// before the loop leaves.
     ///
+    /// The stream also holds a marker for each request of the session that
+    /// finished. A marker is not a `session/update`, so the loop skips it.
+    ///
     /// - Parameters:
-    ///   - updates: The session's update stream, subscribed before the
+    ///   - stream: The session's update stream, subscribed before the
     ///     prompt.
     ///   - writer: The writer each chunk goes to.
     ///   - events: The writer each session event goes to, one line each.
@@ -353,12 +356,12 @@ enum RunPrompt {
     ///   an idle update arrived.
     /// - Throws: ``AnswerWriteError`` when a chunk cannot be written.
     private static func collect(
-        from updates: AsyncStream<SessionUpdate>,
+        from stream: AsyncStream<SessionStreamEvent>,
         into writer: AnswerWriter,
         reporting events: EventLineWriter
     ) async throws -> StopReason? {
         var events = events
-        for await update in updates {
+        for await case .update(let update) in stream {
             events.receive(update)
             switch update {
             case .agentMessageChunk(let chunk):

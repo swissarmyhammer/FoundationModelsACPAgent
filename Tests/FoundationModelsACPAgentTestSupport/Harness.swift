@@ -24,8 +24,9 @@ struct HoldingInstant: InstantProtocol {
 /// A clock that never fires: `now` stands still, and a sleep suspends
 /// until its task is cancelled.
 ///
-/// The harness injects it into `SwiftUIACPClient`, so no coalescing
-/// flush runs on a cadence. A test drains the buffer with
+/// The harness injects it into `ConnectionModel`, which gives it to each
+/// `SessionModel` it opens, so no coalescing flush runs on a cadence. A
+/// test drains the buffer with
 /// ``AgentClientHarness/flushPendingChunks()`` and never sleeps
 /// (plan.md §20.1).
 struct HoldingClock: Clock {
@@ -52,7 +53,7 @@ struct HoldingClock: Clock {
 
 /// One in-process wiring of `RoutedACPAgent` and the shipped client
 /// driver (plan.md §20.1): a ``HarnessWire``, an `AgentSideConnection`
-/// around the agent, and a `SwiftUIACPClient` over an injected
+/// around the agent, and a `ConnectionModel` over an injected
 /// ``HoldingClock`` on the other end.
 ///
 /// The wire is `InMemoryTransport.pair()` by default, the transport the
@@ -60,10 +61,16 @@ struct HoldingClock: Clock {
 /// answers alike passes ``HarnessWire/makeStdioPipes()`` instead
 /// (cli-plan.md §4).
 ///
-/// ``make(wire:)`` wires the client itself through `connect(over:)`.
-/// ``makeRecording(wire:)`` wires a ``RecordingClient`` in front of it,
-/// so the raw notification order lands in an ``UpdateCollector`` while
-/// the observable state still lands in the client.
+/// ``make(wire:)`` connects the model with its own router.
+/// ``makeRecording(wire:)`` puts a ``RecordingClient`` in front of that
+/// router, so the raw notification order lands in an ``UpdateCollector``.
+///
+/// The model holds observable state only for a session that it opened
+/// itself, with `ConnectionModel.newSession(_:)` or
+/// `ConnectionModel.resumeSession(_:)`. A session that a test opens on
+/// ``connection`` has no session model: the router of the model answers
+/// each permission request and each elicitation of that session at once,
+/// with the cancel answer of the spec.
 public struct AgentClientHarness: Sendable {
     /// The dotfolder name the harness constructs the agent with. The
     /// wire must never carry it (plan.md §5).
@@ -81,8 +88,9 @@ public struct AgentClientHarness: Sendable {
     /// The agent under test.
     public let agent: RoutedACPAgent
 
-    /// The observable client container, the primary assertion surface.
-    public let client: SwiftUIACPClient
+    /// The observable connection model. Its session models are the
+    /// primary assertion surface.
+    public let client: ConnectionModel
 
     /// The client side of the wire, which drives the agent.
     public let connection: ClientSideConnection
@@ -164,7 +172,7 @@ public struct AgentClientHarness: Sendable {
     }
 
     /// Wires a fresh agent and client over a transport pair, with the
-    /// client bound through `connect(over:)`.
+    /// model connected through `connect(over:)`.
     ///
     /// - Parameter wire: The transport pair to run over. The in-process
     ///   pair by default.
@@ -189,8 +197,9 @@ public struct AgentClientHarness: Sendable {
     }
 
     /// Wires a fresh agent and client with a ``RecordingClient`` in
-    /// front of the client, so a test can assert the raw notification
-    /// order on the collector and the final state on the client.
+    /// front of the router of the model, so a test can assert the raw
+    /// notification order on the collector and the final state on a
+    /// session model.
     ///
     /// - Parameter wire: The transport pair to run over. The in-process
     ///   pair by default.
@@ -203,10 +212,14 @@ public struct AgentClientHarness: Sendable {
     }
 
     /// Wires the given agent — for example one whose model plays a
-    /// script — with a ``RecordingClient`` in front of the client.
+    /// script — with a ``RecordingClient`` in front of the router of the
+    /// model.
     ///
-    /// `ClientSideConnection(stream:)` binds the recorder here, because
-    /// `connect(over:)` binds the client itself (plan.md §20.1).
+    /// The `client` closure of `ConnectionModel.connect(over:client:)`
+    /// puts the recorder in front of the router (plan.md §20.1). The
+    /// recorder forwards each message to the router, so the router still
+    /// gives each permission request and each elicitation to its session
+    /// model.
     ///
     /// - Parameters:
     ///   - agent: The agent under test.
@@ -229,28 +242,30 @@ public struct AgentClientHarness: Sendable {
         let parts = await makeParts(
             agent: agent, agentEnd: agentWireTap ?? wire.agentEnd)
         let collector = UpdateCollector()
-        let recorder = RecordingClient(forwardingTo: parts.client, collector: collector)
+        let elicitations = ElicitationWireRecorder()
         let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
         let clientEnd: any ACPTransport = wireTap ?? wire.clientEnd
-        let connection = await ClientSideConnection(stream: clientEnd) { _ in recorder }
+        let connection = await parts.client.connect(over: clientEnd) { router in
+            RecordingClient(forwardingTo: router, collector: collector, elicitations: elicitations)
+        }
         return AgentClientHarness(
             agent: parts.agent,
             client: parts.client,
             connection: connection,
             agentConnection: parts.agentConnection,
             collector: collector,
-            elicitations: recorder.elicitations,
+            elicitations: elicitations,
             wireTap: wireTap,
             agentWireTap: agentWireTap,
             wire: wire)
     }
 
-    /// Flushes the coalescing buffer of every session, so a test
-    /// observes buffered text without sleeping for the cadence.
+    /// Flushes the coalescing buffer of each open session model, so a
+    /// test observes buffered text without sleeping for the cadence.
     @MainActor
     public func flushPendingChunks() {
-        for state in client.sessions.values {
-            state.flushPendingChunks()
+        for session in client.openSessions.values {
+            session.flushPendingChunks()
         }
     }
 
@@ -285,13 +300,13 @@ public struct AgentClientHarness: Sendable {
     ) async -> (
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
-        client: SwiftUIACPClient
+        client: ConnectionModel
     ) {
         let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
             agent.bind(connection: connection)
             return agent
         }
-        let client = await SwiftUIACPClient(
+        let client = await ConnectionModel(
             coalescingCadence: coalescingCadence, clock: HoldingClock())
         return (agent, agentConnection, client)
     }

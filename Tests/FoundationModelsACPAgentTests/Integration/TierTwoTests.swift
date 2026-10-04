@@ -295,7 +295,8 @@ import Testing
     // MARK: - Prompt driver
 
     /// Wires the fixture, prompts one scripted tool prompt, waits for
-    /// the idle terminator, and flushes the coalescing buffer.
+    /// the idle terminator in the collector and in the session model, and
+    /// flushes the coalescing buffer.
     ///
     /// - Parameters:
     ///   - code: The snippet the pass runs.
@@ -344,6 +345,7 @@ import Testing
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        try await fixture.waitForSessionModelIdle()
         await fixture.harness.flushPendingChunks()
         return (fixture, updates)
     }
@@ -507,20 +509,50 @@ import Testing
         try updates.map { try encodedText(of: $0) }.joined(separator: "\n")
     }
 
-    /// The accumulated tool call `id` in the session's observable
-    /// state — the primary assertion surface (plan.md §20.1).
+    /// The merged state of one tool call in the session model, copied on
+    /// the main actor so that a test can assert on it.
+    private struct AccumulatedToolCall {
+        /// The status of the call.
+        let status: FoundationModelsACP.ToolCallStatus?
+
+        /// The title of the call.
+        let title: String?
+
+        /// The raw input of the call.
+        let rawInput: FoundationModelsACP.JSONValue?
+
+        /// The JSON text of the ANSWER of the call — its `rawOutput` and its
+        /// `content`, never its `rawInput`. The `runCode` call's `rawInput`
+        /// carries the snippet source, so a reader of the whole entry would
+        /// find an answer on the call that ASKED as well.
+        let answerText: String
+    }
+
+    /// The accumulated tool call `id` in the transcript of the session
+    /// model — the primary assertion surface (plan.md §20.1).
     ///
     /// - Parameters:
     ///   - fixture: The wired fixture.
     ///   - id: The `toolCallId` to read.
-    /// - Returns: The accumulated update.
-    /// - Throws: When the session or the call is absent.
+    /// - Returns: The merged state of each update of the call.
+    /// - Throws: When the transcript holds no entry for the call, and the
+    ///   encoding error.
     @MainActor
     private static func accumulatedToolCall(
         of fixture: ScriptedPromptFixture, id: String
-    ) throws -> ToolCallUpdate {
-        let state = try #require(fixture.harness.client.sessions[fixture.sessionId])
-        return try #require(state.toolCalls[ToolCallId(rawValue: id)])
+    ) throws -> AccumulatedToolCall {
+        let entryID = TranscriptEntry.ID.wire(.toolCall(ToolCallId(rawValue: id)))
+        let entries = fixture.session.transcript.compactMap { entry -> FoundationModelsACPClient.ToolCallEntry? in
+            guard case .toolCall(let call) = entry, call.id == entryID else { return nil }
+            return call
+        }
+        let entry = try #require(entries.first)
+        let rawOutputText = try entry.rawOutput.map { try encodedText(of: $0) } ?? ""
+        return AccumulatedToolCall(
+            status: entry.status,
+            title: entry.title,
+            rawInput: entry.rawInput,
+            answerText: try rawOutputText + encodedText(of: entry.content))
     }
 
     /// The `sessionUpdate` discriminator of the prompt echo, which is
@@ -725,9 +757,9 @@ import Testing
     /// one stable `toolCallId` from creation to completion, the title
     /// on the first report, `in_progress` before `completed`,
     /// `rawInput` carrying the call's real arguments, and `rawOutput`
-    /// carrying each call's real answer — read from
-    /// `ACPSessionState.toolCalls`. The file the snippet claims to
-    /// have written is read back from disk, never from the transcript.
+    /// carrying each call's real answer — read from the tool-call entry of
+    /// the `SessionModel` transcript. The file the snippet claims to have
+    /// written is read back from disk, never from the transcript.
     ///
     /// The snippet settles inside the inline grace of `runCode`, so the
     /// `runCode` call's own answer carries the written line.
@@ -759,19 +791,19 @@ import Testing
         let completedIndex = try #require(lifecycle.firstIndex(of: .completed))
         #expect(inProgressIndex < completedIndex)
 
-        // The converged container: status, title, rawInput, rawOutput.
-        #expect(accumulated.status == .value(.completed))
-        #expect(accumulated.title == .value(Self.runCodeToolName))
+        // The converged entry: status, title, rawInput, rawOutput.
+        #expect(accumulated.status == .completed)
+        #expect(accumulated.title == Self.runCodeToolName)
         let rawInput = try #require(
-            jsonObject(of: patchValue(accumulated.rawInput)),
-            "expected the runCode rawInput object, got \(accumulated.rawInput)")
+            jsonObject(of: accumulated.rawInput),
+            "expected the runCode rawInput object, got \(String(describing: accumulated.rawInput))")
         let codeArgument = try #require(
             jsonString(of: rawInput["code"]),
-            "expected the runCode rawInput object, got \(accumulated.rawInput)")
+            "expected the runCode rawInput object, got \(String(describing: accumulated.rawInput))")
         #expect(codeArgument == Self.noteCode)
 
         // The written line rides the `runCode` call's answer.
-        #expect(try Self.answerText(of: accumulated).contains(Self.noteContent))
+        #expect(accumulated.answerText.contains(Self.noteContent))
     }
 
     // MARK: - Proof 4: prompt order
@@ -908,14 +940,12 @@ import Testing
         // The correlation: the answer rides the call that carried the
         // snippet's result, and no other call of the prompt carries it.
         #expect(answeringIds == [answeringId])
-        #expect(accumulated.status == .value(.completed))
-        // The accumulated call is read through `answerText(of:)`, thus
-        // the text holds the ANSWER alone. A reader of the whole update
-        // would take the `rawInput` as well, and the snippet source in
-        // that field carries the ping, so the REQUEST would answer this
-        // assertion.
-        let accumulatedText = try Self.answerText(of: accumulated)
-        #expect(accumulatedText.contains(Self.echoPing))
+        #expect(accumulated.status == .completed)
+        // The answer text of the accumulated call holds the ANSWER alone.
+        // A reader of the whole entry would take the `rawInput` as well,
+        // and the snippet source in that field carries the ping, so the
+        // REQUEST would answer this assertion.
+        #expect(accumulated.answerText.contains(Self.echoPing))
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 

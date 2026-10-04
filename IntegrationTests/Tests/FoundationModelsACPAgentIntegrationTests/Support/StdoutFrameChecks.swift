@@ -49,19 +49,18 @@ enum StdoutFrameChecks {
         }
     }
 
-    /// Consumes `updates` until the first idle state update, then returns
-    /// its stop reason.
+    /// Consumes `stream` until the first idle state update, then returns
+    /// its stop reason. The request markers of the stream do not end the
+    /// wait.
     ///
-    /// - Parameter updates: The update stream of the session. Subscribe to
+    /// - Parameter stream: The update stream of the session. Subscribe to
     ///   it before the prompt.
     /// - Returns: The stop reason, or `nil` when the stream ended with no
     ///   idle update. That is, the connection stopped before the prompt
     ///   ended.
-    static func waitForIdle(on updates: AsyncStream<SessionUpdate>) async -> StopReason? {
-        for await update in updates {
-            if case .stateUpdate(.idle(let idle)) = update {
-                return idle.stopReason
-            }
+    static func waitForIdle(on stream: AsyncStream<SessionStreamEvent>) async -> StopReason? {
+        for await case .update(.stateUpdate(.idle(let idle))) in stream {
+            return idle.stopReason
         }
         return nil
     }

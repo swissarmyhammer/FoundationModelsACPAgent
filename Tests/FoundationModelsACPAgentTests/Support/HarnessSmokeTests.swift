@@ -93,7 +93,7 @@ final class PathRecordingTool: Tool, Sendable {
 
         #expect(await collector.updates.isEmpty)
         let pendingPermissionCounts = await MainActor.run {
-            harness.client.sessions.values.map(\.pendingPermissionRequests.count)
+            harness.client.openSessions.values.map(\.pendingPermissions.count)
         }
         #expect(pendingPermissionCounts.allSatisfy { $0 == 0 })
         await harness.close()
@@ -101,34 +101,60 @@ final class PathRecordingTool: Tool, Sendable {
 
     // MARK: - The coalescing flush
 
-    /// A streamed chunk stays in the coalescing buffer, because the
-    /// harness clock never fires. The flush helper drains it. No test
-    /// sleeps for the cadence.
+    /// A streamed chunk stays in the coalescing buffer of the session
+    /// model, because the harness clock never fires. The flush helper
+    /// drains it. No test sleeps for the cadence.
+    ///
+    /// The agent end of the wire sends the chunk, and the update tap of the
+    /// model tells when it arrived. The tap gives each update before the
+    /// model folds it, so the read before the flush sees the buffered state.
     @Test(.timeLimit(.minutes(1)))
     func flushDrainsACoalescedChunkWithoutSleeping() async throws {
         let harness = try await AgentClientHarness.make()
-        let sessionId = SessionId(rawValue: "01ARZ3NDEKTSV4RRFFQ69G5FAV")
+        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        let cwd = makeResolvedDirectory(label: "HarnessSmokeTests-flush")
+        let session = try await harness.client.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
+        let arrivals = await session.updateTap()
         let messageId = MessageId(rawValue: "message-1")
         let chunkText = "buffered until the flush"
 
-        await harness.client.sessionUpdate(
+        try await harness.agentConnection.sessionUpdate(
             UpdateSessionNotification(
-                sessionId: sessionId,
+                sessionId: await session.sessionId,
                 update: .agentMessageChunk(
                     ContentChunk(content: .text(TextContent(text: chunkText)), messageId: messageId))))
+        for await case .agentMessageChunk in arrivals {
+            break
+        }
 
         let textBeforeFlush = await MainActor.run {
-            texts(in: harness.client.session(for: sessionId).messageContent(for: messageId))
+            texts(in: Self.agentMessageContent(of: messageId, in: session))
         }
         #expect(!textBeforeFlush.contains(chunkText))
 
         await harness.flushPendingChunks()
 
         let textAfterFlush = await MainActor.run {
-            texts(in: harness.client.session(for: sessionId).messageContent(for: messageId))
+            texts(in: Self.agentMessageContent(of: messageId, in: session))
         }
         #expect(textAfterFlush.contains(chunkText))
         await harness.close()
+    }
+
+    /// The content of the agent message `messageId` in the transcript of
+    /// `session`.
+    ///
+    /// - Parameters:
+    ///   - messageId: The id of the agent message.
+    ///   - session: The session model to read.
+    /// - Returns: The content of the message, or no block when the
+    ///   transcript holds no such message.
+    @MainActor
+    private static func agentMessageContent(of messageId: MessageId, in session: SessionModel) -> [ContentBlock] {
+        session.transcript.flatMap { entry -> [ContentBlock] in
+            guard case .agentMessage(let message) = entry, message.messageId == messageId else { return [] }
+            return message.content
+        }
     }
 
     /// Joins the text blocks of `content` into one string.

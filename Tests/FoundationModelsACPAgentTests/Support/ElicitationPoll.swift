@@ -11,39 +11,35 @@ import Testing
 /// wait uses ``Poll/until(_:_:sourceLocation:)``, thus it stops at the fact
 /// and never sleeps for a guessed span.
 enum ElicitationPoll {
-    /// The elicitations of `sessionId` that `client` did not answer yet.
+    /// The elicitations that `session` did not answer yet.
     ///
-    /// - Parameters:
-    ///   - sessionId: The session to read.
-    ///   - client: The client that received the elicitations.
-    /// - Returns: The pending elicitations of `sessionId`, in arrival order.
-    static func pendingElicitations(
-        of sessionId: SessionId, on client: SwiftUIACPClient
-    ) async -> [PendingElicitation] {
-        await MainActor.run { client.pendingElicitations(for: sessionId) }
+    /// - Parameter session: The session model that received the
+    ///   elicitations.
+    /// - Returns: The pending elicitations of the session, in arrival order.
+    static func pendingElicitations(in session: SessionModel) async -> [PendingElicitation] {
+        await session.pendingElicitations
     }
 
-    /// Waits until `client` holds a pending elicitation of `sessionId`, and
-    /// gives the first one.
+    /// Waits until `session` holds a pending elicitation, and gives the
+    /// first one.
     ///
     /// - Parameters:
-    ///   - sessionId: The session to watch.
-    ///   - client: The client that receives the elicitations.
+    ///   - session: The session model that receives the elicitations.
     ///   - sourceLocation: The line a timeout is reported at.
-    /// - Returns: The first pending elicitation of `sessionId`.
-    /// - Throws: When no elicitation of `sessionId` reaches the client, and
+    /// - Returns: The first pending elicitation of the session.
+    /// - Throws: When no elicitation reaches the session model, and
     ///   `CancellationError` when the test is cancelled.
     static func firstPendingElicitation(
-        of sessionId: SessionId,
-        on client: SwiftUIACPClient,
+        in session: SessionModel,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws -> PendingElicitation {
+        let sessionId = await session.sessionId
         try await Poll.until(
             "an elicitation of \(sessionId.rawValue) reaches the client",
-            { await !pendingElicitations(of: sessionId, on: client).isEmpty },
+            { await !pendingElicitations(in: session).isEmpty },
             sourceLocation: sourceLocation)
         return try #require(
-            await pendingElicitations(of: sessionId, on: client).first,
+            await pendingElicitations(in: session).first,
             sourceLocation: sourceLocation)
     }
 }
