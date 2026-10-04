@@ -27,8 +27,24 @@ comments:
     - evidence: 6 files — Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift, TerminalStreamTests.swift, SandboxCompositionTests.swift, MultiRootConfinementTests.swift, MCPCompositionTests.swift, Integration/TierTwoTests.swift. `swift build -c release` complete, 0 warnings from this package. Parallel `swift test`: 739 tests in 83 suites passed after 8.868 s (1 known issue, as before); slowest aSessionInAnElicitationHoldsNoModel 8.766 s, threePageWalkSeesEverySessionOnceAcrossTwoProjects 4.956 s, closeEndsAMailStartedAnswerThatWaitsForTheModelQueue 4.511 s, noBuiltinInvokesTheModelBackend 4.510 s. `swift test --no-parallel`: first run SIGPIPE in ProgressReporterTests (filed ^xj2arek), second run 739 tests passed after 53.786 s. `swift build --package-path IntegrationTests --build-tests` complete.
     - next: /review
   timestamp: 2026-10-04T22:26:16.406223+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m44gmbf5xr94zmzgwaeh2bp4
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (dc85c19): 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed. 6 Swift test files reviewed. The .reviewignore rule excluded 6 .kanban files. No prior Review Findings section is on the task.
+    - next: none. The task is in done.
+  timestamp: 2026-10-04T22:30:24.485027+00:00
+- actor: claude-code
+  id: 01m44gmjckqn8xkxfmc3z418sw
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 test files
+    - test: green — parallel swift test 739 passed in 8.9 s; --no-parallel 739 passed (one earlier run hit SIGPIPE in ProgressReporterTests, filed ^xj2arek)
+    - commit: dc85c19
+    - review: clean — no findings
+  timestamp: 2026-10-04T22:30:31.571158+00:00
+position_column: done
+position_ordinal: ff9980
 title: Direct ToolCatalog unit tests start a code context they do not need, and never stop it
 ---
 ## Why
