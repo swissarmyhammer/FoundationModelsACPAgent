@@ -34,8 +34,25 @@ comments:
     - evidence: `swift build -c release` rc=0, 0 warnings from this package; `swift test --no-parallel` 737 tests in 83 suites passed (1 known issue = the pre-existing withKnownIssue in HarnessSmokeTests); `swift build --package-path IntegrationTests --build-tests` rc=0. Pins: client 85c1ddd, wire fe0d82d in both gitignored Package.resolved files. 21 files changed (20 tracked + plan.md), nothing committed.
     - next: /review. The last checkbox (CI Build & test and Integration green) needs the commit and the push; it stays open until then.
   timestamp: 2026-10-04T20:38:03.134431+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m44ak97qq3ytjb9hbga91btc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (6789a74). 0 findings, 0 confirmed, 0 refuted. 14 validator runs, 0 failed. Not reviewed: .kanban/ (2 files, from .reviewignore), plan.md (no validator matches this file).
+    - next: The orchestrator pushes and makes sure that CI Build & test and Integration are green. That is the last subtask.
+  timestamp: 2026-10-04T20:44:57.975830+00:00
+- actor: claude-code
+  id: 01m44akgdh9c3439dywb3yrxx6
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 20 files (CLI, example, test support, IntegrationTests, plan.md)
+    - test: green — swift test --no-parallel, 737 passed; IntegrationTests build green
+    - commit: 6789a74
+    - review: clean — no findings
+    - next: push, then verify CI and check the last subtask
+  timestamp: 2026-10-04T20:45:05.329413+00:00
+position_column: done
+position_ordinal: ff9680
 title: 'Adopt FoundationModelsACPClient 85c1ddd: replace SwiftUIACPClient and ACPSessionState with ConnectionModel and SessionModel'
 ---
 ## Problem
