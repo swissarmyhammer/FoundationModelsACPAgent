@@ -47,8 +47,24 @@ comments:
     - evidence: 2 files — Sources/acp-agent/ProgressReporter.swift, Tests/FoundationModelsACPAgentTests/ProgressReporterTests.swift; repetition loop 20/20 trials x 1000 pass after (17 SIGPIPE + 2 SIGSEGV of 20 before); swift test 740 pass; swift test --no-parallel 740 pass; release and IntegrationTests builds clean
     - next: review
   timestamp: 2026-10-04T23:16:01.378649+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m44kcq9yyabkefgn9s7f6y3n
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a09e736). 0 findings, 0 confirmed, 0 refuted. 7 validator tasks attempted, 0 failed. 2 source files reviewed. The .reviewignore rule excluded 2 .kanban files.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-04T23:18:40.190605+00:00
+- actor: claude-code
+  id: 01m44kcxqsvnwvg35cswdqttwj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Sources/acp-agent/ProgressReporter.swift, Tests/.../ProgressReporterTests.swift
+    - test: green — swift test 740 passed; --no-parallel 740 passed; repetition loop 20/20 trials x 1000 pass (was 17 SIGPIPE + 2 SIGSEGV of 20)
+    - commit: a09e736
+    - review: clean — no findings
+  timestamp: 2026-10-04T23:18:46.777819+00:00
+position_column: done
+position_ordinal: ff9a80
 title: A serial swift test run can stop on SIGPIPE in ProgressReporterTests.theReporterReadsTheProgressOnTheMainActor
 ---
 ## Why
