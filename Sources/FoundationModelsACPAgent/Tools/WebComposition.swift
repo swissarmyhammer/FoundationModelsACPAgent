@@ -6,7 +6,7 @@ import FoundationModelsMultitool
 ///
 /// **The capability is on by default.** With no key in the configuration
 /// and none in the environment, the providers are the keyless pages of
-/// Brave and DuckDuckGo. A key in the process environment, or in
+/// DuckDuckGo, then Brave. A key in the process environment, or in
 /// `tools.web.apiKeys`, adds its keyed provider before them. Multitool's
 /// `WebConfiguration.fromEnvironment(_:)` owns the provider table and its
 /// order; this type only gives it the merged environment.

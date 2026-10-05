@@ -124,8 +124,8 @@ first index pass runs after the session starts, thus `session/new` does not
 wait for it.
 
 `tools.web` searches with no setup. With no API key, the providers are the
-keyless result pages of Brave (`braveHTML`), then DuckDuckGo
-(`duckDuckGoHTML`). An API key adds its provider before them. The agent reads
+keyless result pages of DuckDuckGo (`duckDuckGoHTML`), then Brave
+(`braveHTML`). An API key adds its provider before them. The agent reads
 the keys from its process environment, and from the `tools.web.apiKeys` map:
 
 | `apiKeys` key | Environment variable | Provider |
@@ -137,8 +137,8 @@ the keys from its process environment, and from the `tools.web.apiKeys` map:
 | `kagi` | `KAGI_API_KEY` | `kagi` |
 | `searxngURL` | `SEARXNG_URL` (a base URL, not a key) | `searxng` |
 
-The order to try is the order of this table, then `braveHTML`, then
-`duckDuckGoHTML`. The first provider that gives results wins. A key in
+The order to try is the order of this table, then `duckDuckGoHTML`, then
+`braveHTML`. The first provider that gives results wins. A key in
 `config.yaml` wins over the environment variable of the same provider. An
 empty value is not a key. Another `apiKeys` key is an error that names the
 valid keys.

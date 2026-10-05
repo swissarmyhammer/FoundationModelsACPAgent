@@ -14,8 +14,9 @@ import Testing
 @Suite struct WebToolTests {
     // MARK: - Constants
 
-    /// The provider order with no key: the two keyless providers.
-    private static let keylessOrder = ["braveHTML", "duckDuckGoHTML"]
+    /// The provider order with no key: the two keyless providers,
+    /// DuckDuckGo first (Multitool ^pvtmd2y).
+    private static let keylessOrder = ["duckDuckGoHTML", "braveHTML"]
 
     /// A key value that the environment holds.
     private static let environmentKey = "environment-key-value"

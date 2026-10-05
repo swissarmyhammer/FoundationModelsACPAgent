@@ -231,7 +231,7 @@ struct ToolsDoctorTests {
 
         let row = try Self.webRow(in: checks)
         #expect(row.status == .ok)
-        #expect(row.message.contains("braveHTML, duckDuckGoHTML"))
+        #expect(row.message.contains("duckDuckGoHTML, braveHTML"))
     }
 
     /// A key in the environment puts its provider first in the row, and the
@@ -246,7 +246,7 @@ struct ToolsDoctorTests {
         ).runHealthChecks()
 
         let row = try Self.webRow(in: checks)
-        #expect(row.message.contains("tavily, braveHTML, duckDuckGoHTML"))
+        #expect(row.message.contains("tavily, duckDuckGoHTML, braveHTML"))
         #expect(!checks.contains { $0.message.contains(keyValue) })
     }
 

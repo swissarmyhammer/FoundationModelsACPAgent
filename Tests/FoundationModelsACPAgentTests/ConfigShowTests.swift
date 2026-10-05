@@ -302,7 +302,7 @@ struct ConfigShowTests {
 
         let report = try Self.report([], in: fixture)
 
-        #expect(report.standardOutput.contains("tavily, braveHTML, duckDuckGoHTML"))
+        #expect(report.standardOutput.contains("tavily, duckDuckGoHTML, braveHTML"))
     }
 
     /// A key in the environment changes the providers in force, and the
@@ -314,7 +314,7 @@ struct ConfigShowTests {
         let report = try Self.report(
             [], in: fixture, extraEnvironment: ["EXA_API_KEY": environmentKey])
 
-        #expect(report.standardOutput.contains("exa, braveHTML, duckDuckGoHTML"))
+        #expect(report.standardOutput.contains("exa, duckDuckGoHTML, braveHTML"))
         #expect(!report.standardOutput.contains(environmentKey))
     }
 
