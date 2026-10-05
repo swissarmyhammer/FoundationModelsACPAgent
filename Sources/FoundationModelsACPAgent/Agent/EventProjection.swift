@@ -150,6 +150,49 @@ struct EventProjection {
         ]
     }
 
+    /// The number of generate calls of the prompt that Router stopped: the
+    /// repetition stops and the reasoning stops (task ^1pw3j6m).
+    private var routerStopCount = 0
+
+    /// The number of Router stops of the prompt that a recovery followed.
+    private var routerRecoveryCount = 0
+
+    /// The report of the last reasoning stop of the prompt, or `nil` when
+    /// Router stopped no pass for its reasoning.
+    private var lastReasoningStop: ReasoningStop?
+
+    /// The paths of the files that a `FileChangeSet` of the prompt recorded.
+    ///
+    /// Only a mutating files verb attaches a change set. A shell command that
+    /// writes a file records no change, thus this set does not hold that
+    /// file.
+    private var changedFilePaths: Set<String> = []
+
+    /// The number of distinct files that the files verbs of the prompt
+    /// changed.
+    var changedFileCount: Int { changedFilePaths.count }
+
+    /// The metadata of the record of a cut prompt (task ^1pw3j6m): the
+    /// ``usageMetadata``, the Router stops and the recoveries that ran, the
+    /// number of changed files, and the reasoning tokens and the limit of
+    /// the last reasoning stop.
+    ///
+    /// The Router writes its own stop records at the `notice` level, and a
+    /// run that logs at `warning` or above does not keep them. So this one
+    /// `error` record must name the cause by itself.
+    var cutMetadata: Logger.Metadata {
+        typealias Key = ACPAgentTelemetry.LogMetadataKey
+        var metadata = usageMetadata
+        metadata[Key.routerStops] = "\(routerStopCount)"
+        metadata[Key.routerRecoveries] = "\(routerRecoveryCount)"
+        metadata[Key.filesChanged] = "\(changedFileCount)"
+        if let stop = lastReasoningStop {
+            metadata[Key.reasoningTokens] = "\(stop.reasoningTokens)"
+            metadata[Key.reasoningLimit] = "\(stop.limit.map(String.init) ?? "none")"
+        }
+        return metadata
+    }
+
     /// The newest context fill. `nan` means "no stamp": send no meter
     /// for the prompt (§8.4).
     private var contextFill = Double.nan
@@ -211,6 +254,32 @@ struct EventProjection {
         var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
         metadata[ACPAgentTelemetry.LogMetadataKey.eventKind] = "\(ACPAgentTelemetry.caseName(of: event))"
         return metadata
+    }
+
+    /// Counts one generate call that Router stopped, and the recovery that
+    /// follows it, for the record of a cut prompt (task ^1pw3j6m).
+    ///
+    /// - Parameter recovery: The number of the recovery that follows the
+    ///   stop, or `nil` when no recovery was left.
+    private mutating func countRouterStop(recovery: Int?) {
+        routerStopCount += 1
+        if recovery != nil {
+            routerRecoveryCount += 1
+        }
+    }
+
+    /// Records the files that the change sets of `report` name, for the
+    /// record of a cut prompt (task ^1pw3j6m). A move or a copy adds its
+    /// source and its destination.
+    ///
+    /// - Parameter report: The report of the attachments of one call.
+    private mutating func recordChangedFiles(in report: ToolCallReport) {
+        for change in Self.fileChanges(in: report.attachments) {
+            changedFilePaths.insert(change.path)
+            if let destination = change.destinationPath {
+                changedFilePaths.insert(destination)
+            }
+        }
     }
 
     // MARK: - The SessionEvent cases (§8.4)
@@ -301,6 +370,7 @@ struct EventProjection {
                 return
             }
             sawOutput = true
+            recordChangedFiles(in: report)
             await projectToolCallReport(report)
         case .elicitationRequested(let operationEvent):
             // The relay runs the round trip inline (plan.md §16): the
@@ -338,11 +408,14 @@ struct EventProjection {
             // A log line, not a wire message (§8.4): the stop reason of
             // the prompt carries the end, and the next submission of a
             // recovery carries the text.
+            countRouterStop(recovery: stop.recovery)
             reportRouterStop(
                 stop, message: "Router stopped a generate call, because the call repeated itself.")
         case .reasoningStopped(let stop):
             // A log line, not a wire message (§8.4), as for a repetition
             // stop (task ^7fsfw7y).
+            countRouterStop(recovery: stop.recovery)
+            lastReasoningStop = stop
             reportRouterStop(
                 stop, message: "Router stopped a pass, because the pass reasoned and did not act.")
         case .answered(let answer):

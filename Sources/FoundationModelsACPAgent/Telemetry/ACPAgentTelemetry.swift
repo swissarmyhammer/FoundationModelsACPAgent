@@ -219,6 +219,24 @@ enum ACPAgentTelemetry {
         /// `unknown` when no report gave it.
         static let contextFill = "context.fill"
 
+        /// The reasoning tokens of the last pass that Router stopped for its
+        /// reasoning, in the record of a cut prompt (task ^1pw3j6m).
+        static let reasoningTokens = "reasoning.tokens"
+
+        /// The limit that the last pass stopped for its reasoning reached, or
+        /// `none` when the pass ended inside its reasoning before a limit.
+        static let reasoningLimit = "reasoning.limit"
+
+        /// The number of generate calls of a prompt that Router stopped: the
+        /// repetition stops and the reasoning stops.
+        static let routerStops = "router.stops"
+
+        /// The number of Router stops of a prompt that a recovery followed.
+        static let routerRecoveries = "router.recoveries"
+
+        /// The number of files that the files verbs of a prompt changed.
+        static let filesChanged = "files.changed"
+
         /// The working context of a session, in tokens.
         static let contextTokens = "context.tokens"
 

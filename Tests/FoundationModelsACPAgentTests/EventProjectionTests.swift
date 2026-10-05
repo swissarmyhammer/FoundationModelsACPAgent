@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import FoundationModelsRouter
+import Logging
 import TelemetryTestSupport
 import Testing
 
@@ -547,6 +548,96 @@ import Testing
         #expect(updates.map(\.kind) == [.stateUpdate])
         #expect(stopRecords.count == 1)
         #expect(stopRecords.first?.level == .notice)
+    }
+
+    // MARK: - The record of a cut prompt (task ^1pw3j6m)
+
+    /// Drives a prompt that Router stopped three times: two repetition stops
+    /// with a recovery each, then one reasoning stop with no recovery left.
+    /// The last submission ends at the reasoning token limit.
+    ///
+    /// - Parameter before: The events that come before the stops.
+    /// - Returns: The log records of the drive.
+    private static func driveReasoningLimitPrompt(before: [SessionEvent]) async throws
+        -> [TelemetryCapture.LogRecord]
+    {
+        let detection = RepetitionDetection()
+        let repetition: (Int) -> SessionEvent = { recovery in
+            .repetitionStopped(
+                RepetitionStop(
+                    generatedTokens: 4096, countedLines: 100, newLines: 20, tokensWithoutNewLine: 2048,
+                    detection: detection, recovery: recovery))
+        }
+        let reasoning = ReasoningStop(
+            reasoningTokens: RepetitionDetection.defaultReasoningTokenLimit,
+            limit: RepetitionDetection.defaultReasoningTokenLimit,
+            passFinishReason: .reasoningTokenLimit,
+            detection: detection,
+            recovery: nil)
+        let events =
+            before + [
+                repetition(1),
+                repetition(2),
+                .reasoningStopped(reasoning),
+                makeSubmissionEnded(
+                    TokenUsage(
+                        tokensIn: 100, tokensOut: RepetitionDetection.defaultReasoningTokenLimit,
+                        contextFill: .nan, finishReason: .reasoningTokenLimit)),
+            ]
+        return try await TelemetryCapture.run(forbidding: []) { context in
+            _ = await Self.drive(events)
+            return context.logRecords
+        }
+    }
+
+    /// The one `error` record of a cut prompt, found by its stop reason.
+    ///
+    /// - Parameter records: The log records of the drive.
+    /// - Returns: The record.
+    private static func cutRecord(
+        in records: [TelemetryCapture.LogRecord]
+    ) throws -> TelemetryCapture.LogRecord {
+        let key = ACPAgentTelemetry.LogMetadataKey.stopReason
+        let value = Logger.MetadataValue.string(PromptExecution.reasoningLimitStopReasonValue)
+        let cut = records.filter { $0.level == .error && $0.metadata[key] == value }
+        #expect(cut.count == 1)
+        return try #require(cut.first)
+    }
+
+    /// The record of a prompt cut at the reasoning token limit names the
+    /// cause: the reasoning tokens and the limit of the last stopped pass,
+    /// the Router stops and the recoveries that ran, and the number of files
+    /// that the prompt changed. Before task ^1pw3j6m the record said only
+    /// "The last submission of the prompt did not end by itself."
+    @Test func theReasoningLimitRecordNamesTheLimitTheTokensAndTheRecoveries() async throws {
+        let record = try Self.cutRecord(in: await Self.driveReasoningLimitPrompt(before: []))
+        let keys = ACPAgentTelemetry.LogMetadataKey.self
+        let limit = "\(RepetitionDetection.defaultReasoningTokenLimit)"
+
+        #expect(record.metadata[keys.reasoningTokens] == .string(limit))
+        #expect(record.metadata[keys.reasoningLimit] == .string(limit))
+        #expect(record.metadata[keys.routerStops] == .string("3"))
+        #expect(record.metadata[keys.routerRecoveries] == .string("2"))
+        #expect(record.metadata[keys.filesChanged] == .string("0"))
+        #expect("\(record.message)".contains("reasoning token limit"))
+        #expect("\(record.message)".contains("changed no file"))
+    }
+
+    /// The record counts each distinct file that a `FileChangeSet` of the
+    /// prompt recorded, and does not say that no file changed.
+    @Test func theReasoningLimitRecordCountsTheChangedFiles() async throws {
+        let report = Self.makeToolCallReport(attachments: [
+            Self.makeFileChangeSetAttachment(changes: [
+                FileChange(kind: .modify, path: Self.modifiedPath),
+                FileChange(kind: .add, path: Self.addedPath),
+                FileChange(kind: .modify, path: Self.modifiedPath),
+            ])
+        ])
+        let record = try Self.cutRecord(
+            in: await Self.driveReasoningLimitPrompt(before: [.toolCallReport(report)]))
+
+        #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.filesChanged] == .string("2"))
+        #expect(!"\(record.message)".contains("changed no file"))
     }
 
     // MARK: - The attachment report (§8.4, §11.6)

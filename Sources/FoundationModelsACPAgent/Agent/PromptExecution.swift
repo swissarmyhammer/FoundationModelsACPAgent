@@ -312,7 +312,7 @@ struct PromptExecution: Sendable {
         // before Router gave the finish reason.
         if stop == .completed, let cut = Self.cutStop(for: projection.lastFinishReason) {
             stop = cut
-            report(cut: cut, usage: projection.usageMetadata)
+            report(cut: cut, metadata: projection.cutMetadata, changedFileCount: projection.changedFileCount)
         }
         await projection.reportUsage()
         let reason = Self.stopReason(for: stop)
@@ -596,22 +596,61 @@ struct PromptExecution: Sendable {
             "A generation made no output for the stall bound. The prompt ends.", metadata: metadata)
     }
 
-    /// Records the numbers of a prompt whose last submission did not end by
-    /// itself. The wire carries the extension stop reason alone
-    /// (``truncatedStopReasonValue``, ``endedInReasoningStopReasonValue``,
+    /// Records the cause and the numbers of a prompt whose last submission
+    /// did not end by itself. The wire carries the extension stop reason
+    /// alone (``truncatedStopReasonValue``, ``endedInReasoningStopReasonValue``,
     /// ``repeatedStopReasonValue`` or ``reasoningLimitStopReasonValue``),
-    /// thus this record is the one place that says how full the context was
-    /// and how many tokens the prompt spent.
+    /// thus this record is the one place that says how full the context was,
+    /// how many tokens the prompt spent, how many Router stops and
+    /// recoveries ran, the reasoning tokens and the limit of the last
+    /// reasoning stop, and how many files the prompt changed (task
+    /// ^1pw3j6m).
     ///
     /// - Parameters:
     ///   - cut: The stop ``cutStop(for:)`` gave.
-    ///   - usage: The metadata ``EventProjection/usageMetadata`` makes.
-    private func report(cut: PromptStop, usage: Logger.Metadata) {
+    ///   - metadata: The metadata ``EventProjection/cutMetadata`` makes.
+    ///   - changedFileCount: The number of files that the files verbs of the
+    ///     prompt changed.
+    private func report(cut: PromptStop, metadata cutMetadata: Logger.Metadata, changedFileCount: Int) {
         var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
-            .merging(usage) { current, _ in current }
+            .merging(cutMetadata) { current, _ in current }
         metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stopReason(for: cut).wireValue)"
         ACPAgentTelemetry.logger(.promptExecution).error(
-            "The last submission of the prompt did not end by itself.", metadata: metadata)
+            Self.cutMessage(for: cut, changedFileCount: changedFileCount), metadata: metadata)
+    }
+
+    /// The message of the record of a cut prompt: the cause of the stop, and
+    /// whether the files verbs of the prompt changed a file (task ^1pw3j6m).
+    ///
+    /// A shell command that writes a file records no change set, so the
+    /// message names the files verbs and not the whole prompt.
+    ///
+    /// - Parameters:
+    ///   - cut: The stop ``cutStop(for:)`` gave.
+    ///   - changedFileCount: The number of files that the files verbs of the
+    ///     prompt changed.
+    /// - Returns: The message.
+    static func cutMessage(for cut: PromptStop, changedFileCount: Int) -> Logger.Message {
+        let cause: String
+        switch cut {
+        case .truncated:
+            cause = "The last submission of the prompt stopped at the output token ceiling."
+        case .endedInReasoning:
+            cause = "The last submission of the prompt ended inside its reasoning."
+        case .repeated:
+            cause = "Router stopped the last submission of the prompt, because it repeated itself and no recovery was left."
+        case .reasoningLimit:
+            cause = "Router stopped the last pass of the prompt at the reasoning token limit, because it reasoned and did not act and no recovery was left."
+        case .completed, .refusal, .cancelled, .budgetExhausted, .toolLoopCapped, .noOutput, .stalled, .failed:
+            cause = "The last submission of the prompt did not end by itself."
+        }
+        let files: String
+        switch changedFileCount {
+        case 0: files = "The files verbs of the prompt changed no file."
+        case 1: files = "The files verbs of the prompt changed 1 file."
+        default: files = "The files verbs of the prompt changed \(changedFileCount) files."
+        }
+        return "\(cause) \(files)"
     }
 
     /// Records the error a prompt failed on. The wire carries the
