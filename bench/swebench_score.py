@@ -21,19 +21,25 @@ that file. Use --instance-ids to score fewer.
 
 Two conditions need care, and this script controls both:
 
-  * Not enough memory. On Apple Silicon the harness builds x86_64 images with
-    emulation. Parallel builds use much memory, and docker stops them (exit
-    137). One stopped build makes an error for every instance that uses the
-    same environment. So this script uses ONE worker for a local build, and it
-    does an instance that errors again, alone, with a clean build. A memory
-    failure is thus not a permanent loss.
+  * Not enough memory. Nothing builds an image here: this script pulls the
+    published x86_64 image of each instance for linux/amd64, before the
+    harness of swebench 5.0.2 starts. On Apple Silicon
+    docker runs these images with emulation. Parallel emulated containers
+    use much memory, and docker can stop them (exit 137). So this script
+    uses ONE worker, and it does an instance that did not run again, alone.
+    A docker failure is thus not a permanent loss.
 
   * An honest number. The score is resolved / EVALUATED. An instance that did
-    not run, because of a build error, is reported alone. It is NEVER part of
-    the divisor. A memory failure is not an agent failure.
+    not run, because of a docker failure, is reported alone. It is NEVER part
+    of the divisor. A docker failure is not an agent failure.
+
+Only a docker failure goes on to the tally and the second try. Any other
+error of the harness, for example a TypeError when the call does not agree
+with the pinned harness, is a defect of this script. The script then stops
+at once with exit code 5, and the message names the error.
 
 BEFORE YOU START: docker must run, and it needs enough memory. 16 GB or more
-is good on Apple Silicon, because the images are emulated x86_64 builds. This
+is good on Apple Silicon, because docker emulates the x86_64 images. This
 script asks the daemon first, and it stops with exit code 3 when the daemon
 does not answer. The file name is swebench_score.py, and not swebench.py, so
 that `import swebench` finds the installed library and not this file.
@@ -44,6 +50,8 @@ THE EXIT CODES:
      no instance to score, or the run id is not a name
   3  the docker daemon does not answer
   4  docker ran, and no instance was evaluated. There is no score.
+  5  the harness raised an error that is not a docker failure. This is a
+     defect of this script, and there is no score.
 
 HOW TO USE IT:
   uv run bench/swebench_score.py bench/preds.jsonl
@@ -56,10 +64,20 @@ import os
 import time
 from pathlib import Path
 
+import docker
+from rich.markup import escape
 from rich.table import Table
 from swebench.harness.run_evaluation import main as run_harness
+from swebench.harness.utils import load_swebench_dataset
 
 from swebench_common import console, log
+from swebench_harness import (
+    IMAGE_PLATFORM,
+    HarnessCallError,
+    call_harness,
+    harness_arguments,
+    is_memory_failure,
+)
 from swebench_docker import (
     HOST_VARIABLE,
     daemon_answers,
@@ -74,23 +92,26 @@ from swebench_report import (
 )
 
 # --- config -----------------------------------------------------------------
-DATASET = "princeton-nlp/SWE-bench_Lite"
+# The harness of swebench 5.0.2 reads the image, the log parser and the eval
+# script of each instance from the dataset. "SWE-bench/SWE-bench_Lite" has
+# these fields. "princeton-nlp/SWE-bench_Lite" has the same instances, but it
+# does not have these fields, and the harness then stops with KeyError 'image'.
+DATASET = "SWE-bench/SWE-bench_Lite"
 SPLIT = "test"
 HARNESS_TIMEOUT = 1800   # the test limit of one instance in the container, in seconds
-NAMESPACE = None         # None => build the images here. Apple Silicon NEEDS this.
-# The Python API wants None, and not "". main() does not correct "" like the
-# command line does, and "" makes an invalid "/sweb.eval..." image name.
-LOCAL_BUILD = "local-build"  # what the namespace field of a line says for None
-LOCAL_DEFAULT_WORKERS = 1  # parallel emulated builds are the first cause of failure
-REMOTE_DEFAULT_WORKERS = 4
+# This script pulls the published image of each instance. On Apple Silicon
+# docker emulates these x86_64 images, and parallel emulated containers are
+# the first cause of a memory failure.
+DEFAULT_WORKERS = 1
 # The exit codes of this script. A person reads them, and so does a pipeline
 # that drives a run. The docstring above holds the same table.
 BAD_INPUT_EXIT = 2        # the command line is not valid: the file, the ids
                           # or the run id
 NO_DOCKER_EXIT = 3        # the docker daemon does not answer
 NOTHING_EVALUATED_EXIT = 4  # docker ran, and no instance was evaluated
-# One worker, and a clean build, for the second try of an instance that did
-# not run. A parallel emulated build is the first cause of a build error.
+HARNESS_ERROR_EXIT = 5     # the harness raised an error that is not a docker failure
+# One worker for the second try of an instance that did not run. Parallel
+# emulated containers are the first cause of a docker failure.
 RETRY_WORKERS = 1
 # What stands between two ids in ONE field. No space stands there, because a
 # space ends a field and `grep ids=` must find the whole list.
@@ -125,8 +146,8 @@ def parse_args():
     )
     p.add_argument(
         "--max-workers", type=int, default=None, metavar="N",
-        help="how many docker workers run together (default: 1 for a local "
-             "build, 4 if not). Each parallel emulated build needs 2 GB to "
+        help="how many docker workers run together (default: 1). Each parallel emulated container "
+             "needs 2 GB to "
              "4 GB. Keep the number low unless docker has much memory.",
     )
     p.add_argument(
@@ -135,8 +156,8 @@ def parse_args():
     )
     p.add_argument(
         "--no-retry-errors", dest="retry_errors", action="store_false",
-        help="do NOT do an errored instance again alone (by default a build "
-             "error causes one more try, alone, with a clean build)",
+        help="do NOT do an errored instance again alone (by default an instance "
+             "that did not run gets one more try, alone, with one worker)",
     )
     return p.parse_args()
 
@@ -170,7 +191,7 @@ def joined_ids(instance_ids):
 def require_docker():
     """Stop the score step when the docker daemon does not answer.
 
-    The harness builds an image for each instance, so a daemon that does not
+    The harness starts a container for each instance, so a daemon that does not
     run makes every instance fail. The report then says `"resolved": 0`, and
     that reads like a failure of the agent.
 
@@ -234,34 +255,84 @@ def tally(run_id):
     return resolved, evaluated
 
 
-def run_once(instance_ids, workers, force_rebuild, run_id, pred_path):
+def pull_images(instance_ids):
+    """Pull the x86_64 image of each instance before the harness starts.
+
+    - instance_ids: the ids whose images to pull.
+
+    The harness pulls an image with no platform. On Apple Silicon docker then
+    asks for linux/arm64, and the published images have no arm64 manifest, so
+    each pull fails with a 404. This pulls each image for `IMAGE_PLATFORM`.
+    The harness then finds the image on the machine, and it pulls nothing.
+
+    An image that docker cannot pull is logged, and the run goes on. That
+    instance does not run, and the report gives it alone as not run.
+    """
+    client = docker.from_env()
+    for row in load_swebench_dataset(DATASET, SPLIT, list(instance_ids)):
+        image = row["image"]
+        try:
+            client.images.get(image)
+            continue
+        except docker.errors.ImageNotFound:
+            pass
+        log(
+            "[dim]pulling the image of an instance[/]",
+            instance=row["instance_id"],
+            image=image,
+            platform=IMAGE_PLATFORM,
+        )
+        try:
+            client.images.pull(image, platform=IMAGE_PLATFORM)
+        except docker.errors.DockerException as failure:
+            log(
+                "[yellow]docker did not pull the image, and that instance "
+                "will not run[/]",
+                instance=row["instance_id"],
+                error=failure,
+            )
+
+
+def run_once(instance_ids, workers, run_id, pred_path):
     """Do one harness pass.
 
-    A build that runs out of memory (exit 137) makes run_harness raise. But an
-    instance whose image DID build has its report.json on disk already. So
-    this catches the error, and tally() reads what completed.
+    - instance_ids: the ids to evaluate.
+    - workers: how many docker workers run together.
+    - run_id: the harness run id.
+    - pred_path: the path of predictions.jsonl.
+
+    A docker failure (a pull, a container, exit 137) makes run_harness
+    raise. But an instance that DID run has its report.json on disk already.
+    So this logs a docker failure, and tally() reads what completed.
+
+    Any other error is a defect of this script, for example a TypeError when
+    the call does not agree with the pinned harness. A second try cannot
+    correct it, so this stops at once with `HARNESS_ERROR_EXIT`.
     """
+    arguments = harness_arguments(
+        dataset_name=DATASET,
+        split=SPLIT,
+        instance_ids=instance_ids,
+        predictions_path=pred_path.resolve(),
+        max_workers=workers,
+        run_id=run_id,
+        timeout=HARNESS_TIMEOUT,
+    )
     try:
-        run_harness(
-            dataset_name=DATASET,
-            split=SPLIT,
-            instance_ids=list(instance_ids),
-            predictions_path=str(pred_path.resolve()),
-            max_workers=workers,
-            force_rebuild=force_rebuild,
-            cache_level="env",
-            clean=False,
-            open_file_limit=4096,
-            run_id=run_id,
-            timeout=HARNESS_TIMEOUT,
-            namespace=NAMESPACE,
-            rewrite_reports=False,
-            modal=False,
-        )
-    except Exception as exc:
+        failure = call_harness(run_harness, arguments)
+    except HarnessCallError as defect:
+        console.print(f"[red]{escape(str(defect))}[/]")
+        raise SystemExit(HARNESS_ERROR_EXIT) from defect
+    if failure is None:
+        return
+    log(
+        "[yellow]docker failed in the harness, and the tally goes on[/]",
+        error=failure,
+    )
+    if is_memory_failure(failure):
         log(
-            "[yellow]the harness raised an error, and the tally goes on[/]",
-            error=exc,
+            "[yellow]docker stopped a container for memory; give docker "
+            "more memory, or use fewer workers[/]"
         )
 
 
@@ -293,7 +364,7 @@ def main():
     run_id = chosen_run_id(args.run_id)
     workers = (
         args.max_workers if args.max_workers is not None
-        else (LOCAL_DEFAULT_WORKERS if NAMESPACE is None else REMOTE_DEFAULT_WORKERS)
+        else DEFAULT_WORKERS
     )
 
     console.rule(f"SWE-bench score . {pred_path.name}")
@@ -303,27 +374,27 @@ def main():
         not_empty=len(nonempty),
         run_id=run_id,
         workers=workers,
-        namespace=NAMESPACE or LOCAL_BUILD,
     )
     require_docker()
-    log("The first pass builds one image for each instance, and it is slow.")
+    log("The first step pulls one image for each instance, and it is slow.")
+    pull_images(nonempty)
 
     t0 = time.monotonic()
-    run_once(ids, workers, False, run_id, pred_path)
+    run_once(ids, workers, run_id, pred_path)
     resolved, evaluated = tally(run_id)
     errored = [i for i in ids if i not in evaluated]
 
-    # A build error is a machine condition, and not an agent failure. Do each
-    # instance that did not run one more time, alone, with a clean build. Then
+    # A docker failure is a machine condition, and not an agent failure. Do
+    # each instance that did not run one more time, alone, with one worker. Then
     # the number shows the patches, and not the memory of docker.
     if errored and args.retry_errors:
         log(
-            "[yellow]these instances did not run, and a build error is the "
-            "usual cause; doing them again, alone, with a clean build[/]",
+            "[yellow]these instances did not run, and a docker failure is the "
+            "usual cause; doing them again, alone, with one worker[/]",
             instances=len(errored),
             ids=joined_ids(errored),
         )
-        run_once(errored, RETRY_WORKERS, True, run_id, pred_path)
+        run_once(errored, RETRY_WORKERS, run_id, pred_path)
         resolved, evaluated = tally(run_id)
         errored = [i for i in ids if i not in evaluated]
 
@@ -339,8 +410,8 @@ def main():
     )
     if errored:
         log(
-            "[red]these instances did NOT run, and the cause is a build "
-            "error[/]",
+            "[red]these instances did NOT run; the lines of the harness give "
+            "the docker failure[/]",
             instances=len(errored),
             ids=joined_ids(errored),
         )
@@ -351,9 +422,9 @@ def main():
     if out is None:
         console.print(
             f"[red]no instance was evaluated[/] ({report['submitted']} sent). "
-            "Docker built no image, so there is no score and this run writes "
-            "no report. Read the lines of the harness above: exit code 137 is "
-            "a memory failure, and docker then needs more memory."
+            "Docker evaluated no instance, so there is no score and this run "
+            "writes no report. Read the docker failure in the lines of the "
+            "harness above."
         )
         raise SystemExit(NOTHING_EVALUATED_EXIT)
 

@@ -1,6 +1,6 @@
 ---
 name: swebench
-description: Run a SWE-bench benchmark of this ACP agent, and evaluate it while it runs and after it ends. Takes one argument - a SWE-bench instance id (for example django__django-13447), a number N (run N instances), or nothing (evaluate the run that is in progress now). Use when the user says "swebench", "swe-bench", "run the bench", "bench run", "check the bench run", "watch the bench", "evaluate the bench", "score the bench", or "is the bench healthy". Starts a detached run, finds a live run, watches its log, does a deep scan every 10 minutes, and gives a ranked list of problems with evidence.
+description: Run a SWE-bench benchmark of this ACP agent, and evaluate it while it runs and after it ends. Takes one argument - a SWE-bench instance id (for example django__django-13447), a number N (run N instances), or nothing (evaluate the run that is in progress now). Use when the user says "swebench", "swe-bench", "run the bench", "bench run", "check the bench run", "watch the bench", "evaluate the bench", or "is the bench healthy". Starts a detached run, finds a live run, watches its log, does a deep scan every 10 minutes, and gives a ranked list of problems with evidence.
 license: MIT OR Apache-2.0
 compatibility: macOS. Needs swift, uv, git and python3; scoring needs docker. Reads bench/ of this package and the temporary clone of the agent.
 metadata:
@@ -205,14 +205,14 @@ The scan reports these items:
   file that got the warning, `code_context` can give stale results for it.
 
 **After the run ends** (`complete` in the log, no `swebench_run.py` process):
+to score the run, use the swebench-score skill
+([`.claude/skills/swebench-score/SKILL.md`](../swebench-score/SKILL.md)). It
+checks docker, starts the score run detached, watches it, and gives the
+report for each instance. Then do the last deep scan:
 
 ```bash
-uv run bench/swebench_score.py bench/preds.NAME.jsonl   # needs docker; exit 3: docker does not answer
 python3 .claude/skills/swebench/scripts/scan.py --name NAME --timeout 5400
 ```
-
-The score is resolved / evaluated. Run the score in the background too
-(`nohup ... &`), because it can take more than one hour.
 
 ## E. Report
 

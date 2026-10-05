@@ -14,6 +14,8 @@ The work has two steps, because the two steps fail in different ways:
 
 To watch a run and find its problems, use the `swebench` skill:
 [`.claude/skills/swebench/SKILL.md`](../.claude/skills/swebench/SKILL.md).
+To score a run and compare runs, use the `swebench-score` skill:
+[`.claude/skills/swebench-score/SKILL.md`](../.claude/skills/swebench-score/SKILL.md).
 
 ## Run it
 
