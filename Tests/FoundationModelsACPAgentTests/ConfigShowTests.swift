@@ -135,6 +135,9 @@ struct ConfigShowTests {
         #expect(
             report.standardOutput.contains(
                 "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
+        #expect(
+            report.standardOutput.contains(
+                "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
     }
 
     /// A `repetition.reasoningTokenLimit: null` shows as `null`, the value

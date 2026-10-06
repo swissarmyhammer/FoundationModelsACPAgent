@@ -669,6 +669,40 @@ import Testing
         #expect(loaded.configuration.repetition.detection.reasoningTokenLimit == nil)
     }
 
+    /// `repetition.identicalToolCallLimit` decodes into Router's
+    /// `RepetitionDetection` (Router task ^8eq31j0).
+    @Test func theIdenticalToolCallLimitDecodesIntoTheDetection() throws {
+        let loaded = try Fixture().loadProjectConfig(
+            """
+            repetition:
+              identicalToolCallLimit: \(Self.configuredIdenticalToolCallLimit)
+            """)
+
+        #expect(
+            loaded.configuration.repetition.detection.identicalToolCallLimit
+                == Self.configuredIdenticalToolCallLimit)
+    }
+
+    /// An absent `identicalToolCallLimit` keeps Router's default limit, and a
+    /// `null` gives no limit.
+    @Test func anAbsentIdenticalToolCallLimitKeepsTheDefaultAndNullGivesNoLimit() throws {
+        let absent = try Fixture().loadProjectConfig(
+            """
+            repetition:
+              windowTokens: \(Self.configuredWindowTokens)
+            """)
+        let null = try Fixture().loadProjectConfig(
+            """
+            repetition:
+              identicalToolCallLimit: null
+            """)
+
+        #expect(
+            absent.configuration.repetition.detection.identicalToolCallLimit
+                == RepetitionDetection.defaultIdenticalToolCallLimit)
+        #expect(null.configuration.repetition.detection.identicalToolCallLimit == nil)
+    }
+
     /// With no `repetition` section, the detection is Router's default one.
     @Test func anAbsentRepetitionSectionGivesRouterDefaultDetection() throws {
         let loaded = try Fixture().makeLoader().load()
@@ -735,6 +769,10 @@ import Testing
     /// The `repetition.reasoningTokenLimit` the line-shape test writes. It
     /// differs from Router's default, thus the decode is observable.
     private static let configuredReasoningTokenLimit = 4096
+
+    /// The `repetition.identicalToolCallLimit` the tool-call test writes. It
+    /// differs from Router's default, thus the decode is observable.
+    private static let configuredIdenticalToolCallLimit = 5
 
     /// The `profile.standard` model the override test writes. It differs from
     /// the default, thus the override is observable.

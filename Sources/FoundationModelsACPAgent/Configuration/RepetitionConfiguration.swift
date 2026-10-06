@@ -53,18 +53,28 @@ public struct RepetitionConfiguration: Codable, Equatable, Sendable, KeyCheckedS
     /// no recovery left, ends with the `_reasoning_limit` stop reason.
     public var reasoningTokenLimit: Int? = RepetitionDetection.defaultReasoningTokenLimit
 
+    /// The most identical tool calls in a row, or `nil` for no limit (Router
+    /// task ^8eq31j0). Two calls are identical when they have the same tool
+    /// name and the same arguments, and a different call between them starts
+    /// the count again. The call that reaches the limit stops before it runs,
+    /// and it counts as a repetition stop. A `null` in `config.yaml` gives
+    /// `nil`, and Router also reads `0` as no limit. An absent key keeps
+    /// Router's default limit.
+    public var identicalToolCallLimit: Int? = RepetitionDetection.defaultIdenticalToolCallLimit
+
     /// The YAML spelling of each key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case isEnabled, windowTokens, minimumLineLength, recoveriesPerAnswer, passTokenLimit
         case comparesLineShapes, shortLineRepeatThreshold, reasoningTokenLimit
+        case identicalToolCallLimit
     }
 
     /// Router's default detector.
     public init() {}
 
     /// Decodes each present key and keeps Router's default for each absent
-    /// one. A `reasoningTokenLimit` that is present and `null` is `nil`: no
-    /// limit.
+    /// one. A `reasoningTokenLimit` or an `identicalToolCallLimit` that is
+    /// present and `null` is `nil`: no limit.
     ///
     /// - Parameter decoder: The decoder of the section.
     /// - Throws: `DecodingError` when a value has the wrong type.
@@ -85,6 +95,10 @@ public struct RepetitionConfiguration: Codable, Equatable, Sendable, KeyCheckedS
         if container.contains(.reasoningTokenLimit) {
             reasoningTokenLimit = try container.decodeIfPresent(Int.self, forKey: .reasoningTokenLimit)
         }
+        if container.contains(.identicalToolCallLimit) {
+            identicalToolCallLimit =
+                try container.decodeIfPresent(Int.self, forKey: .identicalToolCallLimit)
+        }
     }
 
     /// The detection a session gets from this section.
@@ -97,6 +111,7 @@ public struct RepetitionConfiguration: Codable, Equatable, Sendable, KeyCheckedS
             passTokenLimit: passTokenLimit,
             comparesLineShapes: comparesLineShapes,
             shortLineRepeatThreshold: shortLineRepeatThreshold,
-            reasoningTokenLimit: reasoningTokenLimit)
+            reasoningTokenLimit: reasoningTokenLimit,
+            identicalToolCallLimit: identicalToolCallLimit)
     }
 }
