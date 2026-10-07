@@ -249,7 +249,11 @@ agent config. It gives:
   shows them apart.
 - **UNRESOLVED**: the `FAIL_TO_PASS` and `PASS_TO_PASS` counts of each
   unresolved instance.
-- **WEB**: the web state of the config, and a warning when web was on. A web
+- **WEB**: the web state and the path of the config of the run, and a warning
+  when web was on. The script finds the config in this order: the
+  `agent_config` field of the record, the `agent_config=PATH` or
+  `--agent-config PATH` text in the head of `bench/run.NAME.log`, and
+  `bench/NAME.config.yaml`. When it finds none, the state is `unknown`. A web
   search can find the upstream fix of the issue. The script finds it with the
   same pattern and the same transcript pairing as `scan.py` of the swebench
   skill (it loads that script as a module). For a full check, also run
@@ -261,9 +265,13 @@ measure the same thing.
 
 ## 5. Compare
 
-When a score report of an other NAME exists, the script compares with the
-newest one that is older than this score. `--compare NAME` (or a score json,
-which can also be an other run id of the same predictions) picks one. For each
+With no `--compare`, the script compares with the newest other run whose
+predictions file has the same instance ids, and a score older than this score
+comes first. A run with other instances does not measure the same thing, so the
+script never takes it; when no run has the same ids, it says so and compares
+with nothing. The COMPARE section says which run the script took, and why.
+`--compare NAME` (or a score json, which can also be an other run id of the same
+predictions) names the run, also a run with other instances. For each
 instance it gives the result before, the result now, and the delta:
 `fixed` (now resolved, before not), `broken` (before resolved, now not),
 `same`, or `only one run`. Use it to measure a change of the agent, for

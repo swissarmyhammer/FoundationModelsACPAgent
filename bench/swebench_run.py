@@ -530,6 +530,10 @@ log(
     predictions=outpath,
 )
 log("the record of each instance", record=runs_path(outpath))
+# The report of a score reads this line when the record has no config. The
+# line comes before the first instance, so no agent output stands above it.
+if args.agent_config is not None:
+    log("the agent config", agent_config=args.agent_config)
 
 counts = {
     "patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0,
@@ -778,6 +782,7 @@ with outpath.open("w" if args.force else "a") as out, \
                     env_exit_code=None if built is None else built.exit_code,
                     env_reason=None if built is None else built.reason,
                     prompt=prompt_name(args.preamble),
+                    agent_config=args.agent_config,
                 ),
             )
 

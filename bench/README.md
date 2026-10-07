@@ -83,7 +83,7 @@ All outputs go into `bench/`, where `.gitignore` keeps them out of git.
 | File | What it holds |
 |---|---|
 | `preds.NAME.jsonl` | one prediction row for each instance that got an environment |
-| `preds.NAME.runs.jsonl` | one record row for each instance: times, `stop_reason`, `timed_out`, patch size, environment step (see `swebench_record.py`) |
+| `preds.NAME.runs.jsonl` | one record row for each instance: times, `stop_reason`, `timed_out`, patch size, environment step, `agent_config` (see `swebench_record.py`) |
 | `preds.NAME.transcripts/<instance_id>/` | the agent transcripts, copied when the instance ends |
 | `run.NAME.log` | the log; `grep instance=<id>` gives the history of one instance |
 | `preds.NAME.jsonl.score.<run id>.json` | the score report |

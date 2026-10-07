@@ -64,7 +64,10 @@ A_STOP_REASON = "end_turn"
 # The name of the prompt shape a run used. `swebench_prompt.py` gives it,
 # and the row keeps it so that two runs can be compared.
 A_PROMPT_NAME = "source-only-v1"
-# The sixteen names that the record of an instance carries. A reader of the
+# The `--agent-config` file of a run. The row keeps it, so that a reader can
+# tell if web was on for a run whose name is not the name of its config.
+AN_AGENT_CONFIG = "bench/code-context.config.yaml"
+# The seventeen names that the record of an instance carries. A reader of the
 # file expects all of them in every row.
 RECORD_KEYS = {
     "instance_id",
@@ -83,6 +86,7 @@ RECORD_KEYS = {
     "env_exit_code",
     "env_reason",
     "prompt",
+    "agent_config",
 }
 
 
@@ -106,6 +110,7 @@ def a_record(**changes):
         "env_exit_code": None,
         "env_reason": None,
         "prompt": A_PROMPT_NAME,
+        "agent_config": AN_AGENT_CONFIG,
     }
     fields.update(changes)
     return run_record(INSTANCE_ID, **fields)
@@ -205,7 +210,25 @@ class TheRecordOfAnInstance(unittest.TestCase):
         record = a_record(transcript_path=Path(A_TRANSCRIPT_PATH))
         self.assertEqual(record["transcript_path"], A_TRANSCRIPT_PATH)
 
-    def test_it_holds_the_sixteen_names_when_the_clone_failed(self):
+    def test_it_names_the_agent_config_of_the_run(self):
+        """A run named `final-pass-check` used `bench/code-context.config.yaml`.
+
+        The report of a score finds the config from the run name, and that
+        name was not the name of the config. So the report said "web config
+        unknown". The row keeps the path, and the report reads it.
+        """
+        self.assertEqual(a_record()["agent_config"], AN_AGENT_CONFIG)
+
+    def test_it_keeps_the_agent_config_as_text(self):
+        """`--agent-config` gives a `Path`, and JSON holds text alone."""
+        record = a_record(agent_config=Path(AN_AGENT_CONFIG))
+        self.assertEqual(record["agent_config"], AN_AGENT_CONFIG)
+
+    def test_a_run_with_no_agent_config_gives_null(self):
+        """A run with no `--agent-config` uses the default config of the agent."""
+        self.assertIsNone(a_record(agent_config=None)["agent_config"])
+
+    def test_it_holds_the_seventeen_names_when_the_clone_failed(self):
         """A step that did not run gives no number, but the row keeps shape.
 
         An instance that failed in the clone has no environment, no agent and
@@ -228,6 +251,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
             env_exit_code=None,
             env_reason=None,
             prompt=A_PROMPT_NAME,
+            agent_config=None,
         )
         self.assertEqual(set(record), RECORD_KEYS)
         self.assertIsNone(record["clone_seconds"])
@@ -236,7 +260,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
         self.assertIsNone(record["transcript_path"])
         self.assertIsNone(record["env_status"])
 
-    def test_it_holds_the_sixteen_names_when_the_instance_finished(self):
+    def test_it_holds_the_seventeen_names_when_the_instance_finished(self):
         """The rows of one file must all have the same shape."""
         self.assertEqual(set(a_record()), RECORD_KEYS)
 
@@ -384,6 +408,7 @@ class TheRowsOnDisk(unittest.TestCase):
             env_exit_code=None,
             env_reason=None,
             prompt=A_PROMPT_NAME,
+            agent_config=AN_AGENT_CONFIG,
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "preds.runs.jsonl"

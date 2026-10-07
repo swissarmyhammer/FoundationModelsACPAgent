@@ -50,3 +50,12 @@ jobs:
         run: >
           python3 -m unittest discover
           --start-directory bench --pattern 'test_*.py' --verbose
+
+      # `report.py` of the swebench-score skill reads the files that the
+      # harness writes, and it decides which run a score is compared with.
+      # Its tests need the standard library only, as the harness tests do.
+      - name: Test the scripts of the swebench-score skill
+        run: >
+          python3 -m unittest discover
+          --start-directory .claude/skills/swebench-score/scripts
+          --pattern 'test_*.py' --verbose

@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""test_report.py -- the proof that report.py compares the correct runs, and
+finds the config of a run.
+
+On 2026-10-06 report.py compared the 16-instance run `code-context-1006` with
+the 2-instance check `recovery-check`, because it took the newest other score.
+It also said "web config unknown" for a run whose name is not the name of its
+config file. These tests hold the correct behaviour.
+
+Each test writes fake run files into a temporary bench directory. The tests
+need the standard library only:
+
+    python3 -m unittest discover --start-directory .claude/skills/swebench-score/scripts
+"""
+import contextlib
+import importlib.util
+import io
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+SPEC = importlib.util.spec_from_file_location("swebench_report_script", HERE / "report.py")
+report = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(report)
+
+# The instances of the baseline run, and of a short check run.
+SIXTEEN = [f"django__django-{n}" for n in range(13000, 13016)]
+TWO = SIXTEEN[:2]
+# The modification times of the fake score files, in seconds. A larger time
+# is a newer score.
+OLD, MIDDLE, NEW, NEWEST = 1_000_000, 2_000_000, 3_000_000, 4_000_000
+# The config that the runs of these tests use, with web on, and with web off.
+CONFIG_PATH = "bench/code-context.config.yaml"
+WEB_ON_CONFIG = "tools:\n  web:\n    enabled: true\n"
+WEB_OFF_CONFIG = "tools:\n  web:\n    enabled: false\n"
+
+
+def write_rows(path, rows):
+    """Write rows to a JSON Lines file.
+
+    - path: the file to write.
+    - rows: the dicts to write, one for each line.
+    """
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def make_run(bench, name, ids, score_time, record=None):
+    """Write the predictions, the record and one score report of a fake run.
+
+    - bench: the bench directory.
+    - name: the run NAME.
+    - ids: the instance ids of the run. All of them are resolved.
+    - score_time: the modification time of the score report.
+    - record: the fields to add to each record row, or None.
+
+    Give the path of the predictions file.
+    """
+    preds = bench / f"preds.{name}.jsonl"
+    write_rows(preds, [{"instance_id": i, "model_patch": "diff --git a/x b/x\n"} for i in ids])
+    write_rows(bench / f"preds.{name}.runs.jsonl", [{"instance_id": i, **(record or {})} for i in ids])
+    score = bench / f"preds.{name}.jsonl.score.score_{name}.json"
+    score.write_text(json.dumps({"run_id": f"score_{name}", "resolved_ids": ids,
+                                 "unresolved_ids": [], "errored_ids": []}))
+    os.utime(score, (score_time, score_time))
+    return preds
+
+
+def score_of(preds):
+    """Give the path of the one score report of a fake run."""
+    return Path(report.score_files(preds)[-1])
+
+
+class BenchTestCase(unittest.TestCase):
+    """A test with a temporary root directory that holds `bench/`."""
+
+    def setUp(self):
+        """Make the root and the bench directory of the test."""
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.bench = self.root / "bench"
+        self.bench.mkdir()
+
+    def tearDown(self):
+        """Remove the root of the test."""
+        self.tmp.cleanup()
+
+
+class TheRunToCompareWith(BenchTestCase):
+    """Which other run the report compares with."""
+
+    def test_it_takes_the_run_with_the_same_instances_and_not_a_newer_run_with_other_instances(self):
+        """The bug of 2026-10-06: a newer 2-instance check is not a baseline.
+
+        Two runs are comparable only when they have the same instances. The
+        newest score of all is the check run, and the report must skip it.
+        """
+        same = make_run(self.bench, "baseline", SIXTEEN, OLD)
+        make_run(self.bench, "check", TWO, NEWEST)
+        this = make_run(self.bench, "now", SIXTEEN, NEW)
+        target, _ = report.compare_target(None, this, str(self.bench), score_of(this))
+        self.assertEqual(target, score_of(same))
+
+    def test_it_takes_the_newest_of_the_runs_with_the_same_instances(self):
+        """When two runs have the same instances, the newer one is the baseline."""
+        make_run(self.bench, "older", SIXTEEN, OLD)
+        newer = make_run(self.bench, "newer", SIXTEEN, MIDDLE)
+        this = make_run(self.bench, "now", SIXTEEN, NEW)
+        target, _ = report.compare_target(None, this, str(self.bench), score_of(this))
+        self.assertEqual(target, score_of(newer))
+
+    def test_it_says_which_run_it_took_and_why(self):
+        """A person must see the baseline, and not guess it."""
+        make_run(self.bench, "baseline", SIXTEEN, OLD)
+        this = make_run(self.bench, "now", SIXTEEN, NEW)
+        _, why = report.compare_target(None, this, str(self.bench), score_of(this))
+        self.assertIn("same 16 instance ids", why)
+
+    def test_it_takes_no_run_when_no_other_run_has_the_same_instances(self):
+        """A comparison with other instances measures nothing, so give none."""
+        make_run(self.bench, "check", TWO, OLD)
+        this = make_run(self.bench, "now", SIXTEEN, NEW)
+        target, why = report.compare_target(None, this, str(self.bench), score_of(this))
+        self.assertIsNone(target)
+        self.assertIn("--compare", why)
+
+    def test_it_reads_the_instances_from_the_predictions_and_not_from_a_resumed_score(self):
+        """A resumed score holds only the instances that it sent to docker.
+
+        On 2026-10-06 the score of `code-context-1006` held 15 ids, because
+        one instance had an empty patch. Its predictions held the same 16 ids
+        as the baseline, so the two runs are comparable.
+        """
+        same = make_run(self.bench, "baseline", SIXTEEN, OLD)
+        this = make_run(self.bench, "now", SIXTEEN, NEW)
+        score_of(this).write_text(json.dumps({"resolved_ids": SIXTEEN[1:], "unresolved_ids": [],
+                                              "errored_ids": []}))
+        os.utime(score_of(this), (NEW, NEW))
+        target, _ = report.compare_target(None, this, str(self.bench), score_of(this))
+        self.assertEqual(target, score_of(same))
+
+    def test_compare_name_takes_the_named_run_also_with_other_instances(self):
+        """`--compare NAME` is the decision of a person, and the report obeys it."""
+        check = make_run(self.bench, "check", TWO, OLD)
+        make_run(self.bench, "baseline", SIXTEEN, MIDDLE)
+        this = make_run(self.bench, "now", SIXTEEN, NEW)
+        target, why = report.compare_target("check", this, str(self.bench), score_of(this))
+        self.assertEqual(target, score_of(check))
+        self.assertIn("--compare", why)
+
+
+class TheConfigOfARun(BenchTestCase):
+    """Which agent config a run used, and whether web was on."""
+
+    def write_config(self, text):
+        """Write the shared config of the runs of a test.
+
+        - text: the YAML text of the config.
+        """
+        (self.root / CONFIG_PATH).write_text(text)
+
+    def test_a_check_run_that_used_the_code_context_config_has_web_on(self):
+        """The bug of 2026-10-06: `final-pass-check` gave "web config unknown".
+
+        The run used `bench/code-context.config.yaml`, and its record names
+        that file. The report must read the record, and not the run name.
+        """
+        self.write_config(WEB_ON_CONFIG)
+        preds = make_run(self.bench, "x-check", TWO, OLD, record={"agent_config": CONFIG_PATH})
+        config = report.config_of(preds, str(self.bench))
+        self.assertEqual(config, self.root / CONFIG_PATH)
+        self.assertEqual(report.web_state(config), "on")
+
+    def test_the_record_gives_web_off_for_a_config_with_web_off(self):
+        """The state comes from the file that the record names, not a constant."""
+        self.write_config(WEB_OFF_CONFIG)
+        preds = make_run(self.bench, "x-check", TWO, OLD, record={"agent_config": CONFIG_PATH})
+        self.assertEqual(report.web_state(report.config_of(preds, str(self.bench))), "off")
+
+    def test_the_run_log_gives_the_config_when_the_record_does_not(self):
+        """A record from before the `agent_config` field has no config.
+
+        The run log of `swebench_run.py` names the config in a line before
+        the first instance starts.
+        """
+        self.write_config(WEB_ON_CONFIG)
+        preds = make_run(self.bench, "x-check", TWO, OLD)
+        (self.bench / "run.x-check.log").write_text(
+            f"16:21:47 the agent config agent_config={CONFIG_PATH}\n"
+            "16:22:37 running the agent... instance=a\n")
+        self.assertEqual(report.config_of(preds, str(self.bench)), self.root / CONFIG_PATH)
+
+    def test_the_run_log_gives_the_agent_config_argument(self):
+        """A log that holds the command line gives `--agent-config PATH`."""
+        self.write_config(WEB_ON_CONFIG)
+        preds = make_run(self.bench, "x-check", TWO, OLD)
+        (self.bench / "run.x-check.log").write_text(
+            f"uv run bench/swebench_run.py bench/preds.x-check.jsonl --agent-config {CONFIG_PATH}\n")
+        self.assertEqual(report.config_of(preds, str(self.bench)), self.root / CONFIG_PATH)
+
+    def test_agent_output_in_the_run_log_does_not_name_the_config(self):
+        """The agent can read a file that holds `--agent-config` text.
+
+        Only the lines before the first instance starts come from the run
+        script, so the report reads only those lines.
+        """
+        self.write_config(WEB_ON_CONFIG)
+        preds = make_run(self.bench, "x-check", TWO, OLD)
+        (self.bench / "run.x-check.log").write_text(
+            "16:22:37 running the agent... instance=a\n"
+            f"    the agent read: --agent-config {CONFIG_PATH}\n")
+        self.assertIsNone(report.config_of(preds, str(self.bench)))
+
+    def test_the_config_named_after_the_run_is_the_last_choice(self):
+        """A run named `code-context` used `bench/code-context.config.yaml`."""
+        self.write_config(WEB_ON_CONFIG)
+        preds = make_run(self.bench, "code-context", TWO, OLD)
+        self.assertEqual(report.config_of(preds, str(self.bench)), self.bench / "code-context.config.yaml")
+
+    def test_a_run_with_no_config_found_has_web_unknown(self):
+        """The report must not claim a web state that no file gives."""
+        preds = make_run(self.bench, "x-check", TWO, OLD)
+        config = report.config_of(preds, str(self.bench))
+        self.assertIsNone(config)
+        self.assertEqual(report.web_state(config), "unknown")
+
+    def test_the_web_line_of_the_report_gives_the_config_of_the_run(self):
+        """The WEB line is what a person reads, so it names the state and the file."""
+        self.write_config(WEB_ON_CONFIG)
+        preds = make_run(self.bench, "x-check", TWO, OLD, record={"agent_config": CONFIG_PATH})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report.main([str(preds), "--bench", str(self.bench), "--root", str(self.root), "--no-compare"])
+        web_line = next(line for line in out.getvalue().splitlines() if line.startswith("== WEB"))
+        self.assertIn("config on", web_line)
+        self.assertIn(str(self.root / CONFIG_PATH), web_line)
+
+
+if __name__ == "__main__":
+    unittest.main()

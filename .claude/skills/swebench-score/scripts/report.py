@@ -7,7 +7,10 @@ The script reads these files. Only the score report is necessary:
 - the record: bench/preds.NAME.runs.jsonl
 - the kept transcripts: bench/preds.NAME.transcripts/<instance id>/
 - the logs of the harness: logs/run_evaluation/<run id>/<model>/<instance id>/
-- the agent config: bench/NAME.config.yaml
+- the agent config of the run. The first source that names it wins:
+  the `agent_config` field of the record, then the head of the run log
+  bench/run.NAME.log (`agent_config=PATH` or `--agent-config PATH`), then
+  bench/NAME.config.yaml
 - a saved output of scan.py of the swebench skill (--scan FILE)
 
 The output has these parts:
@@ -20,6 +23,9 @@ The output has these parts:
 5. WEB: a warning when web was on, and the instances where a web result
    looks like the upstream fix.
 6. COMPARE: the change of each instance against the score of an other run.
+   With no --compare, the other run is the newest other run with the same
+   instance ids in its predictions file. A run with other instances does
+   not measure the same thing.
 
 Usage:
   python3 report.py code-context
@@ -46,6 +52,15 @@ SCAN_PATH = HERE.parents[1] / "swebench" / "scripts" / "scan.py"
 # The harness writes its logs below the directory where it started.
 LOGS_DIR = Path("logs") / "run_evaluation"
 PREDS_NAME = re.compile(r"preds\.(.+)\.jsonl")
+# The field of a record row that holds the --agent-config path of the run.
+# swebench_record.py writes it. A record from before 2026-10-07 has no field.
+CONFIG_FIELD = "agent_config"
+# The text in the run log that names the agent config: the log line of
+# swebench_run.py, or the command line when a person put it in the log.
+LOG_CONFIG = re.compile(r"(?:--agent-config[ =]|agent_config=)(\S+)")
+# The log line that starts the agent on an instance. The lines after it can
+# hold agent output, so the search for the config stops at this line.
+LOG_AGENT_START = "running the agent"
 # The line of scan.py that lists the upstream-fix results (5 items or fewer).
 SCAN_UPSTREAM = re.compile(r"^== results that look like the upstream fix \(web\): \d+ (\[.*\])\s*$")
 # The text of the harness log for each cause of a failure, first match wins.
@@ -233,9 +248,76 @@ def scan_upstream(path):
     return out
 
 
+def beside(preds, suffix):
+    """Give the file of a run that stands beside its predictions file.
+
+    - preds: bench/preds.NAME.jsonl.
+    - suffix: the suffix that replaces `.jsonl`, for example `.runs.jsonl`.
+    """
+    return Path(str(preds)[: -len(".jsonl")] + suffix)
+
+
+def run_ids(preds):
+    """Give the set of instance ids of a run.
+
+    The predictions file holds each instance of the run. A resumed score
+    holds only the instances that it sent to docker, so the score ids are
+    the fallback for a run with no predictions file.
+    """
+    ids = set(last_by_id(read_jsonl(preds)))
+    files = score_files(preds)
+    if ids or not files:
+        return ids
+    _, resolved, unresolved, errored = read_score(files[-1])
+    return resolved | unresolved | set(errored)
+
+
+def config_in_log(log):
+    """Give the agent config path that the head of a run log names, or None.
+
+    - log: bench/run.NAME.log.
+
+    Only the lines before the agent starts on the first instance come from
+    the run script. The lines after that can hold agent output, and agent
+    output can hold any text.
+    """
+    try:
+        with open(log, errors="replace") as f:
+            for line in f:
+                if LOG_AGENT_START in line:
+                    return None
+                m = LOG_CONFIG.search(line)
+                if m:
+                    return m.group(1)
+    except OSError:
+        pass
+    return None
+
+
+def config_of(preds, bench):
+    """Give the path of the agent config that a run used, or None.
+
+    - preds: bench/preds.NAME.jsonl.
+    - bench: the bench dir.
+
+    The first source that names a config wins: the `agent_config` field of
+    the record, then the head of the run log, then bench/NAME.config.yaml.
+    A record or a log gives the path as the run got it, relative to the dir
+    where the run started. That dir is the parent of the bench dir.
+    """
+    named = next((r[CONFIG_FIELD] for r in read_jsonl(beside(preds, ".runs.jsonl"))
+                  if isinstance(r, dict) and r.get(CONFIG_FIELD)), None)
+    named = named or config_in_log(Path(bench) / f"run.{name_of(preds)}.log")
+    if named:
+        path = Path(named)
+        return path if path.is_absolute() else Path(bench).parent / path
+    by_name = Path(bench) / f"{name_of(preds)}.config.yaml"
+    return by_name if by_name.exists() else None
+
+
 def web_state(config):
     """Give the web state of a config: "on", "off", or "unknown" when there is no file."""
-    if scan is None or not config.exists():
+    if scan is None or config is None or not config.exists():
         return "unknown"
     _, _, web = scan.config_summary(scan.read_config(str(config)))
     return "off" if web == "false" else "on"
@@ -285,25 +367,46 @@ def table(rows, head):
         print("  " + "  ".join(str(x).ljust(n) for x, n in zip(line, w)).rstrip())
 
 
-def compare_target(arg, preds, bench, this_score):
-    """Give the score report to compare with, or None.
+def preds_of_score(score):
+    """Give the predictions path of a score report: the path without `.score.<run id>.json`."""
+    return Path(re.sub(r"\.score\.[^/]*\.json$", "", str(score)))
 
-    - arg: a score json path, a NAME, a predictions path, or None for the
-      newest score of an other NAME that is older than this score.
+
+def compare_target(arg, preds, bench, this_score):
+    """Give (the score report to compare with or None, why the report took it).
+
+    - arg: a score json path, a NAME or a predictions path from --compare,
+      or None.
+    - preds: the predictions path of this run.
+    - bench: the bench dir.
+    - this_score: the score report of this run.
+
+    With no arg, the target is the newest score of the newest other run with
+    the same instance ids. A score that is older than this score comes first.
+    A run with other instances does not measure the same thing, so it is
+    never the target.
     """
+    named = "named with --compare"
     if arg:
         if arg.endswith(".json") and Path(arg).exists():
-            return Path(arg)
+            return Path(arg), named
         files = score_files(preds_of(arg, bench))
-        return Path(files[-1]) if files else None
+        return (Path(files[-1]) if files else None), named
+    ids = run_ids(preds)
+    same = [Path(score_files(p)[-1]) for p in all_preds(bench)
+            if name_of(p) != name_of(preds) and score_files(p) and run_ids(p) == ids]
+    if not same:
+        return None, f"no other run has the same {len(ids)} instance ids; name one with --compare NAME"
     t = os.path.getmtime(this_score)
-    other = [Path(f) for p in all_preds(bench) if name_of(p) != name_of(preds) for f in score_files(p)]
-    older = [f for f in other if os.path.getmtime(f) <= t]
-    pick = older or other
-    return max(pick, key=os.path.getmtime) if pick else None
+    older = [f for f in same if os.path.getmtime(f) <= t]
+    return max(older or same, key=os.path.getmtime), f"the newest other run with the same {len(ids)} instance ids"
 
 
-def main():
+def main(argv=None):
+    """Print the report of one score run. Give the exit code.
+
+    - argv: the command line arguments, or None for sys.argv.
+    """
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", nargs="?", help="a run NAME (bench/preds.NAME.jsonl) or a predictions path")
     ap.add_argument("--bench", default="bench", help="the bench dir (default: bench)")
@@ -311,14 +414,14 @@ def main():
     ap.add_argument("--score", help="the score report (default: the newest one of the predictions)")
     ap.add_argument("--scan", help="a saved output of scan.py; its upstream-fix items are added")
     ap.add_argument("--compare", help="a NAME, a predictions path or a score json to compare with "
-                                      "(default: the newest score of an other NAME)")
+                                      "(default: the newest other run with the same instance ids)")
     ap.add_argument("--no-compare", action="store_true", help="do not compare")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     if a.run:
         preds = preds_of(a.run, a.bench)
     elif a.score:
-        preds = Path(re.sub(r"\.score\.[^/]*\.json$", "", a.score))
+        preds = preds_of_score(a.score)
     else:
         preds = newest_scored(a.bench)
         if preds is None:
@@ -332,13 +435,14 @@ def main():
     name = name_of(preds)
     report, resolved, unresolved, errored = read_score(score_path)
     preds_rows = last_by_id(read_jsonl(preds))
-    runs = last_by_id(read_jsonl(Path(str(preds)[: -len(".jsonl")] + ".runs.jsonl")))
-    web = web_use(str(preds)[: -len(".jsonl")] + ".transcripts")
+    runs = last_by_id(read_jsonl(beside(preds, ".runs.jsonl")))
+    web = web_use(str(beside(preds, ".transcripts")))
     if a.scan:
         for inst, ev in scan_upstream(a.scan).items():
             n, old = web.get(inst, (0, []))
             web[inst] = (n, old + [e for e in ev if e not in old])
-    state = web_state(Path(a.bench) / f"{name}.config.yaml")
+    config = config_of(preds, a.bench)
+    state = web_state(config)
     run_id = report.get("run_id", "?")
 
     ids = sorted(resolved | unresolved | set(errored)) or sorted(preds_rows)
@@ -381,7 +485,8 @@ def main():
 
     used = sorted(i for i in ids if web.get(i, (0, []))[0])
     up = sorted(i for i in ids if web.get(i, (0, []))[1])
-    print(f"\n== WEB: config {state}; web used in {len(used)} instance(s)")
+    print(f"\n== WEB: config {state} ({config or 'no config found for this run'}); "
+          f"web used in {len(used)} instance(s)")
     if state == "on" or used:
         print("  WARNING: web was on. A web result can hold the upstream fix, so this score")
         print("  does not measure the agent alone. Do not compare it with a run with web off.")
@@ -394,15 +499,16 @@ def main():
 
     if a.no_compare:
         return 0
-    other = compare_target(a.compare, preds, a.bench, score_path)
+    other, why = compare_target(a.compare, preds, a.bench, score_path)
     if other is None:
-        print("\n== COMPARE: no other score report")
+        print(f"\n== COMPARE: no other score report: {why}")
         return 0
-    o_preds = Path(re.sub(r"\.score\.[^/]*\.json$", "", str(other)))
+    o_preds = preds_of_score(other)
     o_report, o_res, o_unres, o_err = read_score(other)
     o_rows = last_by_id(read_jsonl(o_preds))
-    o_state = web_state(Path(a.bench) / f"{name_of(o_preds)}.config.yaml")
+    o_state = web_state(config_of(o_preds, a.bench))
     print(f"\n== COMPARE with {name_of(o_preds)} run id {o_report.get('run_id', '?')} ({other})")
+    print(f"  the report took this run because it is {why}")
     print(f"  before {len(o_res)}/{len(o_res) + len(o_unres)} resolved, now {len(resolved)}/{ev} resolved")
     if o_state != state:
         print(f"  WARNING: web is {o_state} before and {state} now; the two scores do not measure the same thing")

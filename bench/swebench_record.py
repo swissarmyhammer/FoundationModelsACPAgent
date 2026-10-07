@@ -31,6 +31,12 @@ one row for each instance:
 | `env_exit_code` | the exit code of the build command that failed |
 | `env_reason` | why the instance did not run |
 | `prompt` | the name of the prompt shape the instance used |
+| `agent_config` | the `--agent-config` file of the run, or `null` |
+
+`agent_config` is the same in each row of a run. The run name does not have
+to be the name of its config: on 2026-10-06 the run `final-pass-check` used
+`bench/code-context.config.yaml`. The report of a score reads this name to
+tell if web was on.
 
 The five `env_` names hold the step that `swebench_venv.py` does. That step is
 the largest cost of an instance after the agent, and it is the step that
@@ -47,7 +53,7 @@ the protocol for how the turn ended -- `end_turn`, `max_tokens`,
 `max_turn_requests`, `refusal`, `cancelled`, or an extension that begins with
 `_`. It is a free string, and the record keeps whatever the agent said.
 
-Each row carries all sixteen names, in all conditions. A step that did not run
+Each row carries all seventeen names, in all conditions. A step that did not run
 gives `null`, and not a name that is absent, so a reader of the file can use
 `[]` on each row. `append_row` flushes each row, so a run that stops in the
 middle keeps the rows of the instances that are complete.
@@ -127,6 +133,7 @@ def run_record(
     env_exit_code,
     env_reason,
     prompt,
+    agent_config,
 ):
     """The record of one instance of a run.
 
@@ -151,8 +158,10 @@ def run_record(
     - prompt: the name of the prompt shape this instance used.
       `swebench_prompt.py` gives the name. Two runs are comparable
       only when the name is the same, so the row keeps it.
+    - agent_config: the `--agent-config` file of the run, or None when the
+      run gave none. The row keeps it as the run got it.
 
-    The record carries all sixteen names in all conditions, so that a reader
+    The record carries all seventeen names in all conditions, so that a reader
     can use `[]` on each row of the file.
     """
     return {
@@ -172,6 +181,7 @@ def run_record(
         "env_exit_code": env_exit_code,
         "env_reason": env_reason,
         "prompt": prompt,
+        "agent_config": None if agent_config is None else str(agent_config),
     }
 
 
