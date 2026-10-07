@@ -159,7 +159,7 @@ struct EventProjection {
     }
 
     /// The number of generate calls of the prompt that Router stopped: the
-    /// repetition stops and the reasoning stops (task ^1pw3j6m).
+    /// repetition stops and the reasoning stops (task ^dcmsxpw).
     private var routerStopCount = 0
 
     /// The number of Router stops of the prompt that a recovery followed.
@@ -180,7 +180,7 @@ struct EventProjection {
     /// changed.
     var changedFileCount: Int { changedFilePaths.count }
 
-    /// The metadata of the record of a cut prompt (task ^1pw3j6m): the
+    /// The metadata of the record of a cut prompt (task ^dcmsxpw): the
     /// ``usageMetadata``, the Router stops and the recoveries that ran, the
     /// number of changed files, and the reasoning tokens and the limit of
     /// the last reasoning stop.
@@ -266,7 +266,7 @@ struct EventProjection {
     }
 
     /// Counts one generate call that Router stopped, and the recovery that
-    /// follows it, for the record of a cut prompt (task ^1pw3j6m).
+    /// follows it, for the record of a cut prompt (task ^dcmsxpw).
     ///
     /// - Parameter recovery: The number of the recovery that follows the
     ///   stop, or `nil` when no recovery was left.
@@ -278,7 +278,7 @@ struct EventProjection {
     }
 
     /// Records the files that the change sets of `report` name, for the
-    /// record of a cut prompt (task ^1pw3j6m). A move or a copy adds its
+    /// record of a cut prompt (task ^dcmsxpw). A move or a copy adds its
     /// source and its destination.
     ///
     /// - Parameter report: The report of the attachments of one call.

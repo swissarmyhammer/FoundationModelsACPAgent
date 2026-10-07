@@ -550,7 +550,7 @@ import Testing
         #expect(stopRecords.first?.level == .notice)
     }
 
-    // MARK: - The record of a cut prompt (task ^1pw3j6m)
+    // MARK: - The record of a cut prompt (task ^dcmsxpw)
 
     /// Drives a prompt that Router stopped three times: two repetition stops
     /// with a recovery each, then one reasoning stop with no recovery left.
@@ -607,7 +607,7 @@ import Testing
     /// The record of a prompt cut at the reasoning token limit names the
     /// cause: the reasoning tokens and the limit of the last stopped pass,
     /// the Router stops and the recoveries that ran, and the number of files
-    /// that the prompt changed. Before task ^1pw3j6m the record said only
+    /// that the prompt changed. Before task ^dcmsxpw the record said only
     /// "The last submission of the prompt did not end by itself."
     @Test func theReasoningLimitRecordNamesTheLimitTheTokensAndTheRecoveries() async throws {
         let record = try Self.cutRecord(in: await Self.driveReasoningLimitPrompt(before: []))

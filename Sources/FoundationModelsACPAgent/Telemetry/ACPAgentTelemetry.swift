@@ -228,7 +228,7 @@ enum ACPAgentTelemetry {
         static let peakContextFill = "context.peak_fill"
 
         /// The reasoning tokens of the last pass that Router stopped for its
-        /// reasoning, in the record of a cut prompt (task ^1pw3j6m).
+        /// reasoning, in the record of a cut prompt (task ^dcmsxpw).
         static let reasoningTokens = "reasoning.tokens"
 
         /// The limit that the last pass stopped for its reasoning reached, or

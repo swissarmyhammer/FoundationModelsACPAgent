@@ -604,11 +604,11 @@ struct PromptExecution: Sendable {
     /// how many tokens the prompt spent, how many Router stops and
     /// recoveries ran, the reasoning tokens and the limit of the last
     /// reasoning stop, and how many files the prompt changed (task
-    /// ^1pw3j6m).
+    /// ^dcmsxpw).
     ///
     /// - Parameters:
     ///   - cut: The stop ``cutStop(for:)`` gave.
-    ///   - metadata: The metadata ``EventProjection/cutMetadata`` makes.
+    ///   - cutMetadata: The metadata ``EventProjection/cutMetadata`` makes.
     ///   - changedFileCount: The number of files that the files verbs of the
     ///     prompt changed.
     private func report(cut: PromptStop, metadata cutMetadata: Logger.Metadata, changedFileCount: Int) {
@@ -620,7 +620,7 @@ struct PromptExecution: Sendable {
     }
 
     /// The message of the record of a cut prompt: the cause of the stop, and
-    /// whether the files verbs of the prompt changed a file (task ^1pw3j6m).
+    /// whether the files verbs of the prompt changed a file (task ^dcmsxpw).
     ///
     /// A shell command that writes a file records no change set, so the
     /// message names the files verbs and not the whole prompt.
