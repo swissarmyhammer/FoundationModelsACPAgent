@@ -86,8 +86,32 @@ comments:
     - evidence: `swift test --scratch-path .../scratchpad/rel-build`: 783 tests in 86 suites pass, 1 known issue that was there before. No compiler warning (only the SwiftPM "missing creator for mutated node" note on the mlx bundle). 5 files: Tests/FoundationModelsACPAgentTests/Support/CatalogRegistryFixture.swift (new), FilesExcludeTests.swift, SandboxCompositionTests.swift, TerminalStreamTests.swift, Integration/TierTwoTests.swift. Finding FilesExcludeTests.swift:90 reuse/reuse checked.
     - next: /review
   timestamp: 2026-10-07T19:24:25.498525+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4bx6m7f7ces74sj4m8cqzpd
+  text: |-
+    ### test — green
+    - evidence: swift test (scratch rel-build): 783 tests in 86 suites passed, 1 existing known issue; 0 compiler warnings.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-10-07T19:24:47.215188+00:00
+- actor: claude-code
+  id: 01m4bxdafz2mcayn9vhfp89veq
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a3ce050): 0 findings, 0 confirmed, 0 refuted; 5 files reviewed, 2 .kanban files excluded by .reviewignore. The prior reuse finding is checked.
+    - note: The bench acceptance item stays unchecked by the user's decision (no bench run now). It does not block done.
+    - next: The task moves to done.
+  timestamp: 2026-10-07T19:28:26.623388+00:00
+- actor: claude-code
+  id: 01m4bxdkw126we9r1g4ecmd3d5
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — CatalogRegistryFixture.swift (new) and 4 test suites
+    - test: green — swift 783 passed
+    - commit: a3ce050
+    - review: clean — 0 findings, 1 prior finding checked
+  timestamp: 2026-10-07T19:28:36.226+00:00
+position_column: done
+position_ordinal: ffa480
 title: 'files.grep finds the agent''s own transcripts under .acp-agent/: configure exclude patterns for the file tools'
 ---
 ## Decision (user, 2026-10-07)
