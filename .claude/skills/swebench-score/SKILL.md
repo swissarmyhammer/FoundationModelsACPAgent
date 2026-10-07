@@ -215,10 +215,12 @@ instances.
 4. Watch it (step 3) with the same `RUN`.
 
 The resolved and evaluated counts of the new score report include all
-instances of the run id. But `submitted` counts only the ids of
-`--instance-ids`, so `resolved / submitted` is not correct for a resumed score.
-Use `resolved / evaluated`, and give the full count of instances from the
-predictions file. Tell the user that the score was resumed.
+instances of the run id. `submitted` counts each prediction of the file, and
+not only the ids of `--instance-ids`. So `resolved / submitted` is correct for
+a resumed score too. But the `errored` group holds only the ids of
+`--instance-ids` that did not run. An instance of an earlier pass that did not
+run is not in that group; compare `submitted` with `evaluated` to find it.
+Tell the user that the score was resumed.
 
 ## 4. Report
 

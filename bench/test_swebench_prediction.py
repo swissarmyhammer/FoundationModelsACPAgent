@@ -20,15 +20,21 @@ Those are the correct two files for that issue. The harness recorded an empty
 patch. These tests hold the new behaviour: the row keeps the patch, and it
 says that the watchdog stopped the agent.
 
+The score step reads the file with `load_predictions`. The tests of
+`TheSubmittedCountOfAScore` hold that the submitted count comes from the whole
+file, and not from the ids of `--instance-ids`.
+
 This test needs the standard library only, so both commands run it:
 
     uv run bench/test_swebench_prediction.py
     python3 bench/test_swebench_prediction.py
 """
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from swebench_prediction import prediction_row
+from swebench_prediction import load_predictions, prediction_row
 
 # The names below are the names of a test. The instance is the one that lost
 # its work in the run of 2026-09-11.
@@ -44,6 +50,40 @@ A_PATCH = (
     "-    header_rows = None\n"
     "+    header_rows = [\"name\"]\n"
 )
+# The run `code-context-1006` held 16 predictions. Its score stopped, and the
+# resume sent 3 of them again with `--instance-ids`.
+FILE_SIZE = 16
+# The 3 ids of that resume.
+RESUMED_IDS = (
+    "django__django-14608",
+    "django__django-14667",
+    "django__django-14672",
+)
+# The number of the first of the other ids. It is below each resumed id, so no
+# other id is the same as a resumed id.
+FIRST_OTHER_NUMBER = 10000
+# The ids of the 13 other predictions of the file.
+OTHER_IDS = tuple(
+    f"django__django-{number}"
+    for number in range(
+        FIRST_OTHER_NUMBER, FIRST_OTHER_NUMBER + FILE_SIZE - len(RESUMED_IDS)
+    )
+)
+
+
+def a_predictions_file(directory, instance_ids):
+    """Write one prediction row for each id, and give the path of the file.
+
+    - directory: the directory that gets the file.
+    - instance_ids: the ids of the rows, in their order.
+    """
+    path = Path(directory) / "preds.jsonl"
+    lines = (
+        json.dumps(prediction_row(i, MODEL_NAME, A_PATCH, truncated=False))
+        for i in instance_ids
+    )
+    path.write_text("".join(f"{line}\n" for line in lines))
+    return path
 
 
 class TheRowOfAStoppedInstance(unittest.TestCase):
@@ -118,6 +158,47 @@ class TheKeysOfTheRow(unittest.TestCase):
         line = json.dumps(row) + "\n"
         self.assertNotIn("\n", line[:-1])
         self.assertEqual(json.loads(line), row)
+
+
+class TheSubmittedCountOfAScore(unittest.TestCase):
+    """How many predictions a score run counts as sent.
+
+    The resume of `code-context-1006` on 2026-10-06 printed `submitted=3
+    percent_of_submitted=400.0`. The tally read each report of the run id, and
+    it found 12 resolved of 15 evaluated. But the submitted count was the
+    count of `--instance-ids`, and not the 16 predictions of the file.
+    """
+
+    def test_it_counts_each_prediction_of_the_file_and_not_the_chosen_ids(self):
+        """The defect that task ^60mtc3r names.
+
+        A file of 16 rows and 3 `--instance-ids` sent 16 predictions. A
+        count of 3 makes the percent of submitted more than 100.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = a_predictions_file(directory, OTHER_IDS + RESUMED_IDS)
+            predictions = load_predictions(path, list(RESUMED_IDS))
+        self.assertEqual(predictions.submitted, FILE_SIZE)
+
+    def test_it_scores_the_chosen_ids_only(self):
+        """`--instance-ids` still chooses the instances that go to docker."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = a_predictions_file(directory, OTHER_IDS + RESUMED_IDS)
+            predictions = load_predictions(path, list(RESUMED_IDS))
+        chosen = [row["instance_id"] for row in predictions.rows]
+        self.assertEqual(chosen, list(RESUMED_IDS))
+
+    def test_it_counts_an_instance_one_time(self):
+        """The harness keeps one prediction for each instance id.
+
+        A file with a row two times thus sends one prediction for that id.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = a_predictions_file(
+                directory, OTHER_IDS + RESUMED_IDS + RESUMED_IDS[:1]
+            )
+            predictions = load_predictions(path, None)
+        self.assertEqual(predictions.submitted, FILE_SIZE)
 
 
 if __name__ == "__main__":

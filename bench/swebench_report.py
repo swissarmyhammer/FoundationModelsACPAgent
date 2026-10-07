@@ -127,7 +127,9 @@ def score_report(run_id, *, predictions, submitted, evaluated, resolved,
 
     - run_id: the run id of the harness.
     - predictions: the predictions file that the run scored.
-    - submitted: how many instances the run sent to the harness.
+    - submitted: how many predictions the predictions file holds. A score
+      that resumes with `--instance-ids` sends fewer to the harness, but the
+      run submitted each prediction of the file.
     - evaluated: the ids of the instances that ran.
     - resolved: the ids of the instances whose tests passed.
     - errored: the ids of the instances that did not run.

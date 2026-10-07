@@ -84,6 +84,7 @@ from swebench_docker import (
     ensure_host,
     missing_daemon_message,
 )
+from swebench_prediction import load_predictions
 from swebench_report import (
     RunIdError,
     checked_run_id,
@@ -160,21 +161,6 @@ def parse_args():
              "that did not run gets one more try, alone, with one worker)",
     )
     return p.parse_args()
-
-
-def load_predictions(path, only_ids):
-    """Read predictions.jsonl into a list of dicts, and keep only_ids only."""
-    rows = []
-    with path.open() as f:
-        for ln in f:
-            ln = ln.strip()
-            if not ln:
-                continue
-            rows.append(json.loads(ln))
-    if only_ids:
-        keep = set(only_ids)
-        rows = [r for r in rows if r["instance_id"] in keep]
-    return rows
 
 
 def joined_ids(instance_ids):
@@ -354,7 +340,8 @@ def main():
         console.print(f"[red]no such predictions file:[/] {pred_path}")
         raise SystemExit(BAD_INPUT_EXIT)
 
-    rows = load_predictions(pred_path, args.instance_ids)
+    predictions = load_predictions(pred_path, args.instance_ids)
+    rows = predictions.rows
     if not rows:
         console.print("[red]nothing to score[/] (the file is empty, or no id agreed)")
         raise SystemExit(BAD_INPUT_EXIT)
@@ -399,10 +386,13 @@ def main():
         errored = [i for i in ids if i not in evaluated]
 
     dt = (time.monotonic() - t0) / 60
+    # `tally` reads each report of the run id, and a resume with
+    # `--instance-ids` sends only a few ids. So the count of the WHOLE file is
+    # what the run submitted, and not the count of `ids`.
     report = score_report(
         run_id,
         predictions=pred_path,
-        submitted=len(ids),
+        submitted=predictions.submitted,
         evaluated=evaluated,
         resolved=resolved,
         errored=errored,

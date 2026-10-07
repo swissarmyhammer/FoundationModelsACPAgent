@@ -21,11 +21,18 @@ So the row keeps the patch in all conditions, and it carries `truncated` when
 the watchdog stopped the agent. The run step keeps the work, and the score
 step decides what to do with it.
 
+The score step reads the file with `load_predictions`. It can score fewer
+instances than the file holds (`--instance-ids`), but the file still holds
+each prediction of the run. So the count of the predictions that the run
+SENT comes from the whole file, and not from the instances that go to docker.
+
 This module has no PEP 723 block, for the reason `swebench_common.py` gives:
 `uv run --script` reads the block of the script it starts, and not the block
 of a module that the script imports. This module needs the standard library
 only.
 """
+import json
+from typing import NamedTuple
 
 # The three names that the official SWE-bench harness reads from each row. Do
 # not change them: the harness finds the instance, the report name and the
@@ -60,3 +67,43 @@ def prediction_row(instance_id, model_name, patch, *, truncated):
     if truncated:
         row[TRUNCATED_KEY] = True
     return row
+
+
+class Predictions(NamedTuple):
+    """The predictions file, as the score step reads it.
+
+    - rows: the rows to score, in the order of the file.
+    - submitted: how many predictions the file holds.
+    """
+
+    rows: list
+    submitted: int
+
+
+def load_predictions(path, only_ids):
+    """Read a predictions file, and keep the rows of only_ids.
+
+    - path: the path of predictions.jsonl.
+    - only_ids: the ids to score, or None to score each row.
+
+    `submitted` counts each instance of the WHOLE file, and not only the rows
+    of only_ids. A score that resumes with `--instance-ids` sends a few ids
+    again, but the run still submitted each prediction of the file. On
+    2026-10-06 a count of the 3 ids gave `submitted=3` beside 12 resolved, and
+    thus a percent of submitted of 400.
+
+    `submitted` counts an instance id one time. The harness keeps one
+    prediction for each instance id, so a row two times is one prediction.
+    """
+    rows = []
+    with path.open() as f:
+        for ln in f:
+            ln = ln.strip()
+            if not ln:
+                continue
+            rows.append(json.loads(ln))
+    submitted = len({row[INSTANCE_KEY] for row in rows})
+    if only_ids:
+        keep = set(only_ids)
+        rows = [row for row in rows if row[INSTANCE_KEY] in keep]
+    return Predictions(rows=rows, submitted=submitted)
