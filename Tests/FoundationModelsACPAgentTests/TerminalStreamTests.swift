@@ -279,12 +279,8 @@ import Testing
         configuration.tools.codeContext = .disabled
         configuration.tools.shell = .enabled(
             ShellToolOptions(storeDirectory: makeResolvedDirectory(named: "store")))
-        let context = CatalogContext(
-            workingDirectory: workingDirectory,
-            configuration: configuration,
-            profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(named: "cache")))
-        return try await ToolCatalog.makeRegistry(context: context)
+        return try await CatalogRegistryFixture.makeBuiltRegistry(
+            workingDirectory: workingDirectory, configuration: configuration)
     }
 
     /// The catalog builds the host-owned stream exactly when the shell
@@ -297,12 +293,9 @@ import Testing
         var configuration = AgentConfiguration()
         configuration.tools.codeContext = .disabled
         configuration.tools.shell = .disabled
-        let context = CatalogContext(
+        let disabled = try await CatalogRegistryFixture.makeBuiltRegistry(
             workingDirectory: Self.makeResolvedDirectory(named: "disabled"),
-            configuration: configuration,
-            profile: try await makeStubProfile(
-                cacheDirectory: Self.makeResolvedDirectory(named: "disabled-cache")))
-        let disabled = try await ToolCatalog.makeRegistry(context: context)
+            configuration: configuration)
         #expect(disabled.shellOutput == nil)
     }
 

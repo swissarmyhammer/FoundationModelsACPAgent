@@ -52,12 +52,8 @@ import Testing
         configuration.tools.codeContext = .disabled
         configuration.tools.shell = .enabled(
             ShellToolOptions(storeDirectory: makeResolvedDirectory(named: "store")))
-        let context = CatalogContext(
-            workingDirectory: workingDirectory,
-            configuration: configuration,
-            profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(named: "cache")))
-        return try await ToolCatalog.makeRegistry(context: context).registry
+        return try await CatalogRegistryFixture.makeRegistry(
+            workingDirectory: workingDirectory, configuration: configuration)
     }
 
     /// A `CommandSandbox` whose preflight always refuses, so a test proves

@@ -672,13 +672,9 @@ import Testing
             userDirectory: makeResolvedDirectory(label: "TierTwoTests-composition-user"),
             environment: [:]
         ).load()
-        let context = CatalogContext(
-            workingDirectory: cwd,
-            configuration: loaded.configuration,
-            profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(label: "TierTwoTests-composition-cache")))
 
-        let built = try await ToolCatalog.makeRegistry(context: context)
+        let built = try await CatalogRegistryFixture.makeBuiltRegistry(
+            workingDirectory: cwd, configuration: loaded.configuration)
         let entries = built.registry.surface.entries
         await built.pool.shutdownAll()
 

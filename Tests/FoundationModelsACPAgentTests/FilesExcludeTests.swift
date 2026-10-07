@@ -1,6 +1,5 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
-import FoundationModelsMultitool
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -13,8 +12,8 @@ import Testing
 /// `exclude: []` the old behavior returns.
 ///
 /// Each test composes the files capability through
-/// ``ToolCatalog/makeRegistry(context:)`` with a configuration that the
-/// CLI loader gives, and calls each verb through its public wire door.
+/// ``CatalogRegistryFixture`` with a configuration that the CLI loader
+/// gives, and calls each verb through its public wire door.
 @Suite struct FilesExcludeTests {
     /// The text that each file of the workspace holds, and the pattern that
     /// grep searches for.
@@ -79,34 +78,14 @@ import Testing
         return configuration
     }
 
-    /// Builds the registry of a session over `workspace` with
-    /// `configuration`.
-    ///
-    /// - Parameters:
-    ///   - workspace: The session working directory.
-    ///   - configuration: The configuration under test.
-    /// - Returns: The built registry.
-    /// - Throws: Whatever the profile resolve or the registry build throws.
-    private static func makeRegistry(
-        over workspace: URL, configuration: AgentConfiguration
-    ) async throws -> MultiTool.Registry {
-        let context = CatalogContext(
-            workingDirectory: workspace,
-            configuration: configuration,
-            profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(label: "FilesExcludeTests-cache")),
-            environment: [:])
-        return try await ToolCatalog.makeRegistry(context: context).registry
-    }
-
     // MARK: - The default list
 
     /// With the default configuration, `files.grep` gives the source file
     /// and not the transcript under `.acp-agent/`.
     @Test func theDefaultConfigurationKeepsTheTranscriptOutOfGrep() async throws {
         let workspace = try Self.makeWorkspace()
-        let registry = try await Self.makeRegistry(
-            over: workspace, configuration: try Self.loadConfiguration(of: workspace))
+        let registry = try await CatalogRegistryFixture.makeRegistry(
+            workingDirectory: workspace, configuration: try Self.loadConfiguration(of: workspace))
 
         let result = try await FilesVerbSupport.invokeGrep(in: registry, pattern: Self.needle)
 
@@ -118,8 +97,8 @@ import Testing
     /// and not the transcript under `.acp-agent/`.
     @Test func theDefaultConfigurationKeepsTheTranscriptOutOfGlob() async throws {
         let workspace = try Self.makeWorkspace()
-        let registry = try await Self.makeRegistry(
-            over: workspace, configuration: try Self.loadConfiguration(of: workspace))
+        let registry = try await CatalogRegistryFixture.makeRegistry(
+            workingDirectory: workspace, configuration: try Self.loadConfiguration(of: workspace))
 
         let result = try await FilesVerbSupport.invokeGlob(in: registry, pattern: Self.jsonlGlob)
 
@@ -135,7 +114,8 @@ import Testing
         let workspace = try Self.makeWorkspace()
         let configuration = try Self.loadConfiguration(
             of: workspace, projectConfig: "tools:\n  files:\n    exclude: []\n")
-        let registry = try await Self.makeRegistry(over: workspace, configuration: configuration)
+        let registry = try await CatalogRegistryFixture.makeRegistry(
+            workingDirectory: workspace, configuration: configuration)
 
         let grep = try await FilesVerbSupport.invokeGrep(in: registry, pattern: Self.needle)
         let glob = try await FilesVerbSupport.invokeGlob(in: registry, pattern: Self.jsonlGlob)

@@ -46,6 +46,46 @@ comments:
     - evidence: `swift test --scratch-path .../scratchpad/rel-build`: 783 tests in 86 suites pass, 1 known issue that was there before (HarnessSmokeTests withKnownIssue). The only build warning is the SwiftPM "missing creator for mutated node" note on the mlx bundle, no compiler warning. Package.resolved not changed. 14 files: Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift, Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Sources/acp-agent/ConfigCommand.swift, README.md, Tests/.../FilesExcludeTests.swift (new), Tests/.../Support/FilesVerbSupport.swift, ToolSectionCodecTests.swift, ConfigurationLoaderTests.swift, ConfigShowTests.swift, ConfigInitTests.swift, ConfigEditTests.swift, BuiltinCommandsTests.swift.
     - next: /review. The bench acceptance item needs a bench run.
   timestamp: 2026-10-07T19:12:43.401603+00:00
+- actor: claude-code
+  id: 01m4bwhtaehm09j9a71dzw7n3g
+  text: |-
+    ### test — green
+    - evidence: swift test (scratch rel-build, Multitool 1155c168, CodeContext f6cfd466, Router 6bdf9ae7): 783 tests in 86 suites passed, 1 existing known issue; no compiler warning. plan.md §11.3 tables updated for excludePatterns.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-10-07T19:13:25.326577+00:00
+- actor: claude-code
+  id: 01m4bwxz7qv3cjc267fhass3en
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (da1f535): 1 finding (1 confirmed, 1 refuted) — Tests/FoundationModelsACPAgentTests/FilesExcludeTests.swift:90 (reuse/reuse)
+    - bench acceptance item: not checked, because the user said no bench run now. FilesExcludeTests prove the behavior. It does not block done.
+    - next: implement the finding (move one shared makeRegistry helper into the test support folder, and use it from FilesExcludeTests and SandboxCompositionTests), then review again.
+  timestamp: 2026-10-07T19:20:03.575770+00:00
+- actor: claude-code
+  id: 01m4bwyc83jzde30wsj0r3vay7
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 13 files, plus plan.md
+    - test: green — swift 783 passed
+    - commit: da1f535
+    - review: findings — Tests/FoundationModelsACPAgentTests/FilesExcludeTests.swift:90 (reuse: makeRegistry repeats SandboxCompositionTests.makeRegistry)
+  timestamp: 2026-10-07T19:20:16.899722+00:00
+- actor: claude-code
+  id: 01m4bx5wdn0hytzcfxg4xnmt98
+  text: |-
+    ### finding fix: one shared catalog registry build
+    - New `Tests/FoundationModelsACPAgentTests/Support/CatalogRegistryFixture.swift`: `makeBuiltRegistry(workingDirectory:configuration:)` gives `ToolCatalog.BuiltRegistry`, and `makeRegistry(workingDirectory:configuration:)` gives only the registry. The fixture builds the `CatalogContext` with a stub profile over a new cache directory and an empty environment (the environment feeds only the web API keys, so the tests do not read the keys of the machine).
+    - The same setup (`CatalogContext` + `makeStubProfile` + `ToolCatalog.makeRegistry`, with only a working directory and a configuration) was in four suites. All four now call the fixture: FilesExcludeTests (helper removed), SandboxCompositionTests.makeRegistry, TerminalStreamTests (makeBuiltRegistry and the inline disabled build), Integration/TierTwoTests (composition test). Each suite keeps its own configuration setup.
+    - Not changed, because the setup is different: ToolCatalogTests (loader and additionalRoots), MultiRootConfinementTests (additionalRoots), MCPCompositionTests (clientMCPServers), SkillsLibraryTests (sessionSurface, not makeRegistry).
+    - The `dump validators` rule file was 754K characters, too large to read whole; the swift rules that apply (documentation, named constants, no copy) were followed.
+  timestamp: 2026-10-07T19:24:22.837673+00:00
+- actor: claude-code
+  id: 01m4bx5z0tcfdy73719gnmsw4w
+  text: |-
+    ### implement — changed
+    - evidence: `swift test --scratch-path .../scratchpad/rel-build`: 783 tests in 86 suites pass, 1 known issue that was there before. No compiler warning (only the SwiftPM "missing creator for mutated node" note on the mlx bundle). 5 files: Tests/FoundationModelsACPAgentTests/Support/CatalogRegistryFixture.swift (new), FilesExcludeTests.swift, SandboxCompositionTests.swift, TerminalStreamTests.swift, Integration/TierTwoTests.swift. Finding FilesExcludeTests.swift:90 reuse/reuse checked.
+    - next: /review
+  timestamp: 2026-10-07T19:24:25.498525+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'files.grep finds the agent''s own transcripts under .acp-agent/: configure exclude patterns for the file tools'
@@ -86,3 +126,18 @@ Found in the SWE-bench runs. `files.grep` in the agent workspace matches the age
 - [x] A test of the codec: absent key gives the default; an empty list gives no exclude; a user list replaces the default.
 - [x] A test that composes the files tools with the default and runs `files.grep` over a tree with `.acp-agent/transcripts/x.jsonl` that matches: the file is not in the result.
 #tools #bench #upstream
+
+## Review Findings (2026-10-07 14:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/FilesExcludeTests.swift:90` `reuse/reuse` — The new private static makeRegistry(over:configuration:) repeats the body of SandboxCompositionTests.makeRegistry. Both build a CatalogContext, call makeStubProfile with a cache directory, and return ToolCatalog.makeRegistry(context:).registry. The only real difference is that this helper takes a configuration argument. A second copy of this setup means a future change to the registry build must be made in two test suites. Move one shared helper that takes a workspace URL and an AgentConfiguration into the test support folder, for example beside FilesVerbSupport or ConfigCommandFixture. Have FilesExcludeTests and SandboxCompositionTests both call it. SandboxCompositionTests can keep its own configuration setup and pass the result in.
+
+> Note on the bench acceptance item: the item "A bench run gives zero files.grep results with .acp-agent/transcripts lines in scan.py" stays unchecked. The user said: no bench run now. The code-level tests in `FilesExcludeTests` prove the behavior. This item does not block done.
