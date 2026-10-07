@@ -162,11 +162,24 @@ public struct ConfigurationLoader: Sendable {
             environment: environment)
     }
 
+    /// The configuration a load gives when no layer holds a file:
+    /// `AgentConfiguration()` with each default that the dotfolder name
+    /// gives. The files tools exclude the dotfolder `.<name>/`, which holds
+    /// the transcripts of the agent (``FilesToolOptions/exclude``).
+    ///
+    /// `config init` writes this configuration, thus the file it writes
+    /// loads back to the same value.
+    public var builtinConfiguration: AgentConfiguration {
+        resolvingDotfolderDefaults(of: AgentConfiguration())
+    }
+
     /// Loads, merges, checks and decodes `config.yaml`.
     ///
-    /// With no file in any layer the result is `AgentConfiguration()`. An
-    /// unknown top-level section is logged and returned as a warning. An
-    /// unknown key inside a known section is an error.
+    /// With no file in any layer the result is ``builtinConfiguration``.
+    /// Each value that no layer sets and that the dotfolder name gives,
+    /// such as the default of `tools.files.exclude`, is put in after the
+    /// decode. An unknown top-level section is logged and returned as a
+    /// warning. An unknown key inside a known section is an error.
     ///
     /// - Returns: The decoded configuration and the warnings.
     /// - Throws: `ConfigurationError` for a schema failure;
@@ -185,9 +198,22 @@ public struct ConfigurationLoader: Sendable {
             warning.log()
         }
         return LoadedConfiguration(
-            configuration: try Self.configuration(from: document.root),
+            configuration: resolvingDotfolderDefaults(of: try Self.configuration(from: document.root)),
             warnings: warnings,
             sources: Self.sources(in: document))
+    }
+
+    /// `configuration` with each default that the dotfolder name of this
+    /// loader gives put in where no layer set a value.
+    ///
+    /// - Parameter configuration: The decoded configuration.
+    /// - Returns: The configuration in effect.
+    private func resolvingDotfolderDefaults(of configuration: AgentConfiguration)
+        -> AgentConfiguration
+    {
+        var resolved = configuration
+        resolved.tools = configuration.tools.resolvingDotfolderDefaults(name)
+        return resolved
     }
 
     /// The layer that set each key of `document`'s merged tree, by dotted

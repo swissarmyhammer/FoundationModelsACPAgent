@@ -227,7 +227,10 @@ public enum ToolCatalog {
     ///
     /// Each enabled section becomes one builder call (plan.md §11.3):
     /// `files` is confined to the session root set through
-    /// `withFiles(root:additionalRoots:)` (§11.4), `shell` runs under a
+    /// `withFiles(root:additionalRoots:)` (§11.4), and its search verbs skip
+    /// each path that `tools.files.exclude` names (an exclude list that is
+    /// `nil` excludes no path; the loader puts the dotfolder default in
+    /// before the catalog sees the configuration), `shell` runs under a
     /// `SeatbeltSandbox` over the same root set — the sandbox is the only
     /// gate (§11.7); there is no policy and no permission layer — `web`
     /// mounts `tools.web.search` and `tools.web.fetch` with the providers
@@ -254,7 +257,8 @@ public enum ToolCatalog {
                 additionalRoots: Set(context.additionalRoots),
                 readOnly: options.readOnly,
                 allowSymlinks: options.allowSymlinks,
-                recordsChanges: options.recordsChanges)
+                recordsChanges: options.recordsChanges,
+                excludePatterns: options.exclude ?? [])
         }
         var shellOutput: ShellOutputChunkStream?
         if case .enabled(let options) = context.configuration.tools.shell {

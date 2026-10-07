@@ -23,11 +23,15 @@ extension AcpAgentCommand {
         /// slash command also writes through, so the two front doors
         /// cannot drift (cli-plan.md §5.11). The file goes through
         /// ``LayerFileWriter``, the one writer `instructions eject` also
-        /// writes through, so the overwrite guard is one guard.
+        /// writes through, so the overwrite guard is one guard. The
+        /// defaults are the builtin configuration of `loader`, thus the
+        /// defaults that the dotfolder name gives, such as
+        /// `tools.files.exclude`, stand in the file.
         ///
         /// - Parameters:
         ///   - selection: Which layer receives the file.
-        ///   - stack: The stack whose layer roots the file goes into.
+        ///   - loader: The loader whose stack roots the file and whose
+        ///     builtin configuration the file holds.
         ///   - overwrites: Whether a `config.yaml` that is already in the
         ///     layer is replaced.
         /// - Returns: The path the file was written to.
@@ -36,35 +40,34 @@ extension AcpAgentCommand {
         ///   ``LayerFileWriter/write(_:named:into:of:overwrites:)`` throws
         ///   — above all the refusal to overwrite.
         static func writeDefaultConfiguration(
-            into selection: LayerSelection, of stack: DotfolderStack, overwrites: Bool
+            into selection: LayerSelection, of loader: ConfigurationLoader, overwrites: Bool
         ) throws -> URL {
             try LayerFileWriter.write(
-                try ConfigurationYAML.documentText(for: AgentConfiguration(), secrets: .omitted),
+                try ConfigurationYAML.documentText(for: loader.builtinConfiguration, secrets: .omitted),
                 named: ConfigurationLoader.configFileName,
-                into: selection, of: stack, overwrites: overwrites)
+                into: selection, of: loader.stack, overwrites: overwrites)
         }
 
-        /// The layer stack of the directory `--cwd` names.
+        /// The configuration loader of the directory `--cwd` names.
         ///
         /// **One composition, three subcommands.** `init`, `path` and
-        /// `edit` each want the stack and nothing else, so they compose
-        /// it here, and the three cannot drift apart. `show` wants the
-        /// merged values, so it composes the same loader and reads it
-        /// with `load()`.
+        /// `edit` each want the loader's stack, and `init` and `edit` also
+        /// want its builtin configuration, so they compose it here, and
+        /// the three cannot drift apart. `show` wants the merged values,
+        /// so it composes the same loader and reads it with `load()`.
         ///
         /// - Parameters:
         ///   - options: The `--cwd` option group of the subcommand.
         ///   - environment: The environment the stack reads
         ///     `XDG_CONFIG_HOME` from.
-        /// - Returns: The stack of layers.
+        /// - Returns: The loader. Construction touches no file.
         /// - Throws: `DotfolderNameError` when the dotfolder name is
         ///   refused.
-        private static func makeStack(
+        private static func makeLoader(
             for options: WorkingDirectoryOptions, environment: [String: String]
-        ) throws -> DotfolderStack {
+        ) throws -> ConfigurationLoader {
             try AgentComposition.makeConfigurationLoader(
-                workingDirectory: options.directoryURL, environment: environment
-            ).stack
+                workingDirectory: options.directoryURL, environment: environment)
         }
 
         /// `config show`: print the merged configuration, and where each
@@ -249,10 +252,10 @@ extension AcpAgentCommand {
             ///   ``Config/writeDefaultConfiguration(into:of:overwrites:)``
             ///   throws — above all the refusal to overwrite.
             func report(environment: [String: String]) throws -> CommandReport {
-                let stack = try Config.makeStack(
+                let loader = try Config.makeLoader(
                     for: workingDirectoryOptions, environment: environment)
                 let url = try Config.writeDefaultConfiguration(
-                    into: layer, of: stack, overwrites: overwrites)
+                    into: layer, of: loader, overwrites: overwrites)
                 return CommandReport(standardOutput: url.path + "\n", standardErrorLines: [])
             }
         }
@@ -326,8 +329,9 @@ extension AcpAgentCommand {
             /// - Throws: `DotfolderNameError` when the dotfolder name is
             ///   refused.
             func report(environment: [String: String]) throws -> CommandReport {
-                let stack = try Config.makeStack(
-                    for: workingDirectoryOptions, environment: environment)
+                let stack = try Config.makeLoader(
+                    for: workingDirectoryOptions, environment: environment
+                ).stack
                 let rows = [Row(layer: .builtin, location: .code)] + stack.layers.map(Self.row(for:))
                 return CommandReport(standardOutput: Self.table(of: rows), standardErrorLines: [])
             }
@@ -458,14 +462,14 @@ extension AcpAgentCommand {
             ///   name is refused, or the write error of the defaults.
             func plan(environment: [String: String]) throws -> Plan {
                 let editorCommand = try EditorLauncher.command(in: environment)
-                let stack = try Config.makeStack(
+                let loader = try Config.makeLoader(
                     for: workingDirectoryOptions, environment: environment)
-                if let file = stack.nearest(ConfigurationLoader.configFileName) {
+                if let file = loader.stack.nearest(ConfigurationLoader.configFileName) {
                     return Plan(
                         file: file, editorCommand: editorCommand, report: Self.silentReport)
                 }
                 let written = try Config.writeDefaultConfiguration(
-                    into: Self.layerForAMissingFile, of: stack, overwrites: false)
+                    into: Self.layerForAMissingFile, of: loader, overwrites: false)
                 return Plan(
                     file: written, editorCommand: editorCommand,
                     report: Self.noticeReport(forWritten: written))

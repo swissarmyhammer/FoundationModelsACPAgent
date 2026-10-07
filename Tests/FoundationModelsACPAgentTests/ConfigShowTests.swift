@@ -140,6 +140,19 @@ struct ConfigShowTests {
                 "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
     }
 
+    /// With no file in any layer, the report shows `tools.files.exclude`
+    /// with its default: the dotfolder of the CLI, which holds the
+    /// transcripts that the search verbs skip.
+    @Test func noFilesShowTheFilesExcludeDefault() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-files-exclude")
+
+        let report = try Self.report([], in: fixture)
+
+        #expect(
+            report.standardOutput.contains(
+                "    exclude:\n      - \".\(AgentComposition.dotfolderName)/\"\n"))
+    }
+
     /// A `repetition.reasoningTokenLimit: null` shows as `null`, the value
     /// that loads back as "no limit", and not as Router's default limit.
     @Test func aNullReasoningTokenLimitShowsAsNull() throws {

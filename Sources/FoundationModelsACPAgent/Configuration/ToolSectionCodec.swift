@@ -59,10 +59,18 @@ public enum ToolSection<Options: ToolSectionOptions>: Codable, Equatable, Sendab
 
 // MARK: - The option bodies
 
-/// The `tools.files:` body — the three flags of
-/// `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)`
+/// The `tools.files:` body — the three flags and the exclude list of
+/// `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:excludePatterns:)`
 /// that config may set (plan.md §11.3). The root set is session state, not
 /// config, so it is not here.
+///
+/// ```yaml
+/// tools:
+///   files:
+///     exclude:
+///       - .acp-agent/
+///       - build/
+/// ```
 public struct FilesToolOptions: ToolSectionOptions, KeyCheckedSection {
     /// Whether the writing verbs are refused.
     public var readOnly: Bool
@@ -73,20 +81,38 @@ public struct FilesToolOptions: ToolSectionOptions, KeyCheckedSection {
     /// Whether each change is recorded for the session.
     public var recordsChanges: Bool
 
+    /// The exclude patterns, in gitignore syntax, that the search verbs of
+    /// the files capability (`files.grep`, `files.glob` and each other verb
+    /// that walks a tree) skip. A read or a write of an explicit path does
+    /// not change, and a call that sets `respectGitIgnore: false` does not
+    /// turn these patterns off.
+    ///
+    /// `nil` means that no layer set the key. ``ConfigurationLoader`` then
+    /// puts in ``defaultExclude(dotfolderName:)``, thus a loaded
+    /// configuration holds the list in effect. A list replaces the default,
+    /// and an empty list turns the exclusion off. A configuration that does
+    /// not come from the loader and keeps `nil` excludes no path.
+    public var exclude: [String]?
+
     /// The YAML spelling of each key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case readOnly, allowSymlinks, recordsChanges
+        case readOnly, allowSymlinks, recordsChanges, exclude
     }
 
     /// Makes options; each omitted flag keeps the builder call's default,
-    /// which is `false`.
-    public init(readOnly: Bool = false, allowSymlinks: Bool = false, recordsChanges: Bool = false) {
+    /// which is `false`, and an omitted exclude list is `nil`.
+    public init(
+        readOnly: Bool = false, allowSymlinks: Bool = false, recordsChanges: Bool = false,
+        exclude: [String]? = nil
+    ) {
         self.readOnly = readOnly
         self.allowSymlinks = allowSymlinks
         self.recordsChanges = recordsChanges
+        self.exclude = exclude
     }
 
-    /// The defaults: writable, no symlink traversal, no change recording.
+    /// The defaults: writable, no symlink traversal, no change recording,
+    /// and no exclude list set.
     public init() {
         self.init(readOnly: false)
     }
@@ -100,6 +126,19 @@ public struct FilesToolOptions: ToolSectionOptions, KeyCheckedSection {
             try container.decodeIfPresent(Bool.self, forKey: .allowSymlinks) ?? allowSymlinks
         recordsChanges =
             try container.decodeIfPresent(Bool.self, forKey: .recordsChanges) ?? recordsChanges
+        exclude = try container.decodeIfPresent([String].self, forKey: .exclude)
+    }
+
+    /// The default exclude list of a host whose dotfolder is `.<name>/`:
+    /// the dotfolder itself, which holds the transcripts of the agent. The
+    /// search verbs then do not give the agent its own earlier output as a
+    /// search result.
+    ///
+    /// - Parameter name: The dotfolder name of the host, such as
+    ///   `acp-agent`.
+    /// - Returns: The one gitignore pattern `.<name>/`.
+    public static func defaultExclude(dotfolderName name: DotfolderName) -> [String] {
+        [".\(name.rawValue)/"]
     }
 }
 
@@ -676,5 +715,22 @@ extension ToolsConfiguration {
     /// - Returns: The key path of the tool section.
     static func dottedSection(_ name: String) -> String {
         "\(AgentConfiguration.CodingKeys.tools.stringValue).\(name)"
+    }
+
+    /// The roster with each default that the dotfolder name gives: an
+    /// enabled files section with no exclude list gets
+    /// ``FilesToolOptions/defaultExclude(dotfolderName:)``. A set list, an
+    /// empty list included, and a disabled files section do not change.
+    ///
+    /// - Parameter name: The dotfolder name of the loader.
+    /// - Returns: The roster with the defaults put in.
+    func resolvingDotfolderDefaults(_ name: DotfolderName) -> ToolsConfiguration {
+        guard case .enabled(var options) = files, options.exclude == nil else {
+            return self
+        }
+        options.exclude = FilesToolOptions.defaultExclude(dotfolderName: name)
+        var resolved = self
+        resolved.files = .enabled(options)
+        return resolved
     }
 }

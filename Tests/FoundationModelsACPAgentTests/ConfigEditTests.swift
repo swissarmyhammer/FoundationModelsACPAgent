@@ -149,10 +149,9 @@ struct ConfigEditTests {
         #expect(plan.report.standardErrorLines.count == 1)
         #expect(plan.report.standardErrorLines.first?.contains(written.path) == true)
         #expect(plan.report.standardOutput.isEmpty)
-        #expect(
-            try AgentComposition.makeConfigurationLoader(
-                workingDirectory: fixture.workspace, environment: fixture.environment
-            ).load().configuration == AgentConfiguration())
+        let loader = try AgentComposition.makeConfigurationLoader(
+            workingDirectory: fixture.workspace, environment: fixture.environment)
+        #expect(try loader.load().configuration == loader.builtinConfiguration)
     }
 
     /// The nearest file wins: with a file in both layers the plan opens

@@ -270,7 +270,7 @@ call:
 
 | Capability (Builder call) | Takes | Status |
 |---|---|---|
-| `files` — `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)` | `root: URL`, `additionalRoots: Set<URL>`, three flags | ✅ complies |
+| `files` — `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:excludePatterns:)` | `root: URL`, `additionalRoots: Set<URL>`, three flags, `excludePatterns: [String]` | ✅ complies |
 | `mcp` — `withMCP(servers:) async throws` | `[MCPServer]` | ✅ complies |
 | `shell` — `withShell(storeDirectory:sandbox:outputChunkStream:) throws` | an optional store directory, an optional `any CommandSandbox`, an optional `ShellOutputChunkStream` | ✅ complies |
 | *(anything else)* | `withCapability(_:)`, `addTool`, `addTools`, `register(noun:tool:)`, `addGroup(named:_:)` | the open door for a host-supplied capability |
@@ -1660,7 +1660,7 @@ both:**
 
 | Capability | Builder call | Blocked on | Config section |
 |---|---|---|---|
-| `files` | `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:)` — **shipped** | nothing | `files:` |
+| `files` | `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:excludePatterns:)` — **shipped**; `excludePatterns` is the `exclude` list (gitignore syntax, default `.<dotfolder name>/`), which the search verbs skip also when a call sets `respectGitIgnore: false` | nothing | `files:` (`exclude`) |
 | `shell` | `withShell(storeDirectory:sandbox:outputChunkStream:)` — **shipped** | nothing | `shell:` |
 | `mcp` | `withMCP(servers:)` — **shipped** | nothing; the ACP tunnel is unstable-gated (§11.5) | `mcp:` (plus ACP's per-session `mcpServers`) |
 | `web` | `withWeb(configuration:)` — **shipped**; the configuration is `WebConfiguration.fromEnvironment(_:)` over the process environment with the `apiKeys` merged over it | nothing | `web:` (`enabled`, `apiKeys`) |

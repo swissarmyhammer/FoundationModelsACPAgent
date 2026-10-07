@@ -8,6 +8,14 @@ import Testing
 /// Every test loads through a throwaway `ConfigurationLoaderTests.Fixture`,
 /// so the codec is proved on the same path production uses.
 @Suite struct ToolSectionCodecTests {
+    /// The `tools.files.exclude` list a fixture loader gives when no layer
+    /// sets the key: the dotfolder of the loader, `.<name>/`.
+    private static let dotfolderExclude = [".\(ConfigurationLoaderTests.agentName)/"]
+
+    /// The files options a fixture loader gives when no layer sets a files
+    /// key: the flag defaults, and the dotfolder exclude list.
+    private static let loadedFilesDefaults = FilesToolOptions(exclude: dotfolderExclude)
+
     // MARK: - The five shapes of §11.2
 
     /// Shape 1: with no `tools:` section, every built-in is on with its
@@ -17,7 +25,7 @@ import Testing
             "recording:\n  level: full\n")
 
         let tools = loaded.configuration.tools
-        #expect(tools.files == .enabled(FilesToolOptions()))
+        #expect(tools.files == .enabled(Self.loadedFilesDefaults))
         #expect(tools.shell == .enabled(ShellToolOptions()))
         #expect(tools.skills == .enabled(SkillsToolOptions()))
         #expect(tools.codeContext == .enabled(CodeContextToolOptions()))
@@ -70,7 +78,7 @@ import Testing
             "tools:\n  shell: false\n")
 
         #expect(loaded.configuration.tools.shell == .disabled)
-        #expect(loaded.configuration.tools.files == .enabled(FilesToolOptions()))
+        #expect(loaded.configuration.tools.files == .enabled(Self.loadedFilesDefaults))
         #expect(loaded.configuration.tools.skills == .enabled(SkillsToolOptions()))
         #expect(loaded.configuration.tools.mcp == .enabled(servers: []))
     }
@@ -89,8 +97,41 @@ import Testing
                 recordsChanges: true
             """)
 
-        let expected = FilesToolOptions(readOnly: true, allowSymlinks: true, recordsChanges: true)
+        let expected = FilesToolOptions(
+            readOnly: true, allowSymlinks: true, recordsChanges: true, exclude: Self.dotfolderExclude)
         #expect(loaded.configuration.tools.files == .enabled(expected))
+    }
+
+    // MARK: - The files exclude list
+
+    /// With no `exclude:` key in the files body, the loaded options hold
+    /// the default list: the dotfolder of the loader, so the search verbs
+    /// skip the transcripts of the agent.
+    @Test func anAbsentFilesExcludeGivesTheDotfolderDefault() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  files:\n    readOnly: true\n")
+
+        let expected = FilesToolOptions(readOnly: true, exclude: Self.dotfolderExclude)
+        #expect(loaded.configuration.tools.files == .enabled(expected))
+    }
+
+    /// An empty `exclude:` list turns the exclusion off: the loaded options
+    /// hold no pattern, and the default does not come back.
+    @Test func anEmptyFilesExcludeGivesNoExclude() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  files:\n    exclude: []\n")
+
+        #expect(loaded.configuration.tools.files == .enabled(FilesToolOptions(exclude: [])))
+    }
+
+    /// A user `exclude:` list replaces the default: the loaded options hold
+    /// the user patterns in document order, and not the dotfolder.
+    @Test func aUserFilesExcludeReplacesTheDefault() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  files:\n    exclude:\n      - build/\n      - \"*.log\"\n")
+
+        #expect(
+            loaded.configuration.tools.files == .enabled(FilesToolOptions(exclude: ["build/", "*.log"])))
     }
 
     /// An unknown key inside a tool body is an error that names the dotted
@@ -158,7 +199,8 @@ import Testing
     /// An unknown tool section under `tools:` is a warning only, and the
     /// known tools still decode to their defaults.
     @Test func unknownToolSectionGivesAWarningOnly() throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+        let fixture = ConfigurationLoaderTests.Fixture()
+        let loaded = try fixture.loadProjectConfig(
             """
             tools:
               frobnicator:
@@ -167,7 +209,7 @@ import Testing
 
         #expect(loaded.warnings == [.unknownToolSection(name: "frobnicator")])
         #expect(loaded.warnings[0].description.contains("frobnicator"))
-        #expect(loaded.configuration.tools == ToolsConfiguration())
+        #expect(loaded.configuration.tools == (try fixture.makeLoader().builtinConfiguration.tools))
     }
 
     // MARK: - The mcp tri-state
@@ -268,7 +310,7 @@ import Testing
     @Test func codecRoundTripsThroughCodable() throws {
         var tools = ToolsConfiguration()
         tools.shell = .disabled
-        tools.files = .enabled(FilesToolOptions(readOnly: true))
+        tools.files = .enabled(FilesToolOptions(readOnly: true, exclude: ["build/"]))
         tools.mcp = .enabled(servers: [
             MCPServerConfiguration(
                 name: "github",

@@ -317,14 +317,16 @@ struct BuiltinCommandsTests {
     }
 
     /// The emitted YAML round-trips a non-default configuration — a read-only
-    /// files body, an stdio `mcp` server with args and env, extra sandbox
-    /// write paths and a changed compaction trigger — back through the loader
-    /// to the same value, proving the emitter's nested mapping and sequence
-    /// forms parse.
+    /// files body with an exclude list, an stdio `mcp` server with args and
+    /// env, extra sandbox write paths and a changed compaction trigger — back
+    /// through the loader to the same value, proving the emitter's nested
+    /// mapping and sequence forms parse. The exclude list is set, because a
+    /// load puts the dotfolder default in for a list that no layer sets.
     @Test func configYAMLRoundTripsANonDefaultConfiguration() throws {
         let changedTrigger = 0.7
         var configuration = AgentConfiguration()
-        configuration.tools.files = .enabled(FilesToolOptions(readOnly: true))
+        configuration.tools.files = .enabled(
+            FilesToolOptions(readOnly: true, exclude: ["build/", "*.log"]))
         configuration.tools.mcp = .enabled(servers: [
             MCPServerConfiguration(
                 name: "svc",

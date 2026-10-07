@@ -73,15 +73,23 @@ struct ConfigInitTests {
             .report(environment: fixture.environment)
     }
 
+    /// The loader the CLI composes over `fixture`'s stack.
+    ///
+    /// - Parameter fixture: The two-layer tree the loader reads.
+    /// - Returns: The loader.
+    /// - Throws: `DotfolderNameError`.
+    private static func loader(in fixture: ConfigCommandFixture) throws -> ConfigurationLoader {
+        try AgentComposition.makeConfigurationLoader(
+            workingDirectory: fixture.workspace, environment: fixture.environment)
+    }
+
     /// Loads `fixture`'s stack, over the same loader the CLI composes.
     ///
     /// - Parameter fixture: The two-layer tree to load.
     /// - Returns: The load result.
     /// - Throws: `DotfolderNameError`, or the configuration load error.
     private static func load(in fixture: ConfigCommandFixture) throws -> LoadedConfiguration {
-        try AgentComposition.makeConfigurationLoader(
-            workingDirectory: fixture.workspace, environment: fixture.environment
-        ).load()
+        try loader(in: fixture).load()
     }
 
     /// The keys one section schema states.
@@ -100,16 +108,16 @@ struct ConfigInitTests {
     /// Runs `/config export home` over `fixture`'s user layer, the way a
     /// session runs it.
     ///
-    /// The context carries the builtin configuration, because that is
-    /// what `config init` writes: with the same value in both front
-    /// doors, the bytes may be compared.
+    /// The context carries the builtin configuration of the CLI loader,
+    /// because that is what `config init` writes: with the same value in
+    /// both front doors, the bytes may be compared.
     ///
     /// - Parameter fixture: The two-layer tree the export writes into.
     /// - Throws: `DotfolderNameError`, or whatever the command streams.
     private static func exportHome(in fixture: ConfigCommandFixture) async throws {
         let context = BuiltinCommandContext(
             workingDirectory: fixture.workspace,
-            configuration: AgentConfiguration(),
+            configuration: try loader(in: fixture).builtinConfiguration,
             instructions: unreadContextField,
             modelName: unreadContextField,
             profileName: unreadContextField,
@@ -154,10 +162,22 @@ struct ConfigInitTests {
 
         let written = ConfigCommandFixture.configURL(in: fixture.projectDirectory)
         let loaded = try Self.load(in: fixture)
-        #expect(loaded.configuration == AgentConfiguration())
+        #expect(loaded.configuration == (try Self.loader(in: fixture).builtinConfiguration))
         #expect(loaded.warnings.isEmpty)
         #expect(report.standardOutput == written.path + "\n")
         #expect(report.standardErrorLines.isEmpty)
+    }
+
+    /// The written file holds `tools.files.exclude` with its default: the
+    /// dotfolder of the CLI, so a person sees the list and can edit it.
+    @Test func theWrittenFileHoldsTheFilesExcludeDefault() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigInitTests-files-exclude")
+        try Self.initialize(in: fixture)
+
+        let text = try textOnDisk(
+            at: ConfigCommandFixture.configURL(in: fixture.projectDirectory))
+
+        #expect(text.contains("    exclude:\n      - \".\(AgentComposition.dotfolderName)/\"\n"))
     }
 
     /// Every top-level section of the schema, and every key of every
@@ -262,7 +282,8 @@ struct ConfigInitTests {
         let report = try Self.initialize(in: fixture, arguments: [Self.forceFlag])
 
         #expect(try textOnDisk(at: written) != Self.editedText)
-        #expect(try Self.load(in: fixture).configuration == AgentConfiguration())
+        #expect(
+            try Self.load(in: fixture).configuration == Self.loader(in: fixture).builtinConfiguration)
         #expect(report.standardOutput == written.path + "\n")
     }
 

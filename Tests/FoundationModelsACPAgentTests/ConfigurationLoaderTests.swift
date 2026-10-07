@@ -69,15 +69,26 @@ import Testing
 
     // MARK: - Defaults and layering
 
-    /// With no config files, the loaded configuration is the in-code default
-    /// and there is no warning.
+    /// With no config files, the loaded configuration is the builtin
+    /// configuration of the loader and there is no warning.
     @Test func noFilesGiveTheInCodeDefaults() throws {
         let fixture = Fixture()
+        let loader = try fixture.makeLoader()
 
-        let loaded = try fixture.makeLoader().load()
+        let loaded = try loader.load()
 
-        #expect(loaded.configuration == AgentConfiguration())
+        #expect(loaded.configuration == loader.builtinConfiguration)
         #expect(loaded.warnings.isEmpty)
+    }
+
+    /// The builtin configuration of a loader is the in-code default with
+    /// each default that the dotfolder name gives: the files tools exclude
+    /// the dotfolder `.<name>/`, and no other value changes.
+    @Test func theBuiltinConfigurationExcludesTheDotfolderFromTheFilesTools() throws {
+        var expected = AgentConfiguration()
+        expected.tools.files = .enabled(FilesToolOptions(exclude: [".\(Self.agentName)/"]))
+
+        #expect(try Fixture().makeLoader().builtinConfiguration == expected)
     }
 
     /// The default values the plan names (§2.2): recording is `full` and
@@ -455,9 +466,10 @@ import Testing
                 - "git status"
             """, in: fixture.projectDirectory)
 
-        let loaded = try fixture.makeLoader().load()
+        let loader = try fixture.makeLoader()
+        let loaded = try loader.load()
 
-        #expect(loaded.configuration == AgentConfiguration())
+        #expect(loaded.configuration == loader.builtinConfiguration)
         #expect(loaded.warnings == [.unknownSection(name: "permissions")])
         #expect(loaded.warnings[0].description.contains("permissions"))
     }

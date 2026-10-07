@@ -113,6 +113,26 @@ is on by default. Set its config section to `false` to set it off.
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
 
+`tools.files` has four keys. `readOnly`, `allowSymlinks` and `recordsChanges`
+are flags, and each default is `false`. `exclude` is a list of patterns in
+gitignore syntax. The search verbs (`files.grep`, `files.glob` and each other
+verb that walks a tree) skip a path that a pattern matches, also when a call
+sets `respectGitIgnore: false`. A read or a write of an explicit path does not
+change. The default list is the dotfolder of the agent, `.<name>/`
+(`.acp-agent/` for the CLI), which holds the transcripts, thus a search does
+not give the model its own earlier output. `ConfigurationLoader` puts the
+default in from the dotfolder name. A list replaces the default; add the
+dotfolder to your list to keep it. `exclude: []` turns the exclusion off.
+`config show` and `config init` show the list in effect.
+
+```yaml
+tools:
+  files:
+    exclude:
+      - .acp-agent/
+      - build/
+```
+
 `tools.codeContext` has two keys. `autoInstall` (default `true`) says whether a
 language server that is not installed is installed automatically.
 `semanticSearch` (default `true`) says whether the index embeds each chunk with
