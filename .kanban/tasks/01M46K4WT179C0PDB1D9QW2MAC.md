@@ -1,8 +1,25 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+comments:
+- actor: claude-code
+  id: 01m4c01mjwjj8c6ts6ehp5xtg4
+  text: |-
+    ### handoff (2026-10-07)
+    - The user asked to send this task to the session that works on FoundationModelsCodeContext. No other Claude session was running, so the message could not go out. Send it when a CodeContext (or Multitool) session is open.
+    - Update to the evidence: the run of 2026-10-06 (bench/run.code-context-1006.log) had the same burst: 11,789 warnings, peak 299/s. On CodeContext origin main f6cfd466 the warning is near Watcher.swift:341, and it still keeps only the error type. CodeContext b60be28 (FSEventStream on a private serial queue) did not change this path.
+  timestamp: 2026-10-07T20:14:29.468539+00:00
+- actor: claude-code
+  id: 01m4c618aga3stpe9kh21r0h6g
+  text: |-
+    ### upstream fixed — CodeContext f396b6b3 (task ^m03y2mz)
+    - Cause (proven by a CodeContext test): not SQLITE_BUSY. The watcher ran each flush inside the debounce timer task; a new event during a flush cancelled that task, and GRDB 7 `DatabasePool.write` calls `Task.checkCancellation()`, so each remaining markDirty/deleteFile of the batch threw CancellationError, wrapped as `CodeContextError.storage`. The change was lost.
+    - Fix: each flush runs in its own task; a failed write goes back to the pending batch (up to 3 attempts), then the next reconcile finds it; both warnings now hold `error.case` and `db.response.status_code`. A CodeContext burst test of 2000 files fails on the old path and passes with the fix.
+    - This repo: pin updated to f396b6b3 (Package.resolved, local, not tracked). This repo does not match on `CodeContextError.storage(...)`, so the API change needs no code change. `swift test`: 785 tests in 87 suites pass.
+    - The bench part of the acceptance (no warning for an edited file in a bench run) needs a bench run, which the user does not want now.
+  timestamp: 2026-10-07T21:59:08.368913+00:00
+position_column: done
+position_ordinal: ffa680
 title: 'code-context watcher: markDirty fails 24,812 times in one bench run, and the log loses the cause (FoundationModelsCodeContext)'
 ---
 ## Where the code is
