@@ -75,8 +75,31 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift (+1 test, 1 test filter adapted). `swift test --scratch-path …/scratchpad/rel-build`: 763 tests in 84 suites passed, 1 known issue (existing `withKnownIssue`). No compiler warning. Package.resolved not changed. 5/5 findings checked.
     - next: /review
   timestamp: 2026-10-07T17:08:32.213167+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4bndw27g2h0q08vad2zsz0m
+  text: |-
+    ### test — green
+    - evidence: swift test (scratch rel-build): 763 tests in 84 suites passed, 1 existing known issue; no compiler warning.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-10-07T17:08:56.007800+00:00
+- actor: claude-code
+  id: 01m4bnqjd31tjs2kadd49wjr5r
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (5418b9a): 0 findings, 7 validator runs attempted, 0 failed. All 5 items of Review Findings (2026-10-07 11:55) are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T17:14:13.795622+00:00
+- actor: claude-code
+  id: 01m4bnqv8tjxe6rdh7g4jh4vcb
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — MCPComposition.swift, ACPAgentTelemetry.swift, MCPCompositionTests.swift
+    - test: green — swift 763 passed
+    - commit: 5418b9a
+    - review: clean — 0 findings, 5 prior findings checked
+  timestamp: 2026-10-07T17:14:22.874457+00:00
+position_column: done
+position_ordinal: ffa180
 title: Keep the outcome of each MCP server connect, and start the session when a client MCP server fails
 ---
 ## What

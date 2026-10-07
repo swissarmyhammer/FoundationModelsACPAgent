@@ -33,8 +33,31 @@ comments:
     - evidence: .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py (new, 16 tests OK), .github/workflows/bench.yml (new step for the swebench skill scripts), .claude/skills/swebench/SKILL.md. swebench-score tests 25 OK, bench tests 227 OK. Real data: run.code-context.log gives "18173 rows from 801 operations" and names django__django-14667 (13663 rows, operation 01M46DFX2Y3PSFQ8HH9EJA68FB); run.code-context.log.web-off-0717 gives "#1 django__django-13447 stopped (no end line)", no limit problem, and the different-runs warning; run.code-context-1006.log gives "1360 rows from 1028 operations", no flood. A diff with the HEAD scan.py on finished logs changes only the running-notice lines, the new problem, and the corrected run start day.
     - next: review. New task ^p8c7snm for the agent fault.
   timestamp: 2026-10-07T13:17:28.377153+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4b87823ba3fd74sx1wkqk6w
+  text: |-
+    ### test — green
+    - evidence: bench with swebench 5.0.2: 227 OK, 0 skipped; swebench scripts: 16 OK; swebench-score scripts: 25 OK; bench.yml runs both skill test steps. No Swift change.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-10-07T13:18:07.427692+00:00
+- actor: claude-code
+  id: 01m4b8fk9j48gqq4n0tfsnmfnc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 5512064) gave 0 findings, 0 confirmed, 0 refuted, 8 attempted, 0 failed. The engine reviewed 3 files. It did not review 7 files: 6 .kanban files (.reviewignore) and .claude/skills/swebench/SKILL.md (no validator matches this file). The task has no prior Review Findings sections.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T13:22:41.074795+00:00
+- actor: claude-code
+  id: 01m4b8fy7acdvxr6a7sbwqdk0m
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — scan.py, test_scan.py, SKILL.md, bench.yml; new task ^p8c7snm
+    - test: green — bench 227 OK, scan 16 OK, report 25 OK
+    - commit: 5512064
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T13:22:52.266305+00:00
+position_column: done
+position_ordinal: ff9e80
 title: 'scan.py: the ''running'' notice count counts rows, and an old log shows a stopped instance as running'
 ---
 ## Why

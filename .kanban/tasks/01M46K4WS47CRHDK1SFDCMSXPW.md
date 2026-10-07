@@ -18,8 +18,24 @@ comments:
     - evidence: `review sha f3d00bf~1..f3d00bf`, 1 finding (1 confirmed, 1 refuted). Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift:611 `swift/doc-parameter-naming`. The line is the same in the current code (HEAD 09b7295 did not change it).
     - next: change the doc comment of `report(cut:metadata:changedFileCount:)` from `- metadata:` to `- cutMetadata:`, and remove the same cause from the whole file. Then run the review again.
   timestamp: 2026-10-07T15:36:18.652118+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4bgehrj4gzfxpewy7nz7vch
+  text: |-
+    ### finish iteration 2 — findings fixed
+    - implement: changed — the doc comment of report(cut:metadata:changedFileCount:) names `cutMetadata`; the doc comments that named this task as ^1pw3j6m now name ^dcmsxpw (4 files)
+    - test: green — swift build no warnings from this repo; swift test 751 passed
+    - commit: 03cb6db
+    - review: next, HEAD~1..HEAD
+  timestamp: 2026-10-07T15:41:55.346095+00:00
+- actor: claude-code
+  id: 01m4bgn35g75h8kc5yjvs1d0vw
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (03cb6db): 0 findings (7 attempted, 0 failed, 0 skipped). The 1 prior item of 2026-10-07 10:31 is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T15:45:29.776272+00:00
+position_column: done
+position_ordinal: ffa080
 title: 'bench: a prompt that stops at the reasoning limit gives an empty patch, and the stop report does not say why'
 ---
 ## Why
@@ -81,4 +97,4 @@ In 13964 the generation stalled many times. The longest gap is 434 s before seq 
 
 > Scope: `review sha f3d00bf~1..f3d00bf` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 0 not reviewed.
 
-- [ ] `Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift:611` `swift/doc-parameter-naming` — Doc comment uses the external parameter label `metadata` instead of the internal parameter name `cutMetadata`. Doc comments must name the internal (local) parameter, not the external argument label. Change `- metadata:` to `- cutMetadata:` to match the internal parameter name.
+- [x] `Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift:611` `swift/doc-parameter-naming` — Doc comment uses the external parameter label `metadata` instead of the internal parameter name `cutMetadata`. Doc comments must name the internal (local) parameter, not the external argument label. Change `- metadata:` to `- cutMetadata:` to match the internal parameter name.

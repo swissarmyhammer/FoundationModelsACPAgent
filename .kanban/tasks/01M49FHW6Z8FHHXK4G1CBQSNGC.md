@@ -20,10 +20,33 @@ comments:
     - note: an update has no `transport` member when the agent does not know the transport (reason "The transport is not known."). The client task d8d4384 must accept this.
     - next: /review
   timestamp: 2026-10-07T17:26:33.305156+00:00
+- actor: claude-code
+  id: 01m4bpewc0v7vyck8pv15gf1vn
+  text: |-
+    ### test — green
+    - evidence: swift test (scratch rel-build): 774 tests in 85 suites passed, 1 existing known issue; MCPServerStatusReportTests 11/11.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-10-07T17:26:57.664819+00:00
+- actor: claude-code
+  id: 01m4bps1bdf0zc6wgfjebxhv6n
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 929e55d). 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed. 6 files reviewed. 2 .kanban files are excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T17:32:30.445949+00:00
+- actor: claude-code
+  id: 01m4bpsd6f4hy450s0knxgd8n0
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (MCPServerStatusReport.swift new, SessionSetup.swift, SessionHistory.swift, MCPComposition.swift doc, 2 test files)
+    - test: green — swift 774 passed
+    - commit: 929e55d
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T17:32:42.575643+00:00
 depends_on:
 - 01M49FHRMD31QHAZSQG3YWMBW4
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffa280
 title: Report the status of each MCP server of a session as a _mcp_server_status session update
 ---
 ## What
