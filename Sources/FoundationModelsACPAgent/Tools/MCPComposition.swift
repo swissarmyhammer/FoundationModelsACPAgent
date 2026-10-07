@@ -139,7 +139,8 @@ enum MCPComposition {
         }
 
         /// The source of the entry of one server. The raw value is the text
-        /// of the origin in a log record.
+        /// of the origin in a log record and in the `origin` member of the
+        /// status report (``MCPServerStatusReport``).
         enum Origin: String, Equatable, Sendable {
             /// The `mcp:` section of the configuration.
             case config

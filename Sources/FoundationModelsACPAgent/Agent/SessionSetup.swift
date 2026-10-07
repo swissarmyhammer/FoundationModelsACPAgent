@@ -424,7 +424,8 @@ extension RoutedACPAgent {
     /// Mounts one made or restored Router session into the agent (plan.md
     /// §7.1, §7.4): the project-registry record, the command registry with
     /// its bound builtin context, the table entry with its retained
-    /// history, the command-set publication, and the terminal projection.
+    /// history, the command-set publication, the terminal projection, and
+    /// the status report of the MCP servers.
     ///
     /// - Parameters:
     ///   - session: The root Router session to mount.
@@ -511,6 +512,8 @@ extension RoutedACPAgent {
 
         startTerminalProjection(over: composition.surface, sessionId: sessionId)
 
+        reportMCPServerStatus(composition.surface.mcpServerOutcomes, of: sessionId)
+
         return SessionActivation(
             sessionId: sessionId,
             availableCommands: CommandRegistry.availableCommands(for: await commands.commands),
@@ -533,6 +536,36 @@ extension RoutedACPAgent {
             return
         }
         TerminalStream.start(over: shellOutput, send: historySink(for: sessionId, connection: connection))
+    }
+
+    /// Sends the status report of the MCP servers of a session after the
+    /// response of the current `session/new` or `session/resume` request:
+    /// one `_mcp_server_status` update for each outcome, in mount order
+    /// (``MCPServerStatusReport``). The client knows the session id only
+    /// from the response, so no update goes out before it. A resume sends a
+    /// full new report, and the client replaces its list.
+    ///
+    /// The updates go through `post(_:in:)` directly, never through the
+    /// history sink: the status is live, and the retained history and a
+    /// replay never hold it. A session with no MCP server, or an agent with
+    /// no bound connection, sends nothing. The deferred work keeps the
+    /// connection weakly, as the agent keeps the connection (task
+    /// `^173qn8n`).
+    ///
+    /// - Parameters:
+    ///   - outcomes: The outcome of each MCP server of the session, in mount
+    ///     order.
+    ///   - sessionId: The session the updates belong to.
+    private func reportMCPServerStatus(_ outcomes: [MCPComposition.ServerOutcome], of sessionId: SessionId) {
+        guard !outcomes.isEmpty, let connection = boundConnection else {
+            return
+        }
+        let updates = outcomes.map(MCPServerStatusReport.update(for:))
+        connection.afterRespondingInCurrentServiceContext { [weak connection] in
+            for update in updates {
+                await connection?.post(update, in: sessionId)
+            }
+        }
     }
 
     /// Resolves the per-cwd configuration one session request starts from

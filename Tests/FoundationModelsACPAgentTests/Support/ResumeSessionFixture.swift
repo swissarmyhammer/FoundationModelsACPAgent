@@ -231,13 +231,20 @@ struct ResumeSessionFixture {
     ///     `session/new`, or `nil` for none.
     ///   - additionalDirectories: The `session/new` additional roots, or
     ///     `nil` for none.
+    ///   - mcpServers: The client MCP servers of `session/new`, or `nil`
+    ///     for none.
+    ///   - tapsWire: Whether the harness stands a `WireTap` on the client
+    ///     end, so a proof can read the order of the responses and the
+    ///     notifications.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
         label: String,
         workingDirectory: URL? = nil,
         projectConfigYAML: String? = nil,
-        additionalDirectories: [AbsolutePath]? = nil
+        additionalDirectories: [AbsolutePath]? = nil,
+        mcpServers: [MCPServer]? = nil,
+        tapsWire: Bool = false
     ) async throws -> ResumeSessionFixture {
         let container = ResumeRecordingContainer()
         var loader = StubModelLoader()
@@ -247,7 +254,9 @@ struct ResumeSessionFixture {
             label: label,
             workingDirectory: workingDirectory,
             projectConfigYAML: projectConfigYAML,
-            additionalDirectories: additionalDirectories)
+            mcpServers: mcpServers,
+            additionalDirectories: additionalDirectories,
+            tapsWire: tapsWire)
         return ResumeSessionFixture(fixture: fixture, container: container)
     }
 

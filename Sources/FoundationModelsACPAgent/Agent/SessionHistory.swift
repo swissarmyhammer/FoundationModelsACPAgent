@@ -120,8 +120,11 @@ extension RoutedACPAgent {
     /// The sink of the updates of one session: it merges each update into
     /// the retained history of the session, then sends it through
     /// `connection`. Each `session/update` that the agent sends for a
-    /// session goes through one such sink, except the replay of the history
-    /// itself.
+    /// session goes through one such sink, with two exceptions: the replay
+    /// of the history itself, and the `_mcp_server_status` report of the MCP
+    /// servers (``MCPServerStatusReport``). That report is a live status and
+    /// not part of the session history, so the retained history and a
+    /// replay never hold it.
     ///
     /// The sink keeps the agent and the connection weakly, as the agent
     /// keeps the connection (task `^173qn8n`): the prompt-state owner keeps
