@@ -115,11 +115,18 @@ struct EventProjection {
     /// The one agent thought id of the current reasoning message.
     private var thoughtMessageId: MessageId?
 
-    /// The prompt tokens summed across every `submissionEnded` (§8.1).
+    /// The prompt tokens summed across every `submissionEnded` (§8.1). A
+    /// tool loop feeds the whole render again at each generation call, so
+    /// this sum is not the size of the context.
     private var tokensIn = 0
 
     /// The completion tokens summed across every `submissionEnded`.
     private var tokensOut = 0
+
+    /// The fill of the last generation call, the peak fill and the context
+    /// window, from the `generationCall` reports of the prompt (task
+    /// ^1x5ksdv).
+    private var contextUsage = PromptContextUsage()
 
     /// The finish reason of the last submission of the prompt, or `nil`
     /// before the first `submissionEnded`.
@@ -138,16 +145,17 @@ struct EventProjection {
     /// `_reasoning_limit` prompt says how the last submission stopped, and
     /// nothing more. The reader then cannot
     /// tell a model that reasoned too long in one round from a context that
-    /// filled up. These three numbers name the difference: the tokens the
-    /// whole prompt fed and generated, and how full the context was at the
-    /// last report.
+    /// filled up. These numbers name the difference: the tokens that all the
+    /// generation calls of the prompt fed and generated, summed, and from the
+    /// call reports, the fill of the last call, the peak fill and the context
+    /// window (``PromptContextUsage/metadata``).
     var usageMetadata: Logger.Metadata {
-        let fill = contextFill.isNaN ? "unknown" : String(format: "%.3f", contextFill)
-        return [
+        var metadata: Logger.Metadata = [
             ACPAgentTelemetry.LogMetadataKey.tokensIn: "\(tokensIn)",
             ACPAgentTelemetry.LogMetadataKey.tokensOut: "\(tokensOut)",
-            ACPAgentTelemetry.LogMetadataKey.contextFill: "\(fill)",
         ]
+        metadata.merge(contextUsage.metadata) { current, _ in current }
+        return metadata
     }
 
     /// The number of generate calls of the prompt that Router stopped: the
@@ -193,8 +201,9 @@ struct EventProjection {
         return metadata
     }
 
-    /// The newest context fill. `nan` means "no stamp": send no meter
-    /// for the prompt (§8.4).
+    /// The context fill of the last submission: the context that the session
+    /// holds after it, over the window. `nan` means "no stamp": send no
+    /// meter for the prompt (§8.4).
     private var contextFill = Double.nan
 
     /// Whether the prompt produced observable output: a text delta, a
@@ -396,11 +405,12 @@ struct EventProjection {
             tokensIn += usage.tokensIn
             tokensOut += usage.tokensOut
             contextFill = usage.contextFill
-        case .generationCall:
+        case .generationCall(let call):
             // The usage of one generation call alone. The
             // `submissionEnded` sum above already counts these tokens,
-            // so no wire update goes out.
-            break
+            // so no wire update goes out. The call gives the fills and the
+            // window of the context (task ^1x5ksdv).
+            contextUsage.record(call)
         case .submissionQueued:
             // A log line, not a wire message (§8.4).
             reportQueueWait()
@@ -504,17 +514,20 @@ struct EventProjection {
         ACPAgentTelemetry.logger(.promptExecution).notice(message, metadata: metadata)
     }
 
-    /// Sends the one `usage_update` of the prompt, from the summed
-    /// usage. A `nan` context fill means "no stamp": no meter goes on
-    /// the wire (plan.md §8.4).
+    /// Sends the one `usage_update` of the prompt (task ^1x5ksdv).
+    ///
+    /// `size` is the context window that the generation calls measured, and
+    /// `used` is the fill of the last submission over that window: the
+    /// tokens now in the context. The summed tokens of the prompt are not
+    /// the context, because a tool loop feeds the whole render again at
+    /// each call. A `nan` context fill means "no stamp", and a prompt with
+    /// no call report has no window: then no meter goes on the wire
+    /// (plan.md §8.4).
     func reportUsage() async {
-        let used = tokensIn + tokensOut
-        guard used > 0, contextFill.isFinite, contextFill > 0 else {
+        guard let size = contextUsage.windowTokens, let used = contextUsage.tokens(atFill: contextFill) else {
             return
         }
-        // `contextFill` is used divided by size, so the size is derived.
-        let size = Int((Double(used) / contextFill).rounded())
-        await send(.usageUpdate(UsageUpdate(size: max(size, used), used: used)))
+        await send(.usageUpdate(UsageUpdate(size: size, used: used)))
     }
 
     // MARK: - The tool-call upsert (§11.6)

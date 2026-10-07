@@ -795,9 +795,9 @@ import Testing
     /// A retry after a context overflow is two submissions with one
     /// compaction between them, and one `answered` event with the total
     /// usage of the chain. The compaction sends its meter update. The
-    /// prompt then sends one more `usage_update`, which counts the usage of
-    /// each submission one time and adds nothing from the `answered` total.
-    @Test func anOverflowRetrySendsItsCompactionUpdateAndOneSummedUsageUpdate() async throws {
+    /// prompt then sends one more `usage_update`, which gives the context
+    /// that the retry left and adds nothing from the `answered` total.
+    @Test func anOverflowRetrySendsItsCompactionUpdateAndOneUsageUpdate() async throws {
         let overflowed = TokenUsage(tokensIn: 800, tokensOut: 0, contextFill: 0.8)
         let retried = TokenUsage(tokensIn: 300, tokensOut: 100, contextFill: 0.4)
         let chain = TokenUsage(tokensIn: 1100, tokensOut: 100, contextFill: 0.4)
@@ -807,14 +807,18 @@ import Testing
             .compaction(Self.makeFoldResult()),
             makeSubmissionStarted(cause: .continuation),
             .textDelta("the answer after the retry"),
+            .generationCall(
+                GenerationCallUsage(
+                    tokensIn: retried.tokensIn, tokensOut: retried.tokensOut, finishReason: .completed,
+                    entryKind: .text, contextFill: retried.contextFill)),
             makeSubmissionEnded(retried),
             .answered(.makeSynthetic(usage: chain)),
         ])
 
         let usages = updates.compactMap(usageReport(of:))
-        #expect(usages.count == 2, "expected the compaction meter and one sum, got \(updates)")
+        #expect(usages.count == 2, "expected the compaction meter and the prompt meter, got \(updates)")
         #expect(usages.first?.used == Self.tokensAfterFold)
-        #expect(usages.last?.used == chain.tokensIn + chain.tokensOut)
+        #expect(usages.last?.used == retried.tokensIn + retried.tokensOut)
         #expect(updates.count { isRunningState($0) } == 1)
     }
 

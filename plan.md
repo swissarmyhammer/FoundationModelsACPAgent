@@ -1079,8 +1079,8 @@ and its doc comment says a consumer must write a `default` arm. Write one.
 | `runSettled(OperationEvent)` | `tool_call_update` with the **terminal** status (see the mapping below) |
 | `toolCallReport(ToolCallReport)` | `tool_call_update` that replaces the content of the call with its attachments, and its `locations` when a file change is attached (§11.6). A report with no attachment sends nothing — a `warning` log line |
 | `elicitationRequested(OperationEvent)` | the elicitation round trip to the client (§16), with `requires_action` around it (§8.2). With no relay, nothing on the wire — a `notice` log line |
-| `submissionEnded(SubmissionEnd)` | nothing on its own. Its usage adds to the one sum of the prompt, and the agent keeps its finish reason. The one `usage_update` goes at the end of the prompt. The `idle` `state_update` comes from the end of our own prompt task, never from this event (§8.1) |
-| `generationCall(GenerationCallUsage)` | nothing on the wire — the usage of one generation call; `submissionEnded` already counts it (§8.0) |
+| `submissionEnded(SubmissionEnd)` | nothing on its own. Its tokens add to the one sum of the prompt, the agent keeps its context fill for the meter, and the agent keeps its finish reason. The one `usage_update` goes at the end of the prompt. The `idle` `state_update` comes from the end of our own prompt task, never from this event (§8.1) |
+| `generationCall(GenerationCallUsage)` | nothing on the wire — the usage of one generation call; `submissionEnded` already counts its tokens (§8.0). The agent keeps the fill of the last call, the peak fill and the context window (its context divided by its fill) for the meter and for the record of a cut prompt |
 | `repetitionStopped(RepetitionStop)` | nothing on the wire — a `notice` log line with the session id, the model name and the report of Router: the counts of the stop and the settings in force. When no recovery is left, the last submission ends with `.repeatedLines`, and the prompt stops with `_repeated` (§8.2) |
 | `reasoningStopped(ReasoningStop)` | nothing on the wire — a `notice` log line with the session id, the model name and the report of Router: the reasoning tokens, the limit, the finish reason of the pass, the recovery and the settings in force. When no recovery is left, the last submission ends with `.reasoningTokenLimit`, and the prompt stops with `_reasoning_limit` (§8.2) |
 | `answered(SessionAnswer)` / `answerFailed` / `mailDeliveryPaused` | nothing on the wire — a `debug` log line — with one exception: the `answered` of an answer after the caller answer (§8.1) that streamed no text sends its `reply` as one `agent_message_chunk`. The usage of `answered` is the total of the chain, and the `submissionEnded` sum already counts it |
@@ -1174,8 +1174,13 @@ The v2 discriminators are **`snake_case`** (`agent_message_chunk`,
 This is an easy place for a wire error.
 
 - **`usage_update` is the context meter, and it is native**: `{used, size,
-  cost?}` maps to Router's `TokenUsage { tokensIn, tokensOut, contextFill }`
-  and the resolved context. **`TokenUsage` has no cost field**, so send no
+  cost?}`. `size` is the context window: the context of a
+  `GenerationCallUsage` divided by its `contextFill`. `used` is the
+  `contextFill` of the last `TokenUsage` times that window: the tokens now in
+  the context. The summed `tokensIn` of a prompt is not the context, because a
+  tool loop feeds the whole render again at each call. A prompt with no
+  `generationCall` report has no window, so it sends no meter.
+  **`TokenUsage` has no cost field**, so send no
   `cost`. **Trap: `contextFill` returns `Double.nan` when there is no stamp**,
   and the naming constant is internal. Therefore test `.isNaN` yourself and
   omit the meter for that prompt. Do not put a `NaN` on the wire.

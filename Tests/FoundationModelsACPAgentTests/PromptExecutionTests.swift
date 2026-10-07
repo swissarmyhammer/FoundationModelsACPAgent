@@ -278,12 +278,14 @@ import Testing
     /// A retry makes two submissions in one prompt. The Router sends the
     /// events of both submissions, the usage of each generation call, and
     /// one `answered` event with the total usage of the chain. The prompt
-    /// sends one `running`, one `usage_update` with each submission counted
-    /// one time, and one `idle`, keyed on stream completion (§8.1).
-    @Test func aRetryWithTwoSubmissionsSendsOneRunningOneSummedUsageUpdateAndOneIdle() async throws {
-        let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.25)
-        let second = TokenUsage(tokensIn: 150, tokensOut: 30, contextFill: 0.5)
-        let chain = TokenUsage(tokensIn: 250, tokensOut: 50, contextFill: 0.5)
+    /// sends one `running`, one `usage_update` with the context that the
+    /// last submission left, and one `idle`, keyed on stream completion
+    /// (§8.1). The total of the chain adds nothing to the meter.
+    @Test func aRetryWithTwoSubmissionsSendsOneRunningOneUsageUpdateAndOneIdle() async throws {
+        let windowTokens = 1_000
+        let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.12)
+        let second = TokenUsage(tokensIn: 150, tokensOut: 30, contextFill: 0.18)
+        let chain = TokenUsage(tokensIn: 250, tokensOut: 50, contextFill: 0.18)
         let (execution, recorder) = makeSinkedExecution()
         let reason = await execution.drive(
             events: makeEventStream([
@@ -292,7 +294,7 @@ import Testing
                 .generationCall(
                     GenerationCallUsage(
                         tokensIn: 100, tokensOut: 20, finishReason: .completed, entryKind: .text,
-                        contextFill: 0.25)),
+                        contextFill: 0.12)),
                 makeSubmissionEnded(first),
                 makeSubmissionStarted(cause: .continuation),
                 .textReset,
@@ -300,7 +302,7 @@ import Testing
                 .generationCall(
                     GenerationCallUsage(
                         tokensIn: 150, tokensOut: 30, finishReason: .completed, entryKind: .text,
-                        contextFill: 0.5)),
+                        contextFill: 0.18)),
                 makeSubmissionEnded(second),
                 .answered(.makeSynthetic(usage: chain)),
             ]))
@@ -314,7 +316,8 @@ import Testing
         #expect(idle.stopReason == .endTurn)
         let usages = updates.compactMap(usageReport(of:))
         #expect(usages.count == 1)
-        #expect(usages.first?.used == chain.tokensIn + chain.tokensOut)
+        #expect(usages.first?.used == second.tokensIn + second.tokensOut)
+        #expect(usages.first?.size == windowTokens)
     }
 
     /// `textReset` discards the collected text as a whole-message
@@ -370,14 +373,23 @@ import Testing
         #expect(Set(chunkIds).count == 1)
     }
 
-    /// The usage of every `submissionEnded` is summed and reported one
-    /// time, before the idle terminator (§8.1).
-    @Test func submissionUsageIsSummedIntoOneUsageUpdate() async throws {
+    /// The prompt reports its usage one time, before the idle terminator
+    /// (§8.1): the context that the last submission left, over the window
+    /// that the generation calls measured.
+    @Test func submissionUsageIsReportedInOneUsageUpdate() async throws {
         let (execution, recorder) = makeSinkedExecution()
         _ = await execution.drive(
             events: makeEventStream([
+                .generationCall(
+                    GenerationCallUsage(
+                        tokensIn: 1, tokensOut: 2, finishReason: .completed, entryKind: .text,
+                        contextFill: 0.15)),
                 makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
-                makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.5)),
+                .generationCall(
+                    GenerationCallUsage(
+                        tokensIn: 3, tokensOut: 4, finishReason: .completed, entryKind: .text,
+                        contextFill: 0.35)),
+                makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.35)),
             ]))
         let updates = await recorder.updates
 
@@ -386,7 +398,7 @@ import Testing
             return nil
         }
         #expect(usages.count == 1)
-        #expect(usages.first?.used == 10)
+        #expect(usages.first?.used == 7)
         #expect(usages.first?.size == 20)
         #expect(updates.last?.kind == .stateUpdate)
     }

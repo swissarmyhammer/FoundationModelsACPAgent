@@ -209,15 +209,23 @@ enum ACPAgentTelemetry {
         /// reasoning stop. It holds times, counts and settings only.
         static let routerReport = "router.report"
 
-        /// The prompt tokens of a prompt. Router uses the same key.
+        /// The prompt tokens of a prompt, summed over all its generation
+        /// calls. A tool loop feeds the whole render again at each call, so
+        /// this sum is not the size of the context. Router uses the same key.
         static let tokensIn = "tokens.in"
 
-        /// The completion tokens of a prompt. Router uses the same key.
+        /// The completion tokens of a prompt, summed over all its generation
+        /// calls. Router uses the same key.
         static let tokensOut = "tokens.out"
 
-        /// The fraction of the context that the last usage report filled, or
-        /// `unknown` when no report gave it.
-        static let contextFill = "context.fill"
+        /// The fill of the last generation call of a prompt: the fed and
+        /// generated tokens of that call over the context window, or
+        /// `unknown` when no call report gave it.
+        static let lastCallContextFill = "context.last_call_fill"
+
+        /// The largest fill of all generation calls of a prompt, or
+        /// `unknown` when no call report gave it.
+        static let peakContextFill = "context.peak_fill"
 
         /// The reasoning tokens of the last pass that Router stopped for its
         /// reasoning, in the record of a cut prompt (task ^1pw3j6m).
