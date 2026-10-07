@@ -561,7 +561,8 @@ def execute_result(status, detail):
 def find_live_transcripts():
     """Find the transcripts dir of the clone that the live agent uses."""
     out = []
-    for pid in sh("pgrep -f 'acp-agent acp'").split():
+    # The bracket keeps the pattern from finding the shell that holds it.
+    for pid in sh("pgrep -f '[a]cp-agent acp'").split():
         cwd = ""
         for l in sh(f"lsof -a -p {pid} -d cwd -Fn").splitlines():
             if l.startswith("n"):

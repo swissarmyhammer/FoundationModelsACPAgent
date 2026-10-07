@@ -22,6 +22,17 @@ launch checks, the watch, and the evaluation.
 - Do not edit the harness (`bench/*.py`) to do this work.
 - Run each shell command so that it exits quickly. For a long job, use a
   detached launch (step A) and a Monitor (step C).
+- A Monitor stops after 30 minutes at most, and each process that the
+  Monitor command starts stops with it. So start a long step (the run, the
+  score) with `nohup ... &` in a usual shell call. A Monitor only waits and
+  watches. Do not start a step at the end of a wait loop in a Monitor.
+- A wait loop must not find its own command line. Write the process pattern
+  with a bracket, for example `pgrep -f '[s]webench_run\.py bench/preds\.NAME\.jsonl'`.
+  The regex `[s]` finds the letter `s`, but the text `[s]` of the command line
+  is not `s`, so the pattern cannot find the shell that holds it. Also do not
+  put a background subshell (`( ... ) &`) in a wait-loop command: on macOS
+  `pgrep` does not find its own ancestors, but that subshell is a sibling, and
+  it holds the full command text.
 - Write all notes and reports in ASD-STE100 Simplified Technical English.
 
 ## The argument
@@ -91,7 +102,7 @@ Do these checks first. Stop and tell the user if one fails.
 
 ```bash
 ps -axo pid,etime,command | grep -E 'swebench_run.py|acp-agent acp' | grep -v grep
-P=$(pgrep -f 'acp-agent acp' | head -1)
+P=$(pgrep -f '[a]cp-agent acp' | head -1)
 lsof -a -p $P -d cwd -Fn | sed -n 's/^n//p'          # the temporary clone dir
 ```
 
@@ -109,12 +120,28 @@ lsof -a -p $P -d cwd -Fn | sed -n 's/^n//p'          # the temporary clone dir
 ## C. Watch
 
 Arm a Monitor on the run log (30 minutes, the maximum). Re-arm it each time
-it expires, until the log has `complete`:
+it expires. The command shows the new lines of the log every 15 seconds, and
+it ends when no `swebench_run.py` process for NAME is left. Put NAME in the
+first line:
 
 ```bash
-tail -n 0 -F bench/run.NAME.log | grep --line-buffered -v 'could not mark a changed file dirty' \
-  | grep --line-buffered -E 'running the agent|done|EMPTY patch|TOO SLOW|ERROR|NO ENVIRONMENT|not supported|transcripts not kept|complete|Traceback|error|Killed|protocol'
+NAME=code-context; LOG=bench/run.$NAME.log
+n=$(( $(wc -l < "$LOG") ))
+show() {
+  m=$(( $(wc -l < "$LOG") ))
+  [ "$m" -gt "$n" ] && sed -n "$((n + 1)),${m}p" "$LOG" \
+    | grep -v 'could not mark a changed file dirty' \
+    | grep -E 'running the agent|done|EMPTY patch|TOO SLOW|ERROR|NO ENVIRONMENT|not supported|transcripts not kept|complete|Traceback|error|Killed|protocol'
+  n=$m
+}
+while pgrep -f "[s]webench_run\.py bench/preds\.$NAME\.jsonl" >/dev/null; do show; sleep 15; done
+show; echo "no swebench_run.py process for $NAME is left"
 ```
+
+When the command ends, read the end of the log. `complete` tells that the
+run ended normally. If the pattern finds no process at the start (for example,
+the run uses an other predictions path), the command ends at once. Then use
+step B to find the real command line.
 
 The watcher warning `could not mark a changed file dirty` comes in bursts of
 thousands. Do not stream it. Count it in the deep scan.
@@ -208,7 +235,9 @@ The scan reports these items:
 to score the run, use the swebench-score skill
 ([`.claude/skills/swebench-score/SKILL.md`](../swebench-score/SKILL.md)). It
 checks docker, starts the score run detached, watches it, and gives the
-report for each instance. Then do the last deep scan:
+report for each instance. Start the score in a new, usual shell call after the
+watch of step C ends. Do not add the score command to the Monitor command of
+step C: the score then stops when the Monitor stops. Then do the last deep scan:
 
 ```bash
 python3 .claude/skills/swebench/scripts/scan.py --name NAME --timeout 5400
