@@ -20,8 +20,10 @@
 # - `web` is the Multitool group `tools.web` (search and fetch). It is on by
 #   default, and this run sets `enabled: true` to state it. No key is
 #   necessary: with no key, the providers are the keyless pages of Brave
-#   and DuckDuckGo. A web search can find the upstream fix of the issue.
-#   Thus the score of this run does not measure the agent alone.
+#   and DuckDuckGo. A web search can find the upstream fix of the issue. The
+#   web tool is part of the agent, so a fix that the agent finds and uses is
+#   a valid result. A run with web off uses different tools, so a comparison
+#   with it is a comparison of two configurations.
 #
 # No `compaction.toolOutputLimit`. A cap on a tool result keeps the first N
 # tokens and drops the rest before the model reads it: a file read loses its

@@ -258,19 +258,22 @@ agent config. It gives:
   shows them apart.
 - **UNRESOLVED**: the `FAIL_TO_PASS` and `PASS_TO_PASS` counts of each
   unresolved instance.
-- **WEB**: the web state and the path of the config of the run, and a warning
-  when web was on. The script finds the config in this order: the
+- **WEB**: the web state and the path of the config of the run, the count of
+  instances that used web, and the instances where a web result looks like
+  the upstream fix. The script finds the config in this order: the
   `agent_config` field of the record, the `agent_config=PATH` or
   `--agent-config PATH` text in the head of `bench/run.NAME.log`, and
   `bench/NAME.config.yaml`. When it finds none, the state is `unknown`. A web
-  search can find the upstream fix of the issue. The script finds it with the
-  same pattern and the same transcript pairing as `scan.py` of the swebench
-  skill (it loads that script as a module). For a full check, also run
+  search can find the upstream fix of the issue. The web tool is part of the
+  agent, so a fix that the agent finds on the web and uses is a valid result.
+  The script shows it as information: it tells how the agent solved an
+  instance. The script finds it with the same pattern and the same transcript
+  pairing as `scan.py` of the swebench skill (it loads that script as a
+  module). For a full check, also run
   `python3 .claude/skills/swebench/scripts/scan.py --name NAME`.
 
-Give the user the SCORE lines, the table, the harness errors, and the web
-warning. Do not compare a run with web on to a run with web off as if they
-measure the same thing.
+Give the user the SCORE lines, the table, the harness errors, and the WEB
+part.
 
 ## 5. Compare
 
@@ -285,8 +288,9 @@ instance it gives the result before, the result now, and the delta:
 `fixed` (now resolved, before not), `broken` (before resolved, now not),
 `same`, or `only one run`. Use it to measure a change of the agent, for
 example a Multitool fix: score the run before and the run after with the same
-instances, and report the fixed and broken ids. The script gives a warning when
-the web state of the two runs is not the same.
+instances, and report the fixed and broken ids. When the web state of the two
+runs is not the same, the script says so: the two runs use different tools, so
+the comparison is a comparison of two configurations. Tell the user this.
 
 ## 6. Cleanup (only when the user asks)
 

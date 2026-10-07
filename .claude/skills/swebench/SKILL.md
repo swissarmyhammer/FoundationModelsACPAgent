@@ -72,8 +72,9 @@ Do these checks first. Stop and tell the user if one fails.
      `TAVILY_API_KEY`, `EXA_API_KEY`, `SERPER_API_KEY`, `KAGI_API_KEY`,
      `SEARXNG_URL`. The harness gives the agent a clean environment
      (`bench/swebench_env.py`), so check that it keeps the variable.
-   - With web on, the agent can find the upstream fix. Tell the user that the
-     score then does not measure the agent alone.
+   - With web on, the agent can find the upstream fix. The web tool is part
+     of the agent, so a fix that the agent finds and uses is a valid result.
+     The scan shows it as information.
 3. **No collision.** No other run must write the same files:
 
    ```bash
@@ -170,7 +171,7 @@ The scan reports these items:
 | Transcript | missing seq numbers (the router's selection sessions share the seq counter, so a gap is not always a lost line) |
 | Tools | calls / errors for each tool and each `tools.<group>.<verb>`; `execute` nonzero exits apart from tool failures |
 | Made-up verbs | each `is not a function` error (for example `tools.shell.run`; the correct verb is `tools.shell.execute`), the hint, if the model recovered, and that error as the evidence |
-| Web | `web.search` and `web.fetch` calls and errors; zero web calls when web is on; web not offered to the tool-selection model; results that look like the upstream fix |
+| Web | `web.search` and `web.fetch` calls and errors; zero web calls when web is on; web not offered to the tool-selection model; results that look like the upstream fix (information in the TOOLS part, not a problem) |
 | Skills / code context | `skills` tool results (`use skill`), `code_context.*` results, `"kind": "instructions"` lines |
 | Self-matches | `files.grep` results that contain `.acp-agent/transcripts` lines. `.acp-agent` has no ignore rule in the clone, so grep finds the agent's own transcript |
 | Watcher | count, unique files, rate per minute, peak per second, error types, and patched files that also got the warning |
@@ -258,7 +259,9 @@ Give the report in this order. Keep it short.
 2. **Progress**: done / total, the instance that runs now and its time, empty
    patches, timeouts, and the score when there is one.
 3. **Tool stats**: calls / errors for each tool and verb, web calls, skills,
-   code context, made-up verbs, self-matches, the watcher count.
+   code context, made-up verbs, self-matches, the watcher count, and the web
+   results that look like the upstream fix. Such a result shows how the agent
+   solved an instance. It is not a problem.
 
-Do not compare a run with web on to a run with web off as if they measure the
-same thing.
+A run with web on and a run with web off use different tools. A comparison of
+the two is a comparison of two configurations. Say this when you compare them.

@@ -295,5 +295,34 @@ class InputsOfDifferentRuns(ScanTestCase):
         self.assertTrue(self.warnings(self.scan_run()))
 
 
+class AnUpstreamFixFromTheWebIsInformation(ScanTestCase):
+    """The decision of 2026-10-07: an upstream fix that the agent finds on the
+    web and uses is a valid result. The scan shows it, but not as a problem
+    (task ^x2b83hh)."""
+
+    # A web result of django__django-13447 that holds the upstream commit patch.
+    UPSTREAM_ITEM = f"{FIRST} seq 7: From 0123456789abcdef0123456789abcdef01234567 Mon Sep 17 00:00:00 2001"
+
+    def setUp(self):
+        """Give the result of the scan one web result that looks like the upstream fix."""
+        super().setUp()
+        self.R["tools"]["upstream"].append(self.UPSTREAM_ITEM)
+
+    def test_an_upstream_fix_is_not_a_ranked_problem(self):
+        """The upstream fix shows how the agent solved an instance. It is not a problem."""
+        quiet(scan.problems, self.R)
+        self.assertEqual([p for p in self.problem_texts() if "upstream" in p], [])
+
+    def test_the_tools_part_shows_the_upstream_fix(self):
+        """The information stays in the TOOLS part, so a person can see it."""
+        out = quiet(scan.report_tools, self.R)
+        self.assertIn(f"== results that look like the upstream fix (web): 1 ['{self.UPSTREAM_ITEM}']", out)
+
+    def test_no_output_says_that_the_score_does_not_measure_the_agent(self):
+        """A score with web on is a valid score of the agent."""
+        out = quiet(scan.report_tools, self.R) + quiet(scan.problems, self.R)
+        self.assertNotIn("does not measure the agent", out)
+
+
 if __name__ == "__main__":
     unittest.main()

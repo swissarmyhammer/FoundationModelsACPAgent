@@ -251,6 +251,56 @@ class TheConfigOfARun(BenchTestCase):
         self.assertIn(str(self.root / CONFIG_PATH), web_line)
 
 
+class AnUpstreamFixFromTheWebIsInformation(BenchTestCase):
+    """The decision of 2026-10-07: an upstream fix that the agent finds on the
+    web and uses is a valid result. The report shows the web state and the
+    upstream fix as information, and the score stays valid (task ^x2b83hh)."""
+
+    # The instance whose web result holds the upstream fix.
+    WITH_FIX = TWO[0]
+    # The line of a saved scan.py output that names the upstream fix of WITH_FIX.
+    SCAN_LINE = (f"== results that look like the upstream fix (web): 1 "
+                 f"['{WITH_FIX} seq 7: From 0123456789abcdef0123456789abcdef01234567 Mon Sep 17 00:00:00 2001']\n")
+
+    def report_text(self, *argv):
+        """Give the stdout of the report of the run `now` with web on, and with argv added."""
+        (self.root / CONFIG_PATH).write_text(WEB_ON_CONFIG)
+        make_run(self.bench, "now", TWO, NEW, record={"agent_config": CONFIG_PATH})
+        scan_out = self.bench / "scan.now.txt"
+        scan_out.write_text(self.SCAN_LINE)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report.main(["now", "--bench", str(self.bench), "--root", str(self.root),
+                         "--scan", str(scan_out), *argv])
+        return out.getvalue()
+
+    def test_web_on_gives_no_warning(self):
+        """A score with web on is a valid score, so the report gives no WARNING."""
+        self.assertNotIn("WARNING", self.report_text("--no-compare"))
+
+    def test_no_line_says_that_the_score_does_not_measure_the_agent(self):
+        """The old text said that a score with web on does not measure the agent alone."""
+        out = self.report_text("--no-compare")
+        self.assertNotIn("does not measure", out)
+        self.assertNotIn("without an upstream fix", out)
+
+    def test_the_table_and_the_web_part_show_the_upstream_fix(self):
+        """The upstream-fix column and the WEB part keep the information."""
+        out = self.report_text("--no-compare")
+        row = next(line for line in out.splitlines() if line.strip().startswith(self.WITH_FIX))
+        self.assertIn("YES", row)
+        self.assertIn(f"upstream fix seen: {self.WITH_FIX}", out)
+
+    def test_a_compare_with_web_off_is_a_compare_of_two_configurations(self):
+        """A run with web on and a run with web off use different tools."""
+        make_run(self.bench, "baseline", TWO, OLD, record={"agent_config": "bench/off.config.yaml"})
+        (self.bench / "off.config.yaml").write_text(WEB_OFF_CONFIG)
+        out = self.report_text()
+        self.assertNotIn("WARNING", out)
+        self.assertNotIn("do not measure", out)
+        self.assertIn("two configurations", out)
+
+
 class PathsStayInsideTheRepo(BenchTestCase):
     """Each path from input must resolve to a place inside the repo root.
 

@@ -1082,9 +1082,6 @@ def problems(R):
     for k, n in T["made_up"].items():
         R["problems"].append((62, f"made-up verb {k} x{n}; correct verb {T['made_up_hint'][k]}; recovered {T['recovered'][k]} time(s)",
                               T["made_up_ev"].get(k, "")[:220]))
-    if T["upstream"]:
-        R["problems"].append((86, f"the agent got what looks like the upstream fix from the web ({len(T['upstream'])} result(s))",
-                              f"{T['upstream'][:3]}; the score of this run does not measure the agent alone"))
     if T["web"] and T["verb_err"]["web.search"] >= T["web"]["web.search"] > 0:
         R["problems"].append((76, f"every web.search failed ({T['verb_err']['web.search']} of {T['web']['web.search']})",
                               (T["samples"].get("correction, no results") or [""])[0][:200]))

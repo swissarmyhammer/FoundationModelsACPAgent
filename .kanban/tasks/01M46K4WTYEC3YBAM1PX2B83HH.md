@@ -1,34 +1,55 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8480'
-title: 'bench: block the upstream fix sources when web is on'
+comments:
+- actor: claude-code
+  id: 01m4br59pmvw7e8nb1xfp6awre
+  text: |-
+    Research and implementation notes.
+    - No test checked the old text before this work. I added new tests: test_scan.py class AnUpstreamFixFromTheWebIsInformation (3 tests), test_report.py class AnUpstreamFixFromTheWebIsInformation (4 tests). RED was seen for each changed behaviour before the change.
+    - scan.py: removed the ranked problem (score 86) for upstream-fix results. The TOOLS line "== results that look like the upstream fix (web): N [...]" stays unchanged. report.py parses that line with SCAN_UPSTREAM, so do not change its text.
+    - report.py: removed the WEB WARNING. The line "resolved without an upstream fix seen: X/Y" is now "resolved with an upstream fix seen: X of Y resolved" (information). The COMPARE "WARNING: web is A before and B now; ... do not measure the same thing" is now "web is A before and B now: the two runs use different tools, so this is a comparison of two configurations". Docstring parts 5 and 6 changed to match.
+    - Text: bench/code-context.config.yaml comment, bench/README.md, swebench/SKILL.md (launch check, Web row, report part), swebench-score/SKILL.md (WEB item, report sentence, Compare part).
+    - Note: rg skips the hidden .claude dir unless --hidden is given. Use --hidden to search the skills.
+    - Not changed (true text about other things): "A run with other instances does not measure the same thing" (report.py, swebench-score/SKILL.md), and "measure the agent against the plain task" (bench/swebench_prompt.py, bench/swebench_run.py).
+  timestamp: 2026-10-07T17:56:40.788252+00:00
+- actor: claude-code
+  id: 01m4br5dckkb259rm98yczbegg
+  text: |-
+    ### implement — changed
+    - evidence: 8 files — bench/code-context.config.yaml, bench/README.md, .claude/skills/swebench/SKILL.md, .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py, .claude/skills/swebench-score/SKILL.md, .claude/skills/swebench-score/scripts/report.py, .claude/skills/swebench-score/scripts/test_report.py. Tests: swebench/scripts 19 OK, swebench-score/scripts 29 OK, bench (uv run --with swebench==5.0.2) 227 OK. No Swift change.
+    - next: /review
+  timestamp: 2026-10-07T17:56:44.563594+00:00
+position_column: doing
+position_ordinal: '80'
+title: 'bench: an upstream fix that the agent finds on the web counts; report it as information, not as an invalid score'
 ---
-## Why
+## Decision (user, 2026-10-07)
 
-Found in the SWE-bench run `bench/preds.code-context.jsonl` of 2026-10-05. `bench/code-context.config.yaml:44-45` sets `web: enabled: true`. In `django__django-13447` the agent used `tools.web.fetch` to get the Django ticket ("Resolution: → fixed") and the patch of the upstream commit. Transcript: `bench/preds.code-context.transcripts/django__django-13447/01M4600RK9PGR51PV1KN58XRQY/transcript.jsonl` (21 lines name `code.djangoproject.com` or `github.com/django/django/commit|pull`). Eight other instances of the run also name these URLs. A patch copied from upstream does not measure the agent, so the score of a run with web on is not valid.
+"If you can find the answer and use it, that counts." The web tool is part of the agent. When the agent finds the upstream fix of an issue with `web.search` or `web.fetch` and uses it, the result is a valid result of the agent. Do NOT add a block list for upstream sources. No Multitool change is necessary.
 
-## How the code works now
+## Why this task changes
 
-- `Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:287` (`WebToolOptions`): the `web:` section takes only `enabled` and `apiKeys`. No key blocks a host or a URL.
-- Sibling repo FoundationModelsMultitool, `Sources/FoundationModelsMultitool/Capabilities/Web/WebAddressGuard.swift:47-58`: `blockedHosts` and `blockedSuffixes` (`.local`, `.localhost`, `.internal`) are static. They protect against requests to local addresses. No caller can add a host.
-- `Capabilities/Web/WebConfiguration.swift:150-156` (`WebFetchPolicy`): `maxBytes`, `userAgent`, `maxRedirects`. No block list.
-- `Capabilities/Web/WebFetcher.swift:263` (`checkURL(of:)`) checks each request.
-- `.claude/skills/swebench/SKILL.md:64` tells the user that with web on the agent can find the upstream fix. `scan.py` reports results that look like the upstream fix.
+Found in the SWE-bench run `bench/preds.code-context.jsonl` of 2026-10-05: in `django__django-13447` the agent used `tools.web.fetch` to get the Django ticket and the upstream commit patch, and the instance was resolved. The bench text now says that such a score "does not measure the agent alone" and that it is not valid. That text is wrong after the decision above.
 
 ## What to do
 
-1. Add a bench-only block list for `web.fetch`, and filter `web.search` results with the same list. Minimum entries: `code.djangoproject.com/ticket/`, `github.com/<repo>/commit/`, `github.com/<repo>/pull/`, `github.com/<repo>/compare/`, `patch-diff.githubusercontent.com`, and the mailing list archives of the repo. Apply the list to each redirect also.
-2. The list must be a config key (for example `tools.web.blockedURLPrefixes`), so a normal agent session has no list. This needs a FoundationModelsMultitool change: record it as a task on that board, and name it here.
-3. Set the list in `bench/code-context.config.yaml`. Give the refusal a clear text, so the model does not try the same URL again.
-4. Until the list exists, report the score of each run with web on next to a run with web off, and say so in `SKILL.md`.
+1. Find each text that calls a score with web on not valid, or says that it does not measure the agent alone, and change it. Places to check (find them by text, line numbers can move):
+   - `bench/code-context.config.yaml` (the comment above `web:`),
+   - `bench/README.md`,
+   - `.claude/skills/swebench/SKILL.md` and `.claude/skills/swebench/scripts/scan.py` (the problem "the agent got what looks like the upstream fix from the web"),
+   - `.claude/skills/swebench-score/SKILL.md` and `.claude/skills/swebench-score/scripts/report.py` (the WARNING "web was on. A web result can hold the upstream fix, so this score does not measure the agent alone. Do not compare it with a run with web off", and the line "resolved without an upstream fix seen").
+2. Keep the detection of an upstream fix in the web results, as information: it shows how the agent solved an instance. Do not rank it as a problem in `scan.py`, and do not mark the score as not valid in `report.py`.
+3. Keep one true statement: a run with web on and a run with web off use different tools, so a comparison of the two is a comparison of two configurations.
 
 ## Acceptance
 
-- A bench run of `django__django-13447` with web on gets a refusal for the ticket and the commit URLs, and `scan.py` reports zero upstream-fix results.
-- A session with no list can fetch these URLs.
-- Tests prove the list for fetch, for a redirect, and for search results.
-- `swift build` has no warnings, and `swift test` passes.
+- [x] No bench text, skill text or script output says that a score with web on is not valid or does not measure the agent.
+- [x] `scan.py` shows web results that look like an upstream fix as information, not in the ranked problems.
+- [x] `report.py` shows the upstream-fix column and the web state, and no longer prints the WARNING.
+- [x] The tests of the skill scripts and the bench tests pass.
 
-#bench #tools #upstream
+## Tests
+
+- [x] Update the tests of `scan.py` and `report.py` that check the old warning or the old problem.
+#bench

@@ -20,12 +20,16 @@ The output has these parts:
    An empty patch is not a harness error. The harness does not send an
    empty patch to docker, so the score report puts it in `errored_ids`.
 4. UNRESOLVED: the test counts of the harness for each unresolved instance.
-5. WEB: a warning when web was on, and the instances where a web result
-   looks like the upstream fix.
+5. WEB: the web state of the config, the instances that used web, and the
+   instances where a web result looks like the upstream fix. This is
+   information: the web tool is part of the agent, and a fix that the agent
+   finds on the web and uses is a valid result.
 6. COMPARE: the change of each instance against the score of an other run.
    With no --compare, the other run is the newest other run with the same
    instance ids in its predictions file. A run with other instances does
-   not measure the same thing.
+   not measure the same thing. A run with web on and a run with web off use
+   different tools, so their comparison is a comparison of two
+   configurations.
 
 Each path that the script builds or reads from input must resolve to a place
 inside the repo root. The repo root is the dir that holds the bench dir. The
@@ -641,15 +645,14 @@ def print_report(a):
     up = sorted(i for i in ids if web.get(i, (0, []))[1])
     print(f"\n== WEB: config {state} ({config or 'no config found for this run'}); "
           f"web used in {len(used)} instance(s)")
-    if state == "on" or used:
-        print("  WARNING: web was on. A web result can hold the upstream fix, so this score")
-        print("  does not measure the agent alone. Do not compare it with a run with web off.")
     for i in up:
         print(f"  upstream fix seen: {i} [{outcome(i, resolved, unresolved, errored, preds_rows)}]: "
               f"{'; '.join(web[i][1][:3])}")
     if up:
-        clean = [i for i in resolved if i not in up]
-        print(f"  resolved without an upstream fix seen: {len(clean)}/{ev} = {pct(len(clean), ev)}")
+        # Information only: how the agent solved these instances. The web tool
+        # is part of the agent, so each of them is a valid result.
+        with_fix = [i for i in resolved if i in up]
+        print(f"  resolved with an upstream fix seen: {len(with_fix)} of {len(resolved)} resolved")
 
     if a.no_compare:
         return 0
@@ -665,7 +668,8 @@ def print_report(a):
     print(f"  the report took this run because it is {why}")
     print(f"  before {len(o_res)}/{len(o_res) + len(o_unres)} resolved, now {len(resolved)}/{ev} resolved")
     if o_state != state:
-        print(f"  WARNING: web is {o_state} before and {state} now; the two scores do not measure the same thing")
+        print(f"  web is {o_state} before and {state} now: the two runs use different tools, "
+              f"so this is a comparison of two configurations")
     o_ids = o_res | o_unres | set(o_err)
     rows, count = [], {"fixed": 0, "broken": 0, "same": 0, "not run": 0, "only one run": 0}
     for i in sorted(set(ids) | o_ids):

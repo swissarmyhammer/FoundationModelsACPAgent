@@ -59,8 +59,11 @@ marketplace, the `tools.code_context` group, and the `tools.web` group.
 Web search needs no key. With no key, the search uses the free public pages of
 Brave and DuckDuckGo. A key is optional: `BRAVE_SEARCH_API_KEY`,
 `TAVILY_API_KEY`, `EXA_API_KEY`, `SERPER_API_KEY`, `KAGI_API_KEY` or
-`SEARXNG_URL`. **A web search can find the upstream fix of the issue.** Thus
-the score of a run with web on does not measure the agent alone.
+`SEARXNG_URL`. **A web search can find the upstream fix of the issue.** The
+web tool is part of the agent, so a fix that the agent finds on the web and
+uses is a valid result. The score scripts show such a fix as information. A
+run with web on and a run with web off use different tools, so a comparison
+of the two is a comparison of two configurations.
 
 ## What a run does
 
