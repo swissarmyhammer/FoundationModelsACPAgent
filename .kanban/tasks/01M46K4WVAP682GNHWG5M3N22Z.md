@@ -1,0 +1,64 @@
+---
+assignees:
+- claude-code
+comments:
+- actor: claude-code
+  id: 01m4b7szz62te06xwcaxvkfcd3
+  text: |-
+    Research done.
+
+    Item 1, why 14667 wrote 16821 'running' rows (agent side): it is not a poll. The model started the full Django test suite (14878 tests) with execute in the background (operation 01M46DFX2Y3PSFQ8HH9EJA68FB, seq 6061). Execute.reportOutput (FoundationModelsMultitool, Capabilities/Shell/Execute.swift) posts one `progress` OperationEvent for each output chunk that is not only white space. The Django runner writes one "." to stderr for each test, unbuffered. RoutedSessionActorRunJournal.makeRunEventPartial (FoundationModelsRouter) writes one toolOutput transcript row for each event, with no merge. Result: 13663 rows for that one operation (12846 of them are "stderr: ."), 1485 and 716 rows for two more test runs. The transcript is 13 MB. The model did not get these rows: the final prompt names the operation 3 times only. So the fault is transcript size and event volume, not model context. Other instances: max 17 rows for one operation, except 14238 (447). The sum without 14667 is about 1300, which agrees with the old count of 1199 before 14667 ran.
+
+    Item 2: log_clock sets the day of the last line to TODAY. For the old log (Oct 5) the scan used Oct 7. The fix anchors the day on the mtime of the log. Real log gaps between lines go up to 2844 s while a run is live, so "the log changed recently" must use the limit of the open instance, not a short time. The scan also checks with lsof if a process has the log open for write (exact for this log, also when a new run of the same NAME is live).
+
+    Item 3: the transcript of each instance starts 10-26 s after the "running the agent" line of the same run. On the old log the offset of 13447 is 488 s. Preds rows have no time; the log names its predictions file (predictions=), and a log that is not live cannot have a preds row for an instance with no end line.
+
+    Paths: the new code reads no path from input files (the predictions= value is only compared, never opened), so no confinement as in report.py is necessary.
+  timestamp: 2026-10-07T13:10:53.158903+00:00
+- actor: claude-code
+  id: 01m4b85xwk0xtazqbyf6vcrep0
+  text: |-
+    Implementation landed (TDD: 16 new tests failed first, now pass).
+
+    - Item 1: scan_transcripts counts 'running' rows by operation id for each instance (T["running"]). report_tools gives "N rows from M operations" and "per instance (operations/rows)". problems() adds "<inst>: one operation wrote N 'running' rows (more than 1000)" (RUNNING_FLOOD = 1000) with the operation id. The agent fault of 14667 is now task ^p8c7snm (#bench #upstream).
+    - Item 2: log_last_day anchors the HH:MM:SS times of the log on the mtime of the log (the day before when the last line is after the change time of day). run_is_live: a process has the log open for write (lsof -F pa, parse_writers), or the log changed in the limit of the open instance + 300 s. progress() shows "stopped (no end line)" with no time when the run is not live.
+    - Item 3: check_same_run (a new step after the transcripts) warns "the inputs are of different runs" and adds a problem [92] when the log names other predictions, a transcript starts outside -5..+300 s of its "running the agent" line, or a stopped log has no end line for an instance with a prediction row.
+    - Side effect of the day fix: the config section of an old log now shows the real run start day (before: today).
+    - No path from input is opened by the new code, so report.py-style confinement is not necessary.
+  timestamp: 2026-10-07T13:17:24.243826+00:00
+- actor: claude-code
+  id: 01m4b861xs5fh4c48jc8spwfma
+  text: |-
+    ### implement — changed
+    - evidence: .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py (new, 16 tests OK), .github/workflows/bench.yml (new step for the swebench skill scripts), .claude/skills/swebench/SKILL.md. swebench-score tests 25 OK, bench tests 227 OK. Real data: run.code-context.log gives "18173 rows from 801 operations" and names django__django-14667 (13663 rows, operation 01M46DFX2Y3PSFQ8HH9EJA68FB); run.code-context.log.web-off-0717 gives "#1 django__django-13447 stopped (no end line)", no limit problem, and the different-runs warning; run.code-context-1006.log gives "1360 rows from 1028 operations", no flood. A diff with the HEAD scan.py on finished logs changes only the running-notice lines, the new problem, and the corrected run start day.
+    - next: review. New task ^p8c7snm for the agent fault.
+  timestamp: 2026-10-07T13:17:28.377153+00:00
+position_column: doing
+position_ordinal: '80'
+title: 'scan.py: the ''running'' notice count counts rows, and an old log shows a stopped instance as running'
+---
+## Why
+
+Two wrong results from `.claude/skills/swebench/scripts/scan.py` during the evaluation of the SWE-bench run `bench/preds.code-context.jsonl` of 2026-10-05.
+
+### (a) The "'running' notices" count counts rows, not operations
+
+After the change that pairs each result with its call, the count went from 1199 to 18173. The count is of transcript rows: `scan.py:667-675` adds 1 for each `toolOutput` row whose text matches `STATUS_RE` (`scan.py:48`) with `running`. One operation writes many `running` rows. The transcripts hold 18190 lines that match `(<ULID>) running`, and 16822 of them are in one instance: `bench/preds.code-context.transcripts/django__django-14667/01M46CBB8BVBAE10G6TH73957Q/transcript.jsonl`. Consecutive rows there have the same operation id (for example `01M46DFX2Y3PSFQ8HH9EJA68FB` on lines 17001 and 17002). The earlier count of 1199 probably came from a scan before 14667 ran (not yet proven).
+
+### (b) An old log shows a stopped instance as running
+
+On the old log `bench/run.code-context.log.web-off-0717`, `scan.py` says "django__django-13447 runs 16347s of its 5400s limit". That run was stopped: the log has "running the agent... instance=django__django-13447" (line 14) and no end line for it. `progress()` at `scan.py:871-888` treats each started instance with no end as RUNNING, and computes the time from now (`scan.py:877`), also when the log is old and no agent process is alive. The old run and the new run also use the same instance ids, and the old log has no transcript directory of its own, so a scan can mix the old log with the new transcripts.
+
+## What to do
+
+1. (a) Count `running` notices by unique operation id, and give the count for each instance. Report as a problem an instance where one operation gives more than a threshold of `running` rows (for example 14667). Record in this task why 14667 wrote 16822 rows (agent side), and make a new task for it if it is an agent fault.
+2. (b) Show an instance as RUNNING only when the run is live: a `swebench_run.py` process exists, or the log changed recently (`R["log_mtime_age"]`, `scan.py:288`). For a log that is not live, show an instance with no end as "stopped (no end line)", and compute no time against now.
+3. (b) When `--log` names a log whose run start is not the start of the transcripts or preds given, write a warning that the inputs are of different runs.
+
+## Acceptance
+
+- On `bench/run.code-context.log` the scan gives the count of unique operations, and names 14667.
+- On `bench/run.code-context.log.web-off-0717` the scan does not say that 13447 runs past its limit.
+- The existing `scan.py` output for a live run does not change in other sections.
+
+#bench

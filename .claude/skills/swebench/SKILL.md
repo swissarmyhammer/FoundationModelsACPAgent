@@ -164,7 +164,8 @@ The scan reports these items:
 | Area | What it checks |
 |---|---|
 | Config | groups that are off, `web` state, `semanticSearch`, web key names that are set, the `--agent-config` of the live harness, and a warning when the file changed after the run started |
-| Progress | done / total, the time of each instance, a running instance near its limit (more than 80 %) |
+| Progress | done / total, the time of each instance, a running instance near its limit (more than 80 %). When the run is not live (no process has the log open for write, and the log did not change in the limit of the open instance + 300 s), an instance with no end line is `stopped (no end line)`, with no time |
+| Same run | a warning when the run log and the other inputs are of different runs: the log names other predictions, a transcript starts more than 300 s after (or before) the `running the agent` line of its instance, or a stopped log has no end line for an instance that has a prediction |
 | Stalls | gaps of 60 s or more between transcript lines, with the output tokens of the next generation; each stall one time |
 | Transcript | missing seq numbers (the router's selection sessions share the seq counter, so a gap is not always a lost line) |
 | Tools | calls / errors for each tool and each `tools.<group>.<verb>`; `execute` nonzero exits apart from tool failures |
@@ -193,8 +194,11 @@ The scan reports these items:
   of the snippet.
 - The other `toolOutput` lines are operation events:
   `[tool] name (ULID) running|completed|failed: ...`. Each `runCode` and
-  `execute` gives a `running ... End your answer now` notice. The scan does
-  not count those notices. It counts the `runCode` result of the model
+  `execute` gives a `running ... End your answer now` notice, and a background
+  `execute` gives one `running` row for each chunk of its output. The scan
+  does not count those notices as results. It gives their rows and their
+  unique operations for each instance, and it reports an operation with more
+  than 1000 rows as a problem. It counts the `runCode` result of the model
   only, so it does not count one call two times. It counts the final
   `execute` event of each shell command. Read the status from the prefix
   only; a grep result can quote other results that contain `running:`.

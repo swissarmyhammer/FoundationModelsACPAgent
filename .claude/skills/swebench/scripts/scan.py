@@ -18,6 +18,7 @@ last JSONL line can be partial. The scan skips that line.
 The output has three parts:
   1. PROBLEMS: a ranked list. Each item has its evidence.
   2. PROGRESS: done / total, time of each instance, the instance that runs now.
+     When the run is not live, an instance with no end line is "stopped".
   3. TOOLS: calls and errors for each tool and each tools.<group>.<verb>. The
      verbs come from the code of each runCode call (the "toolCalls" lines
      keep it). The scan pairs each call with its result by the call id.
@@ -66,6 +67,22 @@ UPSTREAM_RE = re.compile(r"From [0-9a-f]{40} Mon Sep 17 00:00:00 2001|github\.co
                          r"Status: \| assigned \u2192 closed|Resolution: \| \u2192 fixed|/changeset/[0-9a-f]{7,}")
 WEB_KEYS = ("BRAVE_SEARCH_API_KEY", "TAVILY_API_KEY", "EXA_API_KEY", "SERPER_API_KEY", "KAGI_API_KEY", "SEARXNG_URL")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# More 'running' rows than this for one operation is a flood. Execute writes one
+# row for each output chunk; on 2026-10-05 one Django test run wrote 13663.
+RUNNING_FLOOD = 1000
+# A run log that changed in the limit of its open instance plus this many
+# seconds can be live. The harness writes no line for a long time (up to 2844 s
+# was seen) while an instance runs, so a short time is not a sure sign.
+LIVE_MARGIN_S = 300
+# The first transcript line of an instance comes 10 to 26 s after the
+# "running the agent" line of the same run. A transcript that starts outside
+# this window, in seconds, is of another run. The log has whole seconds only.
+SAME_RUN_EARLY_S = 5
+SAME_RUN_LATE_S = 300
+# A run-log clock that goes back by more than this many seconds went past midnight.
+DAY_CHANGE_S = 3600
+# The lsof access modes of a process that can write a file.
+WRITE_MODES = ("w", "u")
 
 
 def note(msg):
@@ -230,10 +247,30 @@ def scan_config(path, R, start=None):
 
 # ---------------------------------------------------------------- run log
 
-def log_clock(lines):
-    """Give the datetime of each HH:MM:SS run-log line. Correct for a day change."""
+def log_last_day(path, lines):
+    """Give the day of the last HH:MM:SS line of a run log, from the change time of the file.
+
+    - path: the run log. Its last change came at, or a little after, its last line.
+    - lines: the lines of the log.
+
+    A last line with a time after the time of day of the change is of the day
+    before: the file changed after midnight.
+    """
+    changed = dt.datetime.fromtimestamp(os.path.getmtime(path))
+    last = next((m.group(1) for m in map(RUN_LOG_TIME.match, reversed(lines)) if m), None)
+    if last and dt.time.fromisoformat(last) > changed.time():
+        return changed.date() - dt.timedelta(days=1)
+    return changed.date()
+
+
+def log_clock(lines, last_day=None):
+    """Give the datetime of each HH:MM:SS run-log line. Correct for a day change.
+
+    - lines: the lines of the log.
+    - last_day: the day of the last timed line (see log_last_day). Default: today.
+    """
     out = []
-    day = dt.date.today()
+    day = last_day or dt.date.today()
     prev = None
     stamps = []
     for l in lines:
@@ -241,8 +278,8 @@ def log_clock(lines):
         if m:
             t = dt.time.fromisoformat(m.group(1))
             stamps.append(t)
-    # Count the day changes, then set the first day so that the last line is today.
-    changes = sum(1 for a, b in zip(stamps, stamps[1:]) if b < a and (dt.datetime.combine(day, a) - dt.datetime.combine(day, b)).total_seconds() > 3600)
+    # Count the day changes, then set the first day so that the last line is on the last day.
+    changes = sum(1 for a, b in zip(stamps, stamps[1:]) if b < a and (dt.datetime.combine(day, a) - dt.datetime.combine(day, b)).total_seconds() > DAY_CHANGE_S)
     cur = day - dt.timedelta(days=changes)
     for l in lines:
         m = RUN_LOG_TIME.match(l)
@@ -250,7 +287,7 @@ def log_clock(lines):
             out.append(None)
             continue
         t = dt.time.fromisoformat(m.group(1))
-        if prev and t < prev and (dt.datetime.combine(cur, prev) - dt.datetime.combine(cur, t)).total_seconds() > 3600:
+        if prev and t < prev and (dt.datetime.combine(cur, prev) - dt.datetime.combine(cur, t)).total_seconds() > DAY_CHANGE_S:
             cur = cur + dt.timedelta(days=1)
         prev = t
         out.append(dt.datetime.combine(cur, t))
@@ -262,16 +299,68 @@ def run_start(path):
     if not path or not os.path.exists(path):
         return None
     lines = read_lines(path)
-    return next((c for c in log_clock(lines) if c), None)
+    return next((c for c in log_clock(lines, log_last_day(path, lines)) if c), None)
+
+
+def parse_writers(text):
+    """Give the pids that can write the file, from the output of `lsof -F pa`.
+
+    lsof writes one "p<pid>" line for each process, then "f<fd>" and
+    "a<mode>" lines for each open file. A reader (mode r) is not a writer.
+    """
+    out, pid = [], None
+    for line in text.splitlines():
+        if line.startswith("p"):
+            pid = line[1:]
+        elif line.startswith("a") and line[1:] in WRITE_MODES and pid and pid not in out:
+            out.append(pid)
+    return out
+
+
+def log_writers(path):
+    """Give the pids of the processes that have the run log open for write.
+
+    The launch of the skill writes the log through `tee` (or a shell redirect),
+    and that process stays until the run ends. So a writer is the sure sign
+    that the run of this log is live. A missing lsof gives [].
+    """
+    try:
+        text = subprocess.run(["lsof", "-F", "pa", "--", path], capture_output=True, text=True,
+                              timeout=10).stdout
+    except (subprocess.SubprocessError, OSError):
+        return []
+    return parse_writers(text)
+
+
+def run_is_live(path, open_limit, writers=None):
+    """Tell whether the run of a log can still run.
+
+    - path: the run log.
+    - open_limit: the largest limit in seconds of an instance with no end line, or 0.
+    - writers: the pids that write the log. Default: ask lsof.
+
+    The run is live when a process writes the log, or when the log changed in
+    the limit of its open instance plus LIVE_MARGIN_S. The harness ends each
+    instance with a line at its limit, so an older log is of a stopped run.
+    """
+    if writers is None:
+        writers = log_writers(path)
+    return bool(writers) or time.time() - os.path.getmtime(path) <= open_limit + LIVE_MARGIN_S
 
 
 def scan_log(path, timeout, R):
+    """Read the run log: the instances, their ends, the liveness of the run, warnings and errors.
+
+    - path: the run log.
+    - timeout: the limit of an instance whose start line has no limit_seconds.
+    - R: the result to fill.
+    """
     print(f"== run log {path or '(none)'}")
     if not path or not os.path.exists(path):
         note("missing run log")
         return
     lines = read_lines(path)
-    clock = log_clock(lines)
+    clock = log_clock(lines, log_last_day(path, lines))
     now = dt.datetime.now()
     first = next((c for c in clock if c), None)
     last = next((c for c in reversed(clock) if c), None)
@@ -286,6 +375,7 @@ def scan_log(path, timeout, R):
         last = max([t for t in (last, max(agent_times)) if t])
     print(f"  lines={len(lines)} first={first:%H:%M:%S} last={last:%H:%M:%S}" if first and last else f"  lines={len(lines)}")
     R["log_mtime_age"] = time.time() - os.path.getmtime(path)
+    R["log_path"] = path
     if first:
         R["start_epoch"] = first.timestamp()
 
@@ -297,6 +387,7 @@ def scan_log(path, timeout, R):
         f = dict(FIELD_RE.findall(l))
         if "the instances of this run" in l:
             total = f.get("to_do") or f.get("instances")
+            R["log_preds"] = f.get("predictions")
         inst = f.get("instance")
         if not inst:
             continue
@@ -310,6 +401,11 @@ def scan_log(path, timeout, R):
                 ended[inst] = (c, tag, f.get("seconds"), l[:220])
                 break
     R["started"], R["ended"], R["total"] = started, ended, total
+    open_limit = max((v[3] for k, v in started.items() if k not in ended), default=0)
+    R["live"] = run_is_live(path, open_limit)
+    if not R["live"] and any(k not in ended for k in started):
+        print(f"  the run is not live: no process writes the log, and the log did not change "
+              f"in {open_limit + LIVE_MARGIN_S}s (the limit of the open instance + {LIVE_MARGIN_S}s)")
     complete = any(" complete" in l and "instances" not in l for l in lines[-40:]) or any("[bold]complete" in l for l in lines)
     R["complete"] = complete or any(re.search(r"^\d\d:\d\d:\d\d complete\b", l) for l in lines)
 
@@ -380,6 +476,12 @@ def patch_files(patch):
 
 
 def scan_preds(preds, runs, R):
+    """Read the predictions and the record of the run: empty patches, timeouts, stop reasons.
+
+    - preds: the predictions file.
+    - runs: the record file.
+    - R: the result to fill.
+    """
     print(f"== predictions {preds or '(none)'}")
     rows = read_jsonl(preds) if preds and os.path.exists(preds) else []
     if preds and not os.path.exists(preds):
@@ -390,6 +492,7 @@ def scan_preds(preds, runs, R):
         edited |= patch_files(r.get("model_patch"))
     print(f"  rows={len(rows)} empty patches={len(empty)} {empty[:10]}")
     R["preds_rows"], R["empty"] = len(rows), empty
+    R["pred_ids"] = {r.get("instance_id") for r in rows}
     if empty:
         R["problems"].append((65, f"{len(empty)} empty patch(es)", ", ".join(empty[:8])))
     both = edited & R.get("watcher_files", set())
@@ -585,6 +688,12 @@ def add_sample(T, key, text):
 
 
 def scan_transcripts(dirs, gap_s, R):
+    """Read each transcript: stalls, tool results and errors, 'running' notices, start times.
+
+    - dirs: the transcript dirs.
+    - gap_s: a gap of this many seconds between two lines is a stall.
+    - R: the result to fill.
+    """
     files = []
     for d in dirs:
         if not os.path.exists(d):
@@ -606,6 +715,10 @@ def scan_transcripts(dirs, gap_s, R):
             print(f"   missing seq numbers: {missing[:30]}{' ...' if len(missing) > 30 else ''}")
             T["seq_missing"] += len(missing)
         rows_t = sorted((r for r in rows if r.get("ts")), key=lambda r: r["ts"])
+        if rows_t and inst != "clone" and ts(rows_t[0]["ts"]):
+            # The local time, as the times of the run log.
+            first = ts(rows_t[0]["ts"]).astimezone().replace(tzinfo=None)
+            R["transcript_start"][inst] = min(first, R["transcript_start"].get(inst, first))
         if rows_t:
             a, b = ts(rows_t[0]["ts"]), ts(rows_t[-1]["ts"])
             idle = (now - b).total_seconds()
@@ -672,7 +785,8 @@ def scan_transcripts(dirs, gap_s, R):
                 m = STATUS_RE.match(r.get("text", "") or "")
                 status = m.group(4) if m else "other"
                 if status == "running":
-                    T["running_notices"] += 1
+                    # One operation can write many notices: count them by operation id.
+                    T["running"][inst][m.group(3)] += 1
                     continue
                 if tool != "execute":
                     continue
@@ -763,6 +877,7 @@ def scan_transcripts(dirs, gap_s, R):
 
 
 def report_tools(R):
+    """Write the TOOLS part: the calls and errors of each tool and verb, and the counts of the transcripts."""
     T = R["tools"]
     print("== per tool (one result for each call of the model; execute: the shell commands): calls / errors")
     for k, n in T["tool"].most_common():
@@ -770,7 +885,12 @@ def report_tools(R):
     print(f"   execute: nonzero exit (normal work: tests, scripts), not counted as errors: {T['exec_nonzero']}")
     for s in T["nonzero_samples"]:
         print(f"     e.g. {s}")
-    print(f"   'running' notices (not counted above): {T['running_notices']}")
+    run = T["running"]
+    print(f"   'running' notices (not counted above): {sum(sum(c.values()) for c in run.values())} rows "
+          f"from {sum(len(c) for c in run.values())} operations")
+    if run:
+        print("     per instance (operations/rows): "
+              + ", ".join(f"{k}={len(c)}/{sum(c.values())}" for k, c in run.items()))
     if T["pending"] or T["no_code"]:
         print(f"   runCode results with no final result: {T['pending']}; with no call in the transcript: {T['no_code']}")
     print("== per tools.<group>.<verb> (from the code of each runCode call): calls / errors")
@@ -869,7 +989,61 @@ def scan_score(preds, R):
 
 # ---------------------------------------------------------------- report
 
+def same_preds(R, preds):
+    """Tell whether preds is the predictions file that the run log names. True when unknown.
+
+    The log names the path as the harness got it, relative to the repo root:
+    the dir that holds the bench dir of the log.
+    """
+    named, log = R.get("log_preds"), R.get("log_path")
+    if not (named and preds and log):
+        return True
+    root = os.path.dirname(os.path.dirname(os.path.abspath(log)))
+    return os.path.realpath(os.path.join(root, named)) == os.path.realpath(preds)
+
+
+def run_mismatches(R, preds):
+    """Give the reasons why the run log and the other inputs are of different runs.
+
+    - R: the result after the steps that read the log, the preds and the transcripts.
+    - preds: the predictions file of the scan.
+    """
+    out = []
+    if not same_preds(R, preds):
+        out.append(f"the log names the predictions {R['log_preds']}, not {preds}")
+    for inst, (start, *_) in R.get("started", {}).items():
+        first = R["transcript_start"].get(inst)
+        if start and first and not -SAME_RUN_EARLY_S <= (first - start).total_seconds() <= SAME_RUN_LATE_S:
+            out.append(f"the transcript of {inst} starts at {first:%Y-%m-%d %H:%M:%S}, but the log started "
+                       f"it at {start:%Y-%m-%d %H:%M:%S} (same run: {SAME_RUN_LATE_S}s after or less)")
+    if not R.get("live", True):
+        for inst in R.get("started", {}):
+            if inst not in R.get("ended", {}) and inst in R.get("pred_ids", set()):
+                out.append(f"the predictions have a row for {inst}, but the stopped log has no end line for it")
+    return out
+
+
+def check_same_run(R, preds):
+    """Warn when the run log and the transcripts or the predictions are of different runs.
+
+    An old log and a new run of the same NAME use the same instance ids and
+    the same paths, so a scan can mix them with no other sign.
+    """
+    reasons = run_mismatches(R, preds)
+    if not reasons:
+        return
+    print("== WARNING: the inputs are of different runs. Do not mix their results:")
+    for r in reasons:
+        print(f"   {r}")
+    R["problems"].append((92, "the run log and the other inputs are of different runs", "; ".join(reasons[:3])))
+
+
 def progress(R, timeout):
+    """Write the PROGRESS part: done / total, and the state and time of each instance.
+
+    An instance with no end line runs only when the run is live. Else it
+    stopped, and its time against now means nothing.
+    """
     print("== PROGRESS")
     started, ended = R.get("started", {}), R.get("ended", {})
     done = [k for k, v in ended.items() if v[1] not in ("skipped",)]
@@ -881,6 +1055,9 @@ def progress(R, timeout):
             e = ended[k]
             dur = (e[0] - c).total_seconds() if e[0] and c else None
             print(f"   #{n} {k:34} {e[1]:8} {e[2] or (f'{dur:.0f}' if dur else '?')}s")
+        elif not R.get("live", True):
+            # The run stopped: a time against now means nothing.
+            print(f"   #{n} {k:34} stopped (no end line)")
         else:
             el = (now - c).total_seconds() if c else 0
             flag = " NEAR THE LIMIT" if el > 0.8 * limit else ""
@@ -890,6 +1067,7 @@ def progress(R, timeout):
 
 
 def problems(R):
+    """Add the problems that come from the counts, then write the PROBLEMS part, ranked."""
     T = R["tools"]
     total_results = sum(T["tool"].values())
     if R.get("web_enabled") and total_results >= 20 and not T["web"]:
@@ -913,6 +1091,11 @@ def problems(R):
     if T["self_grep"]:
         R["problems"].append((58, f"{len(T['self_grep'])} files.grep result(s) match the agent's own .acp-agent/transcripts",
                               f"{T['self_grep'][:4]}; .acp-agent has no ignore rule in the clone"))
+    for inst, ops in T["running"].items():
+        op, n = ops.most_common(1)[0]
+        if n > RUNNING_FLOOD:
+            R["problems"].append((52, f"{inst}: one operation wrote {n} 'running' rows (more than {RUNNING_FLOOD})",
+                                  f"operation {op}; execute writes one transcript row for each output chunk"))
     for g, inst, seq, tok in sorted(T["stalls"], reverse=True)[:3]:
         R["problems"].append((45 + min(int(g / 60), 20), f"generation stall {g:.0f}s in {inst} before seq {seq}",
                               f"{tok} tokens out" if tok is not None else "no token count"))
@@ -932,7 +1115,23 @@ def problems(R):
         print(f"  {rank}. [{score}] {what}\n       evidence: {ev}")
 
 
+def new_result():
+    """Give the empty result that the steps of the scan fill."""
+    return {"problems": [], "transcript_start": {},
+            "rec": {"kinds": collections.Counter(), "chosen": collections.Counter(), "offered": collections.Counter()},
+            "tools": {"tool": collections.Counter(), "tool_err": collections.Counter(), "verb": collections.Counter(),
+                      "verb_err": collections.Counter(), "samples": collections.defaultdict(list),
+                      "kinds": collections.Counter(), "per_inst": collections.Counter(), "web": collections.Counter(),
+                      "skills": collections.Counter(), "offered": collections.Counter(), "made_up": collections.Counter(),
+                      "made_up_hint": {}, "made_up_ev": {}, "recovered": collections.Counter(), "self_grep": [],
+                      "stalls": [], "upstream": [], "nonzero_samples": [],
+                      "running": collections.defaultdict(collections.Counter), "code_context": 0,
+                      "instructions": 0, "gen": 0, "tokens_out": 0, "seq_missing": 0, "exec_nonzero": 0,
+                      "pending": 0, "no_code": 0}}
+
+
 def main():
+    """Read the arguments, then run each step of the scan. One failed step does not stop the scan."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", help="the output name: sets bench/run.NAME.log, bench/preds.NAME.jsonl, "
                                    "bench/preds.NAME.runs.jsonl, bench/preds.NAME.transcripts and bench/NAME.config.yaml")
@@ -966,21 +1165,13 @@ def main():
     else:
         R_live = []
 
-    R = {"problems": [], "rec": {"kinds": collections.Counter(), "chosen": collections.Counter(),
-                                  "offered": collections.Counter()},
-         "tools": {"tool": collections.Counter(), "tool_err": collections.Counter(), "verb": collections.Counter(),
-                   "verb_err": collections.Counter(), "samples": collections.defaultdict(list),
-                   "kinds": collections.Counter(), "per_inst": collections.Counter(), "web": collections.Counter(),
-                   "skills": collections.Counter(), "offered": collections.Counter(), "made_up": collections.Counter(),
-                   "made_up_hint": {}, "made_up_ev": {}, "recovered": collections.Counter(), "self_grep": [],
-                   "stalls": [], "upstream": [], "nonzero_samples": [], "running_notices": 0, "code_context": 0,
-                   "instructions": 0, "gen": 0, "tokens_out": 0, "seq_missing": 0, "exec_nonzero": 0,
-                   "pending": 0, "no_code": 0}}
+    R = new_result()
     R["live_dirs"] = R_live
     print(f"swebench scan at {dt.datetime.now():%Y-%m-%d %H:%M:%S}")
     start = run_start(a.log)
     steps = [lambda: scan_config(a.config, R, start), lambda: scan_log(a.log, a.timeout, R),
              lambda: scan_preds(a.preds, a.runs, R), lambda: scan_transcripts(a.transcripts, a.gap, R),
+             lambda: check_same_run(R, a.preds),
              lambda: scan_recordings(a.recordings if a.recordings is not None
                                      else find_recordings(R.get("start_epoch", time.time() - 6 * 3600)), R),
              lambda: scan_score(a.preds, R), lambda: report_tools(R), lambda: progress(R, a.timeout),

@@ -59,3 +59,12 @@ jobs:
           python3 -m unittest discover
           --start-directory .claude/skills/swebench-score/scripts
           --pattern 'test_*.py' --verbose
+
+      # `scan.py` of the swebench skill reads the run log, the predictions and
+      # the transcripts of a run, and it tells if a run is live. Its tests
+      # need the standard library only, as the harness tests do.
+      - name: Test the scripts of the swebench skill
+        run: >
+          python3 -m unittest discover
+          --start-directory .claude/skills/swebench/scripts
+          --pattern 'test_*.py' --verbose
