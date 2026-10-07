@@ -44,6 +44,9 @@ SAME_RUN_DELAY = dt.timedelta(seconds=15)
 OTHER_RUN_DELAY = dt.timedelta(seconds=488)
 # The time from the last log line to the last change of the log file.
 WRITE_DELAY = dt.timedelta(seconds=60)
+# The count of single-byte writes of the command of task ^p8c7snm: one write
+# for each test, as the Django test runner writes one "." for each test.
+ONE_BYTE_WRITES = 10000
 
 
 def clock(t):
@@ -80,10 +83,20 @@ def write_rows(path, rows):
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))
 
 
-def running_row(op, seq, t, tool="execute"):
-    """Give a transcript row of a 'running' operation event of op at the local time t."""
+def running_line(op, tool="execute"):
+    """Give the text line of one 'running' operation event of op."""
+    return f"[{tool}] {tool} shell ({op}) running: stderr: ."
+
+
+def running_row(op, seq, t, tool="execute", events=1):
+    """Give a transcript row of 'running' operation events of op at the local time t.
+
+    - events: the count of events in the row. Since Router ^zze1067, the
+      journal merges consecutive progress events of one operation into one
+      row, with one text line for each event.
+    """
     return {"kind": "toolOutput", "seq": seq, "ts": apple_time(t),
-            "text": f"[{tool}] {tool} shell ({op}) running: stderr: .",
+            "text": "\n".join([running_line(op, tool)] * events),
             "entry": {"entryId": f"01ENTRY{seq:019d}", "toolName": tool, "segments": []}}
 
 
@@ -186,6 +199,21 @@ class RunningNoticesCountOperations(ScanTestCase):
         write_transcript(self.transcripts, SECOND, notices("01EDGE", scan.RUNNING_FLOOD, OLD_START))
         quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
         quiet(scan.problems, self.R)
+        self.assertEqual([p for p in self.problem_texts() if "'running' rows" in p], [])
+
+    def test_a_merged_row_of_many_events_is_one_row_and_no_flood(self):
+        """Task ^p8c7snm: since Router ^zze1067, the journal writes the first
+        progress event of an operation as its own row, and merges the next
+        consecutive progress events into one row. A command that writes 10000
+        single bytes thus gives a few rows. The scan must count the merged
+        row as one row, and must not report a flood for it."""
+        rows = [running_row("01MERGED", 1, OLD_START),
+                running_row("01MERGED", 2, OLD_START, events=ONE_BYTE_WRITES),
+                completed_row("01MERGED", 3, OLD_START)]
+        write_transcript(self.transcripts, SECOND, rows)
+        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
+        quiet(scan.problems, self.R)
+        self.assertEqual(self.R["tools"]["running"][SECOND]["01MERGED"], 2)
         self.assertEqual([p for p in self.problem_texts() if "'running' rows" in p], [])
 
 
