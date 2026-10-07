@@ -42,6 +42,42 @@ comments:
     - swift test (scratch path rel-build): 744 tests in 83 suites passed, 0 failed. One known issue is a deliberate withKnownIssue in HarnessSmokeTests (orderedSubsequenceAssertionChecksOrderWithGaps), a file this change did not touch. One build warning from the mlx-swift bundle, not from this change.
     - next: review
   timestamp: 2026-10-07T12:41:35.206966+00:00
+- actor: claude-code
+  id: 01m4b6kqj9jevttpjb06zfdd7n
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit 7651c10). 3 findings (3 confirmed, 1 refuted) — .claude/skills/swebench-score/scripts/report.py:257, .claude/skills/swebench-score/scripts/report.py:313, .claude/skills/swebench-score/scripts/report.py:372
+    - next: Do the 3 code-security/injection items in the Review Findings section of 2026-10-07 07:42. Then run the review again.
+  timestamp: 2026-10-07T12:49:59.369264+00:00
+- actor: claude-code
+  id: 01m4b6m4qcf2pzenkf7s2bb9p1
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files
+    - test: green — bench 224 OK (swebench 5.0.2), skill 14 OK, swift 744 passed
+    - commit: 7651c10
+    - review: findings — report.py:257, report.py:313, report.py:372 (code-security/injection, path traversal)
+  timestamp: 2026-10-07T12:50:12.844286+00:00
+- actor: claude-code
+  id: 01m4b6y99rfwej8nzjm9jwbnk1
+  text: |-
+    Review findings of 2026-10-07 07:42 fixed (not committed). The cause in the whole file: no path from input was resolved or checked. Now:
+    - report.py: new `OutsideRoot(ValueError)`, `repo_root(bench)` (the resolved parent of the bench dir), `confine(path, root, what, scope)` (Path.resolve(), then is_relative_to(root), else OutsideRoot with "outside the repo root ROOT"), `note()` (stderr), `inside_only()` (skip with a note).
+    - Command line paths (run NAME or path, --score, --scan, --compare, --root) are refused: `main` catches OutsideRoot, prints "error: refused ...", exit 2. The body of the old `main` is now `print_report(a)`.
+    - Paths from run files are skipped with a note: `agent_config` of the record or of the run log (config_of gives None, so web state is unknown, and it does NOT fall back to bench/NAME.config.yaml, because the run named an other config), score file names and predictions file names in bench/ that are links to outside (score_files, all_preds), transcripts that are links to outside (web_use), and run id / instance id of the score report in harness_detail (confined to <--root>/logs/run_evaluation; the refusal text takes the place of the detail).
+    - Signature changes: beside(preds, suffix, root), preds_of(arg, bench, what), score_files(preds, root), run_ids(preds, root), web_use(transcripts_dir, root), preds_of_score(score, root). New named_config(). No caller outside report.py and test_report.py.
+    - Each glob now escapes the dir part (glob.escape).
+    - Discovery: on macOS the temp dir is below /var -> /private/var, so the test fixture root is now resolved. A run NAME `../../etc/x` stays inside bench/ (the first `..` joins "preds."), so the CLI test uses four `..`.
+    - SKILL.md: one paragraph on the repo-root rule (save a scan.py output below the repo, not in /tmp).
+    Real data: `report.py code-context-1006` compares with code-context ("the newest other run with the same 16 instance ids"; fixed 3, broken 1, same 11, only one run 1). `report.py final-pass-check` gives "WEB: config on (.../bench/code-context.config.yaml)" and the web warning. `--scan /etc/passwd` gives exit 2 with the refusal.
+  timestamp: 2026-10-07T12:55:45.208923+00:00
+- actor: claude-code
+  id: 01m4b6ycf2pk0m004et0yyhyxj
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — .claude/skills/swebench-score/scripts/report.py, .claude/skills/swebench-score/scripts/test_report.py, .claude/skills/swebench-score/SKILL.md. TDD: RED seen (11 failures, 10 errors on the missing API), then GREEN. Skill tests: `python3 -m unittest discover --start-directory .claude/skills/swebench-score/scripts --pattern 'test_*.py'` 25 tests OK. Bench tests: `uv run --no-project --with swebench==5.0.2 python -m unittest discover --start-directory bench --pattern 'test_*.py'` 224 tests OK, 0 skipped (system python3 without swebench skips 1: test_the_keys_agree_with_the_real_signature). The 3 code-security/injection findings are checked.
+    - next: /review
+  timestamp: 2026-10-07T12:55:48.450062+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'report.py: compare with a run that has the same instances, and read the config of the run'
@@ -61,3 +97,18 @@ title: 'report.py: compare with a run that has the same instances, and read the 
 - [x] A test with a run named `x-check` that used `bench/code-context.config.yaml` checks that the report finds web on.
 
 #bench
+
+## Review Findings (2026-10-07 07:42)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `.claude/skills/swebench-score/SKILL.md` — no validator matches this file
+> - `bench/README.md` — no validator matches this file
+
+- [x] `.claude/skills/swebench-score/scripts/report.py:257` `code-security/injection` — Path traversal: the `beside()` function constructs file paths from user-provided input without validating for directory traversal sequences. If a predictions file path contains `..`, the constructed path would traverse outside the intended directory. Validate that the predictions file path does not contain `..` or use `Path.resolve()` to normalize and verify it stays within the intended directory before constructing related file paths.
+- [x] `.claude/skills/swebench-score/scripts/report.py:313` `code-security/injection` — Path traversal vulnerability: user-controlled agent config path is constructed into a file path without validation for directory traversal (`..`) or absolute paths. An attacker could specify `--agent-config ../../etc/passwd` to make the system attempt to read arbitrary files. Validate that the resolved config path does not contain `..` segments and remains within the intended directory tree. Use `Path.resolve()` to normalize the path and verify it doesn't escape the allowed scope before reading.
+- [x] `.claude/skills/swebench-score/scripts/report.py:372` `code-security/injection` — Path traversal: the `preds_of_score()` function constructs a predictions file path from a score file path via regex substitution without validating for directory traversal. A crafted score path could cause the function to reference arbitrary files. Validate that the score file path does not contain traversal sequences before processing, or use `Path.resolve()` to ensure the result path remains within expected boundaries.

@@ -70,7 +70,18 @@ def make_run(bench, name, ids, score_time, record=None):
 
 def score_of(preds):
     """Give the path of the one score report of a fake run."""
-    return Path(report.score_files(preds)[-1])
+    return Path(report.score_files(preds, report.repo_root(preds.parent))[-1])
+
+
+def run_quiet(fn, *args):
+    """Call fn with args, and keep what it writes to stdout and stderr.
+
+    Give (the value of fn, the stderr text).
+    """
+    err = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        value = fn(*args)
+    return value, err.getvalue()
 
 
 class BenchTestCase(unittest.TestCase):
@@ -79,7 +90,9 @@ class BenchTestCase(unittest.TestCase):
     def setUp(self):
         """Make the root and the bench directory of the test."""
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
+        # The report gives resolved paths. On macOS the temporary dir is below
+        # /var, which is a link to /private/var, so resolve the root here too.
+        self.root = Path(self.tmp.name).resolve()
         self.bench = self.root / "bench"
         self.bench.mkdir()
 
@@ -236,6 +249,142 @@ class TheConfigOfARun(BenchTestCase):
         web_line = next(line for line in out.getvalue().splitlines() if line.startswith("== WEB"))
         self.assertIn("config on", web_line)
         self.assertIn(str(self.root / CONFIG_PATH), web_line)
+
+
+class PathsStayInsideTheRepo(BenchTestCase):
+    """Each path from input must resolve to a place inside the repo root.
+
+    The repo root is the dir that holds `bench/`. The report refuses a path
+    from the command line with an error. It skips a path from a run file with
+    a note on stderr.
+    """
+
+    # The text of each refusal and each note.
+    OUTSIDE = "outside the repo root"
+
+    def setUp(self):
+        """Make the repo root, and a second dir that is outside of it."""
+        super().setUp()
+        self.out_tmp = tempfile.TemporaryDirectory()
+        self.outside = Path(self.out_tmp.name).resolve()
+
+    def tearDown(self):
+        """Remove the two dirs of the test."""
+        self.out_tmp.cleanup()
+        super().tearDown()
+
+    def config_with_record(self, agent_config):
+        """Give (config_of, stderr) for a run whose record names agent_config."""
+        preds = make_run(self.bench, "x-check", TWO, OLD, record={"agent_config": agent_config})
+        return run_quiet(report.config_of, preds, str(self.bench))
+
+    def test_a_record_config_with_dot_dot_is_refused(self):
+        """`../../etc/passwd` in the record must not be read."""
+        config, err = self.config_with_record("../../etc/passwd")
+        self.assertIsNone(config)
+        self.assertIn(self.OUTSIDE, err)
+
+    def test_a_record_config_with_an_absolute_path_outside_the_repo_is_refused(self):
+        """An absolute path outside the repo must not be read, also when the file exists."""
+        outside_config = self.outside / "code-context.config.yaml"
+        outside_config.write_text(WEB_ON_CONFIG)
+        config, err = self.config_with_record(str(outside_config))
+        self.assertIsNone(config)
+        self.assertIn(self.OUTSIDE, err)
+
+    def test_a_record_config_inside_the_repo_is_accepted(self):
+        """The normal record value, relative or absolute, gives the config file."""
+        (self.root / CONFIG_PATH).write_text(WEB_ON_CONFIG)
+        for value in (CONFIG_PATH, str(self.root / CONFIG_PATH)):
+            with self.subTest(agent_config=value):
+                config, err = self.config_with_record(value)
+                self.assertEqual(config, self.root / CONFIG_PATH)
+                self.assertEqual(err, "")
+
+    def test_a_run_log_config_outside_the_repo_is_refused(self):
+        """The run log is input too, so its config path gets the same check."""
+        preds = make_run(self.bench, "x-check", TWO, OLD)
+        (self.bench / "run.x-check.log").write_text("16:21:47 the agent config agent_config=../../etc/passwd\n")
+        config, err = run_quiet(report.config_of, preds, str(self.bench))
+        self.assertIsNone(config)
+        self.assertIn(self.OUTSIDE, err)
+
+    def test_a_command_line_path_outside_the_repo_is_refused_with_an_error(self):
+        """Each path argument gets the check, and the report stops with exit code 2."""
+        make_run(self.bench, "now", SIXTEEN, NEW)
+        outside_file = self.outside / "preds.evil.jsonl.score.x.json"
+        outside_file.write_text("{}")
+        bench = ["--bench", str(self.bench), "--root", str(self.root)]
+        cases = {
+            # bench/preds.{NAME}.jsonl: the first `..` joins `preds.`, and
+            # the next three go up from bench/ to the parent of the repo root.
+            "run": ["../../../../etc/x", *bench],
+            "--score": ["--score", str(outside_file), *bench],
+            "--scan": ["now", "--scan", str(outside_file), *bench],
+            "--compare": ["now", "--compare", str(outside_file), *bench],
+            "--root": ["now", "--bench", str(self.bench), "--root", str(self.outside)],
+        }
+        for what, argv in cases.items():
+            with self.subTest(argument=what):
+                code, err = run_quiet(report.main, argv)
+                self.assertEqual(code, 2)
+                self.assertIn(self.OUTSIDE, err)
+
+    def test_beside_refuses_a_predictions_path_outside_the_repo(self):
+        """The record and the transcripts stand beside the predictions file."""
+        with self.assertRaisesRegex(report.OutsideRoot, self.OUTSIDE):
+            report.beside(self.outside / "preds.x.jsonl", ".runs.jsonl", self.root)
+
+    def test_preds_of_score_refuses_a_score_outside_the_repo(self):
+        """The predictions path of a score is the score path less its suffix."""
+        with self.assertRaisesRegex(report.OutsideRoot, self.OUTSIDE):
+            report.preds_of_score(self.bench / "../../x/preds.y.jsonl.score.z.json", self.root)
+
+    def test_a_score_file_link_that_leaves_the_repo_is_skipped(self):
+        """A score file name in bench/ can be a link to a file outside the repo."""
+        preds = make_run(self.bench, "now", SIXTEEN, NEW)
+        outside_score = self.outside / "evil.json"
+        outside_score.write_text("{}")
+        (self.bench / "preds.now.jsonl.score.evil.json").symlink_to(outside_score)
+        files, err = run_quiet(report.score_files, preds, self.root)
+        self.assertEqual([Path(f).name for f in files], ["preds.now.jsonl.score.score_now.json"])
+        self.assertIn(self.OUTSIDE, err)
+
+    def test_a_predictions_link_that_leaves_the_repo_is_skipped(self):
+        """A predictions file name in bench/ can be a link to a file outside the repo."""
+        make_run(self.bench, "now", SIXTEEN, NEW)
+        outside_preds = self.outside / "preds.evil.jsonl"
+        outside_preds.write_text("")
+        (self.bench / "preds.evil.jsonl").symlink_to(outside_preds)
+        files, err = run_quiet(report.all_preds, str(self.bench))
+        self.assertEqual([f.name for f in files], ["preds.now.jsonl"])
+        self.assertIn(self.OUTSIDE, err)
+
+    def test_a_transcript_link_that_leaves_the_repo_is_skipped(self):
+        """A transcript in the kept transcripts dir can be a link to a file outside the repo."""
+        transcripts = self.bench / "preds.now.transcripts"
+        (transcripts / "a").mkdir(parents=True)
+        outside_transcript = self.outside / "transcript.jsonl"
+        outside_transcript.write_text("")
+        (transcripts / "a" / "transcript.jsonl").symlink_to(outside_transcript)
+        web, err = run_quiet(report.web_use, str(transcripts), self.root)
+        self.assertEqual(web, {})
+        self.assertIn(self.OUTSIDE, err)
+
+    def test_harness_detail_refuses_a_run_id_that_leaves_the_harness_logs(self):
+        """The run id and the instance id come from the score report, which is input.
+
+        --root is inside the repo root, and the harness logs are below it, so
+        a path inside the harness logs is also inside the repo root. The two
+        temporary dirs have the same parent, so the second instance id names
+        a dir that exists, and glob finds it.
+        """
+        escape = f"../../../../../{self.outside.name}"
+        for run_id, iid in (("../../../../etc", "passwd"), ("score_now", escape)):
+            with self.subTest(run_id=run_id, iid=iid):
+                (self.root / report.LOGS_DIR / "score_now" / "model").mkdir(parents=True, exist_ok=True)
+                detail = report.harness_detail(str(self.root), run_id, iid)
+                self.assertIn("outside the harness logs dir", detail)
 
 
 if __name__ == "__main__":

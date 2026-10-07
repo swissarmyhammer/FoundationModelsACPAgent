@@ -27,6 +27,12 @@ The output has these parts:
    instance ids in its predictions file. A run with other instances does
    not measure the same thing.
 
+Each path that the script builds or reads from input must resolve to a place
+inside the repo root. The repo root is the dir that holds the bench dir. The
+input is the command line, the record, the run log, and the file names in
+the bench dir. The script stops with exit code 2 for a command line path
+outside the repo root. It skips a path from a run file with a note on stderr.
+
 Usage:
   python3 report.py code-context
   python3 report.py bench/preds.code-context.jsonl --compare web-off
@@ -72,6 +78,61 @@ HARNESS_CAUSES = (
 )
 # The result names in the table.
 RESOLVED, UNRESOLVED, EMPTY, NOT_RUN, ABSENT = "RESOLVED", "no", "EMPTY", "NOT RUN", "-"
+# The names of the two dirs that a path must stay inside.
+REPO_SCOPE = "the repo root"
+LOGS_SCOPE = "the harness logs dir"
+# The exit code for a usage error: no score report, or a path outside the repo.
+USAGE_ERROR = 2
+
+
+class OutsideRoot(ValueError):
+    """A path from input that resolves to a place outside its permitted dir."""
+
+
+def repo_root(bench):
+    """Give the repo root: the resolved dir that holds the bench dir.
+
+    - bench: the bench dir.
+    """
+    return Path(bench).resolve().parent
+
+
+def confine(path, root, what, scope=REPO_SCOPE):
+    """Give the resolved path. Raise OutsideRoot when it is not inside root.
+
+    - path: the path to check. A relative path is relative to the current dir.
+    - root: the resolved dir that the path must stay inside.
+    - what: the name of the path in the message, for example "--score".
+    - scope: the name of root in the message.
+
+    resolve() removes each `..` and follows each link, so a path that only
+    looks like it is inside root is refused too.
+    """
+    resolved = Path(path).resolve()
+    if not resolved.is_relative_to(root):
+        raise OutsideRoot(f"refused {what} {path}: it resolves to {resolved}, outside {scope} {root}")
+    return resolved
+
+
+def note(text):
+    """Write a note to stderr. stdout holds only the report."""
+    print(f"note: {text}", file=sys.stderr)
+
+
+def inside_only(paths, root, what):
+    """Give the resolved paths that are inside root. Write a note for each other path.
+
+    - paths: the paths to check.
+    - root: the resolved repo root.
+    - what: the name of the paths in the note.
+    """
+    kept = []
+    for p in paths:
+        try:
+            kept.append(confine(p, root, what))
+        except OutsideRoot as e:
+            note(f"skipped: {e}")
+    return kept
 
 
 def load_scan():
@@ -115,31 +176,53 @@ def name_of(preds):
     return m.group(1) if m else Path(preds).stem
 
 
-def preds_of(arg, bench):
-    """Give the predictions path of a NAME or of a path."""
+def preds_of(arg, bench, what):
+    """Give the resolved predictions path of a NAME or of a path.
+
+    - arg: a run NAME or a predictions path, from the command line.
+    - bench: the bench dir.
+    - what: the name of the argument in the message of a refusal.
+
+    Raise OutsideRoot when the path is outside the repo root. A NAME can
+    hold `..`, so the check is also necessary for bench/preds.NAME.jsonl.
+    """
     p = Path(arg)
-    if p.suffix == ".jsonl" or p.exists():
-        return p
-    return Path(bench) / f"preds.{arg}.jsonl"
+    if not (p.suffix == ".jsonl" or p.exists()):
+        p = Path(bench) / f"preds.{arg}.jsonl"
+    return confine(p, repo_root(bench), what)
 
 
 def all_preds(bench):
-    """Give each predictions file in the bench dir. A record file is not a predictions file."""
-    return [Path(p) for p in glob.glob(os.path.join(bench, "preds.*.jsonl"))
-            if not p.endswith(".runs.jsonl")]
+    """Give each predictions file in the bench dir, resolved. A record file is not a predictions file.
+
+    A file name in the bench dir can be a link to a place outside the repo
+    root. The script skips such a file with a note.
+    """
+    found = [p for p in glob.glob(os.path.join(glob.escape(str(bench)), "preds.*.jsonl"))
+             if not p.endswith(".runs.jsonl")]
+    return inside_only(found, repo_root(bench), "predictions file")
 
 
-def score_files(preds):
-    """Give the score reports of one predictions file, the oldest first."""
-    return sorted(glob.glob(glob.escape(str(preds)) + ".score.*.json"), key=os.path.getmtime)
+def score_files(preds, root):
+    """Give the resolved score reports of one predictions file, the oldest first.
+
+    - preds: the resolved predictions path.
+    - root: the resolved repo root.
+
+    A score file name can be a link to a place outside the repo root. The
+    script skips such a file with a note.
+    """
+    found = glob.glob(glob.escape(str(preds)) + ".score.*.json")
+    return sorted(inside_only(found, root, "score report"), key=os.path.getmtime)
 
 
 def newest_scored(bench):
     """Give the predictions file whose newest score report is the newest of all."""
-    scored = [p for p in all_preds(bench) if score_files(p)]
+    root = repo_root(bench)
+    scored = [p for p in all_preds(bench) if score_files(p, root)]
     if not scored:
         return None
-    return max(scored, key=lambda p: os.path.getmtime(score_files(p)[-1]))
+    return max(scored, key=lambda p: os.path.getmtime(score_files(p, root)[-1]))
 
 
 def read_score(path):
@@ -182,18 +265,24 @@ def runcode_detail(text, ops):
     return detail if isinstance(detail, str) else json.dumps(detail)
 
 
-def web_use(transcripts_dir):
+def web_use(transcripts_dir, root):
     """Give {instance id: (web calls, [upstream evidence])} from the kept transcripts.
+
+    - transcripts_dir: the resolved transcripts dir of the run.
+    - root: the resolved repo root.
 
     The script pairs each runCode call with its result by the call id, as scan.py
     does. A web call is a `tools.web.<verb>` in the code of the call. The upstream
     evidence is a result of a web call that agrees with the UPSTREAM_RE of scan.py.
+    A transcript can be a link to a place outside the repo root. The script
+    skips such a transcript with a note.
     """
     out = {}
     if scan is None or not os.path.isdir(transcripts_dir):
         return out
-    pattern = os.path.join(transcripts_dir, "**", "transcript.jsonl")
-    for f in sorted(glob.glob(pattern, recursive=True)):
+    pattern = os.path.join(glob.escape(str(transcripts_dir)), "**", "transcript.jsonl")
+    found = sorted(glob.glob(pattern, recursive=True))
+    for f in (str(p) for p in inside_only(found, root, "transcript")):
         inst = scan.instance_of(f)
         rows = read_jsonl(f)
         calls, ops = {}, {}
@@ -248,24 +337,30 @@ def scan_upstream(path):
     return out
 
 
-def beside(preds, suffix):
-    """Give the file of a run that stands beside its predictions file.
+def beside(preds, suffix, root):
+    """Give the resolved file of a run that stands beside its predictions file.
 
     - preds: bench/preds.NAME.jsonl.
     - suffix: the suffix that replaces `.jsonl`, for example `.runs.jsonl`.
+    - root: the resolved repo root.
+
+    Raise OutsideRoot when the file is outside the repo root.
     """
-    return Path(str(preds)[: -len(".jsonl")] + suffix)
+    return confine(Path(str(preds)[: -len(".jsonl")] + suffix), root, f"the {suffix} file of a run")
 
 
-def run_ids(preds):
+def run_ids(preds, root):
     """Give the set of instance ids of a run.
+
+    - preds: the resolved predictions path.
+    - root: the resolved repo root.
 
     The predictions file holds each instance of the run. A resumed score
     holds only the instances that it sent to docker, so the score ids are
     the fallback for a run with no predictions file.
     """
     ids = set(last_by_id(read_jsonl(preds)))
-    files = score_files(preds)
+    files = score_files(preds, root)
     if ids or not files:
         return ids
     _, resolved, unresolved, errored = read_score(files[-1])
@@ -294,24 +389,44 @@ def config_in_log(log):
     return None
 
 
-def config_of(preds, bench):
-    """Give the path of the agent config that a run used, or None.
+def named_config(preds, bench, root):
+    """Give the agent config path that the record or the run log names, or None.
 
-    - preds: bench/preds.NAME.jsonl.
+    - preds: the resolved predictions path.
+    - bench: the bench dir.
+    - root: the resolved repo root.
+
+    The path is the text of the file, with no check. Raise OutsideRoot when
+    the record or the run log is outside the repo root.
+    """
+    named = next((r[CONFIG_FIELD] for r in read_jsonl(beside(preds, ".runs.jsonl", root))
+                  if isinstance(r, dict) and r.get(CONFIG_FIELD)), None)
+    log = confine(Path(bench) / f"run.{name_of(preds)}.log", root, "run log")
+    return named or config_in_log(log)
+
+
+def config_of(preds, bench):
+    """Give the resolved path of the agent config that a run used, or None.
+
+    - preds: the resolved predictions path.
     - bench: the bench dir.
 
     The first source that names a config wins: the `agent_config` field of
     the record, then the head of the run log, then bench/NAME.config.yaml.
     A record or a log gives the path as the run got it, relative to the dir
-    where the run started. That dir is the parent of the bench dir.
+    where the run started. That dir is the repo root. A path outside the
+    repo root, for example `../../etc/passwd`, is not read: the script
+    writes a note and gives None, so the web state is unknown.
     """
-    named = next((r[CONFIG_FIELD] for r in read_jsonl(beside(preds, ".runs.jsonl"))
-                  if isinstance(r, dict) and r.get(CONFIG_FIELD)), None)
-    named = named or config_in_log(Path(bench) / f"run.{name_of(preds)}.log")
-    if named:
-        path = Path(named)
-        return path if path.is_absolute() else Path(bench).parent / path
-    by_name = Path(bench) / f"{name_of(preds)}.config.yaml"
+    root = repo_root(bench)
+    try:
+        named = named_config(preds, bench, root)
+        if named:
+            return confine(root / str(named), root, "the agent config that the run names")
+        by_name = confine(Path(bench) / f"{name_of(preds)}.config.yaml", root, "the config named after the run")
+    except OutsideRoot as e:
+        note(f"skipped: {e}; the web state of the run is unknown")
+        return None
     return by_name if by_name.exists() else None
 
 
@@ -324,14 +439,27 @@ def web_state(config):
 
 
 def harness_detail(root, run_id, iid):
-    """Give a short text from the logs of the harness for one instance."""
-    run_dir = Path(root) / LOGS_DIR / run_id
-    if not run_dir.is_dir():
-        return f"no harness logs for this run id ({run_dir} is missing)"
-    hits = sorted(glob.glob(str(run_dir).replace("[", "[[]") + "/*/" + glob.escape(iid)))
-    if not hits:
-        return "no harness log: the image did not build, or the logs are gone"
-    d = Path(hits[0])
+    """Give a short text from the logs of the harness for one instance.
+
+    - root: the dir where the harness wrote logs/. main() keeps it inside the repo root.
+    - run_id: the run id of the score report.
+    - iid: the instance id.
+
+    The run id and the instance id come from the score report, so each path
+    that they make must stay inside the harness logs dir. The text of a
+    refusal takes the place of the detail.
+    """
+    logs = Path(root).resolve() / LOGS_DIR
+    try:
+        run_dir = confine(logs / str(run_id), logs, "the run id", LOGS_SCOPE)
+        if not run_dir.is_dir():
+            return f"no harness logs for this run id ({run_dir} is missing)"
+        hits = sorted(glob.glob(glob.escape(str(run_dir)) + "/*/" + glob.escape(iid)))
+        if not hits:
+            return "no harness log: the image did not build, or the logs are gone"
+        d = confine(hits[0], logs, "the instance id", LOGS_SCOPE)
+    except OutsideRoot as e:
+        return str(e)
     rep = d / "report.json"
     if rep.exists():
         try:
@@ -367,9 +495,17 @@ def table(rows, head):
         print("  " + "  ".join(str(x).ljust(n) for x, n in zip(line, w)).rstrip())
 
 
-def preds_of_score(score):
-    """Give the predictions path of a score report: the path without `.score.<run id>.json`."""
-    return Path(re.sub(r"\.score\.[^/]*\.json$", "", str(score)))
+def preds_of_score(score, root):
+    """Give the resolved predictions path of a score report: the path without `.score.<run id>.json`.
+
+    - score: the score report path.
+    - root: the resolved repo root.
+
+    Raise OutsideRoot when the score report or the predictions path is
+    outside the repo root.
+    """
+    resolved = confine(score, root, "score report")
+    return confine(re.sub(r"\.score\.[^/]*\.json$", "", str(resolved)), root, "the predictions file of a score")
 
 
 def compare_target(arg, preds, bench, this_score):
@@ -377,24 +513,25 @@ def compare_target(arg, preds, bench, this_score):
 
     - arg: a score json path, a NAME or a predictions path from --compare,
       or None.
-    - preds: the predictions path of this run.
+    - preds: the resolved predictions path of this run.
     - bench: the bench dir.
     - this_score: the score report of this run.
 
     With no arg, the target is the newest score of the newest other run with
     the same instance ids. A score that is older than this score comes first.
     A run with other instances does not measure the same thing, so it is
-    never the target.
+    never the target. Raise OutsideRoot when arg is outside the repo root.
     """
+    root = repo_root(bench)
     named = "named with --compare"
     if arg:
         if arg.endswith(".json") and Path(arg).exists():
-            return Path(arg), named
-        files = score_files(preds_of(arg, bench))
-        return (Path(files[-1]) if files else None), named
-    ids = run_ids(preds)
-    same = [Path(score_files(p)[-1]) for p in all_preds(bench)
-            if name_of(p) != name_of(preds) and score_files(p) and run_ids(p) == ids]
+            return confine(arg, root, "--compare"), named
+        files = score_files(preds_of(arg, bench, "--compare"), root)
+        return (files[-1] if files else None), named
+    ids = run_ids(preds, root)
+    same = [score_files(p, root)[-1] for p in all_preds(bench)
+            if name_of(p) != name_of(preds) and score_files(p, root) and run_ids(p, root) == ids]
     if not same:
         return None, f"no other run has the same {len(ids)} instance ids; name one with --compare NAME"
     t = os.path.getmtime(this_score)
@@ -417,28 +554,45 @@ def main(argv=None):
                                       "(default: the newest other run with the same instance ids)")
     ap.add_argument("--no-compare", action="store_true", help="do not compare")
     a = ap.parse_args(argv)
+    try:
+        return print_report(a)
+    except OutsideRoot as e:
+        print(f"error: {e}", file=sys.stderr)
+        return USAGE_ERROR
 
+
+def print_report(a):
+    """Print the report of one score run. Give the exit code.
+
+    - a: the parsed command line arguments.
+
+    Raise OutsideRoot when a path from the command line is outside the repo root.
+    """
+    root = repo_root(a.bench)
+    logs_root = confine(a.root, root, "--root")
+    scan_path = confine(a.scan, root, "--scan") if a.scan else None
+    score_arg = confine(a.score, root, "--score") if a.score else None
     if a.run:
-        preds = preds_of(a.run, a.bench)
-    elif a.score:
-        preds = preds_of_score(a.score)
+        preds = preds_of(a.run, a.bench, "the run")
+    elif score_arg:
+        preds = preds_of_score(score_arg, root)
     else:
         preds = newest_scored(a.bench)
         if preds is None:
             print(f"no score report in {a.bench}/. Score a run first.")
-            return 2
-    files = [a.score] if a.score else score_files(preds)
-    if not files or not Path(files[-1]).exists():
+            return USAGE_ERROR
+    files = [score_arg] if score_arg else score_files(preds, root)
+    if not files or not files[-1].exists():
         print(f"no score report for {preds} (want {preds}.score.<run id>.json). Score the run first.")
-        return 2
-    score_path = Path(files[-1])
+        return USAGE_ERROR
+    score_path = files[-1]
     name = name_of(preds)
     report, resolved, unresolved, errored = read_score(score_path)
     preds_rows = last_by_id(read_jsonl(preds))
-    runs = last_by_id(read_jsonl(beside(preds, ".runs.jsonl")))
-    web = web_use(str(beside(preds, ".transcripts")))
-    if a.scan:
-        for inst, ev in scan_upstream(a.scan).items():
+    runs = last_by_id(read_jsonl(beside(preds, ".runs.jsonl", root)))
+    web = web_use(beside(preds, ".transcripts", root), root)
+    if scan_path:
+        for inst, ev in scan_upstream(scan_path).items():
             n, old = web.get(inst, (0, []))
             web[inst] = (n, old + [e for e in ev if e not in old])
     config = config_of(preds, a.bench)
@@ -475,13 +629,13 @@ def main(argv=None):
 
     print(f"\n== NOT RUN by the harness ({len(not_run)}); these are not agent failures")
     for i in not_run:
-        print(f"  {i}: {harness_detail(a.root, run_id, i)}")
+        print(f"  {i}: {harness_detail(logs_root, run_id, i)}")
     if empty:
         print(f"  the empty patches are not sent to docker, so they are also in errored_ids: {', '.join(empty)}")
 
     print(f"\n== UNRESOLVED ({len(unresolved)}): the tests of the harness")
     for i in sorted(unresolved):
-        print(f"  {i}: {harness_detail(a.root, run_id, i)}")
+        print(f"  {i}: {harness_detail(logs_root, run_id, i)}")
 
     used = sorted(i for i in ids if web.get(i, (0, []))[0])
     up = sorted(i for i in ids if web.get(i, (0, []))[1])
@@ -503,7 +657,7 @@ def main(argv=None):
     if other is None:
         print(f"\n== COMPARE: no other score report: {why}")
         return 0
-    o_preds = preds_of_score(other)
+    o_preds = preds_of_score(other, root)
     o_report, o_res, o_unres, o_err = read_score(other)
     o_rows = last_by_id(read_jsonl(o_preds))
     o_state = web_state(config_of(o_preds, a.bench))

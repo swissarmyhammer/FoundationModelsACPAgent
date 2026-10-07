@@ -232,6 +232,13 @@ upstream-fix items are added), `--compare NAME|FILE`, `--no-compare`,
 `--root DIR` (the dir where the harness wrote `logs/`). With no argument, the
 script uses the newest predictions file that has a score report.
 
+Each path must resolve to a place inside the repo root (the dir that holds
+`bench/`). For a path on the command line outside the repo root, the script
+stops with exit code 2. Thus save a `scan.py` output below the repo, not in
+`/tmp`. For a path from a run file (the `agent_config` of the record or the
+run log, a score file name, a transcript, a harness log dir) outside the repo
+root, the script writes a note to stderr and does not read that path.
+
 The script reads the score report, the predictions, the record
 (`preds.NAME.runs.jsonl`), the kept transcripts, the harness logs and the
 agent config. It gives:
