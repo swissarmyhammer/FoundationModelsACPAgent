@@ -30,6 +30,51 @@ comments:
     - evidence: 6 files — Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift (+10 tests, roster tests adapted to `Roster.Entry`), Tests/FoundationModelsACPAgentTests/AgentSpanTests.swift (broken-server test now expects a session and a `.failed` outcome), Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift (+1 resume test), Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift (unreachable http server now expects a session). `swift test --scratch-path …/scratchpad/rel-build`: 762 tests in 84 suites passed, 1 known issue (existing `withKnownIssue` in HarnessSmokeTests). Package.resolved not changed. No ARCHITECTURE.md in the repo.
     - next: /review
   timestamp: 2026-10-07T16:54:52.967740+00:00
+- actor: claude-code
+  id: 01m4bmmp2w7m7f9f4qcwfwbmy5
+  text: |-
+    ### test — green
+    - evidence: swift test (scratch rel-build): 762 tests in 84 suites passed, 1 existing known issue.
+    - next: commit, review HEAD~1..HEAD
+  timestamp: 2026-10-07T16:55:10.684462+00:00
+- actor: claude-code
+  id: 01m4bn0h5anfbbmjfktm1d673t
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (cdc4982), 5 findings (5 confirmed, 0 refuted) — Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:177, :198, :202, :205, :208
+    - next: implement the 5 open items in the "Review Findings (2026-10-07 11:55)" section, then review again.
+  timestamp: 2026-10-07T17:01:38.858201+00:00
+- actor: claude-code
+  id: 01m4bn105ymz9d752rxe89y8zv
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files
+    - test: green — swift 762 passed
+    - commit: cdc4982
+    - review: findings — MCPComposition.swift:177 (data-driven), :198, :202, :205, :208 (assign-only properties of ServerOutcome)
+  timestamp: 2026-10-07T17:01:54.238853+00:00
+- actor: claude-code
+  id: 01m4bnd2cm223na0ctf3d228bq
+  text: |-
+    Review findings (2026-10-07 11:55) fixed. Each finding, word for word:
+    1. `MCPComposition.swift:177` `code-hygiene/data-driven` — "Error-type-to-case mapping written as an if-else chain. ... Replace the if-else chain with a static mapping." Fix: `FailureReason.connectErrorReasons` is now a static table of rows `(matches, reason)`; `init(connectError:)` reads the first row that matches, else `.connectFailed`. No other if-else chain over a known set stays in the file. The exhaustive `switch` statements over enums stay (the rule carve-out: the compiler checks them).
+    2-5. `:198`, `:202`, `:205`, `:208` `code-hygiene/dead-code-swift` — "var.instance `name` / `transport` / `origin` / `result` is assignOnlyProperty." Fix: production code now reads each property. `connectServers(section:clientServers:)` writes one log record for each outcome (new `log(outcomes:)`), with `ServerOutcome.logMetadata` (reads `name`, `transport`, `origin`, `result`) and `Result.logLevel` / `Result.logMessage`. A connected server gives an `info` record, a failed server gives a `warning` record. I did not use `// periphery:ignore`, because a real reader exists now.
+
+    Telemetry no-content rule: the record holds the server name, the transport wire text, the origin raw value (`config`/`client`), the result (`connected`/`failed`) and the case name of the failure reason. It holds no URL, argument, env value, headers value or error description (the outcome holds none). The message does not hold the server name. New `LogMetadataKey` entries in ACPAgentTelemetry: `mcpServerTransport` (= the span attribute key), `mcpServerOrigin`, `mcpServerResult`, `mcpFailureReason`. `TelemetryContentSafetyTests.noTelemetryRecordCarriesTheContentOfTheClient` drives these records under the forbidden markers and passes.
+
+    TDD: new test `MCPCompositionTests.eachOutcomeWritesOneRecordWithItsNameTransportOriginAndResult` (connected stdio, failed relative stdio with secret arg and env, name-collision http with secret url and header, captured with those secrets forbidden). RED: zero outcome records. GREEN after the change.
+
+    Changed existing test: `aRefusedClientServerWritesOneErrorWithItsNameInMetadataAndNoSecret` filtered records only by the server name. The outcome record of the same refused server also has that name, so the filter now also requires the refusal reason key. The assertion (exactly one refusal record) is the same.
+
+    Considered as a better production reader: the `_mcp_server_status` session update (^cbqsngc). That is a separate task, so the log record is the reader in this task's scope.
+  timestamp: 2026-10-07T17:08:29.716176+00:00
+- actor: claude-code
+  id: 01m4bnd4tn1jch8s4mrkyxv2t4
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift (+1 test, 1 test filter adapted). `swift test --scratch-path …/scratchpad/rel-build`: 763 tests in 84 suites passed, 1 known issue (existing `withKnownIssue`). No compiler warning. Package.resolved not changed. 5/5 findings checked.
+    - next: /review
+  timestamp: 2026-10-07T17:08:32.213167+00:00
 position_column: doing
 position_ordinal: '80'
 title: Keep the outcome of each MCP server connect, and start the session when a client MCP server fails
@@ -89,3 +134,16 @@ Most of the MCP capability is already in the code. Do not write it again:
 ## Workflow
 
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-10-07 11:55)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:177` `code-hygiene/data-driven` — Error-type-to-case mapping written as an if-else chain. The arms differ only in which error type is checked and which FailureReason case is assigned — this is a lookup table (error type → FailureReason) written as control flow. Replace the if-else chain with a static mapping. For example, create a dictionary or helper function that maps the error type and case to the FailureReason, eliminating the parallel arms.
+- [x] `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:198` `code-hygiene/dead-code-swift` — var.instance `name` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:202` `code-hygiene/dead-code-swift` — var.instance `transport` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:205` `code-hygiene/dead-code-swift` — var.instance `origin` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift:208` `code-hygiene/dead-code-swift` — var.instance `result` is assignOnlyProperty.

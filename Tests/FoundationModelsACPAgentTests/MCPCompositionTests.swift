@@ -454,7 +454,10 @@ import Testing
         }
 
         let serverNameKey = ACPAgentTelemetry.LogMetadataKey.mcpServerName
-        let refusalRecords = records.filter { $0.metadata[serverNameKey] == .string(Self.remoteName) }
+        let refusalReasonKey = ACPAgentTelemetry.LogMetadataKey.mcpRefusalReason
+        let refusalRecords = records.filter {
+            $0.metadata[serverNameKey] == .string(Self.remoteName) && $0.metadata[refusalReasonKey] != nil
+        }
         #expect(refusalRecords.count == 1)
         let record = try #require(refusalRecords.first)
         #expect(record.level == .error)
@@ -859,6 +862,62 @@ import Testing
             Self.relativeCommand,
         ] {
             #expect(!rendered.contains(secret))
+        }
+    }
+
+    /// The composition writes one record for each outcome, in the order of
+    /// the outcomes. The metadata of the record holds the server name, the
+    /// transport, the origin, the result and the reason of a failure. A
+    /// connected server gives an `info` record, and a failed server gives a
+    /// `warning` record. No record holds the command argument, the `env`
+    /// value, the url or the `headers` value, and the message of a record
+    /// does not hold the server name.
+    @Test func eachOutcomeWritesOneRecordWithItsNameTransportOriginAndResult() async throws {
+        let command = try BuiltProductLocator.mcpTestServerURL().path
+        let connecting = try Self.clientStdioServer(named: Self.deltaName, command: command)
+        let failing = FoundationModelsACP.MCPServer.stdio(
+            MCPServerStdio(
+                command: AbsolutePath(rawValue: Self.relativeCommand),
+                name: Self.gammaName,
+                args: [Self.secretArgument],
+                env: [EnvVariable(name: "TOKEN", value: Self.secretEnvValue)]))
+        let colliding = FoundationModelsACP.MCPServer.http(
+            MCPServerHTTP(
+                name: Self.deltaName,
+                url: Self.secretURL,
+                headers: [HTTPHeader(name: "Authorization", value: Self.secretHeaderValue)]))
+
+        let records = try await TelemetryCapture.run(
+            forbidding: [Self.secretArgument, Self.secretEnvValue, Self.secretURL, Self.secretHeaderValue]
+        ) { context in
+            let connected = try await MCPComposition.connectServers(
+                section: .enabled(servers: []), clientServers: [connecting, failing, colliding])
+            await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
+            return context.logRecords
+        }
+
+        let key = ACPAgentTelemetry.LogMetadataKey.self
+        let outcomeKeys = [
+            key.mcpServerName, key.mcpServerTransport, key.mcpServerOrigin, key.mcpServerResult,
+            key.mcpFailureReason,
+        ]
+        let outcomeRecords = records.filter { $0.metadata[key.mcpServerResult] != nil }
+        #expect(
+            outcomeRecords.map { record in outcomeKeys.map { record.metadata[$0] } } == [
+                [.string(Self.deltaName), .string("stdio"), .string("client"), .string("connected"), nil],
+                [
+                    .string(Self.gammaName), .string("stdio"), .string("client"), .string("failed"),
+                    .string("commandNotAbsolute"),
+                ],
+                [
+                    .string(Self.deltaName), .string("http"), .string("client"), .string("failed"),
+                    .string("nameCollision"),
+                ],
+            ])
+        #expect(outcomeRecords.map(\.level) == [.info, .warning, .warning])
+        for record in outcomeRecords {
+            #expect(!"\(record.message)".contains(Self.gammaName))
+            #expect(!"\(record.message)".contains(Self.deltaName))
         }
     }
 

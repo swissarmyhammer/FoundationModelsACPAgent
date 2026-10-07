@@ -138,8 +138,9 @@ enum MCPComposition {
             }
         }
 
-        /// The source of the entry of one server.
-        enum Origin: Equatable, Sendable {
+        /// The source of the entry of one server. The raw value is the text
+        /// of the origin in a log record.
+        enum Origin: String, Equatable, Sendable {
             /// The `mcp:` section of the configuration.
             case config
 
@@ -169,19 +170,35 @@ enum MCPComposition {
             /// The agent does not know the transport of the server.
             case unknownTransport = "The transport is not known."
 
+            /// The table from a connect error to its reason. Each row holds
+            /// the test that matches the type and the case of an error, and
+            /// the reason of that error. An error that no row matches is a
+            /// failure of the connect or of the ready wait.
+            private static let connectErrorReasons:
+                [(matches: @Sendable (any Error) -> Bool, reason: FailureReason)] = [
+                    (
+                        {
+                            if case .commandNotAbsolute? = $0 as? StdioServerProcess.StdioServerProcessError {
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                        .commandNotAbsolute
+                    ),
+                    (
+                        { if case .invalidServerURL? = $0 as? MCPCompositionError { true } else { false } },
+                        .invalidURL
+                    ),
+                ]
+
             /// The reason of a connect that threw `error`. The reason is
             /// read from the type and the case of the error, never from its
             /// description.
             ///
             /// - Parameter error: The error the connect threw.
             init(connectError error: any Error) {
-                if case .commandNotAbsolute? = error as? StdioServerProcess.StdioServerProcessError {
-                    self = .commandNotAbsolute
-                } else if case .invalidServerURL? = error as? MCPCompositionError {
-                    self = .invalidURL
-                } else {
-                    self = .connectFailed
-                }
+                self = Self.connectErrorReasons.first { $0.matches(error) }?.reason ?? .connectFailed
             }
         }
 
@@ -192,6 +209,33 @@ enum MCPComposition {
 
             /// The server is not connected, for `reason`.
             case failed(reason: FailureReason)
+
+            /// The text of the result in a log record: `connected` or
+            /// `failed`.
+            var logName: String {
+                switch self {
+                case .connected: "connected"
+                case .failed: "failed"
+                }
+            }
+
+            /// The level of the log record of the result: `info` for a
+            /// connected server, `warning` for a failed server.
+            var logLevel: Logger.Level {
+                switch self {
+                case .connected: .info
+                case .failed: .warning
+                }
+            }
+
+            /// The message of the log record of the result. The message
+            /// does not hold the server name; the metadata holds it.
+            var logMessage: Logger.Message {
+                switch self {
+                case .connected: "The composition connected an MCP server."
+                case .failed: "The composition did not connect an MCP server."
+                }
+            }
         }
 
         /// The server name, and so the noun of its tools.
@@ -206,6 +250,27 @@ enum MCPComposition {
 
         /// If the server connected, or why it did not.
         let result: Result
+
+        /// The metadata of the log record of this outcome: the server name,
+        /// the transport (when the agent knows it), the origin, the result,
+        /// and the case name of the reason of a failure.
+        ///
+        /// The record holds no other value of the server. The outcome holds
+        /// no `env` value, no `headers` value, no URL, no command argument
+        /// and no description of an error, so the record holds none.
+        var logMetadata: Logger.Metadata {
+            typealias Key = ACPAgentTelemetry.LogMetadataKey
+            var metadata: Logger.Metadata = [
+                Key.mcpServerName: "\(name)",
+                Key.mcpServerOrigin: "\(origin.rawValue)",
+                Key.mcpServerResult: "\(result.logName)",
+            ]
+            metadata[Key.mcpServerTransport] = transport.map { "\($0.wireName)" }
+            if case .failed(let reason) = result {
+                metadata[Key.mcpFailureReason] = "\(reason)"
+            }
+            return metadata
+        }
     }
 
     /// The composed roster: the accepted entries in mount order, and each
@@ -435,9 +500,9 @@ enum MCPComposition {
 
     // MARK: - The connect step
 
-    /// Composes the roster, logs each refusal, and connects every accepted
-    /// entry — the async step `session/new` awaits before the registry
-    /// build (plan.md §7.3, §11.5).
+    /// Composes the roster, logs each refusal, connects every accepted
+    /// entry, and logs the outcome of each server — the async step
+    /// `session/new` awaits before the registry build (plan.md §7.3, §11.5).
     ///
     /// Each stdio entry spawns a `StdioServerProcess`, whose `respawn` is
     /// the server's transport factory, so a reconnect respawns the
@@ -486,9 +551,25 @@ enum MCPComposition {
                     origin: entry.origin,
                     result: result))
         }
+        outcomes += roster.refusalOutcomes
+        log(outcomes: outcomes)
         return ConnectedServers(
-            servers: servers, processes: processes, refusals: roster.refusals,
-            outcomes: outcomes + roster.refusalOutcomes)
+            servers: servers, processes: processes, refusals: roster.refusals, outcomes: outcomes)
+    }
+
+    /// Writes one log record for each outcome, in the order of the outcomes:
+    /// an `info` record for a connected server and a `warning` record for a
+    /// failed server. The metadata of the record is
+    /// ``ServerOutcome/logMetadata``, and the message does not hold the
+    /// server name.
+    ///
+    /// - Parameter outcomes: The outcomes of the composition.
+    private static func log(outcomes: [ServerOutcome]) {
+        let logger = ACPAgentTelemetry.logger(.mcpComposition)
+        for outcome in outcomes {
+            logger.log(
+                level: outcome.result.logLevel, outcome.result.logMessage, metadata: outcome.logMetadata)
+        }
     }
 
     /// Connects one entry of the roster, and records the connected server

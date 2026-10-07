@@ -294,6 +294,21 @@ enum ACPAgentTelemetry {
         /// name of the refusal case.
         static let mcpRefusalReason = "mcp.server.refusal_reason"
 
+        /// The transport of an MCP server: `stdio` or `http`.
+        static let mcpServerTransport = AttributeKey.mcpServerTransport
+
+        /// The source of the entry of an MCP server: `config` or `client`.
+        static let mcpServerOrigin = "mcp.server.origin"
+
+        /// The result of the composition of an MCP server: `connected` or
+        /// `failed`.
+        static let mcpServerResult = "mcp.server.result"
+
+        /// Why the composition did not connect an MCP server: the name of
+        /// the failure reason case. Never the description of an error,
+        /// because a description can hold a URL or a secret.
+        static let mcpFailureReason = "mcp.server.failure_reason"
+
         /// The id of an elicitation.
         static let elicitationId = "elicitation.id"
 
@@ -436,7 +451,8 @@ enum ACPAgentTelemetry {
         /// The command registry: the merge wins and the reserved-name drops.
         case commands = "Commands"
 
-        /// The MCP composition: the refusals of client-supplied servers.
+        /// The MCP composition: the refusals of client-supplied servers, and
+        /// the outcome of each server.
         case mcpComposition = "MCPComposition"
 
         /// The transcripts module: the damaged lines of the session index
