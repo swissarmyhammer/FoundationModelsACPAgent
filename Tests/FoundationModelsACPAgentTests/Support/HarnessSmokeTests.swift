@@ -128,7 +128,7 @@ final class PathRecordingTool: Tool, Sendable {
     @Test(.timeLimit(.minutes(1)))
     func flushDrainsACoalescedChunkWithoutSleeping() async throws {
         let harness = try await AgentClientHarness.make()
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        _ = try await harness.client.initialize(AgentClientHarness.makeInitializeRequest())
         let cwd = makeResolvedDirectory(label: "HarnessSmokeTests-flush")
         let session = try await harness.client.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
         let arrivals = await session.updateTap()

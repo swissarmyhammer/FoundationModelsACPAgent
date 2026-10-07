@@ -183,7 +183,10 @@ struct ScriptedPromptFixture {
         await agent.registerCommandProviders(commandProviders)
         let harness = await AgentClientHarness.makeRecording(
             agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
-        _ = try await harness.connection.initialize(
+        // The model must send `initialize` itself: it keeps the agent
+        // capabilities, and `newSession(_:)` sends MCP servers and
+        // additional directories only when the agent advertises them.
+        _ = try await harness.client.initialize(
             AgentClientHarness.makeInitializeRequest(capabilities: capabilities))
         let session = try await harness.client.newSession(
             NewSessionRequest(
