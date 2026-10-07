@@ -20,8 +20,31 @@ comments:
     - evidence: 8 files — bench/code-context.config.yaml, bench/README.md, .claude/skills/swebench/SKILL.md, .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py, .claude/skills/swebench-score/SKILL.md, .claude/skills/swebench-score/scripts/report.py, .claude/skills/swebench-score/scripts/test_report.py. Tests: swebench/scripts 19 OK, swebench-score/scripts 29 OK, bench (uv run --with swebench==5.0.2) 227 OK. No Swift change.
     - next: /review
   timestamp: 2026-10-07T17:56:44.563594+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4br67j1y9vavssesdwwp7wm
+  text: |-
+    ### test — green
+    - evidence: swebench scripts 19 OK; swebench-score scripts 29 OK; bench (swebench 5.0.2) 227 OK, 0 skipped. No Swift change.
+    - next: commit f7601e7, review HEAD~1..HEAD
+  timestamp: 2026-10-07T17:57:11.361672+00:00
+- actor: claude-code
+  id: 01m4brh3zehsedypk47wmm98c0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f7601e7): 0 findings, 0 confirmed, 1 refuted, 8 attempted, 0 failed. 4 files had no matching validator (2 SKILL.md, bench/README.md, bench/code-context.config.yaml). 2 .kanban files were excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-07T18:03:08.142278+00:00
+- actor: claude-code
+  id: 01m4brhdgtv1nck4mqsfrkptjj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files (config comment, README, 2 SKILL.md, scan.py, report.py, 2 test files)
+    - test: green — scan 19, report 29, bench 227
+    - commit: f7601e7
+    - review: clean — 0 findings
+  timestamp: 2026-10-07T18:03:17.914534+00:00
+position_column: done
+position_ordinal: ffa380
 title: 'bench: an upstream fix that the agent finds on the web counts; report it as information, not as an invalid score'
 ---
 ## Decision (user, 2026-10-07)
