@@ -253,24 +253,30 @@ import Tracing
         try run.expectOneEnterRecord(withTheIdsOf: connectSpan)
     }
 
-    /// A server that cannot connect gives its connect span the error status
-    /// and the type of the error, as a child of the `session/new` span that
-    /// fails. The span records no error.
+    /// A client server that cannot connect does not stop `session/new`: the
+    /// session starts, and its surface keeps a `.failed` outcome for the
+    /// server. The connect span of the server has the error status and the
+    /// type of the error, as a child of the `session/new` span. The span
+    /// records no error.
     @Test(.timeLimit(.minutes(1)))
     func serverThatFailsToConnectRecordsTheErrorTypeOnItsConnectSpan() async throws {
         let brokenServer = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
                 command: AbsolutePath(rawValue: Self.relativeServerCommand), name: Self.brokenServerName))
-        let run = try await TelemetryCapture.run(forbidding: []) { context in
-            let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
-            await #expect(throws: (any Error).self) {
-                _ = try await fixture.harness.connection.newSession(
-                    NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), mcpServers: [brokenServer]))
-            }
+        let (run, outcomes) = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeTracedFixture(
+                script: [.endPass], context: context, mcpServers: [brokenServer])
+            let outcomes = await fixture.harness.agent.sessions[fixture.sessionId]?.surface.mcpServerOutcomes
             await fixture.close()
-            return TracedRun(sessionId: fixture.sessionId.rawValue, context: context)
+            return (TracedRun(sessionId: fixture.sessionId.rawValue, context: context), outcomes)
         }
 
+        #expect(
+            outcomes == [
+                MCPComposition.ServerOutcome(
+                    name: Self.brokenServerName, transport: .stdio, origin: .client,
+                    result: .failed(reason: .commandNotAbsolute))
+            ])
         let connectSpan = try Self.requireOneSpan(named: ACPAgentTelemetry.SpanName.mcpConnect, in: run)
         #expect(connectSpan.errors.isEmpty)
         #expect(connectSpan.status?.code == .error)

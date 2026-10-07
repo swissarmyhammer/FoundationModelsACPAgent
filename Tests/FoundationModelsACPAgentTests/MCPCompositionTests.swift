@@ -51,6 +51,10 @@ import Testing
     /// The name of an http client server in the roster cases.
     private static let remoteName = "remote"
 
+    /// The url of an http client server in the roster cases, which no case
+    /// connects to.
+    private static let remoteURL = "https://example.test/mcp"
+
     /// A command path for roster cases that never spawn.
     private static let unusedCommand = "/bin/echo"
 
@@ -267,7 +271,9 @@ import Testing
 
         let roster = MCPComposition.composeRoster(section: section, clientServers: [client])
 
-        #expect(roster.entries.map(\.name) == [Self.alphaName, Self.betaName, Self.gammaName])
+        #expect(
+            roster.entries.map(\.configuration.name) == [Self.alphaName, Self.betaName, Self.gammaName])
+        #expect(roster.entries.map(\.origin) == [.config, .config, .client])
         #expect(roster.refusals.isEmpty)
     }
 
@@ -281,7 +287,7 @@ import Testing
         let roster = MCPComposition.composeRoster(
             section: section, clientServers: [colliding, clean])
 
-        #expect(roster.entries.map(\.name) == [Self.alphaName, Self.gammaName])
+        #expect(roster.entries.map(\.configuration.name) == [Self.alphaName, Self.gammaName])
         #expect(roster.refusals == [.nameCollision(serverName: Self.alphaName)])
     }
 
@@ -292,7 +298,7 @@ import Testing
         let roster = MCPComposition.composeRoster(
             section: .enabled(servers: []), clientServers: [first, repeated])
 
-        #expect(roster.entries.map(\.name) == [Self.gammaName])
+        #expect(roster.entries.map(\.configuration.name) == [Self.gammaName])
         #expect(roster.refusals == [.nameCollision(serverName: Self.gammaName)])
     }
 
@@ -341,7 +347,7 @@ import Testing
             section: .enabled(servers: []), clientServers: [client])
 
         #expect(
-            roster.entries == [
+            roster.entries.map(\.configuration) == [
                 MCPServerConfiguration(
                     name: Self.gammaName,
                     transport: .stdio(
@@ -353,7 +359,7 @@ import Testing
         let client = FoundationModelsACP.MCPServer.http(
             MCPServerHTTP(
                 name: Self.remoteName,
-                url: "https://example.test/mcp",
+                url: Self.remoteURL,
                 headers: [
                     HTTPHeader(name: "Authorization", value: "first"),
                     HTTPHeader(name: "Authorization", value: "second"),
@@ -363,11 +369,11 @@ import Testing
             section: .enabled(servers: []), clientServers: [client])
 
         #expect(
-            roster.entries == [
+            roster.entries.map(\.configuration) == [
                 MCPServerConfiguration(
                     name: Self.remoteName,
                     transport: .http(
-                        url: "https://example.test/mcp",
+                        url: Self.remoteURL,
                         headers: ["Authorization": "second"]))
             ])
     }
@@ -375,15 +381,14 @@ import Testing
     // MARK: - Connect errors
 
     @Test func aRelativeStdioCommandThrowsInsteadOfSpawning() async throws {
-        let relativeCommand = "relative/mcp-test-server"
         let section = MCPToolSection.enabled(servers: [
             MCPServerConfiguration(
                 name: Self.alphaName,
-                transport: .stdio(command: relativeCommand, args: [], env: [:]))
+                transport: .stdio(command: Self.relativeCommand, args: [], env: [:]))
         ])
 
         await #expect(
-            throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(relativeCommand)
+            throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(Self.relativeCommand)
         ) {
             _ = try await MCPComposition.connectServers(section: section, clientServers: [])
         }
@@ -634,6 +639,227 @@ import Testing
         await surface.builder.serverPool.shutdownAll()
         #expect(await surface.builder.serverPool.isEmpty)
         withExtendedLifetime(served) {}
+    }
+
+    // MARK: - The outcome of each server
+
+    /// A stdio command that is not an absolute path, so the server cannot
+    /// start.
+    private static let relativeCommand = "relative/mcp-test-server"
+
+    /// A url that parses into a URL with no scheme, so the composition
+    /// refuses it. It is also the secret url of the no-secret case.
+    private static let secretURL = "mcp-composition-secret-url"
+
+    /// The secret command argument of the no-secret case.
+    private static let secretArgument = "mcp-composition-secret-argument"
+
+    /// The outcome of a client-supplied server that failed for `reason`.
+    ///
+    /// - Parameters:
+    ///   - name: The server name.
+    ///   - transport: The transport of the server, or `nil` when it is not
+    ///     known.
+    ///   - reason: Why the server failed.
+    /// - Returns: The outcome.
+    private static func failedClientOutcome(
+        named name: String,
+        transport: MCPComposition.ServerOutcome.Transport?,
+        reason: MCPComposition.ServerOutcome.FailureReason
+    ) -> MCPComposition.ServerOutcome {
+        MCPComposition.ServerOutcome(
+            name: name, transport: transport, origin: .client, result: .failed(reason: reason))
+    }
+
+    /// A client-supplied stdio server whose command is not an absolute path
+    /// gives a `.failed` outcome. The connect does not throw, and nothing
+    /// stays connected or spawned.
+    @Test func aClientStdioServerWithARelativeCommandGivesAFailedOutcomeAndDoesNotThrow() async throws {
+        let client = try Self.clientStdioServer(named: Self.gammaName, command: Self.relativeCommand)
+
+        let connected = try await MCPComposition.connectServers(
+            section: .enabled(servers: []), clientServers: [client])
+
+        #expect(connected.servers.isEmpty)
+        #expect(connected.processes.isEmpty)
+        #expect(
+            connected.outcomes == [
+                Self.failedClientOutcome(
+                    named: Self.gammaName, transport: .stdio, reason: .commandNotAbsolute)
+            ])
+    }
+
+    /// A client-supplied http server whose url does not parse gives a
+    /// `.failed` outcome, and the connect does not throw.
+    @Test func aClientHTTPServerWhoseURLDoesNotParseGivesAFailedOutcomeAndDoesNotThrow() async throws {
+        let client = FoundationModelsACP.MCPServer.http(
+            MCPServerHTTP(name: Self.remoteName, url: "", headers: []))
+
+        let connected = try await MCPComposition.connectServers(
+            section: .enabled(servers: []), clientServers: [client])
+
+        #expect(connected.servers.isEmpty)
+        #expect(
+            connected.outcomes == [
+                Self.failedClientOutcome(named: Self.remoteName, transport: .http, reason: .invalidURL)
+            ])
+    }
+
+    /// A config-derived server that fails after a config-derived server that
+    /// connected still makes the connect throw.
+    @Test func aConfigServerThatFailsAfterAConnectedConfigServerStillThrows() async throws {
+        let command = try BuiltProductLocator.mcpTestServerURL().path
+        let section = MCPToolSection.enabled(servers: [
+            Self.configServer(named: Self.alphaName, command: command, mode: Self.echoMode),
+            Self.configServer(named: Self.betaName, command: Self.relativeCommand, mode: Self.echoMode),
+        ])
+
+        await #expect(
+            throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(Self.relativeCommand)
+        ) {
+            _ = try await MCPComposition.connectServers(section: section, clientServers: [])
+        }
+    }
+
+    /// A client-supplied server that connects gives a `.connected` outcome,
+    /// and its server is in the connected list.
+    @Test func aClientServerThatConnectsGivesAConnectedOutcome() async throws {
+        let command = try BuiltProductLocator.mcpTestServerURL().path
+        let client = try Self.clientStdioServer(named: Self.gammaName, command: command)
+
+        let connected = try await MCPComposition.connectServers(
+            section: .enabled(servers: []), clientServers: [client])
+        await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
+
+        #expect(connected.servers.count == 1)
+        #expect(
+            connected.outcomes == [
+                MCPComposition.ServerOutcome(
+                    name: Self.gammaName, transport: .stdio, origin: .client, result: .connected)
+            ])
+    }
+
+    /// The outcomes list the servers in mount order: the config-derived
+    /// servers first, then the client-supplied servers. A client server
+    /// that fails does not stop the client server after it.
+    @Test func theOutcomesListConfigServersFirstThenClientServers() async throws {
+        let command = try BuiltProductLocator.mcpTestServerURL().path
+        let context = try await Self.makeContext(
+            clientServers: [
+                try Self.clientStdioServer(named: Self.gammaName, command: Self.relativeCommand),
+                try Self.clientStdioServer(named: Self.deltaName, command: command),
+            ]
+        ) { configuration in
+            configuration.tools.mcp = .enabled(servers: [
+                Self.configServer(named: Self.alphaName, command: command, mode: Self.echoMode)
+            ])
+        }
+
+        let built = try await ToolCatalog.makeRegistry(context: context)
+        await built.pool.shutdownAll()
+
+        #expect(
+            built.mcpServerOutcomes == [
+                MCPComposition.ServerOutcome(
+                    name: Self.alphaName, transport: .stdio, origin: .config, result: .connected),
+                Self.failedClientOutcome(
+                    named: Self.gammaName, transport: .stdio, reason: .commandNotAbsolute),
+                MCPComposition.ServerOutcome(
+                    name: Self.deltaName, transport: .stdio, origin: .client, result: .connected),
+            ])
+    }
+
+    /// A client name that collides with an earlier server gives one
+    /// `.failed` outcome for the refused server.
+    @Test func aNameCollisionGivesAFailedOutcomeForTheRefusedServer() async throws {
+        let first = try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand)
+        let repeated = FoundationModelsACP.MCPServer.http(
+            MCPServerHTTP(name: Self.gammaName, url: Self.remoteURL, headers: []))
+
+        let roster = MCPComposition.composeRoster(
+            section: .enabled(servers: []), clientServers: [first, repeated])
+
+        #expect(
+            roster.refusalOutcomes == [
+                Self.failedClientOutcome(named: Self.gammaName, transport: .http, reason: .nameCollision)
+            ])
+    }
+
+    /// `mcp: false` gives one `.failed` outcome for each client-supplied
+    /// server that has a name, and the connect keeps them.
+    @Test func mcpDisabledGivesAFailedOutcomeForEachNamedClientServer() async throws {
+        let clients = [
+            try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand),
+            FoundationModelsACP.MCPServer.http(
+                MCPServerHTTP(name: Self.deltaName, url: Self.remoteURL, headers: [])),
+            FoundationModelsACP.MCPServer.unknown(
+                "carrier-pigeon", .object(["name": .string(Self.remoteName)])),
+            FoundationModelsACP.MCPServer.unknown("carrier-pigeon", .object([:])),
+        ]
+
+        let connected = try await MCPComposition.connectServers(section: .disabled, clientServers: clients)
+
+        #expect(
+            connected.outcomes == [
+                Self.failedClientOutcome(named: Self.gammaName, transport: .stdio, reason: .mcpDisabled),
+                Self.failedClientOutcome(named: Self.deltaName, transport: .http, reason: .mcpDisabled),
+                Self.failedClientOutcome(named: Self.remoteName, transport: nil, reason: .mcpDisabled),
+            ])
+    }
+
+    /// An unknown transport with a name gives one `.failed` outcome with no
+    /// transport.
+    @Test func anUnknownTransportWithANameGivesAFailedOutcome() async throws {
+        let client = FoundationModelsACP.MCPServer.unknown(
+            "carrier-pigeon", .object(["name": .string(Self.remoteName)]))
+
+        let roster = MCPComposition.composeRoster(
+            section: .enabled(servers: []), clientServers: [client])
+
+        #expect(
+            roster.refusalOutcomes == [
+                Self.failedClientOutcome(named: Self.remoteName, transport: nil, reason: .unknownTransport)
+            ])
+    }
+
+    /// An unknown transport with no name gives no outcome: there is no name
+    /// to show.
+    @Test func anUnknownTransportWithNoNameGivesNoOutcome() async throws {
+        let client = FoundationModelsACP.MCPServer.unknown("carrier-pigeon", .object([:]))
+
+        let roster = MCPComposition.composeRoster(
+            section: .enabled(servers: []), clientServers: [client])
+
+        #expect(roster.refusals == [.unknownTransport(serverName: nil)])
+        #expect(roster.refusalOutcomes.isEmpty)
+    }
+
+    /// No outcome holds an `env` value, a `headers` value, a URL, a command
+    /// argument or the description of the error of the connect.
+    @Test func noOutcomeHoldsASecretOrTheDescriptionOfTheError() async throws {
+        let stdio = FoundationModelsACP.MCPServer.stdio(
+            MCPServerStdio(
+                command: AbsolutePath(rawValue: Self.relativeCommand),
+                name: Self.gammaName,
+                args: [Self.secretArgument],
+                env: [EnvVariable(name: "TOKEN", value: Self.secretEnvValue)]))
+        let http = FoundationModelsACP.MCPServer.http(
+            MCPServerHTTP(
+                name: Self.remoteName,
+                url: Self.secretURL,
+                headers: [HTTPHeader(name: "Authorization", value: Self.secretHeaderValue)]))
+
+        let connected = try await MCPComposition.connectServers(
+            section: .enabled(servers: []), clientServers: [stdio, http])
+
+        let rendered = String(reflecting: connected.outcomes)
+        #expect(connected.outcomes.count == 2)
+        for secret in [
+            Self.secretArgument, Self.secretEnvValue, Self.secretURL, Self.secretHeaderValue,
+            Self.relativeCommand,
+        ] {
+            #expect(!rendered.contains(secret))
+        }
     }
 
     // MARK: - No persistence

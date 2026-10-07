@@ -466,6 +466,45 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
+    // MARK: - The MCP server outcomes (plan.md §7.3, §7.4)
+
+    /// The name of the client MCP server of the resume request that cannot
+    /// connect.
+    private static let brokenServerName = "resume-broken"
+
+    /// A command that is not an absolute path, so the server cannot start.
+    private static let relativeServerCommand = "session-resume-tests-relative-command"
+
+    /// `session/resume` connects the `mcpServers` of the resume request, and
+    /// the resumed surface keeps the outcome of each one. A client server that
+    /// cannot connect does not stop the resume.
+    @Test(.timeLimit(.minutes(1)))
+    func resumeKeepsTheOutcomeOfEachMCPServerOfTheRequest() async throws {
+        var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-mcp-outcomes")
+        try await resume.runPrompt("one prompt before the resume")
+        try await ResumeSessionFixture.waitForRecordedResponses(
+            under: try resume.recordingRoot, sessionId: resume.fixture.sessionId, count: 1)
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+        var request = resume.makeResumeRequest()
+        request.mcpServers = [
+            .stdio(
+                MCPServerStdio(
+                    command: AbsolutePath(rawValue: Self.relativeServerCommand),
+                    name: Self.brokenServerName))
+        ]
+
+        _ = try await resume.fixture.harness.connection.resumeSession(request)
+
+        let entry = await resume.fixture.harness.agent.sessions[resume.fixture.sessionId]
+        #expect(
+            entry?.surface.mcpServerOutcomes == [
+                MCPComposition.ServerOutcome(
+                    name: Self.brokenServerName, transport: .stdio, origin: .client,
+                    result: .failed(reason: .commandNotAbsolute))
+            ])
+        await resume.fixture.close()
+    }
+
     // MARK: - The missing-tool report (plan.md §7.4)
 
     @Test(.timeLimit(.minutes(1)))

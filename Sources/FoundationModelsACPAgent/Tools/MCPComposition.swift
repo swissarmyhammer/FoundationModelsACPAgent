@@ -88,6 +88,16 @@ enum MCPComposition {
             }
         }
 
+        /// The reason of the `.failed` outcome of each server that this
+        /// refusal refuses.
+        var failureReason: ServerOutcome.FailureReason {
+            switch self {
+            case .mcpDisabled: .mcpDisabled
+            case .nameCollision: .nameCollision
+            case .unknownTransport: .unknownTransport
+            }
+        }
+
         /// The server name value of the log record, or `nil` when the
         /// refused server has no name.
         private var serverNameValue: Logger.MetadataValue? {
@@ -102,19 +112,131 @@ enum MCPComposition {
         }
     }
 
+    /// The outcome of one server of the composition: its name, its
+    /// transport, its origin, and if it connected or why it did not. The
+    /// status report of the session shows the outcomes to the client.
+    ///
+    /// An outcome holds no `env` value, no `headers` value, no URL, no
+    /// command argument and no description of an error. Each of these can
+    /// hold a secret, so the reason of a failure is a closed set of agent
+    /// texts (``FailureReason``).
+    struct ServerOutcome: Equatable, Sendable {
+        /// The transport of one server.
+        enum Transport: Equatable, Sendable {
+            /// A subprocess that speaks MCP on its stdin and stdout.
+            case stdio
+
+            /// A server at an http url.
+            case http
+
+            /// The wire text of the transport: `stdio` or `http`.
+            var wireName: String {
+                switch self {
+                case .stdio: MCPComposition.stdioTransportName
+                case .http: MCPComposition.httpTransportName
+                }
+            }
+        }
+
+        /// The source of the entry of one server.
+        enum Origin: Equatable, Sendable {
+            /// The `mcp:` section of the configuration.
+            case config
+
+            /// The `mcpServers` of the `session/new` or the
+            /// `session/resume` request.
+            case client
+        }
+
+        /// Why one server is not connected. The raw value of each case is
+        /// the agent text of the reason.
+        enum FailureReason: String, Equatable, Sendable {
+            /// The stdio command is not an absolute path.
+            case commandNotAbsolute = "The command is not an absolute path."
+
+            /// The http url does not parse into a URL with a scheme.
+            case invalidURL = "The url does not parse."
+
+            /// The connect or the wait for the ready state failed.
+            case connectFailed = "The connect to the server failed."
+
+            /// The name is the name of an earlier server.
+            case nameCollision = "An earlier server has the same name."
+
+            /// The configuration turns MCP off.
+            case mcpDisabled = "MCP is off in the configuration."
+
+            /// The agent does not know the transport of the server.
+            case unknownTransport = "The transport is not known."
+
+            /// The reason of a connect that threw `error`. The reason is
+            /// read from the type and the case of the error, never from its
+            /// description.
+            ///
+            /// - Parameter error: The error the connect threw.
+            init(connectError error: any Error) {
+                if case .commandNotAbsolute? = error as? StdioServerProcess.StdioServerProcessError {
+                    self = .commandNotAbsolute
+                } else if case .invalidServerURL? = error as? MCPCompositionError {
+                    self = .invalidURL
+                } else {
+                    self = .connectFailed
+                }
+            }
+        }
+
+        /// If the server connected, or why it did not.
+        enum Result: Equatable, Sendable {
+            /// The server connected and is `.ready`.
+            case connected
+
+            /// The server is not connected, for `reason`.
+            case failed(reason: FailureReason)
+        }
+
+        /// The server name, and so the noun of its tools.
+        let name: String
+
+        /// The transport of the server, or `nil` when the agent does not
+        /// know it.
+        let transport: Transport?
+
+        /// The source of the entry of the server.
+        let origin: Origin
+
+        /// If the server connected, or why it did not.
+        let result: Result
+    }
+
     /// The composed roster: the accepted entries in mount order, and each
     /// refusal in arrival order.
     struct Roster: Equatable, Sendable {
+        /// One accepted entry and its source.
+        struct Entry: Equatable, Sendable {
+            /// The entry, in the config shape.
+            let configuration: MCPServerConfiguration
+
+            /// The source of the entry. A connect failure of a
+            /// config-derived entry throws; a connect failure of a
+            /// client-supplied entry gives a `.failed` outcome.
+            let origin: ServerOutcome.Origin
+        }
+
         /// The accepted server entries — config-derived first, then the
         /// accepted client-supplied ones.
-        let entries: [MCPServerConfiguration]
+        let entries: [Entry]
 
         /// The refused client-supplied servers.
         let refusals: [Refusal]
+
+        /// One `.failed` outcome for each refused server that has a name,
+        /// in arrival order.
+        let refusalOutcomes: [ServerOutcome]
     }
 
     /// The connected composition: the servers in mount order, the spawned
-    /// stdio subprocesses, and the refusals the roster recorded.
+    /// stdio subprocesses, the refusals the roster recorded, and the outcome
+    /// of each server.
     struct ConnectedServers: Sendable {
         /// The connected servers, each `.ready`, in mount order.
         let servers: [FoundationModelsMultitool.MCPServer]
@@ -124,6 +246,10 @@ enum MCPComposition {
 
         /// The refused client-supplied servers, already logged.
         let refusals: [Refusal]
+
+        /// The outcome of each entry in mount order, then the outcome of
+        /// each refused server that has a name.
+        let outcomes: [ServerOutcome]
     }
 
     /// A client-supplied server after normalization: a config-shaped entry,
@@ -143,7 +269,8 @@ enum MCPComposition {
     /// config-derived entries first, then each accepted client-supplied
     /// entry, with a refusal for each collision — see the collision rule in
     /// the type documentation — and one refusal for every client server
-    /// when the section is `mcp: false`.
+    /// when the section is `mcp: false`. Each refused server that has a name
+    /// also gets one `.failed` outcome.
     ///
     /// - Parameters:
     ///   - section: The decoded `mcp:` section.
@@ -157,17 +284,24 @@ enum MCPComposition {
         switch section {
         case .disabled:
             guard !clientServers.isEmpty else {
-                return Roster(entries: [], refusals: [])
+                return Roster(entries: [], refusals: [], refusalOutcomes: [])
             }
-            let names = clientServers.compactMap(Self.clientServerName)
-            return Roster(entries: [], refusals: [.mcpDisabled(serverNames: names)])
+            let refusal = Refusal.mcpDisabled(
+                serverNames: clientServers.compactMap(Self.clientServerName))
+            return Roster(
+                entries: [],
+                refusals: [refusal],
+                refusalOutcomes: clientServers.compactMap {
+                    refusalOutcome(of: $0, reason: refusal.failureReason)
+                })
         case .enabled(let configEntries):
             return composeEnabledRoster(configEntries: configEntries, clientServers: clientServers)
         }
     }
 
     /// Appends each accepted client entry after the config entries, and
-    /// records a refusal for each name collision and unknown transport.
+    /// records a refusal and its outcome for each name collision and
+    /// unknown transport.
     ///
     /// - Parameters:
     ///   - configEntries: The config-derived entries, in document order.
@@ -177,23 +311,62 @@ enum MCPComposition {
         configEntries: [MCPServerConfiguration],
         clientServers: [FoundationModelsACP.MCPServer]
     ) -> Roster {
-        var entries = configEntries
+        var entries = configEntries.map { Roster.Entry(configuration: $0, origin: .config) }
         var refusals: [Refusal] = []
+        var refusalOutcomes: [ServerOutcome] = []
         var takenNames = Set(configEntries.map(\.name))
         for clientServer in clientServers {
+            let refusal: Refusal
             switch normalize(clientServer) {
+            case .entry(let entry) where !takenNames.contains(entry.name):
+                takenNames.insert(entry.name)
+                entries.append(Roster.Entry(configuration: entry, origin: .client))
+                continue
             case .entry(let entry):
-                if takenNames.contains(entry.name) {
-                    refusals.append(.nameCollision(serverName: entry.name))
-                } else {
-                    takenNames.insert(entry.name)
-                    entries.append(entry)
-                }
+                refusal = .nameCollision(serverName: entry.name)
             case .unknownTransport(let serverName):
-                refusals.append(.unknownTransport(serverName: serverName))
+                refusal = .unknownTransport(serverName: serverName)
+            }
+            refusals.append(refusal)
+            if let outcome = refusalOutcome(of: clientServer, reason: refusal.failureReason) {
+                refusalOutcomes.append(outcome)
             }
         }
-        return Roster(entries: entries, refusals: refusals)
+        return Roster(entries: entries, refusals: refusals, refusalOutcomes: refusalOutcomes)
+    }
+
+    /// The `.failed` outcome of one refused client-supplied server, or `nil`
+    /// when the server has no name to show.
+    ///
+    /// - Parameters:
+    ///   - clientServer: The refused wire value.
+    ///   - reason: Why the server is refused.
+    /// - Returns: The outcome, when the server has a name.
+    private static func refusalOutcome(
+        of clientServer: FoundationModelsACP.MCPServer,
+        reason: ServerOutcome.FailureReason
+    ) -> ServerOutcome? {
+        guard let name = clientServerName(of: clientServer) else {
+            return nil
+        }
+        return ServerOutcome(
+            name: name, transport: clientTransport(of: clientServer), origin: .client,
+            result: .failed(reason: reason))
+    }
+
+    /// The transport of one client-supplied server, or `nil` for a
+    /// transport this agent does not know.
+    ///
+    /// - Parameter clientServer: The wire value to read.
+    /// - Returns: The transport, when the agent knows it.
+    private static func clientTransport(
+        of clientServer: FoundationModelsACP.MCPServer
+    ) -> ServerOutcome.Transport? {
+        switch clientServer {
+        case .stdio: .stdio
+        case .http: .http
+        case .unknown: nil
+        }
     }
 
     /// Normalizes one client-supplied server into the config entry shape.
@@ -274,17 +447,24 @@ enum MCPComposition {
     /// its catalog. `elicitationHandler` stays nil — see the type
     /// documentation.
     ///
-    /// A thrown connect error first disconnects every server this call
-    /// already connected and shuts its subprocesses down, so a failed
-    /// `session/new` leaks nothing.
+    /// A connect failure of a client-supplied entry does not throw: the
+    /// failed server is disconnected, its subprocess is shut down, the entry
+    /// gets a `.failed` outcome, and the next entry connects. Thus one broken
+    /// client server does not stop `session/new` or `session/resume`.
+    ///
+    /// A connect failure of a config-derived entry throws, because the
+    /// config is the committed intent of the user. Before the throw, every
+    /// server this call connected is disconnected and every subprocess it
+    /// spawned is shut down, so a failed `session/new` leaks nothing.
     ///
     /// - Parameters:
     ///   - section: The decoded `mcp:` section.
     ///   - clientServers: The client-supplied per-session servers.
     /// - Returns: The connected composition.
-    /// - Throws: `StdioServerProcess.StdioServerProcessError` for a command
-    ///   that is not an absolute path, ``MCPCompositionError`` for a url
-    ///   that does not parse, and whatever a connect throws.
+    /// - Throws: For a config-derived entry:
+    ///   `StdioServerProcess.StdioServerProcessError` for a command that is
+    ///   not an absolute path, ``MCPCompositionError`` for a url that does
+    ///   not parse, and whatever a connect throws.
     static func connectServers(
         section: MCPToolSection,
         clientServers: [FoundationModelsACP.MCPServer]
@@ -296,17 +476,59 @@ enum MCPComposition {
         }
         var servers: [FoundationModelsMultitool.MCPServer] = []
         var processes: [StdioServerProcess] = []
-        do {
-            for entry in roster.entries {
-                let server = try await connect(entry: entry, spawnedProcesses: &processes)
-                servers.append(server)
-            }
-        } catch {
-            await shutDown(servers: servers, processes: processes)
-            throw error
+        var outcomes: [ServerOutcome] = []
+        for entry in roster.entries {
+            let result = try await connect(entry: entry, servers: &servers, processes: &processes)
+            outcomes.append(
+                ServerOutcome(
+                    name: entry.configuration.name,
+                    transport: transport(of: entry.configuration.transport),
+                    origin: entry.origin,
+                    result: result))
         }
         return ConnectedServers(
-            servers: servers, processes: processes, refusals: roster.refusals)
+            servers: servers, processes: processes, refusals: roster.refusals,
+            outcomes: outcomes + roster.refusalOutcomes)
+    }
+
+    /// Connects one entry of the roster, and records the connected server
+    /// and its subprocess.
+    ///
+    /// A failure first disconnects the failed server and shuts its
+    /// subprocess down. A client-supplied entry then gives a `.failed`
+    /// result. A config-derived entry also disconnects every server in
+    /// `servers` and shuts every subprocess in `processes` down, and then
+    /// throws the error again.
+    ///
+    /// - Parameters:
+    ///   - entry: The entry to connect.
+    ///   - servers: The servers connected so far; a connected server is
+    ///     appended.
+    ///   - processes: The subprocesses spawned so far; the subprocess of a
+    ///     connected stdio server is appended.
+    /// - Returns: `.connected`, or `.failed` with the reason of the failure
+    ///   of a client-supplied entry.
+    /// - Throws: What the connect of a config-derived entry throws.
+    private static func connect(
+        entry: Roster.Entry,
+        servers: inout [FoundationModelsMultitool.MCPServer],
+        processes: inout [StdioServerProcess]
+    ) async throws -> ServerOutcome.Result {
+        let server = FoundationModelsMultitool.MCPServer(name: entry.configuration.name)
+        var spawned: [StdioServerProcess] = []
+        do {
+            try await connect(entry: entry.configuration, server: server, spawnedProcesses: &spawned)
+        } catch {
+            await shutDown(servers: [server], processes: spawned)
+            guard entry.origin == .client else {
+                await shutDown(servers: servers, processes: processes)
+                throw error
+            }
+            return .failed(reason: ServerOutcome.FailureReason(connectError: error))
+        }
+        servers.append(server)
+        processes.append(contentsOf: spawned)
+        return .connected
     }
 
     /// The ``ACPAgentTelemetry/AttributeKey/mcpServerTransport`` value of a
@@ -334,60 +556,65 @@ enum MCPComposition {
     ///
     /// - Parameters:
     ///   - entry: The entry to connect.
+    ///   - server: The server to connect, named for the entry. The caller
+    ///     disconnects it when the connect throws.
     ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded —
     ///     appended before the connect, so the caller's failure path can
     ///     shut it down.
-    /// - Returns: The connected server.
     /// - Throws: What the process construction, the connect, or the ready
     ///   wait throws.
     private static func connect(
         entry: MCPServerConfiguration,
+        server: FoundationModelsMultitool.MCPServer,
         spawnedProcesses: inout [StdioServerProcess]
-    ) async throws -> FoundationModelsMultitool.MCPServer {
-        let transport = transportName(of: entry.transport)
+    ) async throws {
+        let transportName = transport(of: entry.transport).wireName
         do {
-            return try await AgentTracing.withEnteredSpan(
+            try await AgentTracing.withEnteredSpan(
                 ACPAgentTelemetry.SpanName.mcpConnect,
                 logger: ACPAgentTelemetry.logger(.mcpComposition),
                 attributes: { attributes in
                     attributes[ACPAgentTelemetry.AttributeKey.mcpServerName] = entry.name
-                    attributes[ACPAgentTelemetry.AttributeKey.mcpServerTransport] = transport
+                    attributes[ACPAgentTelemetry.AttributeKey.mcpServerTransport] = transportName
                 },
                 metadata: [ACPAgentTelemetry.LogMetadataKey.mcpServerName: "\(entry.name)"]
             ) { _ in
-                try await connectToReady(entry: entry, spawnedProcesses: &spawnedProcesses)
+                try await connectToReady(
+                    entry: entry, server: server, spawnedProcesses: &spawnedProcesses)
             }
         } catch {
-            AgentMetrics.recordMCPConnectFailure(transport: transport)
+            AgentMetrics.recordMCPConnectFailure(transport: transportName)
             throw error
         }
     }
 
-    /// The name of the transport of one entry, for the connect span.
+    /// The transport of one entry, for the connect span and the outcome.
     ///
     /// - Parameter transport: The transport of the entry.
-    /// - Returns: `stdio` or `http`.
-    private static func transportName(of transport: MCPServerConfiguration.Transport) -> String {
+    /// - Returns: `.stdio` or `.http`.
+    private static func transport(
+        of transport: MCPServerConfiguration.Transport
+    ) -> ServerOutcome.Transport {
         switch transport {
-        case .stdio: stdioTransportName
-        case .http: httpTransportName
+        case .stdio: .stdio
+        case .http: .http
         }
     }
 
     /// Connects one entry and waits until the server is `.ready`: the work
-    /// of ``connect(entry:spawnedProcesses:)`` in the connect span.
+    /// of ``connect(entry:server:spawnedProcesses:)`` in the connect span.
     ///
     /// - Parameters:
     ///   - entry: The entry to connect.
+    ///   - server: The server to connect.
     ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded.
-    /// - Returns: The connected server.
     /// - Throws: What the process construction, the connect, or the ready
     ///   wait throws.
     private static func connectToReady(
         entry: MCPServerConfiguration,
+        server: FoundationModelsMultitool.MCPServer,
         spawnedProcesses: inout [StdioServerProcess]
-    ) async throws -> FoundationModelsMultitool.MCPServer {
-        let server = FoundationModelsMultitool.MCPServer(name: entry.name)
+    ) async throws {
         switch entry.transport {
         case .stdio(let command, let args, let env):
             let process = try StdioServerProcess(
@@ -401,7 +628,6 @@ enum MCPComposition {
             try await server.connect(via: httpTransportFactory(endpoint: endpoint, headers: headers))
         }
         try await server.waitUntilReady()
-        return server
     }
 
     /// The config env mapping as the ordered pair list a spawn takes, in

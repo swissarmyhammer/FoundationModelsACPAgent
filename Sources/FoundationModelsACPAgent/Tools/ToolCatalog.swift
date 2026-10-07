@@ -39,7 +39,13 @@ public struct SessionSurface: Sendable {
     /// section is off.
     public let codeContextStop: (@Sendable () async -> Void)?
 
-    /// Makes a session surface.
+    /// The outcome of each MCP server of the session, in mount order: the
+    /// config-derived servers first, then the client-supplied servers, then
+    /// the refused client-supplied servers that have a name. The MCP server
+    /// status report of the session reads it.
+    let mcpServerOutcomes: [MCPComposition.ServerOutcome]
+
+    /// Makes a session surface with no MCP server outcome.
     ///
     /// - Parameters:
     ///   - tools: The composed tools, in mount order.
@@ -57,11 +63,38 @@ public struct SessionSurface: Sendable {
         shellOutput: ShellOutputChunkStream? = nil,
         codeContextStop: (@Sendable () async -> Void)? = nil
     ) {
+        self.init(
+            tools: tools, serverPool: serverPool, filesReadVerb: filesReadVerb,
+            shellOutput: shellOutput, codeContextStop: codeContextStop, mcpServerOutcomes: [])
+    }
+
+    /// Makes a session surface.
+    ///
+    /// - Parameters:
+    ///   - tools: The composed tools, in mount order.
+    ///   - serverPool: The pool the session lifecycle shuts down.
+    ///   - filesReadVerb: The mounted read verb, or `nil` when the
+    ///     files section is off.
+    ///   - shellOutput: The host-owned live shell output stream, or
+    ///     `nil` when the shell section is off.
+    ///   - codeContextStop: Stops the code context of the session, or
+    ///     `nil` when the code context section is off.
+    ///   - mcpServerOutcomes: The outcome of each MCP server, in mount
+    ///     order.
+    init(
+        tools: [any FoundationModels.Tool],
+        serverPool: MCPServerPool,
+        filesReadVerb: (any FoundationModels.Tool)?,
+        shellOutput: ShellOutputChunkStream?,
+        codeContextStop: (@Sendable () async -> Void)?,
+        mcpServerOutcomes: [MCPComposition.ServerOutcome]
+    ) {
         self.tools = tools
         self.serverPool = serverPool
         self.filesReadVerb = filesReadVerb
         self.shellOutput = shellOutput
         self.codeContextStop = codeContextStop
+        self.mcpServerOutcomes = mcpServerOutcomes
     }
 
     /// Releases what the surface holds outside the session: it stops the
@@ -104,8 +137,8 @@ public enum ToolCatalog {
     static let codeContextGroupName = "code_context"
 
     /// One built registry and the MCP composition around it: the recorded
-    /// registrations for a rebuild, the pool that owns the servers, and
-    /// the connected servers for the refresher.
+    /// registrations for a rebuild, the pool that owns the servers, the
+    /// connected servers for the refresher, and the outcome of each server.
     struct BuiltRegistry {
         /// The built registry, whose session tools a session mounts.
         let registry: MultiTool.Registry
@@ -121,6 +154,10 @@ public enum ToolCatalog {
         /// The connected MCP servers, in mount order — what the surface
         /// refresher watches.
         let mcpServers: [FoundationModelsMultitool.MCPServer]
+
+        /// The outcome of each MCP server of the composition, in mount
+        /// order — what the session surface keeps for the status report.
+        let mcpServerOutcomes: [MCPComposition.ServerOutcome]
 
         /// The host-owned live shell output stream the build handed to
         /// `withShell(outputChunkStream:)` (plan.md §11.8), or `nil`
@@ -182,7 +219,8 @@ public enum ToolCatalog {
             serverPool: built.pool,
             filesReadVerb: built.registry.tools[Self.filesReadVerbPath],
             shellOutput: built.shellOutput,
-            codeContextStop: built.codeContextStop)
+            codeContextStop: built.codeContextStop,
+            mcpServerOutcomes: built.mcpServerOutcomes)
     }
 
     /// Builds the Multitool registry over the enabled capability modules.
@@ -252,6 +290,7 @@ public enum ToolCatalog {
                 source: builder.registrySource,
                 pool: builder.serverPool,
                 mcpServers: composed.servers,
+                mcpServerOutcomes: composed.outcomes,
                 shellOutput: shellOutput,
                 codeContextStop: codeContextStop)
         } catch {

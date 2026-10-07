@@ -26,7 +26,8 @@ import Testing
 /// Two errors hold a marker in their description: the render error of the
 /// failing command (the command span and the prompt request span see it),
 /// and the connect error of the http MCP server, whose URL holds a marker
-/// (the MCP connect span and the `session/new` request span see it). A
+/// (the MCP connect span sees it; the session starts with a `.failed`
+/// outcome for the server). A
 /// tracing backend exports a recorded error as an `exception` event that
 /// holds the description of the error, thus these errors prove that no span
 /// records an error description.
@@ -199,7 +200,7 @@ import Testing
         try await Poll.until("each prompt span ended") {
             context.spans.count { $0.operationName == ACPAgentTelemetry.SpanName.prompt } == promptCount
         }
-        await connectUnreachableServer(on: fixture)
+        try await connectUnreachableServer(on: fixture)
         _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
         await fixture.close()
     }
@@ -222,16 +223,27 @@ import Testing
     }
 
     /// Sends a `session/new` with the http MCP server where no server
-    /// listens, and expects the failure. The description of the failure holds
-    /// the path of the URL, as the description of the connect error does.
+    /// listens. A client server that cannot connect does not stop the
+    /// session: the session starts, and its surface keeps the `.connected`
+    /// outcome of the config server and then a `.failed` outcome for the
+    /// http server. The connect span sees the connect error,
+    /// whose description holds the path of the URL, and the capture proves
+    /// that no record holds that path.
     ///
     /// - Parameter fixture: The fixture of the run.
-    private static func connectUnreachableServer(on fixture: ScriptedPromptFixture) async {
-        let failure = await #expect(throws: (any Error).self) {
-            _ = try await fixture.harness.connection.newSession(
-                NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), mcpServers: [httpServer]))
-        }
-        #expect(String(describing: failure).contains(unreachableServerPath))
+    /// - Throws: Whatever the `session/new` request throws.
+    private static func connectUnreachableServer(on fixture: ScriptedPromptFixture) async throws {
+        let response = try await fixture.harness.connection.newSession(
+            NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), mcpServers: [httpServer]))
+        let outcomes = await fixture.harness.agent.sessions[response.sessionId]?.surface.mcpServerOutcomes
+        #expect(
+            outcomes == [
+                MCPComposition.ServerOutcome(
+                    name: elicitingServerName, transport: .stdio, origin: .config, result: .connected),
+                MCPComposition.ServerOutcome(
+                    name: httpServerName, transport: .http, origin: .client,
+                    result: .failed(reason: .connectFailed)),
+            ])
     }
 
     /// Sends the prompt that runs the two tool calls, answers the
