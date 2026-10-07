@@ -173,6 +173,13 @@ private let otelPackage = "swift-otel"
 /// versions this graph already resolves.
 private let otelVersionFloor: Version = "1.5.1"
 
+/// The traits of `otelPackage` that the agent turns on. The agent exports
+/// OTLP over HTTP only. The default traits of `swift-otel` also turn on
+/// `OTLPGRPC`, which compiles three gRPC packages that the agent does not
+/// use. SwiftPM joins the traits of each package in the graph, so each
+/// family package that depends on `swift-otel` must name only this trait.
+private let otelTraits: Set<Package.Dependency.Trait> = ["OTLPHTTP"]
+
 /// The one product of `otelPackage` the agent CLI links.
 private let otelProduct = Target.Dependency.product(name: "OTel", package: otelPackage)
 
@@ -326,7 +333,8 @@ let package = Package(
         makeApplePackage(name: loggingPackage, from: loggingVersionFloor),
         makeApplePackage(name: metricsPackage, from: metricsVersionFloor),
         // The telemetry backend of the agent CLI — see `otelPackage`.
-        .package(url: "https://github.com/swift-otel/\(otelPackage).git", from: otelVersionFloor),
+        .package(
+            url: "https://github.com/swift-otel/\(otelPackage).git", from: otelVersionFloor, traits: otelTraits),
         .package(
             url: "https://github.com/swift-server/\(serviceLifecyclePackage).git",
             from: serviceLifecycleVersionFloor),
