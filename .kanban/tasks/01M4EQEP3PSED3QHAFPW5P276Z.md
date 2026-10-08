@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4er6rctrhayrp7es0p56kar
+  text: The fix for this task is in commit b8adff1 (task ^8q8m1r4). The test step changed `json.load(open(...))` in `scan_score` to a `with` block, and added the test `TheScoreReportIsClosedAfterTheRead`. The suites pass with `-W error`. Only a review of b8adff1 for this task is left.
+  timestamp: 2026-10-08T21:55:11.898572+00:00
 position_column: todo
 position_ordinal: '8680'
 title: 'swebench scan: scan_score leaves the score report file open (ResourceWarning)'
