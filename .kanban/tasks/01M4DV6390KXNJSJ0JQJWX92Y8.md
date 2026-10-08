@@ -106,8 +106,31 @@ comments:
     - evidence: swift test (root package) — 793 tests in 88 suites passed, 0 failed, 0 skipped, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests). The only warning is the mlx-swift_Cmlx.bundle build-system line from a dependency. No file changed in this run.
     - next: review
   timestamp: 2026-10-08T16:05:54.903558+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4e47r25s7a2p2yxbf049rr8
+  text: |-
+    ### commit — changed
+    - evidence: 49d315b refactor(acp): build each run tool_call_update in one helper (^jwx92y8)
+    - next: review
+  timestamp: 2026-10-08T16:06:12.805493+00:00
+- actor: claude-code
+  id: 01m4e4j4kacx78qqq6wsvkfv6w
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (49d315b). Counts: 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed. 1 file reviewed. 2 .kanban files are excluded by .reviewignore. The prior finding at EventProjection.swift:723 (reuse/reuse) is checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-08T16:11:53.322161+00:00
+- actor: claude-code
+  id: 01m4e4jh6b024gd56h8c0m05rn
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (EventProjection.swift)
+    - test: green — swift test, 793 tests in 88 suites passed, 1 known issue (HarnessSmokeTests)
+    - commit: 49d315b
+    - review: clean — 0 findings; the prior finding EventProjection.swift:723 is checked
+  timestamp: 2026-10-08T16:12:06.219682+00:00
+position_column: done
+position_ordinal: ffa780
 title: Send tool progress and tool plans to the client as session updates
 ---
 ## Goal
