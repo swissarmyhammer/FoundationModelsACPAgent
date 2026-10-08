@@ -7,11 +7,21 @@ import FoundationModelsSkills
 /// The option type of one mapping-bodied `tools:` entry (plan.md §11.2).
 /// The body is the tool package's own option type — there is no `enabled:`
 /// key, because `false` sits outside the body — and `init()` is the
-/// defaults an enabling shape (`absent`, `{}`, null, `true`) gives. The one
-/// exception is ``WebToolOptions``, whose body also takes `enabled:`.
+/// defaults an enabling shape (`absent`, `{}`, null, `true`) gives. The
+/// exceptions are the ``SwitchableToolOptions`` bodies, which also take
+/// `enabled:`.
 public protocol ToolSectionOptions: Codable, Equatable, Sendable {
     /// The defaults the tool gets when the config enables it without a body.
     init()
+}
+
+/// The option type of a tool body that also takes `enabled:`, so that a
+/// config can say `tools.<name>.enabled: false` beside the scalar
+/// `<name>: false` of the shared codec. ``WebToolOptions`` and
+/// ``GitToolOptions`` are these bodies.
+public protocol SwitchableToolOptions: ToolSectionOptions {
+    /// Whether the capability mounts.
+    var enabled: Bool { get }
 }
 
 extension SingleValueDecodingContainer {
@@ -315,15 +325,15 @@ public enum WebAPIKeyName: String, CaseIterable, Hashable, Sendable {
 ///       tavily: tvly-...
 /// ```
 ///
-/// The web section is the one tool body with an `enabled:` key, so that a
-/// config can say `tools.web.enabled: false`. The scalar `web: false` of the
-/// shared codec turns the tool off too.
+/// The web body has an `enabled:` key, so that a config can say
+/// `tools.web.enabled: false`. The scalar `web: false` of the shared codec
+/// turns the tool off too.
 ///
 /// No form of this type shows a key value: each key is a
 /// ``ConfiguredSecret``. An encoder that sets
 /// ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` gets an empty
 /// `apiKeys` map.
-public struct WebToolOptions: ToolSectionOptions, KeyCheckedSection {
+public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
     /// Whether the web capability mounts.
     public var enabled: Bool
 
@@ -414,15 +424,58 @@ extension WebToolOptions: CustomStringConvertible {
     }
 }
 
-extension ToolSection where Options == WebToolOptions {
-    /// The options of a web section that mounts the capability, or `nil`
-    /// when the section is off by either shape: `web: false`, or
-    /// `web: {enabled: false}`.
-    public var mountedOptions: WebToolOptions? {
+extension ToolSection where Options: SwitchableToolOptions {
+    /// The options of a section that mounts the capability, or `nil` when
+    /// the section is off by either shape: the scalar `<name>: false`, or
+    /// the body `<name>: {enabled: false}`.
+    public var mountedOptions: Options? {
         guard case .enabled(let options) = self, options.enabled else {
             return nil
         }
         return options
+    }
+}
+
+/// The `tools.git:` body: whether the git capability mounts.
+///
+/// ```yaml
+/// tools:
+///   git:
+///     enabled: true
+/// ```
+///
+/// The git verbs — `tools.git.blame`, `show`, `log`, `commit`, `status`,
+/// `branches`, `changes` and `diff` — only read the repository, thus the
+/// capability is on by default. Its root is the session working directory,
+/// so the section has no root key. The scalar `git: false` of the shared
+/// codec turns the tool off too.
+public struct GitToolOptions: SwitchableToolOptions, KeyCheckedSection {
+    /// Whether the git capability mounts.
+    public var enabled: Bool
+
+    /// The YAML spelling of each key.
+    public enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled
+    }
+
+    /// Makes options.
+    ///
+    /// - Parameter enabled: Whether the git capability mounts. The default
+    ///   is `true`.
+    public init(enabled: Bool = true) {
+        self.enabled = enabled
+    }
+
+    /// The defaults: on.
+    public init() {
+        self.init(enabled: true)
+    }
+
+    /// Decodes `enabled` when present, and keeps the default when absent.
+    public init(from decoder: any Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? enabled
     }
 }
 
@@ -583,12 +636,16 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
     /// `tools.web.fetch`, with the keyless providers when no key is set.
     public var web = ToolSection<WebToolOptions>.enabled(WebToolOptions())
 
+    /// The git capability's entry: the read-only `tools.git` verbs over the
+    /// session working directory.
+    public var git = ToolSection<GitToolOptions>.enabled(GitToolOptions())
+
     /// The mcp entry — the one list-bodied section.
     public var mcp = MCPToolSection.enabled(servers: [])
 
     /// The YAML spelling of each tool key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case files, shell, skills, codeContext, web, mcp
+        case files, shell, skills, codeContext, web, git, mcp
     }
 
     /// The default roster: every built-in on, with its defaults.
@@ -613,6 +670,7 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
                 ToolSection<CodeContextToolOptions>.self, forKey: .codeContext)
             ?? codeContext
         web = try container.decodeIfPresent(ToolSection<WebToolOptions>.self, forKey: .web) ?? web
+        git = try container.decodeIfPresent(ToolSection<GitToolOptions>.self, forKey: .git) ?? git
         mcp = try container.decodeIfPresent(MCPToolSection.self, forKey: .mcp) ?? mcp
     }
 }
@@ -627,6 +685,7 @@ extension ToolsConfiguration {
         CodingKeys.skills.stringValue: SkillsToolOptions.knownKeys,
         CodingKeys.codeContext.stringValue: CodeContextToolOptions.knownKeys,
         CodingKeys.web.stringValue: WebToolOptions.knownKeys,
+        CodingKeys.git.stringValue: GitToolOptions.knownKeys,
     ]
 
     /// The key checks of the `tools:` body (plan.md §11.2), run by the

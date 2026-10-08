@@ -5,8 +5,8 @@ import FoundationModelsMultitool
 /// The `doctor` component of the sandbox and the tools (cli-plan.md §5.12,
 /// the Sandbox and Tools rows): the seatbelt sandbox starts, each
 /// `sandbox.extraWritePaths` entry is on disk, the shell store directory
-/// can be written, the web tool names its search providers, and each
-/// configured MCP server answers.
+/// can be written, the web tool names its search providers, the git tool
+/// says whether it is on, and each configured MCP server answers.
 ///
 /// The component takes the resolved configuration and an injected
 /// ``ToolsProber``, so a unit test starts no confined command and no MCP
@@ -94,12 +94,32 @@ public struct ToolsDoctor: Doctorable {
         + ShellToolOptions.CodingKeys.storeDirectory.stringValue
 
     /// The dotted key path that turns the web tool off.
-    private static let webEnabledKey =
+    private static let webEnabledKey = enabledKey(
+        ofTool: .web, enabledKey: WebToolOptions.CodingKeys.enabled)
+
+    /// The check that states the git tool.
+    private static let gitToolCheckName = "the git tool"
+
+    /// The dotted key path that turns the git tool off.
+    private static let gitEnabledKey = enabledKey(
+        ofTool: .git, enabledKey: GitToolOptions.CodingKeys.enabled)
+
+    /// The dotted key path of the `enabled:` key of one tool section, such
+    /// as `tools.web.enabled`.
+    ///
+    /// - Parameters:
+    ///   - tool: The key of the tool section under `tools:`.
+    ///   - enabledKey: The `enabled:` key of the option body of that tool.
+    /// - Returns: The dotted key path.
+    private static func enabledKey(
+        ofTool tool: ToolsConfiguration.CodingKeys, enabledKey: some CodingKey
+    ) -> String {
         AgentConfiguration.CodingKeys.tools.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + ToolsConfiguration.CodingKeys.web.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + WebToolOptions.CodingKeys.enabled.stringValue
+            + LoadedConfiguration.keyPathSeparator
+            + tool.stringValue
+            + LoadedConfiguration.keyPathSeparator
+            + enabledKey.stringValue
+    }
 
     /// The dotted key path of the mcp section a fix names.
     private static let mcpKey =
@@ -158,13 +178,13 @@ public struct ToolsDoctor: Doctorable {
     }
 
     /// Reports the sandbox, then one finding per extra write path, then the
-    /// shell, then the web tool, then the MCP servers.
+    /// shell, then the web tool, then the git tool, then the MCP servers.
     ///
     /// - Returns: The findings, in that order.
     public func runHealthChecks() async -> [HealthCheck] {
         await [sandboxCheck()]
             + configuration.sandbox.extraWritePaths.map(Self.check(ofExtraWritePath:))
-            + [shellCheck(), webCheck()]
+            + [shellCheck(), webCheck(), gitCheck()]
             + mcpChecks()
     }
 
@@ -265,6 +285,28 @@ public struct ToolsDoctor: Doctorable {
             name: Self.webToolCheckName,
             message: "on; the search providers in order: "
                 + names.joined(separator: Self.providerSeparator),
+            category: Self.category)
+    }
+
+    // MARK: - The git tool
+
+    /// The finding of the git section: one row that says the read-only git
+    /// verbs mount over the working directory, or one row that says
+    /// disabled.
+    ///
+    /// The row reads no repository. A working directory outside a
+    /// repository is not a fault: each git verb then answers with a
+    /// correction that the model reads.
+    ///
+    /// - Returns: That one finding.
+    private func gitCheck() -> HealthCheck {
+        guard configuration.tools.git.mountedOptions != nil else {
+            return DisabledSectionCheck.check(
+                name: Self.gitToolCheckName, key: Self.gitEnabledKey, category: Self.category)
+        }
+        return .ok(
+            name: Self.gitToolCheckName,
+            message: "on; the read-only git verbs read the repository at \(workingDirectory.path)",
             category: Self.category)
     }
 

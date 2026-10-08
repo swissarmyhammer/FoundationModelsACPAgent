@@ -48,6 +48,9 @@ import Testing
     /// The surface path of the web fetch verb.
     private static let webFetchPath = "web.fetch"
 
+    /// The branch of the one commit of the temporary git repository.
+    private static let repositoryBranch = "catalog-branch"
+
     /// The task the embedder proof gives the mounted `searchTools`.
     private static let embedderTask = "read one text file from the workspace"
 
@@ -354,6 +357,50 @@ import Testing
 
         #expect(!registry.surface.entries.contains { $0.group == Self.webNoun })
         #expect(registry.surface.entries.contains { $0.path == Self.readVerbPath })
+    }
+
+    // MARK: The git group
+
+    /// With the default configuration, the surface has each read-only git
+    /// verb. The capability reads no repository when it mounts.
+    @Test func aDefaultRegistryMountsTheGitVerbs() async throws {
+        let context = try await Self.makeContext()
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        let paths = Set(registry.surface.entries.map(\.path))
+        for verbPath in GitVerbSupport.verbPaths {
+            #expect(paths.contains(verbPath), "the surface has no \(verbPath)")
+        }
+    }
+
+    /// `tools.git: false` and `tools.git.enabled: false` each mount no
+    /// `tools.git` namespace, and the other capabilities stay.
+    @Test(arguments: [
+        ToolSection<GitToolOptions>.disabled, .enabled(GitToolOptions(enabled: false)),
+    ])
+    func aGitSectionThatIsOffMountsNoGitNamespace(section: ToolSection<GitToolOptions>) async throws {
+        let context = try await Self.makeContext { configuration in
+            configuration.tools.git = section
+        }
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        #expect(!registry.surface.entries.contains { $0.group == GitVerbSupport.gitNoun })
+        #expect(registry.surface.entries.contains { $0.path == Self.readVerbPath })
+    }
+
+    /// In a git repository, `tools.git.status` reads the session working
+    /// directory and gives the current branch.
+    @Test func theGitStatusVerbGivesTheCurrentBranch() async throws {
+        let context = try await Self.makeContext()
+        try GitVerbSupport.makeRepository(in: context.workingDirectory, branch: Self.repositoryBranch)
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+        let status = try await GitVerbSupport.invokeStatus(in: registry)
+
+        #expect(status.correction == nil)
+        #expect(status.branch == Self.repositoryBranch)
     }
 
     // MARK: The skills registry

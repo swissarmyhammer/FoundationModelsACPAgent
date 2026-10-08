@@ -20,15 +20,21 @@ struct ToolsDoctorTests {
     private static let oneFinding = 1
 
     /// The number of rows a roster with the shell tool off reports: the
-    /// sandbox row, the shell row and the web row. The `mcp:` default names
-    /// no server, so it adds none.
-    private static let disabledShellRowCount = 3
+    /// sandbox row, the shell row, the web row and the git row. The `mcp:`
+    /// default names no server, so it adds none.
+    private static let disabledShellRowCount = 4
 
     /// The name of the web row.
     private static let webRowName = "the web tool"
 
     /// The configuration key a disabled web row names.
     private static let webEnabledKey = "tools.web.enabled"
+
+    /// The name of the git row.
+    private static let gitRowName = "the git tool"
+
+    /// The configuration key a disabled git row names.
+    private static let gitEnabledKey = "tools.git.enabled"
 
     /// The timeout a test that proves the timeout injects, in seconds. It
     /// is short, so the test does not wait long for the timeout to fire.
@@ -91,7 +97,18 @@ struct ToolsDoctorTests {
     /// - Returns: The one finding whose name is ``webRowName``.
     /// - Throws: When no finding has that name.
     private static func webRow(in checks: [HealthCheck]) throws -> HealthCheck {
-        try #require(checks.first { $0.name == webRowName })
+        try row(named: webRowName, in: checks)
+    }
+
+    /// The row of `checks` whose name is `name`.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the row.
+    ///   - checks: The findings of one run.
+    /// - Returns: The first finding with that name.
+    /// - Throws: When no finding has that name.
+    private static func row(named name: String, in checks: [HealthCheck]) throws -> HealthCheck {
+        try #require(checks.first { $0.name == name })
     }
 
     /// The findings of `checks` that carry `status`.
@@ -203,7 +220,7 @@ struct ToolsDoctorTests {
 
     /// `tools.shell: false` gives one `.ok` row that says disabled, and no
     /// store-directory check runs: the roster reports the sandbox row, that
-    /// one row and the web row, and nothing else.
+    /// one row, the web row and the git row, and nothing else.
     @Test func aDisabledShellSectionSaysDisabledAndChecksNoStore() async {
         let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-shellOff")
         var configuration = AgentConfiguration()
@@ -265,6 +282,42 @@ struct ToolsDoctorTests {
         #expect(row.status == .ok)
         #expect(row.message.contains(Self.disabledWord))
         #expect(row.message.contains(Self.webEnabledKey))
+    }
+
+    // MARK: - The git tool
+
+    /// With the default configuration, the git row passes and says that the
+    /// tool is on.
+    @Test func theGitRowSaysOn() async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-gitOn")
+
+        let checks = await Self.doctor(
+            configuration: AgentConfiguration(), workingDirectory: workspace
+        ).runHealthChecks()
+
+        let row = try Self.row(named: Self.gitRowName, in: checks)
+        #expect(row.status == .ok)
+        #expect(!row.message.contains(Self.disabledWord))
+    }
+
+    /// `tools.git: false` and `tools.git.enabled: false` each give one `.ok`
+    /// row that says disabled and names the key.
+    @Test(arguments: [
+        ToolSection<GitToolOptions>.disabled, .enabled(GitToolOptions(enabled: false)),
+    ])
+    func aGitSectionThatIsOffSaysDisabled(section: ToolSection<GitToolOptions>) async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-gitOff")
+        var configuration = AgentConfiguration()
+        configuration.tools.git = section
+
+        let checks = await Self.doctor(
+            configuration: configuration, workingDirectory: workspace
+        ).runHealthChecks()
+
+        let row = try Self.row(named: Self.gitRowName, in: checks)
+        #expect(row.status == .ok)
+        #expect(row.message.contains(Self.disabledWord))
+        #expect(row.message.contains(Self.gitEnabledKey))
     }
 
     // MARK: - The MCP servers

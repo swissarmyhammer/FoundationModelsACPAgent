@@ -99,14 +99,15 @@ enum FilesVerbSupport {
     }
 
     /// Invokes a mounted verb with string arguments and decodes its wire
-    /// result.
+    /// result. ``GitVerbSupport`` invokes the git verbs through this same
+    /// door.
     ///
     /// - Parameters:
     ///   - tool: The mounted verb to invoke.
     ///   - arguments: The string arguments, by name.
     /// - Returns: The decoded wire result.
     /// - Throws: Whatever the invocation or the decode throws.
-    private static func invoke<Result: Decodable>(
+    static func invoke<Result: Decodable>(
         _ tool: any FoundationModels.Tool, arguments: [String: String]
     ) async throws -> Result {
         let argumentsJSON = String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)

@@ -111,6 +111,7 @@ is on by default. Set its config section to `false` to set it off.
 | `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
 | `codeContext` | The `tools.code_context.*` verbs — symbol lookup, call graph, blast radius and the language server operations — over an index of the session working directory | `tools.codeContext` |
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
+| `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
 
 `tools.files` has four keys. `readOnly`, `allowSymlinks` and `recordsChanges`
@@ -177,6 +178,19 @@ the provider name only, and `/config export` writes no key. `config show`
 ends with one comment line that names the providers in force, and `doctor`
 has one row for them. The web verbs run in the agent process, not in the
 shell sandbox; they refuse private and local addresses.
+
+`tools.git` has one key, `enabled` (default `true`). The git verbs only read
+the repository: they change no file, no index and no branch. Their root is the
+session working directory, which can be a folder below the top of the
+repository. Outside a repository, each verb gives a correction that the model
+reads, and the session continues. Set `enabled: false` (or `git: false`) to set
+the git tool off; `doctor` then has one row that says it is disabled.
+
+```yaml
+tools:
+  git:
+    enabled: false
+```
 
 The `tools.skills.marketplaces` list names remote skill marketplaces. Each entry
 has a `url`, and optionally a `ref` (a branch or a tag), a `sha`, a `path`, an

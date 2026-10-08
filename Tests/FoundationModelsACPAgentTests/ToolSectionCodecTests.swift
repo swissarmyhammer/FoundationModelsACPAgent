@@ -212,6 +212,52 @@ import Testing
         #expect(loaded.configuration.tools == (try fixture.makeLoader().builtinConfiguration.tools))
     }
 
+    // MARK: - The git section
+
+    /// With no `git:` key, the git tools are on, with the defaults.
+    @Test func noGitKeyEnablesTheGitTools() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "recording:\n  level: full\n")
+
+        #expect(loaded.configuration.tools.git == .enabled(GitToolOptions()))
+        #expect(loaded.configuration.tools.git.mountedOptions == GitToolOptions())
+    }
+
+    /// The scalar `git: false` and the body `enabled: false` each turn the
+    /// git tools off.
+    @Test(arguments: ["git: false", "git:\n    enabled: false"])
+    func eachOffShapeMountsNoGitTools(body: String) throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig("tools:\n  \(body)\n")
+
+        #expect(loaded.configuration.tools.git.mountedOptions == nil)
+        #expect(loaded.warnings.isEmpty)
+    }
+
+    /// An unknown key in the git body is an error that names `tools.git`
+    /// and the key, as in each other tool body.
+    @Test func anUnknownKeyInTheGitBodyIsAnError() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+
+        #expect(throws: ConfigurationError.unknownKey(section: "tools.git", key: "verbs")) {
+            try fixture.loadProjectConfig("tools:\n  git:\n    verbs: []\n")
+        }
+    }
+
+    /// The document that `config init` writes holds `tools.git.enabled:
+    /// true`, and it reads back to exactly the builtin configuration, with
+    /// the git tools on.
+    @Test func theConfigInitDocumentReadsBackWithTheGitToolsOn() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+        let builtin = try fixture.makeLoader().builtinConfiguration
+
+        let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
+        let loaded = try fixture.loadProjectConfig(text)
+
+        #expect(text.contains("  git:\n    enabled: true\n"))
+        #expect(loaded.configuration == builtin)
+        #expect(loaded.configuration.tools.git.mountedOptions == GitToolOptions())
+    }
+
     // MARK: - The mcp tri-state
 
     /// Omitted `mcp:` means MCP is on with no configured servers — the

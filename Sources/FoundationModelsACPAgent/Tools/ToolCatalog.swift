@@ -206,7 +206,7 @@ public enum ToolCatalog {
         let built = try await makeRegistry(context: context)
         let mounted = try built.registry.makeSessionToolsAndStaging(
             selection: makeSearchSelection(profile: context.profile),
-            embedder: ProfileTextEmbedding(embedder: context.profile.embedding))
+            embedder: ProfileEmbedding(embedder: context.profile.embedding))
         var tools = mounted.tools
         if let skillsTool = try await makeSkillsTool(context: context, registry: skillsRegistry) {
             tools.append(skillsTool)
@@ -235,7 +235,8 @@ public enum ToolCatalog {
     /// gate (§11.7); there is no policy and no permission layer — `web`
     /// mounts `tools.web.search` and `tools.web.fetch` with the providers
     /// that the process environment and `tools.web.apiKeys` select (see
-    /// ``WebComposition``), and
+    /// ``WebComposition``), `git` mounts the read-only `tools.git` verbs
+    /// over the session working directory through `withGit(root:)`, and
     /// `mcp` composes the config-derived servers with the client's
     /// per-session ones (§7.3, §11.5), connects each one, and records the
     /// spawned subprocesses in the builder's pool. `codeContext` opens and
@@ -276,6 +277,9 @@ public enum ToolCatalog {
                 outputChunkStream: stream)
         }
         WebComposition.compose(into: builder, context: context)
+        if context.configuration.tools.git.mountedOptions != nil {
+            builder.withGit(root: context.workingDirectory)
+        }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,
             clientServers: context.clientMCPServers)
@@ -333,9 +337,9 @@ public enum ToolCatalog {
         guard case .enabled(let options) = context.configuration.tools.codeContext else {
             return nil
         }
-        let embedder: (any FoundationModelsCodeContext.TextEmbedding)? =
+        let embedder: (any PooledEmbedding)? =
             options.semanticSearch
-            ? ProfileTextEmbedding(embedder: context.profile.embedding)
+            ? ProfileEmbedding(embedder: context.profile.embedding)
             : nil
         let codeContext = try await CodeContext(
             rootDirectory: context.workingDirectory,
@@ -394,16 +398,18 @@ public enum ToolCatalog {
     /// Skills is not a Multitool capability (plan.md §11.3): the tool is a
     /// plain `FoundationModels.Tool` appended beside the Multitool session
     /// tools, so a skill loads in one request/response step. Its selection
-    /// tier runs on the profile's flash slot, and the session closure
-    /// captures the profile itself so the resident models outlive the
-    /// context.
+    /// tier runs on the profile's flash slot through a
+    /// ``RoutedSelectionModel``, which captures the profile itself so the
+    /// resident models outlive the context. The tier asks for its
+    /// `Selection` type, so each Router session gets the JSON Schema of that
+    /// type as its grammar, and a small model cannot write `[explore]`.
     ///
     /// - Parameters:
     ///   - context: The session whose profile backs the selection tier.
     ///   - registry: The registry the tool reads, or `nil` to make one
     ///     through ``makeSkillsRegistry(context:)``.
     /// - Returns: The `skills` tool, or `nil` when skills is disabled.
-    /// - Throws: Whatever `SkillsTool.make(registry:session:)` throws.
+    /// - Throws: Whatever `SkillsTool.make(registry:model:)` throws.
     static func makeSkillsTool(
         context: CatalogContext, registry: SkillsRegistry? = nil
     ) async throws -> (any FoundationModels.Tool)? {
@@ -414,26 +420,12 @@ public enum ToolCatalog {
         guard let registry else {
             return nil
         }
-        let profile = context.profile
         return try await SkillsTool.make(
-            registry: registry,
-            session: OwnedSelectionSession.factory(makingEach: { request in
-                // The selection answer must be `{"ids": [...]}` with ids of
-                // the candidate set. The skills package gives that JSON
-                // Schema in the request, and the guided session applies it
-                // as a grammar, so a small model cannot write `[explore]`.
-                // The factory owns each guided session and closes it when
-                // the tier drops it: the cached root when the tier ends,
-                // and an over-budget session after its one prompt.
-                profile.flash.makeGuidedSession(
-                    grammar: .jsonSchema(request.jsonSchema),
-                    instructions: request.instructions)
-            }))
+            registry: registry, model: RoutedSelectionModel(profile: context.profile))
     }
 
-    /// Makes the selection tier of `searchTools`: for each catalog, one id
-    /// grammar, and each session of the tier a guided session of the flash
-    /// slot under that grammar.
+    /// Makes the selection tier of `searchTools`: for each catalog, a
+    /// configuration whose model is the flash slot of the profile.
     ///
     /// The selection must run on a model that is not the model of the
     /// session that calls `searchTools`. The tool is synchronous, so its
@@ -442,55 +434,18 @@ public enum ToolCatalog {
     /// refuses that wait. Thus the tier uses `flash`, and never forks the
     /// calling session.
     ///
-    /// The grammar is built one time for each catalog, before the session
-    /// factory, because `SelectionConfig` gives the factory the instructions
-    /// alone. Over budget, the tier prompts one slice of the catalog at a
-    /// time while the grammar permits every id of the catalog. The tier drops
-    /// an id outside the slice, so that is safe.
-    ///
-    /// Each guided session goes through ``OwnedSelectionSession``, as the
-    /// skills tier does, so the tier closes each session when it drops it.
+    /// The tier names the ids of each prompt as the only choices, and asks
+    /// for its `Selection` type, so each Router session gets the JSON Schema
+    /// of that type as its grammar. The factory reads no id itself. Each
+    /// session goes through one ``RoutedSelectionModel``, which closes the
+    /// session when its one prompt ends.
     ///
     /// - Parameter profile: The resolved profile whose flash slot the tier
-    ///   runs on. The factory captures it, so the resident models outlive
-    ///   the catalog context.
+    ///   runs on. The model captures it, so the resident models outlive the
+    ///   catalog context.
     /// - Returns: The selection factory that `searchTools` calls.
     static func makeSearchSelection(profile: LanguageModelProfile) -> SearchToolsTool.SelectionFactory {
-        // `makeGuidedSession` is sync and does not throw, so the closure has
-        // no `try await`. It is marked `async throws` to show the type of
-        // `GuidedSessionMaker`.
-        makeSearchSelection(makingEach: { grammar, instructions async throws in
-            profile.flash.makeGuidedSession(grammar: grammar, instructions: instructions)
-        })
-    }
-
-    /// Makes one guided Router session for the selection tier of
-    /// `searchTools`, from the id grammar of the catalog and the
-    /// instructions that the tier gives. The tier awaits it, and an error
-    /// comes out of the search that asked for the session.
-    typealias GuidedSessionMaker =
-        @Sendable (_ grammar: Grammar, _ instructions: String) async throws -> any RoutedSession
-
-    /// Makes the selection tier of `searchTools` over one session maker:
-    /// for each catalog, one id grammar, and each session of the tier a
-    /// session that `makeSession` makes under that grammar.
-    ///
-    /// The configuration takes the async throwing factory of
-    /// `SelectionConfig(model:)`. Each session goes through
-    /// ``OwnedSelectionSession``, so the tier closes each session when it
-    /// drops it.
-    ///
-    /// - Parameter makeSession: Makes each guided session of the tier.
-    /// - Returns: The selection factory that `searchTools` calls.
-    static func makeSearchSelection(
-        makingEach makeSession: @escaping GuidedSessionMaker
-    ) -> SearchToolsTool.SelectionFactory {
-        { ids in
-            let grammar = Grammar.jsonSchema(try SelectionTier.idEnumSchema(ids: ids))
-            return SelectionConfig(
-                model: OwnedSelectionSession.factory(makingEach: { instructions in
-                    try await makeSession(grammar, instructions)
-                }))
-        }
+        let model = RoutedSelectionModel(profile: profile)
+        return { _ in SelectionConfig(model: model) }
     }
 }
