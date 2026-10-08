@@ -66,8 +66,9 @@ extension RoutedACPAgent {
     /// tools, the confinement — and Router restores the session itself
     /// with the freshly assembled instructions and roster. The client's
     /// `additionalDirectories` and `mcpServers` are authoritative on each
-    /// reconnect. Replay of the retained history, when asked for, goes out
-    /// before the response returns (``retainedHistory(kept:directory:sessionId:)``).
+    /// reconnect. Replay of the retained history and of the recorded plans,
+    /// when asked for, goes out before the response returns
+    /// (``resumedHistory(kept:directory:rootId:sessionId:)``).
     ///
     /// The request runs in one server span, and it writes one "enter" record
     /// when it starts, because the composition and the restore can take a
@@ -138,8 +139,9 @@ extension RoutedACPAgent {
             clientMCPServers: params.mcpServers ?? [])
         let restored = try await restoreRecordedSession(
             rootId, sessionId: params.sessionId, composition: composition)
-        let history = retainedHistory(
-            kept: keptHistory, directory: restored.session.recordingDirectory, sessionId: params.sessionId)
+        let history = resumedHistory(
+            kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
+            sessionId: params.sessionId)
 
         let activation = try await activateSession(
             restored.session,
@@ -360,8 +362,11 @@ extension RoutedACPAgent {
     /// message that the client saw live, as one whole-message upsert with
     /// the id it had live, and never the `*_chunk` forms, so a client that
     /// saw the live chunk stream converges through §8.3's replace row. The
-    /// Router journal is never a source of the replay: a compaction changes
-    /// only the model context, and the history keeps every message.
+    /// Router journal is never a source of a replayed message: a compaction
+    /// changes only the model context, and the history keeps every message.
+    /// The plans that the journal recorded are in the history already
+    /// (``resumedHistory(kept:directory:rootId:sessionId:)``), so the replay
+    /// sends the last plan of each plan id.
     ///
     /// - Parameters:
     ///   - history: The retained history of the session.

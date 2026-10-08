@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import Logging
@@ -211,6 +212,9 @@ struct EventProjection {
     /// an attachment report, a relayed elicitation, or a run
     /// settlement (task ^pez780d).
     ///
+    /// The progress of a run does not count (task ^jwx92y8): a text progress
+    /// and a plan tell about a run, not about the generation of the model.
+    ///
     /// `PromptExecution.drive` reads it beside a stall report as well: a
     /// prompt that already produced something is not waiting on a model
     /// that cannot generate (task ^s0bw5cv).
@@ -367,6 +371,16 @@ struct EventProjection {
         case .runSettled(let operationEvent):
             sawOutput = true
             await projectSettlement(of: operationEvent)
+        case .runProgress(let operationEvent):
+            // A report of a run, not output of the model: it does not set
+            // `sawOutput`, so it changes neither the `_no_output` stop
+            // reason nor the stall guard of the prompt (task ^jwx92y8).
+            await projectProgress(of: operationEvent)
+        case .runMessage:
+            // Mail of a background run to the model, with no ACP
+            // counterpart: the answer that the mail starts carries the
+            // result to the client.
+            reportUnsentEvent(event)
         case .toolCallReport(let report):
             // The "at least one attachment" rule is a doc comment
             // upstream, not a type guarantee: an empty report sends
@@ -679,6 +693,62 @@ struct EventProjection {
                     name: .value(operationEvent.tool),
                     status: .value(status),
                     title: .value(operationEvent.op))))
+    }
+
+    // MARK: - The progress of a run (§8.4, §13)
+
+    /// Sends the progress that a run reported through
+    /// `ToolContext.progress(_:plan:)` while it continues (task ^jwx92y8).
+    ///
+    /// A progress event with a plan sends one `plan_update` that holds the
+    /// full list of the plan (``planUpdate(for:)``). The `detail` of that
+    /// event is the text line for the model, so it does not go to the client.
+    ///
+    /// A progress event with no plan sends its `detail` as the content of
+    /// the tool call of the run. The update keys on the `correlationID` of
+    /// the run, which is its tool call id, as the attachment report and the
+    /// settlement do. The tool of the event never selects the call: in code
+    /// mode, a `tools.*` call posts under the tool name and the
+    /// `correlationID` of the outer run. The `op` rides as the title and the
+    /// tool as the `name`, because this update can be the creation of the
+    /// wire call. The update says `in_progress`, because the run is still
+    /// open, and the settlement of the run later gives its terminal status.
+    ///
+    /// - Parameter operationEvent: The `.progress` event of the run.
+    private func projectProgress(of operationEvent: OperationEvent) async {
+        if let plan = operationEvent.plan {
+            await send(.planUpdate(Self.planUpdate(for: plan)))
+            return
+        }
+        await send(
+            .toolCallUpdate(
+                ToolCallUpdate(
+                    toolCallId: ToolCallId(rawValue: operationEvent.correlationID),
+                    content: .value([Self.textItem(operationEvent.detail)]),
+                    name: .value(operationEvent.tool),
+                    status: .value(.inProgress),
+                    title: .value(operationEvent.op))))
+    }
+
+    /// Maps one plan of a run to the wire: one `plan_update` that holds the
+    /// full list of entries, keyed by the id of the plan. The client replaces
+    /// the plan that has the same `planId` with each update (§13).
+    ///
+    /// The priority and the status of each entry map by their raw values,
+    /// which Extras gives as the ACP wire values. Thus the mapping is total:
+    /// a value that this wire revision does not know stays as the `.unknown`
+    /// case and is not lost.
+    ///
+    /// - Parameter plan: The plan that the run reported.
+    /// - Returns: The wire update.
+    static func planUpdate(for plan: PlanSnapshot) -> PlanUpdate {
+        let entries = plan.entries.map { entry in
+            PlanEntry(
+                content: entry.content,
+                priority: PlanEntryPriority(wireValue: entry.priority.rawValue),
+                status: PlanEntryStatus(wireValue: entry.status.rawValue))
+        }
+        return PlanUpdate(plan: .items(PlanItems(entries: entries, planId: PlanId(rawValue: plan.id))))
     }
 
     // MARK: - The attachment report (§8.4, §11.6)

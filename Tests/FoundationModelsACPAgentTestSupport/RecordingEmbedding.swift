@@ -34,8 +34,6 @@ public final class RecordingEmbeddingContainer: LoadedEmbeddingContainer {
         self.wrapped = wrapped
     }
 
-    public var dimension: Int { wrapped.dimension }
-
     /// Every batch of texts this container was asked to embed, in call
     /// order: one element per `embed(texts:)` call.
     public var batches: [[String]] {

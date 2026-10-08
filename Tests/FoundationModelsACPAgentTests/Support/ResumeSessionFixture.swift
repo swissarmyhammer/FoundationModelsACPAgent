@@ -2,11 +2,15 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
-import FoundationModelsRouter
+import FoundationModelsExtras
 import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
+// `RoutedSessionActor` and its outbox are internal to Router. A debug build
+// compiles Router with testing enabled, so the fixture posts the operation
+// events of a recorded session this way.
+@testable import FoundationModelsRouter
 
 // MARK: - The resume model seam (plan.md §7.4, §20.1)
 //
@@ -293,10 +297,20 @@ struct ResumeSessionFixture {
     /// and not through the agent: the recording has a Router journal and no
     /// retained history, as a session that an earlier build recorded.
     ///
-    /// - Parameter prompts: The prompts the session answers, in order.
+    /// After the prompts, the session posts `events` to its outbox, as a run
+    /// of the session posts them, so the Router journal records them.
+    ///
+    /// - Parameters:
+    ///   - prompts: The prompts the session answers, in order.
+    ///   - events: The operation events the session posts after the
+    ///     prompts, in order. The default posts none.
     /// - Returns: The id of the recorded session.
-    /// - Throws: Whatever the recording root or a prompt throws.
-    func recordSessionOutsideTheAgent(prompts: [String]) async throws -> SessionId {
+    /// - Throws: Whatever the recording root or a prompt throws, or a
+    ///   failed requirement when the session is not a `RoutedSessionActor`
+    ///   and so has no outbox to post to.
+    func recordSessionOutsideTheAgent(
+        prompts: [String], posting events: [OperationEvent] = []
+    ) async throws -> SessionId {
         let recorded = fixture.harness.agent.residentProfile.standard.makeSession(
             instructions: "recorded instructions",
             workingDirectory: fixture.cwd,
@@ -306,6 +320,12 @@ struct ResumeSessionFixture {
             compactionPrompt: .default)
         for prompt in prompts {
             _ = try await recorded.respond(to: prompt)
+        }
+        if !events.isEmpty {
+            let actor = try #require(recorded as? RoutedSessionActor)
+            for event in events {
+                await actor.outbox.post(event: event)
+            }
         }
         await recorded.close()
         return SessionId(rawValue: recorded.id.description)

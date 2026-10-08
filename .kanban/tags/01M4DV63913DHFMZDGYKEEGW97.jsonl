@@ -1,0 +1,1 @@
+{"id":"01M4DV63940T7C31P890R7WRTS","timestamp":"2026-10-08T13:28:01.572169Z","op":"create","item_id":"01M4DV63913DHFMZDGYKEEGW97","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: b60205\n+tag_name: acp\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: b60205\n-tag_name: acp\n","transaction_id":null}

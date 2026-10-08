@@ -1,5 +1,7 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
+import FoundationModelsRouter
 
 // The retained history of a session (ACP schema-v2.0.0-alpha.7).
 //
@@ -15,7 +17,10 @@ import FoundationModelsACP
 // compaction changes only the model context, never this history. The agent
 // writes the history to a file beside the transcript, so a new process can
 // replay the same messages with the same ids. The Router journal serves
-// only the restore of the model context.
+// the restore of the model context, and one part of the replay: the plans
+// of the session (task ^jwx92y8). A plan has its own id, and Router writes
+// each plan event to disk at once, so a resume merges the recorded plans
+// into the history.
 
 /// The file that keeps the retained history of one session, in the
 /// transcript directory of the session (`<recording root>/<sessionId>/`).
@@ -211,10 +216,11 @@ extension RoutedACPAgent {
     /// The retained history of a session that `session/resume` restores:
     /// the history in the table when this process ran the session, else
     /// the history in the file of an earlier process, else an empty
-    /// history. The Router journal is never a source: its messages have no
-    /// ACP ids, and after a compaction it holds a summary in place of the
-    /// messages that it folded. A file that does not read is logged, and
-    /// the history starts empty.
+    /// history. The Router journal is never a source of a message: its
+    /// messages have no ACP ids, and after a compaction it holds a summary in
+    /// place of the messages that it folded. Its plans are a source, and
+    /// ``resumedHistory(kept:directory:rootId:sessionId:)`` adds them. A file
+    /// that does not read is logged, and the history starts empty.
     ///
     /// - Parameters:
     ///   - kept: The history in the table, or `nil`.
@@ -234,6 +240,64 @@ extension RoutedACPAgent {
                 "The retained history of a session did not read. The resume replays no message.",
                 metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
             return SessionMergeEngine()
+        }
+    }
+
+    /// The history that `session/resume` restores: the retained history
+    /// (``retainedHistory(kept:directory:sessionId:)``), with each plan that
+    /// the Router journal of the session recorded (task ^jwx92y8).
+    ///
+    /// The plans are the one part of the history that the Router journal
+    /// gives. Router writes each plan event to disk at once, but the agent
+    /// writes the history file only at the end of a prompt and at
+    /// `session/close`. So a process that stopped during a prompt can leave a
+    /// plan in the journal that the history file does not hold. The history
+    /// merges each recorded plan in post order, as the live projection did
+    /// (``EventProjection/planUpdate(for:)``). Thus it holds the last plan of
+    /// each plan id, and a plan that the history holds already does not
+    /// change.
+    ///
+    /// - Parameters:
+    ///   - kept: The history in the table, or `nil`.
+    ///   - directory: The transcript directory of the session.
+    ///   - rootId: The recorded id of the session, which selects its events.
+    ///   - sessionId: The session, for the log.
+    /// - Returns: The history to replay.
+    func resumedHistory(
+        kept: SessionMergeEngine?, directory: URL, rootId: ULID, sessionId: SessionId
+    ) -> SessionMergeEngine {
+        var history = retainedHistory(kept: kept, directory: directory, sessionId: sessionId)
+        for plan in recordedPlans(of: rootId, in: directory, sessionId: sessionId) {
+            history.apply(.planUpdate(EventProjection.planUpdate(for: plan)))
+        }
+        return history
+    }
+
+    /// Each plan that the Router journal of one session recorded, in post
+    /// order.
+    ///
+    /// The read keeps only the events of the session itself. The transcript
+    /// directory of a session also holds the journals of its forks, and the
+    /// client must not get a plan of a session that did not make it. A
+    /// journal that does not read is logged, and the resume replays no
+    /// recorded plan: the history file can still hold the plans.
+    ///
+    /// - Parameters:
+    ///   - rootId: The recorded id of the session.
+    ///   - directory: The transcript directory of the session.
+    ///   - sessionId: The session, for the log.
+    /// - Returns: The plans, in post order.
+    private func recordedPlans(of rootId: ULID, in directory: URL, sessionId: SessionId) -> [PlanSnapshot] {
+        do {
+            return try TranscriptEvent.merged(under: directory)
+                .filter { $0.sessionId == rootId }
+                .flatMap(\.operationEvents)
+                .compactMap(\.plan)
+        } catch {
+            ACPAgentTelemetry.logger(.sessionResume).error(
+                "The Router journal of a session did not read. The resume replays no recorded plan.",
+                metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+            return []
         }
     }
 }

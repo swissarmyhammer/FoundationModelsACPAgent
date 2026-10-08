@@ -881,6 +881,12 @@ the wire. The last one wins.
   earlier build recorded), the history is empty and the replay sends no
   message. Thus an id is the same before and after a resume, also in a new
   process.
+- **The plans are the one part of the replay that the Router journal gives**
+  (task ^jwx92y8). Router writes each plan event to disk at once, and the
+  history file is written only at the end of a prompt and at `session/close`.
+  A resume reads the recorded plans of the session itself (never of a fork or
+  of another session) and merges each one into the history in post order.
+  Thus the replay sends the last plan of each `planId`.
 - **The replay sends the full engine**: `transcriptUpdates` then
   `stateUpdates` (the command list, the config options, the usage, the session
   info, the state). The replay does not send a new `messageId`. Each
@@ -1077,6 +1083,8 @@ and its doc comment says a consumer must write a `default` arm. Write one.
 | `generationStalled(GenerationStall)` | nothing on the wire — log it, and read it as the stalled-generation guard below |
 | `submissionQueued(SubmissionID)` | nothing on the wire — a `notice` log line with the session id and the model name: the submission waits for a place in the model queue, because the model runs a submission of another session (§8.0). It is not a stall (see the guard below) |
 | `runSettled(OperationEvent)` | `tool_call_update` with the **terminal** status (see the mapping below) |
+| `runProgress(OperationEvent)` | with a `plan`: one `plan_update` that holds the full list of the plan, keyed by its `planId` (§13). With no `plan`: a `tool_call_update` with the `detail` as the content of the call, the status `in_progress`, on the `correlationID` of the run (the tool call id). Never select the call by the `tool` of the event: in code mode, a `tools.*` call posts under the tool and the `correlationID` of the outer run. A progress event is not observable output of the prompt, so it changes no stop reason (task ^jwx92y8) |
+| `runMessage(OperationEvent)` | nothing on the wire — a `debug` log line. It is mail of a background run to the model, and the answer that the mail starts carries the result |
 | `toolCallReport(ToolCallReport)` | `tool_call_update` that replaces the content of the call with its attachments, and its `locations` when a file change is attached (§11.6). A report with no attachment sends nothing — a `warning` log line |
 | `elicitationRequested(OperationEvent)` | the elicitation round trip to the client (§16), with `requires_action` around it (§8.2). With no relay, nothing on the wire — a `notice` log line |
 | `submissionEnded(SubmissionEnd)` | nothing on its own. Its tokens add to the one sum of the prompt, the agent keeps its context fill for the meter, and the agent keeps its finish reason. The one `usage_update` goes at the end of the prompt. The `idle` `state_update` comes from the end of our own prompt task, never from this event (§8.1) |
@@ -2030,10 +2038,16 @@ the answer.
 
 ## 13. Agent Plan
 
-**It has no peer. It is off, and we say so.** Router has no planning noun. v2
-says only that agents SHOULD report plans. We send nothing, and we say so.
+**A tool makes the plan, and the agent sends it** (task ^jwx92y8). A tool
+calls `ToolContext.progress(_:plan:)` with a `PlanSnapshot` (Extras): an `id`
+and the full list of entries. Router sends the event live as
+`SessionEvent.runProgress`, and it keeps the plan out of the model input. The
+projection sends one `plan_update` for each plan event (§8.4). The priority and
+the status of an entry map by their raw values, which are the ACP wire values.
+A resume replays the last plan of each `planId` (§7.4). The Kanban tool does
+not make a plan yet.
 
-For the time when a planner lands, know this
+Know this
 asymmetry: **`plan_update` is the one v2 update that replaces. It does not
 patch.** Agents MUST send the complete entry list. Clients MUST replace the
 previous contents fully. An implementer who knows the upsert algebra (§8.3)
