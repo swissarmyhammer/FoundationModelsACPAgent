@@ -59,6 +59,53 @@ comments:
     - evidence: swift test (root package) — 793 tests in 88 suites passed, 0 failed, 0 skipped, 1 known issue (the intended withKnownIssue in HarnessSmokeTests, orderedSubsequenceAssertionChecksOrderWithGaps). No compiler warning in this package's files. One build-system line: "warning: missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS" comes from the mlx-swift dependency bundle, not from a file in this package. Package.resolved and Package.swift are unchanged. No local path override.
     - next: none. No file was edited by this step. No commit was made.
   timestamp: 2026-10-08T15:45:05.406194+00:00
+- actor: claude-code
+  id: 01m4e32aemb8jz4g35rmdkh4jc
+  text: |-
+    ### commit — changed
+    - evidence: 32da230 feat(acp): send tool progress and tool plans to the client as session updates (^jwx92y8); earlier chore commit 2097d09
+    - next: review
+  timestamp: 2026-10-08T15:45:46.452618+00:00
+- actor: claude-code
+  id: 01m4e3ncnbgce8jyqmkeezrgnp
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (32da230). Counts: 1 finding, 1 confirmed, 4 refuted. Sources/FoundationModelsACPAgent/Agent/EventProjection.swift:723 (reuse/reuse).
+    - next: Do the open item in "Review Findings (2026-10-08 10:46)". Then run the review again. The task stays in review.
+  timestamp: 2026-10-08T15:56:11.307553+00:00
+- actor: claude-code
+  id: 01m4e3nrac77cg2rav5pyv8cvq
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files
+    - test: green — swift test, 793 tests in 88 suites passed, 1 known issue (HarnessSmokeTests)
+    - commit: 32da230
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift:723
+  timestamp: 2026-10-08T15:56:23.244236+00:00
+- actor: claude-code
+  id: 01m4e43j6p8nb1e7j2yzt4jp1y
+  text: |-
+    Review finding EventProjection.swift:723 (reuse/reuse) done (not committed).
+
+    - New `private static func runCallUpdate(correlationID:tool:op:content:locations:rawOutput:status:) -> SessionUpdate` in EventProjection.swift, in a new MARK "The wire call of a run". It is the one place that builds the run-keyed `tool_call_update`: id = `ToolCallId(rawValue: correlationID)`, `name` = tool, `title` = op. `locations`, `rawOutput` and `status` default to `.unchanged`.
+    - All three run-keyed copies now call it: `projectProgress` (content + status in_progress), `projectSettlement` (content + terminal status), `projectToolCallReport` (content + locations + rawOutput, no status). The wire output is the same as before.
+    - Not changed, by intent: `projectToolCall` and `projectToolStatus` also build a `ToolCallUpdate`, but they key on the transcript `Transcript.ToolCall.id`, not on a run. `projectToolCall` sends the tool name as both `name` and title, with `rawInput`. `projectToolStatus` sends no name or title. Neither has the tool/op shape of the finding.
+    - No new test: the change is a refactor with no behavior change. The existing suites cover the wire shape of each of the three updates.
+  timestamp: 2026-10-08T16:03:55.734537+00:00
+- actor: claude-code
+  id: 01m4e43ms1113mez4m2vgd10c3
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift. `swift test --filter 'RunProgressTests|EventProjectionTests|PromptExecutionTests|PromptFollowUpTests|TierTwoTests'`: 95 tests in 5 suites passed, 0 failed. No compiler warning in package files (the only warning line is the known mlx-swift_Cmlx.bundle build-system line). Package.resolved not changed; no local path override. Finding flipped to [x].
+    - next: /review
+  timestamp: 2026-10-08T16:03:58.369331+00:00
+- actor: claude-code
+  id: 01m4e476jq6vgmbswqp5jjjkx7
+  text: |-
+    ### test — green
+    - evidence: swift test (root package) — 793 tests in 88 suites passed, 0 failed, 0 skipped, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests). The only warning is the mlx-swift_Cmlx.bundle build-system line from a dependency. No file changed in this run.
+    - next: review
+  timestamp: 2026-10-08T16:05:54.903558+00:00
 position_column: doing
 position_ordinal: '80'
 title: Send tool progress and tool plans to the client as session updates
@@ -103,3 +150,15 @@ The tasks are on other boards, so this board cannot hold the dependency links. C
 The Kanban tool. The user decided to do it later.
 
 #acp #tools
+
+## Review Findings (2026-10-08 10:46)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift:723` `reuse/reuse` — projectProgress builds the same ToolCallUpdate wire shape (toolCallId, content, name, status, title) inline that projectSettlement already builds. The same wire construction now exists in two places, so a later change to the shape must be made twice. Extract a private helper, for example toolCallUpdate(id:, tool:, op:, content:, status:), that returns the SessionUpdate. Call it from projectProgress and projectSettlement, and from projectToolCallReport if its shape matches.

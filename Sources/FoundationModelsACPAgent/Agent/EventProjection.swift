@@ -643,6 +643,46 @@ struct EventProjection {
         CompactionReporter(sessionId: sessionId, send: send)
     }
 
+    // MARK: - The wire call of a run (§8.4, §11.6)
+
+    /// Builds one `tool_call_update` for the wire call of a run. This is the
+    /// one place that gives the wire shape of the run updates: the progress
+    /// text, the attachment report and the settlement all use it.
+    ///
+    /// The update keys on the `correlationID` of the run, which is its tool
+    /// call id. The tool of the run rides as the `name` and the `op` rides as
+    /// the title, because each of these updates can be the creation of the
+    /// wire call. Each other field stays `.unchanged` unless the caller sets it.
+    ///
+    /// - Parameters:
+    ///   - correlationID: The correlation token of the run, its tool call id.
+    ///   - tool: The tool of the run, sent as the `name`.
+    ///   - op: The operation of the run, sent as the title.
+    ///   - content: The content patch of the call.
+    ///   - locations: The locations patch of the call.
+    ///   - rawOutput: The raw output patch of the call.
+    ///   - status: The status patch of the call.
+    /// - Returns: The `tool_call_update` session update.
+    private static func runCallUpdate(
+        correlationID: String,
+        tool: String,
+        op: String,
+        content: PatchField<[ToolCallContent]>,
+        locations: PatchField<[ToolCallLocation]> = .unchanged,
+        rawOutput: PatchField<FoundationModelsACP.JSONValue> = .unchanged,
+        status: PatchField<FoundationModelsACP.ToolCallStatus> = .unchanged
+    ) -> SessionUpdate {
+        .toolCallUpdate(
+            ToolCallUpdate(
+                toolCallId: ToolCallId(rawValue: correlationID),
+                content: content,
+                locations: locations,
+                name: .value(tool),
+                rawOutput: rawOutput,
+                status: status,
+                title: .value(op)))
+    }
+
     // MARK: - The settlement (§8.4, §11.6)
 
     /// Sends the terminal `tool_call_update` of a settled run. The `op`
@@ -686,13 +726,12 @@ struct EventProjection {
             items.append(Self.textItem(note))
         }
         await send(
-            .toolCallUpdate(
-                ToolCallUpdate(
-                    toolCallId: ToolCallId(rawValue: operationEvent.correlationID),
-                    content: items.isEmpty ? .unchanged : .value(items),
-                    name: .value(operationEvent.tool),
-                    status: .value(status),
-                    title: .value(operationEvent.op))))
+            Self.runCallUpdate(
+                correlationID: operationEvent.correlationID,
+                tool: operationEvent.tool,
+                op: operationEvent.op,
+                content: items.isEmpty ? .unchanged : .value(items),
+                status: .value(status)))
     }
 
     // MARK: - The progress of a run (§8.4, §13)
@@ -721,13 +760,12 @@ struct EventProjection {
             return
         }
         await send(
-            .toolCallUpdate(
-                ToolCallUpdate(
-                    toolCallId: ToolCallId(rawValue: operationEvent.correlationID),
-                    content: .value([Self.textItem(operationEvent.detail)]),
-                    name: .value(operationEvent.tool),
-                    status: .value(.inProgress),
-                    title: .value(operationEvent.op))))
+            Self.runCallUpdate(
+                correlationID: operationEvent.correlationID,
+                tool: operationEvent.tool,
+                op: operationEvent.op,
+                content: .value([Self.textItem(operationEvent.detail)]),
+                status: .value(.inProgress)))
     }
 
     /// Maps one plan of a run to the wire: one `plan_update` that holds the
@@ -787,14 +825,13 @@ struct EventProjection {
                 metadata: runMetadata(report.correlationID))
         }
         await send(
-            .toolCallUpdate(
-                ToolCallUpdate(
-                    toolCallId: ToolCallId(rawValue: report.correlationID),
-                    content: .value(documents.map(Self.textItem)),
-                    locations: locations.isEmpty ? .unchanged : .value(locations),
-                    name: .value(report.tool),
-                    rawOutput: Self.rawOutputPatch(fromDocuments: documents),
-                    title: .value(report.op))))
+            Self.runCallUpdate(
+                correlationID: report.correlationID,
+                tool: report.tool,
+                op: report.op,
+                content: .value(documents.map(Self.textItem)),
+                locations: locations.isEmpty ? .unchanged : .value(locations),
+                rawOutput: Self.rawOutputPatch(fromDocuments: documents)))
     }
 
     // MARK: - The status functions (§8.4)
