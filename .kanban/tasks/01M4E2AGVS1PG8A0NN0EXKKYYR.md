@@ -94,11 +94,27 @@ comments:
     - evidence: 225b162 feat(bench): turn the git tools on in the SWE-bench config, and count them in the scan and the score (^exkkyyr); 40b99b0 chore(kanban): add tasks ^8q8m1r4 and ^fts1r32
     - next: none. No push done.
   timestamp: 2026-10-08T21:00:51.804697+00:00
+- actor: claude-code
+  id: 01m4enpy959mbf9g9dvas9rd88
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b1575f6). 0 findings, 0 confirmed, 6 refuted, 8 attempted, 0 failed. 11 files reviewed. Not reviewed: 2 .kanban files (from .reviewignore), bench/README.md and bench/code-context.config.yaml (no validator matches these files). The task had no earlier Review Findings section.
+    - next: none. The task is in done.
+  timestamp: 2026-10-08T21:11:36.485968+00:00
+- actor: claude-code
+  id: 01m4enq8xy8eap724qmnz2sct9
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 13 files (one decision by the orchestrator: the explicit verb-check run is the evidence for the git-call test; added the `.git/info/exclude` fix)
+    - test: green — bench 254 (1 old skip), swebench 24, swebench-score 34; Swift config suites 54; config show on the bench config: no warning
+    - commit: b1575f6 (the commit step comment says 225b162, the sha before an amend)
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T21:11:47.390690+00:00
 depends_on:
 - 01M4E2A5G4FC38X7WG4P28XJZ6
 - 01M4E2BEVVM2SHK85XG9DGE8CC
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffaa80
 title: 'bench: turn the git tools on in the SWE-bench config, and count them in the scan and the score'
 ---
 ## Goal
