@@ -7,16 +7,18 @@ public enum BuiltinConfigurationFileError: Error, Equatable, Sendable, CustomStr
     /// The resource bundle of the library has no builtin configuration file.
     case missing(fileName: String)
 
-    /// The file is in the bundle, but it cannot be read as UTF-8 text.
-    case unreadable(path: String)
+    /// The file cannot be read as UTF-8 text. `reason` is the description of
+    /// the error that the file system gives, thus the caller learns the real
+    /// cause, for example a missing permission or an I/O error.
+    case unreadable(path: String, reason: String)
 
     /// A human-readable reason that names the file.
     public var description: String {
         switch self {
         case .missing(let fileName):
             return "the resource bundle has no builtin configuration file \(fileName)"
-        case .unreadable(let path):
-            return "the builtin configuration file \(path) cannot be read as UTF-8 text"
+        case .unreadable(let path, let reason):
+            return "the builtin configuration file \(path) cannot be read as UTF-8 text: \(reason)"
         }
     }
 }
@@ -63,9 +65,22 @@ enum BuiltinConfigurationFile {
     /// - Throws: ``BuiltinConfigurationFileError`` when the file is missing or
     ///   cannot be read; `YAMLValueParsingError` when its text is not YAML.
     static func root() throws -> YAMLValue {
-        let url = try url()
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            throw BuiltinConfigurationFileError.unreadable(path: url.path)
+        try root(at: url())
+    }
+
+    /// The parsed tree of the configuration file at `url`.
+    ///
+    /// - Parameter url: The location of the file.
+    /// - Returns: The tree.
+    /// - Throws: ``BuiltinConfigurationFileError/unreadable(path:reason:)``
+    ///   with the reason of the file system when the file cannot be read as
+    ///   UTF-8 text; `YAMLValueParsingError` when its text is not YAML.
+    static func root(at url: URL) throws -> YAMLValue {
+        let text: String
+        do {
+            text = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            throw BuiltinConfigurationFileError.unreadable(path: url.path, reason: error.localizedDescription)
         }
         return try YAMLValue.parse(text)
     }

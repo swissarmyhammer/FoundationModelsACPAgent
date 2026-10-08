@@ -47,6 +47,52 @@ comments:
     - evidence: swift test (root) — 814 tests in 88 suites passed, 1 known issue (intentional withKnownIssue in HarnessSmokeTests), 0 failed, 0 skipped. swift test --package-path IntegrationTests --no-parallel — 30 tests in 11 suites passed, 0 failed, 0 skipped. Only warning in both runs: mlx-swift_Cmlx.bundle build-system line from a dependency. No code change made. Package.resolved not moved.
     - next: commit
   timestamp: 2026-10-08T19:32:16.989425+00:00
+- actor: claude-code
+  id: 01m4eg1qxx2q0xxxgxk2y51qmr
+  text: |-
+    ### commit — changed
+    - evidence: 7d1316d feat(config): ship the builtin configuration as a YAML file that names each tool (^9dge8cc). Before it: f7a84ea chore(kanban): add task ^wydftp1.
+    - next: review
+  timestamp: 2026-10-08T19:32:38.973157+00:00
+- actor: claude-code
+  id: 01m4egjsk97q72jna7jkh7r8ds
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (7d1316d). 2 findings (2 confirmed, 4 refuted). Sources/FoundationModelsACPAgent/Configuration/BuiltinConfigurationFile.swift:67 (swift/error-handling), Tests/FoundationModelsACPAgentTests/BuiltinConfigurationFileTests.swift:55 (swift/optionals). No validator examined builtin.config.yaml, cli-plan.md, and plan.md.
+    - next: Correct the 2 findings in the dated Review Findings section. Then do the review again.
+  timestamp: 2026-10-08T19:41:57.737457+00:00
+- actor: claude-code
+  id: 01m4egk6jcg3wdnecsyasgkqwh
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 14 files
+    - test: green — swift test 814 passed; IntegrationTests --no-parallel 30 passed
+    - commit: 7d1316d
+    - review: findings — Sources/FoundationModelsACPAgent/Configuration/BuiltinConfigurationFile.swift:67, Tests/FoundationModelsACPAgentTests/BuiltinConfigurationFileTests.swift:55
+  timestamp: 2026-10-08T19:42:11.020056+00:00
+- actor: claude-code
+  id: 01m4eh3kvrcmmdd0yqypnc23cd
+  text: |-
+    Review findings of 2026-10-08 14:32 are fixed (not committed):
+    - `swift/error-handling`: `BuiltinConfigurationFileError.unreadable` is now `unreadable(path:reason:)`. The description adds the reason after the path. The new internal `BuiltinConfigurationFile.root(at:)` reads the file in a `do`/`catch` and keeps `error.localizedDescription`. `root()` calls `root(at: url())`. The file has no `try?` now. There were no other callers of `.unreadable` in Sources or Tests.
+    - `swift/optionals`: the test file has no `guard` now. `toolBodies()` and the new `body(of:)` unwrap with `try #require`, through a `fileprivate` test-only `YAMLValue.mapping` accessor. The old `bodyKeys(of:)` and `value(of:inTool:)` helpers are removed, and their callers use `body(of:)`.
+    - New tests (RED first, the build failed because `root(at:)` and `reason` did not exist): `aFileThatCannotBeReadKeepsTheFileSystemReason` (a file that is not on disk gives `.unreadable(path:reason:)` with the exact reason from the file system) and `theUnreadableDescriptionNamesTheReason`.
+    - Package.resolved did not change. There is no local path override.
+  timestamp: 2026-10-08T19:51:08.920711+00:00
+- actor: claude-code
+  id: 01m4eh3pca7b0m8q1r0rh1bx7f
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsACPAgent/Configuration/BuiltinConfigurationFile.swift, Tests/FoundationModelsACPAgentTests/BuiltinConfigurationFileTests.swift. `swift test --filter 'BuiltinConfigurationFileTests|ConfigShowTests|ConfigInitTests'`: 41 tests in 3 suites passed, 0 failed. The only warning is the mlx-swift_Cmlx.bundle build-system line from a dependency. Both review findings are `- [x]`.
+    - next: /review
+  timestamp: 2026-10-08T19:51:11.498034+00:00
+- actor: claude-code
+  id: 01m4eh710k5ew7skw92gzmv0em
+  text: |-
+    ### test — green
+    - evidence: swift test (root package) — 816 tests in 88 suites passed, 0 failed, 0 skipped, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps). Only warning line: mlx-swift_Cmlx.bundle build-system line from a dependency. No Swift warning in this package.
+    - next: review. No file changed in this run. bench/swebench_prompt.py and its test were not touched. No commit.
+  timestamp: 2026-10-08T19:53:00.691491+00:00
 depends_on:
 - 01M4E2A5G4FC38X7WG4P28XJZ6
 position_column: doing
@@ -81,3 +127,18 @@ The builtin configuration (layer 1) is Swift code, not a file. `AgentConfigurati
 After ^p28xjz6, because the file must name `tools.git`.
 
 #config #tools
+
+## Review Findings (2026-10-08 14:32)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 5 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 3 file(s) not reviewed — no validator matched:
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+> - `cli-plan.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/BuiltinConfigurationFile.swift:67` `swift/error-handling` — `try?` discards the underlying file-system error, so any read failure (missing permissions, I/O error) is reported as `unreadable`, whose text says the file 'cannot be read as UTF-8 text'. The caller cannot learn the real reason. Use a `do`/`catch` that keeps the underlying error, for example `case unreadable(path: String, reason: String)` carrying `error.localizedDescription`, so the description names the actual cause.
+- [x] `Tests/FoundationModelsACPAgentTests/BuiltinConfigurationFileTests.swift:55` `swift/optionals` — A `guard` in a test helper returns `nil` silently when a tool body is missing. The rule says a test must not use `guard`; the miss should be an assertion failure, not an early return. Record the missing body with `Issue.record` before returning `nil`, or unwrap in the calling test with `try #require`.

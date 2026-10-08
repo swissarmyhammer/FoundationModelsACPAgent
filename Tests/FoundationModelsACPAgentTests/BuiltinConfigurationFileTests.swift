@@ -19,43 +19,24 @@ import Testing
     /// spelling of the tool.
     ///
     /// - Returns: The bodies.
-    /// - Throws: When the file does not load, or when its `tools:` value is
-    ///   not a mapping.
+    /// - Throws: When the file does not load. When the file or its `tools:`
+    ///   value is not a mapping, `#require` records an issue and throws.
     private static func toolBodies() throws -> [String: YAMLValue] {
         let root = try BuiltinConfigurationFile.root()
-        guard case .dictionary(let sections) = root,
-            case .dictionary(let tools)? = sections[AgentConfiguration.CodingKeys.tools.stringValue]
-        else {
-            Issue.record("the builtin file has no tools mapping: \(root)")
-            return [:]
-        }
-        return tools
+        let sections = try #require(root.mapping, "the builtin file is not a mapping: \(root)")
+        return try #require(
+            sections[AgentConfiguration.CodingKeys.tools.stringValue]?.mapping,
+            "the builtin file has no tools mapping: \(root)")
     }
 
-    /// The keys of the body of one tool in the builtin file.
+    /// The mapping body of one tool in the builtin file.
     ///
     /// - Parameter tool: The YAML spelling of the tool.
-    /// - Returns: The keys, or an empty set when the body is not a mapping.
-    /// - Throws: What ``toolBodies()`` throws.
-    private static func bodyKeys(of tool: String) throws -> Set<String> {
-        guard case .dictionary(let body)? = try toolBodies()[tool] else {
-            return []
-        }
-        return Set(body.keys)
-    }
-
-    /// The value of one key of the body of one tool in the builtin file.
-    ///
-    /// - Parameters:
-    ///   - key: The option key.
-    ///   - tool: The YAML spelling of the tool.
-    /// - Returns: The value, or `nil` when the file does not set it.
-    /// - Throws: What ``toolBodies()`` throws.
-    private static func value(of key: String, inTool tool: String) throws -> YAMLValue? {
-        guard case .dictionary(let body)? = try toolBodies()[tool] else {
-            return nil
-        }
-        return body[key]
+    /// - Returns: The keys and values of the body.
+    /// - Throws: What ``toolBodies()`` throws. When the file has no mapping
+    ///   body for `tool`, `#require` records an issue and throws.
+    private static func body(of tool: String) throws -> [String: YAMLValue] {
+        try #require(toolBodies()[tool]?.mapping, "the builtin file has no mapping body for tools.\(tool)")
     }
 
     /// A loader over `fixture` that reads `builtinLayer` as layer 1 in place
@@ -77,6 +58,28 @@ import Testing
             builtinLayer: { builtinLayer })
     }
 
+    /// The URL of a file that is not on disk, in a directory that is not on
+    /// disk.
+    ///
+    /// - Returns: The URL.
+    private static func absentFileURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("BuiltinConfigurationFileTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(BuiltinConfigurationFile.fileName)
+    }
+
+    /// The reason the file system gives when it cannot read `url` as UTF-8
+    /// text.
+    ///
+    /// - Parameter url: A file that cannot be read.
+    /// - Returns: The localized description of the read error.
+    /// - Throws: An issue and an error when the read does not fail.
+    private static func fileSystemReason(forReading url: URL) throws -> String {
+        try #require(throws: (any Error).self) {
+            try String(contentsOf: url, encoding: .utf8)
+        }.localizedDescription
+    }
+
     /// A layer 1 tree that turns the web tool off.
     private static let webOffBuiltinLayer = YAMLValue.dictionary([
         AgentConfiguration.CodingKeys.tools.stringValue: .dictionary([
@@ -92,6 +95,29 @@ import Testing
 
         #expect(url.lastPathComponent == BuiltinConfigurationFile.fileName)
         #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    /// A file that cannot be read gives `unreadable` with the reason of the
+    /// file system, not only the path.
+    @Test func aFileThatCannotBeReadKeepsTheFileSystemReason() throws {
+        let url = Self.absentFileURL()
+        let reason = try Self.fileSystemReason(forReading: url)
+
+        let error = try #require(throws: BuiltinConfigurationFileError.self) {
+            try BuiltinConfigurationFile.root(at: url)
+        }
+
+        #expect(error == .unreadable(path: url.path, reason: reason))
+    }
+
+    /// The description of `unreadable` names the reason of the file system.
+    @Test func theUnreadableDescriptionNamesTheReason() {
+        let reason = "the disk is not available"
+
+        let description = BuiltinConfigurationFileError.unreadable(path: "/builtin.config.yaml", reason: reason)
+            .description
+
+        #expect(description.contains(reason))
     }
 
     // MARK: - The file and the code are the same
@@ -116,24 +142,22 @@ import Testing
     /// option keys of that tool.
     @Test func theFileNamesEachOptionKeyOfEachTool() throws {
         for (tool, optionKeys) in ToolsConfiguration.optionKeys {
-            #expect(try Self.bodyKeys(of: tool) == optionKeys, "the keys of tools.\(tool) differ")
+            #expect(try Set(Self.body(of: tool).keys) == optionKeys, "the keys of tools.\(tool) differ")
         }
     }
 
     /// Each tool body that takes `enabled:` sets it to `true`.
     @Test(arguments: [ToolsConfiguration.CodingKeys.web, .git])
     func eachSwitchableToolIsOnInTheFile(tool: ToolsConfiguration.CodingKeys) throws {
-        let enabled = try Self.value(
-            of: WebToolOptions.CodingKeys.enabled.stringValue, inTool: tool.stringValue)
+        let enabled = try Self.body(of: tool.stringValue)[WebToolOptions.CodingKeys.enabled.stringValue]
 
         #expect(enabled == .bool(true))
     }
 
     /// The file holds no secret: the map of web API keys is empty.
     @Test func theFileHoldsNoSecret() throws {
-        let apiKeys = try Self.value(
-            of: WebToolOptions.CodingKeys.apiKeys.stringValue,
-            inTool: ToolsConfiguration.CodingKeys.web.stringValue)
+        let apiKeys = try Self.body(of: ToolsConfiguration.CodingKeys.web.stringValue)[
+            WebToolOptions.CodingKeys.apiKeys.stringValue]
 
         #expect(apiKeys == .dictionary([:]))
     }
@@ -176,5 +200,16 @@ import Testing
 
         #expect(loaded.configuration.tools.web == .enabled(WebToolOptions()))
         #expect(loaded.sources["tools.web"] == .user)
+    }
+}
+
+extension YAMLValue {
+    /// The keys and values of this tree when it is a mapping, or `nil` when
+    /// it is an other kind of value. A test unwraps it with `#require`.
+    fileprivate var mapping: [String: YAMLValue]? {
+        if case .dictionary(let mapping) = self {
+            return mapping
+        }
+        return nil
     }
 }
