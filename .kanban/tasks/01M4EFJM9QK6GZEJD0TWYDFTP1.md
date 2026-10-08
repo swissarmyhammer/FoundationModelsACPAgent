@@ -1,10 +1,40 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4erx1gegdxqdyp55r5v9f95
+  text: 'Research: `BuiltinConfigurationFile` is internal to the library, thus the `acp-agent` target cannot call `BuiltinConfigurationFile.url()`. Plan: add a public static accessor `ConfigurationLoader.builtinConfigurationFileURL()` that forwards to `BuiltinConfigurationFile.url()`. In `Config.Path`, remove `Location.code` and the "(in code, no file)" text; each row then holds a path and an exists mark. The builtin row shows the file path, without the directory suffix "/". Unit tests: `ConfigPathTests` (the existing builtin assertions say "no mark", which the change makes false, thus they change). Integration test: `CLIProcessTests.configPathWritesTheLayerRowsToStdoutAndExitsZero` checks only the row count and the "builtin" prefix.'
+  timestamp: 2026-10-08T22:07:22.126705+00:00
+- actor: claude-code
+  id: 01m4es5sf3403kezmswjmn83h2
+  text: |-
+    Implementation done.
+    - Library: new public `ConfigurationLoader.builtinConfigurationFileURL()`. It forwards to the internal `BuiltinConfigurationFile.url()`. The CLI target cannot see the internal type, thus the accessor is necessary.
+    - CLI `Config.Path`: removed `Location` (`.code` / `.directory`) and `codeLocation` "(in code, no file)". `Row` now holds `path` and `exists`. The builtin row is the bundle path of `builtin.config.yaml` with the `exists` / `missing` mark (`FileManager.fileExists`). A directory row keeps the "/" suffix. All rows now share one path column and one mark column.
+    - Contract note: when the resource bundle has no builtin file, `config path` now throws `BuiltinConfigurationFileError.missing`. Before, it printed a row. Each configuration load (`config show`, each session) fails the same way in that case, thus the doc comment of `report(environment:)` states it.
+    - TDD: RED was `ConfigPathTests.theBuiltinRowNamesTheBuiltinFileThatExists` (it got "builtin  (in code, no file)"), then GREEN. The old builtin assertions in `theThreeLayersCarryTheRightMarks` said "no mark", which the card makes false, thus I removed them. `BuiltinConfigurationFileTests.theLoaderGivesTheLocationOfTheFileThatLoads` covers the public forwarder. I wrote it after the one-line forwarder, not before.
+    - Integration: `CLIProcessTests.configPathWritesTheLayerRowsToStdoutAndExitsZero` now also checks that the builtin row of the built binary names `/builtin.config.yaml` and ends with `exists`.
+    - No doc file holds "(in code, no file)". cli-plan.md and README.md text stays true.
+  timestamp: 2026-10-08T22:12:08.803192+00:00
+- actor: claude-code
+  id: 01m4es5w48zq3r8m3wmve914bm
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift, Sources/acp-agent/ConfigCommand.swift, Tests/FoundationModelsACPAgentTests/ConfigPathTests.swift, Tests/FoundationModelsACPAgentTests/BuiltinConfigurationFileTests.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/CLIProcessTests.swift. `swift test`: 818 tests in 88 suites passed (1 intentional known issue in HarnessSmokeTests). `swift test --package-path IntegrationTests --filter CLIProcessTests`: 7/7 passed. The one build warning ("missing creator for mutated node" for the mlx-swift_Cmlx bundle) comes from the build system for a dependency. It was there before this change.
+    - next: /review
+  timestamp: 2026-10-08T22:12:11.528518+00:00
+- actor: claude-code
+  id: 01m4ese69h4tn815tgag7s4vtr
+  text: |-
+    ### test — green
+    - evidence: swift test (root) — 818 tests in 88 suites passed, 0 failed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests); swift test --package-path IntegrationTests --no-parallel — 30 tests in 11 suites passed, 0 failed. Zero skipped. The only warning is the mlx-swift_Cmlx.bundle build-system line from a dependency. No file was changed.
+    - next: review
+  timestamp: 2026-10-08T22:16:44.081598+00:00
 depends_on:
 - 01M4E2BEVVM2SHK85XG9DGE8CC
-position_column: todo
-position_ordinal: '8380'
+position_column: doing
+position_ordinal: '80'
 title: 'config path: show the builtin configuration file in the builtin row'
 ---
 ## Problem

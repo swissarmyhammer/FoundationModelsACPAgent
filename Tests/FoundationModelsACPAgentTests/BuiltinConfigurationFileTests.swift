@@ -97,6 +97,14 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: url.path))
     }
 
+    /// The public accessor of the loader gives the same file that layer 1
+    /// reads, thus a report of the location names the file that loads.
+    @Test func theLoaderGivesTheLocationOfTheFileThatLoads() throws {
+        let url = try ConfigurationLoader.builtinConfigurationFileURL()
+
+        #expect(url == (try BuiltinConfigurationFile.url()))
+    }
+
     /// A file that cannot be read gives `unreadable` with the reason of the
     /// file system, not only the path.
     @Test func aFileThatCannotBeReadKeepsTheFileSystemReason() throws {

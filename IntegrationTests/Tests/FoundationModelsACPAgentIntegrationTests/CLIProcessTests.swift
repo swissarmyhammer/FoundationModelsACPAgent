@@ -62,6 +62,9 @@ struct CLIProcessTests {
     /// The number of rows `config path` writes: builtin, user and project.
     private static let layerRowCount = 3
 
+    /// The mark `config path` writes after a layer path that is on disk.
+    private static let existsMark = "exists"
+
     // MARK: - The subprocess driver
 
     /// Runs the built `acp-agent` with `arguments` in fresh directories.
@@ -157,14 +160,19 @@ struct CLIProcessTests {
     }
 
     /// `config path` writes the three layer rows to stdout, nothing to
-    /// stderr, and exits 0.
+    /// stderr, and exits 0. The builtin row names the builtin
+    /// configuration file that the built binary finds in its resource
+    /// bundle, and marks it `exists`.
     @Test func configPathWritesTheLayerRowsToStdoutAndExitsZero() async throws {
         let run = try await Self.runAgentCLI(arguments: ["config", "path"])
 
         #expect(run.exitCode == 0, "stderr: \(run.standardError)")
         let rows = run.standardOutput.split(separator: "\n")
         #expect(rows.count == Self.layerRowCount, "stdout: \(run.standardOutput)")
-        #expect(rows.first?.hasPrefix("builtin") == true, "stdout: \(run.standardOutput)")
+        let builtinRow = try #require(rows.first, "stdout: \(run.standardOutput)")
+        #expect(builtinRow.hasPrefix("builtin"), "stdout: \(run.standardOutput)")
+        #expect(builtinRow.contains("/" + BuiltinConfigurationFile.fileName + " "), "stdout: \(run.standardOutput)")
+        #expect(builtinRow.hasSuffix(Self.existsMark), "stdout: \(run.standardOutput)")
         #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
     }
 }

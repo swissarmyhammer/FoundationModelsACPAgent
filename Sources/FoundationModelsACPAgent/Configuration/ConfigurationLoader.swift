@@ -200,6 +200,17 @@ public struct ConfigurationLoader: Sendable {
         resolvingDotfolderDefaults(of: AgentConfiguration())
     }
 
+    /// The location of the builtin configuration file
+    /// `builtin.config.yaml`, layer 1 of the stack, in the resource bundle
+    /// of this library. `config path` shows it in the builtin row.
+    ///
+    /// - Returns: The file URL.
+    /// - Throws: ``BuiltinConfigurationFileError/missing(fileName:)`` when
+    ///   the bundle has no such file.
+    public static func builtinConfigurationFileURL() throws -> URL {
+        try BuiltinConfigurationFile.url()
+    }
+
     /// Loads, merges, checks and decodes `config.yaml`.
     ///
     /// The merged dotfolder tree goes over layer 1, the builtin file. With

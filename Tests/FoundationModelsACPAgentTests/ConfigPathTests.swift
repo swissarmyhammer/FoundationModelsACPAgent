@@ -12,10 +12,10 @@ import Testing
 struct ConfigPathTests {
     // MARK: - Constants
 
-    /// The mark of a layer directory that is on disk.
+    /// The mark of a layer path that is on disk.
     private static let existsMark = "exists"
 
-    /// The mark of a layer directory that is not on disk.
+    /// The mark of a layer path that is not on disk.
     private static let missingMark = "missing"
 
     /// The start of every ANSI escape sequence.
@@ -56,8 +56,8 @@ struct ConfigPathTests {
     // MARK: - The report
 
     /// With only the project layer on disk, the three rows name their
-    /// layer and path, the project row is marked `exists`, the user row
-    /// `missing`, and the builtin row says it is in code.
+    /// layer and path, the project row is marked `exists`, and the user
+    /// row `missing`.
     @Test func theThreeLayersCarryTheRightMarks() throws {
         let fixture = ConfigCommandFixture(label: "ConfigPathTests-marks")
         try FileManager.default.createDirectory(
@@ -68,8 +68,6 @@ struct ConfigPathTests {
         let lines = Self.lines(of: report)
         #expect(lines.count == Self.layerRowCount)
         #expect(lines[Self.builtinRow].hasPrefix("builtin"))
-        #expect(!lines[Self.builtinRow].contains(Self.existsMark))
-        #expect(!lines[Self.builtinRow].contains(Self.missingMark))
         #expect(lines[Self.userRow].hasPrefix("user"))
         #expect(lines[Self.userRow].contains(fixture.userDirectory.path))
         #expect(lines[Self.userRow].hasSuffix(Self.missingMark))
@@ -77,6 +75,21 @@ struct ConfigPathTests {
         #expect(lines[Self.projectRow].contains(fixture.projectDirectory.path))
         #expect(lines[Self.projectRow].hasSuffix(Self.existsMark))
         #expect(report.standardErrorLines.isEmpty)
+    }
+
+    /// The builtin row names the builtin configuration file in the
+    /// resource bundle of the library, and marks it `exists`, because the
+    /// file is on disk.
+    @Test func theBuiltinRowNamesTheBuiltinFileThatExists() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigPathTests-builtin")
+        let builtinFile = try BuiltinConfigurationFile.url()
+
+        let report = try Self.report(in: fixture)
+
+        let builtinLine = Self.lines(of: report)[Self.builtinRow]
+        #expect(builtinLine.contains(builtinFile.path + " "))
+        #expect(builtinLine.hasSuffix(Self.existsMark))
+        #expect(FileManager.default.fileExists(atPath: builtinFile.path))
     }
 
     /// A user layer on disk is marked `exists`, and a project layer that

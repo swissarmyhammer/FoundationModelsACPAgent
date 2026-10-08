@@ -269,41 +269,25 @@ extension AcpAgentCommand {
                 commandName: "path",
                 abstract: "Print each layer path, and say which ones exist.")
 
-            /// Where a layer lives.
-            private enum Location {
-                /// In code: the builtin defaults have no file.
-                case code
-
-                /// A directory on disk, which exists or is missing.
-                case directory(path: String, exists: Bool)
-
-                /// The directory path, or `nil` for the layer in code.
-                var directoryPath: String? {
-                    switch self {
-                    case .code:
-                        return nil
-                    case .directory(let path, _):
-                        return path
-                    }
-                }
-            }
-
-            /// One row of the report: the layer, and where it lives.
+            /// One row of the report: the layer, its path, and whether that
+            /// path is on disk.
             private struct Row {
                 /// The layer name, the first column.
                 let layer: ConfigurationLayerName
 
-                /// Where the layer lives, the other columns.
-                let location: Location
+                /// The path of the layer, the second column: the builtin
+                /// configuration file for the builtin layer, and the layer
+                /// directory for each other layer.
+                let path: String
+
+                /// Whether the path is on disk, the mark column.
+                let exists: Bool
             }
 
-            /// The path column of the builtin row.
-            private static let codeLocation = "(in code, no file)"
-
-            /// The mark of a layer directory that is on disk.
+            /// The mark of a layer path that is on disk.
             private static let existsMark = "exists"
 
-            /// The mark of a layer directory that is not on disk.
+            /// The mark of a layer path that is not on disk.
             private static let missingMark = "missing"
 
             /// The suffix a layer path carries, because a layer is a
@@ -327,13 +311,29 @@ extension AcpAgentCommand {
             ///   `XDG_CONFIG_HOME` from.
             /// - Returns: The report, with nothing for stderr.
             /// - Throws: `DotfolderNameError` when the dotfolder name is
-            ///   refused.
+            ///   refused; `BuiltinConfigurationFileError` when the resource
+            ///   bundle has no builtin configuration file, which also fails
+            ///   each configuration load.
             func report(environment: [String: String]) throws -> CommandReport {
                 let stack = try Config.makeLoader(
                     for: workingDirectoryOptions, environment: environment
                 ).stack
-                let rows = [Row(layer: .builtin, location: .code)] + stack.layers.map(Self.row(for:))
+                let rows = [try Self.builtinRow()] + stack.layers.map(Self.row(for:))
                 return CommandReport(standardOutput: Self.table(of: rows), standardErrorLines: [])
+            }
+
+            /// The builtin row: the path of the builtin configuration file
+            /// in the resource bundle of the library, and whether that file
+            /// is on disk.
+            ///
+            /// - Returns: The row.
+            /// - Throws: `BuiltinConfigurationFileError` when the resource
+            ///   bundle has no builtin configuration file.
+            private static func builtinRow() throws -> Row {
+                let file = try ConfigurationLoader.builtinConfigurationFileURL()
+                return Row(
+                    layer: .builtin, path: file.path,
+                    exists: FileManager.default.fileExists(atPath: file.path))
             }
 
             /// The row of one stack layer: its name, its root as a
@@ -341,8 +341,7 @@ extension AcpAgentCommand {
             private static func row(for layer: DotfolderStack.Layer) -> Row {
                 Row(
                     layer: ConfigurationLayerName(layer.source),
-                    location: .directory(
-                        path: layer.root.path + directorySuffix, exists: isDirectory(layer.root)))
+                    path: layer.root.path + directorySuffix, exists: isDirectory(layer.root))
             }
 
             /// Whether `url` is a directory on disk.
@@ -353,11 +352,10 @@ extension AcpAgentCommand {
             }
 
             /// The rows as aligned columns, one line each, newline-terminated.
-            /// The path column is as wide as the widest directory path; the
-            /// builtin row's text sits in that column and has no mark.
+            /// The path column is as wide as the widest path.
             private static func table(of rows: [Row]) -> String {
                 let layerWidth = columnWidth(of: rows.map(\.layer.rawValue))
-                let pathWidth = columnWidth(of: rows.compactMap(\.location.directoryPath))
+                let pathWidth = columnWidth(of: rows.map(\.path))
                 return rows.map { line(of: $0, layerWidth: layerWidth, pathWidth: pathWidth) }
                     .joined(separator: "\n") + "\n"
             }
@@ -368,16 +366,10 @@ extension AcpAgentCommand {
             }
 
             /// One line: the layer name padded to `layerWidth`, then the
-            /// location text, then, for a directory, the path padded to
-            /// `pathWidth` and its mark.
+            /// path padded to `pathWidth`, then its mark.
             private static func line(of row: Row, layerWidth: Int, pathWidth: Int) -> String {
-                let name = padded(row.layer.rawValue, to: layerWidth)
-                switch row.location {
-                case .code:
-                    return name + codeLocation
-                case .directory(let path, let exists):
-                    return name + padded(path, to: pathWidth) + (exists ? existsMark : missingMark)
-                }
+                padded(row.layer.rawValue, to: layerWidth) + padded(row.path, to: pathWidth)
+                    + (row.exists ? existsMark : missingMark)
             }
 
             /// `text` followed by spaces up to `width`.
