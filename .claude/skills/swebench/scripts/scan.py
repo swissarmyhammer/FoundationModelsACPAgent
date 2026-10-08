@@ -1021,6 +1021,10 @@ def scan_transcripts(dirs, gap_s, R):
                 c = None
             detail = text
             outcome = None
+            # The result that the model got. It is the detail, but for a pending
+            # snippet with no final result it is the notice, which add_result
+            # does not count.
+            seen = None
             if isinstance(c, dict) and "completionToken" in c:
                 outcome = c.get("outcome")
                 detail = c.get("detail")
@@ -1029,6 +1033,7 @@ def scan_transcripts(dirs, gap_s, R):
                     if detail is None:
                         T["pending"] += 1
                         detail = ""
+                        seen = text
             if not isinstance(detail, str):
                 detail = json.dumps(detail)
             code = args.get("code") or ""
@@ -1050,7 +1055,7 @@ def scan_transcripts(dirs, gap_s, R):
             if "files.grep" in verbs and ".acp-agent/transcripts" in detail.replace("\\/", "/"):
                 T["self_grep"].append(where)
             cls = runcode_error(detail) or ("outcome failed" if outcome == "failed" else None)
-            add_result(T["results"][inst], (tool, code), detail)
+            add_result(T["results"][inst], (tool, code), detail if seen is None else seen)
             track_tests(T["timeline"][inst], T["test_ids"][inst], r.get("seq"), code, detail,
                         bool(EDIT_VERBS.intersection(verbs)) and not cls)
             if cls:
@@ -1211,7 +1216,8 @@ def scan_score(preds, R):
         note(f"no {preds}.score.*.json yet; score after the run ends")
         return
     try:
-        d = json.load(open(reps[-1]))
+        with open(reps[-1]) as f:
+            d = json.load(f)
     except (OSError, ValueError) as e:
         note(f"cannot read {reps[-1]}: {e}")
         return

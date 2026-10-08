@@ -46,6 +46,63 @@ comments:
     - evidence: python3 -W error -m unittest discover: swebench/scripts 32 passed; swebench-score/scripts 34 passed; bench 254 run, 253 passed, 0 failed, 1 old skip ("swebench is not installed"). scan.py --name code-context-1008 --timeout 5400 exit 0, no traceback from scan.py (the 2 "Traceback" strings are quoted agent tool results in the scanned data).
     - next: review
   timestamp: 2026-10-08T21:25:17.767223+00:00
+- actor: claude-code
+  id: 01m4epgg4p2eexe2ewbz62pw5j
+  text: |-
+    ### commit — changed
+    - evidence: 4db60f5 feat(swebench): report repeated tool results and the test result before and after the last edit (^8q8m1r4)
+    - next: review
+  timestamp: 2026-10-08T21:25:33.974501+00:00
+- actor: claude-code
+  id: 01m4eq3e1nd93ntjca10bq5z5z
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (4db60f5): 3 findings (3 confirmed, 1 refuted) — .claude/skills/swebench/scripts/scan.py:1053, .claude/skills/swebench/scripts/test_scan.py:534, .claude/skills/swebench/scripts/test_scan.py:540. SKILL.md had no validator.
+    - next: Fix the 3 findings in the dated Review Findings section. Then run the tests and review again.
+  timestamp: 2026-10-08T21:35:54.421508+00:00
+- actor: claude-code
+  id: 01m4eq3t8b2tjdwnmbgsve8msd
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files
+    - test: green — swebench 32, swebench-score 34, bench 253 passed with 1 skip; scan of code-context-1008 exit 0
+    - commit: 4db60f5
+    - review: findings — .claude/skills/swebench/scripts/scan.py:1053, .claude/skills/swebench/scripts/test_scan.py:534, .claude/skills/swebench/scripts/test_scan.py:540
+  timestamp: 2026-10-08T21:36:06.923796+00:00
+- actor: claude-code
+  id: 01m4eqfd87h72xb0ay68b35cgz
+  text: |-
+    Review findings of 2026-10-08 16:25: fix landed (not committed).
+
+    1. scan.py `completeness/invariant-propagation`: RED first. The new test `test_snippet_notices_with_no_final_result_are_not_repeated_results` (18 runCode results with outer `pending: true` and no operation row) failed with "17 tool results repeat an earlier result". Fix: when the outer runCode result is pending and the transcript has no final result, scan_transcripts now gives add_result the raw notice text (new local `seen`). is_pending excludes it, as at the non-runCode site. Then GREEN. Why not "skip add_result" or "always pass the raw text": the raw text of a RESOLVED pending result is also a pending notice, so is_pending would drop real results. Only the unresolved branch passes the notice. add_result has only these two call sites.
+    2. + 3. test_scan.py `reuse/reuse`: `scan_rows(self, inst, rows)` and `problems_with(self, *texts)` are now on ScanTestCase. Both class copies of scan_rows, and loop_problems and same_problems, are removed. Each other filter of `self.R["problems"]` / `problem_texts()` by a substring in the file now calls problems_with too (flood tests, limit tests, the different-runs test, the upstream test). The flood tests also call scan_rows now. The repeated `quiet(scan.scan_transcripts, [...], 60, self.R)` call is one helper, `scan_kept_transcripts`, and the 60 is the named constant STALL_GAP. The substrings are the class constants REPEAT_TEXT and SAME_TEXT.
+
+    Scan of --name code-context-1008 after the fix: the LOOP counts did not change. 14667 = 10, 13964 = 14, 14155 = 121, 13925 = 11, the same as before. The scan prints no "runCode results with no final result" line for this run, so T["pending"] is 0: this run has no unresolved pending runCode result, and the fix cannot change its counts.
+
+    Discovery: `python3 -W error scan.py --name code-context-1008` writes a ResourceWarning from `json.load(open(...))` in scan_score. That code is not in this change. New task ^5p276z records it.
+
+    Note: to compare the ruff output before and after, I ran `git stash` and then `git stash pop` one time. The stash held all tracked changes, together with the uncommitted changes to bench/swebench_prompt.py and bench/test_swebench_prompt.py. The pop put them back with no change (`git stash list` is empty, and `git diff --stat` shows the same files). I did not edit those two files.
+  timestamp: 2026-10-08T21:42:26.823731+00:00
+- actor: claude-code
+  id: 01m4eqfqa5crc7q04gebbj52ht
+  text: 'Correction to the comment above: the new task about the ResourceWarning in scan_score is ^w5p276z (01M4EQEP3PSED3QHAFPW5P276Z), not ^5p276z.'
+  timestamp: 2026-10-08T21:42:37.125735+00:00
+- actor: claude-code
+  id: 01m4eqftnkmnjs7m5x8jkrdcd5
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py. 3 of 3 review findings of 2026-10-08 16:25 are now `- [x]`. RED: the new test failed with "17 tool results repeat an earlier result"; GREEN after the fix. `python3 -W error -m unittest discover`: swebench/scripts 33 OK; swebench-score/scripts 34 OK; bench 254 run, OK, 1 skip that was there before (swebench is not installed). ruff (PLR0915 at 180, PLR2004, D1): the same 16 findings before and after the change, none on a changed line. Scan of code-context-1008: exit 0, LOOP counts did not change (14667=10, 13964=14, 14155=121, 13925=11). bench/swebench_prompt.py and bench/test_swebench_prompt.py not edited. Not committed. New task ^w5p276z.
+    - next: /review
+  timestamp: 2026-10-08T21:42:40.563875+00:00
+- actor: claude-code
+  id: 01m4eqj2hhp401h0gm8zezap3f
+  text: |-
+    ### test — green
+    - evidence: python3 -W error -m unittest discover in .claude/skills/swebench/scripts (34 tests, OK), .claude/skills/swebench-score/scripts (34 tests, OK), bench (254 tests, OK, skipped=1: the old skip "swebench is not installed"). scan.py --name code-context-1008: exit 0, no traceback and no ResourceWarning from scan.py.
+    - fix: the first run found a ResourceWarning in scan.py, function scan_score: json.load(open(...)) did not close the score report. It now uses a with block. New test TheScoreReportIsClosedAfterTheRead in test_scan.py holds it.
+    - files: .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py. bench/swebench_prompt.py and bench/test_swebench_prompt.py were not edited. Nothing committed.
+    - next: review
+  timestamp: 2026-10-08T21:43:54.161082+00:00
 depends_on:
 - 01M4E2AGVS1PG8A0NN0EXKKYYR
 position_column: doing
@@ -78,3 +135,17 @@ In `test_scan.py`, with small transcript fixtures:
 The session foundationmodelsacpagent-19 found these gaps on 2026-10-08.
 
 #bench
+
+## Review Findings (2026-10-08 16:25)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `.claude/skills/swebench/SKILL.md` — no validator matches this file
+
+- [x] `.claude/skills/swebench/scripts/scan.py:1053` `completeness/invariant-propagation` — The pending-notice exclusion in add_result is applied at the non-runCode site but bypassed at the runCode site. When a runCode result is pending and no operation output is known for its completion token, lines 1028-1031 set detail to "" before this call. is_pending("") is False, so each such unresolved notice is counted as a repeat of the same empty result. Several unresolved background commands in one instance then inflate the repeat count and can raise a false LOOP problem. A notice is not a result, so it must be excluded here too. Skip the add_result call when the outer result was pending and unresolved (the same branch that sets detail = ""), or pass the raw result text to add_result and let is_pending exclude it. Add a test where the outer result has pending: true and no matching operation row, with 18 such calls, and assert no loop problem.
+- [x] `.claude/skills/swebench/scripts/test_scan.py:534` `reuse/reuse` — The `scan_rows` helper in `TheTestResultBeforeAndAfterTheLastEdit` repeats the body of `scan_rows` in `RepeatedResultsAreALoop` (line 462). Only the transcript instance (FIRST vs SECOND) and the docstring differ. Two copies of the scan-and-report step can drift apart, and a fix to one would not reach the other. Move `scan_rows` to `ScanTestCase` (or a shared mixin) and take the instance as a parameter, for example `scan_rows(self, inst, rows)`. Both classes then call the one helper with SECOND or FIRST.
+- [x] `.claude/skills/swebench/scripts/test_scan.py:540` `reuse/reuse` — `same_problems` repeats the filter pattern of `loop_problems` (line 468). Each one selects `self.R["problems"]` rows by a substring of the message. The two helpers differ only in the substring, so the selection logic exists twice. Add one helper on `ScanTestCase`, for example `problems_with(self, text)`, that returns the problems whose message contains `text`. Both classes then call it with their own substring.

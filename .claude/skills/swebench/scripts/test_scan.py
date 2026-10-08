@@ -17,12 +17,14 @@ temporary directory. The tests need the standard library only:
 """
 import contextlib
 import datetime as dt
+import gc
 import importlib.util
 import io
 import json
 import os
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -47,6 +49,8 @@ WRITE_DELAY = dt.timedelta(seconds=60)
 # The count of single-byte writes of the command of task ^p8c7snm: one write
 # for each test, as the Django test runner writes one "." for each test.
 ONE_BYTE_WRITES = 10000
+# The scan reports a gap of this many seconds between two transcript lines as a stall.
+STALL_GAP = 60
 
 
 def clock(t):
@@ -157,6 +161,17 @@ def pending_notice(command_id):
                                   "next": "The command is running in the background, and this is not its result."}))
 
 
+def pending_snippet(seq, code):
+    """Give the rows of one runCode call with the code, whose snippet still runs in the background.
+
+    The result is the notice of the snippet, not a snippet result. The
+    transcript has no final operation event for its completion token.
+    """
+    result = {"pending": True, "completionToken": ulid(seq),
+              "next": "The snippet is still running in the background, and this is not its result."}
+    return model_call(seq, "runCode", {"code": code}, json.dumps(result))
+
+
 def shell_lines(command_id, lines):
     """Give the detail of a getLines call that read the output lines of the command."""
     numbered = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
@@ -211,14 +226,31 @@ class ScanTestCase(unittest.TestCase):
         """
         steps = (lambda: scan.scan_log(str(self.log), LIMIT, self.R),
                  lambda: scan.scan_preds(str(self.preds), None, self.R),
-                 lambda: scan.scan_transcripts([str(self.transcripts)], 60, self.R),
+                 self.scan_kept_transcripts,
                  lambda: scan.check_same_run(self.R, str(self.preds)),
                  lambda: scan.progress(self.R, LIMIT))
         return "".join(quiet(step) for step in steps)
 
+    def scan_kept_transcripts(self):
+        """Run the transcript step of the scan on the kept transcripts dir."""
+        scan.scan_transcripts([str(self.transcripts)], STALL_GAP, self.R)
+
+    def scan_rows(self, inst, rows):
+        """Scan one transcript of inst with the rows.
+
+        Give the output of the loop report and of the problems.
+        """
+        write_transcript(self.transcripts, inst, rows)
+        quiet(self.scan_kept_transcripts)
+        return quiet(scan.report_loops, self.R) + quiet(scan.problems, self.R)
+
     def problem_texts(self):
         """Give the 'what' text of each problem that the scan found."""
         return [what for _, what, _ in self.R["problems"]]
+
+    def problems_with(self, *texts):
+        """Give the problems whose 'what' text contains each of texts."""
+        return [p for p in self.R["problems"] if all(text in p[1] for text in texts)]
 
 
 class RunningNoticesCountOperations(ScanTestCase):
@@ -230,7 +262,7 @@ class RunningNoticesCountOperations(ScanTestCase):
         write_transcript(self.transcripts, FIRST,
                          notices("01OPA", 3, OLD_START) + notices("01OPB", 1, OLD_START, first_seq=10))
         write_transcript(self.transcripts, SECOND, notices("01OPC", 2, OLD_START))
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
+        quiet(self.scan_kept_transcripts)
         out = quiet(scan.report_tools, self.R)
         self.assertIn("'running' notices (not counted above): 6 rows from 3 operations", out)
         self.assertIn(f"{FIRST}=2/4", out)
@@ -241,27 +273,23 @@ class RunningNoticesCountOperations(ScanTestCase):
         not add to the rows or to the operations."""
         write_transcript(self.transcripts, FIRST,
                          notices("01OPA", 2, OLD_START) + [completed_row("01OPA", 5, OLD_START)])
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
+        quiet(self.scan_kept_transcripts)
         out = quiet(scan.report_tools, self.R)
         self.assertIn("'running' notices (not counted above): 2 rows from 1 operations", out)
 
     def test_an_operation_with_more_rows_than_the_flood_limit_is_a_problem(self):
         """django__django-14667 wrote 13663 rows for one execute operation.
         The scan must name the instance and the operation."""
-        write_transcript(self.transcripts, SECOND, notices("01FLOOD", scan.RUNNING_FLOOD + 1, OLD_START))
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
-        quiet(scan.problems, self.R)
-        hits = [p for p in self.R["problems"] if SECOND in p[1]]
+        self.scan_rows(SECOND, notices("01FLOOD", scan.RUNNING_FLOOD + 1, OLD_START))
+        hits = self.problems_with(SECOND)
         self.assertEqual(len(hits), 1, self.problem_texts())
         self.assertIn(f"{scan.RUNNING_FLOOD + 1} 'running' rows", hits[0][1])
         self.assertIn("01FLOOD", hits[0][2])
 
     def test_an_operation_at_the_flood_limit_is_not_a_problem(self):
         """The limit itself is normal output. Only more rows than the limit is a flood."""
-        write_transcript(self.transcripts, SECOND, notices("01EDGE", scan.RUNNING_FLOOD, OLD_START))
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
-        quiet(scan.problems, self.R)
-        self.assertEqual([p for p in self.problem_texts() if "'running' rows" in p], [])
+        self.scan_rows(SECOND, notices("01EDGE", scan.RUNNING_FLOOD, OLD_START))
+        self.assertEqual(self.problems_with("'running' rows"), [])
 
     def test_a_merged_row_of_many_events_is_one_row_and_no_flood(self):
         """Task ^p8c7snm: since Router ^zze1067, the journal writes the first
@@ -272,11 +300,9 @@ class RunningNoticesCountOperations(ScanTestCase):
         rows = [running_row("01MERGED", 1, OLD_START),
                 running_row("01MERGED", 2, OLD_START, events=ONE_BYTE_WRITES),
                 completed_row("01MERGED", 3, OLD_START)]
-        write_transcript(self.transcripts, SECOND, rows)
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
-        quiet(scan.problems, self.R)
+        self.scan_rows(SECOND, rows)
         self.assertEqual(self.R["tools"]["running"][SECOND]["01MERGED"], 2)
-        self.assertEqual([p for p in self.problem_texts() if "'running' rows" in p], [])
+        self.assertEqual(self.problems_with("'running' rows"), [])
 
 
 class LogTimesTakeTheDayOfTheLog(ScanTestCase):
@@ -306,7 +332,7 @@ class AStoppedRunIsNotRunning(ScanTestCase):
         out = self.scan_run()
         self.assertIn("stopped (no end line)", out)
         self.assertNotIn("RUNNING", out)
-        self.assertEqual([p for p in self.problem_texts() if "limit" in p], [])
+        self.assertEqual(self.problems_with("limit"), [])
 
     def test_a_live_log_shows_the_instance_near_its_limit(self):
         """A log that changed in the limit of its open instance is live. The
@@ -318,7 +344,7 @@ class AStoppedRunIsNotRunning(ScanTestCase):
         out = self.scan_run()
         self.assertIn("RUNNING", out)
         self.assertIn("NEAR THE LIMIT", out)
-        self.assertTrue(any(FIRST in p and "limit" in p for p in self.problem_texts()), self.problem_texts())
+        self.assertTrue(self.problems_with(FIRST, "limit"), self.problem_texts())
 
     def test_a_process_that_writes_the_log_makes_an_old_log_live(self):
         """The harness can stay quiet for longer than the limit allows. A
@@ -357,7 +383,7 @@ class InputsOfDifferentRuns(ScanTestCase):
         write_transcript(self.transcripts, FIRST, notices("01OPA", 1, OLD_START + OTHER_RUN_DELAY))
         out = self.scan_run()
         self.assertTrue(self.warnings(out), out)
-        self.assertTrue(any("different runs" in p for p in self.problem_texts()))
+        self.assertTrue(self.problems_with("different runs"))
 
     def test_a_transcript_that_starts_before_the_log_line_gives_a_warning(self):
         """A transcript of the same run cannot start before the log starts its instance."""
@@ -401,7 +427,7 @@ class AnUpstreamFixFromTheWebIsInformation(ScanTestCase):
     def test_an_upstream_fix_is_not_a_ranked_problem(self):
         """The upstream fix shows how the agent solved an instance. It is not a problem."""
         quiet(scan.problems, self.R)
-        self.assertEqual([p for p in self.problem_texts() if "upstream" in p], [])
+        self.assertEqual(self.problems_with("upstream"), [])
 
     def test_the_tools_part_shows_the_upstream_fix(self):
         """The information stays in the TOOLS part, so a person can see it."""
@@ -459,15 +485,8 @@ class RepeatedResultsAreALoop(ScanTestCase):
     LIST_SKILL = {"op": "list skill", "filter": "detected"}
     SKILL_TEXT = "- detected-projects: Discover project types, build commands, test commands."
 
-    def scan_rows(self, rows):
-        """Scan one transcript of SECOND with the rows. Give the output of the report and of the problems."""
-        write_transcript(self.transcripts, SECOND, rows)
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
-        return quiet(scan.report_loops, self.R) + quiet(scan.problems, self.R)
-
-    def loop_problems(self):
-        """Give the problems about repeated results."""
-        return [p for p in self.R["problems"] if "repeat" in p[1]]
+    # The text of each problem about repeated results.
+    REPEAT_TEXT = "repeat an earlier result"
 
     def skill_calls(self, count):
         """Give count `list skill` calls with the same result."""
@@ -476,8 +495,8 @@ class RepeatedResultsAreALoop(ScanTestCase):
     def test_eighteen_calls_with_the_same_result_are_a_loop(self):
         """18 calls with the same result give 17 repeats. The scan names the
         instance and the count, and the tool and the arguments of the group."""
-        out = self.scan_rows(self.skill_calls(18))
-        hits = self.loop_problems()
+        out = self.scan_rows(SECOND, self.skill_calls(18))
+        hits = self.problems_with(self.REPEAT_TEXT)
         self.assertEqual(len(hits), 1, self.problem_texts())
         self.assertIn(SECOND, hits[0][1])
         self.assertIn("17 tool results repeat an earlier result", hits[0][1])
@@ -487,8 +506,8 @@ class RepeatedResultsAreALoop(ScanTestCase):
     def test_repeats_at_the_limit_are_not_a_loop(self):
         """A model can read the same thing again some times for a good reason.
         Only more repeats than REPEAT_LIMIT are a loop."""
-        self.scan_rows(self.skill_calls(scan.REPEAT_LIMIT + 1))
-        self.assertEqual(self.loop_problems(), [])
+        self.scan_rows(SECOND, self.skill_calls(scan.REPEAT_LIMIT + 1))
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
 
     def test_results_that_differ_only_in_a_ulid_are_the_same(self):
         """The getLines polling loop of django__django-13964: each poll of a
@@ -498,8 +517,8 @@ class RepeatedResultsAreALoop(ScanTestCase):
         for i in range(18):
             rows += snippet(10 * i, f'tools.shell.getLines({{ commandID: "{ulid(i)}" }});',
                             json.dumps({"commandID": ulid(i), "first": 0, "last": 0, "lines": [], "status": "running"}))
-        self.scan_rows(rows)
-        self.assertEqual(len(self.loop_problems()), 1, self.problem_texts())
+        self.scan_rows(SECOND, rows)
+        self.assertEqual(len(self.problems_with(self.REPEAT_TEXT)), 1, self.problem_texts())
 
     def test_a_call_with_many_lines_gives_one_report_line(self):
         """The code of a runCode call has newlines. On the run code-context-1008
@@ -509,7 +528,7 @@ class RepeatedResultsAreALoop(ScanTestCase):
         rows = []
         for i in range(18):
             rows += snippet(10 * i, code, json.dumps({"lines": [], "status": "running"}))
-        out = self.scan_rows(rows)
+        out = self.scan_rows(SECOND, rows)
         self.assertIn(f'{SECOND}: 17 repeated results; largest group 18 x runCode '
                       f'const r = await tools.shell.getLines({{ commandID: "X" }}); return r;  LOOP', out)
 
@@ -519,8 +538,19 @@ class RepeatedResultsAreALoop(ScanTestCase):
         rows = []
         for i in range(18):
             rows += snippet(10 * i, f'tools.shell.execute({{ command: "ls {i}" }});', pending_notice(ulid(i)))
-        self.scan_rows(rows)
-        self.assertEqual(self.loop_problems(), [])
+        self.scan_rows(SECOND, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
+
+    def test_snippet_notices_with_no_final_result_are_not_repeated_results(self):
+        """A runCode result can be the notice that the snippet still runs in
+        the background. When the transcript has no final result for it, the
+        model got no output. A notice is not a result, so 18 such notices are
+        not a loop (review finding of 2026-10-08 on task ^8q8m1r4)."""
+        rows = []
+        for i in range(18):
+            rows += pending_snippet(10 * i, f'tools.shell.execute({{ command: "ls {i}" }});')
+        self.scan_rows(SECOND, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
 
 
 class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
@@ -530,33 +560,27 @@ class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
     the edit did not change that."""
 
     NOT_LOADED = ["Ran 1 test in 0.000s", "", "FAILED (errors=1)"]
-
-    def scan_rows(self, rows):
-        """Scan one transcript of FIRST with the rows. Give the output of the report and of the problems."""
-        write_transcript(self.transcripts, FIRST, rows)
-        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
-        return quiet(scan.report_loops, self.R) + quiet(scan.problems, self.R)
-
-    def same_problems(self):
-        """Give the problems about a test result that the edit did not change."""
-        return [p for p in self.R["problems"] if "same before and after" in p[1]]
+    # The text of each problem about a test result that the edit did not change.
+    SAME_TEXT = "same before and after"
 
     def test_the_same_summary_before_and_after_the_edit_marks_the_instance(self):
         """The edit did not change what the test run says, so the instance is marked."""
         after = ["Ran 1 test in 0.001s", "", "FAILED (errors=1)"]
-        out = self.scan_rows(runtests_rows(10, ulid(1), self.NOT_LOADED) + edit(20) + runtests_rows(30, ulid(2), after))
+        out = self.scan_rows(FIRST, runtests_rows(10, ulid(1), self.NOT_LOADED) + edit(20)
+                             + runtests_rows(30, ulid(2), after))
         self.assertIn(f"{FIRST}: before the last edit: Ran 1 test in 0.000s FAILED (errors=1); "
                       f"after it: Ran 1 test in 0.001s FAILED (errors=1)  SAME", out)
-        self.assertEqual(len(self.same_problems()), 1, self.problem_texts())
+        self.assertEqual(len(self.problems_with(self.SAME_TEXT)), 1, self.problem_texts())
 
     def test_a_different_summary_after_the_edit_does_not_mark_the_instance(self):
         """The edit changed the result of the test run, so there is nothing to mark."""
         after = ["Ran 9 tests in 0.017s", "", "OK"]
-        out = self.scan_rows(runtests_rows(10, ulid(1), self.NOT_LOADED) + edit(20) + runtests_rows(30, ulid(2), after))
+        out = self.scan_rows(FIRST, runtests_rows(10, ulid(1), self.NOT_LOADED) + edit(20)
+                             + runtests_rows(30, ulid(2), after))
         self.assertIn(f"{FIRST}: before the last edit: Ran 1 test in 0.000s FAILED (errors=1); "
                       f"after it: Ran 9 tests in 0.017s OK", out)
         self.assertNotIn("SAME", out)
-        self.assertEqual(self.same_problems(), [])
+        self.assertEqual(self.problems_with(self.SAME_TEXT), [])
 
     def test_a_read_of_runtests_py_is_not_a_test_run(self):
         """On the run code-context-1008 the model read tests/runtests.py with
@@ -565,10 +589,27 @@ class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
         holds a summary line."""
         grep = snippet(10, 'const r = await tools.files.grep({ pattern: "Ran", path: "tests/runtests.py" });',
                        shell_lines(ulid(1), self.NOT_LOADED))
-        out = self.scan_rows(grep + edit(20) + runtests_rows(30, ulid(2), self.NOT_LOADED))
+        out = self.scan_rows(FIRST, grep + edit(20) + runtests_rows(30, ulid(2), self.NOT_LOADED))
         self.assertIn(f"{FIRST}: before the last edit: no test run; "
                       f"after it: Ran 1 test in 0.000s FAILED (errors=1)", out)
-        self.assertEqual(self.same_problems(), [])
+        self.assertEqual(self.problems_with(self.SAME_TEXT), [])
+
+
+class TheScoreReportIsClosedAfterTheRead(ScanTestCase):
+    """On the run code-context-1008, `python3 -W error scan.py` wrote a
+    ResourceWarning with a traceback: the scan did not close the score report."""
+
+    def test_the_read_of_the_score_report_leaves_no_open_file(self):
+        """Read a score report. No ResourceWarning is raised, also after a
+        garbage collection."""
+        report = Path(str(self.preds) + ".score.run1.json")
+        report.write_text(json.dumps({"submitted": 2, "evaluated": 2, "resolved": 1, "unresolved": 1}))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = quiet(scan.scan_score, str(self.preds), self.R)
+            gc.collect()
+        self.assertIn("score=1/2=50.0%", out)
+        self.assertEqual([w for w in caught if issubclass(w.category, ResourceWarning)], [])
 
 
 if __name__ == "__main__":
