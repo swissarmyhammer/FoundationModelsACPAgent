@@ -31,10 +31,33 @@ comments:
     - evidence: swift test (root) — 818 tests in 88 suites passed, 0 failed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests); swift test --package-path IntegrationTests --no-parallel — 30 tests in 11 suites passed, 0 failed. Zero skipped. The only warning is the mlx-swift_Cmlx.bundle build-system line from a dependency. No file was changed.
     - next: review
   timestamp: 2026-10-08T22:16:44.081598+00:00
+- actor: claude-code
+  id: 01m4esep8zz7xrbcq97jrenz10
+  text: |-
+    ### commit — changed
+    - evidence: 94237a5 fix(cli): show the builtin configuration file in the config path builtin row (^wydftp1)
+    - next: none
+  timestamp: 2026-10-08T22:17:00.447766+00:00
+- actor: claude-code
+  id: 01m4esrn2729k0tqb7877drw7s
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (94237a5). 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. 2 .kanban files not reviewed (.reviewignore).
+    - next: none. The task moved to done.
+  timestamp: 2026-10-08T22:22:26.887729+00:00
+- actor: claude-code
+  id: 01m4ess0geehebdrsyr7p54ye5
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files
+    - test: green — swift test 818 passed (1 known issue, HarnessSmokeTests); IntegrationTests --no-parallel 30 passed
+    - commit: 94237a5
+    - review: clean — 0 findings
+  timestamp: 2026-10-08T22:22:38.606307+00:00
 depends_on:
 - 01M4E2BEVVM2SHK85XG9DGE8CC
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffad80
 title: 'config path: show the builtin configuration file in the builtin row'
 ---
 ## Problem
