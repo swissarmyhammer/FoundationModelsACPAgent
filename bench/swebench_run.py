@@ -177,8 +177,10 @@ from datasets import load_dataset
 from rich.table import Table
 
 from swebench_acp import AgentServer, is_chunk
+from swebench_clone import exclude_agent_folder
 from swebench_common import console, log
 from swebench_env import environment_fields
+from swebench_history import upstream_reads
 from swebench_prediction import prediction_row
 from swebench_prompt import instance_prompt, prompt_name
 from swebench_record import append_row, patch_file_count, run_record, runs_path
@@ -680,6 +682,11 @@ with outpath.open("w" if args.force else "a") as out, \
             #    for the model load. `swebench_prompt.py` holds the
             #    instruction, and it says why the bench gives one.
             give_agent_config(repo, args.agent_config)
+            # The git tools of the agent must not list its own config and
+            # transcripts. `.git/info/exclude` is not tracked, so the patch
+            # `git diff <base_commit>` does not change. `swebench_clone.py`
+            # says why.
+            exclude_agent_folder(repo)
             log(
                 "running the agent...",
                 **about,
@@ -758,6 +765,16 @@ with outpath.open("w" if args.force else "a") as out, \
                     log("transcripts", **about, path=kept)
             except OSError as exc:
                 log("[yellow]transcripts not kept[/]", **about, error=exc)
+            # The git reads of the agent that reached past the base commit.
+            # Such a read can show the upstream fix, and that is a valid
+            # result: the run does not block it, it records it. The check
+            # needs the clone, so it runs before the clone goes.
+            upstream = None
+            if clone_seconds is not None:
+                upstream = upstream_reads(repo, inst["base_commit"], Path(repo) / AGENT_TRANSCRIPTS)
+            if upstream:
+                log("git read of the history after the base commit", **about,
+                    reads=", ".join(f"{r['verb']} {r['rev']}" for r in upstream))
             shutil.rmtree(repo, ignore_errors=True)
             # The record of the instance goes last, so that it can name the
             # transcripts. This runs for a finished agent, a stopped agent
@@ -783,6 +800,7 @@ with outpath.open("w" if args.force else "a") as out, \
                     env_reason=None if built is None else built.reason,
                     prompt=prompt_name(args.preamble),
                     agent_config=args.agent_config,
+                    git_upstream_reads=upstream,
                 ),
             )
 

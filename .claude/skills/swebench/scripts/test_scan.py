@@ -352,5 +352,41 @@ class AnUpstreamFixFromTheWebIsInformation(ScanTestCase):
         self.assertNotIn("does not measure the agent", out)
 
 
+class TheConfigStatesTheGitGroup(ScanTestCase):
+    """The config part states `tools.git.enabled`, as it states the web group
+    (task ^exkkyyr). A run with the git tools reads the git history of the
+    clone, so a person must see if the run had them."""
+
+    def config_text(self, yaml_text):
+        """Write yaml_text as the agent config, and give the config part of the scan."""
+        config = self.bench / "x.config.yaml"
+        config.write_text(yaml_text)
+        return quiet(scan.scan_config, str(config), self.R)
+
+    def test_the_config_part_states_git_off(self):
+        """`enabled: false` turns the git group off, and the scan says so."""
+        out = self.config_text("tools:\n  git:\n    enabled: false\n")
+        self.assertIn("tools.git.enabled = false", out)
+        self.assertIs(self.R["git_enabled"], False)
+
+    def test_the_config_part_states_git_on(self):
+        """The bench config sets `enabled: true` so that the run states it."""
+        out = self.config_text("tools:\n  git:\n    enabled: true\n")
+        self.assertIn("tools.git.enabled = true", out)
+        self.assertIs(self.R["git_enabled"], True)
+
+    def test_a_config_with_no_git_entry_states_the_default(self):
+        """A group that the config does not name is on by default."""
+        out = self.config_text("tools:\n  web:\n    enabled: true\n")
+        self.assertIn("tools.git.enabled = (not set: on by default)", out)
+        self.assertIs(self.R["git_enabled"], True)
+
+    def test_a_git_body_of_false_is_off(self):
+        """The builtin config turns a group off with `false` as its whole body."""
+        out = self.config_text("tools:\n  git: false\n")
+        self.assertIn("tools.git.enabled = false", out)
+        self.assertIn("groups that are off: git", out)
+
+
 if __name__ == "__main__":
     unittest.main()

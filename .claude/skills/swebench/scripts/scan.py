@@ -83,6 +83,11 @@ SAME_RUN_LATE_S = 300
 DAY_CHANGE_S = 3600
 # The lsof access modes of a process that can write a file.
 WRITE_MODES = ("w", "u")
+# The two scalar values that set the state of a tool group, in lower case.
+ON_OFF = ("true", "false")
+# The tool groups whose state the config part states on a line of its own:
+# the groups whose body has the `enabled` key.
+STATED_GROUPS = ("web", "git")
 
 
 def note(msg):
@@ -163,11 +168,36 @@ def read_config(path, text=None):
     return out
 
 
+def enabled_value(cfg, group):
+    """Give the on/off state that a config sets for a tool group, as text.
+
+    - cfg: the dotted keys of the config (see read_config).
+    - group: the name of the group below `tools`, for example "git".
+
+    Give "true" or "false", or "" when the config does not set a state. The
+    builtin config of the agent turns a group off in two forms: `false` as
+    the whole body of the group (`git: false`), or `enabled: false` in the
+    body. Only the web and git bodies have the `enabled` key.
+    """
+    body = str(cfg.get(f"tools.{group}") or "").lower()
+    if body in ON_OFF:
+        return body
+    return str(cfg.get(f"tools.{group}.enabled") or "").lower()
+
+
 def config_summary(cfg):
-    """Give (the groups that are off, the value of tools.web.enabled) of a config."""
+    """Give (the tool groups, the groups that are off, the web state) of a config.
+
+    The web state is the text of enabled_value for the web group.
+    """
     groups = sorted({k.split(".")[1] for k in cfg if k.startswith("tools.") and k.count(".") >= 1})
-    off = [g for g in groups if str(cfg.get(f"tools.{g}.enabled", "")).lower() == "false"]
-    return groups, off, str(cfg.get("tools.web.enabled", "")).lower()
+    off = [g for g in groups if enabled_value(cfg, g) == "false"]
+    return groups, off, enabled_value(cfg, "web")
+
+
+def state_text(cfg, group):
+    """Give the text of the state line of a group, for example "tools.git.enabled = true"."""
+    return f"tools.{group}.enabled = {enabled_value(cfg, group) or '(not set: on by default)'}"
 
 
 def config_problem(R, score, what, evidence):
@@ -195,6 +225,13 @@ def harness_config():
 
 
 def scan_config(path, R, start=None):
+    """Write the config part: the tool groups, the groups that are off, and the web and git states.
+
+    - path: the agent config of the run, or None for the default config.
+    - R: the result to fill. It gets `web_enabled` and `git_enabled`.
+    - start: the time of the run start, or None. A config file that changed
+      after it gives a warning, and each config problem is marked as not sure.
+    """
     print(f"== config {path or '(none)'}")
     live = harness_config()
     if live:
@@ -219,18 +256,20 @@ def scan_config(path, R, start=None):
         if rev:
             rel = path if os.path.isabs(path) else "./" + path
             old = read_config(None, sh(f"git show '{rev.split()[0]}:{rel}'"))
-            _, old_off, old_web = config_summary(old)
+            _, old_off, _ = config_summary(old)
             print(f"  the config in git at the last commit before the run started ({rev}):")
             print(f"   groups that are off: {', '.join(old_off) or '(none)'}; "
-                  f"tools.web.enabled = {old_web or '(not set: on by default)'}")
+                  f"{'; '.join(state_text(old, g) for g in STATED_GROUPS)}")
             print("   (the run can also have used a copy that was not committed)")
     cfg = read_config(path)
     groups, off, web = config_summary(cfg)
-    # The web group is on by default. Only "enabled: false" turns it off.
+    # The web and git groups are on by default. Only a "false" state turns one off.
     R["web_enabled"] = web != "false"
+    R["git_enabled"] = enabled_value(cfg, "git") != "false"
     print(f"  tool groups in the file: {', '.join(groups) or '(none)'}")
     print(f"  groups that are off: {', '.join(off) or '(none)'}")
-    print(f"  tools.web.enabled = {web or '(not set: on by default)'}")
+    for g in STATED_GROUPS:
+        print(f"  {state_text(cfg, g)}")
     for k in ("tools.codeContext.semanticSearch", "tools.codeContext.autoInstall"):
         if k in cfg:
             print(f"  {k} = {cfg[k]}")

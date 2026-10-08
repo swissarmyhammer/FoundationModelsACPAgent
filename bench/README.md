@@ -54,7 +54,13 @@ Each script has `--help` for the full list.
 
 Add `--agent-config bench/code-context.config.yaml`, and use the NAME
 `code-context`. The agent then mounts the `code-context` branch of the skills
-marketplace, the `tools.code_context` group, and the `tools.web` group.
+marketplace, the `tools.code_context` group, the `tools.web` group and the
+`tools.git` group. The file names each tool group with its state.
+
+The clone of an instance is a full clone, so a git read of a rev after the base
+commit (for example `main`) can show the upstream fix. As for the web tool,
+that is a valid result, and the run does not block it. The run records each
+such read in `git_upstream_reads`, and the score report marks the instance.
 
 Web search needs no key. With no key, the search uses the free public pages of
 Brave and DuckDuckGo. A key is optional: `BRAVE_SEARCH_API_KEY`,
@@ -86,7 +92,7 @@ All outputs go into `bench/`, where `.gitignore` keeps them out of git.
 | File | What it holds |
 |---|---|
 | `preds.NAME.jsonl` | one prediction row for each instance that got an environment |
-| `preds.NAME.runs.jsonl` | one record row for each instance: times, `stop_reason`, `timed_out`, patch size, environment step, `agent_config` (see `swebench_record.py`) |
+| `preds.NAME.runs.jsonl` | one record row for each instance: times, `stop_reason`, `timed_out`, patch size, environment step, `agent_config`, `git_upstream_reads` (see `swebench_record.py`) |
 | `preds.NAME.transcripts/<instance_id>/` | the agent transcripts, copied when the instance ends |
 | `run.NAME.log` | the log; `grep instance=<id>` gives the history of one instance |
 | `preds.NAME.jsonl.score.<run id>.json` | the score report |

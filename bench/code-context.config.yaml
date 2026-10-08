@@ -3,6 +3,18 @@
 # Give this file to the run with `--agent-config bench/code-context.config.yaml`.
 # The run writes it to `.acp-agent/config.yaml` in each clone.
 #
+# The `tools` section names each tool group with its state, in the order of
+# the builtin file of the agent
+# (Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml). Each group
+# is on by default, thus a group that this file does not name is also on. The
+# file names each group so that the run states the full tool set, and not
+# only the groups that differ from the default. A group body that is a mapping
+# turns the group on. Only `web` and `git` also have the `enabled` key.
+#
+# - `files` is the Multitool group `tools.files`. The keys are the builtin
+#   defaults. `exclude` is not set: the default skips the dotfolder of the
+#   agent, `.acp-agent/`, which holds the transcripts.
+# - `shell` is the Multitool group `tools.shell`, with the builtin defaults.
 # - `skills` is the stand-alone `skills` tool. It reads the `code-context`
 #   branch of the skills marketplace, which holds only the five skills that
 #   need the code context tool. The URL is the HTTPS form: the agent of a
@@ -23,7 +35,19 @@
 #   and DuckDuckGo. A web search can find the upstream fix of the issue. The
 #   web tool is part of the agent, so a fix that the agent finds and uses is
 #   a valid result. A run with web off uses different tools, so a comparison
-#   with it is a comparison of two configurations.
+#   with it is a comparison of two configurations. The file does not set
+#   `apiKeys`: a key must not be in this file, and an empty map here would
+#   replace the keys of the user layer.
+# - `git` is the Multitool group `tools.git` (status, changes, diff, log,
+#   show, blame, commit, branches). It is on by default, and this run sets
+#   `enabled: true` to state it. The clone of an instance has the full
+#   history, also the commits after the base commit. Thus a git read of a
+#   later rev, for example `main`, can find the upstream fix. As for the web
+#   tool, a fix that the agent finds that way is a valid result. The run
+#   records each such read (`git_upstream_reads` in the record), and the score
+#   report marks it in the upstream-fix column.
+# - `mcp` is the list of the MCP servers. The list is empty: this file adds
+#   no MCP server.
 #
 # No `compaction.toolOutputLimit`. A cap on a tool result keeps the first N
 # tokens and drops the rest before the model reads it: a file read loses its
@@ -36,6 +60,12 @@
 # The real fix is a fold at each append, in Router (cards ^9ddjkjm,
 # ^46bz58k).
 tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
   skills:
     marketplaces:
       - url: https://github.com/swissarmyhammer/skills.git
@@ -45,3 +75,6 @@ tools:
     semanticSearch: false
   web:
     enabled: true
+  git:
+    enabled: true
+  mcp: []

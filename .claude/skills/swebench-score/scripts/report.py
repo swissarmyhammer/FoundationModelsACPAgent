@@ -24,11 +24,15 @@ The output has these parts:
    instances where a web result looks like the upstream fix. This is
    information: the web tool is part of the agent, and a fix that the agent
    finds on the web and uses is a valid result.
-6. COMPARE: the change of each instance against the score of an other run.
+6. GIT: the git state of the config, and each instance whose agent read a
+   rev after the base commit (the `git_upstream_reads` field of the record).
+   Such a read can show the upstream fix, and it is information too. The
+   upstream-fix column of INSTANCES marks a web fix and a git read alike.
+7. COMPARE: the change of each instance against the score of an other run.
    With no --compare, the other run is the newest other run with the same
    instance ids in its predictions file. A run with other instances does
-   not measure the same thing. A run with web on and a run with web off use
-   different tools, so their comparison is a comparison of two
+   not measure the same thing. A run with web (or git) on and a run with it
+   off use different tools, so their comparison is a comparison of two
    configurations.
 
 Each path that the script builds or reads from input must resolve to a place
@@ -65,6 +69,13 @@ PREDS_NAME = re.compile(r"preds\.(.+)\.jsonl")
 # The field of a record row that holds the --agent-config path of the run.
 # swebench_record.py writes it. A record from before 2026-10-07 has no field.
 CONFIG_FIELD = "agent_config"
+# The field of a record row that holds the git reads of the agent past the base
+# commit. swebench_record.py writes it. A record from before 2026-10-08 has no field.
+GIT_FIELD = "git_upstream_reads"
+# How many letters of a commit the evidence of a git read shows.
+SHORT_SHA = 10
+# The two tool groups whose state the report states: they can find the upstream fix.
+WEB, GIT = "web", "git"
 # The text in the run log that names the agent config: the log line of
 # swebench_run.py, or the command line when a person put it in the log.
 LOG_CONFIG = re.compile(r"(?:--agent-config[ =]|agent_config=)(\S+)")
@@ -434,12 +445,72 @@ def config_of(preds, bench):
     return by_name if by_name.exists() else None
 
 
-def web_state(config):
-    """Give the web state of a config: "on", "off", or "unknown" when there is no file."""
+def tool_state(config, group):
+    """Give the state of a tool group in a config: "on", "off", or "unknown" when there is no file.
+
+    - config: the resolved path of the agent config, or None.
+    - group: the name of the group below `tools`, for example "git".
+
+    A group is on by default. scan.py reads the two forms that turn it off.
+    """
     if scan is None or config is None or not config.exists():
         return "unknown"
-    _, _, web = scan.config_summary(scan.read_config(str(config)))
-    return "off" if web == "false" else "on"
+    return "off" if scan.enabled_value(scan.read_config(str(config)), group) == "false" else "on"
+
+
+def web_state(config):
+    """Give the web state of a config: "on", "off", or "unknown" when there is no file."""
+    return tool_state(config, WEB)
+
+
+def git_state(config):
+    """Give the git state of a config: "on", "off", or "unknown" when there is no file."""
+    return tool_state(config, GIT)
+
+
+def git_upstream(runs):
+    """Give {instance id: [evidence]} of the git reads past the base commit.
+
+    - runs: {instance id: record row}.
+
+    The run checks each git read of the agent while the clone is there, and
+    the record keeps the reads whose commit is not an ancestor of the base
+    commit (`bench/swebench_history.py`). Such a read can show the upstream
+    fix. That is a valid result, so this is information, as for web.
+    """
+    out = {}
+    for iid, row in runs.items():
+        reads = row.get(GIT_FIELD)
+        evidence = [f"git {r.get('verb')} {r.get('rev')} ({str(r.get('commit'))[:SHORT_SHA]})"
+                    for r in reads if isinstance(r, dict)] if isinstance(reads, list) else []
+        if evidence:
+            out[iid] = evidence
+    return out
+
+
+def git_checked(runs):
+    """Give the count of record rows that hold the git check (a list, also an empty one)."""
+    return sum(1 for row in runs.values() if isinstance(row.get(GIT_FIELD), list))
+
+
+def print_git(config, runs, git, result_of):
+    """Print the GIT part: the git state of the config, and each read past the base commit.
+
+    - config: the resolved path of the agent config, or None.
+    - runs: {instance id: record row}.
+    - git: {instance id: [evidence]} from git_upstream.
+    - result_of: gives the result name of an instance id.
+
+    A record from before the check has no field, so the report says that it
+    cannot tell, and not that the agent read no later rev.
+    """
+    checked = git_checked(runs)
+    reads = (f"a read of the history after the base commit in {len(git)} instance(s) "
+             f"({checked} of {len(runs)} record rows hold the check)") if checked else \
+        "no git check in the record (a run from before 2026-10-08)"
+    print(f"\n== GIT: config {git_state(config)} ({config or 'no config found for this run'}); {reads}")
+    for i in sorted(git):
+        print(f"  later history read: {i} [{result_of(i)}]: {'; '.join(git[i][:3])}")
 
 
 def harness_detail(root, run_id, iid):
@@ -599,6 +670,7 @@ def print_report(a):
         for inst, ev in scan_upstream(scan_path).items():
             n, old = web.get(inst, (0, []))
             web[inst] = (n, old + [e for e in ev if e not in old])
+    git = git_upstream(runs)
     config = config_of(preds, a.bench)
     state = web_state(config)
     run_id = report.get("run_id", "?")
@@ -622,6 +694,7 @@ def print_report(a):
         r = runs.get(i) or {}
         p = (preds_rows.get(i) or {}).get("model_patch") or ""
         n, upv = web.get(i, (0, []))
+        upv = upv + git.get(i, [])
         stop = r.get("stop_reason") or "?"
         if r.get("timed_out"):
             stop += " (timeout)"
@@ -648,11 +721,12 @@ def print_report(a):
     for i in up:
         print(f"  upstream fix seen: {i} [{outcome(i, resolved, unresolved, errored, preds_rows)}]: "
               f"{'; '.join(web[i][1][:3])}")
-    if up:
-        # Information only: how the agent solved these instances. The web tool
-        # is part of the agent, so each of them is a valid result.
-        with_fix = [i for i in resolved if i in up]
-        print(f"  resolved with an upstream fix seen: {len(with_fix)} of {len(resolved)} resolved")
+    print_git(config, runs, git, lambda i: outcome(i, resolved, unresolved, errored, preds_rows))
+    if up or git:
+        # Information only: how the agent solved these instances. The web and
+        # git tools are part of the agent, so each of them is a valid result.
+        with_fix = [i for i in resolved if i in up or i in git]
+        print(f"  resolved with an upstream fix seen (web or git): {len(with_fix)} of {len(resolved)} resolved")
 
     if a.no_compare:
         return 0
@@ -663,13 +737,15 @@ def print_report(a):
     o_preds = preds_of_score(other, root)
     o_report, o_res, o_unres, o_err = read_score(other)
     o_rows = last_by_id(read_jsonl(o_preds))
-    o_state = web_state(config_of(o_preds, a.bench))
+    o_config = config_of(o_preds, a.bench)
     print(f"\n== COMPARE with {name_of(o_preds)} run id {o_report.get('run_id', '?')} ({other})")
     print(f"  the report took this run because it is {why}")
     print(f"  before {len(o_res)}/{len(o_res) + len(o_unres)} resolved, now {len(resolved)}/{ev} resolved")
-    if o_state != state:
-        print(f"  web is {o_state} before and {state} now: the two runs use different tools, "
-              f"so this is a comparison of two configurations")
+    for group in (WEB, GIT):
+        before, now = tool_state(o_config, group), tool_state(config, group)
+        if before != now:
+            print(f"  {group} is {before} before and {now} now: the two runs use different tools, "
+                  f"so this is a comparison of two configurations")
     o_ids = o_res | o_unres | set(o_err)
     rows, count = [], {"fixed": 0, "broken": 0, "same": 0, "not run": 0, "only one run": 0}
     for i in sorted(set(ids) | o_ids):

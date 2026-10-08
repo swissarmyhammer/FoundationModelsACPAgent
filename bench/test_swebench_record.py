@@ -67,7 +67,10 @@ A_PROMPT_NAME = "source-only-v1"
 # The `--agent-config` file of a run. The row keeps it, so that a reader can
 # tell if web was on for a run whose name is not the name of its config.
 AN_AGENT_CONFIG = "bench/code-context.config.yaml"
-# The seventeen names that the record of an instance carries. A reader of the
+# The git reads of the agent that reached past the base commit, as
+# `swebench_history.upstream_reads` gives them.
+SOME_UPSTREAM_READS = [{"verb": "log", "rev": "main", "commit": "0123456789abcdef0123456789abcdef01234567"}]
+# The eighteen names that the record of an instance carries. A reader of the
 # file expects all of them in every row.
 RECORD_KEYS = {
     "instance_id",
@@ -87,6 +90,7 @@ RECORD_KEYS = {
     "env_reason",
     "prompt",
     "agent_config",
+    "git_upstream_reads",
 }
 
 
@@ -111,6 +115,7 @@ def a_record(**changes):
         "env_reason": None,
         "prompt": A_PROMPT_NAME,
         "agent_config": AN_AGENT_CONFIG,
+        "git_upstream_reads": SOME_UPSTREAM_READS,
     }
     fields.update(changes)
     return run_record(INSTANCE_ID, **fields)
@@ -228,7 +233,20 @@ class TheRecordOfAnInstance(unittest.TestCase):
         """A run with no `--agent-config` uses the default config of the agent."""
         self.assertIsNone(a_record(agent_config=None)["agent_config"])
 
-    def test_it_holds_the_seventeen_names_when_the_clone_failed(self):
+    def test_it_keeps_the_git_reads_of_the_upstream_history(self):
+        """Task ^exkkyyr: the run removes the clone after the instance.
+
+        The ancestry of a rev can be checked only while the clone is there,
+        so the row keeps the result, and the score report reads it.
+        """
+        self.assertEqual(a_record()["git_upstream_reads"], SOME_UPSTREAM_READS)
+
+    def test_a_check_that_did_not_run_gives_null(self):
+        """null says that nobody checked; an empty list says that the agent read no later rev."""
+        self.assertIsNone(a_record(git_upstream_reads=None)["git_upstream_reads"])
+        self.assertEqual(a_record(git_upstream_reads=[])["git_upstream_reads"], [])
+
+    def test_it_holds_the_eighteen_names_when_the_clone_failed(self):
         """A step that did not run gives no number, but the row keeps shape.
 
         An instance that failed in the clone has no environment, no agent and
@@ -252,6 +270,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
             env_reason=None,
             prompt=A_PROMPT_NAME,
             agent_config=None,
+            git_upstream_reads=None,
         )
         self.assertEqual(set(record), RECORD_KEYS)
         self.assertIsNone(record["clone_seconds"])
@@ -260,7 +279,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
         self.assertIsNone(record["transcript_path"])
         self.assertIsNone(record["env_status"])
 
-    def test_it_holds_the_seventeen_names_when_the_instance_finished(self):
+    def test_it_holds_the_eighteen_names_when_the_instance_finished(self):
         """The rows of one file must all have the same shape."""
         self.assertEqual(set(a_record()), RECORD_KEYS)
 
@@ -409,6 +428,7 @@ class TheRowsOnDisk(unittest.TestCase):
             env_reason=None,
             prompt=A_PROMPT_NAME,
             agent_config=AN_AGENT_CONFIG,
+            git_upstream_reads=[],
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "preds.runs.jsonl"

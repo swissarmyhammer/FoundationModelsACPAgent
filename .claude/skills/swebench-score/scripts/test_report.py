@@ -36,6 +36,9 @@ OLD, MIDDLE, NEW, NEWEST = 1_000_000, 2_000_000, 3_000_000, 4_000_000
 CONFIG_PATH = "bench/code-context.config.yaml"
 WEB_ON_CONFIG = "tools:\n  web:\n    enabled: true\n"
 WEB_OFF_CONFIG = "tools:\n  web:\n    enabled: false\n"
+# The config with the git tools on, and with the git tools off.
+GIT_ON_CONFIG = "tools:\n  web:\n    enabled: true\n  git:\n    enabled: true\n"
+GIT_OFF_CONFIG = "tools:\n  web:\n    enabled: true\n  git:\n    enabled: false\n"
 
 
 def write_rows(path, rows):
@@ -299,6 +302,74 @@ class AnUpstreamFixFromTheWebIsInformation(BenchTestCase):
         self.assertNotIn("WARNING", out)
         self.assertNotIn("do not measure", out)
         self.assertIn("two configurations", out)
+
+
+class TheGitToolsOfARun(BenchTestCase):
+    """Task ^exkkyyr: the report states the git state of the config, and it
+    marks a git read of the history after the base commit as an upstream fix.
+
+    The clone of an instance is a full clone, so a git read of `main` can
+    show the upstream fix. As for the web tool, that is a valid result: the
+    report shows it as information, and the score stays valid."""
+
+    # The instance whose agent read the history after the base commit.
+    WITH_READ = TWO[0]
+    # The read that the run recorded for WITH_READ (`swebench_history.py`).
+    READ = {"verb": "log", "rev": "main", "commit": "0123456789abcdef0123456789abcdef01234567"}
+
+    def report_text(self, config_text, reads, *argv):
+        """Give the stdout of the report of the run `now`.
+
+        - config_text: the YAML text of the agent config of the run.
+        - reads: {instance id: the git_upstream_reads field of its record row}.
+        - argv: more arguments of the report.
+        """
+        (self.root / CONFIG_PATH).write_text(config_text)
+        make_run(self.bench, "now", TWO, NEW)
+        write_rows(self.bench / "preds.now.runs.jsonl",
+                   [{"instance_id": i, "agent_config": CONFIG_PATH, **({"git_upstream_reads": reads[i]}
+                                                                       if i in reads else {})} for i in TWO])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report.main(["now", "--bench", str(self.bench), "--root", str(self.root), *argv])
+        return out.getvalue()
+
+    def line_of(self, out, start):
+        """Give the first line of out that starts with start."""
+        return next(line for line in out.splitlines() if line.strip().startswith(start))
+
+    def test_the_git_line_gives_the_state_and_the_config(self):
+        """A person must see if the run had the git tools, as for web."""
+        out = self.report_text(GIT_ON_CONFIG, {}, "--no-compare")
+        git_line = self.line_of(out, "== GIT")
+        self.assertIn("config on", git_line)
+        self.assertIn(str(self.root / CONFIG_PATH), git_line)
+
+    def test_a_config_with_git_off_gives_git_off(self):
+        """The state comes from the file, not from a constant."""
+        (self.root / CONFIG_PATH).write_text(GIT_OFF_CONFIG)
+        self.assertEqual(report.git_state(self.root / CONFIG_PATH), "off")
+
+    def test_a_read_of_later_history_marks_the_upstream_fix_column(self):
+        """The row of the instance with the read says YES, and the other row does not."""
+        out = self.report_text(GIT_ON_CONFIG, {self.WITH_READ: [self.READ], TWO[1]: []}, "--no-compare")
+        self.assertIn("YES", self.line_of(out, self.WITH_READ))
+        self.assertNotIn("YES", self.line_of(out, TWO[1]))
+        self.assertIn(f"later history read: {self.WITH_READ}", out)
+        self.assertIn("git log main (0123456789)", out)
+        self.assertNotIn("WARNING", out)
+
+    def test_a_record_with_no_git_check_says_so(self):
+        """A record from before the check has no field. The report must not say that no read happened."""
+        out = self.report_text(GIT_ON_CONFIG, {}, "--no-compare")
+        self.assertIn("no git check in the record", self.line_of(out, "== GIT"))
+
+    def test_a_compare_with_git_off_is_a_compare_of_two_configurations(self):
+        """A run with git on and a run with git off use different tools."""
+        make_run(self.bench, "baseline", TWO, OLD, record={"agent_config": "bench/off.config.yaml"})
+        (self.bench / "off.config.yaml").write_text(GIT_OFF_CONFIG)
+        out = self.report_text(GIT_ON_CONFIG, {})
+        self.assertIn("git is off before and on now", out)
 
 
 class PathsStayInsideTheRepo(BenchTestCase):

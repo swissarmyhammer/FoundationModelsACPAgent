@@ -32,6 +32,14 @@ one row for each instance:
 | `env_reason` | why the instance did not run |
 | `prompt` | the name of the prompt shape the instance used |
 | `agent_config` | the `--agent-config` file of the run, or `null` |
+| `git_upstream_reads` | each git read of the agent that reached past the base commit, or `null` |
+
+`git_upstream_reads` comes from `swebench_history.py`. The clone of an instance
+holds the history after the base commit, and a git read of it can show the
+upstream fix. That is a valid result, so the run does not block it. The run
+removes the clone after the instance, so the row keeps the reads, and the
+score report marks them. `null` says that the check did not run; `[]` says
+that the agent read no such rev.
 
 `agent_config` is the same in each row of a run. The run name does not have
 to be the name of its config: on 2026-10-06 the run `final-pass-check` used
@@ -53,7 +61,7 @@ the protocol for how the turn ended -- `end_turn`, `max_tokens`,
 `max_turn_requests`, `refusal`, `cancelled`, or an extension that begins with
 `_`. It is a free string, and the record keeps whatever the agent said.
 
-Each row carries all seventeen names, in all conditions. A step that did not run
+Each row carries all eighteen names, in all conditions. A step that did not run
 gives `null`, and not a name that is absent, so a reader of the file can use
 `[]` on each row. `append_row` flushes each row, so a run that stops in the
 middle keeps the rows of the instances that are complete.
@@ -134,6 +142,7 @@ def run_record(
     env_reason,
     prompt,
     agent_config,
+    git_upstream_reads,
 ):
     """The record of one instance of a run.
 
@@ -160,8 +169,11 @@ def run_record(
       only when the name is the same, so the row keeps it.
     - agent_config: the `--agent-config` file of the run, or None when the
       run gave none. The row keeps it as the run got it.
+    - git_upstream_reads: the git reads of the agent that reached past the
+      base commit (`swebench_history.upstream_reads`), [] for none, or None
+      when the check did not run.
 
-    The record carries all seventeen names in all conditions, so that a reader
+    The record carries all eighteen names in all conditions, so that a reader
     can use `[]` on each row of the file.
     """
     return {
@@ -182,6 +194,7 @@ def run_record(
         "env_reason": env_reason,
         "prompt": prompt,
         "agent_config": None if agent_config is None else str(agent_config),
+        "git_upstream_reads": git_upstream_reads,
     }
 
 
