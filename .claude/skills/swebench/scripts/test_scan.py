@@ -117,6 +117,68 @@ def notices(op, count, start, first_seq=1):
     return [running_row(op, first_seq + i, start + dt.timedelta(seconds=i)) for i in range(count)]
 
 
+def call_row(seq, cid, tool, args):
+    """Give the transcript row of one tool call of the model.
+
+    - cid: the call id. The result row of the call has the same id.
+    - args: the arguments of the call, as a dict.
+    """
+    return {"kind": "toolCalls", "seq": seq, "ts": apple_time(OLD_START),
+            "entry": {"entryId": f"ENTRY-{seq}",
+                      "toolCalls": [{"id": cid, "toolName": tool, "argumentsJSON": json.dumps(args)}]}}
+
+
+def result_row(seq, cid, tool, text):
+    """Give the transcript row of the result that the model got for the call cid."""
+    return {"kind": "toolOutput", "seq": seq, "ts": apple_time(OLD_START),
+            "entry": {"entryId": cid, "toolName": tool, "segments": [{"type": "text", "content": text}]}}
+
+
+def model_call(seq, tool, args, text):
+    """Give the call row and the result row of one tool call of the model, at seq and seq + 1."""
+    cid = f"call_{seq:08d}"
+    return [call_row(seq, cid, tool, args), result_row(seq + 1, cid, tool, text)]
+
+
+def ulid(n):
+    """Give a fake ULID (26 characters of the Crockford alphabet) that differs for each n."""
+    return f"01M4{n:022d}"
+
+
+def snippet(seq, code, detail):
+    """Give the rows of one runCode call with the code, whose snippet result has the detail."""
+    result = {"pending": False, "completionToken": ulid(seq), "outcome": "succeeded", "detail": detail}
+    return model_call(seq, "runCode", {"code": code}, json.dumps(result))
+
+
+def pending_notice(command_id):
+    """Give the detail of an execute call: the notice that the command runs in the background."""
+    return json.dumps(json.dumps({"pending": True, "completionToken": command_id,
+                                  "next": "The command is running in the background, and this is not its result."}))
+
+
+def shell_lines(command_id, lines):
+    """Give the detail of a getLines call that read the output lines of the command."""
+    numbered = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
+    return json.dumps({"commandID": command_id, "first": 1, "last": len(lines), "lines": numbered,
+                       "status": "completed"})
+
+
+def runtests_rows(seq, command_id, summary_lines):
+    """Give the rows of a test run: an execute call of runtests.py, then the getLines call that reads its output."""
+    start = snippet(seq, 'const r = await tools.shell.execute({ command: "python tests/runtests.py urls" });',
+                    pending_notice(command_id))
+    read = snippet(seq + 2, f'const r = await tools.shell.getLines({{ commandID: "{command_id}" }});',
+                   shell_lines(command_id, ["E", "-" * 70] + summary_lines))
+    return start + read
+
+
+def edit(seq):
+    """Give the rows of one files.edit call that the agent applied."""
+    return snippet(seq, 'const r = await tools.files.edit({ path: "django/urls/resolvers.py", find: "a", replace: "b" });',
+                   json.dumps({"applied": 1, "status": "applied"}))
+
+
 def quiet(fn, *args):
     """Call fn with args. Give the text that it writes to stdout."""
     out = io.StringIO()
@@ -386,6 +448,127 @@ class TheConfigStatesTheGitGroup(ScanTestCase):
         out = self.config_text("tools:\n  git: false\n")
         self.assertIn("tools.git.enabled = false", out)
         self.assertIn("groups that are off: git", out)
+
+
+class RepeatedResultsAreALoop(ScanTestCase):
+    """The scan counts the tool results that repeat an earlier result of the
+    same instance (task ^8q8m1r4). Each call of such a loop succeeds, so the
+    count of errors does not show it."""
+
+    # The arguments and the result of the `list skill` loop of django__django-14667.
+    LIST_SKILL = {"op": "list skill", "filter": "detected"}
+    SKILL_TEXT = "- detected-projects: Discover project types, build commands, test commands."
+
+    def scan_rows(self, rows):
+        """Scan one transcript of SECOND with the rows. Give the output of the report and of the problems."""
+        write_transcript(self.transcripts, SECOND, rows)
+        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
+        return quiet(scan.report_loops, self.R) + quiet(scan.problems, self.R)
+
+    def loop_problems(self):
+        """Give the problems about repeated results."""
+        return [p for p in self.R["problems"] if "repeat" in p[1]]
+
+    def skill_calls(self, count):
+        """Give count `list skill` calls with the same result."""
+        return [row for i in range(count) for row in model_call(10 * i, "skills", self.LIST_SKILL, self.SKILL_TEXT)]
+
+    def test_eighteen_calls_with_the_same_result_are_a_loop(self):
+        """18 calls with the same result give 17 repeats. The scan names the
+        instance and the count, and the tool and the arguments of the group."""
+        out = self.scan_rows(self.skill_calls(18))
+        hits = self.loop_problems()
+        self.assertEqual(len(hits), 1, self.problem_texts())
+        self.assertIn(SECOND, hits[0][1])
+        self.assertIn("17 tool results repeat an earlier result", hits[0][1])
+        self.assertIn('18 x skills {"filter": "detected", "op": "list skill"}', hits[0][2])
+        self.assertIn(f"{SECOND}: 17 repeated results", out)
+
+    def test_repeats_at_the_limit_are_not_a_loop(self):
+        """A model can read the same thing again some times for a good reason.
+        Only more repeats than REPEAT_LIMIT are a loop."""
+        self.scan_rows(self.skill_calls(scan.REPEAT_LIMIT + 1))
+        self.assertEqual(self.loop_problems(), [])
+
+    def test_results_that_differ_only_in_a_ulid_are_the_same(self):
+        """The getLines polling loop of django__django-13964: each poll of a
+        running command gives no lines. The command id differs from command to
+        command, but the model learns nothing new from each poll."""
+        rows = []
+        for i in range(18):
+            rows += snippet(10 * i, f'tools.shell.getLines({{ commandID: "{ulid(i)}" }});',
+                            json.dumps({"commandID": ulid(i), "first": 0, "last": 0, "lines": [], "status": "running"}))
+        self.scan_rows(rows)
+        self.assertEqual(len(self.loop_problems()), 1, self.problem_texts())
+
+    def test_a_call_with_many_lines_gives_one_report_line(self):
+        """The code of a runCode call has newlines. On the run code-context-1008
+        they moved the LOOP mark of django__django-14155 to a line of its own.
+        The report gives each instance on one line, with its mark."""
+        code = 'const r = await tools.shell.getLines({ commandID: "X" });\nreturn r;\n'
+        rows = []
+        for i in range(18):
+            rows += snippet(10 * i, code, json.dumps({"lines": [], "status": "running"}))
+        out = self.scan_rows(rows)
+        self.assertIn(f'{SECOND}: 17 repeated results; largest group 18 x runCode '
+                      f'const r = await tools.shell.getLines({{ commandID: "X" }}); return r;  LOOP', out)
+
+    def test_pending_notices_are_not_repeated_results(self):
+        """Each execute call gives the notice that the command runs in the
+        background. That notice is not a result, so it is not a repeat."""
+        rows = []
+        for i in range(18):
+            rows += snippet(10 * i, f'tools.shell.execute({{ command: "ls {i}" }});', pending_notice(ulid(i)))
+        self.scan_rows(rows)
+        self.assertEqual(self.loop_problems(), [])
+
+
+class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
+    """The scan compares the last test result before the last edit with the
+    first test result after it (task ^8q8m1r4). In django__django-14155 both
+    were `Ran 1 test in 0.000s FAILED (errors=1)`: the test did not load, and
+    the edit did not change that."""
+
+    NOT_LOADED = ["Ran 1 test in 0.000s", "", "FAILED (errors=1)"]
+
+    def scan_rows(self, rows):
+        """Scan one transcript of FIRST with the rows. Give the output of the report and of the problems."""
+        write_transcript(self.transcripts, FIRST, rows)
+        quiet(scan.scan_transcripts, [str(self.transcripts)], 60, self.R)
+        return quiet(scan.report_loops, self.R) + quiet(scan.problems, self.R)
+
+    def same_problems(self):
+        """Give the problems about a test result that the edit did not change."""
+        return [p for p in self.R["problems"] if "same before and after" in p[1]]
+
+    def test_the_same_summary_before_and_after_the_edit_marks_the_instance(self):
+        """The edit did not change what the test run says, so the instance is marked."""
+        after = ["Ran 1 test in 0.001s", "", "FAILED (errors=1)"]
+        out = self.scan_rows(runtests_rows(10, ulid(1), self.NOT_LOADED) + edit(20) + runtests_rows(30, ulid(2), after))
+        self.assertIn(f"{FIRST}: before the last edit: Ran 1 test in 0.000s FAILED (errors=1); "
+                      f"after it: Ran 1 test in 0.001s FAILED (errors=1)  SAME", out)
+        self.assertEqual(len(self.same_problems()), 1, self.problem_texts())
+
+    def test_a_different_summary_after_the_edit_does_not_mark_the_instance(self):
+        """The edit changed the result of the test run, so there is nothing to mark."""
+        after = ["Ran 9 tests in 0.017s", "", "OK"]
+        out = self.scan_rows(runtests_rows(10, ulid(1), self.NOT_LOADED) + edit(20) + runtests_rows(30, ulid(2), after))
+        self.assertIn(f"{FIRST}: before the last edit: Ran 1 test in 0.000s FAILED (errors=1); "
+                      f"after it: Ran 9 tests in 0.017s OK", out)
+        self.assertNotIn("SAME", out)
+        self.assertEqual(self.same_problems(), [])
+
+    def test_a_read_of_runtests_py_is_not_a_test_run(self):
+        """On the run code-context-1008 the model read tests/runtests.py with
+        files.grep. The name of the test runner in the code of a call that is
+        not a shell command does not make a test run, also when the result
+        holds a summary line."""
+        grep = snippet(10, 'const r = await tools.files.grep({ pattern: "Ran", path: "tests/runtests.py" });',
+                       shell_lines(ulid(1), self.NOT_LOADED))
+        out = self.scan_rows(grep + edit(20) + runtests_rows(30, ulid(2), self.NOT_LOADED))
+        self.assertIn(f"{FIRST}: before the last edit: no test run; "
+                      f"after it: Ran 1 test in 0.000s FAILED (errors=1)", out)
+        self.assertEqual(self.same_problems(), [])
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ The output has three parts:
   3. TOOLS: calls and errors for each tool and each tools.<group>.<verb>. The
      verbs come from the code of each runCode call (the "toolCalls" lines
      keep it). The scan pairs each call with its result by the call id.
+     Then the loops of each instance: the tool results that repeat an earlier
+     result, and the test result before and after the last edit.
 
 Usage:
   python3 scan.py --name code-context --live
@@ -88,6 +90,37 @@ ON_OFF = ("true", "false")
 # The tool groups whose state the config part states on a line of its own:
 # the groups whose body has the `enabled` key.
 STATED_GROUPS = ("web", "git")
+# More tool results than this that repeat an earlier result of the same
+# instance are a loop. In the run code-context-1008 the instances with no loop
+# had 0 to 5 repeats, and the loops had 10 (django__django-14667) to 121
+# (django__django-14155).
+REPEAT_LIMIT = 8
+# A ULID: a completion token or a command id. Each call gets a new one, so two
+# results that differ only in their ULIDs are the same result.
+ULID_RE = re.compile(r"\b[0-9A-HJKMNP-TV-Z]{26}\b")
+# The time fields of a result. They also change from call to call.
+ELAPSED_RE = re.compile(r'("(?:elapsedMs|durationMs)"\s*:\s*)[0-9.]+')
+# The completion token of a pending notice: the id of the command that runs
+# in the background. The notice can be JSON in a JSON string, so a quote can
+# have a backslash before it.
+TOKEN_RE = re.compile(r'completionToken\\*"\s*:\s*\\*"([0-9A-HJKMNP-TV-Z]{26})')
+# The verb that runs a shell command. Only a shell command can start a test run.
+SHELL_VERB = "tools.shell.execute"
+# The command text of a test run.
+TEST_CMD_RE = re.compile(r"runtests\.py|pytest|manage\.py test|-m django test|-m unittest")
+# The verbs that change a file.
+EDIT_VERBS = frozenset({"files.edit", "files.patch", "files.write"})
+# The line number that getLines puts before each output line: "12: text".
+LINE_NO_RE = re.compile(r"^\d+: ")
+# The summary of a unittest run: "Ran 9 tests in 0.017s", then a line with
+# "OK" or "FAILED (errors=1)".
+RAN_RE = re.compile(r"^Ran \d+ tests? in [\d.]+s$", re.M)
+VERDICT_RE = re.compile(r"^(?:OK\b.*|FAILED \(.*\))$", re.M)
+# The summary line of a pytest run, for example "1 failed, 2 passed in 0.12s",
+# with or without the "=" signs around it.
+PYTEST_RE = re.compile(r"^=*\s*((?:\d+ [a-z]+(?:, )?)+ in [\d.]+s|no tests ran in [\d.]+s)\s*=*$", re.M)
+# The run time in a test summary. Two summaries that differ only in it are the same.
+RUN_TIME_RE = re.compile(r" in [\d.]+s")
 
 
 def note(msg):
@@ -643,17 +676,8 @@ def runcode_error(detail):
         if ARG_FAIL_RE.search(t[:300]):
             return "argument validation"
         return None
-    try:
-        j = json.loads(t)
-    except ValueError:
-        return None
-    if isinstance(j, str):
-        # The result is a JSON string. It can hold JSON again; read the keys of that only.
-        try:
-            j = json.loads(j)
-        except ValueError:
-            return None
-    return structured_error(j)
+    # The result can be a JSON string that holds JSON again; read the keys of that only.
+    return structured_error(json_value(t))
 
 
 def error_verbs(detail, verbs):
@@ -726,6 +750,138 @@ def add_sample(T, key, text):
         T["samples"][key].append(text)
 
 
+def json_value(text):
+    """Give the JSON value of text, or None when text is not JSON.
+
+    A result can be a JSON string that holds JSON again. Then give the value
+    of that inner JSON, or the string when the inner text is not JSON.
+    """
+    try:
+        j = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(j, str):
+        try:
+            return json.loads(j)
+        except ValueError:
+            return j
+    return j
+
+
+def is_pending(result):
+    """Tell whether a result is the notice that a command runs in the background.
+
+    The execute tool gives this notice for each command. It is not the result
+    of the command, so it is not a repeated result.
+    """
+    j = json_value(result)
+    return isinstance(j, dict) and j.get("pending") is True
+
+
+def add_result(groups, call, result):
+    """Count one result of a model call in the groups of equal results of its instance.
+
+    - groups: the groups of the instance. Key: the tool, and the result with no
+      ULID and no time field. Value: {"n": the count, "call": the first call}.
+    - call: (the tool, the text of the arguments) of the call. The group keeps
+      the call on one line, so the report gives each instance on one line.
+    - result: the result that the model got.
+    """
+    if is_pending(result):
+        return
+    key = (call[0], ELAPSED_RE.sub(r"\1<n>", ULID_RE.sub("<id>", result or "")))
+    group = groups.setdefault(key, {"n": 0, "call": re.sub(r"\s+", " ", " ".join(call)).strip()})
+    group["n"] += 1
+
+
+def repeats(groups):
+    """Give (the count of results that repeat an earlier result, the largest group) of one instance."""
+    largest = max(groups.values(), key=lambda g: g["n"], default=None)
+    return sum(g["n"] - 1 for g in groups.values()), largest
+
+
+def output_text(result):
+    """Give the output lines of a shell result as text.
+
+    A getLines result has a "lines" list, and an execute result an "output"
+    list, each line with its line number. Remove the line numbers. Give any
+    other result as it is.
+    """
+    j = json_value(result)
+    lines = (j.get("lines") or j.get("output")) if isinstance(j, dict) else None
+    if not isinstance(lines, list):
+        return result or ""
+    return "\n".join(LINE_NO_RE.sub("", str(line)) for line in lines)
+
+
+def run_summary(result):
+    """Give the summary of the last test run in a shell result, or None.
+
+    For example "Ran 1 test in 0.000s FAILED (errors=1)" (unittest) or
+    "1 failed, 2 passed in 0.12s" (pytest).
+    """
+    text = output_text(result)
+    found = []
+    for ran in RAN_RE.finditer(text):
+        verdict = VERDICT_RE.search(text, ran.end())
+        found.append((ran.start(), f"{ran.group(0)} {verdict.group(0)}" if verdict else ran.group(0)))
+    found += [(m.start(), m.group(1)) for m in PYTEST_RE.finditer(text)]
+    return max(found)[1] if found else None
+
+
+def track_tests(timeline, test_ids, seq, code, result, edited):
+    """Add the edit and the test result of one runCode call to the timeline of its instance.
+
+    - timeline: the (seq, "edit" or "test", test summary) items of the
+      instance, in the order of the calls of the model.
+    - test_ids: the command ids of the test runs of the instance.
+    - code: the code of the call. A shell command with a test command in it
+      starts a test run; the name of the test runner in another call (for
+      example a files.grep of tests/runtests.py) does not. The command id of a
+      test run in the code (a getLines call) reads the output of that run.
+    - result: the result that the model got.
+    - edited: True when the call changed a file.
+    """
+    if edited:
+        timeline.append((seq, "edit", ""))
+    starts_tests = SHELL_VERB in code and bool(TEST_CMD_RE.search(code))
+    if starts_tests:
+        test_ids.update(TOKEN_RE.findall(result or ""))
+    if starts_tests or any(i in code for i in test_ids):
+        summary = run_summary(result)
+        if summary:
+            timeline.append((seq, "test", summary))
+
+
+def before_after(timeline):
+    """Give (the last edit, the last test result before it, the first test result after it), or None.
+
+    Each item is a (seq, kind, summary) item of the timeline, or None when
+    there is no such item. Give None when the timeline has no edit.
+    """
+    edits = [i for i, item in enumerate(timeline) if item[1] == "edit"]
+    if not edits:
+        return None
+    last = edits[-1]
+    before = next((t for t in reversed(timeline[:last]) if t[1] == "test"), None)
+    after = next((t for t in timeline[last + 1:] if t[1] == "test"), None)
+    return timeline[last], before, after
+
+
+def same_test_result(before, after):
+    """Tell whether two test items have the same summary. The run time does not count."""
+    return bool(before and after) and RUN_TIME_RE.sub("", before[2]) == RUN_TIME_RE.sub("", after[2])
+
+
+def skill_name(args, text):
+    """Give the name of the skill of a skills call: from its arguments, else from its result."""
+    name = args.get("id") or args.get("name")
+    if name:
+        return name
+    m = re.search(r"use skill\W+([\w:-]+)", text)
+    return m.group(1) if m else "?"
+
+
 def scan_transcripts(dirs, gap_s, R):
     """Read each transcript: stalls, tool results and errors, 'running' notices, start times.
 
@@ -746,6 +902,9 @@ def scan_transcripts(dirs, gap_s, R):
         rows = read_jsonl(f)
         inst = instance_of(f)
         print(f"-- {inst}: {f}  lines={len(rows)}")
+        # Each instance gets a line in the loop report, also with no result.
+        T["results"].setdefault(inst, {})
+        T["timeline"].setdefault(inst, [])
         seqs = sorted({r.get("seq") for r in rows if isinstance(r.get("seq"), int)})
         missing = [s for s in range(seqs[0], seqs[-1] + 1) if s not in set(seqs)] if seqs else []
         if missing:
@@ -851,14 +1010,10 @@ def scan_transcripts(dirs, gap_s, R):
             text = content_of(r)
             T["tool"][tool] += 1
             T["per_inst"][inst] += 1
-            if tool == "skills":
-                n = args.get("id") or args.get("name")
-                if not n:
-                    m = re.search(r"use skill\W+([\w:-]+)", text)
-                    n = m.group(1) if m else "?"
-                T["skills"][n] += 1
-                continue
             if tool != "runCode":
+                add_result(T["results"][inst], (tool, json.dumps(args, sort_keys=True)), text)
+                if tool == "skills":
+                    T["skills"][skill_name(args, text)] += 1
                 continue
             try:
                 c = json.loads(text)
@@ -895,6 +1050,9 @@ def scan_transcripts(dirs, gap_s, R):
             if "files.grep" in verbs and ".acp-agent/transcripts" in detail.replace("\\/", "/"):
                 T["self_grep"].append(where)
             cls = runcode_error(detail) or ("outcome failed" if outcome == "failed" else None)
+            add_result(T["results"][inst], (tool, code), detail)
+            track_tests(T["timeline"][inst], T["test_ids"][inst], r.get("seq"), code, detail,
+                        bool(EDIT_VERBS.intersection(verbs)) and not cls)
             if cls:
                 T["tool_err"][tool] += 1
                 for v in error_verbs(detail, verbs):
@@ -953,6 +1111,47 @@ def report_tools(R):
     for k, v in T["samples"].items():
         for s in v:
             print(f"   [{k}] {s}")
+
+
+def before_after_text(timeline):
+    """Give the text of the test results before and after the last edit of one instance."""
+    found = before_after(timeline)
+    if not found:
+        return "no edit"
+    edit, before, after = found
+    text = (f"before the last edit: {before[2] if before else 'no test run'}; "
+            f"after it: {after[2] if after else 'no test run'}")
+    return text + ("  SAME" if same_test_result(before, after) else "") + f"  (last edit at seq {edit[0]})"
+
+
+def report_loops(R):
+    """Write the loops of each instance: the repeated tool results, and the test result before and after the last edit."""
+    T = R["tools"]
+    print(f"== repeated tool results (the same result as an earlier call of the instance; "
+          f"more than {REPEAT_LIMIT} is a loop)")
+    for inst, groups in T["results"].items():
+        n, largest = repeats(groups)
+        group = f"; largest group {largest['n']} x {largest['call'][:160]}" if n else ""
+        print(f"   {inst}: {n} repeated results{group}{'  LOOP' if n > REPEAT_LIMIT else ''}")
+    print("== the test result before and after the last edit (from the test runs that the model saw)")
+    for inst, timeline in T["timeline"].items():
+        print(f"   {inst}: {before_after_text(timeline)}")
+
+
+def loop_problems(R):
+    """Add a problem for each loop of repeated results, and for each last edit that did not change the test result."""
+    T = R["tools"]
+    for inst, groups in T["results"].items():
+        n, largest = repeats(groups)
+        if n > REPEAT_LIMIT:
+            R["problems"].append((57, f"{inst}: {n} tool results repeat an earlier result (more than {REPEAT_LIMIT})",
+                                  f"largest group: {largest['n']} x {largest['call'][:160]}"))
+    for inst, timeline in T["timeline"].items():
+        found = before_after(timeline)
+        if found and same_test_result(found[1], found[2]):
+            edit, before, after = found
+            R["problems"].append((56, f"{inst}: the test result is the same before and after the last edit",
+                                  f"seq {before[0]}: {before[2]}; last edit at seq {edit[0]}; seq {after[0]}: {after[2]}"))
 
 
 # ---------------------------------------------------------------- recordings
@@ -1135,6 +1334,7 @@ def problems(R):
     for g, inst, seq, tok in sorted(T["stalls"], reverse=True)[:3]:
         R["problems"].append((45 + min(int(g / 60), 20), f"generation stall {g:.0f}s in {inst} before seq {seq}",
                               f"{tok} tokens out" if tok is not None else "no token count"))
+    loop_problems(R)
     errs = sum(T["tool_err"].values())
     if total_results and errs / total_results > 0.15:
         R["problems"].append((60, f"tool error rate {errs}/{total_results}", str(dict(T['verb_err']))))
@@ -1162,6 +1362,8 @@ def new_result():
                       "made_up_hint": {}, "made_up_ev": {}, "recovered": collections.Counter(), "self_grep": [],
                       "stalls": [], "upstream": [], "nonzero_samples": [],
                       "running": collections.defaultdict(collections.Counter), "code_context": 0,
+                      "results": collections.defaultdict(dict), "timeline": collections.defaultdict(list),
+                      "test_ids": collections.defaultdict(set),
                       "instructions": 0, "gen": 0, "tokens_out": 0, "seq_missing": 0, "exec_nonzero": 0,
                       "pending": 0, "no_code": 0}}
 
@@ -1210,7 +1412,8 @@ def main():
              lambda: check_same_run(R, a.preds),
              lambda: scan_recordings(a.recordings if a.recordings is not None
                                      else find_recordings(R.get("start_epoch", time.time() - 6 * 3600)), R),
-             lambda: scan_score(a.preds, R), lambda: report_tools(R), lambda: progress(R, a.timeout),
+             lambda: scan_score(a.preds, R), lambda: report_tools(R), lambda: report_loops(R),
+             lambda: progress(R, a.timeout),
              lambda: problems(R)]
     for step in steps:
         try:

@@ -174,6 +174,8 @@ The scan reports these items:
 | Web | `web.search` and `web.fetch` calls and errors; zero web calls when web is on; web not offered to the tool-selection model; results that look like the upstream fix (information in the TOOLS part, not a problem) |
 | Skills / code context | `skills` tool results (`use skill`), `code_context.*` results, `"kind": "instructions"` lines |
 | Self-matches | `files.grep` results that contain `.acp-agent/transcripts` lines. `.acp-agent` has no ignore rule in the clone, so grep finds the agent's own transcript |
+| Repeated results | for each instance, the count of tool results that are the same as an earlier result of the instance, and the tool and the arguments of the largest group. A ULID and the `elapsedMs` / `durationMs` values do not count, so each empty `getLines` poll of a running command is the same result. The pending notice of `execute` is not a result. More than 8 repeats (`REPEAT_LIMIT` in `scan.py`) is a loop, and a problem. Each call of a loop succeeds, so the error counts do not show it |
+| Test result before and after the last edit | for each instance, one line: the last test result before the last edit, and the first test result after it. A test run is an `execute` command with `runtests.py`, `pytest`, `manage.py test`, `-m django test` or `-m unittest`. Its result is the summary (`Ran N tests in Xs` with `OK` or `FAILED (...)`, or the pytest summary line) in the `getLines` result for that command. `SAME` marks two results that are the same apart from the run time: the edit did not change what the test says. That is a problem |
 | Watcher | count, unique files, rate per minute, peak per second, error types, and patched files that also got the warning |
 | Log | other warnings and errors by kind, with counts and rate per hour |
 | ACP | `acp.protocol_version.requested` / `answered` notices, version fallback, JSON-RPC error lines |
@@ -259,7 +261,8 @@ Give the report in this order. Keep it short.
 2. **Progress**: done / total, the instance that runs now and its time, empty
    patches, timeouts, and the score when there is one.
 3. **Tool stats**: calls / errors for each tool and verb, web calls, skills,
-   code context, made-up verbs, self-matches, the watcher count, and the web
+   code context, made-up verbs, self-matches, the repeated results and the
+   test result before and after the last edit, the watcher count, and the web
    results that look like the upstream fix. Such a result shows how the agent
    solved an instance. It is not a problem.
 
