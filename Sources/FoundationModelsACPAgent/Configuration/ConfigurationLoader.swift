@@ -119,11 +119,13 @@ public struct LoadedConfiguration: Equatable, Sendable {
     public let sources: [String: DotfolderStack.Source]
 }
 
-/// Loads `config.yaml` through the dotfolder stack (plan.md §2.2): the user
-/// layer `~/.config/<name>/` (or `$XDG_CONFIG_HOME/<name>/` when that
-/// variable is set and absolute) under the project layer `<cwd>/.<name>/`.
-/// Both layers render untrusted; there is no defaults directory, because
-/// the builtin defaults are `AgentConfiguration`'s property values.
+/// Loads `config.yaml` through the configuration stack (plan.md §2.2).
+/// Layer 1 is the builtin file `builtin.config.yaml`, a resource of
+/// this library. Over it is the dotfolder stack: the user layer
+/// `~/.config/<name>/` (or `$XDG_CONFIG_HOME/<name>/` when that variable is
+/// set and absolute) under the project layer `<cwd>/.<name>/`. Both
+/// dotfolder layers render untrusted. Layer 1 is not a template and sets no
+/// source, thus a key that only layer 1 sets reports the builtin layer.
 ///
 /// The project layer resolves per session, so one loader serves one
 /// working directory. Two loaders with two working directories see two
@@ -138,7 +140,10 @@ public struct ConfigurationLoader: Sendable {
     /// The two-layer stack the loader resolves `config.yaml` against.
     public let stack: DotfolderStack
 
-    /// Builds the stack for `name`.
+    /// Gives the tree of layer 1, under the dotfolder stack.
+    private let builtinLayer: @Sendable () throws -> YAMLValue
+
+    /// Builds the stack for `name`, over the builtin configuration file.
     ///
     /// - Parameters:
     ///   - name: The validated dotfolder name.
@@ -154,12 +159,34 @@ public struct ConfigurationLoader: Sendable {
         userDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
+        self.init(
+            name: name, workingDirectory: workingDirectory, userDirectory: userDirectory,
+            environment: environment, builtinLayer: BuiltinConfigurationFile.root)
+    }
+
+    /// Builds the stack for `name`, over the layer 1 tree that
+    /// `builtinLayer` gives.
+    ///
+    /// - Parameters:
+    ///   - name: The validated dotfolder name.
+    ///   - workingDirectory: The session working directory.
+    ///   - userDirectory: The user layer root, or `nil` to derive it.
+    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - builtinLayer: Gives the tree of layer 1. Each load calls it.
+    init(
+        name: DotfolderName,
+        workingDirectory: URL,
+        userDirectory: URL?,
+        environment: [String: String],
+        builtinLayer: @escaping @Sendable () throws -> YAMLValue
+    ) {
         self.name = name
         self.stack = DotfolderStack(
             name: name.rawValue,
             workingDirectory: workingDirectory,
             userDirectory: userDirectory,
             environment: environment)
+        self.builtinLayer = builtinLayer
     }
 
     /// The configuration a load gives when no layer holds a file:
@@ -175,32 +202,50 @@ public struct ConfigurationLoader: Sendable {
 
     /// Loads, merges, checks and decodes `config.yaml`.
     ///
-    /// With no file in any layer the result is ``builtinConfiguration``.
-    /// Each value that no layer sets and that the dotfolder name gives,
-    /// such as the default of `tools.files.exclude`, is put in after the
-    /// decode. An unknown top-level section is logged and returned as a
-    /// warning. An unknown key inside a known section is an error.
+    /// The merged dotfolder tree goes over layer 1, the builtin file. With
+    /// no file in any dotfolder layer the result is
+    /// ``builtinConfiguration``. Each value that no layer sets and that the
+    /// dotfolder name gives, such as the default of `tools.files.exclude`,
+    /// is put in after the decode. An unknown top-level section is logged
+    /// and returned as a warning. An unknown key inside a known section is
+    /// an error.
     ///
     /// - Returns: The decoded configuration and the warnings.
     /// - Throws: `ConfigurationError` for a schema failure;
     ///   `LayeredYAMLDocumentError` for a layer that cannot be read,
-    ///   rendered or parsed; `YAMLValueDecodingError` for a value that
-    ///   does not decode, such as a `recording.level` other than `off` or
-    ///   `full`.
+    ///   rendered or parsed; ``BuiltinConfigurationFileError`` or
+    ///   `YAMLValueParsingError` for a builtin file that cannot be read or
+    ///   parsed; `YAMLValueDecodingError` for a value that does not decode,
+    ///   such as a `recording.level` other than `off` or `full`.
     public func load() throws -> LoadedConfiguration {
         let document = try LayeredYAMLDocument.load(
             Self.configFileName,
             from: stack,
             engine: TemplateEngine(partials: stack),
             context: TemplateContext())
-        let warnings = try Self.schemaWarnings(in: document.root)
+        let root = try layeredRoot(over: document)
+        let warnings = try Self.schemaWarnings(in: root)
         for warning in warnings {
             warning.log()
         }
         return LoadedConfiguration(
-            configuration: resolvingDotfolderDefaults(of: try Self.configuration(from: document.root)),
+            configuration: resolvingDotfolderDefaults(of: try Self.configuration(from: root)),
             warnings: warnings,
             sources: Self.sources(in: document))
+    }
+
+    /// The tree of layer 1 with the merged dotfolder tree over it.
+    ///
+    /// - Parameter document: The merged dotfolder layers.
+    /// - Returns: The tree of layer 1 alone when no dotfolder layer holds a
+    ///   file, and the merged tree of all the layers otherwise.
+    /// - Throws: What the layer 1 source throws.
+    private func layeredRoot(over document: LayeredYAMLDocument) throws -> YAMLValue {
+        let builtinRoot = try builtinLayer()
+        guard document.root != .null else {
+            return builtinRoot
+        }
+        return builtinRoot.layered(under: document.root)
     }
 
     /// `configuration` with each default that the dotfolder name of this
@@ -251,8 +296,8 @@ public struct ConfigurationLoader: Sendable {
         }
     }
 
-    /// The decoded merged tree, or the builtin defaults when no layer
-    /// contributed a document.
+    /// The decoded merged tree, or the in-code defaults when the tree is
+    /// empty.
     private static func configuration(from root: YAMLValue) throws -> AgentConfiguration {
         guard root != .null else {
             return AgentConfiguration()

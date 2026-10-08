@@ -186,13 +186,17 @@ The `userDirectory` and `environment` parameters are injectable. Thus tests do
 not touch the real home directory. This package does not pass a
 `defaultsDirectory`. The layers follow, with the lowest precedence first:
 
-1. **Builtin defaults are in code, not on disk.** The property defaults of
-   `AgentConfiguration` *are* the default configuration: a selected
-   coding-model profile that operates correctly on a 16 GB machine
-   (`recording.level: full`, `transcripts.location: project`). There is no
-   shipped `config.yaml`. There is nothing to materialize on the first run.
-   There is no defaults directory. Layer 1 is code for each artifact: the
-   config defaults, the compiled-in `Instructions.md` (§3.1), and the builtin
+1. **Builtin defaults ship in the library, not in a dotfolder.** For the
+   configuration, layer 1 is the file `builtin.config.yaml`, a resource of
+   the library target. It names each tool under `tools:`, and each tool is
+   on by default. The property defaults of `AgentConfiguration` stay as the
+   decode fallback, and a test makes sure that the file decodes to exactly
+   `AgentConfiguration()`: a selected coding-model profile that operates
+   correctly on a 16 GB machine (`recording.level: full`,
+   `transcripts.location: project`). There is nothing to materialize on the
+   first run. There is no defaults directory. Layer 1 ships in the library
+   for each artifact: the builtin configuration file, the compiled-in
+   `Instructions.md` (§3.1), and the builtin
    slash commands (Swift `.action` closures, §14.1). One rule stays important:
    **a change of behavior must not make a rebuild necessary.** A file can
    shadow each code-level default. `/config export` (§14.1) and

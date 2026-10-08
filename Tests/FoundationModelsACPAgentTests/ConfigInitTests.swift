@@ -168,6 +168,21 @@ struct ConfigInitTests {
         #expect(report.standardErrorLines.isEmpty)
     }
 
+    /// The written file holds the same tool defaults as the builtin file,
+    /// with the files exclude default of the CLI dotfolder.
+    @Test func theWrittenToolsAreTheToolsOfTheBuiltinFile() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigInitTests-builtin-file")
+        try Self.initialize(in: fixture)
+        let fileTools = try BuiltinConfigurationFile.root().decoded(as: AgentConfiguration.self).tools
+
+        let loaded = try Self.load(in: fixture)
+
+        #expect(
+            loaded.configuration.tools
+                == fileTools.resolvingDotfolderDefaults(
+                    try DotfolderName(AgentComposition.dotfolderName)))
+    }
+
     /// The written file holds `tools.files.exclude` with its default: the
     /// dotfolder of the CLI, so a person sees the list and can edit it.
     @Test func theWrittenFileHoldsTheFilesExcludeDefault() throws {

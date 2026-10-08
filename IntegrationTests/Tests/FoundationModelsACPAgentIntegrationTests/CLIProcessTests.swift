@@ -55,6 +55,10 @@ struct CLIProcessTests {
           embedding: []
         """
 
+    /// The line of the git tool that `config show --source` writes when no
+    /// layer sets the tool.
+    private static let builtinGitLine = "  git:  # builtin"
+
     /// The number of rows `config path` writes: builtin, user and project.
     private static let layerRowCount = 3
 
@@ -137,6 +141,18 @@ struct CLIProcessTests {
 
         #expect(run.exitCode == 0, "stderr: \(run.standardError)")
         #expect(run.standardOutput.contains("profile:"), "stdout: \(run.standardOutput)")
+        #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
+    }
+
+    /// The built binary reads the builtin configuration file from the
+    /// resource bundle of the library: `config show --source` exits 0, and
+    /// the git tool reports the builtin layer. A binary that cannot find
+    /// the file fails each load, thus the exit code is the proof.
+    @Test func configShowReadsTheBuiltinFileFromTheResourceBundle() async throws {
+        let run = try await Self.runAgentCLI(arguments: ["config", "show", "--source"])
+
+        #expect(run.exitCode == 0, "stderr: \(run.standardError)")
+        #expect(run.standardOutput.contains(Self.builtinGitLine), "stdout: \(run.standardOutput)")
         #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
     }
 

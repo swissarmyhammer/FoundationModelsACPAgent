@@ -17,10 +17,12 @@ extension KeyCheckedSection {
     }
 }
 
-/// The `config.yaml` schema (plan.md §2.4). The property defaults of this
-/// type and its sections ARE the builtin configuration, layer 1 of the
-/// stack (§2.2): there is no shipped `config.yaml` and no defaults
-/// directory. A missing section or key keeps its default.
+/// The `config.yaml` schema (plan.md §2.4). Layer 1 of the stack (§2.2) is
+/// the builtin file `builtin.config.yaml`, which names each tool and
+/// its defaults. The property defaults of this type and its sections are the
+/// decode fallback: a section or a key that no layer sets keeps its default.
+/// A test makes sure that the builtin file decodes to exactly
+/// `AgentConfiguration()`.
 ///
 /// There is no `permissions` section: the sandbox is the only gate (§11.7).
 /// There is no `instructions` section: the system prompt is a markdown file

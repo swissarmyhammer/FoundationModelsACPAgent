@@ -23,6 +23,13 @@ struct ConfigShowTests {
     /// the value key under it.
     private static let recordingOffKeyCount = 2
 
+    /// A user `config.yaml` that turns the web tool off.
+    private static let webOffYAML = "tools:\n  web: false\n"
+
+    /// The number of keys ``webOffYAML`` sets: the section key, and the
+    /// tool key under it.
+    private static let webOffKeyCount = 2
+
     /// The `compaction.trigger` a fixture sets; it differs from the
     /// default so the value is observable in both output forms.
     private static let configuredTrigger = 0.7
@@ -240,6 +247,23 @@ struct ConfigShowTests {
         let keyLines = Self.keyLines(in: report.standardOutput)
         #expect(keyLines.contains { $0.contains("level: \"full\"") && $0.hasSuffix("# project") })
         #expect(keyLines.contains { $0.contains("location: \"home\"") && $0.hasSuffix("# user") })
+    }
+
+    /// A user `tools.web: false` reports `user` for that key and for its
+    /// section, and each other key reports `builtin`: layer 1, the builtin
+    /// file, sets no source.
+    @Test func aUserToolKeyReportsUserAndTheOtherToolKeysBuiltin() throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-tools")
+        try fixture.writeUserConfig(Self.webOffYAML)
+
+        let report = try Self.report(["--source"], in: fixture)
+
+        let keyLines = Self.keyLines(in: report.standardOutput)
+        let userLines = keyLines.filter { $0.hasSuffix("# user") }
+        let builtinLines = keyLines.filter { $0.hasSuffix(Self.builtinAnnotation) }
+        #expect(userLines.count == Self.webOffKeyCount)
+        #expect(userLines.contains { $0.contains("web: false") })
+        #expect(builtinLines.count == keyLines.count - Self.webOffKeyCount)
     }
 
     /// Without `--source` no key carries an annotation.

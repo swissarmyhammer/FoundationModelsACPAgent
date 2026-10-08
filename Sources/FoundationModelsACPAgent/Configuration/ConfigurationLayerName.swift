@@ -2,13 +2,14 @@ import FoundationModelsExtras
 
 /// The layer a reported configuration key came from (cli-plan.md §5.11).
 ///
-/// `DotfolderStack.Source` names the layers on disk and has no case for
-/// the builtin defaults, because the builtin layer is code, not a file
-/// (§5.10). A key no layer set has no entry in
-/// `LoadedConfiguration.sources`; this type maps that absent entry to
-/// ``builtin``, so a report can name every key.
+/// `DotfolderStack.Source` names the dotfolder layers and has no case for
+/// the builtin layer, because the builtin layer is a resource of the
+/// library and not a dotfolder (§5.10). A key no dotfolder layer set has no
+/// entry in `LoadedConfiguration.sources`; this type maps that absent entry
+/// to ``builtin``, so a report can name every key.
 public enum ConfigurationLayerName: String, Encodable, Equatable, Sendable {
-    /// The property defaults of `AgentConfiguration`: in code, no file.
+    /// Layer 1: the builtin file `builtin.config.yaml`, with the
+    /// property defaults of `AgentConfiguration` as the decode fallback.
     case builtin
 
     /// A cached remote skill marketplace layer. A host adds this layer

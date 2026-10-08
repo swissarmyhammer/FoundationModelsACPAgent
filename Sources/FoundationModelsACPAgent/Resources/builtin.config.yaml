@@ -1,0 +1,68 @@
+# The builtin configuration of the agent. This file is layer 1 of the
+# configuration stack. The user layer and the project layer are above it.
+# A key in a higher layer replaces the same key in this file.
+#
+# Each tool is on by default. To turn a tool off, set it to false in a
+# higher layer, for example:
+#
+#   tools:
+#     web: false
+#
+# A tool body that is a mapping turns the tool on. The web and git bodies
+# also have the "enabled" key.
+#
+# Do not put a secret, for example an API key, in this file.
+#
+# The tests make sure that this file decodes to the defaults in the code
+# (AgentConfiguration), and that it names each tool and each option key.
+tools:
+  # The files tools: read, write, search and edit the files of the session.
+  files:
+    # When true, the tools do not write a file.
+    readOnly: false
+    # When true, a path can go through a symbolic link.
+    allowSymlinks: false
+    # When true, the tools record each change of the session.
+    recordsChanges: false
+    # The gitignore patterns that the search tools skip. When the value is
+    # null, the tools skip the dotfolder of the agent, for example
+    # ".acp-agent/". An empty list skips no path.
+    exclude: null
+
+  # The shell tools: run a command and keep its output.
+  shell:
+    # The directory for the command output. When the value is null, the
+    # shell tools use their own directory.
+    storeDirectory: null
+
+  # The skills tool: find and load the skills of the dotfolder stack.
+  skills:
+    # The remote skill marketplaces. Each item has a "url" key. An empty
+    # list uses the local dotfolder stack only.
+    marketplaces: []
+
+  # The code context tools: the symbol index, the call graph and the
+  # language servers of the session working directory.
+  codeContext:
+    # When true, the tools install a language server that is not installed.
+    autoInstall: true
+    # When true, the index uses the embedding model, and the searchCode
+    # verb can rank by meaning.
+    semanticSearch: true
+
+  # The web tools: search the web and fetch a page.
+  web:
+    # When false, the web tools are off.
+    enabled: true
+    # The API keys of the search providers, by provider name. Put a key in
+    # the user layer or in the environment, not in this file.
+    apiKeys: {}
+
+  # The git tools: read the repository of the session working directory.
+  git:
+    # When false, the git tools are off.
+    enabled: true
+
+  # The MCP servers. Each item has a "name" key and a "command" key or a
+  # "url" key. An empty list connects only the servers of the client.
+  mcp: []

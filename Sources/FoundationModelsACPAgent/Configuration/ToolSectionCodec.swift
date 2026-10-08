@@ -678,8 +678,10 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
 extension ToolsConfiguration {
     /// The known body keys of each mapping-bodied tool, by the tool's YAML
     /// spelling. `mcp` is not here: its body is a list of server entries,
-    /// each checked against `MCPServerConfiguration.knownKeys`.
-    private static let optionKeys: [String: Set<String>] = [
+    /// each checked against `MCPServerConfiguration.knownKeys`. The tests of
+    /// ``BuiltinConfigurationFile`` read it to make sure that the builtin
+    /// file names each key.
+    static let optionKeys: [String: Set<String>] = [
         CodingKeys.files.stringValue: FilesToolOptions.knownKeys,
         CodingKeys.shell.stringValue: ShellToolOptions.knownKeys,
         CodingKeys.skills.stringValue: SkillsToolOptions.knownKeys,

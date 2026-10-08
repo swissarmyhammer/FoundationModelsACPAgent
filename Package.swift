@@ -6,6 +6,13 @@ import PackageDescription
 /// The name of this package, its library product, and its library target.
 private let packageName = "FoundationModelsACPAgent"
 
+/// The builtin configuration file, a resource of the library target, by its
+/// path under the target directory. `ConfigurationLoader` reads it as layer 1
+/// of the configuration stack through `Bundle.module`. SwiftPM copies the
+/// resource bundle beside each product that links the library, thus the
+/// `acp-agent` binary finds it as the unit tests do.
+private let builtinConfigurationResource = "Resources/builtin.config.yaml"
+
 /// The name of the unit test target, under `Tests/`.
 private let testTargetName = "\(packageName)Tests"
 
@@ -345,7 +352,9 @@ let package = Package(
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts + [mcpSDKProduct] + telemetryAPIProducts
+            dependencies: familyProducts + [mcpSDKProduct] + telemetryAPIProducts,
+            // The builtin configuration — see `builtinConfigurationResource`.
+            resources: [.copy(builtinConfigurationResource)]
         ),
         // The agent CLI (cli-plan.md §5, §8): the ArgumentParser subcommand
         // tree over `AgentComposition`, and the tier-3 fixture. It links

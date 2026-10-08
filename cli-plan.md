@@ -275,7 +275,7 @@ with the lowest precedence first:
 
 | Layer | Path | On disk? |
 |---|---|---|
-| 1. Builtin defaults | none | **No.** The property defaults of `AgentConfiguration` are the defaults. Nothing is written on the first run. |
+| 1. Builtin defaults | `builtin.config.yaml` in the resource bundle of the library | **No dotfolder.** The file names each tool, and each tool is on. The property defaults of `AgentConfiguration` are the decode fallback, and a test keeps the file and the code the same. Nothing is written on the first run. |
 | 2. User | `$XDG_CONFIG_HOME/acp-agent/`, or `~/.config/acp-agent/` when that variable is not set or is not absolute | Yes. No leading dot, because `~/.config` is already hidden. |
 | 3. Project | `<project>/.acp-agent/` | Yes. A leading dot, because it sits at a repo root beside the source. |
 
@@ -303,7 +303,8 @@ So `--cwd` behaves differently in each mode:
 key as `<NAME>_DEFAULTS_DIR`, and our name gives
 `ACP-AGENT_DEFAULTS_DIR`. A shell cannot `export` a name that holds a
 hyphen, so only `env 'ACP-AGENT_DEFAULTS_DIR=…' acp-agent …` reaches it.
-This package passes no defaults directory, so layer 1 stays code, and the
+This package passes no defaults directory, so layer 1 stays the builtin
+file `builtin.config.yaml` in the resource bundle of the library, and the
 key is not used today.
 
 ### 5.11 The `config` subcommands
