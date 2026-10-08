@@ -213,4 +213,19 @@ import Testing
             try await Self.select(on: model)
         }
     }
+
+    /// Two models with different session makers each answer through their
+    /// own maker. The SDK can give the two models one executor, so the
+    /// executor must read the maker from the model of each call.
+    @Test func eachModelAnswersThroughItsOwnSessionMaker() async throws {
+        let profile = try await Self.makeProfile(script: [.textDelta(Self.selectionJSON), .endPass])
+        let firstLog = MakerLog()
+        let secondLog = MakerLog()
+
+        _ = try await Self.select(on: Self.makeCountingModel(profile: profile, log: firstLog))
+        _ = try await Self.select(on: Self.makeCountingModel(profile: profile, log: secondLog))
+
+        #expect(await firstLog.sessions.count == Self.oneSession)
+        #expect(await secondLog.sessions.count == Self.oneSession)
+    }
 }

@@ -39,9 +39,11 @@ struct RoutedSelectionModel: LanguageModel {
     typealias SessionMaker =
         @Sendable (_ grammar: Grammar?, _ instructions: String?) async throws -> any RoutedSession
 
-    /// The session maker and the token counter that all copies of this
-    /// model share. Its identity is the cache key of the executor.
-    let source: RoutedSelectionSource
+    /// Makes the Router session of each generation call.
+    let makeSession: SessionMaker
+
+    /// Counts the tokens of each answer, for the usage that the SDK reports.
+    let tokenCounter: any TokenCounter
 
     /// Makes a model over a session maker.
     ///
@@ -50,7 +52,8 @@ struct RoutedSelectionModel: LanguageModel {
     ///     that the SDK reports.
     ///   - makeSession: Makes the Router session of each generation call.
     init(tokenCounter: any TokenCounter, makingEach makeSession: @escaping SessionMaker) {
-        source = RoutedSelectionSource(makeSession: makeSession, tokenCounter: tokenCounter)
+        self.makeSession = makeSession
+        self.tokenCounter = tokenCounter
     }
 
     /// Makes a model over the flash slot of `profile`.
@@ -73,33 +76,11 @@ struct RoutedSelectionModel: LanguageModel {
         LanguageModelCapabilities([.guidedGeneration])
     }
 
-    /// The cache key of the executor: the identity of the shared source.
+    /// The cache key of the executor. All models share one key, thus one
+    /// executor: the executor keeps no state, and it reads the session maker
+    /// and the token counter from the model of each call.
     var executorConfiguration: RoutedSelectionModelExecutor.Configuration {
-        RoutedSelectionModelExecutor.Configuration(source: ObjectIdentifier(source))
-    }
-}
-
-/// The session maker and the token counter of one ``RoutedSelectionModel``.
-///
-/// A class, because its identity is the cache key of the executor: the SDK
-/// makes one executor for each distinct configuration. Both stored
-/// properties are immutable and `Sendable`, so the class is `Sendable` with
-/// no lock.
-final class RoutedSelectionSource: Sendable {
-    /// Makes the Router session of one generation call.
-    let makeSession: RoutedSelectionModel.SessionMaker
-
-    /// Counts the tokens of each answer.
-    let tokenCounter: any TokenCounter
-
-    /// Makes a source.
-    ///
-    /// - Parameters:
-    ///   - makeSession: Makes the Router session of one generation call.
-    ///   - tokenCounter: Counts the tokens of each answer.
-    init(makeSession: @escaping RoutedSelectionModel.SessionMaker, tokenCounter: any TokenCounter) {
-        self.makeSession = makeSession
-        self.tokenCounter = tokenCounter
+        RoutedSelectionModelExecutor.Configuration()
     }
 }
 
@@ -121,17 +102,16 @@ enum RoutedSelectionModelError: Error, Equatable, CustomStringConvertible {
 /// The executor of ``RoutedSelectionModel``: one Router session for each
 /// generation call.
 struct RoutedSelectionModelExecutor: LanguageModelExecutor {
-    /// The cache key that the SDK makes and uses again for the executor.
-    struct Configuration: Sendable, Hashable {
-        /// The identity of the source of the model.
-        let source: ObjectIdentifier
-    }
+    /// The cache key that the SDK makes and uses again for the executor. It
+    /// holds no value, because the executor keeps no state.
+    struct Configuration: Sendable, Hashable {}
 
     /// The model that this executor runs for.
     typealias Model = RoutedSelectionModel
 
     /// Makes an executor. The executor reads nothing from the configuration:
-    /// the source comes with the model on each call.
+    /// the session maker and the token counter come with the model on each
+    /// call.
     ///
     /// - Parameter configuration: The cache key.
     /// - Throws: Never. `throws` comes from the `LanguageModelExecutor`
@@ -144,7 +124,7 @@ struct RoutedSelectionModelExecutor: LanguageModelExecutor {
     ///
     /// - Parameters:
     ///   - request: The generation request with the full transcript.
-    ///   - model: The model with the source.
+    ///   - model: The model with the session maker and the token counter.
     ///   - channel: The channel that the answer goes into.
     /// - Throws: ``RoutedSelectionModelError/noPrompt`` for a transcript with
     ///   no prompt, the error of the schema encode, or whatever the session
@@ -156,7 +136,7 @@ struct RoutedSelectionModelExecutor: LanguageModelExecutor {
     ) async throws {
         let prompt = try Self.lastPromptText(in: request.transcript)
         let grammar = try request.schema.map(Self.grammar(of:))
-        let session = try await model.source.makeSession(
+        let session = try await model.makeSession(
             grammar, Self.instructionsText(in: request.transcript))
         let text: String
         do {
@@ -166,7 +146,7 @@ struct RoutedSelectionModelExecutor: LanguageModelExecutor {
             throw error
         }
         await session.close()
-        let tokenCount = model.source.tokenCounter.count(text)
+        let tokenCount = model.tokenCounter.count(text)
         await channel.send(.response(action: .appendText(text, tokenCount: tokenCount)))
     }
 
