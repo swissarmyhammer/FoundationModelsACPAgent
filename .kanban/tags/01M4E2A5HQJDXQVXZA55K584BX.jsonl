@@ -1,0 +1,1 @@
+{"id":"01M4E2A5HQ2W03TB2FFE88ZVM1","timestamp":"2026-10-08T15:32:34.999907Z","op":"create","item_id":"01M4E2A5HQJDXQVXZA55K584BX","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: b60205\n+tag_name: config\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: b60205\n-tag_name: config\n","transaction_id":null}
