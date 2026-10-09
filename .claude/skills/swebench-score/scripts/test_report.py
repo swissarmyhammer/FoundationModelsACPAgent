@@ -20,6 +20,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Callable, NamedTuple
 
 HERE = Path(__file__).resolve().parent
 SPEC = importlib.util.spec_from_file_location("swebench_report_script", HERE / "report.py")
@@ -345,18 +346,6 @@ class TheGitToolsOfARun(RunReportTestCase):
     # The read that the run recorded for WITH_READ (`swebench_history.py`).
     READ = {"verb": "log", "rev": "main", "commit": "0123456789abcdef0123456789abcdef01234567"}
 
-    def test_the_git_line_gives_the_state_and_the_config(self):
-        """A person must see if the run had the git tools, as for web."""
-        out = self.report_text(GIT_ON_CONFIG, {}, "--no-compare")
-        git_line = self.line_of(out, "== GIT")
-        self.assertIn("config on", git_line)
-        self.assertIn(str(self.root / CONFIG_PATH), git_line)
-
-    def test_a_config_with_git_off_gives_git_off(self):
-        """The state comes from the file, not from a constant."""
-        (self.root / CONFIG_PATH).write_text(GIT_OFF_CONFIG)
-        self.assertEqual(report.git_state(self.root / CONFIG_PATH), "off")
-
     def test_a_read_of_later_history_marks_the_upstream_fix_column(self):
         """The row of the instance with the read says YES, and the other row does not."""
         out = self.report_text(GIT_ON_CONFIG, {self.WITH_READ: [self.READ], TWO[1]: []}, "--no-compare")
@@ -371,38 +360,60 @@ class TheGitToolsOfARun(RunReportTestCase):
         out = self.report_text(GIT_ON_CONFIG, {}, "--no-compare")
         self.assertIn("no git check in the record", self.line_of(out, "== GIT"))
 
-    def test_a_compare_with_git_off_is_a_compare_of_two_configurations(self):
-        """A run with git on and a run with git off use different tools."""
-        make_run(self.bench, "baseline", TWO, OLD, record={"agent_config": "bench/off.config.yaml"})
-        (self.bench / "off.config.yaml").write_text(GIT_OFF_CONFIG)
-        out = self.report_text(GIT_ON_CONFIG, {})
-        self.assertIn("git is off before and on now", out)
+
+class SwitchOnlyGroup(NamedTuple):
+    """One group of tools that the config turns on and off with `enabled` only."""
+
+    # The name of the group under `tools:`, as the report writes it.
+    name: str
+    # The config text with the group on, and with the group off.
+    on_config: str
+    off_config: str
+    # The function of report.py that reads the state of the group from a config file.
+    state_of: Callable[[Path], str]
+    # The start of the report line that states the group.
+    header: str
 
 
-class TheEnvironmentToolsOfARun(RunReportTestCase):
-    """Task ^fn8sfpv: the report states `tools.environment.enabled` of the
-    config, as it states the web and git groups. The environment tools give
-    the model each variable of the agent process, so a person must see if
-    the run had them."""
+# Each switch-only group that the report states (tasks ^exkkyyr and ^fn8sfpv).
+SWITCH_ONLY_GROUPS = (
+    SwitchOnlyGroup("git", GIT_ON_CONFIG, GIT_OFF_CONFIG, report.git_state, "== GIT"),
+    SwitchOnlyGroup("environment", ENVIRONMENT_ON_CONFIG, ENVIRONMENT_OFF_CONFIG,
+                    report.environment_state, "== ENVIRONMENT"),
+)
 
-    def test_the_environment_line_gives_the_state_and_the_config(self):
-        """The bench config sets `enabled: true`, and the report says so with the path of the config."""
-        out = self.report_text(ENVIRONMENT_ON_CONFIG, {}, "--no-compare")
-        environment_line = self.line_of(out, "== ENVIRONMENT")
-        self.assertIn("config on", environment_line)
-        self.assertIn(str(self.root / CONFIG_PATH), environment_line)
 
-    def test_a_config_with_environment_off_gives_environment_off(self):
+class TheSwitchOnlyGroupsOfARun(RunReportTestCase):
+    """The report states `tools.<group>.enabled` of the config for each
+    switch-only group, as it states the web group. A person must see if the
+    run had the git tools, and if the model got each variable of the agent
+    process from the environment tools."""
+
+    def test_the_line_of_each_group_gives_the_state_and_the_config(self):
+        """The config sets `enabled: true`, and the report says so with the path of the config."""
+        for group in SWITCH_ONLY_GROUPS:
+            with self.subTest(group=group.name):
+                out = self.report_text(group.on_config, {}, "--no-compare")
+                line = self.line_of(out, group.header)
+                self.assertIn("config on", line)
+                self.assertIn(str(self.root / CONFIG_PATH), line)
+
+    def test_a_config_with_a_group_off_gives_off(self):
         """The state comes from the file, not from a constant."""
-        (self.root / CONFIG_PATH).write_text(ENVIRONMENT_OFF_CONFIG)
-        self.assertEqual(report.environment_state(self.root / CONFIG_PATH), "off")
+        for group in SWITCH_ONLY_GROUPS:
+            with self.subTest(group=group.name):
+                (self.root / CONFIG_PATH).write_text(group.off_config)
+                self.assertEqual(group.state_of(self.root / CONFIG_PATH), "off")
 
-    def test_a_compare_with_environment_off_is_a_compare_of_two_configurations(self):
-        """A run with the environment tools on and a run with them off use different tools."""
-        make_run(self.bench, "baseline", TWO, OLD, record={"agent_config": "bench/off.config.yaml"})
-        (self.bench / "off.config.yaml").write_text(ENVIRONMENT_OFF_CONFIG)
-        out = self.report_text(ENVIRONMENT_ON_CONFIG, {})
-        self.assertIn("environment is off before and on now", out)
+    def test_a_compare_with_a_group_off_is_a_compare_of_two_configurations(self):
+        """A run with a group on and a run with that group off use different tools."""
+        for group in SWITCH_ONLY_GROUPS:
+            with self.subTest(group=group.name):
+                make_run(self.bench, "baseline", TWO, OLD,
+                         record={"agent_config": "bench/off.config.yaml"})
+                (self.bench / "off.config.yaml").write_text(group.off_config)
+                out = self.report_text(group.on_config, {})
+                self.assertIn(f"{group.name} is off before and on now", out)
 
 
 class PathsStayInsideTheRepo(BenchTestCase):

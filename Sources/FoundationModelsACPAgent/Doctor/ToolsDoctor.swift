@@ -304,18 +304,14 @@ public struct ToolsDoctor: Doctorable {
     ///
     /// - Returns: That one finding.
     private func webCheck() -> HealthCheck {
-        guard
-            let names = WebComposition.providerNames(
-                section: configuration.tools.web, processEnvironment: environment)
-        else {
-            return DisabledSectionCheck.check(
-                name: Self.webToolCheckName, key: Self.webEnabledKey, category: Self.category)
-        }
-        return .ok(
-            name: Self.webToolCheckName,
-            message: "on; the search providers in order: "
-                + names.joined(separator: Self.providerSeparator),
-            category: Self.category)
+        let names = WebComposition.providerNames(
+            section: configuration.tools.web, processEnvironment: environment)
+        return Self.switchableSectionCheck(
+            name: Self.webToolCheckName, key: Self.webEnabledKey,
+            onMessage: names.map {
+                "on; the search providers in order: "
+                    + $0.joined(separator: Self.providerSeparator)
+            })
     }
 
     // MARK: - The git tool
@@ -330,14 +326,11 @@ public struct ToolsDoctor: Doctorable {
     ///
     /// - Returns: That one finding.
     private func gitCheck() -> HealthCheck {
-        guard configuration.tools.git.mountedOptions != nil else {
-            return DisabledSectionCheck.check(
-                name: Self.gitToolCheckName, key: Self.gitEnabledKey, category: Self.category)
-        }
-        return .ok(
-            name: Self.gitToolCheckName,
-            message: "on; the read-only git verbs read the repository at \(workingDirectory.path)",
-            category: Self.category)
+        Self.switchableSectionCheck(
+            name: Self.gitToolCheckName, key: Self.gitEnabledKey,
+            onMessage: configuration.tools.git.mountedOptions.map { _ in
+                "on; the read-only git verbs read the repository at \(workingDirectory.path)"
+            })
     }
 
     // MARK: - The environment tool
@@ -353,14 +346,11 @@ public struct ToolsDoctor: Doctorable {
     ///
     /// - Returns: That one finding.
     private func environmentCheck() -> HealthCheck {
-        guard configuration.tools.environment.mountedOptions != nil else {
-            return DisabledSectionCheck.check(
-                name: Self.environmentToolCheckName, key: Self.environmentEnabledKey,
-                category: Self.category)
-        }
-        return .ok(
-            name: Self.environmentToolCheckName, message: Self.environmentOnMessage,
-            category: Self.category)
+        Self.switchableSectionCheck(
+            name: Self.environmentToolCheckName, key: Self.environmentEnabledKey,
+            onMessage: configuration.tools.environment.mountedOptions.map { _ in
+                Self.environmentOnMessage
+            })
     }
 
     // MARK: - The MCP servers
@@ -429,6 +419,25 @@ public struct ToolsDoctor: Doctorable {
     }
 
     // MARK: - The shared shapes
+
+    /// The one row of a tool section that is on or off: a pass with the on
+    /// message, or the row that says disabled and names the key that turns
+    /// the tool on again.
+    ///
+    /// - Parameters:
+    ///   - name: What the row is called in the report.
+    ///   - key: The dotted `enabled:` key path of the section.
+    ///   - onMessage: What the row says when the tool is on, or `nil` when
+    ///     the tool is off.
+    /// - Returns: That one row.
+    private static func switchableSectionCheck(
+        name: String, key: String, onMessage: String?
+    ) -> HealthCheck {
+        guard let onMessage else {
+            return DisabledSectionCheck.check(name: name, key: key, category: category)
+        }
+        return .ok(name: name, message: onMessage, category: category)
+    }
 
     /// The finding one probe gives.
     ///

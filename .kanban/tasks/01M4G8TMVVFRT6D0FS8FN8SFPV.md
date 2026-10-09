@@ -81,6 +81,53 @@ comments:
     - skipped: bench test_swebench_harness.HarnessArgumentsTests.test_the_keys_agree_with_the_real_signature, reason "swebench is not installed".
     - next: none
   timestamp: 2026-10-09T19:23:15.983186+00:00
+- actor: claude-code
+  id: 01m4h1y4fvmxf7bxjg679p9cmw
+  text: |-
+    ### commit — changed
+    - evidence: 6bc13fa feat(tools): mount the Multitool environment tools, on by default, with tools.environment in the configuration file (^fn8sfpv). Earlier kanban commit: d677ad6.
+    - next: none
+  timestamp: 2026-10-09T19:23:43.995957+00:00
+- actor: claude-code
+  id: 01m4h5fd72rgpjs3ms6fbkc18k
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (6bc13fa). 5 findings (5 confirmed, 2 refuted) — .claude/skills/swebench-score/scripts/test_report.py:400, Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:454, Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift:355 (duplication), Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift:355 (reuse), Tests/FoundationModelsACPAgentTests/Doctor/ToolsDoctorTests.swift:363.
+    - next: Do the items of "Review Findings (2026-10-09 14:24)". Then do a new review. The task stays in review.
+  timestamp: 2026-10-09T20:25:35.714187+00:00
+- actor: claude-code
+  id: 01m4h5fyr5hgmevzxb5hybqcdp
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 17 files; all pins made again with a full update (Multitool 2f8ea80)
+    - test: green — swift test 827; IntegrationTests 30; bench 254 (1 skip: swebench is not installed), swebench 38, swebench-score 37
+    - commit: 6bc13fa
+    - review: findings — .claude/skills/swebench-score/scripts/test_report.py:400, Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:454, Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift:355 (2), Tests/FoundationModelsACPAgentTests/Doctor/ToolsDoctorTests.swift:363
+  timestamp: 2026-10-09T20:25:53.669268+00:00
+- actor: claude-code
+  id: 01m4h60bnk4td5mhb6txdkv552
+  text: |-
+    Review findings of 2026-10-09 14:24, done (implement pass 2). What changed and why:
+    - ToolSectionCodec.swift: `SwitchOnlyToolOptions` has no generic parameter now. The tag protocol `SwitchOnlyTool` and the tags `GitTool` and `EnvironmentTool` are deleted. `GitToolOptions` and `EnvironmentToolOptions` are typealiases of the one struct. No code used the two types as distinct types (no overload, no extension with `where Options ==`), so the phantom tag gave nothing. The `SwitchableToolOptions` doc now names `SwitchOnlyToolOptions`.
+    - ToolsDoctor.swift: one private static helper `switchableSectionCheck(name:key:onMessage:)` makes the on/off row. `onMessage: nil` gives the `DisabledSectionCheck` row. `webCheck`, `gitCheck` and `environmentCheck` all call it (webCheck had the same guard/disabled/ok shape, so it is folded too). `shellCheck` and `mcpChecks` have a different shape (a writable-directory check, and an async list of probes), so they stay.
+    - ToolsDoctorTests.swift: one parameterized test `aSwitchableSectionThatIsOffSaysDisabled` over `sectionOffCases` (a `SectionOffCase` struct: label, row name, enabled key, and a closure that turns the section off). Cases: web body off, git scalar, git body, environment scalar, environment body. It replaces the web-off, git-off and environment-off tests. A closure is used because `WebToolOptions` is a different type from `SwitchOnlyToolOptions`.
+    - test_report.py: a `SwitchOnlyGroup` NamedTuple and `SWITCH_ONLY_GROUPS` (git, environment). Class `TheSwitchOnlyGroupsOfARun` has three subTest loops: the report line states on and the config path, the state function gives off for an off config, and a compare with the group off says "<group> is off before and on now". These replace the git and environment copies of the three tests (the line test and the off-state test had the same cause). `TheGitToolsOfARun` keeps only the two git-history tests. The web compare test stays in `AnUpstreamFixFromTheWebIsInformation`: it uses that class's own report helper with a scan file and asserts other text.
+    Note: the rule dump of `dump validators` was 766K characters and the file tool cannot read it whole; the findings and the known rules were applied.
+  timestamp: 2026-10-09T20:34:51.187315+00:00
+- actor: claude-code
+  id: 01m4h60fc3fw451w1fybz51arv
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift, Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift, Tests/FoundationModelsACPAgentTests/Doctor/ToolsDoctorTests.swift, .claude/skills/swebench-score/scripts/test_report.py. `swift test --filter 'ToolSectionCodecTests|ToolsDoctorTests|ToolCatalogTests|BuiltinConfigurationFileTests'`: 78 tests in 4 suites passed (aSwitchableSectionThatIsOffSaysDisabled: 5 cases passed); the only warning is the dependency build line "missing creator for mutated node ... mlx-swift_Cmlx.bundle". `python3 -W error -m unittest discover --start-directory .claude/skills/swebench-score/scripts`: 34 tests OK (was 37: 6 copies removed, 3 parameterized tests added). 5 of 5 findings checked. No Package.resolved change, no git stash, bench/swebench_prompt.py and its test not touched.
+    - next: review. The task stays in doing.
+  timestamp: 2026-10-09T20:34:54.979983+00:00
+- actor: claude-code
+  id: 01m4h64t1gx0fj1evmp7hg7y6p
+  text: |-
+    ### test — green
+    - evidence: swift test — 825 tests in 88 suites passed, 1 known issue (the expected withKnownIssue in HarnessSmokeTests), 0 failures. python3 -W error -m unittest discover — bench: 254 tests OK (skipped=1, "swebench is not installed"); .claude/skills/swebench/scripts: 38 OK; .claude/skills/swebench-score/scripts: 34 OK. Only warning: the mlx-swift_Cmlx.bundle build-system line from a dependency.
+    - next: none. No files were changed in this iteration.
+  timestamp: 2026-10-09T20:37:16.976073+00:00
 position_column: doing
 position_ordinal: '80'
 title: Mount the Multitool environment tools, on by default, with a tools.environment section in the configuration file
@@ -126,3 +173,22 @@ The environment tools are ON by default, the same as `git` and `web`. The user a
 - The bench and skill Python suites pass with the new config key.
 
 #tools #config
+
+## Review Findings (2026-10-09 14:24)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 13 file(s) reviewed, 6 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 4 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+> - `bench/README.md` — no validator matches this file
+> - `bench/code-context.config.yaml` — no validator matches this file
+
+- [x] `.claude/skills/swebench-score/scripts/test_report.py:400` `reuse/reuse` — test_a_compare_with_environment_off_is_a_compare_of_two_configurations repeats the git compare test at line 374 of this file. It writes the same baseline and asserts the same message shape, with only the group changed. Use one parameterized compare test over the switch-only groups, with the off-config and the expected message as the parameters.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:454` `code-hygiene/dead-code-swift` — generic_type_param `Tool` is unused.
+- [x] `Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift:355` `duplication/duplication` — environmentCheck repeats the body of gitCheck. Both guard on mountedOptions() != nil, return DisabledSectionCheck.check(name:key:category:) when the tool is off, and otherwise return .ok(name:message:category:). The two blocks differ only by the property names and the message. A later change to the disabled-row or the on-row shape must be made in both copies, and they can drift apart. Extract one helper, for example `private func switchableSectionCheck(mounted: Bool, name: String, key: String, onMessage: String) -> HealthCheck`, which returns the DisabledSectionCheck row or the .ok row. Have gitCheck and environmentCheck call it with their name, key and message. Keep the gitCheck edit in this change, because its body is in the changed set; if gitCheck is not otherwise touched, it is still the shared shape that the new helper replaces.
+- [x] `Sources/FoundationModelsACPAgent/Doctor/ToolsDoctor.swift:355` `reuse/reuse` — environmentCheck repeats the body of gitCheck: a guard on mountedOptions, a DisabledSectionCheck row when the tool is off, and an ok row otherwise. Only the names and the message differ. A fix to one check will be missed in the other. Extract one private helper that takes the section's mountedOptions, the row name, the enabled key, and the on-message. Have gitCheck and environmentCheck call it, so the disabled-row logic exists once.
+- [x] `Tests/FoundationModelsACPAgentTests/Doctor/ToolsDoctorTests.swift:363` `reuse/reuse` — The environment-off test repeats the shape of the git-off test at line 320, with the same parameterized sections and the same three checks on the row. Two copies of one behavior drift apart as the tool list grows. Both sections are switch-only tools. Make one parameterized test over the switch-only sections. Each case gives the section, its row name, and its enabled key. Keep the git and environment rows in the parameter list, not in two functions.

@@ -279,23 +279,6 @@ struct ToolsDoctorTests {
         #expect(!checks.contains { $0.message.contains(keyValue) })
     }
 
-    /// `tools.web.enabled: false` gives one `.ok` row that says disabled
-    /// and names the key.
-    @Test func aWebSectionThatIsNotEnabledSaysDisabled() async throws {
-        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-webOff")
-        var configuration = AgentConfiguration()
-        configuration.tools.web = .enabled(WebToolOptions(enabled: false))
-
-        let checks = await Self.doctor(
-            configuration: configuration, workingDirectory: workspace
-        ).runHealthChecks()
-
-        let row = try Self.webRow(in: checks)
-        #expect(row.status == .ok)
-        #expect(row.message.contains(Self.disabledWord))
-        #expect(row.message.contains(Self.webEnabledKey))
-    }
-
     // MARK: - The git tool
 
     /// With the default configuration, the git row passes and says that the
@@ -310,26 +293,6 @@ struct ToolsDoctorTests {
         let row = try Self.row(named: Self.gitRowName, in: checks)
         #expect(row.status == .ok)
         #expect(!row.message.contains(Self.disabledWord))
-    }
-
-    /// `tools.git: false` and `tools.git.enabled: false` each give one `.ok`
-    /// row that says disabled and names the key.
-    @Test(arguments: [
-        ToolSection<GitToolOptions>.disabled, .enabled(GitToolOptions(enabled: false)),
-    ])
-    func aGitSectionThatIsOffSaysDisabled(section: ToolSection<GitToolOptions>) async throws {
-        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-gitOff")
-        var configuration = AgentConfiguration()
-        configuration.tools.git = section
-
-        let checks = await Self.doctor(
-            configuration: configuration, workingDirectory: workspace
-        ).runHealthChecks()
-
-        let row = try Self.row(named: Self.gitRowName, in: checks)
-        #expect(row.status == .ok)
-        #expect(row.message.contains(Self.disabledWord))
-        #expect(row.message.contains(Self.gitEnabledKey))
     }
 
     // MARK: - The environment tool
@@ -354,27 +317,66 @@ struct ToolsDoctorTests {
         #expect(!checks.contains { $0.message.contains(secretValue) })
     }
 
-    /// `tools.environment: false` and `tools.environment.enabled: false`
-    /// each give one `.ok` row that says disabled and names the key.
-    @Test(arguments: [
-        ToolSection<EnvironmentToolOptions>.disabled,
-        .enabled(EnvironmentToolOptions(enabled: false)),
-    ])
-    func anEnvironmentSectionThatIsOffSaysDisabled(
-        section: ToolSection<EnvironmentToolOptions>
-    ) async throws {
-        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-environmentOff")
+    // MARK: - The switchable sections
+
+    /// One tool section that the doctor shows as one row that is on or
+    /// off, and one shape of the configuration that turns it off.
+    struct SectionOffCase: Sendable, CustomTestStringConvertible {
+        /// The shape of the configuration, as the test report shows it.
+        let label: String
+
+        /// The name of the row of the section.
+        let rowName: String
+
+        /// The dotted `enabled:` key that the disabled row names.
+        let enabledKey: String
+
+        /// Turns the section off in the shape that ``label`` names.
+        let turnOff: @Sendable (inout ToolsConfiguration) -> Void
+
+        /// The text that the test report shows for this case.
+        var testDescription: String { label }
+    }
+
+    /// Each shape that turns a switchable section off: the scalar `false`
+    /// and the body `enabled: false` of the git and the environment
+    /// sections, and the body `enabled: false` of the web section.
+    static let sectionOffCases: [SectionOffCase] = [
+        SectionOffCase(
+            label: "web: {enabled: false}", rowName: webRowName, enabledKey: webEnabledKey,
+            turnOff: { $0.web = .enabled(WebToolOptions(enabled: false)) }),
+        SectionOffCase(
+            label: "git: false", rowName: gitRowName, enabledKey: gitEnabledKey,
+            turnOff: { $0.git = .disabled }),
+        SectionOffCase(
+            label: "git: {enabled: false}", rowName: gitRowName, enabledKey: gitEnabledKey,
+            turnOff: { $0.git = .enabled(GitToolOptions(enabled: false)) }),
+        SectionOffCase(
+            label: "environment: false", rowName: environmentRowName,
+            enabledKey: environmentEnabledKey, turnOff: { $0.environment = .disabled }),
+        SectionOffCase(
+            label: "environment: {enabled: false}", rowName: environmentRowName,
+            enabledKey: environmentEnabledKey,
+            turnOff: { $0.environment = .enabled(EnvironmentToolOptions(enabled: false)) }),
+    ]
+
+    /// A switchable section that is off gives one `.ok` row that says
+    /// disabled and names the `enabled:` key. The row states no secret
+    /// risk, because the tool does not mount.
+    @Test(arguments: sectionOffCases)
+    func aSwitchableSectionThatIsOffSaysDisabled(_ sectionOff: SectionOffCase) async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-sectionOff")
         var configuration = AgentConfiguration()
-        configuration.tools.environment = section
+        sectionOff.turnOff(&configuration.tools)
 
         let checks = await Self.doctor(
             configuration: configuration, workingDirectory: workspace
         ).runHealthChecks()
 
-        let row = try Self.row(named: Self.environmentRowName, in: checks)
+        let row = try Self.row(named: sectionOff.rowName, in: checks)
         #expect(row.status == .ok)
         #expect(row.message.contains(Self.disabledWord))
-        #expect(row.message.contains(Self.environmentEnabledKey))
+        #expect(row.message.contains(sectionOff.enabledKey))
         #expect(!row.message.contains(Self.secretWord))
     }
 

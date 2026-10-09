@@ -18,7 +18,7 @@ public protocol ToolSectionOptions: Codable, Equatable, Sendable {
 /// The option type of a tool body that also takes `enabled:`, so that a
 /// config can say `tools.<name>.enabled: false` beside the scalar
 /// `<name>: false` of the shared codec. ``WebToolOptions`` and
-/// ``GitToolOptions`` are these bodies.
+/// ``SwitchOnlyToolOptions`` are these bodies.
 public protocol SwitchableToolOptions: ToolSectionOptions {
     /// Whether the capability mounts.
     var enabled: Bool { get }
@@ -436,22 +436,11 @@ extension ToolSection where Options: SwitchableToolOptions {
     }
 }
 
-/// The tag of one capability whose tool section has the `enabled` key only.
-/// The tag is a type with no value. It keeps the option type of each such
-/// section distinct, thus `ToolSection<GitToolOptions>` and
-/// `ToolSection<EnvironmentToolOptions>` are two types.
-public protocol SwitchOnlyTool: Sendable {}
-
-/// The tag of the git capability. See ``GitToolOptions``.
-public enum GitTool: SwitchOnlyTool {}
-
-/// The tag of the environment capability. See ``EnvironmentToolOptions``.
-public enum EnvironmentTool: SwitchOnlyTool {}
-
 /// The body of a tool section whose only key is `enabled`: whether the
 /// capability mounts. The capability is on by default, and the scalar
-/// `<name>: false` of the shared codec turns it off too.
-public struct SwitchOnlyToolOptions<Tool: SwitchOnlyTool>: SwitchableToolOptions, KeyCheckedSection {
+/// `<name>: false` of the shared codec turns it off too. ``GitToolOptions``
+/// and ``EnvironmentToolOptions`` are names of this type.
+public struct SwitchOnlyToolOptions: SwitchableToolOptions, KeyCheckedSection {
     /// Whether the capability mounts.
     public var enabled: Bool
 
@@ -493,7 +482,7 @@ public struct SwitchOnlyToolOptions<Tool: SwitchOnlyTool>: SwitchableToolOptions
 /// `branches`, `changes` and `diff` — only read the repository, thus the
 /// capability is on by default. Its root is the session working directory,
 /// so the section has no root key.
-public typealias GitToolOptions = SwitchOnlyToolOptions<GitTool>
+public typealias GitToolOptions = SwitchOnlyToolOptions
 
 /// The `tools.environment:` body: whether the environment capability mounts.
 ///
@@ -508,7 +497,7 @@ public typealias GitToolOptions = SwitchOnlyToolOptions<GitTool>
 /// decided this on 2026-10-09). `variables` gives the model each variable of
 /// the agent process, secrets too: set `enabled: false` to keep them out of
 /// the model context. The section has no variable filter.
-public typealias EnvironmentToolOptions = SwitchOnlyToolOptions<EnvironmentTool>
+public typealias EnvironmentToolOptions = SwitchOnlyToolOptions
 
 // MARK: - The mcp entry
 
