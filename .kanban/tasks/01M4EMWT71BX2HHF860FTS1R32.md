@@ -42,8 +42,31 @@ comments:
     - evidence: swift test (root package) — 828 tests in 88 suites passed, 0 failed, 0 skipped. 1 known issue: the intentional withKnownIssue in HarnessSmokeTests (orderedSubsequenceAssertionChecksOrderWithGaps). 0 compiler warnings in package files. The only warning line is the mlx-swift_Cmlx.bundle build-system line from a dependency.
     - next: review. No file was changed by this step. No commit was made.
   timestamp: 2026-10-09T22:39:15.536571+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4hd4pgxrxp65fxz6nvqe0jk
+  text: |-
+    ### commit — changed
+    - evidence: f86e69b test(tools): prove the git changes and diff verbs on a detached HEAD with Multitool 2f8ea80 (^fts1r32)
+    - next: none. The comment itself is a new kanban change that is not in this commit.
+  timestamp: 2026-10-09T22:39:33.405491+00:00
+- actor: claude-code
+  id: 01m4hdvbv13xa889k4vyyvxeat
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f86e69b). Counts: 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed, 0 skipped. 2 files reviewed. 2 .kanban/ files not reviewed (.reviewignore). No prior Review Findings sections.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-09T22:51:56.129828+00:00
+- actor: claude-code
+  id: 01m4hdvtdmgh8a7q4x896jbpf6
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 test files; both defects are gone with Multitool 2f8ea80
+    - test: green — swift test, 828 passed (1 known issue, HarnessSmokeTests)
+    - commit: f86e69b
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T22:52:11.060550+00:00
+position_column: done
+position_ordinal: ffaf80
 title: 'Upstream Multitool: tools.git.changes fails on a detached HEAD, and tools.git.diff misses a change against HEAD'
 ---
 ## Status
