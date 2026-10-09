@@ -50,8 +50,31 @@ comments:
     - evidence: swift test (root) — 830 tests in 89 suites passed, 0 failed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests); swift test --package-path IntegrationTests --no-parallel — 30 tests in 11 suites passed, 0 failed. No compiler warnings in package files. The only warning is the mlx-swift_Cmlx.bundle build-system line from a dependency.
     - next: none. No file changed. No commit made.
   timestamp: 2026-10-09T23:23:46.278817+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4hfph5n7yyr492esvj6mx77
+  text: |-
+    ### commit — changed
+    - evidence: 25787f4 feat(library): make the agent composition public as ComposedAgent, and let the executable call it (^h72a557)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-10-09T23:24:14.901644+00:00
+- actor: claude-code
+  id: 01m4hgvrwypcyp0mzgzzfw6rhb
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (25787f4) — 0 findings, 0 confirmed, 3 refuted, 7 attempted, 0 failed. 6 files reviewed. Not reviewed: README.md (no validator matches it) and 2 .kanban files (.reviewignore). Five code-hygiene Swift tool rules declined only the old path Sources/acp-agent/PacedStubModel.swift. The commit moved that file to the library, so the old path has no file. No prior Review Findings section.
+    - next: none. Task moved to done. Send the commit sha 25787f4 to agentviewkit-1c after the push.
+  timestamp: 2026-10-09T23:44:35.230973+00:00
+- actor: claude-code
+  id: 01m4hgw7xjx7jv9fk5w29wcddn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test 830 (1 known issue, HarnessSmokeTests); IntegrationTests 30
+    - commit: 25787f4
+    - review: clean — 0 findings
+  timestamp: 2026-10-09T23:44:50.610475+00:00
+position_column: done
+position_ordinal: ffb080
 title: Make the serve and compose helper of the agent public in the library target
 ---
 ## What
