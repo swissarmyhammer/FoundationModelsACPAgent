@@ -88,8 +88,9 @@ WRITE_MODES = ("w", "u")
 # The two scalar values that set the state of a tool group, in lower case.
 ON_OFF = ("true", "false")
 # The tool groups whose state the config part states on a line of its own:
-# the groups whose body has the `enabled` key.
-STATED_GROUPS = ("web", "git")
+# the groups whose body has the `enabled` key. The result of the scan gets
+# `<group>_enabled` for each of them.
+STATED_GROUPS = ("web", "git", "environment")
 # More tool results than this that repeat an earlier result of the same
 # instance are a loop. In the run code-context-1008 the instances with no loop
 # had 0 to 5 repeats, and the loops had 10 (django__django-14667) to 121
@@ -210,7 +211,7 @@ def enabled_value(cfg, group):
     Give "true" or "false", or "" when the config does not set a state. The
     builtin config of the agent turns a group off in two forms: `false` as
     the whole body of the group (`git: false`), or `enabled: false` in the
-    body. Only the web and git bodies have the `enabled` key.
+    body. Only the bodies of STATED_GROUPS have the `enabled` key.
     """
     body = str(cfg.get(f"tools.{group}") or "").lower()
     if body in ON_OFF:
@@ -219,13 +220,10 @@ def enabled_value(cfg, group):
 
 
 def config_summary(cfg):
-    """Give (the tool groups, the groups that are off, the web state) of a config.
-
-    The web state is the text of enabled_value for the web group.
-    """
+    """Give (the tool groups, the groups that are off) of a config."""
     groups = sorted({k.split(".")[1] for k in cfg if k.startswith("tools.") and k.count(".") >= 1})
     off = [g for g in groups if enabled_value(cfg, g) == "false"]
-    return groups, off, enabled_value(cfg, "web")
+    return groups, off
 
 
 def state_text(cfg, group):
@@ -258,10 +256,10 @@ def harness_config():
 
 
 def scan_config(path, R, start=None):
-    """Write the config part: the tool groups, the groups that are off, and the web and git states.
+    """Write the config part: the tool groups, the groups that are off, and the state of each of STATED_GROUPS.
 
     - path: the agent config of the run, or None for the default config.
-    - R: the result to fill. It gets `web_enabled` and `git_enabled`.
+    - R: the result to fill. It gets `<group>_enabled` for each of STATED_GROUPS.
     - start: the time of the run start, or None. A config file that changed
       after it gives a warning, and each config problem is marked as not sure.
     """
@@ -289,16 +287,16 @@ def scan_config(path, R, start=None):
         if rev:
             rel = path if os.path.isabs(path) else "./" + path
             old = read_config(None, sh(f"git show '{rev.split()[0]}:{rel}'"))
-            _, old_off, _ = config_summary(old)
+            _, old_off = config_summary(old)
             print(f"  the config in git at the last commit before the run started ({rev}):")
             print(f"   groups that are off: {', '.join(old_off) or '(none)'}; "
                   f"{'; '.join(state_text(old, g) for g in STATED_GROUPS)}")
             print("   (the run can also have used a copy that was not committed)")
     cfg = read_config(path)
-    groups, off, web = config_summary(cfg)
-    # The web and git groups are on by default. Only a "false" state turns one off.
-    R["web_enabled"] = web != "false"
-    R["git_enabled"] = enabled_value(cfg, "git") != "false"
+    groups, off = config_summary(cfg)
+    # Each of STATED_GROUPS is on by default. Only a "false" state turns one off.
+    for g in STATED_GROUPS:
+        R[f"{g}_enabled"] = enabled_value(cfg, g) != "false"
     print(f"  tool groups in the file: {', '.join(groups) or '(none)'}")
     print(f"  groups that are off: {', '.join(off) or '(none)'}")
     for g in STATED_GROUPS:

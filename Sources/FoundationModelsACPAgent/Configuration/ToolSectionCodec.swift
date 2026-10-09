@@ -436,21 +436,23 @@ extension ToolSection where Options: SwitchableToolOptions {
     }
 }
 
-/// The `tools.git:` body: whether the git capability mounts.
-///
-/// ```yaml
-/// tools:
-///   git:
-///     enabled: true
-/// ```
-///
-/// The git verbs — `tools.git.blame`, `show`, `log`, `commit`, `status`,
-/// `branches`, `changes` and `diff` — only read the repository, thus the
-/// capability is on by default. Its root is the session working directory,
-/// so the section has no root key. The scalar `git: false` of the shared
-/// codec turns the tool off too.
-public struct GitToolOptions: SwitchableToolOptions, KeyCheckedSection {
-    /// Whether the git capability mounts.
+/// The tag of one capability whose tool section has the `enabled` key only.
+/// The tag is a type with no value. It keeps the option type of each such
+/// section distinct, thus `ToolSection<GitToolOptions>` and
+/// `ToolSection<EnvironmentToolOptions>` are two types.
+public protocol SwitchOnlyTool: Sendable {}
+
+/// The tag of the git capability. See ``GitToolOptions``.
+public enum GitTool: SwitchOnlyTool {}
+
+/// The tag of the environment capability. See ``EnvironmentToolOptions``.
+public enum EnvironmentTool: SwitchOnlyTool {}
+
+/// The body of a tool section whose only key is `enabled`: whether the
+/// capability mounts. The capability is on by default, and the scalar
+/// `<name>: false` of the shared codec turns it off too.
+public struct SwitchOnlyToolOptions<Tool: SwitchOnlyTool>: SwitchableToolOptions, KeyCheckedSection {
+    /// Whether the capability mounts.
     public var enabled: Bool
 
     /// The YAML spelling of each key.
@@ -460,8 +462,8 @@ public struct GitToolOptions: SwitchableToolOptions, KeyCheckedSection {
 
     /// Makes options.
     ///
-    /// - Parameter enabled: Whether the git capability mounts. The default
-    ///   is `true`.
+    /// - Parameter enabled: Whether the capability mounts. The default is
+    ///   `true`.
     public init(enabled: Bool = true) {
         self.enabled = enabled
     }
@@ -478,6 +480,35 @@ public struct GitToolOptions: SwitchableToolOptions, KeyCheckedSection {
         enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? enabled
     }
 }
+
+/// The `tools.git:` body: whether the git capability mounts.
+///
+/// ```yaml
+/// tools:
+///   git:
+///     enabled: true
+/// ```
+///
+/// The git verbs — `tools.git.blame`, `show`, `log`, `commit`, `status`,
+/// `branches`, `changes` and `diff` — only read the repository, thus the
+/// capability is on by default. Its root is the session working directory,
+/// so the section has no root key.
+public typealias GitToolOptions = SwitchOnlyToolOptions<GitTool>
+
+/// The `tools.environment:` body: whether the environment capability mounts.
+///
+/// ```yaml
+/// tools:
+///   environment:
+///     enabled: true
+/// ```
+///
+/// The environment verbs — `tools.environment.variables`, `os` and `now` —
+/// only read the process, thus the capability is on by default (the user
+/// decided this on 2026-10-09). `variables` gives the model each variable of
+/// the agent process, secrets too: set `enabled: false` to keep them out of
+/// the model context. The section has no variable filter.
+public typealias EnvironmentToolOptions = SwitchOnlyToolOptions<EnvironmentTool>
 
 // MARK: - The mcp entry
 
@@ -640,12 +671,16 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
     /// session working directory.
     public var git = ToolSection<GitToolOptions>.enabled(GitToolOptions())
 
+    /// The environment capability's entry: the read-only
+    /// `tools.environment` verbs `variables`, `os` and `now`.
+    public var environment = ToolSection<EnvironmentToolOptions>.enabled(EnvironmentToolOptions())
+
     /// The mcp entry — the one list-bodied section.
     public var mcp = MCPToolSection.enabled(servers: [])
 
     /// The YAML spelling of each tool key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case files, shell, skills, codeContext, web, git, mcp
+        case files, shell, skills, codeContext, web, git, environment, mcp
     }
 
     /// The default roster: every built-in on, with its defaults.
@@ -671,6 +706,10 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
             ?? codeContext
         web = try container.decodeIfPresent(ToolSection<WebToolOptions>.self, forKey: .web) ?? web
         git = try container.decodeIfPresent(ToolSection<GitToolOptions>.self, forKey: .git) ?? git
+        environment =
+            try container.decodeIfPresent(
+                ToolSection<EnvironmentToolOptions>.self, forKey: .environment)
+            ?? environment
         mcp = try container.decodeIfPresent(MCPToolSection.self, forKey: .mcp) ?? mcp
     }
 }
@@ -688,6 +727,7 @@ extension ToolsConfiguration {
         CodingKeys.codeContext.stringValue: CodeContextToolOptions.knownKeys,
         CodingKeys.web.stringValue: WebToolOptions.knownKeys,
         CodingKeys.git.stringValue: GitToolOptions.knownKeys,
+        CodingKeys.environment.stringValue: EnvironmentToolOptions.knownKeys,
     ]
 
     /// The key checks of the `tools:` body (plan.md §11.2), run by the

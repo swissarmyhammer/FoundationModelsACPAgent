@@ -20,9 +20,9 @@ struct ToolsDoctorTests {
     private static let oneFinding = 1
 
     /// The number of rows a roster with the shell tool off reports: the
-    /// sandbox row, the shell row, the web row and the git row. The `mcp:`
-    /// default names no server, so it adds none.
-    private static let disabledShellRowCount = 4
+    /// sandbox row, the shell row, the web row, the git row and the
+    /// environment row. The `mcp:` default names no server, so it adds none.
+    private static let disabledShellRowCount = 5
 
     /// The name of the web row.
     private static let webRowName = "the web tool"
@@ -35,6 +35,17 @@ struct ToolsDoctorTests {
 
     /// The configuration key a disabled git row names.
     private static let gitEnabledKey = "tools.git.enabled"
+
+    /// The name of the environment row.
+    private static let environmentRowName = "the environment tool"
+
+    /// The configuration key that the environment row names: the key that
+    /// turns the tool off.
+    private static let environmentEnabledKey = "tools.environment.enabled"
+
+    /// The word of the note of the environment row that states the secret
+    /// risk.
+    private static let secretWord = "secret"
 
     /// The timeout a test that proves the timeout injects, in seconds. It
     /// is short, so the test does not wait long for the timeout to fire.
@@ -220,7 +231,8 @@ struct ToolsDoctorTests {
 
     /// `tools.shell: false` gives one `.ok` row that says disabled, and no
     /// store-directory check runs: the roster reports the sandbox row, that
-    /// one row, the web row and the git row, and nothing else.
+    /// one row, the web row, the git row and the environment row, and
+    /// nothing else.
     @Test func aDisabledShellSectionSaysDisabledAndChecksNoStore() async {
         let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-shellOff")
         var configuration = AgentConfiguration()
@@ -318,6 +330,52 @@ struct ToolsDoctorTests {
         #expect(row.status == .ok)
         #expect(row.message.contains(Self.disabledWord))
         #expect(row.message.contains(Self.gitEnabledKey))
+    }
+
+    // MARK: - The environment tool
+
+    /// With the default configuration, the environment row passes, says
+    /// that the tool is on, and states the secret risk with the key that
+    /// turns the tool off. The row never shows the value of a variable.
+    @Test func theEnvironmentRowStatesTheSecretRiskAndNoValue() async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-environmentOn")
+        let secretValue = "environment-secret-value"
+
+        let checks = await Self.doctor(
+            configuration: AgentConfiguration(), workingDirectory: workspace,
+            environment: ["TAVILY_API_KEY": secretValue]
+        ).runHealthChecks()
+
+        let row = try Self.row(named: Self.environmentRowName, in: checks)
+        #expect(row.status == .ok)
+        #expect(!row.message.contains(Self.disabledWord))
+        #expect(row.message.contains(Self.secretWord))
+        #expect(row.message.contains(Self.environmentEnabledKey))
+        #expect(!checks.contains { $0.message.contains(secretValue) })
+    }
+
+    /// `tools.environment: false` and `tools.environment.enabled: false`
+    /// each give one `.ok` row that says disabled and names the key.
+    @Test(arguments: [
+        ToolSection<EnvironmentToolOptions>.disabled,
+        .enabled(EnvironmentToolOptions(enabled: false)),
+    ])
+    func anEnvironmentSectionThatIsOffSaysDisabled(
+        section: ToolSection<EnvironmentToolOptions>
+    ) async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-environmentOff")
+        var configuration = AgentConfiguration()
+        configuration.tools.environment = section
+
+        let checks = await Self.doctor(
+            configuration: configuration, workingDirectory: workspace
+        ).runHealthChecks()
+
+        let row = try Self.row(named: Self.environmentRowName, in: checks)
+        #expect(row.status == .ok)
+        #expect(row.message.contains(Self.disabledWord))
+        #expect(row.message.contains(Self.environmentEnabledKey))
+        #expect(!row.message.contains(Self.secretWord))
     }
 
     // MARK: - The MCP servers

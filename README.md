@@ -112,6 +112,7 @@ is on by default. Set its config section to `false` to set it off.
 | `codeContext` | The `tools.code_context.*` verbs — symbol lookup, call graph, blast radius and the language server operations — over an index of the session working directory | `tools.codeContext` |
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
+| `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
 
 `tools.files` has four keys. `readOnly`, `allowSymlinks` and `recordsChanges`
@@ -191,6 +192,28 @@ tools:
   git:
     enabled: false
 ```
+
+`tools.environment` has one key, `enabled` (default `true`). The tool has
+three read-only verbs: `variables` (each environment variable of the agent
+process, or the variables that a `name` or a `prefix` selects), `os` (the
+platform name and version, the architecture, the host name, the user name, the
+home directory, the processor count, the memory and the locale) and `now` (the
+date and the time, in an optional `timeZone`). Set `enabled: false` (or
+`environment: false`) to set the environment tool off; `doctor` then has one
+row that says it is disabled.
+
+```yaml
+tools:
+  environment: false
+```
+
+**Know the environment risk.** `tools.environment.variables` gives the model
+each variable of the agent process, and secrets are included. An example is
+the web API keys that `tools.web.apiKeys` reads from the environment. The
+value goes into the model context and into the transcript. There is no
+variable filter. If the agent process holds a secret, set the environment tool
+off. When the tool is on, `doctor` has one row that states this risk; the row
+shows no variable value.
 
 The `tools.skills.marketplaces` list names remote skill marketplaces. Each entry
 has a `url`, and optionally a `ref` (a branch or a tag), a `sha`, a `path`, an

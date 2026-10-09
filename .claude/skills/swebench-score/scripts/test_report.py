@@ -39,6 +39,9 @@ WEB_OFF_CONFIG = "tools:\n  web:\n    enabled: false\n"
 # The config with the git tools on, and with the git tools off.
 GIT_ON_CONFIG = "tools:\n  web:\n    enabled: true\n  git:\n    enabled: true\n"
 GIT_OFF_CONFIG = "tools:\n  web:\n    enabled: true\n  git:\n    enabled: false\n"
+# The config with the environment tools on, and with the environment tools off.
+ENVIRONMENT_ON_CONFIG = "tools:\n  web:\n    enabled: true\n  environment:\n    enabled: true\n"
+ENVIRONMENT_OFF_CONFIG = "tools:\n  web:\n    enabled: true\n  environment:\n    enabled: false\n"
 
 
 def write_rows(path, rows):
@@ -304,18 +307,8 @@ class AnUpstreamFixFromTheWebIsInformation(BenchTestCase):
         self.assertIn("two configurations", out)
 
 
-class TheGitToolsOfARun(BenchTestCase):
-    """Task ^exkkyyr: the report states the git state of the config, and it
-    marks a git read of the history after the base commit as an upstream fix.
-
-    The clone of an instance is a full clone, so a git read of `main` can
-    show the upstream fix. As for the web tool, that is a valid result: the
-    report shows it as information, and the score stays valid."""
-
-    # The instance whose agent read the history after the base commit.
-    WITH_READ = TWO[0]
-    # The read that the run recorded for WITH_READ (`swebench_history.py`).
-    READ = {"verb": "log", "rev": "main", "commit": "0123456789abcdef0123456789abcdef01234567"}
+class RunReportTestCase(BenchTestCase):
+    """A report test that writes the agent config and the record of the run `now`."""
 
     def report_text(self, config_text, reads, *argv):
         """Give the stdout of the report of the run `now`.
@@ -337,6 +330,20 @@ class TheGitToolsOfARun(BenchTestCase):
     def line_of(self, out, start):
         """Give the first line of out that starts with start."""
         return next(line for line in out.splitlines() if line.strip().startswith(start))
+
+
+class TheGitToolsOfARun(RunReportTestCase):
+    """Task ^exkkyyr: the report states the git state of the config, and it
+    marks a git read of the history after the base commit as an upstream fix.
+
+    The clone of an instance is a full clone, so a git read of `main` can
+    show the upstream fix. As for the web tool, that is a valid result: the
+    report shows it as information, and the score stays valid."""
+
+    # The instance whose agent read the history after the base commit.
+    WITH_READ = TWO[0]
+    # The read that the run recorded for WITH_READ (`swebench_history.py`).
+    READ = {"verb": "log", "rev": "main", "commit": "0123456789abcdef0123456789abcdef01234567"}
 
     def test_the_git_line_gives_the_state_and_the_config(self):
         """A person must see if the run had the git tools, as for web."""
@@ -370,6 +377,32 @@ class TheGitToolsOfARun(BenchTestCase):
         (self.bench / "off.config.yaml").write_text(GIT_OFF_CONFIG)
         out = self.report_text(GIT_ON_CONFIG, {})
         self.assertIn("git is off before and on now", out)
+
+
+class TheEnvironmentToolsOfARun(RunReportTestCase):
+    """Task ^fn8sfpv: the report states `tools.environment.enabled` of the
+    config, as it states the web and git groups. The environment tools give
+    the model each variable of the agent process, so a person must see if
+    the run had them."""
+
+    def test_the_environment_line_gives_the_state_and_the_config(self):
+        """The bench config sets `enabled: true`, and the report says so with the path of the config."""
+        out = self.report_text(ENVIRONMENT_ON_CONFIG, {}, "--no-compare")
+        environment_line = self.line_of(out, "== ENVIRONMENT")
+        self.assertIn("config on", environment_line)
+        self.assertIn(str(self.root / CONFIG_PATH), environment_line)
+
+    def test_a_config_with_environment_off_gives_environment_off(self):
+        """The state comes from the file, not from a constant."""
+        (self.root / CONFIG_PATH).write_text(ENVIRONMENT_OFF_CONFIG)
+        self.assertEqual(report.environment_state(self.root / CONFIG_PATH), "off")
+
+    def test_a_compare_with_environment_off_is_a_compare_of_two_configurations(self):
+        """A run with the environment tools on and a run with them off use different tools."""
+        make_run(self.bench, "baseline", TWO, OLD, record={"agent_config": "bench/off.config.yaml"})
+        (self.bench / "off.config.yaml").write_text(ENVIRONMENT_OFF_CONFIG)
+        out = self.report_text(ENVIRONMENT_ON_CONFIG, {})
+        self.assertIn("environment is off before and on now", out)
 
 
 class PathsStayInsideTheRepo(BenchTestCase):

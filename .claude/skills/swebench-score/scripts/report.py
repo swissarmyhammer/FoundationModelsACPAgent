@@ -28,12 +28,14 @@ The output has these parts:
    rev after the base commit (the `git_upstream_reads` field of the record).
    Such a read can show the upstream fix, and it is information too. The
    upstream-fix column of INSTANCES marks a web fix and a git read alike.
-7. COMPARE: the change of each instance against the score of an other run.
+7. ENVIRONMENT: the state of `tools.environment.enabled` in the config. The
+   environment tools give the model each variable of the agent process.
+8. COMPARE: the change of each instance against the score of an other run.
    With no --compare, the other run is the newest other run with the same
    instance ids in its predictions file. A run with other instances does
-   not measure the same thing. A run with web (or git) on and a run with it
-   off use different tools, so their comparison is a comparison of two
-   configurations.
+   not measure the same thing. A run with web, git or environment on and a
+   run with it off use different tools, so their comparison is a
+   comparison of two configurations.
 
 Each path that the script builds or reads from input must resolve to a place
 inside the repo root. The repo root is the dir that holds the bench dir. The
@@ -76,6 +78,12 @@ GIT_FIELD = "git_upstream_reads"
 SHORT_SHA = 10
 # The two tool groups whose state the report states: they can find the upstream fix.
 WEB, GIT = "web", "git"
+# The tool group that gives the model the variables of the agent process. It
+# cannot find the upstream fix, but the report states it too (task ^fn8sfpv).
+ENVIRONMENT = "environment"
+# The tool groups that the COMPARE part checks: a run with one of them on and
+# a run with it off use different tools.
+STATED_GROUPS = (WEB, GIT, ENVIRONMENT)
 # The text in the run log that names the agent config: the log line of
 # swebench_run.py, or the command line when a person put it in the log.
 LOG_CONFIG = re.compile(r"(?:--agent-config[ =]|agent_config=)(\S+)")
@@ -468,6 +476,19 @@ def git_state(config):
     return tool_state(config, GIT)
 
 
+def environment_state(config):
+    """Give the environment state of a config: "on", "off", or "unknown" when there is no file."""
+    return tool_state(config, ENVIRONMENT)
+
+
+def print_environment(config):
+    """Print the ENVIRONMENT part: the state of `tools.environment.enabled` in the config.
+
+    - config: the resolved path of the agent config, or None.
+    """
+    print(f"\n== ENVIRONMENT: config {environment_state(config)} ({config or 'no config found for this run'})")
+
+
 def git_upstream(runs):
     """Give {instance id: [evidence]} of the git reads past the base commit.
 
@@ -727,6 +748,7 @@ def print_report(a):
         # git tools are part of the agent, so each of them is a valid result.
         with_fix = [i for i in resolved if i in up or i in git]
         print(f"  resolved with an upstream fix seen (web or git): {len(with_fix)} of {len(resolved)} resolved")
+    print_environment(config)
 
     if a.no_compare:
         return 0
@@ -741,7 +763,7 @@ def print_report(a):
     print(f"\n== COMPARE with {name_of(o_preds)} run id {o_report.get('run_id', '?')} ({other})")
     print(f"  the report took this run because it is {why}")
     print(f"  before {len(o_res)}/{len(o_res) + len(o_unres)} resolved, now {len(resolved)}/{ev} resolved")
-    for group in (WEB, GIT):
+    for group in STATED_GROUPS:
         before, now = tool_state(o_config, group), tool_state(config, group)
         if before != now:
             print(f"  {group} is {before} before and {now} now: the two runs use different tools, "

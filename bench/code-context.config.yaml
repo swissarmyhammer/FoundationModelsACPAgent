@@ -9,7 +9,8 @@
 # is on by default, thus a group that this file does not name is also on. The
 # file names each group so that the run states the full tool set, and not
 # only the groups that differ from the default. A group body that is a mapping
-# turns the group on. Only `web` and `git` also have the `enabled` key.
+# turns the group on. Only `web`, `git` and `environment` also have the
+# `enabled` key.
 #
 # - `files` is the Multitool group `tools.files`. The keys are the builtin
 #   defaults. `exclude` is not set: the default skips the dotfolder of the
@@ -46,6 +47,13 @@
 #   tool, a fix that the agent finds that way is a valid result. The run
 #   records each such read (`git_upstream_reads` in the record), and the score
 #   report marks it in the upstream-fix column.
+# - `environment` is the Multitool group `tools.environment` (variables, os,
+#   now). It is on by default, and this run sets `enabled: true` to state it.
+#   The `variables` verb gives the model each variable of the agent process.
+#   The harness gives the agent a clean environment (bench/swebench_env.py):
+#   the agent keeps HOME, USER, TMPDIR, LANG and the system directories, and
+#   it loses each variable of the harness. Thus the model reads no key of the
+#   harness. The scan and the score report state `tools.environment.enabled`.
 # - `mcp` is the list of the MCP servers. The list is empty: this file adds
 #   no MCP server.
 #
@@ -76,5 +84,7 @@ tools:
   web:
     enabled: true
   git:
+    enabled: true
+  environment:
     enabled: true
   mcp: []

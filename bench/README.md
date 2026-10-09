@@ -54,8 +54,9 @@ Each script has `--help` for the full list.
 
 Add `--agent-config bench/code-context.config.yaml`, and use the NAME
 `code-context`. The agent then mounts the `code-context` branch of the skills
-marketplace, the `tools.code_context` group, the `tools.web` group and the
-`tools.git` group. The file names each tool group with its state.
+marketplace, the `tools.code_context` group, the `tools.web` group, the
+`tools.git` group and the `tools.environment` group. The file names each tool
+group with its state.
 
 The clone of an instance is a full clone, so a git read of a rev after the base
 commit (for example `main`) can show the upstream fix. As for the web tool,

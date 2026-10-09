@@ -6,7 +6,8 @@ import FoundationModelsMultitool
 /// the Sandbox and Tools rows): the seatbelt sandbox starts, each
 /// `sandbox.extraWritePaths` entry is on disk, the shell store directory
 /// can be written, the web tool names its search providers, the git tool
-/// says whether it is on, and each configured MCP server answers.
+/// says whether it is on, the environment tool says whether it is on and
+/// states its secret risk, and each configured MCP server answers.
 ///
 /// The component takes the resolved configuration and an injected
 /// ``ToolsProber``, so a unit test starts no confined command and no MCP
@@ -104,6 +105,34 @@ public struct ToolsDoctor: Doctorable {
     private static let gitEnabledKey = enabledKey(
         ofTool: .git, enabledKey: GitToolOptions.CodingKeys.enabled)
 
+    /// The check that states the environment tool.
+    private static let environmentToolCheckName = "the environment tool"
+
+    /// The dotted key path that turns the environment tool off.
+    private static let environmentEnabledKey = enabledKey(
+        ofTool: .environment, enabledKey: EnvironmentToolOptions.CodingKeys.enabled)
+
+    /// The dotted key path of the verb that gives the model each variable
+    /// of the process.
+    private static let environmentVariablesKey =
+        AgentConfiguration.CodingKeys.tools.stringValue
+        + LoadedConfiguration.keyPathSeparator
+        + ToolsConfiguration.CodingKeys.environment.stringValue
+        + LoadedConfiguration.keyPathSeparator
+        + environmentVariablesVerb
+
+    /// The verb of the environment tool that reads the variables of the
+    /// process.
+    private static let environmentVariablesVerb = "variables"
+
+    /// What the environment row says when the tool is on. It states the
+    /// secret risk and names the key that turns the tool off. It holds no
+    /// variable value.
+    private static let environmentOnMessage =
+        "on; \(environmentVariablesKey) gives the model each variable of this process, "
+        + "and a variable can hold a secret, for example a web API key; set "
+        + "\(environmentEnabledKey) to false to keep the variables out of the model context"
+
     /// The dotted key path of the `enabled:` key of one tool section, such
     /// as `tools.web.enabled`.
     ///
@@ -178,13 +207,14 @@ public struct ToolsDoctor: Doctorable {
     }
 
     /// Reports the sandbox, then one finding per extra write path, then the
-    /// shell, then the web tool, then the git tool, then the MCP servers.
+    /// shell, then the web tool, then the git tool, then the environment
+    /// tool, then the MCP servers.
     ///
     /// - Returns: The findings, in that order.
     public func runHealthChecks() async -> [HealthCheck] {
         await [sandboxCheck()]
             + configuration.sandbox.extraWritePaths.map(Self.check(ofExtraWritePath:))
-            + [shellCheck(), webCheck(), gitCheck()]
+            + [shellCheck(), webCheck(), gitCheck(), environmentCheck()]
             + mcpChecks()
     }
 
@@ -307,6 +337,29 @@ public struct ToolsDoctor: Doctorable {
         return .ok(
             name: Self.gitToolCheckName,
             message: "on; the read-only git verbs read the repository at \(workingDirectory.path)",
+            category: Self.category)
+    }
+
+    // MARK: - The environment tool
+
+    /// The finding of the environment section: one row that says the tool
+    /// is on and states the secret risk of `tools.environment.variables`,
+    /// or one row that says disabled.
+    ///
+    /// The row reads no variable, so it never prints a variable value. The
+    /// on row is a pass and not a warning: the tool is on in the default
+    /// configuration, and a warning makes `doctor` fail on that
+    /// configuration.
+    ///
+    /// - Returns: That one finding.
+    private func environmentCheck() -> HealthCheck {
+        guard configuration.tools.environment.mountedOptions != nil else {
+            return DisabledSectionCheck.check(
+                name: Self.environmentToolCheckName, key: Self.environmentEnabledKey,
+                category: Self.category)
+        }
+        return .ok(
+            name: Self.environmentToolCheckName, message: Self.environmentOnMessage,
             category: Self.category)
     }
 

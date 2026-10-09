@@ -236,7 +236,9 @@ public enum ToolCatalog {
     /// mounts `tools.web.search` and `tools.web.fetch` with the providers
     /// that the process environment and `tools.web.apiKeys` select (see
     /// ``WebComposition``), `git` mounts the read-only `tools.git` verbs
-    /// over the session working directory through `withGit(root:)`, and
+    /// over the session working directory through `withGit(root:)`,
+    /// `environment` mounts the read-only `tools.environment` verbs
+    /// (`variables`, `os` and `now`) through `withEnvironment()`, and
     /// `mcp` composes the config-derived servers with the client's
     /// per-session ones (§7.3, §11.5), connects each one, and records the
     /// spawned subprocesses in the builder's pool. `codeContext` opens and
@@ -279,6 +281,9 @@ public enum ToolCatalog {
         WebComposition.compose(into: builder, context: context)
         if context.configuration.tools.git.mountedOptions != nil {
             builder.withGit(root: context.workingDirectory)
+        }
+        if context.configuration.tools.environment.mountedOptions != nil {
+            builder.withEnvironment()
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,

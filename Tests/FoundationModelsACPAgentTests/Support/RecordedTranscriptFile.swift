@@ -164,11 +164,34 @@ enum RecordedTranscriptFile {
     static func completionToken(
         answering callId: String, in lines: [RecordedTranscriptLine]
     ) -> String? {
-        let bodies = self.lines(ofKind: toolOutputKind, in: lines)
+        outputBodies(answering: callId, in: lines).compactMap(completionToken(inEnvelope:)).first
+    }
+
+    /// The recorded segment bodies of each `toolOutput` entry that answers
+    /// one call, in order.
+    ///
+    /// - Parameters:
+    ///   - callId: The id of the call the output answers.
+    ///   - lines: The session's recorded lines.
+    /// - Returns: The body of each segment: the JSON text of a structured
+    ///   segment, or the text of a text segment.
+    static func outputBodies(
+        answering callId: String, in lines: [RecordedTranscriptLine]
+    ) -> [String] {
+        self.lines(ofKind: toolOutputKind, in: lines)
             .filter { $0.entry?.entryId == callId }
             .flatMap { $0.entry?.segments ?? [] }
             .compactMap { $0.contentJSON ?? $0.content }
-        return bodies.compactMap(completionToken(inEnvelope:)).first
+    }
+
+    /// The text one recorded segment body carries. A structured segment
+    /// carries a string as one JSON string, so the reader unwraps it; any
+    /// other body is the text itself.
+    ///
+    /// - Parameter body: The recorded segment body.
+    /// - Returns: The text.
+    static func text(ofBody body: String) -> String {
+        jsonValue(in: body) as? String ?? body
     }
 
     /// The completion token one recorded envelope names.

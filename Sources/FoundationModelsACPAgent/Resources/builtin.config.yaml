@@ -8,8 +8,8 @@
 #   tools:
 #     web: false
 #
-# A tool body that is a mapping turns the tool on. The web and git bodies
-# also have the "enabled" key.
+# A tool body that is a mapping turns the tool on. The web, git and
+# environment bodies also have the "enabled" key.
 #
 # Do not put a secret, for example an API key, in this file.
 #
@@ -61,6 +61,14 @@ tools:
   # The git tools: read the repository of the session working directory.
   git:
     # When false, the git tools are off.
+    enabled: true
+
+  # The environment tools: read the variables of the agent process, the
+  # operating system, and the date and the time. The variables can hold
+  # secrets, for example a web API key. The model reads each value that it
+  # asks for.
+  environment:
+    # When false, the environment tools are off.
     enabled: true
 
   # The MCP servers. Each item has a "name" key and a "command" key or a

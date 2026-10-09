@@ -440,16 +440,20 @@ class AnUpstreamFixFromTheWebIsInformation(ScanTestCase):
         self.assertNotIn("does not measure the agent", out)
 
 
-class TheConfigStatesTheGitGroup(ScanTestCase):
-    """The config part states `tools.git.enabled`, as it states the web group
-    (task ^exkkyyr). A run with the git tools reads the git history of the
-    clone, so a person must see if the run had them."""
+class ConfigTestCase(ScanTestCase):
+    """A scan test that writes an agent config and reads the config part of the scan."""
 
     def config_text(self, yaml_text):
         """Write yaml_text as the agent config, and give the config part of the scan."""
         config = self.bench / "x.config.yaml"
         config.write_text(yaml_text)
         return quiet(scan.scan_config, str(config), self.R)
+
+
+class TheConfigStatesTheGitGroup(ConfigTestCase):
+    """The config part states `tools.git.enabled`, as it states the web group
+    (task ^exkkyyr). A run with the git tools reads the git history of the
+    clone, so a person must see if the run had them."""
 
     def test_the_config_part_states_git_off(self):
         """`enabled: false` turns the git group off, and the scan says so."""
@@ -474,6 +478,37 @@ class TheConfigStatesTheGitGroup(ScanTestCase):
         out = self.config_text("tools:\n  git: false\n")
         self.assertIn("tools.git.enabled = false", out)
         self.assertIn("groups that are off: git", out)
+
+
+class TheConfigStatesTheEnvironmentGroup(ConfigTestCase):
+    """The config part states `tools.environment.enabled`, as it states the
+    web and git groups (task ^fn8sfpv). A run with the environment tools can
+    give the model each variable of the agent process, so a person must see
+    if the run had them."""
+
+    def test_the_config_part_states_environment_off(self):
+        """`enabled: false` turns the environment group off, and the scan says so."""
+        out = self.config_text("tools:\n  environment:\n    enabled: false\n")
+        self.assertIn("tools.environment.enabled = false", out)
+        self.assertIs(self.R["environment_enabled"], False)
+
+    def test_the_config_part_states_environment_on(self):
+        """The bench config sets `enabled: true` so that the run states it."""
+        out = self.config_text("tools:\n  environment:\n    enabled: true\n")
+        self.assertIn("tools.environment.enabled = true", out)
+        self.assertIs(self.R["environment_enabled"], True)
+
+    def test_a_config_with_no_environment_entry_states_the_default(self):
+        """The environment group is on by default, as the builtin config of the agent sets it."""
+        out = self.config_text("tools:\n  web:\n    enabled: true\n")
+        self.assertIn("tools.environment.enabled = (not set: on by default)", out)
+        self.assertIs(self.R["environment_enabled"], True)
+
+    def test_an_environment_body_of_false_is_off(self):
+        """The builtin config turns a group off with `false` as its whole body."""
+        out = self.config_text("tools:\n  environment: false\n")
+        self.assertIn("tools.environment.enabled = false", out)
+        self.assertIn("groups that are off: environment", out)
 
 
 class RepeatedResultsAreALoop(ScanTestCase):

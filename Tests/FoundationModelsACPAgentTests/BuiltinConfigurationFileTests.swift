@@ -155,7 +155,7 @@ import Testing
     }
 
     /// Each tool body that takes `enabled:` sets it to `true`.
-    @Test(arguments: [ToolsConfiguration.CodingKeys.web, .git])
+    @Test(arguments: [ToolsConfiguration.CodingKeys.web, .git, .environment])
     func eachSwitchableToolIsOnInTheFile(tool: ToolsConfiguration.CodingKeys) throws {
         let enabled = try Self.body(of: tool.stringValue)[WebToolOptions.CodingKeys.enabled.stringValue]
 

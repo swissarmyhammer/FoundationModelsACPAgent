@@ -258,6 +258,55 @@ import Testing
         #expect(loaded.configuration.tools.git.mountedOptions == GitToolOptions())
     }
 
+    // MARK: - The environment section
+
+    /// With no `environment:` key, the environment tools are on, with the
+    /// defaults.
+    @Test func noEnvironmentKeyEnablesTheEnvironmentTools() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "recording:\n  level: full\n")
+
+        #expect(loaded.configuration.tools.environment == .enabled(EnvironmentToolOptions()))
+        #expect(loaded.configuration.tools.environment.mountedOptions == EnvironmentToolOptions())
+    }
+
+    /// The scalar `environment: false` and the body `enabled: false` each
+    /// turn the environment tools off.
+    @Test(arguments: ["environment: false", "environment:\n    enabled: false"])
+    func eachOffShapeMountsNoEnvironmentTools(body: String) throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig("tools:\n  \(body)\n")
+
+        #expect(loaded.configuration.tools.environment.mountedOptions == nil)
+        #expect(loaded.warnings.isEmpty)
+    }
+
+    /// An unknown key in the environment body is an error that names
+    /// `tools.environment` and the key. A variable filter is not a key.
+    @Test func anUnknownKeyInTheEnvironmentBodyIsAnError() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+
+        #expect(
+            throws: ConfigurationError.unknownKey(section: "tools.environment", key: "exclude")
+        ) {
+            try fixture.loadProjectConfig("tools:\n  environment:\n    exclude: []\n")
+        }
+    }
+
+    /// The document that `config init` writes holds
+    /// `tools.environment.enabled: true`, and it reads back to exactly the
+    /// builtin configuration, with the environment tools on.
+    @Test func theConfigInitDocumentReadsBackWithTheEnvironmentToolsOn() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+        let builtin = try fixture.makeLoader().builtinConfiguration
+
+        let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
+        let loaded = try fixture.loadProjectConfig(text)
+
+        #expect(text.contains("  environment:\n    enabled: true\n"))
+        #expect(loaded.configuration == builtin)
+        #expect(loaded.configuration.tools.environment.mountedOptions == EnvironmentToolOptions())
+    }
+
     // MARK: - The mcp tri-state
 
     /// Omitted `mcp:` means MCP is on with no configured servers — the

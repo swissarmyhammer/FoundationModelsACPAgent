@@ -23,16 +23,18 @@ import Testing
 ///    bytes went away.
 ///
 /// **The join.** No single entry holds both the source and the outcome,
-/// so a reader walks three hops:
+/// so a reader walks these hops:
 ///
 /// 1. the `toolCalls` entry gives the call id and the `argumentsJSON`,
 ///    whose `code` field is the snippet source;
 /// 2. the `toolOutput` entry whose entry id equals that call id answers
-///    the call with the run's pending envelope, which carries the
-///    `completionToken`;
-/// 3. the operation event whose `correlationID` equals that token, and
-///    whose kind is `completed`, gives the outcome `detail` — the
-///    failure message with the line number in it.
+///    the call. A run that ends inside its settle period answers with its
+///    own result, which is the outcome — the failure message with the
+///    line number in it. A run that continues answers with its pending
+///    envelope, which carries the `completionToken`;
+/// 3. only for a run that continued: the operation event whose
+///    `correlationID` equals that token, and whose kind is `completed`,
+///    gives the outcome `detail`.
 ///
 /// The model is the scripted backend, so the suite loads no weights and
 /// touches no network. The snippets themselves run in the real code-mode
@@ -150,23 +152,26 @@ struct RunCodeSourceTests {
             droppedByteCount: arguments[droppedByteCountKey] as? Int)
     }
 
-    /// Hop 2: the completion token of the run one recorded call started.
+    /// Hop 2, and hop 3 when the run continued: the outcome of the run one
+    /// recorded call started.
     ///
     /// - Parameters:
     ///   - callId: The id of the call the output answers.
-    ///   - lines: The session's recorded lines.
-    /// - Returns: The run's completion token.
-    /// - Throws: When no output answers the call with an envelope that
-    ///   names a token.
-    private static func completionToken(
-        answering callId: String, in lines: [RecordedTranscriptLine]
+    ///   - run: The recorded lines and events of the session.
+    /// - Returns: The answering output of a run that ended inside its
+    ///   settle period, or the completion detail of a run that continued.
+    /// - Throws: When no output answers the call, or when a run that
+    ///   continued recorded no completion event.
+    private static func outcome(
+        answering callId: String, in run: RecordedRun
     ) throws -> String {
-        try #require(
-            RecordedTranscriptFile.completionToken(answering: callId, in: lines),
-            """
-            no recorded output answering \(callId) names a \
-            \(RecordedTranscriptFile.completionTokenKey)
-            """)
+        if let token = RecordedTranscriptFile.completionToken(answering: callId, in: run.lines) {
+            return try completedDetail(forToken: token, in: run.events)
+        }
+        let body = try #require(
+            RecordedTranscriptFile.outputBodies(answering: callId, in: run.lines).first,
+            "no recorded output answers \(callId)")
+        return RecordedTranscriptFile.text(ofBody: body)
     }
 
     /// Hop 3: the outcome detail of one settled run.
@@ -206,8 +211,7 @@ struct RunCodeSourceTests {
             code: Self.failingSnippet, label: "RunCodeSourceTests-failure")
 
         let call = try Self.recordedCall(in: run.lines)
-        let token = try Self.completionToken(answering: call.id, in: run.lines)
-        let detail = try Self.completedDetail(forToken: token, in: run.events)
+        let detail = try Self.outcome(answering: call.id, in: run)
 
         #expect(call.source == Self.failingSnippet)
         #expect(detail.hasPrefix(Self.failureOpening))

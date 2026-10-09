@@ -48,6 +48,20 @@ import Testing
     /// The surface path of the web fetch verb.
     private static let webFetchPath = "web.fetch"
 
+    /// The noun the environment capability owns on the surface.
+    private static let environmentNoun = "environment"
+
+    /// The surface path of the environment `now` verb.
+    private static let environmentNowPath = "environment.now"
+
+    /// The surface path of each verb that the environment capability mounts.
+    private static let environmentVerbPaths = [
+        "environment.variables", "environment.os", environmentNowPath,
+    ]
+
+    /// The format of the `date` field of the `now` verb: `yyyy-MM-dd`.
+    private static let nowDatePattern = #"^\d{4}-\d{2}-\d{2}$"#
+
     /// The branch of the one commit of the temporary git repository.
     private static let repositoryBranch = "catalog-branch"
 
@@ -401,6 +415,67 @@ import Testing
 
         #expect(status.correction == nil)
         #expect(status.branch == Self.repositoryBranch)
+    }
+
+    // MARK: The environment group
+
+    /// The slice of the wire result of the `now` verb that these tests
+    /// assert on. The output struct of the verb is internal upstream; the
+    /// wire JSON is the public shape.
+    private struct NowVerbResult: Decodable {
+        /// The local date, as `yyyy-MM-dd`.
+        let date: String
+
+        /// Why the verb gave no date, or `nil` when the date stands.
+        let correction: String?
+    }
+
+    /// With the default configuration, the surface has each environment
+    /// verb. The capability reads nothing from the process when it mounts.
+    @Test func aDefaultRegistryMountsTheEnvironmentVerbs() async throws {
+        let context = try await Self.makeContext()
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        let paths = Set(registry.surface.entries.map(\.path))
+        for verbPath in Self.environmentVerbPaths {
+            #expect(paths.contains(verbPath), "the surface has no \(verbPath)")
+        }
+    }
+
+    /// `tools.environment: false` and `tools.environment.enabled: false`
+    /// each mount no `tools.environment` namespace, and the other
+    /// capabilities stay.
+    @Test(arguments: [
+        ToolSection<EnvironmentToolOptions>.disabled,
+        .enabled(EnvironmentToolOptions(enabled: false)),
+    ])
+    func anEnvironmentSectionThatIsOffMountsNoEnvironmentNamespace(
+        section: ToolSection<EnvironmentToolOptions>
+    ) async throws {
+        let context = try await Self.makeContext { configuration in
+            configuration.tools.environment = section
+        }
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        #expect(!registry.surface.entries.contains { $0.group == Self.environmentNoun })
+        #expect(registry.surface.entries.contains { $0.path == Self.readVerbPath })
+    }
+
+    /// `tools.environment.now`, called through the registry with no time
+    /// zone, gives the local date and no correction.
+    @Test func theEnvironmentNowVerbGivesTheDate() async throws {
+        let context = try await Self.makeContext()
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        let now: NowVerbResult = try await FilesVerbSupport.invoke(
+            try #require(registry.tools[Self.environmentNowPath]), arguments: [:])
+
+        #expect(now.correction == nil)
+        #expect(
+            now.date.range(of: Self.nowDatePattern, options: .regularExpression) != nil,
+            "the date is \(now.date)")
     }
 
     // MARK: The skills registry
