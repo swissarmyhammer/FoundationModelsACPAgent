@@ -65,6 +65,17 @@ import Testing
     /// The branch of the one commit of the temporary git repository.
     private static let repositoryBranch = "catalog-branch"
 
+    /// The git ref `HEAD`: the branch name that `tools.git.changes` gives for
+    /// a detached HEAD, and the ref of the old side of `tools.git.diff`.
+    private static let headReference = "HEAD"
+
+    /// The git range of the last commit of the temporary git repository.
+    private static let lastCommitRange = "HEAD~1..HEAD"
+
+    /// The `entityType` of a `tools.git.diff` change that holds changed
+    /// lines that no entity holds.
+    private static let uncoveredLinesEntityType = "lines"
+
     /// The task the embedder proof gives the mounted `searchTools`.
     private static let embedderTask = "read one text file from the workspace"
 
@@ -415,6 +426,54 @@ import Testing
 
         #expect(status.correction == nil)
         #expect(status.branch == Self.repositoryBranch)
+    }
+
+    /// On a detached HEAD, `tools.git.changes` with no `branch` reads HEAD:
+    /// it gives no correction, and the result names the branch `HEAD`.
+    @Test func theGitChangesVerbReadsADetachedHeadWithNoBranch() async throws {
+        let context = try await Self.makeContext()
+        try GitVerbSupport.makeDetachedRepository(in: context.workingDirectory, branch: Self.repositoryBranch)
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+        let changes = try await GitVerbSupport.invokeChanges(in: registry, arguments: [:])
+
+        #expect(changes.correction == nil)
+        #expect(changes.branch == Self.headReference)
+    }
+
+    /// On a detached HEAD, `tools.git.changes` with the range of the last
+    /// commit lists the file of that commit, and only that file.
+    @Test func theGitChangesVerbReadsARangeOnADetachedHead() async throws {
+        let context = try await Self.makeContext()
+        try GitVerbSupport.makeDetachedRepository(in: context.workingDirectory, branch: Self.repositoryBranch)
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+        let changes = try await GitVerbSupport.invokeChanges(
+            in: registry, arguments: ["range": Self.lastCommitRange])
+
+        #expect(changes.correction == nil)
+        #expect(changes.files == [GitVerbSupport.sourceFileName])
+    }
+
+    /// `tools.git.diff` of a tracked source file at HEAD against the work
+    /// tree reports a comment line added at the end of the file, as changed
+    /// lines that no entity holds.
+    @Test func theGitDiffVerbReportsACommentLineAddedAtTheEndOfAFile() async throws {
+        let context = try await Self.makeContext()
+        try GitVerbSupport.makeDetachedRepository(in: context.workingDirectory, branch: Self.repositoryBranch)
+        try GitVerbSupport.appendCommentLine(in: context.workingDirectory)
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+        let diff = try await GitVerbSupport.invokeDiff(
+            in: registry,
+            left: "\(GitVerbSupport.sourceFileName)@\(Self.headReference)",
+            right: GitVerbSupport.sourceFileName)
+
+        #expect(diff.correction == nil)
+        #expect(
+            diff.changes.contains {
+                $0.entityType == Self.uncoveredLinesEntityType && $0.filePath == GitVerbSupport.sourceFileName
+            })
     }
 
     // MARK: The environment group
