@@ -14,36 +14,36 @@ function. A frontend chooses a dotfolder name. Everything else derives.
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgent
-import FoundationModelsRouter
 
 // The one choice a frontend makes. It roots ~/.config/acp-agent/ for the
 // user layer, <cwd>/.acp-agent/ for the project layer, and the transcripts.
 let name = try DotfolderName("acp-agent")
 let cwd = URL(
     fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-let configuration = try ConfigurationLoader(name: name, workingDirectory: cwd)
-    .load().configuration
 
-// Real models: the configured weights download on first use and stay resident.
-let router = Router(loader: LiveModelLoader())
-
-let agent = try await RoutedACPAgent(
-    name: name, router: router, configuration: configuration)
+// Loads the configuration stack and resolves the profile over the real
+// models: the configured weights download on first use and stay resident.
+let composed = try await ComposedAgent.compose(name: name, workingDirectory: cwd)
 
 // Full duplex on one pipe: the read loop serves every request while a prompt
 // streams session/update notifications. stdout carries ndJSON only; logs go
 // to stderr. A read-one-then-write-one loop deadlocks here.
-let connection = await AgentSideConnection(
-    stream: .stdio, logger: .standardError
-) { connection in
-    agent.bind(connection: connection)
-    return agent
-}
+let connection = await composed.serve(over: .stdio, logger: .standardError)
 while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
 ```
 
+A host that makes its own `AgentSideConnection`, for example over an
+in-process transport, gives the agent from the factory closure. The call is
+synchronous and does not throw, and it starts no transport of its own:
+
+```swift
+let connection = await AgentSideConnection(stream: transport) { connection in
+    composed.agent(boundTo: connection)
+}
+```
+
 The same composition, with its full commentary, is
-[`Sources/acp-agent/AgentComposition.swift`](Sources/acp-agent/AgentComposition.swift),
+[`Sources/FoundationModelsACPAgent/ComposedAgent.swift`](Sources/FoundationModelsACPAgent/ComposedAgent.swift),
 the composition the `acp-agent` CLI builds every mode on.
 
 ## Install

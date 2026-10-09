@@ -1,21 +1,21 @@
 import Foundation
 import FoundationModels
-import FoundationModelsACPAgent
 import FoundationModelsRouter
 
 // MARK: - The paced stub model (cli-plan.md §5.9, §9)
 //
-// `ACP_AGENT_STUB_MODEL=1` gives a spawned `acp-agent` a deterministic
+// The stub model of ``ComposedAgent/ModelSource/stub`` gives a deterministic
 // model, and that is enough for every claim about what a prompt SAYS. It
 // is not enough for a claim about a prompt that is still RUNNING: the
 // library's echo backend answers in one chunk and in microseconds, so a
 // signal always lands after the prompt is over.
 //
-// `ACP_AGENT_STUB_CHUNK_DELAY_MS` holds a prompt open. The prompt comes
-// back word by word, with the named pause between the words, so a test
-// can send `SIGINT` into a live prompt across a real process boundary.
-// The knob touches nothing when it is unset, and it is read only on the
-// stub path.
+// The chunk delay of ``ComposedAgent/compose(name:workingDirectory:environment:modelSource:stubChunkDelay:reporting:)``
+// holds a prompt open. The prompt comes back word by word, with the named
+// pause between the words, so a test can send `SIGINT` into a live prompt
+// across a real process boundary. The `acp-agent` executable reads that
+// delay from `ACP_AGENT_STUB_CHUNK_DELAY_MS`. The delay touches nothing
+// when it is `nil`, and it is read only on the stub path.
 
 /// A stub session backend that answers the prompt word by word, with a
 /// pause between the words.

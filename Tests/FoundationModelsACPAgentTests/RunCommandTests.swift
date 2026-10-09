@@ -53,7 +53,7 @@ struct RunCommandTests {
     private static let swiftExtension = "swift"
 
     /// The one file of ``commandSourceDirectory`` that may name the agent
-    /// type: it is the file that constructs the agent.
+    /// type: it is the file that composes the agent through the library.
     private static let compositionFileName = "AgentComposition.swift"
 
     /// The agent type no other file of the CLI may name.
