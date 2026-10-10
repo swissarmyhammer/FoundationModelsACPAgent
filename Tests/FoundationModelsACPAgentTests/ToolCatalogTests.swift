@@ -20,12 +20,13 @@ import Testing
 /// `ToolInvoker.invoke(_:content:)` door with its wire JSON.
 @Suite struct ToolCatalogTests {
     /// The mount order a default context gives the model: the two
-    /// Multitool session tools, then the appended standalone skills tool.
-    private static let defaultToolNames = ["searchTools", "runCode", "skills"]
+    /// Multitool session tools, then the appended standalone `skills` and
+    /// `agents` tools.
+    private static let defaultToolNames = ["searchTools", "runCode", "skills", "agents"]
 
     /// The mount order with the skills section disabled: the Multitool
-    /// session tools alone.
-    private static let multitoolOnlyNames = ["searchTools", "runCode"]
+    /// session tools, then the standalone `agents` tool.
+    private static let withoutSkillsNames = ["searchTools", "runCode", "agents"]
 
     /// The surface path of the files read verb.
     private static let readVerbPath = FilesVerbSupport.readVerbPath
@@ -174,7 +175,7 @@ import Testing
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == Self.multitoolOnlyNames)
+        #expect(surface.tools.map(\.name) == Self.withoutSkillsNames)
     }
 
     // MARK: The profile embedder

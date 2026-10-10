@@ -9,8 +9,8 @@
 # is on by default, thus a group that this file does not name is also on. The
 # file names each group so that the run states the full tool set, and not
 # only the groups that differ from the default. A group body that is a mapping
-# turns the group on. Only `web`, `git` and `environment` also have the
-# `enabled` key.
+# turns the group on. Only `agents`, `web`, `git` and `environment` also have
+# the `enabled` key.
 #
 # - `files` is the Multitool group `tools.files`. The keys are the builtin
 #   defaults. `exclude` is not set: the default skips the dotfolder of the
@@ -21,6 +21,12 @@
 #   need the code context tool. The URL is the HTTPS form: the agent of a
 #   run gets a clean environment, and the HTTPS form of this public
 #   repository needs no SSH agent and no credential.
+# - `agents` is the stand-alone `agents` tool. It is on by default, and this
+#   run sets `enabled: true` to state it. It starts an agent folder
+#   `agents/<name>/AGENT.md` in its own session. The agents of a marketplace
+#   come from the marketplaces of `skills`; the `code-context` branch holds
+#   no agent folder now, thus the tool lists only the local agents of the
+#   clone and of the user layer.
 # - `codeContext` is the Multitool group `tools.code_context`. It is on by
 #   default; the entry is here so that the run states it.
 #   `semanticSearch: false` stops the embedding pass of the index. Each
@@ -78,6 +84,8 @@ tools:
     marketplaces:
       - url: https://github.com/swissarmyhammer/skills.git
         ref: code-context
+  agents:
+    enabled: true
   codeContext:
     autoInstall: true
     semanticSearch: false

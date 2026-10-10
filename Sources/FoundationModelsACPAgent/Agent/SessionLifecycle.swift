@@ -60,9 +60,9 @@ extension RoutedACPAgent {
     }
 
     /// Adopts `descendant` as a child of `sessionId`, so `session/close`
-    /// closes it too (plan.md §10.1). A fork or a spawned sub-agent is this
-    /// session's work; a later Multitool agents capability registers each
-    /// spawned session here, and this iteration registers forks.
+    /// closes it too (plan.md §10.1). A fork is this session's work. The runs
+    /// of the `agents` tool are not registered here: the teardown stops them
+    /// through `SessionSurface.stopAgentRuns()`.
     ///
     /// - Parameters:
     ///   - descendant: The child session to close at the parent's teardown.
@@ -120,10 +120,10 @@ extension RoutedACPAgent {
     // MARK: - The teardown (plan.md §10.1)
 
     /// Runs the full §10.1 teardown of one session: cancel the running prompt,
-    /// run the session sweep, close every descendant, finish the shell stream,
-    /// shut the MCP servers down, and write the retained history to its file
-    /// — in that order. The entry stays in the table, marked closed, so the
-    /// session is still resumable.
+    /// stop the agent runs, run the session sweep, close every descendant,
+    /// finish the shell stream, shut the MCP servers down, and write the
+    /// retained history to its file — in that order. The entry stays in the
+    /// table, marked closed, so the session is still resumable.
     ///
     /// It is idempotent: a session already closed has released its resources,
     /// so this returns at once.
@@ -147,6 +147,11 @@ extension RoutedACPAgent {
             await entry.session.cancel()
             await promptState.waitForPromptEnd()
         }
+        // The agent runs stop first: the Router does not know the runs that
+        // a `start agent` call started, thus the session sweep below cannot
+        // cancel them, and a run that outlives the root session would send
+        // its final message to a closed session.
+        await entry.surface.stopAgentRuns()
         // The session sweep: it cancels every background run, rejects every
         // pending elicitation, journals the terminal events, and finishes
         // every `streamSessionEvents()` subscription. `deinit` does not run

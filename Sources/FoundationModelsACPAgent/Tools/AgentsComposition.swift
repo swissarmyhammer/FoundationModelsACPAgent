@@ -1,0 +1,146 @@
+import Foundation
+import FoundationModels
+import FoundationModelsAgents
+import FoundationModelsExtras
+import FoundationModelsMultitool
+import FoundationModelsSkills
+
+/// The mounted `agents` tool of one session: the tool that the root session
+/// gets, the runner of its agent runs, and the environment of those runs.
+struct AgentsMount: Sendable {
+    /// The `agents` tool of the root session.
+    let tool: AgentsTool
+
+    /// The runner of the agent runs of the session. The session lifecycle
+    /// stops it before the root session closes, because the Router does not
+    /// know the runs of a session.
+    let runner: AgentRunner
+
+    /// The environment of each agent run: the one skills registry, the
+    /// `skills` tool of the root session and of the runs, the tools of the
+    /// runs, and the settle period.
+    let environment: AgentEnvironment
+}
+
+/// The composition of the standalone `agents` tool of FoundationModelsAgents
+/// (task ^c4a6mwy).
+///
+/// **The tool is standalone, not a Multitool capability.** A `start agent`
+/// call waits for its run for the settle period of the session. A run that
+/// ends in that time gives its final message as the output of the call, and
+/// a longer run goes to the background and gives its final message as mail.
+/// Inside a `runCode` snippet that wait would be a second background point,
+/// thus the tool mounts beside `searchTools`, `runCode` and `skills`, the
+/// same as the `skills` tool.
+///
+/// **One skills registry and one marketplace store.** The environment makes
+/// the `skills` tool from the skills registry of the session, and the root
+/// session mounts that tool, `AgentEnvironment.skillsTool`, in place of its
+/// own. The agent registry reads the marketplace layers of the same store.
+/// The host tool catalog never registers `skills`: the environment adds it.
+///
+/// **The tools of a run.** A run gets the Multitool session tools,
+/// `searchTools` and `runCode`, by name, over the registry of the root
+/// session, and the `skills` tool. The `tools` and `disallowedTools` keys
+/// of an agent select from these names.
+///
+/// The `FoundationModelsAgents::` module selector names the tool catalog of
+/// FoundationModelsAgents. This module has a ``ToolCatalog`` of its own, and
+/// FoundationModelsAgents has an enum with the name of its module, thus
+/// `FoundationModelsAgents.ToolCatalog` does not name the type.
+enum AgentsComposition {
+    /// Builds the agent registry, the environment, the runner and the
+    /// `agents` tool, or gives `nil` when the `agents:` section is off.
+    ///
+    /// The agent registry reads the agent folders `agents/<name>/AGENT.md`
+    /// of the `agents` dotfolder stack (``ToolCatalog/agentsDotfolderName``),
+    /// and of each marketplace layer of the skills store. It does not watch:
+    /// the schema of the tool is fixed when the tool is made, thus an agent
+    /// that a later edit adds reaches the next session.
+    ///
+    /// - Parameters:
+    ///   - context: The session whose configuration, profile, working
+    ///     directory and settle period the composition reads.
+    ///   - skills: The skills source of the session, or `nil` when the
+    ///     `skills:` section is off. With `nil`, the runs get a `skills` tool
+    ///     over an empty skills registry, and the agent registry reads no
+    ///     marketplace.
+    ///   - runTools: The tools that a run can get, by name.
+    /// - Returns: The mount, or `nil` when the section is off.
+    /// - Throws: Whatever `AgentRegistry.load()`, `AgentEnvironment.make`
+    ///   or `AgentsTool.make(context:)` throws.
+    static func compose(
+        context: CatalogContext, skills: SkillsSource?, runTools: FoundationModelsAgents::ToolCatalog
+    ) async throws -> AgentsMount? {
+        guard context.configuration.tools.agents.mountedOptions != nil else {
+            return nil
+        }
+        let registry = makeAgentRegistry(context: context, marketplaces: skills?.marketplaces)
+        try await registry.load()
+        let environment = try await AgentEnvironment.make(
+            profile: context.profile,
+            skills: skills?.registry ?? SkillsRegistry(roots: []),
+            skillsSelectionModel: RoutedSelectionModel(profile: context.profile),
+            workingDirectory: context.workingDirectory,
+            tools: runTools,
+            inlineSettleGrace: context.inlineSettleGrace)
+        let runner = AgentRunner(registry: registry, environment: environment)
+        let tool = try await AgentsTool.make(context: AgentsToolContext(runner: runner))
+        return AgentsMount(tool: tool, runner: runner, environment: environment)
+    }
+
+    /// Makes the agent registry over the `agents` dotfolder stack, and over
+    /// the marketplace store when the session has one. The registry reads
+    /// no file until `load()`.
+    ///
+    /// - Parameters:
+    ///   - context: The session whose working directory roots the project
+    ///     layer of the stack.
+    ///   - marketplaces: The started skills marketplace store, or `nil`.
+    /// - Returns: The registry.
+    static func makeAgentRegistry(
+        context: CatalogContext, marketplaces: MarketplaceStore?
+    ) -> AgentRegistry {
+        let stack = DotfolderStack(
+            name: ToolCatalog.agentsDotfolderName, workingDirectory: context.workingDirectory)
+        guard let marketplaces else {
+            return AgentRegistry(stack: stack)
+        }
+        return AgentRegistry(marketplaces: marketplaces, stack: stack)
+    }
+
+    /// Makes the tool catalog of the runs: one factory for each Multitool
+    /// session tool of the root session, by its name.
+    ///
+    /// Each factory call makes a new pair of session tools over `registry`,
+    /// thus each run gets its own `searchTools` and `runCode`, and gives the
+    /// tool of the name. A `searchTools` and a `runCode` of one run come from
+    /// two pairs; both read the same registry, and a registry holder keeps
+    /// no state of a search, thus the two answer as one pair does. The probe
+    /// pair below proves that the call succeeds for this registry. A later
+    /// call over the same registry and the same selection gives the same
+    /// result, and the probe tool is the answer of a call that fails.
+    ///
+    /// - Parameters:
+    ///   - registry: The built Multitool registry of the root session.
+    ///   - selection: The selection tier of `searchTools`.
+    ///   - embedder: The embedder that `searchTools` and `runCode` rank with.
+    /// - Returns: The tool catalog of the runs.
+    /// - Throws: Whatever `MultiTool.Registry.makeSessionTools(selection:embedder:)`
+    ///   throws for the probe pair.
+    static func makeRunTools(
+        registry: MultiTool.Registry,
+        selection: @escaping SearchToolsTool.SelectionFactory,
+        embedder: any PooledEmbedding
+    ) throws -> FoundationModelsAgents::ToolCatalog {
+        var tools = FoundationModelsAgents::ToolCatalog()
+        for probe in try registry.makeSessionTools(selection: selection, embedder: embedder) {
+            let name = probe.name
+            tools.register(name) {
+                let fresh = try? registry.makeSessionTools(selection: selection, embedder: embedder)
+                return fresh?.first { $0.name == name } ?? probe
+            }
+        }
+        return tools
+    }
+}

@@ -307,6 +307,55 @@ import Testing
         #expect(loaded.configuration.tools.environment.mountedOptions == EnvironmentToolOptions())
     }
 
+    // MARK: - The agents section
+
+    /// With no `agents:` key, the `agents` tool is on, with the defaults.
+    @Test func noAgentsKeyEnablesTheAgentsTool() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "recording:\n  level: full\n")
+
+        #expect(loaded.configuration.tools.agents == .enabled(AgentsToolOptions()))
+        #expect(loaded.configuration.tools.agents.mountedOptions == AgentsToolOptions())
+    }
+
+    /// The scalar `agents: false` and the body `enabled: false` each turn
+    /// the `agents` tool off.
+    @Test(arguments: ["agents: false", "agents:\n    enabled: false"])
+    func eachOffShapeMountsNoAgentsTool(body: String) throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig("tools:\n  \(body)\n")
+
+        #expect(loaded.configuration.tools.agents.mountedOptions == nil)
+        #expect(loaded.warnings.isEmpty)
+    }
+
+    /// An unknown key in the agents body is an error that names
+    /// `tools.agents` and the key. The agent registry reads the skills
+    /// marketplaces, thus `marketplaces` is not a key of this body.
+    @Test func anUnknownKeyInTheAgentsBodyIsAnError() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+
+        #expect(
+            throws: ConfigurationError.unknownKey(section: "tools.agents", key: "marketplaces")
+        ) {
+            try fixture.loadProjectConfig("tools:\n  agents:\n    marketplaces: []\n")
+        }
+    }
+
+    /// The document that `config init` writes holds
+    /// `tools.agents.enabled: true`, and it reads back to exactly the
+    /// builtin configuration, with the `agents` tool on.
+    @Test func theConfigInitDocumentReadsBackWithTheAgentsToolOn() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+        let builtin = try fixture.makeLoader().builtinConfiguration
+
+        let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
+        let loaded = try fixture.loadProjectConfig(text)
+
+        #expect(text.contains("  agents:\n    enabled: true\n"))
+        #expect(loaded.configuration == builtin)
+        #expect(loaded.configuration.tools.agents.mountedOptions == AgentsToolOptions())
+    }
+
     // MARK: - The mcp tri-state
 
     /// Omitted `mcp:` means MCP is on with no configured servers — the

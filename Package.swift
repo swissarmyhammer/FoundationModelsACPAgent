@@ -67,6 +67,14 @@ private let multitoolDependencyName = "FoundationModelsMultitool"
 /// in one request/response and not through the async code-mode lane.
 private let skillsDependencyName = "FoundationModelsSkills"
 
+/// The sub-agents package: the agent registry over `agents/<name>/AGENT.md`
+/// folders, the runner, and the `agents` tool. The tool is a plain
+/// `FoundationModels.Tool`. It is NOT a Multitool capability, the same as the
+/// `skills` tool: a `start agent` call waits for its run in the settle period
+/// of the session, and a second background point inside `runCode` must not
+/// wrap it.
+private let agentsDependencyName = "FoundationModelsAgents"
+
 /// The code context package: the indexed symbol, call graph and language
 /// server operations of one workspace. It gives three plain
 /// `FoundationModels.Tool` values, which the tool catalog mounts in Multitool
@@ -281,6 +289,7 @@ private let familyDependencyNames = [
     extrasDependencyName,
     multitoolDependencyName,
     skillsDependencyName,
+    agentsDependencyName,
     codeContextDependencyName,
     rankerDependencyName,
 ]

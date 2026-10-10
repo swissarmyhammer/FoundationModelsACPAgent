@@ -438,8 +438,9 @@ extension ToolSection where Options: SwitchableToolOptions {
 
 /// The body of a tool section whose only key is `enabled`: whether the
 /// capability mounts. The capability is on by default, and the scalar
-/// `<name>: false` of the shared codec turns it off too. ``GitToolOptions``
-/// and ``EnvironmentToolOptions`` are names of this type.
+/// `<name>: false` of the shared codec turns it off too. ``GitToolOptions``,
+/// ``EnvironmentToolOptions`` and ``AgentsToolOptions`` are names of this
+/// type.
 public struct SwitchOnlyToolOptions: SwitchableToolOptions, KeyCheckedSection {
     /// Whether the capability mounts.
     public var enabled: Bool
@@ -498,6 +499,22 @@ public typealias GitToolOptions = SwitchOnlyToolOptions
 /// the agent process, secrets too: set `enabled: false` to keep them out of
 /// the model context. The section has no variable filter.
 public typealias EnvironmentToolOptions = SwitchOnlyToolOptions
+
+/// The `tools.agents:` body: whether the standalone `agents` tool mounts.
+///
+/// ```yaml
+/// tools:
+///   agents:
+///     enabled: true
+/// ```
+///
+/// The `agents` tool of FoundationModelsAgents starts an agent, an
+/// `agents/<name>/AGENT.md` folder, in its own session, and the tool is on
+/// by default. The section has no `marketplaces` key: the agent registry
+/// reads the marketplaces of `tools.skills` through the one marketplace
+/// store of the session. The settle period of a `start agent` call is the
+/// settle period of the session, so the section has no settle key either.
+public typealias AgentsToolOptions = SwitchOnlyToolOptions
 
 // MARK: - The mcp entry
 
@@ -649,6 +666,9 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
     /// The skills tool's entry.
     public var skills = ToolSection<SkillsToolOptions>.enabled(SkillsToolOptions())
 
+    /// The standalone `agents` tool's entry.
+    public var agents = ToolSection<AgentsToolOptions>.enabled(AgentsToolOptions())
+
     /// The code context capability's entry.
     public var codeContext = ToolSection<CodeContextToolOptions>.enabled(CodeContextToolOptions())
 
@@ -669,7 +689,7 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
 
     /// The YAML spelling of each tool key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case files, shell, skills, codeContext, web, git, environment, mcp
+        case files, shell, skills, agents, codeContext, web, git, environment, mcp
     }
 
     /// The default roster: every built-in on, with its defaults.
@@ -689,6 +709,9 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
         skills =
             try container.decodeIfPresent(ToolSection<SkillsToolOptions>.self, forKey: .skills)
             ?? skills
+        agents =
+            try container.decodeIfPresent(ToolSection<AgentsToolOptions>.self, forKey: .agents)
+            ?? agents
         codeContext =
             try container.decodeIfPresent(
                 ToolSection<CodeContextToolOptions>.self, forKey: .codeContext)
@@ -713,6 +736,7 @@ extension ToolsConfiguration {
         CodingKeys.files.stringValue: FilesToolOptions.knownKeys,
         CodingKeys.shell.stringValue: ShellToolOptions.knownKeys,
         CodingKeys.skills.stringValue: SkillsToolOptions.knownKeys,
+        CodingKeys.agents.stringValue: AgentsToolOptions.knownKeys,
         CodingKeys.codeContext.stringValue: CodeContextToolOptions.knownKeys,
         CodingKeys.web.stringValue: WebToolOptions.knownKeys,
         CodingKeys.git.stringValue: GitToolOptions.knownKeys,

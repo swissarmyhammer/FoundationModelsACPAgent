@@ -199,7 +199,8 @@ import Testing
             recordingRoot: directory.appendingPathComponent("recordings", isDirectory: true),
             tools: [tool],
             compaction: CompactionConfiguration(),
-            repetition: RepetitionConfiguration())
+            repetition: RepetitionConfiguration(),
+            inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
         let (execution, recorder) = makeSinkedExecution()
         await execution.run(session: session)
         await session.close()

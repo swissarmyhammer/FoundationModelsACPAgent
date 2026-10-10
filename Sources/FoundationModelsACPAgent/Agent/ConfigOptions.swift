@@ -234,7 +234,8 @@ extension RoutedACPAgent {
                 recordingRoot: entry.transcriptDirectory,
                 tools: entry.surface.tools,
                 compaction: entry.configuration.compaction,
-                repetition: entry.configuration.repetition)
+                repetition: entry.configuration.repetition,
+                inlineSettleGrace: entry.surface.inlineSettleGrace)
         sessions[sessionId]?.session = replacement
         sessions[sessionId]?.selectedSlot = slot
         if entry.availability == .idle {

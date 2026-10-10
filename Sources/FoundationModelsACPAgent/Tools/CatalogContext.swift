@@ -43,6 +43,21 @@ public struct CatalogContext: Sendable {
     /// it, so a configured key wins.
     public let environment: [String: String]
 
+    /// The settle period of each session that this agent makes: the
+    /// settle period of the Router session, `ToolMount.defaultInlineSettleGrace`.
+    public static let defaultInlineSettleGrace: TimeInterval = ToolMount.defaultInlineSettleGrace
+
+    /// The settle period of the sessions of this surface, in seconds: how
+    /// long a background call, for example `start agent`, waits for its own
+    /// work before it gives the pending envelope.
+    ///
+    /// This is the one source of the value. The surface gives it to
+    /// `AgentEnvironment.make(inlineSettleGrace:)`, thus to the session of
+    /// each agent run, and keeps it as ``SessionSurface/inlineSettleGrace``.
+    /// The root session takes it from there through
+    /// `RoutedLLM.makeBudgetedSession(...inlineSettleGrace:)`.
+    public let inlineSettleGrace: TimeInterval
+
     /// Makes a catalog context.
     ///
     /// - Parameters:
@@ -55,13 +70,16 @@ public struct CatalogContext: Sendable {
     ///     in wire order. Defaults to none.
     ///   - environment: The environment that the web capability reads its
     ///     API keys from. Defaults to the environment of the process.
+    ///   - inlineSettleGrace: The settle period of the sessions of the
+    ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
         configuration: AgentConfiguration,
         profile: LanguageModelProfile,
         clientMCPServers: [FoundationModelsACP.MCPServer] = [],
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
     ) {
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
@@ -69,5 +87,6 @@ public struct CatalogContext: Sendable {
         self.profile = profile
         self.clientMCPServers = clientMCPServers
         self.environment = environment
+        self.inlineSettleGrace = inlineSettleGrace
     }
 }

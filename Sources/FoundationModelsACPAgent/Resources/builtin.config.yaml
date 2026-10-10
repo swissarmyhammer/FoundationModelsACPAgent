@@ -8,7 +8,7 @@
 #   tools:
 #     web: false
 #
-# A tool body that is a mapping turns the tool on. The web, git and
+# A tool body that is a mapping turns the tool on. The agents, web, git and
 # environment bodies also have the "enabled" key.
 #
 # Do not put a secret, for example an API key, in this file.
@@ -40,6 +40,13 @@ tools:
     # The remote skill marketplaces. Each item has a "url" key. An empty
     # list uses the local dotfolder stack only.
     marketplaces: []
+
+  # The agents tool: start an agent, a folder agents/<name>/AGENT.md of the
+  # agents dotfolder stack, in its own session. The agents of a marketplace
+  # come from the marketplaces of the skills tool.
+  agents:
+    # When false, the agents tool is off.
+    enabled: true
 
   # The code context tools: the symbol index, the call graph and the
   # language servers of the session working directory.

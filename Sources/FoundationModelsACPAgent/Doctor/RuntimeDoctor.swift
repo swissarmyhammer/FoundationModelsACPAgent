@@ -15,6 +15,10 @@ import FoundationModelsExtras
 /// With `tools.skills: false` no layer is read at all, so the component
 /// reports one passing row that says the section is off and reads nothing.
 ///
+/// The agents stack (``ToolCatalog/agentsDotfolderName``) gets the same
+/// rows after the skills rows: one per layer when `tools.agents` is on, and
+/// one passing row that names `tools.agents.enabled` when it is off.
+///
 /// The component takes the environment as an argument, so a test drives it
 /// over a temporary stack and no test reads the real home directory.
 /// Nothing here throws.
@@ -58,6 +62,28 @@ public struct RuntimeDoctor: Doctorable {
         unreadableCost: ", so its skills are lost",
         unreadableFixHint: ", or remove it")
 
+    /// The check that states the agents section is off.
+    private static let agentsToolCheckName = "the agents tool"
+
+    /// The dotted key path that turns the agents tool off, as the git and
+    /// environment rows of ``ToolsDoctor`` name their `enabled` keys.
+    private static let agentsEnabledKey =
+        AgentConfiguration.CodingKeys.tools.stringValue
+        + LoadedConfiguration.keyPathSeparator
+        + ToolsConfiguration.CodingKeys.agents.stringValue
+        + LoadedConfiguration.keyPathSeparator
+        + AgentsToolOptions.CodingKeys.enabled.stringValue
+
+    /// The words this component says about the layers of the agents stack.
+    ///
+    /// A layer that is not on disk is no fault, because agents are
+    /// optional. An unreadable one loses every agent in it.
+    private static let agentsLayerWording = DotfolderLayerCheck.Wording(
+        missingReason: "agents are optional",
+        noun: ToolCatalog.agentsDotfolderName,
+        unreadableCost: ", so its agents are lost",
+        unreadableFixHint: ", or remove it")
+
     // MARK: - Stored state
 
     /// The resolved configuration, whose `tools.skills:` section says
@@ -96,10 +122,19 @@ public struct RuntimeDoctor: Doctorable {
     }
 
     /// Reports one finding per layer of the skills stack, lowest precedence
-    /// first, or the one row of a section that is off.
+    /// first, or the one row of a skills section that is off, then the same
+    /// for the agents stack.
     ///
     /// - Returns: The findings, in that order.
     public func runHealthChecks() async -> [HealthCheck] {
+        skillsChecks() + agentsChecks()
+    }
+
+    /// The findings of the skills section: one per layer of the skills
+    /// stack, or the one row of a section that is off.
+    ///
+    /// - Returns: The findings, lowest precedence first.
+    private func skillsChecks() -> [HealthCheck] {
         guard case .enabled = configuration.tools.skills else {
             return [
                 DisabledSectionCheck.check(
@@ -107,6 +142,33 @@ public struct RuntimeDoctor: Doctorable {
             ]
         }
         return skillsStack.layers.map(Self.check(ofSkillsLayer:))
+    }
+
+    /// The findings of the agents section: one per layer of the agents
+    /// stack, or the one row of a section that is off by either shape, the
+    /// scalar `agents: false` or `enabled: false`.
+    ///
+    /// - Returns: The findings, lowest precedence first.
+    private func agentsChecks() -> [HealthCheck] {
+        guard configuration.tools.agents.mountedOptions != nil else {
+            return [
+                DisabledSectionCheck.check(
+                    name: Self.agentsToolCheckName, key: Self.agentsEnabledKey, category: Self.category)
+            ]
+        }
+        return agentsStack.layers.map { layer in
+            DotfolderLayerCheck.check(
+                of: layer, wording: Self.agentsLayerWording, category: Self.category, requiresWrite: false)
+        }
+    }
+
+    /// The dotfolder stack the agent registry reads, under the dotfolder
+    /// name ``ToolCatalog/agentsDotfolderName``, so this component reports
+    /// the very layers a session reads.
+    private var agentsStack: DotfolderStack {
+        DotfolderStack(
+            name: ToolCatalog.agentsDotfolderName, workingDirectory: workingDirectory,
+            environment: environment)
     }
 
     // MARK: - The skills stack

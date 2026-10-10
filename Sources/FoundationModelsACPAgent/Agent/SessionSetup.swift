@@ -89,11 +89,10 @@ struct ActiveSession: Sendable {
     /// so the suspended tool resumes before the `idle` terminator.
     var activeElicitationRelay: ElicitationRelay?
 
-    /// The session's descendants — its forks and, later, its spawned
-    /// sub-agents (plan.md §10.1). `session/close` closes each one, so no
-    /// orphan keeps a run or a submission in the model queue after the
-    /// parent goes. This iteration holds forks; the path stays open for the
-    /// spawned sessions a later Multitool agents capability starts.
+    /// The session's descendants — its forks (plan.md §10.1). `session/close`
+    /// closes each one, so no orphan keeps a run or a submission in the model
+    /// queue after the parent goes. The runs of the `agents` tool are not
+    /// here: `SessionSurface.stopAgentRuns()` stops them.
     var descendants: [any RoutedSession] = []
 
     /// Whether `session/close` released this session (plan.md §10.1).
@@ -387,20 +386,21 @@ extension RoutedACPAgent {
 
         // The session comes from the profile's standard slot, never from
         // the router (plan.md §7.1). `grammar` stays absent — a plain
-        // session, not a guided one — and `agentSpawn` stays nil: agents
-        // arrive later as a Multitool code-mode background capability
-        // (§11.3), spawned from inside a tool call, never from
-        // `session/new`. The budget starts automatic compaction: the
-        // fractions come from the `compaction:` section and the limit
-        // from the model's resolved context (plan.md §2.4). The repetition
-        // detector takes the `repetition:` section.
+        // session, not a guided one — and `agentSpawn` stays nil: an agent
+        // run starts from the standalone `agents` tool of the surface,
+        // never from `session/new`. The budget starts automatic
+        // compaction: the fractions come from the `compaction:` section and
+        // the limit from the model's resolved context (plan.md §2.4). The
+        // repetition detector takes the `repetition:` section. The settle
+        // period is the one that the surface gave the agent runs.
         let session = residentProfile.standard.makeBudgetedSession(
             instructions: composition.instructions,
             workingDirectory: workingDirectory,
             recordingRoot: composition.transcriptRoot,
             tools: composition.surface.tools,
             compaction: composition.configuration.compaction,
-            repetition: composition.configuration.repetition)
+            repetition: composition.configuration.repetition,
+            inlineSettleGrace: composition.surface.inlineSettleGrace)
 
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt task appends it at the first recorded activity,
@@ -646,22 +646,22 @@ extension RoutedACPAgent {
             profile: residentProfile,
             clientMCPServers: clientMCPServers)
 
-        // One watched registry serves the preload assembly here and the
-        // slash-command source below (plan.md §14.2). `watch: true` is
-        // what makes its `commandUpdates` non-nil.
-        let skills = await ToolCatalog.makeSkillsRegistry(context: catalogContext)
+        // One watched registry serves the preload assembly here, the
+        // slash-command source below, the `skills` tool and the agent runs
+        // (plan.md §14.2). `watch: true` is what makes its
+        // `commandUpdates` non-nil.
+        let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
         let instructions = try await InstructionsAssembler(
             stack: context.loader.stack, workingDirectory: workingDirectory
-        ).assemble(skills: skills)
+        ).assemble(skills: skills?.registry)
 
-        let surface = try await ToolCatalog.sessionSurface(
-            context: catalogContext, skillsRegistry: skills)
+        let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
 
         return SessionComposition(
             configuration: context.loaded.configuration,
             instructions: instructions.text,
             surface: surface,
-            commandProviders: makeCommandProviders(surface: surface, skills: skills),
+            commandProviders: makeCommandProviders(surface: surface, skills: skills?.registry),
             userLayerRoot: context.userLayerRoot,
             transcriptRoot: context.transcriptRoot)
     }
@@ -760,6 +760,9 @@ extension RoutedLLM {
     ///   - compaction: The `compaction:` section the budget derives from.
     ///   - repetition: The `repetition:` section the repetition detector of
     ///     the session takes (task ^k51h6bb).
+    ///   - inlineSettleGrace: The settle period of the session, in seconds:
+    ///     the ``SessionSurface/inlineSettleGrace`` of the mounted surface,
+    ///     thus the same period that each agent run of the surface gets.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``).
@@ -769,7 +772,8 @@ extension RoutedLLM {
         recordingRoot: URL,
         tools: [any FoundationModels.Tool],
         compaction: CompactionConfiguration,
-        repetition: RepetitionConfiguration
+        repetition: RepetitionConfiguration,
+        inlineSettleGrace: TimeInterval
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
@@ -784,19 +788,21 @@ extension RoutedLLM {
                 ACPAgentTelemetry.LogMetadataKey.compactionTriggerFraction: "\(compaction.trigger)",
                 ACPAgentTelemetry.LogMetadataKey.compactionTargetFraction: "\(compaction.target)",
             ])
+        let budget = TokenBudget(
+            limit: contextTokens,
+            trigger: compaction.trigger,
+            target: compaction.target,
+            hardCeiling: compaction.hardCeiling,
+            toolOutputLimit: compaction.toolOutputLimit)
         return makeSession(
-            instructions: instructions,
-            workingDirectory: workingDirectory,
-            recordingRoot: recordingRoot,
-            tools: tools,
-            budget: TokenBudget(
-                limit: contextTokens,
-                trigger: compaction.trigger,
-                target: compaction.target,
-                hardCeiling: compaction.hardCeiling,
-                toolOutputLimit: compaction.toolOutputLimit),
-            compactionPrompt: .default,
-            toolOutputProtection: SkillOutputProtection.rule,
-            repetitionDetection: repetition.detection)
+            configuration: SessionConfiguration(
+                instructions: instructions,
+                workingDirectory: workingDirectory,
+                recordingRoot: recordingRoot,
+                tools: tools,
+                compaction: CompactionSettings(
+                    budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
+                repetitionDetection: repetition.detection,
+                inlineSettleGrace: inlineSettleGrace))
     }
 }

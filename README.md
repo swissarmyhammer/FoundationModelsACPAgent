@@ -98,9 +98,9 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 
 The model-facing surface is two code-mode tools from
 `FoundationModelsMultitool` — `searchTools` and `runCode` — plus the
-standalone `skills` tool. There is no `wait` tool. A `runCode` run that does
-not settle in its inline grace continues in the background, and its result
-comes back to the session as mail when it settles. Capability modules mount
+standalone `skills` and `agents` tools. There is no `wait` tool. A `runCode`
+run that does not settle in its inline grace continues in the background, and
+its result comes back to the session as mail when it settles. Capability modules mount
 inside the Multitool registry, one row here per capability. Each capability
 is on by default. Set its config section to `false` to set it off.
 
@@ -114,6 +114,7 @@ is on by default. Set its config section to `false` to set it off.
 | `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
 | `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
+| `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `agents/<name>/AGENT.md` of the `agents` dotfolder stack | `tools.agents` |
 
 `tools.files` has four keys. `readOnly`, `allowSymlinks` and `recordsChanges`
 are flags, and each default is `false`. `exclude` is a list of patterns in
@@ -230,6 +231,26 @@ tools:
 Use the HTTPS form of a marketplace URL. The SSH form (`git@github.com:…`) is
 not supported for now: the skills package gives `unreachable` for it, and the
 session then has no marketplace skill.
+
+`tools.agents` has one key, `enabled` (default `true`). The `agents` tool
+starts an agent in its own session: an agent is a folder
+`agents/<name>/AGENT.md` in a layer of the `agents` dotfolder stack
+(`<cwd>/.agents/` and `~/.config/agents/`), or in a marketplace of
+`tools.skills.marketplaces`; the agent registry reads the same marketplace
+store as the skills. A `start agent` call waits for its run for the settle
+period of the session. A run that ends in that time gives its final message
+as the output of the call; a longer run goes to the background, and its final
+message comes back to the session as mail. Each run gets the `searchTools`,
+`runCode` and `skills` tools, and the root session and the runs read one skills
+registry. When the session closes, its agent runs stop first. Set
+`enabled: false` (or `agents: false`) to set the agents tool off; `doctor`
+then has one row that says it is disabled.
+
+```yaml
+tools:
+  agents:
+    enabled: false
+```
 
 **Know the sandbox limit.** The sandbox is the only gate on shell commands:
 there is no permission prompt, and the agent never sends

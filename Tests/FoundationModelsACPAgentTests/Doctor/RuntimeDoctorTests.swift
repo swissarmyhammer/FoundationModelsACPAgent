@@ -29,6 +29,19 @@ struct RuntimeDoctorTests {
     /// The configuration key a disabled-section row names.
     private static let skillsKey = "tools.skills"
 
+    /// The start of the name of each row of the skills tool.
+    private static let skillsRowPrefix = "the skills"
+
+    /// The start of the name of each row of the agents tool.
+    private static let agentsRowPrefix = "the agents"
+
+    /// The name of the row of an agents section that is off.
+    private static let agentsToolCheckName = "the agents tool"
+
+    /// The configuration key that the row of an agents section that is off
+    /// names.
+    private static let agentsEnabledKey = "tools.agents.enabled"
+
     // MARK: - Helpers
 
     /// The component over one configuration and one fixture tree.
@@ -128,10 +141,51 @@ struct RuntimeDoctorTests {
             .runHealthChecks()
         try setPermissions(ownerOnlyPermissions, of: layer)
 
-        #expect(checks.count == Self.oneFinding)
-        #expect(checks.allSatisfy { $0.status == .ok })
-        #expect(checks.contains { $0.message.contains(Self.disabledWord) })
-        #expect(checks.contains { $0.message.contains(Self.skillsKey) })
+        let skillsChecks = checks.filter { $0.name.hasPrefix(Self.skillsRowPrefix) }
+        #expect(skillsChecks.count == Self.oneFinding)
+        #expect(skillsChecks.allSatisfy { $0.status == .ok })
+        #expect(skillsChecks.contains { $0.message.contains(Self.disabledWord) })
+        #expect(skillsChecks.contains { $0.message.contains(Self.skillsKey) })
+    }
+
+    // MARK: - The agents tool
+
+    /// With the agents section on, the component gives one row for each
+    /// layer of the agents stack, and a layer that is not on disk passes.
+    @Test func theAgentsSectionOnGivesOneRowForEachAgentsLayer() async {
+        let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-agents")
+
+        let checks = await Self.doctor(in: fixture).runHealthChecks()
+
+        let agentsChecks = checks.filter { $0.name.hasPrefix(Self.agentsRowPrefix) }
+        #expect(!agentsChecks.isEmpty)
+        #expect(agentsChecks.allSatisfy { $0.status == .ok })
+        #expect(agentsChecks.allSatisfy { $0.name != Self.agentsToolCheckName })
+    }
+
+    /// `tools.agents: false` and `tools.agents.enabled: false` each give
+    /// one `.ok` row for the agents tool that says disabled and names the
+    /// key that turns the tool on again.
+    @Test(arguments: [
+        ToolSection<AgentsToolOptions>.disabled, .enabled(AgentsToolOptions(enabled: false)),
+    ])
+    func eachOffShapeOfTheAgentsSectionSaysDisabled(
+        section: ToolSection<AgentsToolOptions>
+    ) async {
+        let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-agents-off")
+        var configuration = AgentConfiguration()
+        configuration.tools.agents = section
+
+        let checks = await Self.doctor(configuration: configuration, in: fixture)
+            .runHealthChecks()
+
+        let agentsChecks = checks.filter { $0.name.hasPrefix(Self.agentsRowPrefix) }
+        #expect(agentsChecks.count == Self.oneFinding)
+        let row = agentsChecks.first
+        #expect(row?.name == Self.agentsToolCheckName)
+        #expect(row?.status == .ok)
+        #expect(row?.message.contains(Self.disabledWord) == true)
+        #expect(row?.message.contains(Self.agentsEnabledKey) == true)
     }
 
     // MARK: - The fix rule

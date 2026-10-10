@@ -17,6 +17,15 @@ import FoundationModelsRouter
 /// aliases that the skills tool itself accepts (`call`, `invoke`, `get`).
 /// Every other output of the `skills` tool, such as a search result, is not
 /// protected.
+///
+/// The output of the `agents` tool is not protected either (task ^c4a6mwy).
+/// A skill is a procedure that controls the rest of the session, thus a
+/// fold must not remove it. The final message of an agent run is a result:
+/// the model acts on it one time, in the answer after it arrives, and the
+/// changes that the model makes are in the files after that answer. A
+/// session that starts many runs would also fill its context with results
+/// that a fold can never remove. Thus a compaction treats a `start agent`
+/// output, and the mail of a run, as each other tool result.
 enum SkillOutputProtection {
     /// The name of the standalone skills tool.
     static let skillsToolName = "skills"
