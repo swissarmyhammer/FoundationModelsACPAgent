@@ -126,6 +126,44 @@ func makeEventStream(
     }
 }
 
+/// The one driver of a synthetic prompt. The projection suites use it to
+/// send a scripted event stream through a sinked prompt execution.
+enum SyntheticPrompt {
+    /// Drives one synthetic prompt of `events` through a sinked prompt
+    /// execution.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the prompt, in order.
+    ///   - shellSnapshot: The reader of the stored output of a settled
+    ///     run; the default finds no run.
+    /// - Returns: The updates that the prompt sent, in send order, and the
+    ///   stop reason of the prompt.
+    static func drive(
+        _ events: [SessionEvent],
+        shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
+    ) async -> (updates: [SessionUpdate], reason: StopReason) {
+        let (execution, recorder) = makeSinkedExecution(shellSnapshot: shellSnapshot)
+        let reason = await execution.drive(events: makeEventStream(events))
+        return (await recorder.updates, reason)
+    }
+
+    /// Drives one synthetic prompt of `events` and gives only the updates
+    /// that it sent. Use this form when the test does not read the stop
+    /// reason.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the prompt, in order.
+    ///   - shellSnapshot: The reader of the stored output of a settled
+    ///     run; the default finds no run.
+    /// - Returns: The updates that the prompt sent, in send order.
+    static func sentUpdates(
+        _ events: [SessionEvent],
+        shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
+    ) async -> [SessionUpdate] {
+        await drive(events, shellSnapshot: shellSnapshot).updates
+    }
+}
+
 // MARK: - The update readers
 
 /// The tool-call updates in the sequence, in order.

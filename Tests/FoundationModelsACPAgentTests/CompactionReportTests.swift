@@ -118,17 +118,7 @@ struct CompactionReportTests {
     /// - Parameter result: The compaction result the event carries.
     /// - Returns: The updates the prompt sent, in order.
     private static func project(_ result: CompactionResult) async -> [SessionUpdate] {
-        await project([.compaction(result)])
-    }
-
-    /// Projects synthetic Router events and returns what they sent.
-    ///
-    /// - Parameter events: The events to project, in order.
-    /// - Returns: The updates the prompt sent, in order.
-    private static func project(_ events: [SessionEvent]) async -> [SessionUpdate] {
-        let (execution, recorder) = makeSinkedExecution()
-        _ = await execution.drive(events: makeEventStream(events))
-        return await recorder.updates
+        await SyntheticPrompt.sentUpdates([.compaction(result)])
     }
 
     /// The `compactionStarted` event of the synthetic automatic compaction.
@@ -294,7 +284,7 @@ struct CompactionReportTests {
     /// the `usage_update` with the new context use.
     @Test(.timeLimit(.minutes(1)))
     func anAutomaticCompactionSendsInProgressThenCompletedUnderOneId() async throws {
-        let updates = await Self.project([Self.makeAutomaticStart(), .compaction(Self.makeAutomaticResult())])
+        let updates = await SyntheticPrompt.sentUpdates([Self.makeAutomaticStart(), .compaction(Self.makeAutomaticResult())])
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .completed])
@@ -310,7 +300,7 @@ struct CompactionReportTests {
     /// not change, so no `usage_update` goes out.
     @Test(.timeLimit(.minutes(1)))
     func anAutomaticFailureSendsFailedWithTheErrorText() async throws {
-        let updates = await Self.project([
+        let updates = await SyntheticPrompt.sentUpdates([
             Self.makeAutomaticStart(), Self.makeAutomaticFailure(.failed(Self.automaticFailureText)),
         ])
 
@@ -326,7 +316,7 @@ struct CompactionReportTests {
     /// `cancelled` under the same id, with no error and no `usage_update`.
     @Test(.timeLimit(.minutes(1)))
     func anAutomaticCancelSendsCancelled() async throws {
-        let updates = await Self.project([Self.makeAutomaticStart(), Self.makeAutomaticFailure(.cancelled)])
+        let updates = await SyntheticPrompt.sentUpdates([Self.makeAutomaticStart(), Self.makeAutomaticFailure(.cancelled)])
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .cancelled])

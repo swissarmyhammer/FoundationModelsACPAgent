@@ -113,16 +113,6 @@ import Testing
         ]
     }
 
-    /// Drives one synthetic prompt of `events` and gives the sent updates.
-    ///
-    /// - Parameter events: The events of the prompt.
-    /// - Returns: The updates, in send order.
-    private static func drive(_ events: [SessionEvent]) async -> [SessionUpdate] {
-        let (execution, recorder) = makeSinkedExecution()
-        _ = await execution.drive(events: makeEventStream(events))
-        return await recorder.updates
-    }
-
     /// The `toolCallId` of each update that has one, in send order. The
     /// value comes from the wire object, so each kind of tool-call update
     /// counts: a `tool_call_update` and a `tool_call_content_chunk`.
@@ -166,7 +156,7 @@ import Testing
                 .toolCallReport(report),
             ] + Self.sdkCall(Self.sdkCallId)
 
-        let ids = try Self.wireToolCallIds(in: await Self.drive(events))
+        let ids = try Self.wireToolCallIds(in: await SyntheticPrompt.sentUpdates(events))
 
         #expect(ids.count == 6)
         #expect(Set(ids) == [Self.sdkCallId])
@@ -184,7 +174,7 @@ import Testing
                 Self.settlement(Self.runToken),
             ]
 
-        let updates = await Self.drive(events)
+        let updates = await SyntheticPrompt.sentUpdates(events)
         let settlement = try #require(toolCallUpdates(in: updates).last)
         let ids = try Self.wireToolCallIds(in: updates)
 
@@ -198,7 +188,7 @@ import Testing
     /// between two answers.
     @Test func aRunThatNoSdkCallJoinedKeepsItsCompletionToken() async throws {
         let ids = try Self.wireToolCallIds(
-            in: await Self.drive([
+            in: await SyntheticPrompt.sentUpdates([
                 Self.openRecord(Self.runToken, toolCallID: nil),
                 Self.progress(Self.runToken),
                 Self.settlement(Self.runToken),
@@ -224,7 +214,7 @@ import Testing
                 Self.progress(Self.secondRunToken),
             ] + Self.sdkCall(Self.sdkCallId) + Self.sdkCall(Self.secondSdkCallId)
 
-        let updates = await Self.drive(events)
+        let updates = await SyntheticPrompt.sentUpdates(events)
         let ids = try Self.wireToolCallIds(in: updates)
 
         #expect(Self.toolCallIds(carrying: Self.progressText, in: updates) == [Self.sdkCallId])

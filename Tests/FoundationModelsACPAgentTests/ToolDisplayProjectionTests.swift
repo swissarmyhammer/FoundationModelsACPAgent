@@ -79,20 +79,6 @@ import Testing
                 outcome: outcome))
     }
 
-    /// Drives one synthetic prompt of `events` and gives the sent updates.
-    ///
-    /// - Parameters:
-    ///   - events: The events of the prompt.
-    ///   - shellSnapshot: The reader of the stored output of a settled run.
-    /// - Returns: The updates, in send order.
-    private static func drive(
-        _ events: [SessionEvent], shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
-    ) async -> [SessionUpdate] {
-        let (execution, recorder) = makeSinkedExecution(shellSnapshot: shellSnapshot)
-        _ = await execution.drive(events: makeEventStream(events))
-        return await recorder.updates
-    }
-
     /// The wire objects of the updates of the tool call of the run, in send
     /// order: each update that names ``runToken`` as its `toolCallId`.
     ///
@@ -116,7 +102,7 @@ import Testing
     private static func onlyRunWireUpdate(
         of events: [SessionEvent]
     ) async throws -> [String: FoundationModelsACP.JSONValue]? {
-        let updates = try runWireUpdates(in: await drive(events))
+        let updates = try runWireUpdates(in: await SyntheticPrompt.sentUpdates(events))
         return updates.count == 1 ? updates.first : nil
     }
 
@@ -365,7 +351,7 @@ import Testing
     /// after each display event of the run.
     @Test func theSettlementReplaceIsTheLastUpdateOfTheToolCall() async throws {
         let updates = try Self.runWireUpdates(
-            in: await Self.drive([
+            in: await SyntheticPrompt.sentUpdates([
                 Self.display(.contentChunk(.text(Self.firstPart))),
                 Self.display(.metadata(title: Self.toolTitle, kind: .edit, locations: nil, rawInput: nil)),
                 Self.display(.contentReplace([.text(Self.secondPart)])),
@@ -392,7 +378,7 @@ import Testing
             bytes: bytes, binaryDetected: false, truncated: false, storedByteCount: bytes.count)
         let snapshot = ShellOutputSnapshot(stdout: stored, stderr: stored)
         let updates = try Self.runWireUpdates(
-            in: await Self.drive(
+            in: await SyntheticPrompt.sentUpdates(
                 [Self.display(.contentChunk(.text(Self.firstPart))), Self.settlement(.succeeded)],
                 shellSnapshot: { commandID in commandID == Self.runToken ? snapshot : nil }))
 

@@ -75,6 +75,56 @@ comments:
     - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to empty scratch folder) — 871 tests in 94 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failures, 0 skipped. swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed, 0 failures, 0 skipped. Only warning in both runs: "missing creator for mutated node" under mlx-swift_Cmlx.bundle (the expected mlx-swift dependency warning). No package file warnings.
     - next: none. No code was changed. No process was killed, default .build was not touched, no Package.resolved edit, no commit.
   timestamp: 2026-10-10T16:12:39.657345+00:00
+- actor: claude-code
+  id: 01m4k9dhn8pvn649b85j7cwjc9
+  text: |-
+    ### commit — changed
+    - evidence: 73dd4d5 feat(acp): send each update of a tool run on the tool call id that Router joins to the run (^e1yq4gh)
+    - next: none
+  timestamp: 2026-10-10T16:12:57.896120+00:00
+- actor: claude-code
+  id: 01m4k9sqtpnksva8jta4my9nrm
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (73dd4d5). Counts: 1 finding, 1 confirmed, 1 refuted, 7 attempted, 0 failed, 0 skipped. Finding at Tests/FoundationModelsACPAgentTests/ToolCallJoinProjectionTests.swift:120 (reuse/reuse). No validator failed because of the orphan checkout in `.build`.
+    - next: Move the shared `drive` test driver into the test support code, and make the three suites call it. Then run the review again.
+  timestamp: 2026-10-10T16:19:37.430867+00:00
+- actor: claude-code
+  id: 01m4k9t539rdqextky87f2nyky
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 4 files
+    - test: green — swift test 871 (1 known issue); IntegrationTests 30
+    - commit: 73dd4d5
+    - review: findings — Tests/FoundationModelsACPAgentTests/ToolCallJoinProjectionTests.swift:120
+  timestamp: 2026-10-10T16:19:51.017086+00:00
+- actor: claude-code
+  id: 01m4ka2r27ywjexhjkd4gw9v5s
+  text: |-
+    ### Review fix: shared prompt driver (2026-10-10)
+
+    Research: six suites had a copy of the same driver (makeSinkedExecution + execution.drive(events: makeEventStream(events)) + recorder.updates): ToolCallJoinProjectionTests.drive, RunProgressTests.drive (it also gives the stop reason), EventProjectionTests.drive and ToolDisplayProjectionTests.drive (both with a shellSnapshot parameter), CompactionReportTests.project(_ events:), and the bodies of ContextUsageReportTests.usageUpdates and cutRecord. TerminalStreamTests.project drives a TerminalStream, not a prompt, so it is a different driver and stays.
+
+    Change: `enum SyntheticPrompt` in Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift, next to `toolCallUpdates(in:)`. `SyntheticPrompt.drive(_:shellSnapshot:)` gives `(updates:, reason:)`; `SyntheticPrompt.sentUpdates(_:shellSnapshot:)` gives only the updates and calls `drive`. It is a caseless enum and not a top-level func, because the swift `immutability` rule says "A function belongs to a type". The six per-suite copies are deleted and the call sites call the shared driver. CompactionReportTests.project(_ result:) stays as a one-line adapter from a CompactionResult to the event list.
+
+    Not changed: the inline `makeSinkedExecution()` + `execution.drive` lines in PromptExecutionTests, CancellationTests and PromptFollowUpTests. Those tests use a throwing stream, a cancel request before the drive, or a follow-up, so they do not have the same driver.
+
+    Tool note (again): `files` `edit file` with `replace_all: true` replaced only 1 occurrence for each call.
+  timestamp: 2026-10-10T16:24:32.583172+00:00
+- actor: claude-code
+  id: 01m4ka972n1tcrk180qkmq6jzh
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift (new `enum SyntheticPrompt` with `drive(_:shellSnapshot:)` -> (updates, reason) and `sentUpdates(_:shellSnapshot:)`), ToolCallJoinProjectionTests.swift, RunProgressTests.swift, EventProjectionTests.swift, ToolDisplayProjectionTests.swift, CompactionReportTests.swift, ContextUsageReportTests.swift (per-suite drivers deleted, call sites call the shared driver). `swift test --scratch-path .build/alt --force-resolved-versions --filter <the 6 suites>`: 82 tests in 6 suites passed. Full root suite with SKILLS_MARKETPLACE_CACHE set to an empty scratch folder: 871 tests in 94 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failures. Only warning: the mlx-swift_Cmlx.bundle "missing creator for mutated node" line from a dependency. Finding at ToolCallJoinProjectionTests.swift:120 is checked. No git stash, bench files not touched, no Package.resolved edit, not committed.
+    - next: /review. The task stays in `doing`.
+  timestamp: 2026-10-10T16:28:04.565449+00:00
+- actor: claude-code
+  id: 01m4kanj1jjqz33205t2vz6jtj
+  text: |-
+    ### test — green
+    - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to an empty scratch folder) — 871 tests in 94 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests). swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed. Zero failures, zero skipped. Only warning in both runs: the mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle).
+    - next: review. No files were changed in this iteration.
+  timestamp: 2026-10-10T16:34:49.010415+00:00
 position_column: doing
 position_ordinal: '80'
 title: Show one tool call for each tool run
@@ -103,3 +153,12 @@ Use the joined id from the Router, so that both paths send their updates on the 
 - [x] One tool run gives exactly one `tool_call` and its `tool_call_update` rows on one `toolCallId`.
 - [x] A background run that settles later updates the same `toolCallId`.
 - [x] A test reads the wire messages and counts the distinct `toolCallId` values for one run.
+
+## Review Findings (2026-10-10 11:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ToolCallJoinProjectionTests.swift:120` `reuse/reuse` — The new `drive(_:)` helper repeats the wrapper that `RunProgressTests.drive` and `EventProjectionTests.drive` already implement. It builds a sinked execution, drives the event stream, and returns the sent updates. The only difference is that it drops the stop reason. This is a parallel copy of a test driver that the suites already have, so future changes to how a prompt is driven must be made in several places. Move the shared driver into `Tests/FoundationModelsACPAgentTestSupport` or `Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift`, next to `toolCallUpdates(in:)`, and have the three suites call it. If the move is out of scope for this change, at least call the existing `RunProgressTests` helper's shape instead of rewriting it. Confidence is moderate: I cited the probe rows and did not read the three `drive` bodies in full.

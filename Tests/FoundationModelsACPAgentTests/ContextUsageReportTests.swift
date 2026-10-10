@@ -87,8 +87,7 @@ import Testing
     private static func cutRecord(after calls: [SessionEvent]) async throws -> TelemetryCapture.LogRecord {
         let events = calls + [makeSummedSubmissionEnd(finishReason: .reasoningTokenLimit)]
         let records = try await TelemetryCapture.run(forbidding: []) { context in
-            let (execution, _) = makeSinkedExecution()
-            _ = await execution.drive(events: makeEventStream(events))
+            _ = await SyntheticPrompt.drive(events)
             return context.logRecords
         }
         let cut = records.filter { $0.level == .error }
@@ -101,10 +100,8 @@ import Testing
     /// - Parameter calls: The generation call events before the end.
     /// - Returns: The usage updates the prompt sent, in order.
     private static func usageUpdates(after calls: [SessionEvent]) async -> [UsageUpdate] {
-        let (execution, recorder) = makeSinkedExecution()
-        _ = await execution.drive(
-            events: makeEventStream(calls + [makeSummedSubmissionEnd(finishReason: .completed)]))
-        return await recorder.updates.compactMap(usageReport(of:))
+        await SyntheticPrompt.sentUpdates(calls + [makeSummedSubmissionEnd(finishReason: .completed)])
+            .compactMap(usageReport(of:))
     }
 
     // MARK: - The record of a cut prompt

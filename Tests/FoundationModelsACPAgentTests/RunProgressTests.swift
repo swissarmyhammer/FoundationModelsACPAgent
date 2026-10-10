@@ -116,16 +116,6 @@ import Testing
         }
     }
 
-    /// Drives one synthetic prompt of `events` and gives the sent updates.
-    ///
-    /// - Parameter events: The events of the prompt.
-    /// - Returns: The updates and the stop reason.
-    private static func drive(_ events: [SessionEvent]) async -> (updates: [SessionUpdate], reason: StopReason) {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(events: makeEventStream(events))
-        return (await recorder.updates, reason)
-    }
-
     // MARK: - The scripted tool
 
     /// The completion tokens that the scripted tool saw, in call order.
@@ -233,7 +223,7 @@ import Testing
     @Test func aPlanEventSendsNoToolCallUpdate() async {
         let plan = PlanSnapshot(id: Self.planId, entries: Self.planEntries())
 
-        let (updates, _) = await Self.drive([.runProgress(Self.codeModeProgress(Self.planLine, plan: plan))])
+        let (updates, _) = await SyntheticPrompt.drive([.runProgress(Self.codeModeProgress(Self.planLine, plan: plan))])
 
         #expect(toolCallUpdates(in: updates).isEmpty)
         #expect(Self.planUpdates(in: updates).count == 1)
@@ -245,7 +235,7 @@ import Testing
         let first = PlanSnapshot(id: Self.planId, entries: Self.planEntries(firstStatus: .inProgress))
         let second = PlanSnapshot(id: Self.planId, entries: Self.planEntries(firstStatus: .completed))
 
-        let (updates, _) = await Self.drive([
+        let (updates, _) = await SyntheticPrompt.drive([
             .runProgress(Self.codeModeProgress(Self.planLine, plan: first)),
             .runProgress(Self.codeModeProgress(Self.planLine, plan: second)),
         ])
@@ -265,7 +255,7 @@ import Testing
     @Test func aPlanDoesNotChangeTheStopReasonOfAPromptThatGeneratedNothing() async {
         let plan = PlanSnapshot(id: Self.planId, entries: Self.planEntries())
 
-        let (_, reason) = await Self.drive([
+        let (_, reason) = await SyntheticPrompt.drive([
             .runProgress(Self.codeModeProgress(Self.planLine, plan: plan)),
             makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
         ])
@@ -301,7 +291,7 @@ import Testing
             tool: Self.codeModeToolName, op: Self.codeModeOpName, correlationID: Self.outerRunToken,
             kind: .completed, detail: "{}", outcome: .succeeded)
 
-        let (updates, _) = await Self.drive([
+        let (updates, _) = await SyntheticPrompt.drive([
             .runProgress(Self.codeModeProgress(Self.textLine)), .runSettled(settlement),
         ])
 

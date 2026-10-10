@@ -151,21 +151,6 @@ import Testing
             stagesApplied: ["fold"])
     }
 
-    /// Drives one synthetic event stream through a sinked prompt execution.
-    ///
-    /// - Parameters:
-    ///   - events: The events to project, in order.
-    ///   - shellSnapshot: The reader of a settled run's stored output.
-    /// - Returns: The updates the prompt sent, in order.
-    private static func drive(
-        _ events: [SessionEvent],
-        shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
-    ) async -> [SessionUpdate] {
-        let (execution, recorder) = makeSinkedExecution(shellSnapshot: shellSnapshot)
-        _ = await execution.drive(events: makeEventStream(events))
-        return await recorder.updates
-    }
-
     // MARK: - Readers
 
     /// The message ids of the agent message chunks in the sequence.
@@ -280,7 +265,7 @@ import Testing
     /// `in_progress` status and the parsed raw input, keeps the one
     /// `toolCallId` across the updates, and completes it.
     @Test func aScriptedToolPromptCreatesWithTitleThenRunsThenCompletes() async throws {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .toolCall(
                 id: Self.sdkToolCallId, name: Self.scriptedToolName,
                 argumentsJSON: Self.scriptedArgumentsJSON),
@@ -312,7 +297,7 @@ import Testing
     /// (ACP schema-v2.0.0-alpha.7 `ToolCallUpdate.name`), beside the title
     /// for a person. The later updates leave the name unchanged.
     @Test func theCreatingToolCallUpdateNamesTheTool() async throws {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .toolCall(
                 id: Self.sdkToolCallId, name: Self.scriptedToolName,
                 argumentsJSON: Self.scriptedArgumentsJSON),
@@ -327,7 +312,7 @@ import Testing
     /// tool that posted the run.
     @Test func aRunSettlementNamesTheToolOfTheRun() async throws {
         let event = Self.makeOperationEvent(outcome: .succeeded)
-        let updates = await Self.drive([.runSettled(event)])
+        let updates = await SyntheticPrompt.sentUpdates([.runSettled(event)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.name == .value(event.tool))
@@ -339,7 +324,7 @@ import Testing
         let report = Self.makeToolCallReport(attachments: [
             ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON)
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.name == .value(Self.reportedToolName))
@@ -347,7 +332,7 @@ import Testing
 
     /// A failed tool status reports `failed`.
     @Test func aFailedToolStatusReportsFailed() async throws {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .toolStatus(id: Self.sdkToolCallId, status: .failed, summary: nil, output: nil)
         ])
         let call = try #require(toolCallUpdates(in: updates).first)
@@ -359,7 +344,7 @@ import Testing
     /// A `.lost` outcome settles as `_lost` — never as `failed` — and
     /// its text says the run's fate is unknown.
     @Test func aLostRunSettlesAsUnderscoreLostAndNeverFailed() async throws {
-        let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .lost))])
+        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: .lost))])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.toolCallId.rawValue == Self.completionToken)
@@ -371,7 +356,7 @@ import Testing
     /// A `.timedOut` outcome settles as `failed` and names the timeout
     /// in the text.
     @Test func aTimedOutRunSettlesAsFailedAndNamesTheTimeout() async throws {
-        let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .timedOut))])
+        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: .timedOut))])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.status == .value(.failed))
@@ -383,7 +368,7 @@ import Testing
     /// be forced to stop past a process boundary, so the honest claim
     /// is that we stopped listening, not that the work stopped.
     @Test func aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening() async throws {
-        let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: .cancelled))])
+        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: .cancelled))])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.status == .value(.cancelled))
@@ -394,7 +379,7 @@ import Testing
     /// is a doc comment, not a type guarantee — settles as unknown and
     /// does not crash the projection.
     @Test func aCompletedEventWithNilOutcomeSettlesAsUnknown() async throws {
-        let updates = await Self.drive([.runSettled(Self.makeOperationEvent(outcome: nil))])
+        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: nil))])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(
@@ -405,7 +390,7 @@ import Testing
     /// An outcome on a non-terminal event is ignored: a `.progress`
     /// event that carries one settles nothing.
     @Test func anOutcomeOnAProgressEventIsIgnored() async throws {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .runSettled(Self.makeOperationEvent(outcome: .succeeded, kind: .progress))
         ])
         #expect(toolCallUpdates(in: updates).isEmpty)
@@ -419,7 +404,7 @@ import Testing
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: "hello"),
             stderr: Self.makeRawOutput(text: "oops"))
-        let updates = await Self.drive(
+        let updates = await SyntheticPrompt.sentUpdates(
             [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
         ) { commandID in
             commandID == Self.completionToken ? snapshot : nil
@@ -437,7 +422,7 @@ import Testing
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: "part", truncated: true),
             stderr: Self.makeRawOutput(text: ""))
-        let updates = await Self.drive(
+        let updates = await SyntheticPrompt.sentUpdates(
             [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
         ) { commandID in
             commandID == Self.completionToken ? snapshot : nil
@@ -456,7 +441,7 @@ import Testing
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: ""),
             stderr: Self.makeRawOutput(text: "raw", binaryDetected: true))
-        let updates = await Self.drive(
+        let updates = await SyntheticPrompt.sentUpdates(
             [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
         ) { commandID in
             commandID == Self.completionToken ? snapshot : nil
@@ -475,7 +460,7 @@ import Testing
     /// text delta starts a new message id, and an update with a new
     /// `messageId` begins a new message.
     @Test func aRecordedResponseEntryClosesTheAgentMessage() async throws {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .textDelta("first"),
             .entryRecorded(id: "entry-1", kind: .response),
             .textDelta("second"),
@@ -489,7 +474,7 @@ import Testing
     /// A recorded `.reasoning` entry closes the thought message the
     /// same way.
     @Test func aRecordedReasoningEntryClosesTheThoughtMessage() async throws {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .reasoningDelta("first"),
             .entryRecorded(id: "entry-1", kind: .reasoning),
             .reasoningDelta("second"),
@@ -519,7 +504,7 @@ import Testing
             timeWithoutProgress: .seconds(1),
             timeInFlight: .seconds(1),
             visibility: .wholeAnswer, lastProgress: .callStart)
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .toolInvocation(record),
             .discoveryPrimingFailed(.toolNotMounted(tool: "codemode")),
             .generationStalled(stall),
@@ -542,7 +527,7 @@ import Testing
             recovery: nil)
 
         let (updates, records) = try await TelemetryCapture.run(forbidding: []) { context in
-            (await Self.drive([.reasoningStopped(stop)]), context.logRecords)
+            (await SyntheticPrompt.sentUpdates([.reasoningStopped(stop)]), context.logRecords)
         }
 
         let reportKey = ACPAgentTelemetry.LogMetadataKey.routerReport
@@ -587,7 +572,7 @@ import Testing
                         contextFill: .nan, finishReason: .reasoningTokenLimit)),
             ]
         return try await TelemetryCapture.run(forbidding: []) { context in
-            _ = await Self.drive(events)
+            _ = await SyntheticPrompt.sentUpdates(events)
             return context.logRecords
         }
     }
@@ -655,7 +640,7 @@ import Testing
                 schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
             ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let calls = toolCallUpdates(in: updates)
 
         #expect(calls.map(\.toolCallId.rawValue) == [Self.completionToken])
@@ -673,7 +658,7 @@ import Testing
             ToolCallAttachment(
                 schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON)
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         let value = try #require(
@@ -692,7 +677,7 @@ import Testing
                 schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
             ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         let values = try #require(
@@ -711,7 +696,7 @@ import Testing
         let report = Self.makeToolCallReport(attachments: [
             ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: "not json")
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(texts(in: call.content) == ["not json"])
@@ -728,7 +713,7 @@ import Testing
                 FileChange(kind: .add, path: Self.addedPath),
             ])
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
         let paths = try #require(Self.locationPaths(of: call.locations))
 
@@ -744,7 +729,7 @@ import Testing
                     kind: .move, path: Self.modifiedPath, destinationPath: Self.renamedPath)
             ])
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
         let paths = try #require(Self.locationPaths(of: call.locations))
 
@@ -760,7 +745,7 @@ import Testing
             ToolCallAttachment(
                 schemaName: FileChangeSet.operationEventDetailKey, contentJSON: Self.noteJSON)
         ])
-        let updates = await Self.drive([.toolCallReport(report)])
+        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.locations == .unchanged)
@@ -771,7 +756,7 @@ import Testing
     /// guarantee, and an empty content replace would erase the call's
     /// content.
     @Test func aToolCallReportWithNoAttachmentsSendsNothing() async {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             .toolCallReport(Self.makeToolCallReport(attachments: []))
         ])
         #expect(updates.map(\.kind) == [.stateUpdate])
@@ -784,7 +769,7 @@ import Testing
     /// entry is the UNSTABLE `compaction_update`, which the stable union
     /// carries as its `unknown` case (`CompactionReportTests` reads it).
     @Test func aCompactionSendsItsEntryAndOneUsageUpdateAndNoMessageUpdate() async throws {
-        let updates = await Self.drive([.compaction(Self.makeFoldResult())])
+        let updates = await SyntheticPrompt.sentUpdates([.compaction(Self.makeFoldResult())])
 
         #expect(updates.map(\.kind) == [.unknown, .usageUpdate, .stateUpdate])
         let usage = try #require(
@@ -803,7 +788,7 @@ import Testing
         let overflowed = TokenUsage(tokensIn: 800, tokensOut: 0, contextFill: 0.8)
         let retried = TokenUsage(tokensIn: 300, tokensOut: 100, contextFill: 0.4)
         let chain = TokenUsage(tokensIn: 1100, tokensOut: 100, contextFill: 0.4)
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             makeSubmissionStarted(),
             makeSubmissionEnded(overflowed),
             .compaction(Self.makeFoldResult()),
@@ -829,7 +814,7 @@ import Testing
     /// A `NaN` context fill means "no stamp": the prompt sends no meter
     /// and never puts a `NaN` on the wire.
     @Test func aNaNContextFillOmitsTheUsageUpdate() async {
-        let updates = await Self.drive([
+        let updates = await SyntheticPrompt.sentUpdates([
             makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan))
         ])
         #expect(!updates.contains { $0.kind == .usageUpdate })
