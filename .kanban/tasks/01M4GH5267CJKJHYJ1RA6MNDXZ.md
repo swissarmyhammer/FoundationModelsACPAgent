@@ -33,6 +33,17 @@ comments:
   id: 01m4jamzkztr155z38j0dbvqf3
   text: 'Router is pushed (session foundationmodelsacp-43, 2026-10-10): origin/main holds 29b60440 (^twha0gz) and 1b77ef2b (^xhmws92). This task is READY. Run `swift package update FoundationModelsRouter` first. The same Router move also changes `toolInvocation(record)` to `toolInvocation(record, toolCallID:)` (task ^e1yq4gh), and `EventProjection.swift` must compile after the move. Thus, the first of ^a6mndxz and ^e1yq4gh that runs must make both switch arms compile in its commit.'
   timestamp: 2026-10-10T07:15:15.711911+00:00
+- actor: claude-code
+  id: 01m4jy7wk2ye9q65kcff3wxvxv
+  text: |-
+    ### FoundationModelsAgents moves with Router (session foundationmodelsagents-3d, 2026-10-10)
+
+    FoundationModelsAgents main is now 016945e, and it uses Router main dc642256. It reads `SessionEvent.toolInvocation(_, toolCallID:)` and handles `.toolDisplay`. The pinned Agents dfd406b was built against the old Router API. Thus, when this task moves the Router pin, move FoundationModelsAgents to 016945e or later in the same update: `swift package update FoundationModelsRouter FoundationModelsAgents` (same gRPC retry rule; no hand edit; no local path override). Report every pin that moves. CI for 016945e was running when this was written; check that session's report first.
+
+    Other changes in Agents 016945e that the agent tests can see:
+    - BREAKING: the agents tool of a RUN does not show the run's own agent. "start agent" with its own agent name gives a corrective, and "send agent" with its own run id also gives a corrective. The host root session has no run, so the rule does not apply to it.
+    - The agents tool description changed: the model compares each task with each agent description, gives the task to a matching agent, calls "list agents" when no agent matches, and does the task itself only when no agent matches after that. A test that checks the tool description text can need an update.
+  timestamp: 2026-10-10T12:57:38.146063+00:00
 position_column: todo
 position_ordinal: '8680'
 title: Project tool display events as tool_call_content_chunk and metadata patches

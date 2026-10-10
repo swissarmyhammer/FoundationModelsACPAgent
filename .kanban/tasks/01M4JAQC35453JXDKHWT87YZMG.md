@@ -84,8 +84,33 @@ comments:
     - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to an empty folder, it stayed empty) — 855 tests in 91 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failed, 0 skipped. swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed, 0 failed, 0 skipped. Warnings: only the expected mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle). No file changed.
     - next: review
   timestamp: 2026-10-10T12:50:59.331886+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4jxw73qwa0npymtg9y5c5wc
+  text: |-
+    ### commit — changed
+    - evidence: 0774430 refactor(tests): make the config command fixture use the one stub environment helper (^t87yzmg)
+    - next: review
+  timestamp: 2026-10-10T12:51:15.703405+00:00
+- actor: claude-code
+  id: 01m4jy8wyntz1ytwkvjb6vnnkz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (0774430). counts: findings 0, confirmed 0, refuted 0, attempted 7, failed 0. 1 file reviewed (Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift). 4 .kanban files excluded by .reviewignore. The 2 prior findings (duplication/duplication, reuse/reuse) are checked.
+    - note: the tool rule code-hygiene/dead-code-swift did not run. Cause: the orphan checkout .build/checkouts/FoundationModelsMetadataRegistry cannot be removed (NSCocoaErrorDomain Code=513, "Operation not permitted"). This rule gave no result for this pass.
+    - next: none. Task moved to done.
+  timestamp: 2026-10-10T12:58:11.285412+00:00
+- actor: claude-code
+  id: 01m4jy99ha77515qc1zmxmfezd
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (ConfigCommandFixture.swift)
+    - test: green — swift test 855 (1 known issue) with an empty marketplace cache; IntegrationTests 30
+    - commit: 0774430
+    - review: clean — 0 findings; the 2 prior findings are checked
+    - open: code-hygiene/dead-code-swift did not run on 746963a or 0774430 (orphan checkout in .build)
+  timestamp: 2026-10-10T12:58:24.170684+00:00
+position_column: done
+position_ordinal: ffb280
 title: Read the skills marketplace from swissarmyhammer/skills main, in the builtin default and in the bench config
 ---
 ## Goal
