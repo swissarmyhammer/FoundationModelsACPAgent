@@ -264,6 +264,20 @@ func terminalUpdate(of update: SessionUpdate?) -> TerminalUpdate? {
 
 // MARK: - The JSON value readers
 
+/// The wire object of one update: the update goes through the JSON codec
+/// of the transport, so a test reads the members that cross the wire, and
+/// it can see that an omitted field is absent and not `null`.
+///
+/// - Parameter update: The sent update.
+/// - Returns: The members of the encoded update, or `nil` when the update
+///   does not encode as a JSON object.
+/// - Throws: The encoding or the decoding error.
+func wireObject(of update: SessionUpdate) throws -> [String: FoundationModelsACP.JSONValue]? {
+    jsonObject(
+        of: try JSONDecoder().decode(
+            FoundationModelsACP.JSONValue.self, from: JSONEncoder().encode(update)))
+}
+
 /// The members a JSON object carries.
 ///
 /// - Parameter value: The JSON value to read, or `nil`.

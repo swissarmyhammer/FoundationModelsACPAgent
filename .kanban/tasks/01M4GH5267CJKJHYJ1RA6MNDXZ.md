@@ -48,8 +48,55 @@ comments:
   id: 01m4jz0q3y13q8npsmt98h2e9b
   text: 'CI of FoundationModelsAgents 016945e (run 38053696912), reported by session foundationmodelsagents-3d on 2026-10-10: "Build & test" passed. In "Integration", 12 of 13 live tests passed (including LiveNested agentSpawn). The one failure is LiveSourcesTests.swift:94, "The folder ''agents'' doesn''t exist", because swissarmyhammer/skills main (2451fac) has no `agents/<name>/AGENT.md` folders yet. It is safe to move the Agents pin to 016945e in this task.'
   timestamp: 2026-10-10T13:11:11.742839+00:00
-position_column: todo
-position_ordinal: '8680'
+- actor: claude-code
+  id: 01m4k5a72rc0s7wardb1bn42b4
+  text: |-
+    Step 1 (pins) done, 2026-10-10.
+
+    - `swift package update ... --scratch-path` is not valid: `--scratch-path` must come before `update` (`swift package --scratch-path .build/alt update FoundationModelsRouter FoundationModelsAgents`).
+    - Runs 1 to 4 exit 1 with "exhausted attempts ... grpc-swift-2, grpc-swift-nio-transport, grpc-swift-protobuf". `--very-verbose` shows "dependency resolution complete!" with Router main and Agents main, then the error comes in the graph load after the solve. SwiftPM did not write Package.resolved, but .build/alt/workspace-state.json already had the new checkouts. The swift-otel conditions use `alwaysIncludeOnKnownBrokenToolchains`, but that is only for compiler 6.2.0; this toolchain is Swift 6.4. Thus the fault comes and goes from one process to the next (my hypothesis: the order of the trait map, which comes from the random hash seed of each process). Run 5 exit 0 (166 s).
+    - Root Package.resolved: foundationmodelsrouter 16abef2 -> dc642256; foundationmodelsagents dfd406b -> 016945e. No other pin moved. No grpc pin.
+    - IntegrationTests (`swift package --package-path IntegrationTests --scratch-path IntegrationTests/.build/alt update FoundationModelsRouter FoundationModelsAgents`): run 1 exit 0. The same two pins moved. Root and IntegrationTests have the same pins.
+    - Package.resolved is git-ignored, thus git shows no diff for it.
+  timestamp: 2026-10-10T15:01:14.456751+00:00
+- actor: claude-code
+  id: 01m4k6tw9pbbf7xg1m6fjjj8ny
+  text: |-
+    ### Implementation (2026-10-10)
+
+    Research:
+    - The Router move (16abef2 -> dc642256) broke one line only: the `.toolInvocation(let record)` arm in `EventProjection.project(_:)`. Now `.toolInvocation(let record, _)`; the behavior did not change (a debug log only). ^e1yq4gh uses the `toolCallID` next.
+    - `.toolDisplay` did not break the build, because the switch has an `@unknown default` arm. Before this change, each display event became the debug log "The projection does not know a Router event".
+    - The Router doc says: a background run that settles in its settle period still sends `runSettled`, and it does not withdraw its display events. Thus the order is: display events, then the settlement. The projection keeps that order, so the settlement replace stays last with no extra state.
+    - The ACP v2 `Diff` holds `changes` and an optional `patch` (`git_patch`, absolute paths). Multitool `GitPatch` is internal, so I could not use it.
+
+    What changed:
+    - `EventProjection.projectDisplay(_:)`: `.contentChunk` -> one `tool_call_content_chunk`; `.contentReplace` -> `tool_call_update` with all the parts; `.metadata` -> `tool_call_update` patch of `title`, `kind` (raw value -> `ToolKind(wireValue:)`), `locations`, `rawInput`. Each `nil` field is omitted (`.unchanged`), never `null`. All keys are on the run `correlationID` (new helper `runCallId`), the same as progress, report and settlement.
+    - `runCallUpdate` now takes `title: PatchField<String>` and has `kind` and `rawInput` patches. The three old callers send `title: .value(op)`, as before.
+    - Content mapping: `.text` and `.json` -> text item (the same rule as a `.structure` segment). `.diff` -> `Diff` with one `add` (no old text) or `modify` change and a whole-file git patch (new `WholeFilePatch`). A relative diff path -> a text item that holds the patch, with a warning log. A diff that does not change the text -> a `Diff` with no `patch`.
+    - Metadata edge rules: a relative location is dropped (warning); when all locations are dropped, `locations` stays unchanged (an empty array would clear it); an empty list from the tool clears it; a `rawInput` that is not JSON stays unchanged (warning).
+    - A display event sets `sawOutput`: it is observable output on the wire, as an attachment report is.
+
+    Discovered problem, new task ^w7hzpmq (depends on ^e1yq4gh): the metadata title of a tool is written over by the `op` title of each later run update, and the settlement is always last. The fix needs the one-creation rule of ^e1yq4gh, so I did not do a partial fix here.
+
+    Agents 016945e: no test in this package or in IntegrationTests reads the agents tool description or the self-start rule, so no test text needed an update. The full suites pass with the new Agents pin.
+  timestamp: 2026-10-10T15:27:49.046940+00:00
+- actor: claude-code
+  id: 01m4k6v4bpktjxd6agp34ejrdp
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/Agent/EventProjection.swift, Sources/FoundationModelsACPAgent/Agent/WholeFilePatch.swift (new), Tests/FoundationModelsACPAgentTests/ToolDisplayProjectionTests.swift (new, 15 tests), Tests/FoundationModelsACPAgentTests/WholeFilePatchTests.swift (new, 3 tests), Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift (`wireObject(of:)`), plus the git-ignored Package.resolved files (root and IntegrationTests: Router 16abef2 -> dc642256, Agents dfd406b -> 016945e; no other pin moved). RED: 13 of 13 new projection tests failed (no display update on the wire); then 3 edge tests failed before their branches. GREEN: `swift test --scratch-path .build/alt --force-resolved-versions --filter "WholeFilePatchTests|ToolDisplayProjectionTests"` 17 tests passed (one more test added after). Full root suite (`SKILLS_MARKETPLACE_CACHE=<empty scratch folder> swift test --scratch-path .build/alt --force-resolved-versions`): 867 tests in 93 suites passed, 1 known issue (the intended `withKnownIssue` in HarnessSmokeTests). IntegrationTests (`swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions`): 30 tests in 11 suites passed. The only warning in both runs is the mlx-swift_Cmlx.bundle "missing creator for mutated node" line from a dependency. No git stash; bench/swebench_prompt.py and its test not touched; not committed.
+    - next: /review. The task stays in `doing`.
+  timestamp: 2026-10-10T15:27:57.302571+00:00
+- actor: claude-code
+  id: 01m4k7g3rmbpbgzkqbf3995bmr
+  text: |-
+    ### test — green
+    - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to an empty scratch folder) — 867 tests in 93 suites passed, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests), 0 failures; swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed; swift build -c release --scratch-path .build/alt-release --force-resolved-versions — Build complete, 0 warnings. Only warning in the logs: "missing creator for mutated node" for the mlx-swift_Cmlx.bundle (mlx-swift dependency). No package files changed.
+    - next: review or commit by the caller
+  timestamp: 2026-10-10T15:39:24.820383+00:00
+position_column: doing
+position_ordinal: '80'
 title: Project tool display events as tool_call_content_chunk and metadata patches
 ---
 ## Goal
@@ -75,8 +122,8 @@ In `Sources/FoundationModelsACPAgent/Agent/EventProjection.swift`:
 
 ## Acceptance
 
-- [ ] A content chunk event gives one `tool_call_content_chunk` on the wire.
-- [ ] A content replace event gives a `tool_call_update` with the new content.
-- [ ] A metadata event gives a `tool_call_update` patch with `title`, `kind`, `locations` and `rawInput`.
-- [ ] The settlement replace is still the last update of a tool call.
-- [ ] Each case has a test that reads the wire messages.
+- [x] A content chunk event gives one `tool_call_content_chunk` on the wire.
+- [x] A content replace event gives a `tool_call_update` with the new content.
+- [x] A metadata event gives a `tool_call_update` patch with `title`, `kind`, `locations` and `rawInput`.
+- [x] The settlement replace is still the last update of a tool call.
+- [x] Each case has a test that reads the wire messages.

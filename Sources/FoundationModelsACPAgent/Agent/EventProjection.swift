@@ -211,8 +211,8 @@ struct EventProjection {
 
     /// Whether the prompt produced observable output: a text delta, a
     /// reasoning delta, a tool call or status, an invocation record,
-    /// an attachment report, a relayed elicitation, or a run
-    /// settlement (task ^pez780d).
+    /// an attachment report, a display event of a tool, a relayed
+    /// elicitation, or a run settlement (task ^pez780d).
     ///
     /// The progress of a run does not count (task ^jwx92y8): a text progress
     /// and a plan tell about a run, not about the generation of the model.
@@ -344,7 +344,7 @@ struct EventProjection {
         case .toolStatus(let id, let status, let summary, let output):
             sawOutput = true
             await projectToolStatus(id: id, status: status, summary: summary, output: output)
-        case .toolInvocation(let record):
+        case .toolInvocation(let record, _):
             sawOutput = true
             // A correlation record only, never a wire message: its
             // `correlationID` is the run's completion token, a
@@ -397,6 +397,9 @@ struct EventProjection {
             sawOutput = true
             recordChangedFiles(in: report)
             await projectToolCallReport(report)
+        case .toolDisplay(let display):
+            sawOutput = true
+            await projectDisplay(display)
         case .elicitationRequested(let operationEvent):
             // The relay runs the round trip inline: the
             // asking tool is suspended in Router's mailbox until the
@@ -646,42 +649,60 @@ struct EventProjection {
 
     // MARK: - The wire call of a run
 
+    /// The wire id of the tool call of a run: the `correlationID` of the run,
+    /// which is its completion token. Each update and each content chunk of
+    /// a run keys on it.
+    ///
+    /// - Parameter correlationID: The correlation token of the run.
+    /// - Returns: The tool call id.
+    private static func runCallId(_ correlationID: String) -> ToolCallId {
+        ToolCallId(rawValue: correlationID)
+    }
+
     /// Builds one `tool_call_update` for the wire call of a run. This is the
     /// one place that gives the wire shape of the run updates: the progress
-    /// text, the attachment report and the settlement all use it.
+    /// text, the attachment report, the settlement and the display events of
+    /// a tool all use it.
     ///
     /// The update keys on the `correlationID` of the run, which is its tool
-    /// call id. The tool of the run rides as the `name` and the `op` rides as
-    /// the title, because each of these updates can be the creation of the
-    /// wire call. Each other field stays `.unchanged` unless the caller sets it.
+    /// call id. The tool of the run rides as the `name`, because each of
+    /// these updates can be the creation of the wire call. Each other field
+    /// stays `.unchanged` unless the caller sets it.
     ///
     /// - Parameters:
     ///   - correlationID: The correlation token of the run, its tool call id.
     ///   - tool: The tool of the run, sent as the `name`.
-    ///   - op: The operation of the run, sent as the title.
+    ///   - title: The title patch of the call. A Router event sends the `op`
+    ///     of the run; a metadata event of the tool sends its own title.
     ///   - content: The content patch of the call.
+    ///   - kind: The kind patch of the call.
     ///   - locations: The locations patch of the call.
+    ///   - rawInput: The raw input patch of the call.
     ///   - rawOutput: The raw output patch of the call.
     ///   - status: The status patch of the call.
     /// - Returns: The `tool_call_update` session update.
     private static func runCallUpdate(
         correlationID: String,
         tool: String,
-        op: String,
-        content: PatchField<[ToolCallContent]>,
+        title: PatchField<String>,
+        content: PatchField<[ToolCallContent]> = .unchanged,
+        kind: PatchField<FoundationModelsACP.ToolKind> = .unchanged,
         locations: PatchField<[ToolCallLocation]> = .unchanged,
+        rawInput: PatchField<FoundationModelsACP.JSONValue> = .unchanged,
         rawOutput: PatchField<FoundationModelsACP.JSONValue> = .unchanged,
         status: PatchField<FoundationModelsACP.ToolCallStatus> = .unchanged
     ) -> SessionUpdate {
         .toolCallUpdate(
             ToolCallUpdate(
-                toolCallId: ToolCallId(rawValue: correlationID),
+                toolCallId: runCallId(correlationID),
                 content: content,
+                kind: kind,
                 locations: locations,
                 name: .value(tool),
+                rawInput: rawInput,
                 rawOutput: rawOutput,
                 status: status,
-                title: .value(op)))
+                title: title))
     }
 
     // MARK: - The settlement
@@ -730,7 +751,7 @@ struct EventProjection {
             Self.runCallUpdate(
                 correlationID: operationEvent.correlationID,
                 tool: operationEvent.tool,
-                op: operationEvent.op,
+                title: .value(operationEvent.op),
                 content: items.isEmpty ? .unchanged : .value(items),
                 status: .value(status)))
     }
@@ -764,7 +785,7 @@ struct EventProjection {
             Self.runCallUpdate(
                 correlationID: operationEvent.correlationID,
                 tool: operationEvent.tool,
-                op: operationEvent.op,
+                title: .value(operationEvent.op),
                 content: .value([Self.textItem(operationEvent.detail)]),
                 status: .value(.inProgress)))
     }
@@ -789,6 +810,135 @@ struct EventProjection {
                 status: PlanEntryStatus(wireValue: entry.status.rawValue))
         }
         return PlanUpdate(plan: .items(PlanItems(entries: entries, planId: PlanId(rawValue: plan.id))))
+    }
+
+    // MARK: - The display events of a tool
+
+    /// Sends one display event of a tool as the v2 prompt-lifecycle shape.
+    ///
+    /// Each shape keys on the `correlationID` of the run, its tool call id,
+    /// as the progress, the attachment report and the settlement do:
+    ///
+    /// - A content chunk is one `tool_call_content_chunk`: the client adds
+    ///   the item after the earlier items of the call.
+    /// - A content replace is a `tool_call_update` that replaces the content
+    ///   of the call with all the parts, in order.
+    /// - A metadata event is a `tool_call_update` patch of `title`, `kind`,
+    ///   `locations` and `rawInput`. A `nil` field means "no change", so the
+    ///   patch omits it: a `null` on the wire clears the field.
+    ///
+    /// The projection sends each event at once, in the order Router gives.
+    /// The settlement of the run comes after the display events of the run,
+    /// so its content replace stays the last update of the call. This holds
+    /// for a background run that settles in its settle period too: such a
+    /// run withdraws its staged events, but not its display events.
+    ///
+    /// - Parameter display: The display event of the tool.
+    private func projectDisplay(_ display: ToolDisplayEvent) async {
+        switch display.kind {
+        case .contentChunk(let content):
+            await send(
+                .toolCallContentChunk(
+                    ToolCallContentChunk(
+                        content: displayItem(for: content, run: display.correlationID),
+                        toolCallId: Self.runCallId(display.correlationID))))
+        case .contentReplace(let contents):
+            await send(
+                Self.runCallUpdate(
+                    correlationID: display.correlationID,
+                    tool: display.tool,
+                    title: .value(display.op),
+                    content: .value(contents.map { displayItem(for: $0, run: display.correlationID) })))
+        case .metadata(let title, let kind, let locations, let rawInput):
+            await send(
+                Self.runCallUpdate(
+                    correlationID: display.correlationID,
+                    tool: display.tool,
+                    title: title.map(PatchField.value) ?? .unchanged,
+                    kind: kind.map { .value(FoundationModelsACP.ToolKind(wireValue: $0.rawValue)) } ?? .unchanged,
+                    locations: locationsPatch(for: locations, run: display.correlationID),
+                    rawInput: rawInputPatch(from: rawInput, run: display.correlationID)))
+        }
+    }
+
+    /// Maps one display part of a tool to one tool-call content item.
+    ///
+    /// Text rides as text. A JSON document rides as its text, because the
+    /// tool owns its shape and this package does not read it. A file change
+    /// rides as a `diff` item with a ``WholeFilePatch``. The wire requires an
+    /// absolute path in a diff, so a change at another path rides as a text
+    /// item that holds the same patch: the client still shows the change,
+    /// and the projection never invents a path.
+    ///
+    /// - Parameters:
+    ///   - content: The display part.
+    ///   - runId: The correlation id of the run, for the log record.
+    /// - Returns: The content item.
+    private func displayItem(for content: ToolDisplayContent, run runId: String) -> ToolCallContent {
+        switch content {
+        case .text(let text), .json(let text):
+            return Self.textItem(text)
+        case .diff(let path, let oldText, let newText):
+            let patch = WholeFilePatch.text(path: path, oldText: oldText, newText: newText)
+            guard let absolutePath = AbsolutePath(absolute: path) else {
+                ACPAgentTelemetry.logger(.promptExecution).warning(
+                    "A tool showed a file change at a path that is not absolute. The change rides as text.",
+                    metadata: runMetadata(runId))
+                return Self.textItem(patch)
+            }
+            let change = Self.diffChange(for: oldText == nil ? .add(path: absolutePath) : .modify(path: absolutePath))
+            return .diff(
+                Diff(changes: [change], patch: patch.isEmpty ? nil : DiffPatch(format: .gitPatch, text: patch)))
+        }
+    }
+
+    /// The `locations` patch of a metadata event.
+    ///
+    /// `nil` leaves the locations unchanged. A location whose path is not
+    /// absolute cannot ride on the wire, so the patch drops it. When the
+    /// event gave locations and the wire can carry none of them, the patch
+    /// leaves the locations unchanged: an empty array would clear them. An
+    /// empty list from the tool clears them, because the tool asked for it.
+    ///
+    /// - Parameters:
+    ///   - locations: The locations of the event, or `nil`.
+    ///   - runId: The correlation id of the run, for the log record.
+    /// - Returns: The locations patch.
+    private func locationsPatch(
+        for locations: [ToolDisplayEvent.Location]?, run runId: String
+    ) -> PatchField<[ToolCallLocation]> {
+        guard let locations else { return .unchanged }
+        let carried = locations.compactMap { location in
+            AbsolutePath(absolute: location.path).map { ToolCallLocation(path: $0, line: location.line) }
+        }
+        guard carried.count == locations.count else {
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "A tool named a location that is not absolute. The location is not on the wire.",
+                metadata: runMetadata(runId))
+            return carried.isEmpty ? .unchanged : .value(carried)
+        }
+        return .value(carried)
+    }
+
+    /// The `rawInput` patch of a metadata event: the parsed JSON of the
+    /// input. `nil` leaves the raw input unchanged, and so does a text that
+    /// is not JSON: the projection never invents a value from it.
+    ///
+    /// - Parameters:
+    ///   - rawInput: The input of the call as a JSON text, or `nil`.
+    ///   - runId: The correlation id of the run, for the log record.
+    /// - Returns: The raw input patch.
+    private func rawInputPatch(
+        from rawInput: String?, run runId: String
+    ) -> PatchField<FoundationModelsACP.JSONValue> {
+        guard let rawInput else { return .unchanged }
+        guard let value = Self.jsonValue(from: rawInput) else {
+            ACPAgentTelemetry.logger(.promptExecution).warning(
+                "The raw input of a tool did not parse as JSON. The raw input is not on the wire.",
+                metadata: runMetadata(runId))
+            return .unchanged
+        }
+        return .value(value)
     }
 
     // MARK: - The attachment report
@@ -830,7 +980,7 @@ struct EventProjection {
             Self.runCallUpdate(
                 correlationID: report.correlationID,
                 tool: report.tool,
-                op: report.op,
+                title: .value(report.op),
                 content: .value(documents.map(Self.textItem)),
                 locations: locations.isEmpty ? .unchanged : .value(locations),
                 rawOutput: Self.rawOutputPatch(fromDocuments: documents)))
