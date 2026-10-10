@@ -44,6 +44,10 @@ comments:
     - BREAKING: the agents tool of a RUN does not show the run's own agent. "start agent" with its own agent name gives a corrective, and "send agent" with its own run id also gives a corrective. The host root session has no run, so the rule does not apply to it.
     - The agents tool description changed: the model compares each task with each agent description, gives the task to a matching agent, calls "list agents" when no agent matches, and does the task itself only when no agent matches after that. A test that checks the tool description text can need an update.
   timestamp: 2026-10-10T12:57:38.146063+00:00
+- actor: claude-code
+  id: 01m4jz0q3y13q8npsmt98h2e9b
+  text: 'CI of FoundationModelsAgents 016945e (run 38053696912), reported by session foundationmodelsagents-3d on 2026-10-10: "Build & test" passed. In "Integration", 12 of 13 live tests passed (including LiveNested agentSpawn). The one failure is LiveSourcesTests.swift:94, "The folder ''agents'' doesn''t exist", because swissarmyhammer/skills main (2451fac) has no `agents/<name>/AGENT.md` folders yet. It is safe to move the Agents pin to 016945e in this task.'
+  timestamp: 2026-10-10T13:11:11.742839+00:00
 position_column: todo
 position_ordinal: '8680'
 title: Project tool display events as tool_call_content_chunk and metadata patches
