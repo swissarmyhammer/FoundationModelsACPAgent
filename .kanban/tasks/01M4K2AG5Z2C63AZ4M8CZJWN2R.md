@@ -33,8 +33,31 @@ comments:
     - evidence: swift test (scratch .build/alt, empty SKILLS_MARKETPLACE_CACHE) - 849 tests in 91 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failures. swift test in IntegrationTests (--no-parallel) - 30 tests in 11 suites passed. swift build -c release (scratch .build/alt-release) - Build complete, the test support library compiled. Warnings: only mlx-swift dependency warnings (C++17 extension, missing creator for Cmlx.bundle). None in this package's files.
     - next: review
   timestamp: 2026-10-10T14:32:34.031698+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4k3pbfcx6h7fpzsyb2c20mt
+  text: |-
+    ### commit — changed
+    - evidence: 97e095f refactor(tests): one stub agent constructor, one switchable-section test table, and no mutable state in keyLines (^czjwn2r)
+    - next: none. The commit is local. It is not pushed.
+  timestamp: 2026-10-10T14:32:55.020755+00:00
+- actor: claude-code
+  id: 01m4k48kbnre02xg61h4tbexex
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (97e095f); 0 findings, 0 confirmed, 0 refuted; 7 pairs attempted, 0 failed, 0 skipped; 5 files reviewed, 2 .kanban files not reviewed because of .reviewignore. No validator failed because of the orphan checkout in .build. All 3 prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-10T14:42:52.917773+00:00
+- actor: claude-code
+  id: 01m4k48wv9rqr2e8p9f9106sgz
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files (one public RoutedACPAgent initializer with an inlineSettleGrace parameter of the same default)
+    - test: green — swift test 849 (1 known issue); IntegrationTests 30; release build complete
+    - commit: 97e095f
+    - review: clean — 0 findings; the 3 findings of 08:59 are checked; every validator finished
+  timestamp: 2026-10-10T14:43:02.633878+00:00
+position_column: done
+position_ordinal: ffb480
 title: Fix the code-hygiene findings of the range af04397..0774430 (agents tool and skills marketplace tests)
 ---
 ## Why
