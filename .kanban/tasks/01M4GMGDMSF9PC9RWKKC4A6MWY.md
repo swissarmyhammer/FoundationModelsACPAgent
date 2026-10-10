@@ -267,8 +267,33 @@ comments:
     - evidence: `swift test --scratch-path .build/alt --force-resolved-versions` — 850 tests in 90 suites passed, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests), 0 failures, 0 skipped. `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 30 tests in 11 suites passed, 0 failures, 0 skipped. The only warning in both runs is the mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle). No package warnings.
     - next: none. No source files changed in this iteration.
   timestamp: 2026-10-10T11:10:15.966320+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4jr3yd4n9hqjf0hhx4t1gqh
+  text: |-
+    ### commit — changed
+    - evidence: 69fe886 test(tools): prove that each session receives the settle period of the agent (^c4a6mwy); also b5c6e6d chore(kanban): add the task for the agent environment in CatalogContext
+    - next: review
+  timestamp: 2026-10-10T11:10:37.476843+00:00
+- actor: claude-code
+  id: 01m4jrr0fpxasmzstr0dq6g8f7
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (HEAD 69fe886). Counts: 0 findings, 0 confirmed, 2 refuted, 7 attempted, 0 failed. 3 files reviewed. 2 files not reviewed (`.kanban/`, from `.reviewignore`). All prior Review Findings items are `- [x]`, also the section "Review Findings (2026-10-10, acceptance check)".
+    - gap: the tool rule `code-hygiene/dead-code-swift` did not finish. It could not remove `.build/checkouts/FoundationModelsMetadataRegistry` (NSCocoaErrorDomain Code=513, Operation not permitted). This is the orphan checkout in the default `.build`. The engine has no findings from this rule.
+    - next: task moved to `done`. To get the result of `code-hygiene/dead-code-swift`, stop the indexer processes that hold the default `.build`, then run the review again.
+  timestamp: 2026-10-10T11:21:34.966488+00:00
+- actor: claude-code
+  id: 01m4jrsfkv5fpm7p9h56yd4rd9
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 3 files (two clock-free settle-period tests; internal RoutedACPAgent initializer; acceptance items marked)
+    - test: green — swift test 850 (1 known issue, HarnessSmokeTests) and IntegrationTests 30, in .build/alt
+    - commit: 69fe886
+    - review: clean — 0 findings; all 8 prior findings and all 6 acceptance items checked
+    - open: code-hygiene/dead-code-swift did not run on af04397, 3b9edee or 69fe886, because of the orphan checkout .build/checkouts/FoundationModelsMetadataRegistry. Run that rule on HEAD~3..HEAD of this task after the checkout is removed.
+  timestamp: 2026-10-10T11:22:23.227870+00:00
+position_column: done
+position_ordinal: ffb180
 title: Mount the standalone agents tool beside the skills tool, and let the model follow agents tool output
 ---
 ## Goal
