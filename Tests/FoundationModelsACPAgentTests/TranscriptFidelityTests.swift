@@ -171,15 +171,18 @@ struct TranscriptFidelityTests {
     func theRunCodeCallReachesTheWire() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-wire")
 
-        let creations = run.updates.compactMap { notification -> ToolCallUpdate? in
+        let callUpdates = run.updates.compactMap { notification -> ToolCallUpdate? in
             guard case .toolCallUpdate(let update) = notification.update,
                 update.toolCallId.rawValue == Self.runCodeCallId
             else { return nil }
             return update
         }
-        let creation = try #require(creations.first)
-        #expect(creation.title == .value(ScriptedPromptFixture.runCodeToolName))
-        #expect(String(describing: creation.rawInput).contains(Self.snippetCode))
+        // The run updates of the call go on the same id (task ^e1yq4gh), and
+        // they can come before the `toolCall` event. The update of the
+        // `toolCall` event is the one that carries the arguments.
+        let sdkCall = try #require(callUpdates.first { $0.rawInput != .unchanged })
+        #expect(sdkCall.title == .value(ScriptedPromptFixture.runCodeToolName))
+        #expect(String(describing: sdkCall.rawInput).contains(Self.snippetCode))
     }
 
     @Test("the recorded event count never falls between two reads", .timeLimit(.minutes(1)))

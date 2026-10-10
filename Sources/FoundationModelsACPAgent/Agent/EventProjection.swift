@@ -6,7 +6,7 @@ import FoundationModelsRouter
 import Logging
 
 /// Reads the stored raw output of a settled run, keyed by the run's
-/// `commandID` — which is its `completionToken` and its `toolCallId`.
+/// `commandID`, which is its `completionToken`.
 /// The production reader is the host-owned
 /// `ShellOutputChunkStream.snapshot(for:)`; a prompt with no shell mount
 /// reads nothing.
@@ -179,6 +179,27 @@ struct EventProjection {
     /// file.
     private var changedFilePaths: Set<String> = []
 
+    /// The SDK tool-call id of each run that Router joined, keyed by the
+    /// completion token of the run (task ^e1yq4gh).
+    ///
+    /// Router sends the joined id on the `toolInvocation(record, toolCallID:)`
+    /// event of the open record, before each other event of the run. The
+    /// progress, the display events, the attachment report and the settlement
+    /// of a run carry only the completion token, so each one finds its wire id
+    /// here (``runCallId(_:)``). The SDK `toolCall` and `toolStatus` events
+    /// carry the same SDK id, so the client sees one tool call for each run.
+    /// An entry stays after the close record, because the attachment report
+    /// and the settlement of a background run come after the close record.
+    ///
+    /// Known limit: Router joins a record to the first open SDK call that has
+    /// the same tool name, because the record does not hold the arguments.
+    /// When one round calls one tool two times and the SDK runs the two calls
+    /// at the same time, each run can get the id of the other call. The
+    /// projection cannot see this, so it sends each run on the id that Router
+    /// gave. The client still sees one tool call for each run, but the content
+    /// of a run can show on the call that holds the arguments of the other run.
+    private var joinedToolCallIds: [String: String] = [:]
+
     /// The number of distinct files that the files verbs of the prompt
     /// changed.
     var changedFileCount: Int { changedFilePaths.count }
@@ -248,10 +269,11 @@ struct EventProjection {
     }
 
     /// The metadata of a record about one run of this prompt: the session id
-    /// and the tool call id of the run.
+    /// and the completion token of the run, under the tool-call id key. The
+    /// Router records of the run use the same token.
     ///
-    /// - Parameter runId: The correlation id of the run, which is its tool
-    ///   call id.
+    /// - Parameter runId: The correlation id of the run, which is its
+    ///   completion token.
     /// - Returns: The metadata.
     private func runMetadata(_ runId: String) -> Logger.Metadata {
         var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
@@ -344,11 +366,15 @@ struct EventProjection {
         case .toolStatus(let id, let status, let summary, let output):
             sawOutput = true
             await projectToolStatus(id: id, status: status, summary: summary, output: output)
-        case .toolInvocation(let record, _):
+        case .toolInvocation(let record, let toolCallID):
             sawOutput = true
-            // A correlation record only, never a wire message: its
-            // `correlationID` is the run's completion token, a
-            // different identity space from `Transcript.ToolCall.id`.
+            // A correlation record only, never a wire message. It joins the
+            // completion token of the run to the SDK tool-call id, and each
+            // later update of the run goes on that id. A record that no SDK
+            // call joined keeps the completion token as its wire id.
+            if let toolCallID {
+                joinedToolCallIds[record.correlationID] = toolCallID
+            }
             ACPAgentTelemetry.logger(.promptExecution).debug(
                 "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
         case .entryRecorded(let id, let kind):
@@ -649,14 +675,19 @@ struct EventProjection {
 
     // MARK: - The wire call of a run
 
-    /// The wire id of the tool call of a run: the `correlationID` of the run,
-    /// which is its completion token. Each update and each content chunk of
-    /// a run keys on it.
+    /// The wire id of the tool call of a run. Each update and each content
+    /// chunk of a run keys on it.
+    ///
+    /// It is the SDK tool-call id that Router joined to the run
+    /// (``joinedToolCallIds``), so the run events and the SDK `toolCall` and
+    /// `toolStatus` events update one wire call. When no SDK call joined the
+    /// run, it is the `correlationID` of the run, which is its completion
+    /// token.
     ///
     /// - Parameter correlationID: The correlation token of the run.
     /// - Returns: The tool call id.
-    private static func runCallId(_ correlationID: String) -> ToolCallId {
-        ToolCallId(rawValue: correlationID)
+    private func runCallId(_ correlationID: String) -> ToolCallId {
+        ToolCallId(rawValue: joinedToolCallIds[correlationID] ?? correlationID)
     }
 
     /// Builds one `tool_call_update` for the wire call of a run. This is the
@@ -664,13 +695,13 @@ struct EventProjection {
     /// text, the attachment report, the settlement and the display events of
     /// a tool all use it.
     ///
-    /// The update keys on the `correlationID` of the run, which is its tool
-    /// call id. The tool of the run rides as the `name`, because each of
-    /// these updates can be the creation of the wire call. Each other field
-    /// stays `.unchanged` unless the caller sets it.
+    /// The update keys on the wire id of the run (``runCallId(_:)``). The
+    /// tool of the run rides as the `name`, because each of these updates can
+    /// be the creation of the wire call. Each other field stays `.unchanged`
+    /// unless the caller sets it.
     ///
     /// - Parameters:
-    ///   - correlationID: The correlation token of the run, its tool call id.
+    ///   - correlationID: The correlation token of the run.
     ///   - tool: The tool of the run, sent as the `name`.
     ///   - title: The title patch of the call. A Router event sends the `op`
     ///     of the run; a metadata event of the tool sends its own title.
@@ -681,7 +712,7 @@ struct EventProjection {
     ///   - rawOutput: The raw output patch of the call.
     ///   - status: The status patch of the call.
     /// - Returns: The `tool_call_update` session update.
-    private static func runCallUpdate(
+    private func runCallUpdate(
         correlationID: String,
         tool: String,
         title: PatchField<String>,
@@ -748,7 +779,7 @@ struct EventProjection {
             items.append(Self.textItem(note))
         }
         await send(
-            Self.runCallUpdate(
+            runCallUpdate(
                 correlationID: operationEvent.correlationID,
                 tool: operationEvent.tool,
                 title: .value(operationEvent.op),
@@ -766,9 +797,9 @@ struct EventProjection {
     /// event is the text line for the model, so it does not go to the client.
     ///
     /// A progress event with no plan sends its `detail` as the content of
-    /// the tool call of the run. The update keys on the `correlationID` of
-    /// the run, which is its tool call id, as the attachment report and the
-    /// settlement do. The tool of the event never selects the call: in code
+    /// the tool call of the run. The update keys on the wire id of the run
+    /// (``runCallId(_:)``), as the attachment report and the settlement do.
+    /// The tool of the event never selects the call: in code
     /// mode, a `tools.*` call posts under the tool name and the
     /// `correlationID` of the outer run. The `op` rides as the title and the
     /// tool as the `name`, because this update can be the creation of the
@@ -782,7 +813,7 @@ struct EventProjection {
             return
         }
         await send(
-            Self.runCallUpdate(
+            runCallUpdate(
                 correlationID: operationEvent.correlationID,
                 tool: operationEvent.tool,
                 title: .value(operationEvent.op),
@@ -816,8 +847,8 @@ struct EventProjection {
 
     /// Sends one display event of a tool as the v2 prompt-lifecycle shape.
     ///
-    /// Each shape keys on the `correlationID` of the run, its tool call id,
-    /// as the progress, the attachment report and the settlement do:
+    /// Each shape keys on the wire id of the run (``runCallId(_:)``), as the
+    /// progress, the attachment report and the settlement do:
     ///
     /// - A content chunk is one `tool_call_content_chunk`: the client adds
     ///   the item after the earlier items of the call.
@@ -841,17 +872,17 @@ struct EventProjection {
                 .toolCallContentChunk(
                     ToolCallContentChunk(
                         content: displayItem(for: content, run: display.correlationID),
-                        toolCallId: Self.runCallId(display.correlationID))))
+                        toolCallId: runCallId(display.correlationID))))
         case .contentReplace(let contents):
             await send(
-                Self.runCallUpdate(
+                runCallUpdate(
                     correlationID: display.correlationID,
                     tool: display.tool,
                     title: .value(display.op),
                     content: .value(contents.map { displayItem(for: $0, run: display.correlationID) })))
         case .metadata(let title, let kind, let locations, let rawInput):
             await send(
-                Self.runCallUpdate(
+                runCallUpdate(
                     correlationID: display.correlationID,
                     tool: display.tool,
                     title: title.map(PatchField.value) ?? .unchanged,
@@ -944,9 +975,8 @@ struct EventProjection {
     // MARK: - The attachment report
 
     /// Sends the attachment `tool_call_update` of one closed call: the
-    /// update keys on the run's `correlationID` — its
-    /// `completionToken`, its `toolCallId` — carries each attached
-    /// document as one content item in call order, and puts the parsed
+    /// update keys on the wire id of the run (``runCallId(_:)``), carries
+    /// each attached document as one content item in call order, and puts the parsed
     /// documents in `rawOutput`. The `op` rides as the title and the
     /// tool as the `name`, because this update can be the creation of the
     /// wire call.
@@ -977,7 +1007,7 @@ struct EventProjection {
                 metadata: runMetadata(report.correlationID))
         }
         await send(
-            Self.runCallUpdate(
+            runCallUpdate(
                 correlationID: report.correlationID,
                 tool: report.tool,
                 title: .value(report.op),

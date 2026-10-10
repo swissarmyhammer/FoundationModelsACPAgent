@@ -27,6 +27,10 @@ import Testing
     /// The text of the progress with no plan.
     private static let textLine = "812 lines"
 
+    /// The SDK tool-call id of the one tool call of the scripted prompt. The
+    /// scripted backend makes the ids by ordinal.
+    private static let scriptedCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "1"
+
     /// The id of the plan of the tests.
     private static let planId = "plan-1"
 
@@ -41,7 +45,8 @@ import Testing
     private static let codeModeOpName = "run code"
 
     /// The completion token of the outer code-mode run: the correlation id
-    /// of each event of its nested calls, and its tool call id.
+    /// of each event of its nested calls, and its tool call id: the synthetic
+    /// events join no SDK call to the run.
     private static let outerRunToken = "01OUTERRUNCODETOKEN0000000"
 
     /// The name of the scripted tool that reports its progress.
@@ -272,7 +277,8 @@ import Testing
 
     /// A scripted tool calls `progress("812 lines")` with no plan. The
     /// client gets a `tool_call_update` with that text, on the tool call id
-    /// of the run: the completion token of the call.
+    /// of the run: the SDK tool-call id that Router joined to the completion
+    /// token of the call (task ^e1yq4gh), and not the completion token.
     @Test(.timeLimit(.minutes(1)))
     func aToolTextProgressGoesToTheToolCallOfTheRun() async throws {
         let tokens = TokenLog()
@@ -282,7 +288,8 @@ import Testing
 
         let token = try #require(await tokens.tokens.first)
         let progress = toolCallUpdates(in: updates).filter { texts(in: $0.content) == [Self.textLine] }
-        #expect(progress.map(\.toolCallId) == [ToolCallId(rawValue: token)])
+        #expect(progress.map(\.toolCallId) == [ToolCallId(rawValue: Self.scriptedCallId)])
+        #expect(token != Self.scriptedCallId)
         #expect(Self.planUpdates(in: updates).isEmpty)
     }
 
