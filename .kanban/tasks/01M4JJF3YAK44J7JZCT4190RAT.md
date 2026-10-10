@@ -32,8 +32,31 @@ comments:
     - evidence: `swift test --scratch-path .build/alt --force-resolved-versions` — 883 tests in 96 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failed, 0 skipped. `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 33 tests in 12 suites passed, 0 failed, 0 skipped. Both used an empty SKILLS_MARKETPLACE_CACHE folder. Only warning in both: the mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle). No package warnings.
     - next: none. No files changed.
   timestamp: 2026-10-10T22:13:35.357835+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4ky2edne2fwa3k58rd0qx7b
+  text: |-
+    ### commit — changed
+    - evidence: fc53557 fix(integration): find the child process in each path form of a /private/tmp build folder (^4190rat)
+    - next: none
+  timestamp: 2026-10-10T22:13:54.229942+00:00
+- actor: claude-code
+  id: 01m4kyfkk8t2zpc6x4mmfqxvq9
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (fc53557): 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed, 0 skipped. 2 files reviewed (ProcessCensus.swift, ProcessCensusTests.swift). 2 .kanban files not reviewed (.reviewignore). All 4 acceptance items are `- [x]`. Each named test exists: ProcessCensusTests.aPrivateTemporaryPathFindsTheChildInEachPathForm(commandLine:) (2 cases), ProcessCensusTests.theParentRunOfTheSameBinaryDoesNotMatch, ProcessCensusTests.aDotInThePathMatchesOnlyADot, OutOfProcessTests.noProcessOfTheChildsGroupOutlivesTheRun. No prior Review Findings section. No validator failed because of the .build checkout.
+    - next: none. Task moved to done.
+  timestamp: 2026-10-10T22:21:05.512399+00:00
+- actor: claude-code
+  id: 01m4kyg824zxbc0p2tzm1b1hzr
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (ProcessCensus pattern; new ProcessCensusTests)
+    - test: green — swift test 883 (1 known issue); IntegrationTests 33
+    - commit: fc53557
+    - review: clean — 0 findings; every validator finished; 4/4 acceptance items name a test that exists
+  timestamp: 2026-10-10T22:21:26.468470+00:00
+position_column: done
+position_ordinal: ffba80
 title: 'OutOfProcessTests: the pgrep pattern finds no child process when the build folder is under /private/tmp'
 ---
 ## Problem
