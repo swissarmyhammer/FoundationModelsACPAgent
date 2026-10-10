@@ -41,6 +41,49 @@ comments:
     - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE = empty scratch folder, still empty after run) — 855 tests in 91 suites passed, 1 known issue (expected withKnownIssue in HarnessSmokeTests). swift test --package-path IntegrationTests --no-parallel — 30 tests in 11 suites passed. python3 -W error -m unittest discover: bench 254 run OK (skipped=1, expected "swebench is not installed"); swebench scripts 38 OK; swebench-score scripts 34 OK. Only warning: mlx-swift_Cmlx.bundle "missing creator for mutated node" (expected dependency warning). No code changes.
     - next: none
   timestamp: 2026-10-10T12:21:49.564568+00:00
+- actor: claude-code
+  id: 01m4jw72c7kh8qgk59svqb0spa
+  text: |-
+    ### commit — changed
+    - evidence: 746963a feat(config): read the skills marketplace from swissarmyhammer/skills main by default (^t87yzmg); kanban-only commit d691419 chore(kanban): add task ^8zjqm5d
+    - next: review
+  timestamp: 2026-10-10T12:22:14.151120+00:00
+- actor: claude-code
+  id: 01m4jx1hfaxh1z6xbgw2qt6shd
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (746963a). 2 findings (2 confirmed, 1 refuted, 14 attempted, 0 failed). Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:43 (duplication/duplication), Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:43 (reuse/reuse).
+    - not judged: the tool rule `code-hygiene/dead-code-swift` failed. It could not remove `.build/checkouts/FoundationModelsMetadataRegistry` (NSCocoaErrorDomain Code=513, "Operation not permitted"). This is the orphan checkout in the default `.build`. Thus the dead-code results for Swift are missing for this pass.
+    - next: make `ConfigCommandFixture.makeStubEnvironment()` use the shared stub environment helper. Then run the review again.
+  timestamp: 2026-10-10T12:36:41.578706+00:00
+- actor: claude-code
+  id: 01m4jx1zp367ca2awpgbcdb6p3
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 24 files (2 new)
+    - test: green — swift test 855 (1 known issue) with an empty marketplace cache after the run; IntegrationTests 30; bench 254 (1 skip), swebench 38, swebench-score 34
+    - commit: 746963a
+    - review: findings — Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:43 (duplication/duplication), Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:43 (reuse/reuse); code-hygiene/dead-code-swift did not run (orphan checkout)
+  timestamp: 2026-10-10T12:36:56.131709+00:00
+- actor: claude-code
+  id: 01m4jxdx2938xwjask5ewvkngh
+  text: |-
+    Pulled back to doing for the two review findings at Support/ConfigCommandFixture.swift (duplication/duplication, reuse/reuse).
+    - Fix: `ConfigCommandFixture.makeStubEnvironment()` now forwards to `ComposedPromptFixture.makeStubEnvironment(configHome: configHome)`. The name stays, so the callers in RunCommandTests, ExitCodeTests and CompositionInterruptTests do not change. ComposedPromptFixture.swift is not edited.
+    - Check for other copies in the test support: `StubAgentDefaultsLayer.makeEnvironment(name:)` in StubProfileFixtures (no base, no stub switch) and the call in ComposedAgentTests (no stub switch, a different dotfolder name, a test file and not support) are different compositions, so they stay.
+    - The rules dump of `dump validators` was 750K characters and could not be read in one pass; the change is a one-line forward to an existing helper.
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift. `swift test --scratch-path .build/alt --force-resolved-versions --filter` the 15 suites that use ConfigCommandFixture or ComposedPromptFixture (ConfigShowTests, ConfigInitTests, RunCommandTests, AcpCommandTests, ConfigurationDoctorTests, ConfigPathTests, CompositionInterruptTests, InstructionsEjectTests, FilesExcludeTests, DoctorRegistryTests, ExitCodeTests, ConfigEditTests, TranscriptsDoctorTests, AgentCompositionTests, RuntimeDoctorTests): 108 tests in 15 suites passed. `SKILLS_MARKETPLACE_CACHE` was an empty scratch folder and stayed empty (0 entries). Only warning: the SwiftPM "missing creator for mutated node … mlx-swift_Cmlx.bundle" warning that existed before.
+    - next: /review
+  timestamp: 2026-10-10T12:43:26.665940+00:00
+- actor: claude-code
+  id: 01m4jxvq43h70z4d13kr9rp96t
+  text: |-
+    ### test — green
+    - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to an empty folder, it stayed empty) — 855 tests in 91 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failed, 0 skipped. swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed, 0 failed, 0 skipped. Warnings: only the expected mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle). No file changed.
+    - next: review
+  timestamp: 2026-10-10T12:50:59.331886+00:00
 position_column: doing
 position_ordinal: '80'
 title: Read the skills marketplace from swissarmyhammer/skills main, in the builtin default and in the bench config
@@ -70,3 +113,23 @@ The user decided on 2026-10-10: the agent gets its skills (and its marketplace a
 - Run after ^c4a6mwy, because both tasks change the configuration files.
 
 #config #tools
+
+## Review Findings (2026-10-10 07:22)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 19 file(s) reviewed, 5 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 3 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+> - `bench/code-context.config.yaml` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/dead-code-swift' failed — the tool judged nothing, so its findings are missing:
+> error: 'foundationmodelsmetadataregistry': Error Domain=NSCocoaErrorDomain Code=513 "“FoundationModelsMetadataRegistry” couldn’t be removed because you don’t have permission to access it." UserInfo={NSUserStringVariant=(
+>     Remove
+> ), NSFilePath=/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.build/checkouts/FoundationModelsMetadataRegistry, NSURL=file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.build/checkouts/FoundationModelsMetadataRegistry, NSUnderlyingError=0x797fa2c030 {Error Domain=NSPOSIXErrorDomain Code=1 "Operation not permitted"}}
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:43` `duplication/duplication` — The new `ConfigCommandFixture.makeStubEnvironment()` repeats the body of the existing `ComposedPromptFixture.makeStubEnvironment(configHome:)`. Both set the stub-model switch to enabled, pass the config home, and call `StubAgentDefaultsLayer.makeEnvironment(name:base:)` with the same dotfolder name. The two copies can drift apart, for example if the stub switch or the defaults layer changes in one place only. Delete the body of `ConfigCommandFixture.makeStubEnvironment()` and forward to the existing shared helper: `ComposedPromptFixture.makeStubEnvironment(configHome: configHome)`. Keep the `ConfigCommandFixture` method name if its callers in `RunCommandTests.swift` need it, so the call sites stay unchanged. Do not edit `ComposedPromptFixture.swift`, because it is outside this change.
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ConfigCommandFixture.swift:43` `reuse/reuse` — The new `makeStubEnvironment()` rebuilds the same stub environment that `ComposedPromptFixture.makeStubEnvironment(configHome:)` already builds: the stub model switch, the `XDG_CONFIG_HOME` root, and `StubAgentDefaultsLayer.makeEnvironment(name:base:)`. Two copies of this composition can drift apart, for example when the defaults layer changes. Make `ConfigCommandFixture.makeStubEnvironment()` call `ComposedPromptFixture.makeStubEnvironment(configHome: configHome)`, or move one shared helper into `StubProfileFixtures.swift` beside `StubAgentDefaultsLayer` and have both fixtures call it.
