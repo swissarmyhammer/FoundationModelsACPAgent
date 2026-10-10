@@ -79,6 +79,16 @@ import Testing
                 outcome: outcome))
     }
 
+    /// A progress event of the run, with no plan.
+    private static let progress = SessionEvent.runProgress(
+        OperationEvent(tool: toolName, op: opName, correlationID: runToken, kind: .progress, detail: firstPart))
+
+    /// The attachment report of the run, with one document.
+    private static let report = SessionEvent.toolCallReport(
+        ToolCallReport(
+            tool: toolName, op: opName, correlationID: runToken, sessionID: ULID.generate(),
+            attachments: [ToolCallAttachment(schemaName: "note", contentJSON: #"{"note":"kept"}"#)]))
+
     /// The wire objects of the updates of the tool call of the run, in send
     /// order: each update that names ``runToken`` as its `toolCallId`.
     ///
@@ -343,6 +353,29 @@ import Testing
             ]))
 
         #expect(update["rawInput"] == nil)
+    }
+
+    // MARK: - The title of the call
+
+    /// The title that a metadata event gives the call stays on the client.
+    /// The progress, the attachment report and the settlement of the run come
+    /// later, and none of them writes the `op` over that title.
+    @Test func aMetadataTitleStaysAfterTheProgressTheReportAndTheSettlement() async throws {
+        let updates = await SyntheticPrompt.sentUpdates([
+            Self.display(.metadata(title: Self.toolTitle, kind: .edit, locations: nil, rawInput: nil)),
+            Self.progress,
+            Self.report,
+            Self.settlement(.succeeded),
+        ])
+
+        #expect(try updates.lastWireTitle(ofToolCall: Self.runToken) == Self.toolTitle)
+    }
+
+    /// A run with no metadata title shows its `op` as the title of its call.
+    @Test func aRunWithNoMetadataTitleShowsItsOp() async throws {
+        let updates = await SyntheticPrompt.sentUpdates([Self.progress, Self.report, Self.settlement(.succeeded)])
+
+        #expect(try updates.lastWireTitle(ofToolCall: Self.runToken) == Self.opName)
     }
 
     // MARK: - The settlement stays last

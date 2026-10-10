@@ -200,6 +200,19 @@ struct EventProjection {
     /// of a run can show on the call that holds the arguments of the other run.
     private var joinedToolCallIds: [String: String] = [:]
 
+    /// The wire ids of the tool calls that have a title on the client (task
+    /// ^w7hzpmq).
+    ///
+    /// A metadata event of a tool always sends its title, because the tool
+    /// asked for it. The `op` of a run and the tool name of the SDK `toolCall`
+    /// are default titles: only the first update that gives the call a title
+    /// sends one (``titlePatch(for:defaultTitle:toolTitle:)``). Each later
+    /// update omits `title`, so the progress, the attachment report and the
+    /// settlement of a run do not write over the title of the tool. The SDK
+    /// `toolCall` event comes after the SDK call returned, thus after the run
+    /// events of the call, and it also omits `title` when the call has one.
+    private var titledToolCallIds: Set<String> = []
+
     /// The number of distinct files that the files verbs of the prompt
     /// changed.
     var changedFileCount: Int { changedFilePaths.count }
@@ -578,18 +591,21 @@ struct EventProjection {
 
     /// Sends the creating `tool_call_update`: v2 has no create
     /// variant, so the first update with an unseen `toolCallId` is the
-    /// creation. It carries the tool name twice: as the `name` for a
-    /// program (ACP schema-v2.0.0-alpha.7), and as the title for a
-    /// person. It says `in_progress` — the call already runs, and
-    /// `pending` is the default a creating update must not leave in place.
+    /// creation. It carries the tool name as the `name` for a program (ACP
+    /// schema-v2.0.0-alpha.7). It carries the tool name as the title for a
+    /// person only when the call has no title yet
+    /// (``titlePatch(for:defaultTitle:toolTitle:)``): the run events of the
+    /// call come first, and a title from a metadata event of the tool stays.
+    /// It says `in_progress` — the call already runs, and `pending` is the
+    /// default a creating update must not leave in place.
     ///
     /// - Parameters:
     ///   - id: Apple's `Transcript.ToolCall.id`, passed through
     ///     unchanged.
-    ///   - name: The tool name; the creation's name and title.
+    ///   - name: The tool name; the creation's name and default title.
     ///   - argumentsJSON: The call's arguments, the structured
     ///     per-call record `rawInput` parses from.
-    private func projectToolCall(id: String, name: String, argumentsJSON: String) async {
+    private mutating func projectToolCall(id: String, name: String, argumentsJSON: String) async {
         let rawInput: PatchField<FoundationModelsACP.JSONValue>
         if let value = Self.jsonValue(from: argumentsJSON) {
             rawInput = .value(value)
@@ -607,7 +623,7 @@ struct EventProjection {
                     name: .value(name),
                     rawInput: rawInput,
                     status: .value(.inProgress),
-                    title: .value(name))))
+                    title: titlePatch(for: ToolCallId(rawValue: id), defaultTitle: name))))
     }
 
     /// Sends the lifecycle `tool_call_update` of one SDK tool call:
@@ -697,14 +713,18 @@ struct EventProjection {
     ///
     /// The update keys on the wire id of the run (``runCallId(_:)``). The
     /// tool of the run rides as the `name`, because each of these updates can
-    /// be the creation of the wire call. Each other field stays `.unchanged`
-    /// unless the caller sets it.
+    /// be the creation of the wire call. The title of the tool always rides
+    /// as the title. The `op` rides as the title only when the call has no
+    /// title yet (``titlePatch(for:defaultTitle:toolTitle:)``), so a later
+    /// update does not write the `op` over the title of the tool. Each other
+    /// field stays `.unchanged` unless the caller sets it.
     ///
     /// - Parameters:
     ///   - correlationID: The correlation token of the run.
     ///   - tool: The tool of the run, sent as the `name`.
-    ///   - title: The title patch of the call. A Router event sends the `op`
-    ///     of the run; a metadata event of the tool sends its own title.
+    ///   - op: The op of the run, the default title of the call.
+    ///   - toolTitle: The title that a metadata event of the tool gives the
+    ///     call, or `nil` when the update gives no such title.
     ///   - content: The content patch of the call.
     ///   - kind: The kind patch of the call.
     ///   - locations: The locations patch of the call.
@@ -712,10 +732,11 @@ struct EventProjection {
     ///   - rawOutput: The raw output patch of the call.
     ///   - status: The status patch of the call.
     /// - Returns: The `tool_call_update` session update.
-    private func runCallUpdate(
+    private mutating func runCallUpdate(
         correlationID: String,
         tool: String,
-        title: PatchField<String>,
+        op: String,
+        toolTitle: String? = nil,
         content: PatchField<[ToolCallContent]> = .unchanged,
         kind: PatchField<FoundationModelsACP.ToolKind> = .unchanged,
         locations: PatchField<[ToolCallLocation]> = .unchanged,
@@ -723,9 +744,10 @@ struct EventProjection {
         rawOutput: PatchField<FoundationModelsACP.JSONValue> = .unchanged,
         status: PatchField<FoundationModelsACP.ToolCallStatus> = .unchanged
     ) -> SessionUpdate {
-        .toolCallUpdate(
+        let toolCallId = runCallId(correlationID)
+        return .toolCallUpdate(
             ToolCallUpdate(
-                toolCallId: runCallId(correlationID),
+                toolCallId: toolCallId,
                 content: content,
                 kind: kind,
                 locations: locations,
@@ -733,14 +755,40 @@ struct EventProjection {
                 rawInput: rawInput,
                 rawOutput: rawOutput,
                 status: status,
-                title: title))
+                title: titlePatch(for: toolCallId, defaultTitle: op, toolTitle: toolTitle)))
+    }
+
+    /// The title patch of one update of a tool call, and the record that the
+    /// call has a title (``titledToolCallIds``).
+    ///
+    /// The title of the tool always rides, because the tool asked for it. The
+    /// default title rides only on the first update that gives the call a
+    /// title. A later update omits `title`, so the client keeps the title
+    /// that it has.
+    ///
+    /// - Parameters:
+    ///   - toolCallId: The wire id of the call.
+    ///   - defaultTitle: The `op` of a run, or the tool name of an SDK call.
+    ///   - toolTitle: The title that a metadata event of the tool gives the
+    ///     call, or `nil` when the update gives no such title.
+    /// - Returns: The title patch.
+    private mutating func titlePatch(
+        for toolCallId: ToolCallId, defaultTitle: String, toolTitle: String? = nil
+    ) -> PatchField<String> {
+        let isFirstTitle = titledToolCallIds.insert(toolCallId.rawValue).inserted
+        if let toolTitle {
+            return .value(toolTitle)
+        }
+        return isFirstTitle ? .value(defaultTitle) : .unchanged
     }
 
     // MARK: - The settlement
 
-    /// Sends the terminal `tool_call_update` of a settled run. The `op`
-    /// rides as the title and the tool as the `name`, because a settlement
-    /// can be the creation of the wire call of a run.
+    /// Sends the terminal `tool_call_update` of a settled run. The tool rides
+    /// as the `name`, and the `op` rides as the title when the call has no
+    /// title yet, because a settlement can be the creation of the wire call
+    /// of a run. A settlement does not write the `op` over a title that the
+    /// call already has.
     ///
     /// The envelope is read defensively: the "outcome is non-nil if
     /// and only if the kind is `.completed`" rule is a doc comment
@@ -755,7 +803,7 @@ struct EventProjection {
     /// `TerminalUpdate.output` replacement instead.
     ///
     /// - Parameter operationEvent: The run's operation event.
-    private func projectSettlement(of operationEvent: OperationEvent) async {
+    private mutating func projectSettlement(of operationEvent: OperationEvent) async {
         guard operationEvent.kind == .completed else {
             if operationEvent.outcome != nil {
                 ACPAgentTelemetry.logger(.promptExecution).warning(
@@ -782,7 +830,7 @@ struct EventProjection {
             runCallUpdate(
                 correlationID: operationEvent.correlationID,
                 tool: operationEvent.tool,
-                title: .value(operationEvent.op),
+                op: operationEvent.op,
                 content: items.isEmpty ? .unchanged : .value(items),
                 status: .value(status)))
     }
@@ -801,13 +849,14 @@ struct EventProjection {
     /// (``runCallId(_:)``), as the attachment report and the settlement do.
     /// The tool of the event never selects the call: in code
     /// mode, a `tools.*` call posts under the tool name and the
-    /// `correlationID` of the outer run. The `op` rides as the title and the
-    /// tool as the `name`, because this update can be the creation of the
-    /// wire call. The update says `in_progress`, because the run is still
-    /// open, and the settlement of the run later gives its terminal status.
+    /// `correlationID` of the outer run. The tool rides as the `name`, and the
+    /// `op` rides as the title when the call has no title yet, because this
+    /// update can be the creation of the wire call. The update says
+    /// `in_progress`, because the run is still open, and the settlement of
+    /// the run later gives its terminal status.
     ///
     /// - Parameter operationEvent: The `.progress` event of the run.
-    private func projectProgress(of operationEvent: OperationEvent) async {
+    private mutating func projectProgress(of operationEvent: OperationEvent) async {
         if let plan = operationEvent.plan {
             await send(.planUpdate(Self.planUpdate(for: plan)))
             return
@@ -816,7 +865,7 @@ struct EventProjection {
             runCallUpdate(
                 correlationID: operationEvent.correlationID,
                 tool: operationEvent.tool,
-                title: .value(operationEvent.op),
+                op: operationEvent.op,
                 content: .value([Self.textItem(operationEvent.detail)]),
                 status: .value(.inProgress)))
     }
@@ -856,7 +905,9 @@ struct EventProjection {
     ///   of the call with all the parts, in order.
     /// - A metadata event is a `tool_call_update` patch of `title`, `kind`,
     ///   `locations` and `rawInput`. A `nil` field means "no change", so the
-    ///   patch omits it: a `null` on the wire clears the field.
+    ///   patch omits it: a `null` on the wire clears the field. The title of
+    ///   the tool stays on the client: no later update of the call sends the
+    ///   `op` or the tool name over it.
     ///
     /// The projection sends each event at once, in the order Router gives.
     /// The settlement of the run comes after the display events of the run,
@@ -865,7 +916,7 @@ struct EventProjection {
     /// run withdraws its staged events, but not its display events.
     ///
     /// - Parameter display: The display event of the tool.
-    private func projectDisplay(_ display: ToolDisplayEvent) async {
+    private mutating func projectDisplay(_ display: ToolDisplayEvent) async {
         switch display.kind {
         case .contentChunk(let content):
             await send(
@@ -878,14 +929,15 @@ struct EventProjection {
                 runCallUpdate(
                     correlationID: display.correlationID,
                     tool: display.tool,
-                    title: .value(display.op),
+                    op: display.op,
                     content: .value(contents.map { displayItem(for: $0, run: display.correlationID) })))
         case .metadata(let title, let kind, let locations, let rawInput):
             await send(
                 runCallUpdate(
                     correlationID: display.correlationID,
                     tool: display.tool,
-                    title: title.map(PatchField.value) ?? .unchanged,
+                    op: display.op,
+                    toolTitle: title,
                     kind: kind.map { .value(FoundationModelsACP.ToolKind(wireValue: $0.rawValue)) } ?? .unchanged,
                     locations: locationsPatch(for: locations, run: display.correlationID),
                     rawInput: rawInputPatch(from: rawInput, run: display.correlationID)))
@@ -977,9 +1029,9 @@ struct EventProjection {
     /// Sends the attachment `tool_call_update` of one closed call: the
     /// update keys on the wire id of the run (``runCallId(_:)``), carries
     /// each attached document as one content item in call order, and puts the parsed
-    /// documents in `rawOutput`. The `op` rides as the title and the
-    /// tool as the `name`, because this update can be the creation of the
-    /// wire call.
+    /// documents in `rawOutput`. The tool rides as the `name`, and the `op`
+    /// rides as the title when the call has no title yet, because this update
+    /// can be the creation of the wire call.
     ///
     /// The update claims no status: the report records what the call
     /// attached, not how the call ended, and the terminal claim
@@ -995,7 +1047,7 @@ struct EventProjection {
     /// rather than erasing it.
     ///
     /// - Parameter report: The report of the call's attachments.
-    private func projectToolCallReport(_ report: ToolCallReport) async {
+    private mutating func projectToolCallReport(_ report: ToolCallReport) async {
         let documents = report.attachments.map(\.contentJSON)
         let changes = Self.fileChanges(in: report.attachments)
         let locations = changes.compactMap { change in
@@ -1010,7 +1062,7 @@ struct EventProjection {
             runCallUpdate(
                 correlationID: report.correlationID,
                 tool: report.tool,
-                title: .value(report.op),
+                op: report.op,
                 content: .value(documents.map(Self.textItem)),
                 locations: locations.isEmpty ? .unchanged : .value(locations),
                 rawOutput: Self.rawOutputPatch(fromDocuments: documents)))

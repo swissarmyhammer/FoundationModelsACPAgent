@@ -181,8 +181,12 @@ struct TranscriptFidelityTests {
         // they can come before the `toolCall` event. The update of the
         // `toolCall` event is the one that carries the arguments.
         let sdkCall = try #require(callUpdates.first { $0.rawInput != .unchanged })
-        #expect(sdkCall.title == .value(ScriptedPromptFixture.runCodeToolName))
         #expect(String(describing: sdkCall.rawInput).contains(Self.snippetCode))
+        // The first update of the call gives the call its one title: the `op`
+        // of the run, or the tool name when the `toolCall` event comes first.
+        // No later update sends a title over it (task ^w7hzpmq).
+        let firstUpdate = try #require(callUpdates.first)
+        #expect(callUpdates.compactMap { patchValue($0.title) } == [try #require(patchValue(firstUpdate.title))])
     }
 
     @Test("the recorded event count never falls between two reads", .timeLimit(.minutes(1)))

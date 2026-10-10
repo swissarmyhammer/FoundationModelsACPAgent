@@ -316,6 +316,23 @@ func wireObject(of update: SessionUpdate) throws -> [String: FoundationModelsACP
             FoundationModelsACP.JSONValue.self, from: JSONEncoder().encode(update)))
 }
 
+extension Array where Element == SessionUpdate {
+    /// The title that the client shows at the end for one tool call: the
+    /// last `title` that an update of the call put on the wire. An update
+    /// that omits `title` does not change the title on the client.
+    ///
+    /// - Parameter toolCallId: The wire id of the tool call.
+    /// - Returns: The last title, or `nil` when no update of the call sent
+    ///   one.
+    /// - Throws: The encoding error of an update.
+    func lastWireTitle(ofToolCall toolCallId: String) throws -> String? {
+        try compactMap { try wireObject(of: $0) }
+            .filter { jsonString(of: $0["toolCallId"]) == toolCallId }
+            .compactMap { jsonString(of: $0["title"]) }
+            .last
+    }
+}
+
 /// The members a JSON object carries.
 ///
 /// - Parameter value: The JSON value to read, or `nil`.

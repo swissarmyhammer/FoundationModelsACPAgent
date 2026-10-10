@@ -44,6 +44,9 @@ import Testing
     /// The text of the progress of a run.
     private static let progressText = "listing the folder"
 
+    /// The title that a metadata event of the tool gives the call.
+    private static let toolTitle = "Run ls in /repo"
+
     /// The fixed time of each record. The projection does not read it.
     private static let recordTime = Date(timeIntervalSince1970: 0)
 
@@ -195,6 +198,29 @@ import Testing
             ]))
 
         #expect(ids == [Self.runToken, Self.runToken])
+    }
+
+    // MARK: - The title of the joined call
+
+    /// The SDK `toolCall` event comes after the SDK call returned, thus after
+    /// the run events of the call. The tool name of that event does not go
+    /// over the title that a metadata event of the tool gave the call.
+    @Test func theSdkCallDoesNotWriteItsNameOverAMetadataTitle() async throws {
+        let events: [SessionEvent] =
+            [
+                Self.openRecord(Self.runToken, toolCallID: Self.sdkCallId),
+                .toolDisplay(
+                    ToolDisplayEvent(
+                        tool: Self.toolName, op: Self.opName, correlationID: Self.runToken,
+                        kind: .metadata(title: Self.toolTitle, kind: nil, locations: nil, rawInput: nil))),
+                Self.progress(Self.runToken),
+                Self.closeRecord(Self.runToken, toolCallID: Self.sdkCallId),
+                Self.settlement(Self.runToken),
+            ] + Self.sdkCall(Self.sdkCallId)
+
+        let updates = await SyntheticPrompt.sentUpdates(events)
+
+        #expect(try updates.lastWireTitle(ofToolCall: Self.sdkCallId) == Self.toolTitle)
     }
 
     // MARK: - The known limit of the join
