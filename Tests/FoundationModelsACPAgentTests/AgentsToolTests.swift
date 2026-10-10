@@ -344,6 +344,101 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         await surface.shutdown()
     }
 
+    /// The slice of a recorded `session.json` sidecar that the settle-period
+    /// tests read. The stored properties of the sidecar are internal to
+    /// Router, thus the tests decode only the key that they need.
+    struct SidecarSettleSlice: Decodable {
+        /// The configuration envelope of the sidecar.
+        struct Configuration: Decodable {
+            /// The settle period that the session got in its
+            /// `SessionConfiguration`, in seconds.
+            let inlineSettleGrace: TimeInterval?
+        }
+
+        /// The configuration envelope, or `nil` for a recording made before
+        /// the envelope existed.
+        let configuration: Configuration?
+    }
+
+    /// Makes an initialized agent over the stub profile whose sessions get
+    /// `inlineSettleGrace`.
+    ///
+    /// - Parameters:
+    ///   - label: The directory label of the calling test.
+    ///   - inlineSettleGrace: The settle period of each session of the agent.
+    /// - Returns: The agent, after `initialize`.
+    /// - Throws: Whatever the construction or the handshake throws.
+    static func makeAgent(label: String, inlineSettleGrace: TimeInterval) async throws -> RoutedACPAgent {
+        let router = EchoModel.makeRouter(
+            cacheDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache"),
+            recordingsDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-recordings"))
+        let agent = try await RoutedACPAgent(
+            name: DotfolderName(AgentClientHarness.dotfolderName),
+            router: router,
+            configuration: AgentConfiguration(),
+            reporting: nil,
+            userDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-user"),
+            environment: StubAgentDefaultsLayer.makeEnvironment(name: AgentClientHarness.dotfolderName),
+            inlineSettleGrace: inlineSettleGrace)
+        _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
+        return agent
+    }
+
+    /// The recorded settle period of each session sidecar under the
+    /// project-local transcripts root of `cwd`, in no fixed order.
+    ///
+    /// - Parameter cwd: The session working directory.
+    /// - Returns: One value for each `session.json`, or `nil` for a sidecar
+    ///   that records no settle period.
+    /// - Throws: The read or the decode error of a sidecar.
+    static func recordedSettlePeriods(under cwd: URL) throws -> [TimeInterval?] {
+        let transcriptsRoot = cwd
+            .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+            .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
+        let files = try #require(FileManager.default.enumerator(at: transcriptsRoot, includingPropertiesForKeys: nil))
+        return try files.compactMap { $0 as? URL }
+            .filter { $0.lastPathComponent == SessionIndex.sidecarFileName }
+            .map { sidecar in
+                try JSONDecoder().decode(SidecarSettleSlice.self, from: Data(contentsOf: sidecar))
+                    .configuration?.inlineSettleGrace
+            }
+    }
+
+    /// `session/new` gives the session that `makeBudgetedSession` makes the
+    /// settle period of the agent in its `SessionConfiguration`: the sidecar
+    /// of the root session records the short period, not the default. The
+    /// test reads the sidecar, not a clock.
+    @Test(.timeLimit(.minutes(1)))
+    func aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration() async throws {
+        let agent = try await Self.makeAgent(label: "settle-new", inlineSettleGrace: Self.shortSettlePeriod)
+        let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-new-repo")
+
+        _ = try await agent.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
+
+        let periods = try Self.recordedSettlePeriods(under: cwd)
+        #expect(periods == [Self.shortSettlePeriod])
+    }
+
+    /// A model-slot switch gives the replacement session that
+    /// `makeBudgetedSession` makes the settle period of the agent in its
+    /// `SessionConfiguration`: after the switch, the sidecar of the root
+    /// session and the sidecar of the replacement both record the short
+    /// period. The test reads the sidecars, not a clock.
+    @Test(.timeLimit(.minutes(1)))
+    func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
+        let agent = try await Self.makeAgent(label: "settle-switch", inlineSettleGrace: Self.shortSettlePeriod)
+        let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-switch-repo")
+        let response = try await agent.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
+
+        _ = try await agent.setSessionConfigOption(
+            SetSessionConfigOptionRequest(
+                configId: ConfigOptions.modelOptionId, sessionId: response.sessionId,
+                value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
+
+        let periods = try Self.recordedSettlePeriods(under: cwd)
+        #expect(periods == [Self.shortSettlePeriod, Self.shortSettlePeriod])
+    }
+
     // MARK: - The start agent answers
 
     /// A `start agent` call to a run that ends in the settle period gives
@@ -374,7 +469,13 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// of the context gives the pending envelope. The final message of the
     /// run comes later as mail, one time. The test does not measure the wait
     /// with a clock, because a clock limit fails when the machine has a high
-    /// load. The settle-period test above proves the value.
+    /// load. These tests prove the settle period without a clock:
+    /// ``theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext()``
+    /// for the agent environment and the surface,
+    /// ``aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration()`` for
+    /// the root session, and
+    /// ``aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent()``
+    /// for the session after a slot switch.
     @Test(.timeLimit(.minutes(1)))
     func aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime() async throws {
         let hold = ScriptedHold()

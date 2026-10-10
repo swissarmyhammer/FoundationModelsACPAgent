@@ -57,6 +57,13 @@ public actor RoutedACPAgent: Agent {
     /// `XDG_CONFIG_HOME` from.
     nonisolated let environment: [String: String]
 
+    /// The settle period of each session that this agent makes, in seconds:
+    /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
+    /// The public initializer sets ``CatalogContext/defaultInlineSettleGrace``,
+    /// the one source of the value. A test sets an other value through the
+    /// internal initializer, so that it can see the value in each session.
+    nonisolated let inlineSettleGrace: TimeInterval
+
     /// The live sessions, keyed by the ACP session id (plan.md §7.1).
     /// Each entry carries its own config, instructions, confinement,
     /// transcript directory, and idle/busy state.
@@ -195,9 +202,39 @@ public actor RoutedACPAgent: Agent {
         userDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) async throws {
+        try await self.init(
+            name: name, router: router, configuration: configuration, reporting: reporting,
+            userDirectory: userDirectory, environment: environment,
+            inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
+    }
+
+    /// Creates an agent as ``init(name:router:configuration:reporting:userDirectory:environment:)``
+    /// does, with the settle period of each session that the agent makes.
+    ///
+    /// - Parameters:
+    ///   - name: The dotfolder name the frontend chose.
+    ///   - router: The router that resolves the profile.
+    ///   - configuration: The agent configuration whose `profile` section
+    ///     is resolved.
+    ///   - reporting: The resolution progress, or `nil` for a fresh one.
+    ///   - userDirectory: The user layer root, or `nil` to derive it.
+    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - inlineSettleGrace: The settle period of each session, in seconds.
+    /// - Throws: `ProfileResolutionError` when the profile does not
+    ///   resolve.
+    init(
+        name: DotfolderName,
+        router: Router,
+        configuration: AgentConfiguration,
+        reporting: ResolutionProgress?,
+        userDirectory: URL?,
+        environment: [String: String],
+        inlineSettleGrace: TimeInterval
+    ) async throws {
         self.name = name
         self.userDirectory = userDirectory
         self.environment = environment
+        self.inlineSettleGrace = inlineSettleGrace
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

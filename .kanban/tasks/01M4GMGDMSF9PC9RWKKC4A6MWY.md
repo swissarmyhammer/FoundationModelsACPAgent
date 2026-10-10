@@ -193,6 +193,80 @@ comments:
     - evidence: `swift test --scratch-path .build/alt --force-resolved-versions` — 848 tests in 90 suites passed, 0 failed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests). `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 30 tests in 11 suites passed, 0 failed. The only warning in both runs is the mlx-swift_Cmlx.bundle "missing creator for mutated node" build warning. It comes from a dependency. No warning is in this package's files. No skipped tests.
     - next: review
   timestamp: 2026-10-10T10:26:26.468321+00:00
+- actor: claude-code
+  id: 01m4jnm2azps28gkz7ec108aqt
+  text: |-
+    ### commit — changed
+    - evidence: 3b9edee refactor(tools): share the doctor rows of skills and agents, and record a failed fresh session tool (^c4a6mwy)
+    - next: review
+  timestamp: 2026-10-10T10:27:00.063863+00:00
+- actor: claude-code
+  id: 01m4jp4724qpc3p4c4jp5vqkbs
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (HEAD 3b9edee). counts: findings 0, confirmed 0, refuted 0, attempted 7, failed 0. All 6 prior findings of 2026-10-10 04:57 are `- [x]`. 7 files reviewed. 2 files in `.kanban/` were not reviewed (`.reviewignore`).
+    - validator that did not finish: the tool rule `code-hygiene/dead-code-swift` failed. It cannot remove `.build/checkouts/FoundationModelsMetadataRegistry` (NSCocoaErrorDomain Code=513, "Operation not permitted"). This rule judged nothing, thus its findings are missing for this pass.
+    - next: task is in `done`. Remove the orphan checkout `.build/checkouts/FoundationModelsMetadataRegistry` (stop its indexer processes first), then run `code-hygiene/dead-code-swift` again on `HEAD~2..HEAD` if a full dead-code pass is necessary.
+  timestamp: 2026-10-10T10:35:49.188163+00:00
+- actor: claude-code
+  id: 01m4jpckw6prynveqr0ks3knz2
+  text: |-
+    ### Decision (orchestrator, 2026-10-10), recorded after the acceptance check
+
+    1. The settle period has ONE shared source, and no configuration key: `CatalogContext.defaultInlineSettleGrace`, which is `ToolMount.defaultInlineSettleGrace`. The root session and `AgentEnvironment.make` read this one value. Step 2 of "What to change" asked for a settle-period key in the `agents` section; that key is removed by this decision. Acceptance item 3 now means: "The settle period of the `agents` tool and of the root session is the one shared value, not a literal, and a test proves that each session receives it."
+    2. The `agents` section has only `enabled`. The agent marketplaces come from `tools.skills.marketplaces`, through the one `MarketplaceStore`.
+
+    The acceptance check (double-check, 2026-10-10) passed items 1, 2, 4, 5 and 6. It found one gap in item 3; see the new findings section.
+  timestamp: 2026-10-10T10:40:24.454771+00:00
+- actor: claude-code
+  id: 01m4jpez18a2a62e58g8kqn453
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 7 files (fix of the 6 findings of 04:57)
+    - test: green — swift test 848 and IntegrationTests 30, in .build/alt
+    - commit: 3b9edee
+    - review: clean (0 findings; dead-code-swift did not run), then the acceptance check found 2 open items — Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift:335 (no test proves that each session receives the settle period), .kanban/tasks/01M4GMGDMSF9PC9RWKKC4A6MWY.md Acceptance (items not marked). The task moved back to review.
+  timestamp: 2026-10-10T10:41:41.416344+00:00
+- actor: claude-code
+  id: 01m4jpv5xw6rb4rqsk00nzk8ns
+  text: |-
+    ### Research for the acceptance findings (2026-10-10)
+
+    - The clock-free observation point is the `session.json` sidecar. Router writes it when it makes the session (`RoutedSessionActor` init, `writeSidecarIfNew`), and its `configuration` envelope holds `inlineSettleGrace` (`SessionConfiguration.Persistable`). `SessionSetupTests` already reads the budget and the repetition detection from this sidecar, thus the new test follows that pattern.
+    - The scripted loader never sees the `SessionConfiguration`, thus it cannot record the value.
+    - Problem: `composeSession(from:...)` makes its `CatalogContext` with the default settle period, and `RoutedACPAgent` has no way to give an other value. The default (6 s) is the same as the Router default, thus a test with the default value cannot see a removed forwarding step.
+    - Design: `RoutedACPAgent` gets an internal stored `inlineSettleGrace` and an internal init with that parameter. The public init delegates to it with `CatalogContext.defaultInlineSettleGrace`. `composeSession(from:...)` gives the value to `CatalogContext`. This is not a configuration key and not public API; the one source stays `CatalogContext.defaultInlineSettleGrace`.
+    - The slot switch records the replacement session under the transcript directory of the session, thus its sidecar is `<transcripts>/<sessionId>/<replacementId>/session.json`.
+  timestamp: 2026-10-10T10:48:21.692059+00:00
+- actor: claude-code
+  id: 01m4jqpp997wk23qcrxn0ezv9n
+  text: |-
+    ### Acceptance findings fixed (2026-10-10)
+
+    - Seam: `RoutedACPAgent` has a new internal `nonisolated let inlineSettleGrace` and an internal init with an `inlineSettleGrace:` parameter. The public init is unchanged and delegates with `CatalogContext.defaultInlineSettleGrace`. `composeSession(from:...)` gives the value to `CatalogContext`. Not a configuration key, not public API; the one source stays `CatalogContext.defaultInlineSettleGrace`.
+    - New tests in `AgentsToolTests` (they read the `configuration.inlineSettleGrace` of each `session.json` sidecar, no clock): `aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration`, `aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent`. The comment above `aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime` now names the three settle-period tests.
+    - TDD record: RED 1 = compile error (no init with `inlineSettleGrace:`). RED 2 = the agent kept the value but did not give it to `CatalogContext`: both tests failed. GREEN after the forward.
+    - Mutation checks (each step removed, one run, then put back):
+      - `SessionSetup` `createSession` passes `CatalogContext.defaultInlineSettleGrace` in place of `composition.surface.inlineSettleGrace`: both tests fail.
+      - `ConfigOptions.applyModelSlot` passes the default in place of `entry.surface.inlineSettleGrace`: only the slot-switch test fails (`[6.0, 0.5]`).
+      - `makeBudgetedSession` does not give `inlineSettleGrace` to `SessionConfiguration`: both tests fail (`[6.0]`, `[6.0, 6.0]`).
+    - Note: a value in `try` inside `#expect` shows `<not evaluated>` on failure. The tests read the periods into a `let` first, so a failure shows the recorded values.
+    - Found, not changed: `composeSession(from:...)` does not give `environment:` to `CatalogContext`, so the web capability reads the process environment, not `RoutedACPAgent.environment`. This is outside this task.
+  timestamp: 2026-10-10T11:03:23.177825+00:00
+- actor: claude-code
+  id: 01m4jqq574cqrdsd21j85qxsgn
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift. `swift test --scratch-path .build/alt --force-resolved-versions`: 850 tests in 90 suites passed, 1 known issue (intended `withKnownIssue` in HarnessSmokeTests). `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions`: 30 tests in 11 suites passed. Only warning: the mlx-swift_Cmlx.bundle build line (dependency). All 6 acceptance items and both acceptance-check findings are `- [x]`. New task for the `CatalogContext.environment` gap: "Give the agent environment to the CatalogContext of each session composition".
+    - next: /review. Not committed. Task stays in `doing`.
+  timestamp: 2026-10-10T11:03:38.468211+00:00
+- actor: claude-code
+  id: 01m4jr39cy5sqcq3aj02p0phg3
+  text: |-
+    ### test — green
+    - evidence: `swift test --scratch-path .build/alt --force-resolved-versions` — 850 tests in 90 suites passed, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests), 0 failures, 0 skipped. `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 30 tests in 11 suites passed, 0 failures, 0 skipped. The only warning in both runs is the mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle). No package warnings.
+    - next: none. No source files changed in this iteration.
+  timestamp: 2026-10-10T11:10:15.966320+00:00
 position_column: doing
 position_ordinal: '80'
 title: Mount the standalone agents tool beside the skills tool, and let the model follow agents tool output
@@ -233,12 +307,12 @@ Another session (`foundationmodelsacpagent-fd`) works in this repository. Tell i
 
 ## Acceptance
 
-- [ ] A session has a top-level `agents` tool, and Multitool has no agents capability.
-- [ ] A `start agent` call to a short agent gives its final message as the output of the call, with no pending envelope. A longer run gives the pending result, and its final message comes later as mail one time.
-- [ ] The settle period of the `agents` tool is the configured value, not a literal.
-- [ ] The section `agents:` with `enabled: false` gives a session with no `agents` tool.
-- [ ] The system prompt names both the `skills` tool and the `agents` tool as the exceptions to the Safety rule, and the test checks that text.
-- [ ] The full test suite passes.
+- [x] A session has a top-level `agents` tool, and Multitool has no agents capability. Proof: `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift` `aDefaultContextMountsTheAgentsToolBesideTheSkillsTool`.
+- [x] A `start agent` call to a short agent gives its final message as the output of the call, with no pending envelope. A longer run gives the pending result, and its final message comes later as mail one time. Proof: `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift` `aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall` and `aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime`.
+- [x] The settle period of the `agents` tool and of the root session is the one shared value (`CatalogContext.defaultInlineSettleGrace`, which is `ToolMount.defaultInlineSettleGrace`), not a literal, and a test proves that each session receives it. (Decision of 2026-10-10: no configuration key.) Proof: `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift` `theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext` (agent environment and surface), `aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration` (root session of `session/new`), and `aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent` (session after a slot switch).
+- [x] The section `agents:` with `enabled: false` gives a session with no `agents` tool. Proof: `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift` `eachOffShapeOfTheAgentsSectionMountsNoAgentsTool(section:)`, and `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift` `eachOffShapeOfTheAgentsSectionReadsBackTheSame(section:)`.
+- [x] The system prompt names both the `skills` tool and the `agents` tool as the exceptions to the Safety rule, and the test checks that text. Proof: `Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift` `theSafetyExceptionNamesTheSkillsToolAndTheAgentsTool`.
+- [x] The full test suite passes. Proof (2026-10-10): `swift test --scratch-path .build/alt --force-resolved-versions` 850 tests in 90 suites passed, 1 known issue (the intended `withKnownIssue` in `HarnessSmokeTests`); `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` 30 tests in 11 suites passed.
 
 ## Review Findings (2026-10-10 04:57)
 
@@ -263,3 +337,8 @@ Another session (`foundationmodelsacpagent-fd`) works in this repository. Tell i
 - [x] `Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:25` `reuse/reuse` — defaultToolNames is a second private copy of the same mount-order constant that AgentsToolTests already declares. A change to the mount order would have to be made in two files. Declare the mount-order constant once, for example on ToolCatalogTests as internal static, and have AgentsToolTests read it. Or drop the private copy and reference the shared one.
 - [x] `Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:29` `reuse/reuse` — withoutSkillsNames is a second copy of the constant AgentsToolTests declares for the same mount order with skills off. Use one shared declaration for this list, as with defaultToolNames above.
 - [x] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:324` `completeness/inverse-operation-coverage` — The off shapes of the agents section are decoded, but no test encodes them and decodes them back. The only round trip (theConfigInitDocumentReadsBackWithTheAgentsToolOn, line 347) uses the enabled default. The existing codec round trip at about line 452 uses shell and does not cover the agents section. A regression in how the off shapes are written would not be caught. Add one round trip: set configuration.tools.agents to .disabled and to .enabled(AgentsToolOptions(enabled: false)), encode with ConfigurationYAML.documentText, load the text back with fixture.loadProjectConfig, and assert the decoded agents section equals the original. Use the same pattern as theConfigInitDocumentReadsBackWithTheAgentsToolOn.
+
+## Review Findings (2026-10-10, acceptance check)
+
+- [x] `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift:335` `completeness/acceptance` — `theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext` reads only two stored fields. No test proves that `RoutedLLM.makeBudgetedSession` (`Agent/SessionSetup.swift:770-807`) sends `inlineSettleGrace` into the `SessionConfiguration` of the session that it makes, or that the production calls at `SessionSetup.swift:403` and `ConfigOptions.swift:238` send `surface.inlineSettleGrace`. If someone removes a forwarding step, the root session goes back to the Router default and all tests still pass. Add a check that does not use the clock and that reads the settle period of the session that `makeBudgetedSession` makes (for example, record the value that the scripted loader or the session configuration receives), for the session of `composeSession` and for the session after a slot switch. Correct the comment at `AgentsToolTests.swift:373-377`, which says that the settle-period test proves the value.
+- [x] `.kanban/tasks/01M4GMGDMSF9PC9RWKKC4A6MWY.md` `## Acceptance` — mark each acceptance item that is proved as `- [x]`, and add the test that proves it (file and test name) after the item.
