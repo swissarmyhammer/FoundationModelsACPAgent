@@ -23,9 +23,10 @@ import Tracing
 /// The agent's environment does not come from the process, so a session
 /// never reads the real process environment; a suite that composes
 /// sessions injects `userDirectory` so nothing touches the real home
-/// directory either. The environment holds one key only: the defaults
-/// layer of ``StubAgentDefaultsLayer``, which turns the code context and
-/// the skills marketplaces off for each session of the agent.
+/// directory either. The environment holds the keys of `environment` and
+/// one key more: the defaults layer of ``StubAgentDefaultsLayer``, which
+/// turns the code context and the skills marketplaces off for each session
+/// of the agent.
 ///
 /// - Parameters:
 ///   - name: The bare dotfolder name to construct the agent with.
@@ -45,6 +46,9 @@ import Tracing
 ///     in seconds. The default is ``CatalogContext/defaultInlineSettleGrace``,
 ///     the value of the production agent. A suite that proves the settle
 ///     period gives a shorter value.
+///   - environment: The host environment of the agent, below the key of
+///     the defaults layer. Empty by default. A suite that proves that the
+///     host environment reaches the session tools gives keys here.
 /// - Returns: The constructed agent.
 /// - Throws: `DotfolderNameError` when `name` is refused,
 ///   `ProfileResolutionError` when the stub resolution fails, or the
@@ -56,7 +60,8 @@ public func makeStubAgent(
     userDirectory: URL? = nil,
     loader: any ModelLoader = StubModelLoader(),
     tracer: (any Tracer)? = nil,
-    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+    environment: [String: String] = [:]
 ) async throws -> RoutedACPAgent {
     let router = EchoModel.makeRouter(
         cacheDirectory: cacheDirectory,
@@ -67,13 +72,13 @@ public func makeStubAgent(
         name: DotfolderName(name),
         router: router,
         userDirectory: userDirectory,
-        environment: StubAgentDefaultsLayer.makeEnvironment(name: name),
+        environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
         inlineSettleGrace: inlineSettleGrace)
 }
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///
@@ -104,7 +109,7 @@ public enum StubAgentDefaultsLayer {
     /// The suffix of the environment key that `DotfolderStack` reads the
     /// defaults layer root from: `<NAME>_DEFAULTS_DIR`, with the dotfolder
     /// name in upper case.
-    static let environmentKeySuffix = "_DEFAULTS_DIR"
+    public static let environmentKeySuffix = "_DEFAULTS_DIR"
 
     /// Writes the layer into a fresh directory, and returns `base` with the
     /// key that names that directory as the defaults layer root of `name`.

@@ -5,7 +5,7 @@ import FoundationModelsRouter
 /// What each builder call of the tool catalog needs: the
 /// session working directory, the session's additional roots, the decoded
 /// configuration, the resolved profile, the client's per-session MCP
-/// servers, and the process environment.
+/// servers, and the environment of the host.
 ///
 /// The name is `CatalogContext` because Router's `Hosting/` substrate owns
 /// the name `ToolContext`.
@@ -40,11 +40,22 @@ public struct CatalogContext: Sendable {
     /// list again.
     public let clientMCPServers: [FoundationModelsACP.MCPServer]
 
-    /// The process environment that the web capability reads its API keys
-    /// from (task ^ba231ka). The keys of `tools.web.apiKeys` are put in over
-    /// it, so a configured key wins. The skills marketplace store reads its
-    /// cache folder and its seed folder from it too
-    /// (``ToolCatalog/makeSkillsSource(context:)``).
+    /// The environment of the host: the session composition of the agent
+    /// gives `RoutedACPAgent.environment` (task ^b2kb6j1).
+    ///
+    /// The web capability reads its API keys from it (task ^ba231ka). The
+    /// keys of `tools.web.apiKeys` are put in over it, so a configured key
+    /// wins. The skills marketplace store reads its cache folder and its
+    /// seed folder from it, and the `skills` and `agents` dotfolder stacks
+    /// read their defaults layer and their user layer from it
+    /// (``ToolCatalog/makeSkillsSource(context:)``,
+    /// ``AgentsComposition/makeAgentRegistry(context:marketplaces:)``).
+    ///
+    /// Three session tools read the process environment and not this one,
+    /// because Multitool takes no environment for them: the
+    /// `tools.environment` verbs, each shell command, and each stdio MCP
+    /// server (``ToolCatalog/makeRegistry(context:)``,
+    /// ``MCPComposition``).
     public let environment: [String: String]
 
     /// The settle period of each session that this agent makes: the
@@ -72,10 +83,9 @@ public struct CatalogContext: Sendable {
     ///   - profile: The resolved profile, retained by this context.
     ///   - clientMCPServers: The client-supplied per-session MCP servers,
     ///     in wire order. Defaults to none.
-    ///   - environment: The environment that the web capability reads its
-    ///     API keys from, and that the skills marketplace store reads its
-    ///     cache folder and its seed folder from. Defaults to the environment
-    ///     of the process.
+    ///   - environment: The environment of the host, which the session tools
+    ///     read (``environment``). Defaults to the environment of the
+    ///     process, for a caller that composes a catalog with no host.
     ///   - inlineSettleGrace: The settle period of the sessions of the
     ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
     public init(

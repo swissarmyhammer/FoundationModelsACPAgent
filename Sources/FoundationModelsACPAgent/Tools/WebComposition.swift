@@ -6,8 +6,10 @@ import FoundationModelsMultitool
 ///
 /// **The capability is on by default.** With no key in the configuration
 /// and none in the environment, the providers are the keyless pages of
-/// DuckDuckGo, then Brave. A key in the process environment, or in
-/// `tools.web.apiKeys`, adds its keyed provider before them. Multitool's
+/// DuckDuckGo, then Brave. A key in the environment of the host
+/// (``CatalogContext/environment``), or in `tools.web.apiKeys`, adds its
+/// keyed provider before them. The `acp-agent` CLI gives the environment of
+/// its process as the host environment. Multitool's
 /// `WebConfiguration.fromEnvironment(_:)` owns the provider table and its
 /// order; this type only gives it the merged environment.
 ///
@@ -20,7 +22,7 @@ import FoundationModelsMultitool
 /// only. ``providerNames(section:processEnvironment:)`` gives names, never a
 /// key.
 public enum WebComposition {
-    /// The `WebConfiguration` of one web section: the process environment
+    /// The `WebConfiguration` of one web section: the given environment
     /// with the configured keys put in over it, given to
     /// `WebConfiguration.fromEnvironment(_:)`.
     ///
@@ -28,7 +30,9 @@ public enum WebComposition {
     ///
     /// - Parameters:
     ///   - options: The decoded `tools.web:` body.
-    ///   - processEnvironment: The environment of the process.
+    ///   - processEnvironment: The environment the keys are read from: the
+    ///     host environment of a session (``CatalogContext/environment``),
+    ///     or the environment that a CLI command gives.
     /// - Returns: The configuration, whose environment is the merged
     ///   dictionary that each key reads at the time of a call.
     static func configuration(
@@ -45,7 +49,8 @@ public enum WebComposition {
     ///
     /// - Parameters:
     ///   - section: The decoded `tools.web` entry.
-    ///   - processEnvironment: The environment of the process.
+    ///   - processEnvironment: The environment the keys are read from, as in
+    ///     ``configuration(options:processEnvironment:)``.
     /// - Returns: The provider names, or `nil` when the web tool does not
     ///   mount.
     public static func providerNames(

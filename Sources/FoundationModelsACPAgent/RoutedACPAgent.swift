@@ -55,8 +55,10 @@ public actor RoutedACPAgent: Agent {
     /// same seam `ConfigurationLoader` documents.
     nonisolated let userDirectory: URL?
 
-    /// The environment the per-session dotfolder stack reads
-    /// `XDG_CONFIG_HOME` from.
+    /// The environment of the host. The per-session dotfolder stack reads
+    /// `XDG_CONFIG_HOME` from it, and each session composition gives it to
+    /// its ``CatalogContext``, so the session tools read the values that the
+    /// host gave (``CatalogContext/environment``).
     nonisolated let environment: [String: String]
 
     /// The settle period of each session that this agent makes, in seconds:
@@ -195,7 +197,10 @@ public actor RoutedACPAgent: Agent {
     ///   - userDirectory: The user layer root, or `nil` to derive it from
     ///     `environment` and the home directory. Tests inject a value so
     ///     they never touch the real home directory.
-    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - environment: The environment of the host: `XDG_CONFIG_HOME` is
+    ///     read from it, and the session tools read it
+    ///     (``CatalogContext/environment``). Defaults to the environment of
+    ///     the process.
     ///   - inlineSettleGrace: The settle period of each session that the
     ///     agent makes, in seconds. Defaults to
     ///     ``CatalogContext/defaultInlineSettleGrace``.

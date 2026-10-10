@@ -717,6 +717,11 @@ enum MCPComposition {
     /// name order so a spawn is deterministic. The pairs layer onto the
     /// inherited environment; they never replace it.
     ///
+    /// The inherited environment is the environment of the process, not
+    /// ``CatalogContext/environment``: `StdioServerProcess` of Multitool
+    /// builds the environment of the child from `environ`, and it takes no
+    /// other base.
+    ///
     /// - Parameter env: The env mapping of one entry.
     /// - Returns: The ordered pairs.
     private static func envVariables(_ env: [String: String]) -> [StdioServerProcess.EnvVariable] {

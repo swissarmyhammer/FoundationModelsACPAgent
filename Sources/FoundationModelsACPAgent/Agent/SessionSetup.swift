@@ -640,6 +640,13 @@ extension RoutedACPAgent {
     /// assemble the instructions, then connect the MCP
     /// servers and build the tool roster through the catalog.
     ///
+    /// The catalog context gets ``environment``, the environment of the
+    /// host, so each session tool that reads an environment value reads the
+    /// value the host gave (task ^b2kb6j1). `session/new` and
+    /// `session/resume` compose through this function. A model-slot switch
+    /// composes nothing: the replacement session gets the tools of this
+    /// composition.
+    ///
     /// - Parameters:
     ///   - context: The resolved per-cwd configuration.
     ///   - workingDirectory: The validated session working directory.
@@ -662,6 +669,7 @@ extension RoutedACPAgent {
             configuration: context.loaded.configuration,
             profile: residentProfile,
             clientMCPServers: clientMCPServers,
+            environment: environment,
             inlineSettleGrace: inlineSettleGrace)
 
         // One watched registry serves the preload assembly here, the

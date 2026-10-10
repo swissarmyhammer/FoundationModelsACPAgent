@@ -321,7 +321,7 @@ public enum ToolCatalog {
     /// `SeatbeltSandbox` over the same root set — the sandbox is the only
     /// gate; there is no policy and no permission layer — `web`
     /// mounts `tools.web.search` and `tools.web.fetch` with the providers
-    /// that the process environment and `tools.web.apiKeys` select (see
+    /// that ``CatalogContext/environment`` and `tools.web.apiKeys` select (see
     /// ``WebComposition``), `git` mounts the read-only `tools.git` verbs
     /// over the session working directory through `withGit(root:)`,
     /// `environment` mounts the read-only `tools.environment` verbs
@@ -358,6 +358,10 @@ public enum ToolCatalog {
             // `snapshot(for:)` on the same stream.
             let stream = ShellOutputChunkStream()
             shellOutput = stream
+            // Each shell command inherits the environment of the process,
+            // not the context environment: `withShell(...)` of Multitool
+            // takes no environment, and its runner starts each child with
+            // the process environment.
             try SandboxComposition.composeShell(
                 into: builder,
                 options: options,
@@ -370,6 +374,10 @@ public enum ToolCatalog {
             builder.withGit(root: context.workingDirectory)
         }
         if context.configuration.tools.environment.mountedOptions != nil {
+            // `tools.environment.variables` reads the environment of the
+            // process, not the context environment: Multitool gives no public
+            // way to give the capability an environment
+            // (`EnvironmentContext.init` is internal).
             builder.withEnvironment()
         }
         let composed = try await MCPComposition.connectServers(
@@ -484,7 +492,9 @@ public enum ToolCatalog {
     /// The store reads its cache folder and its read-only seed folder from
     /// ``CatalogContext/environment``: `SKILLS_MARKETPLACE_CACHE` and
     /// `SKILLS_MARKETPLACE_SEED`. With neither variable, the cache is the
-    /// default folder under the home folder, and there is no seed.
+    /// default folder under the home folder, and there is no seed. The
+    /// dotfolder stack reads `SKILLS_DEFAULTS_DIR` and `XDG_CONFIG_HOME` from
+    /// the same environment.
     ///
     /// - Parameter context: The session whose working directory roots the
     ///   stack's project layer.
@@ -495,7 +505,8 @@ public enum ToolCatalog {
         }
         let stack = DotfolderStack(
             name: skillsDotfolderName,
-            workingDirectory: context.workingDirectory)
+            workingDirectory: context.workingDirectory,
+            environment: context.environment)
         guard !options.marketplaces.isEmpty else {
             return SkillsSource(registry: SkillsRegistry(stack: stack, watch: true), marketplaces: nil)
         }
