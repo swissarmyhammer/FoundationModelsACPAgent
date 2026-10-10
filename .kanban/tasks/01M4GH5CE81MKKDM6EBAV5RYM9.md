@@ -91,8 +91,31 @@ comments:
     - evidence: SKILLS_MARKETPLACE_CACHE=<empty scratch folder> swift test --scratch-path .build/alt --force-resolved-versions — 857 tests in 91 suites passed, 0 failed, 0 skipped, 1 known issue (the intended withKnownIssue in HarnessSmokeTests). Compiler warnings in package files: 0. The only build warning is the mlx-swift dependency (missing creator for mutated node, mlx-swift_Cmlx.bundle). The three "An elicitation answer did not decode" lines are runtime log output of a test that makes that case on purpose.
     - next: review
   timestamp: 2026-10-10T13:51:05.572044+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4k1a7mex3vrhcaebv6z95js
+  text: |-
+    ### commit — changed
+    - evidence: 0a1a548 fix(tests): compare the link scheme without case in the README link test (^av5rym9)
+    - next: review
+  timestamp: 2026-10-10T13:51:20.718129+00:00
+- actor: claude-code
+  id: 01m4k1r9t0k0crw9pq1g1bnv4f
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (0a1a548). 1 file reviewed. Counts: 0 findings, 0 confirmed, 0 refuted. 7 validator runs attempted, 0 failed, 0 skipped. The 1 prior finding (DocumentationSyncTests.swift:87) is checked. No tool rule failed because of the `.build` checkout this time.
+    - next: none. The task is in done.
+  timestamp: 2026-10-10T13:59:01.696143+00:00
+- actor: claude-code
+  id: 01m4k1rswghs4s4awd0ne9gs2q
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (DocumentationSyncTests.swift)
+    - test: green — swift test 857 (1 known issue)
+    - commit: 0a1a548
+    - review: clean — 0 findings; the prior finding is checked; all 7 validator runs finished (dead-code-swift also ran this time)
+  timestamp: 2026-10-10T13:59:18.160099+00:00
+position_column: done
+position_ordinal: ffb380
 title: Remove plan.md and the references to it
 ---
 ## Goal
