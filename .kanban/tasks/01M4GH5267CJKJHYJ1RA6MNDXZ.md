@@ -95,8 +95,31 @@ comments:
     - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to an empty scratch folder) — 867 tests in 93 suites passed, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests), 0 failures; swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed; swift build -c release --scratch-path .build/alt-release --force-resolved-versions — Build complete, 0 warnings. Only warning in the logs: "missing creator for mutated node" for the mlx-swift_Cmlx.bundle (mlx-swift dependency). No package files changed.
     - next: review or commit by the caller
   timestamp: 2026-10-10T15:39:24.820383+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4k7gxa1qy15q451z2ck7y1d
+  text: |-
+    ### commit — changed
+    - evidence: e4c06e7 feat(acp): project tool display events as tool_call_content_chunk and metadata patches (^a6mndxz). Kanban commit before it: b4f0dd3 chore(kanban): add task ^w7hzpmq.
+    - next: review
+  timestamp: 2026-10-10T15:39:50.977818+00:00
+- actor: claude-code
+  id: 01m4k81a3h70ef11nxc16vxs5k
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e4c06e7). Counts: findings 0, confirmed 0, refuted 4, attempted 7, failed 0, skipped 0. 5 files reviewed. 2 .kanban files not reviewed (.reviewignore). No validator failed because of the orphan checkout in .build.
+    - next: none. The task is in done.
+  timestamp: 2026-10-10T15:48:48.369108+00:00
+- actor: claude-code
+  id: 01m4k81n8ztch99cs44cxww9g6
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files; pins Router 16abef2 -> dc642256 and Agents dfd406b -> 016945e (the gRPC error 4 times, run 5 passed)
+    - test: green — swift test 867 (1 known issue); IntegrationTests 30; release build complete
+    - commit: e4c06e7
+    - review: clean — 0 findings; every validator finished
+  timestamp: 2026-10-10T15:48:59.807378+00:00
+position_column: done
+position_ordinal: ffb580
 title: Project tool display events as tool_call_content_chunk and metadata patches
 ---
 ## Goal
