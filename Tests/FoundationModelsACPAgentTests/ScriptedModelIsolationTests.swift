@@ -6,7 +6,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The model isolation of two agents in one process (plan.md §20.1).
+/// The model isolation of two agents in one process.
 ///
 /// Router keeps its resident models in a pool, and the pool holds one
 /// container for each model identity. `ModelPool.shared` is process-wide,

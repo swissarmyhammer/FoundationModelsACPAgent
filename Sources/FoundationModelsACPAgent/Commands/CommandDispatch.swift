@@ -3,8 +3,8 @@ import FoundationModelsACP
 import FoundationModelsExtras
 import Tracing
 
-/// One parsed leading slash command of a prompt request (plan.md
-/// §14.3): the bare name, the raw argument text, and the content
+/// One parsed leading slash command of a prompt request: the bare
+/// name, the raw argument text, and the content
 /// blocks that came with the command.
 struct ParsedCommand: Sendable {
     /// The bare command name, no leading slash.
@@ -15,11 +15,11 @@ struct ParsedCommand: Sendable {
 
     /// The content blocks after the command's text block. They carry
     /// into a prompt-style or `.rendered` prompt; an `.action` command
-    /// refuses them (plan.md §14.3).
+    /// refuses them, because it makes no model call.
     let attachments: [ContentBlock]
 }
 
-/// The dispatch mechanics of the prompt owner (plan.md §14.3): the
+/// The dispatch mechanics of the prompt owner: the
 /// leading-slash parse, the `.prompt` template expansion, and the model
 /// prompt assembly.
 enum CommandDispatch {
@@ -35,7 +35,7 @@ enum CommandDispatch {
     /// The command must be the first block, must be text, and must
     /// start with ``commandPrefix`` followed by at least one non-space
     /// character. A lone slash is not a command; a literal leading
-    /// slash is the frontend's escaping problem (plan.md §14.3).
+    /// slash is the frontend's escaping problem.
     ///
     /// - Parameter blocks: The request's content blocks.
     /// - Returns: The parsed command, or `nil` when the prompt is not a
@@ -57,7 +57,7 @@ enum CommandDispatch {
     }
 
     /// Expands a `.prompt` template through the harness template engine
-    /// into the model text of the prompt (plan.md §14.3). The template is
+    /// into the model text of the prompt. The template is
     /// data-sourced, so it renders untrusted, with the raw argument
     /// text under ``argumentsTemplateKey``.
     ///
@@ -75,7 +75,8 @@ enum CommandDispatch {
     /// Assembles the model prompt of an expanded command prompt: the
     /// expanded text first, then the text of each attached text block,
     /// newline-joined — the attachments carry into the expanded prompt
-    /// (plan.md §14.3). Non-text attachments ride in the echoed blocks,
+    /// so the agent does not drop a file that the user attached.
+    /// Non-text attachments ride in the echoed blocks,
     /// the same way they do for a plain prompt.
     ///
     /// - Parameters:
@@ -93,7 +94,7 @@ enum CommandDispatch {
     }
 }
 
-// MARK: - The .action prompt (plan.md §14.3)
+// MARK: - The .action prompt
 
 /// The execution of one `.action` command prompt: the closure runs and its
 /// text streams as agent-message chunks. There is no model prompt, and
@@ -113,8 +114,8 @@ struct ActionCommandExecution: Sendable {
 
     /// Runs the prompt: `running`, the streamed chunks, and one `idle` with
     /// the stop reason. The `user_message` echo went out before this work.
-    /// A stream error is classified the same way a model prompt's error is
-    /// (plan.md §8.2).
+    /// A stream error is classified the same way a model prompt's error
+    /// is.
     func run() async {
         await promptState.promptDidStart()
         let messageId = EventProjection.makeMessageId()
@@ -135,7 +136,7 @@ struct ActionCommandExecution: Sendable {
     }
 }
 
-// MARK: - The command refusals (plan.md §14.3)
+// MARK: - The command refusals
 
 extension RequestError {
     /// The reason an `.action` command with attachments reports: the
@@ -144,7 +145,7 @@ extension RequestError {
     private static let actionAttachmentsReason =
         "an action command sends nothing to the model, so attached content has no place to go; send the attachments without the command"
 
-    /// The unknown-command refusal (plan.md §14.3): invalid params with
+    /// The unknown-command refusal: invalid params with
     /// the name and the near-miss suggestions in `data`. It never sends
     /// the prompt to the model.
     ///
@@ -167,7 +168,7 @@ extension RequestError {
             ]))
     }
 
-    /// The `.action`-with-attachments refusal (plan.md §14.3): invalid
+    /// The `.action`-with-attachments refusal: invalid
     /// params with the reason in `data`.
     ///
     /// - Parameter name: The action command's name.
@@ -202,11 +203,11 @@ extension RequestError {
     }
 }
 
-// MARK: - Dispatch at the prompt owner (plan.md §14.3)
+// MARK: - Dispatch at the prompt owner
 
 extension RoutedACPAgent {
     /// Dispatches one parsed command before anything touches the
-    /// session (plan.md §14.3): a `.prompt` template expands through
+    /// session: a `.prompt` template expands through
     /// the harness engine, a `.rendered` closure is called — preferred
     /// wherever a provider offers it — and both feed a normal recorded
     /// model prompt; an `.action` streams its text with no model call. An

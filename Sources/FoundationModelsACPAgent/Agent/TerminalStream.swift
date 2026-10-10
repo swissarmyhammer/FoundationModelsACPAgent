@@ -3,11 +3,11 @@ import FoundationModelsACP
 import FoundationModelsMultitool
 import Logging
 
-/// The terminal display projection (plan.md §11.8): the one mapping
+/// The terminal display projection: the one mapping
 /// from the host-owned `ShellOutputChunkStream` to the wire's
 /// display-only terminal updates.
 ///
-/// The identity rule is §11.8's: a shell run's `commandID` is its
+/// The identity rule: a shell run's `commandID` is its
 /// `correlationID`, its `completionToken`, and its `toolCallId` — one
 /// string — and it maps to the run's `terminalId`. Each event kind maps
 /// to one wire shape:
@@ -29,7 +29,7 @@ import Logging
 ///   output replacement rides beside it.
 ///
 /// One value consumes one stream, because the upstream stream hands
-/// each event out exactly once — run exactly one loop (§11.8).
+/// each event out exactly once — run exactly one loop.
 struct TerminalStream {
     /// The reader of a run's stored raw output, for the gap and
     /// completion replacements. The production reader is the same
@@ -58,7 +58,7 @@ struct TerminalStream {
     ///
     /// The task ends when the stream finishes — `finish()` at session
     /// teardown, or the stream's own deinit — and the session lifecycle
-    /// keeps the handle so a teardown can cancel it (plan.md §11.8).
+    /// keeps the handle so a teardown can cancel it.
     ///
     /// - Parameters:
     ///   - stream: The host-owned stream to consume. Its
@@ -116,7 +116,7 @@ struct TerminalStream {
     }
 
     /// The `Terminal` content reference of one run, for the tool call
-    /// that owns it. The settlement projection reuses it (§11.8).
+    /// that owns it. The settlement projection reuses it.
     ///
     /// - Parameter commandID: The run's completion token.
     /// - Returns: The content item.
@@ -138,7 +138,9 @@ struct TerminalStream {
     /// Sends the run's `Terminal` reference at its first event: one
     /// `tool_call_update` keyed by the `commandID`, saying the call
     /// runs — the first update with an unseen id is the creation, and
-    /// a creation must not leave `pending` in place (§11.6).
+    /// a creation must not leave `pending` in place: a creating update
+    /// that omits `status` defaults to `pending`, and the client then
+    /// shows a running call as queued.
     ///
     /// - Parameter commandID: The run the event belongs to.
     private mutating func announceRunIfNew(_ commandID: String) async {

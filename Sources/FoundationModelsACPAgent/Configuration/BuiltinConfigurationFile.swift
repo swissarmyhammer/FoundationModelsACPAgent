@@ -24,7 +24,8 @@ public enum BuiltinConfigurationFileError: Error, Equatable, Sendable, CustomStr
 }
 
 /// The builtin configuration file `builtin.config.yaml`: layer 1 of the
-/// configuration stack (plan.md §2.2), a resource of the library target.
+/// configuration stack, a resource of the library target. The builtin
+/// defaults ship in the library, so the first run materializes nothing.
 ///
 /// The file names each tool under `tools:` with its default options, thus a
 /// person can read which tools exist and which are on. ``ConfigurationLoader``

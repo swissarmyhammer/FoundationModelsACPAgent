@@ -5,7 +5,7 @@ import FoundationModelsMultitool
 import FoundationModelsRouter
 import Synchronization
 
-// MARK: - The scripted-model seam (plan.md §20.1)
+// MARK: - The scripted-model seam
 //
 // The injectable `ModelLoader` every tier-2 test drives: no MLX, no
 // download, no network, no Apple-silicon gate. It runs in CI at every
@@ -35,12 +35,12 @@ public enum ScriptedPassStep: Sendable, Equatable {
     case toolCall(name: String, argumentsJSON: String)
 
     /// Throws the real SDK error `failure` names, so a stop-reason test
-    /// drives the prompt owner's error mapping (plan.md §8.2).
+    /// drives the prompt owner's error mapping to a stop reason.
     case fail(ScriptedFailure)
 
     /// Suspends until the pass's task is cancelled, then throws
     /// `CancellationError`. A cancellation test holds the prompt open with
-    /// this step and cancels it from the client end (plan.md §8.6).
+    /// this step and cancels it from the client end.
     case hold
 
     /// Suspends until the test calls ``ScriptedHold/release()`` on the
@@ -107,7 +107,7 @@ public enum ScriptedFailure: Sendable, Equatable {
 }
 
 /// Records every model prompt the scripted backend receives, so a
-/// harness test asserts what the model was given (plan.md §20.1).
+/// harness test asserts what the model was given.
 public actor PromptRecorder {
     /// The recorded prompts, in arrival order.
     public private(set) var prompts: [String] = []
@@ -150,7 +150,7 @@ public enum ScriptedModelError: Error, Equatable {
 /// - a `.toolCalls` entry before each played invocation and a
 ///   `.toolOutput` entry after it, so Router's transcript diff derives
 ///   the `toolCall` and `toolStatus` session events for the tier-2
-///   projection proofs (plan.md §8.4, §20.1);
+///   projection proofs;
 /// - one `.response` entry after a play that reached the pass end. A
 ///   failing or cancelled play appends none, as a real failed pass
 ///   records none.
@@ -341,7 +341,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         // The SDK entries the played tool calls appended. Router's
         // transcript diff reads them and derives the `toolCall` and
         // `toolStatus` session events, the way it does for a real
-        // model session (plan.md §8.4).
+        // model session.
         synthesized.withLock { $0.entries }
     }
 

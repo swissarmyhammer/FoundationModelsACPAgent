@@ -7,7 +7,7 @@ import FoundationModelsRouter
 import FoundationModelsSkills
 import Testing
 
-/// The smoke test for the package linkage (plan.md §1).
+/// The smoke test for the package linkage.
 ///
 /// The test imports each of the five family modules that the library target
 /// declares, and the client module that the test target alone declares. It
@@ -41,8 +41,9 @@ import Testing
         #expect(String(describing: SkillsRegistry.self) == "SkillsRegistry")
     }
 
-    /// The client driver (plan.md §20.1): the test target links
-    /// `FoundationModelsACPClient`, and the library target never does.
+    /// The client driver: the test target links
+    /// `FoundationModelsACPClient`, and the library target never does. The
+    /// client depends on the wire and Extras only, so no cycle is possible.
     @Test func testTargetLinksTheClientDriver() {
         #expect(String(describing: ConnectionModel.self) == "ConnectionModel")
     }

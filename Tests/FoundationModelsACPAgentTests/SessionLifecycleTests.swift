@@ -7,7 +7,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// Session lifecycle (plan.md §10): `session/close` runs the tree teardown
+/// Session lifecycle: `session/close` runs the tree teardown
 /// and keeps the transcript, and `session/delete` removes the transcript
 /// directory and the index line for real. The suite drives the wire, and
 /// checks the filesystem truth on disk and the spawned server process.
@@ -48,7 +48,7 @@ struct SessionLifecycleTests {
         AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText)
     }
 
-    // MARK: - The unknown-id policy (plan.md §10.1)
+    // MARK: - The unknown-id policy
 
     /// `session/close` on an unknown id answers `-32602` with the id in
     /// `data`, so a client bug is visible instead of a silent success.
@@ -84,7 +84,7 @@ struct SessionLifecycleTests {
         await fixture.close()
     }
 
-    // MARK: - Close during an active prompt (plan.md §10.1)
+    // MARK: - Close during an active prompt
 
     /// Closing a session during a scripted prompt makes the collector see one
     /// `idle` with the `cancelled` stop reason — the close waited for the
@@ -113,7 +113,7 @@ struct SessionLifecycleTests {
         await fixture.close()
     }
 
-    // MARK: - The tree teardown (plan.md §10.1)
+    // MARK: - The tree teardown
 
     /// After close, a `streamSessionEvents()` subscription taken before the
     /// close finishes: the session sweep finished every outstanding one.
@@ -173,7 +173,7 @@ struct SessionLifecycleTests {
         await fixture.close()
     }
 
-    // MARK: - Resume after close (plan.md §10.1)
+    // MARK: - Resume after close
 
     /// After close, `session/resume` on that id still works: the transcript
     /// stayed on disk, so the session is resumable, and the resumed session
@@ -201,7 +201,7 @@ struct SessionLifecycleTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The real delete (plan.md §10.2)
+    // MARK: - The real delete
 
     /// Delete removes the transcript directory and the index line, and a
     /// resume of the deleted session then fails: the absence does the work.

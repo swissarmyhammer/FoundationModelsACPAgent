@@ -4,8 +4,8 @@ import FoundationModelsACP
 /// A transport that hands another transport's inbound chunks on
 /// unchanged, and reports when that inbound stream ends.
 ///
-/// `acp` mode needs the report. plan.md §17 gives a stdio agent no
-/// teardown handshake: the client closes stdin, the agent's read of
+/// `acp` mode needs the report. A stdio agent has no teardown
+/// handshake: the client closes stdin, the agent's read of
 /// stdin ends, and the process is finished. `AgentSideConnection`
 /// consumes the inbound stream itself. Its `closed` value comes only
 /// after each inbound handler ended, so a prompt that still runs holds

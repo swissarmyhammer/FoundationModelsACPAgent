@@ -4,7 +4,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - Tier 3: the client-server interop contract (plan.md §20.2)
+// MARK: - Tier 3: the client-server interop contract
 //
 // The suite that runs the built `acp-print` example as a subprocess.
 // `acp-print` itself spawns `acp-agent` through the client package, so one

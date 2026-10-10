@@ -35,11 +35,11 @@ public struct ProfileDoctor: Doctorable {
     /// The memory a machine must have for the shipped profile, in bytes:
     /// 32 GB (cli-plan.md §7).
     ///
-    /// **The figure is the plan's, and this component does no arithmetic
+    /// **The figure is the one of cli-plan.md, and this component does no arithmetic
     /// of its own.** Router's `JointFit` prices the three slots together
     /// against one shared budget, and it needs the repository metadata of
     /// each candidate to do it. This check reads no such metadata, so it
-    /// compares the machine with the floor the plan measured for the
+    /// compares the machine with the floor cli-plan.md measured for the
     /// shipped trio, and it applies that same floor to a profile that
     /// names other models.
     public static let memoryFloorBytes: Int64 = 34_359_738_368

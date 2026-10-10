@@ -8,7 +8,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The prompt execution (plan.md §8.1–§8.3, §10.1): the acknowledge-then-notify
+/// The prompt execution: the acknowledge-then-notify
 /// order, the `user_message` echo, the prompt-state machine, the stop-reason
 /// mapping, and the first-activity index record.
 @Suite struct PromptExecutionTests {
@@ -76,12 +76,12 @@ import Testing
         return value
     }
 
-    // MARK: - The §8.1 order
+    // MARK: - The prompt order
 
     /// A scripted prompt streams the acknowledge-then-notify order: the
     /// `{}` response returns first, then the echo, the first-activity
     /// info update, `running`, the chunks, and one `idle` with
-    /// `end_turn`. The echo owns the message identity (§8.3): the agent
+    /// `end_turn`. The echo owns the message identity: the agent
     /// chunks ride one different id.
     @Test(.timeLimit(.minutes(1)))
     func aScriptedPromptStreamsTheAcknowledgeThenNotifyOrder() async throws {
@@ -138,7 +138,7 @@ import Testing
         #expect(echoIds == [response.messageId])
     }
 
-    // MARK: - The busy refusal (§7.1)
+    // MARK: - The busy refusal
 
     /// A second `session/prompt` during a running prompt answers a client
     /// error and does not disturb the first prompt.
@@ -171,7 +171,7 @@ import Testing
         #expect(updates.count { $0.update.kind == .userMessage } == 1)
     }
 
-    // MARK: - The stop-reason matrix (§8.2)
+    // MARK: - The stop-reason matrix
 
     /// A guardrail refusal ends the prompt as `idle` with `refusal`.
     @Test(.timeLimit(.minutes(1)))
@@ -198,7 +198,7 @@ import Testing
     }
 
     /// A `session/cancel` during a held prompt surfaces as `idle` with
-    /// `cancelled`, not as an error (§8.6).
+    /// `cancelled`, not as an error.
     @Test(.timeLimit(.minutes(1)))
     func aCancelledPromptEndsIdleWithTheCancelledStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("thinking"), .hold])
@@ -280,7 +280,8 @@ import Testing
     /// one `answered` event with the total usage of the chain. The prompt
     /// sends one `running`, one `usage_update` with the context that the
     /// last submission left, and one `idle`, keyed on stream completion
-    /// (§8.1). The total of the chain adds nothing to the meter.
+    /// (one prompt can make more than one submission). The total of the
+    /// chain adds nothing to the meter.
     @Test func aRetryWithTwoSubmissionsSendsOneRunningOneUsageUpdateAndOneIdle() async throws {
         let windowTokens = 1_000
         let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.12)
@@ -321,7 +322,7 @@ import Testing
     }
 
     /// `textReset` discards the collected text as a whole-message
-    /// replace on the same message id, never as another chunk (§8.3).
+    /// replace on the same message id, never as another chunk.
     @Test func textResetSendsAWholeMessageReplaceOnTheSameMessageId() async throws {
         let (execution, recorder) = makeSinkedExecution()
         _ = await execution.drive(
@@ -345,7 +346,7 @@ import Testing
     }
 
     /// Tool events project to `tool_call_update` sends in stream order
-    /// (§8.4) and do not disturb the text stream: the two text chunks
+    /// and do not disturb the text stream: the two text chunks
     /// still share one message id, and the prompt still ends with one
     /// `idle`.
     @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
@@ -373,8 +374,8 @@ import Testing
         #expect(Set(chunkIds).count == 1)
     }
 
-    /// The prompt reports its usage one time, before the idle terminator
-    /// (§8.1): the context that the last submission left, over the window
+    /// The prompt reports its usage one time, before the idle terminator:
+    /// the context that the last submission left, over the window
     /// that the generation calls measured.
     @Test func submissionUsageIsReportedInOneUsageUpdate() async throws {
         let (execution, recorder) = makeSinkedExecution()
@@ -404,7 +405,7 @@ import Testing
     }
 
     /// A thrown `CancellationError` maps to the `cancelled` stop reason;
-    /// it never escapes as an error and never reads as `refusal` (§8.2).
+    /// it never escapes as an error and never reads as `refusal`.
     @Test func aThrownCancellationBecomesTheCancelledStopReason() async throws {
         let (execution, recorder) = makeSinkedExecution()
         let reason = await execution.drive(
@@ -415,7 +416,7 @@ import Testing
         #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
     }
 
-    // MARK: - The no-output prompt (§8.2, task ^pez780d)
+    // MARK: - The no-output prompt (task ^pez780d)
 
     /// A prompt whose last generate call reached the output token ceiling
     /// ends with the `_truncated` extension stop reason, never with a
@@ -626,7 +627,7 @@ import Testing
                 == .unknown(PromptExecution.noOutputStopReasonValue))
     }
 
-    // MARK: - The repetition stop (§8.2, task ^k51h6bb)
+    // MARK: - The repetition stop (task ^k51h6bb)
 
     /// The window of Router's repetition watch in the repetition proof, in
     /// tokens. It is small, so a short script fills it. The scripted
@@ -741,7 +742,7 @@ import Testing
         await fixture.close()
     }
 
-    // MARK: - The stalled generation (§8.2, task ^s0bw5cv)
+    // MARK: - The stalled generation (task ^s0bw5cv)
 
     /// Makes one stall report of the shape Router emits on a streaming
     /// request.
@@ -916,7 +917,7 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    // MARK: - The requires_action pairing (§8.2)
+    // MARK: - The requires_action pairing
 
     /// Checks that the owner sent two updates: `requires_action` first,
     /// and then `running`.
@@ -1049,7 +1050,7 @@ import Testing
         #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
     }
 
-    // MARK: - The unknown-id policy (§10.1)
+    // MARK: - The unknown-id policy
 
     /// An unknown `sessionId` answers `-32602` with the id in `data`,
     /// and sends no `session/update`.
@@ -1091,7 +1092,7 @@ import Testing
         await fixture.close()
     }
 
-    // MARK: - The title and the index timing (§9)
+    // MARK: - The title and the index timing
 
     /// `sessions.jsonl` is absent before the first prompt, gains the
     /// session's record with a one-line title at the first prompt, and

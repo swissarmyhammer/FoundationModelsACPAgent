@@ -27,8 +27,7 @@ struct HoldingInstant: InstantProtocol {
 /// The harness injects it into `ConnectionModel`, which gives it to each
 /// `SessionModel` it opens, so no coalescing flush runs on a cadence. A
 /// test drains the buffer with
-/// ``AgentClientHarness/flushPendingChunks()`` and never sleeps
-/// (plan.md §20.1).
+/// ``AgentClientHarness/flushPendingChunks()`` and never sleeps.
 struct HoldingClock: Clock {
     var now: HoldingInstant { HoldingInstant(offset: .zero) }
 
@@ -52,7 +51,7 @@ struct HoldingClock: Clock {
 }
 
 /// One in-process wiring of `RoutedACPAgent` and the shipped client
-/// driver (plan.md §20.1): a ``HarnessWire``, an `AgentSideConnection`
+/// driver `FoundationModelsACPClient`: a ``HarnessWire``, an `AgentSideConnection`
 /// around the agent, and a `ConnectionModel` over an injected
 /// ``HoldingClock`` on the other end.
 ///
@@ -73,7 +72,8 @@ struct HoldingClock: Clock {
 /// with the cancel answer of the spec.
 public struct AgentClientHarness: Sendable {
     /// The dotfolder name the harness constructs the agent with. The
-    /// wire must never carry it (plan.md §5).
+    /// wire must never carry it: the dotfolder name is the private choice
+    /// of the user, and `initialize` reports the product name.
     public static let dotfolderName = "coding"
 
     /// The number of seconds in ``coalescingCadence``. The name records
@@ -110,7 +110,7 @@ public struct AgentClientHarness: Sendable {
     /// was wired without one.
     ///
     /// Only an order proof that spans a response and a notification
-    /// needs it (plan.md §8.1), so it is off by default and every other
+    /// needs it, so it is off by default and every other
     /// suite runs the untapped wire.
     public let wireTap: WireTap?
 
@@ -216,7 +216,7 @@ public struct AgentClientHarness: Sendable {
     /// model.
     ///
     /// The `client` closure of `ConnectionModel.connect(over:client:)`
-    /// puts the recorder in front of the router (plan.md §20.1). The
+    /// puts the recorder in front of the router. The
     /// recorder forwards each message to the router, so the router still
     /// gives each permission request and each elicitation to its session
     /// model.
@@ -225,12 +225,12 @@ public struct AgentClientHarness: Sendable {
     ///   - agent: The agent under test.
     ///   - tapsWire: Whether a ``WireTap`` stands on the client end, so
     ///     a proof can read the raw line order. Off by default, because
-    ///     only the §8.1 order proof reads it.
+    ///     only the prompt order proof reads it.
     ///   - tapsAgentWire: Whether a ``WireTap`` stands on the agent end,
     ///     so a proof can read what the client sent. Off by default,
-    ///     because only the §5.9 cancel proof reads it.
+    ///     because only the cli-plan.md §5.9 cancel proof reads it.
     ///   - wire: The transport pair to run over. The in-process pair by
-    ///     default; a §4 comparison passes the stdio pipes instead.
+    ///     default; a cli-plan.md §4 comparison passes the stdio pipes instead.
     /// - Returns: The connected harness, with a collector.
     public static func makeRecording(
         agent: RoutedACPAgent,
@@ -274,7 +274,7 @@ public struct AgentClientHarness: Sendable {
     /// what gives them back.
     ///
     /// Then it waits until the agent closed each session that is still
-    /// open (plan.md §10.1). Thus that teardown ends inside the test that
+    /// open. Thus that teardown ends inside the test that
     /// made the sessions, and does not run beside a later test.
     public func close() async {
         await connection.close()
@@ -288,7 +288,7 @@ public struct AgentClientHarness: Sendable {
     /// The wiring every factory shares: the agent with its connection
     /// over the wire's agent end, and the client over the holding clock.
     /// The factory closure binds the connection into the agent, so a
-    /// prompt can send notifications through it (plan.md §8.1).
+    /// prompt can send notifications through it.
     ///
     /// - Parameters:
     ///   - agent: The agent under test.

@@ -9,7 +9,7 @@ typealias SessionUpdateSink = @Sendable (SessionUpdate) async -> Void
 
 extension AgentSideConnection {
     /// Sends one `session/update` for `sessionId`. A send failure is
-    /// logged and dropped: the prompt already returned its response (plan.md §8.1),
+    /// logged and dropped: the prompt already returned its response,
     /// so no prompt error can become a JSON-RPC error, and a closed
     /// connection has no reader to correct.
     ///
@@ -28,15 +28,16 @@ extension AgentSideConnection {
     }
 }
 
-/// The prompt-state owner of one session (plan.md §8.2).
+/// The prompt-state owner of one session.
 ///
 /// It owns the `state_update` transitions of the session's one running
 /// prompt: `running` at the prompt start, `requires_action` while the
 /// prompt is blocked on the human, back to `running` at the answer, and
 /// `idle` with a stop reason at the end.
 /// It also records a `session/cancel` request, so the prompt ends as
-/// `cancelled` even when the cancelled model work runs to completion
-/// (plan.md §8.6).
+/// `cancelled` even when the cancelled model work runs to completion:
+/// model work that never checks for cancellation returns its response,
+/// and does not throw.
 actor PromptStateOwner {
     /// The sink every state update goes to.
     private let send: SessionUpdateSink
@@ -50,7 +51,7 @@ actor PromptStateOwner {
     /// The stop reason that the `idle` terminator carried, or `nil` while the
     /// prompt runs: a value tells that ``promptDidEnd(reason:)`` sent the
     /// terminator. `session/close` reads it, so the close response follows
-    /// the terminator (plan.md §10.1), and the prompt span reads it when it
+    /// the terminator, and the prompt span reads it when it
     /// ends.
     private(set) var stopReason: StopReason?
 
@@ -70,16 +71,18 @@ actor PromptStateOwner {
     }
 
     /// Sends `state_update: running` one time for the prompt. The
-    /// projection calls it at each Router `submissionStarted` event
-    /// (plan.md §8.4), and a prompt can make more than one submission, so
-    /// a later call sends nothing.
+    /// projection calls it at each Router `submissionStarted` event,
+    /// and a prompt can make more than one submission, so only the
+    /// first call sends `running`. A later call sends nothing.
     func promptDidStart() async {
         guard !didStart else { return }
         didStart = true
         await sendRunning()
     }
 
-    /// Runs `body` as a wait on the human (plan.md §8.2): sends
+    /// Runs `body` as a wait on the human, for example an elicitation
+    /// round trip. A prompt that stays `running` while it waits on a
+    /// person shows as a stopped agent. Thus this call sends
     /// `requires_action`, runs the body, and returns to `running` when the
     /// body ends — with a value or with an error.
     ///
@@ -104,7 +107,9 @@ actor PromptStateOwner {
     }
 
     /// Sends the one `state_update: idle` that ends the prompt, with its
-    /// stop reason (plan.md §8.1).
+    /// stop reason. The end of the prompt task calls it, never a
+    /// `submissionEnded` event, because one prompt can make more than one
+    /// submission.
     ///
     /// - Parameter reason: Why the prompt stopped.
     func promptDidEnd(reason: StopReason) async {
@@ -119,7 +124,8 @@ actor PromptStateOwner {
 
     /// Suspends until the prompt's `idle` terminator has gone out. A close
     /// during an active prompt awaits it, so the client learns the prompt
-    /// ended before the close response (plan.md §10.1). It returns at once
+    /// ended before the close response. If not, a client with a spinner
+    /// does not learn that the prompt ended. It returns at once
     /// when the terminator already went out.
     func waitForPromptEnd() async {
         guard stopReason == nil else {
@@ -132,7 +138,8 @@ actor PromptStateOwner {
 
     /// Records that `session/cancel` asked this prompt to stop. The
     /// prompt reads it at the end, because a cancelled prompt does not
-    /// always throw (plan.md §8.6). It also runs each handler that
+    /// always throw: model work that never checks for cancellation runs to
+    /// completion. It also runs each handler that
     /// ``onCancelRequest(_:)`` registered.
     func noteCancelRequested() {
         cancelRequested = true

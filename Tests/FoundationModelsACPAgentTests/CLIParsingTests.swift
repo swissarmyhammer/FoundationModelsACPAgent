@@ -210,7 +210,7 @@ struct CLIParsingTests {
     }
 
     /// `--version` prints the agent's build version to stdout, and exits
-    /// 0. One version: the one `initialize` reports (plan.md §5).
+    /// 0. One version: the one `initialize` reports as `info.version`.
     @Test func versionIsTheAgentBuildVersion() async throws {
         let error = try #require(await Self.outcomeError(of: ["--version"]))
 

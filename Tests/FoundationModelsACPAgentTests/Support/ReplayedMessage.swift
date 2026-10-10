@@ -1,6 +1,6 @@
 import FoundationModelsACP
 
-// MARK: - The replay readers (plan.md §7.4, §8.3)
+// MARK: - The replay readers
 //
 // A `session/resume` with `replayFrom` sends each kept message as one
 // whole-message upsert. `SessionResumeTests`, `PromptExecutionTests` and

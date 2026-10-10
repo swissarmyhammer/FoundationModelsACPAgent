@@ -11,7 +11,7 @@ import Testing
 /// back the text the prompt streamed.
 ///
 /// The composition suite and the `acp` suite both drive a prompt this way,
-/// and the `acp` suite drives one over each wire of §4, so the
+/// and the `acp` suite drives one over each wire of cli-plan.md §4, so the
 /// composition and the drive stand in one place and cannot drift.
 enum ComposedPromptFixture {
     /// What one composed prompt gave: the session it ran in, and the agent

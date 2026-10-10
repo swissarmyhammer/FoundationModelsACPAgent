@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shared plumbing for the two JSON-lines files this package writes:
-/// `sessions.jsonl` (plan.md §4.3) and `projects.jsonl` (§4.5). One record
+/// `sessions.jsonl` and `projects.jsonl`. One record
 /// per line, RFC 3339 dates, keys in sorted order so a record's line is
 /// stable across writes.
 enum JSONLines {

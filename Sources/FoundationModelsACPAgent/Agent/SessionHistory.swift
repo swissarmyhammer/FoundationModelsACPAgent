@@ -92,7 +92,7 @@ extension SessionMergeEngine {
     }
 
     /// The updates that a `session/resume` replay sends, at or after
-    /// `cursor` (plan.md §7.4): the full retained history. Each transcript
+    /// `cursor`: the full retained history. Each transcript
     /// entry goes as one whole update with its id, then each state field
     /// that has a value.
     ///

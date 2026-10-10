@@ -7,8 +7,10 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// Layered `config.yaml` loading through `ConfigurationLoader` (plan.md
-/// §2.2 and §2.4). Every test builds its own throwaway `user/` and
+/// Layered `config.yaml` loading through `ConfigurationLoader`: the builtin
+/// defaults, then the user layer, then the project layer, with a key-level
+/// override. An unknown top-level section gives a warning, and an unknown
+/// key in a known section gives an error. Every test builds its own throwaway `user/` and
 /// `workspace/.<name>/` tree under a temp directory and injects the user
 /// directory and the environment, so no test touches the real home
 /// directory.
@@ -91,9 +93,9 @@ import Testing
         #expect(try Fixture().makeLoader().builtinConfiguration == expected)
     }
 
-    /// The default values the plan names (§2.2): recording is `full` and
+    /// The in-code default values: recording is `full` and
     /// transcripts are project-local.
-    @Test func inCodeDefaultsMatchThePlan() {
+    @Test func inCodeDefaultsRecordFullTranscriptsInTheProject() {
         let configuration = AgentConfiguration()
 
         #expect(configuration.recording.level == .full)
@@ -537,7 +539,7 @@ import Testing
     }
 
     /// The `tools` and `sandbox` sections decode their bodies through the
-    /// codec (plan.md §11.2, §11.7): a `shell: false` disables the tool and
+    /// codec: a `shell: false` disables the tool and
     /// an `extraWritePaths` entry lands in the sandbox section.
     @Test func toolsAndSandboxBodiesDecodeThroughTheCodec() throws {
         let fixture = Fixture()

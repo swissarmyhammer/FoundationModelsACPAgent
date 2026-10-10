@@ -6,7 +6,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The compaction report (plan.md §8.5, task ^e8hafh0): each Router compaction
+/// The compaction report (task ^e8hafh0): each Router compaction
 /// shows as one `compaction_update` entry, keyed by one `compactionId`, and a
 /// compaction changes only the model context. The ACP history keeps every
 /// earlier message with its id, and a resume replays the compaction entry

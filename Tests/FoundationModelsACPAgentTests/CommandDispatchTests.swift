@@ -7,9 +7,11 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// Dispatch at the prompt owner (plan.md §14.3, §14.4): the three body
-/// kinds, the unknown-command refusal, the attachment rules, and the
-/// `available_commands_update` publication.
+/// Dispatch at the prompt owner: the three body kinds, the
+/// unknown-command refusal, the attachment rules, and the
+/// `available_commands_update` publication. A leading `/name` goes
+/// through the registry before anything touches the session, so a slash
+/// command never reaches the model as a prompt.
 struct CommandDispatchTests {
     /// One wired dispatch fixture: an echo-model agent with stub
     /// command providers, a recording harness, an initialized wire, and
@@ -104,7 +106,7 @@ struct CommandDispatchTests {
         }
     }
 
-    // MARK: - Unknown commands (plan.md §14.3)
+    // MARK: - Unknown commands
 
     /// A `/nosuchcmd` prompt gives an error that names the nearest
     /// command, and the model backend is never invoked.
@@ -137,10 +139,11 @@ struct CommandDispatchTests {
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
     }
 
-    // MARK: - The .rendered body (plan.md §14.2 gap 1)
+    // MARK: - The .rendered body
 
     /// A `.rendered` provider body is called, and its output reaches
-    /// the model pass.
+    /// the model pass. The provider renders, and the dispatcher gives the
+    /// result to the model, as it does for `.prompt`.
     @Test(.timeLimit(.minutes(1)))
     func aRenderedBodyOutputReachesTheModelPass() async throws {
         let fixture = try await Fixture.make(
@@ -159,11 +162,13 @@ struct CommandDispatchTests {
         #expect(texts.contains { $0.contains("RENDERED alpha") })
     }
 
-    // MARK: - The skills path (plan.md §14.2)
+    // MARK: - The skills path
 
     /// A real skill with a `$1` placeholder reaches the model with the
     /// second argument substituted, which proves the `registry.call`
-    /// path ran all three render passes.
+    /// path ran all three render passes. A skill command still carries a
+    /// raw `.prompt(template:)` body, so the dispatcher sends skill
+    /// commands through `registry.call(id:arguments:)` for full fidelity.
     @Test(.timeLimit(.minutes(1)))
     func aSkillCommandRunsThroughRegistryCall() async throws {
         let fixture = try await Fixture.make(
@@ -179,7 +184,7 @@ struct CommandDispatchTests {
         #expect(texts.contains { $0.contains("Hello beta.") })
     }
 
-    // MARK: - The .action body (plan.md §14.3)
+    // MARK: - The .action body
 
     /// An `.action` command with an attached resource link is refused
     /// with a reason, and no model pass runs.
@@ -262,7 +267,7 @@ struct CommandDispatchTests {
         #expect(echoIds == [response.messageId])
     }
 
-    // MARK: - The ACP surface (plan.md §14.4)
+    // MARK: - The ACP surface
 
     /// The `session/new` response holds the first command list (ACP
     /// schema-v2.0.0-alpha.7), so no `available_commands_update` repeats

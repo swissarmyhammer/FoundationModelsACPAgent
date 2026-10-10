@@ -58,7 +58,7 @@ public struct SystemToolsProber: ToolsProber {
     /// real profile, against `/usr/bin/true`. The working directory is
     /// `options.writableRoots.first`, which the options initializer already
     /// put through `realpath(3)` — the resolved-path precondition of
-    /// `CommandSandbox` (plan.md §2.5).
+    /// `CommandSandbox`.
     ///
     /// - Parameter options: The write confinement to prove.
     /// - Returns: What the canary gave.
@@ -102,7 +102,7 @@ public struct SystemToolsProber: ToolsProber {
     ///
     /// The seatbelt profile matches the path the kernel resolved, and
     /// `URL.resolvingSymlinksInPath()` gives the other form on macOS, so
-    /// the resolution goes through `realpath(3)` itself (plan.md §2.5).
+    /// the resolution goes through `realpath(3)` itself.
     ///
     /// - Returns: The resolved path, or the unresolved one when the
     ///   directory cannot be resolved.

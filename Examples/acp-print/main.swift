@@ -4,7 +4,7 @@ import FoundationModelsACPClient
 
 /// # The `acp-print` example: a one-shot ACP client CLI.
 ///
-/// One executable, one lesson (plan.md §20.2): how a frontend drives an
+/// One executable, one lesson: how a frontend drives an
 /// ACP agent through `FoundationModelsACPClient`. The CLI takes one
 /// prompt, spawns `acp-agent` over stdio, runs one turn, prints the
 /// answer, and exits at the stop reason. It is the client-server interop
@@ -113,7 +113,8 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
 
         // The process working directory is always absolute, and the wire
         // type carries the string as sent, so there is nothing to refuse
-        // here. The agent judges the path (plan.md §7.1).
+        // here. The agent judges the path: `cwd` must be absolute, and it
+        // is part of the root set of the session.
         let cwd = AbsolutePath(rawValue: FileManager.default.currentDirectoryPath)
         let session = try await connection.newSession(NewSessionRequest(cwd: cwd))
 

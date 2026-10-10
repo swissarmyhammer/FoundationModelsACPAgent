@@ -284,10 +284,75 @@ The compiled-in floor is
 — one copy of the text, never mirrored here. It is written for a small local
 model, and its doc comment states why each section reads the way it does.
 
+## Design decisions
+
+The code depends on these decisions. The doc comment at each place in the
+code gives the local detail.
+
+- **ACP v2 only.** A client that asks for an earlier protocol version gets
+  version 2 in a successful `initialize` response. The client then decides
+  to disconnect. Extensions go in `_meta`, and an extension value of an
+  enum starts with `_` (for example the tool status `_lost` and the stop
+  reasons `_no_output`, `_stalled` and `_truncated`).
+- **No authentication.** A local agent on the device has nothing to
+  authenticate. The agent advertises no `authMethods`, and `auth/login` gives
+  `-32601`. The dotfolder name never goes on the wire: `initialize` reports
+  the package name.
+- **One ACP session is one root Router session.** The ACP `sessionId` is the
+  ULID of the root Router session. There is no mapping table, because a table
+  can drift and a resume then restores the wrong conversation. A fork or a
+  sub-agent is never an ACP session: `session/list` does not show it, and it
+  does not accept `session/prompt`.
+- **One prompt for each session at a time.** A `session/prompt` for a session
+  that is not idle is a client error, not a queue entry. The `idle` update
+  comes at the end of the prompt, never at the end of one Router submission,
+  because one prompt can make more than one submission.
+- **The sandbox is the only gate.** The agent does not advertise or send
+  `session/request_permission`. There is no permission mode, no
+  `permissions:` section and no stored decision. A denylist over the command
+  text is easy to bypass, and a question that a person answers a hundred
+  times each day is not a boundary. `SeatbeltSandbox` is a kernel boundary,
+  and the spelling of a command does not change it. Its writable roots are
+  the session root set: the `cwd` and the `additionalDirectories`. The root
+  set is never empty, because an empty list gives write access to the working
+  directory of the process. `sandbox.extraWritePaths` is the only
+  configuration key. A failed sandbox preflight stops the command, and no
+  command runs without the sandbox. The sandbox limit below applies.
+- **Transcripts are project context, and you commit them.** A session records
+  to `<cwd>/.<name>/transcripts/<sessionId>/`. Each session has its own
+  directory, thus two persons make no merge conflict. `sessions.jsonl` is
+  append-only, and `.gitattributes` sets `merge=union` on it.
+- **No redaction.** The agent records each transcript verbatim. Redaction
+  damages the record, and a partial redaction gives false confidence. To
+  record less, set `recording.level: off` in the project layer. There is no
+  level between `full` and `off`.
+- **Client MCP servers are not stored.** The `mcpServers` of `session/new` and
+  `session/resume` connect after the configured servers, for that session
+  only. Their headers can hold tokens, and the session metadata is committed.
+  A client server whose name is the name of an accepted server is refused.
+  `tools.mcp: false` refuses the client servers too.
+- **A capability is on until the configuration sets it off.** Set
+  `tools.<name>: false` to set one capability off. There is no switch that
+  sets all tools off.
+- **Unknown and closed sessions.** `session/prompt` and
+  `session/set_config_option` give `-32602` for an unknown or a closed
+  session; a closed session must be resumed first. `session/resume` of a
+  closed session succeeds. `session/close` of a closed session succeeds.
+  `session/delete` succeeds also when the session does not exist.
+- **`session/delete` is a real delete.** It removes the transcript directory
+  and the index record. A version that git has stays in the git history.
+- **A compaction changes only the model context.** The ACP history keeps each
+  message with its id, and a compaction is one more entry in it. A resume
+  replays the ACP history that the agent keeps in `session-history.json`,
+  never the Router journal.
+- **A `resource_link` reads only a file in the root set.** The agent reads a
+  `file://` URI through the `files` capability. It refuses each other scheme,
+  with a reason: a fetch that the user did not ask for is not permitted.
+
 ## Documentation
 
-[`plan.md`](plan.md) is the design record: the wire, the session lifecycle, the
-tool catalog, and the test tiers. `swift test` runs the hermetic suites;
+[`cli-plan.md`](cli-plan.md) is the design record of the `acp-agent` command
+line. `swift test` runs the hermetic suites;
 `swift test --package-path IntegrationTests` runs the tiers that spawn a built
 binary or load a real model.
 

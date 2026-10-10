@@ -1,6 +1,6 @@
 import FoundationModelsRouter
 
-/// The readable failure of the agent's profile resolution (plan.md §1).
+/// The readable failure of the agent's profile resolution.
 ///
 /// Router's `ResolutionFailure` — the error `resolve` throws when no
 /// candidate trio fits — is internal, so the resolve path catches
@@ -20,16 +20,17 @@ public struct ProfileResolutionError: Error, Equatable, Sendable, CustomStringCo
 }
 
 extension ProfileConfiguration {
-    /// Maps this decoded section to Router's authored profile (plan.md §1).
+    /// Maps this decoded section to Router's authored profile.
     ///
     /// The configured ``name`` wins; a section without one falls back to
-    /// the dotfolder name, the name's third consumer (plan.md §2.1). Each
+    /// the dotfolder name. The name has three consumers: the configuration
+    /// stack, the transcript root and this default. Each
     /// slot carries its candidate list in preference order, and the refs
     /// arrive as the `ModelRef` values the config decode produced through
     /// `Codable`, the one decode door that type has.
     ///
     /// `context` stays `nil` on purpose: the config has no context key
-    /// (plan.md §2.4), so resolution derives the working context from each
+    /// (the context size comes from the model), so resolution derives the working context from each
     /// candidate's native maximum instead of the initializer's 8192
     /// default.
     ///

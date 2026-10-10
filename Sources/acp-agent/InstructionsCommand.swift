@@ -4,8 +4,7 @@ import FoundationModelsACPAgent
 
 extension AcpAgentCommand {
     /// `acp-agent instructions`: the compiled-in instructions floor, and
-    /// its wholesale replacement in a layer (plan.md §3.1, cli-plan.md
-    /// §5.3).
+    /// its wholesale replacement in a layer (cli-plan.md §5.3).
     struct Instructions: ParsableCommand {
         static let configuration = CommandConfiguration(
             commandName: "instructions",
@@ -15,7 +14,7 @@ extension AcpAgentCommand {
         /// `instructions eject`: write `Instructions.md` into a layer.
         ///
         /// The prompt floor is compiled in, and a layer file replaces it
-        /// wholesale (plan.md §3.1). A person cannot edit what they cannot
+        /// wholesale: the nearest layer wins. A person cannot edit what they cannot
         /// read, so this command writes the compiled-in text out for them.
         /// After an eject the file on disk is the prompt, and every edit
         /// to it is the whole new prompt.

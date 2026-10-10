@@ -13,7 +13,7 @@ public enum SandboxCompositionError: Error, Equatable, CustomStringConvertible {
     /// `SeatbeltSandbox.Options` is constructed. The upstream initializer
     /// replaces an empty `writableRoots` with the process working
     /// directory — the widest grant the type can give — so an empty root
-    /// set must fail loudly here and never pass through (plan.md §11.7).
+    /// set must fail loudly here and never pass through.
     case emptyRootSet
 
     /// A human-readable description of this error.
@@ -25,13 +25,13 @@ public enum SandboxCompositionError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// The sandbox composition (plan.md §11.7): the one place this package
+/// The sandbox composition: the one place this package
 /// builds the `SeatbeltSandbox` the shell capability runs under, from the
 /// session root set and the decoded `sandbox:` config section.
 ///
 /// **The sandbox is the only gate.** There is no permission layer: this
 /// agent does not advertise a permission capability and never sends
-/// `session/request_permission` (plan.md §5, §11.7). A denylist over
+/// `session/request_permission`. A denylist over
 /// command text can be avoided by respelling the command; the seatbelt
 /// sandbox is a kernel boundary and does not care how a command is
 /// spelled.
@@ -42,7 +42,7 @@ public enum SandboxCompositionError: Error, Equatable, CustomStringConvertible {
 /// reason, and there is no path from a failed preflight to an unconfined
 /// spawn — this composition never mounts the shell without a sandbox.
 ///
-/// **Stated limit (plan.md §2.5):** ``statedLimit`` — the sandbox bounds
+/// **Stated limit:** ``statedLimit`` — the sandbox bounds
 /// writing and deleting only. Reads are free and the network is open, so
 /// exfiltration is not bounded. The README states the same limit, and a
 /// test keeps the two in step.
@@ -60,7 +60,9 @@ public enum SandboxComposition {
     /// `SandboxConfiguration.sandboxOptions(workingDirectory:additionalRoots:)`,
     /// which goes only through
     /// `SeatbeltSandbox.Options(writableRoots:extraWritePaths:)`, so every
-    /// path is `realpath(3)`-resolved (plan.md §2.5).
+    /// path is `realpath(3)`-resolved. Never pass the output of
+    /// `URL.resolvingSymlinksInPath()`: on macOS it strips `/private`,
+    /// and Seatbelt cannot match that path form.
     ///
     /// - Parameters:
     ///   - rootSet: The session root set, in order: the working directory
@@ -97,7 +99,7 @@ public enum SandboxComposition {
     ///   - configuration: The decoded `sandbox:` section.
     ///   - rootSet: The session root set, working directory first.
     ///   - outputChunkStream: The host-owned live output stream the
-    ///     capability tees raw bytes into (plan.md §11.8), or `nil` to
+    ///     capability tees raw bytes into, or `nil` to
     ///     tee nothing.
     /// - Throws: ``SandboxCompositionError/emptyRootSet`` for an empty
     ///   root set, and whatever
@@ -127,7 +129,7 @@ public enum SandboxComposition {
     ///   - options: The decoded `tools.shell:` options.
     ///   - sandbox: The confinement every command spawns under.
     ///   - outputChunkStream: The host-owned live output stream the
-    ///     capability tees raw bytes into (plan.md §11.8), or `nil` to
+    ///     capability tees raw bytes into, or `nil` to
     ///     tee nothing.
     ///   - defaultWorkingDirectory: The directory a run that omits
     ///     `workingDirectory` runs in — the session working directory —

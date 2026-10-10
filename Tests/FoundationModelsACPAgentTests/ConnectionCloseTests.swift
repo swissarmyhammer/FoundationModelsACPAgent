@@ -9,7 +9,7 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The close of the open sessions when the connection ends with no
-/// `session/close` (plan.md §10.1).
+/// `session/close`.
 ///
 /// A client can drop the wire at any time: it closes the standard input of
 /// a stdio agent, or a host lets the transport go. The agent then runs the

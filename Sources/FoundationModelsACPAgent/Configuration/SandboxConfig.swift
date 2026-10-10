@@ -1,11 +1,24 @@
 import Foundation
 import FoundationModelsMultitool
 
-/// The `sandbox:` section (plan.md §11.7): the one key, `extraWritePaths`.
+/// The `sandbox:` section: the one key, `extraWritePaths`.
 /// The section builds the write confinement the shell capability runs
 /// under, `SeatbeltSandbox.Options`, over the session root set.
 ///
-/// **Stated limit (plan.md §2.5):** the sandbox bounds writing and deleting
+/// **The permission decision is sandbox-only.** `SeatbeltSandbox` is the only
+/// gate on a shell command. The agent does not advertise and does not send
+/// `session/request_permission`. There is no `permissions:` section, no
+/// policy, no ask route and no remembered decision. The reason: a denylist
+/// over command text is bypassable, and the sandbox is a kernel boundary
+/// that does not care how a command is spelled.
+///
+/// `extraWritePaths` is the only key. Use it for a build cache or a
+/// temporary directory outside the roots. `writableRoots` is not a key: it
+/// is always the session root set, the cwd and the additional roots. Never
+/// give an empty `writableRoots`: the initializer then uses the process
+/// working directory, which is the widest grant.
+///
+/// **Stated limit:** the sandbox bounds writing and deleting
 /// only. Reads are free and the network is open, so exfiltration is not
 /// bounded.
 public struct SandboxConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
@@ -43,7 +56,7 @@ extension SandboxConfiguration {
     /// `realpath(3)` over both lists — the resolved-path precondition of
     /// `CommandSandbox`. `URL.resolvingSymlinksInPath()` never substitutes:
     /// on macOS it strips `/private` and gives exactly the form Seatbelt
-    /// cannot match (plan.md §2.5).
+    /// cannot match.
     ///
     /// - Parameters:
     ///   - workingDirectory: The session working directory — the root set's

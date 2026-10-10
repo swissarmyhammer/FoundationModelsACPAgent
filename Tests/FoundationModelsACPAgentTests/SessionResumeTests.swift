@@ -8,7 +8,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The `session/resume` wire surface (plan.md §7.4, §8.3, §10.1): the cwd
+/// The `session/resume` wire surface: the cwd
 /// equality pre-check, the restore with freshly assembled instructions,
 /// the root-set replacement, the missing-tool report, the command list of
 /// the response, and replay of the retained history as whole-message
@@ -98,7 +98,7 @@ struct SessionResumeTests {
     /// holds.
     private static let builtinHelpCommandName = "help"
 
-    // MARK: - The absolute-cwd rule (plan.md §7.1, §7.4)
+    // MARK: - The absolute-cwd rule
 
     /// A relative `cwd` is refused before the session id is read, and the
     /// refusal names the field that failed and why. `session/new`,
@@ -141,7 +141,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The unknown-id policy (plan.md §10.1)
+    // MARK: - The unknown-id policy
 
     @Test(.timeLimit(.minutes(1)))
     func resumeWithAnUnknownIdAnswersInvalidParamsWithTheIdInData() async throws {
@@ -203,7 +203,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The cwd equality pre-check (plan.md §7.4)
+    // MARK: - The cwd equality pre-check
 
     @Test(.timeLimit(.minutes(1)))
     func resumeWithADifferentCwdErrorsBeforeAnySessionIsBuilt() async throws {
@@ -240,7 +240,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - Replay as whole-message upserts (plan.md §7.4, §8.3)
+    // MARK: - Replay as whole-message upserts
 
     /// The replay sends the retained history of the session: each message
     /// that the client saw live, as one whole-message upsert with the id it
@@ -274,7 +274,7 @@ struct SessionResumeTests {
         #expect(response.configOptions?.isEmpty == false)
 
         // A second replay converges: the same ids again, no duplicates
-        // under the §8.3 replace row.
+        // because a whole-message upsert replaces all accumulated content.
         let countBetween = await resume.fixture.collector.updates.count
         _ = try await resume.fixture.harness.connection.resumeSession(
             resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
@@ -390,7 +390,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The resumed conversation (plan.md §7.4)
+    // MARK: - The resumed conversation
 
     @Test(.timeLimit(.minutes(1)))
     func aResumedSessionContinuesTheConversationWithTheEarlierContext() async throws {
@@ -427,7 +427,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The root set (plan.md §7.2, §7.4)
+    // MARK: - The root set
 
     @Test(.timeLimit(.minutes(1)))
     func resumeOmittingAdditionalDirectoriesConfinesToTheCwdAlone() async throws {
@@ -466,7 +466,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The MCP server outcomes (plan.md §7.3, §7.4)
+    // MARK: - The MCP server outcomes
 
     /// The name of the client MCP server of the resume request that cannot
     /// connect.
@@ -505,7 +505,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The missing-tool report (plan.md §7.4)
+    // MARK: - The missing-tool report
 
     @Test(.timeLimit(.minutes(1)))
     func resumingWithShellNewlyDisabledReportsTheMissingShellVerbs() async throws {
@@ -554,7 +554,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    // MARK: - The instructions override (plan.md §7.4)
+    // MARK: - The instructions override
 
     @Test(.timeLimit(.minutes(1)))
     func resumingWithChangedInstructionsReachesTheModelAndWritesOneDivergenceEvent() async throws {

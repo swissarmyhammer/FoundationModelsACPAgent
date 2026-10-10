@@ -59,7 +59,7 @@ extension SessionAnswer {
     }
 }
 
-// MARK: - The synthetic projection fixtures (plan.md §20.1)
+// MARK: - The synthetic projection fixtures
 //
 // The projection tests drive `PromptExecution.drive(events:)` with a
 // synthetic event stream and record each update the prompt sends. No

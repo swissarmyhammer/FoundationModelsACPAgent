@@ -6,8 +6,8 @@ import FoundationModelsRouter
 import Logging
 import Tracing
 
-/// Why one prompt stopped, in this agent's own vocabulary
-/// (plan.md §8.2). Router's error enums are internal, so the prompt
+/// Why one prompt stopped, in this agent's own vocabulary.
+/// Router's error enums are internal, so the prompt
 /// catches `any Error` and classifies it into this intent first;
 /// ``PromptExecution/stopReason(for:)`` then maps each intent to the wire
 /// value, totally.
@@ -26,13 +26,13 @@ enum PromptStop: Equatable, Sendable {
 
     /// The tool-loop cap ended the prompt. No producer exists yet: neither
     /// Router nor the SDK caps tool loops today. The arm keeps the
-    /// §8.2 mapping total for the task that adds the cap.
+    /// stop-reason mapping total for the task that adds the cap.
     case toolLoopCapped
 
     /// The prompt completed, but it generated nothing: no text, no
     /// reasoning, no tool call, and a usage report of zero output
     /// tokens. A bare `end_turn` would hide that, so the arm maps to
-    /// the `_no_output` extension value (§8.2's `_` rule; task
+    /// the `_no_output` extension value (the ACP `_` extension rule; task
     /// ^pez780d).
     case noOutput
 
@@ -42,7 +42,7 @@ enum PromptStop: Equatable, Sendable {
     /// call is cut. A bare `end_turn` would hide that, and `max_tokens`
     /// is the overflow of the INPUT context, which is a different
     /// budget. So the arm maps to the `_truncated` extension value
-    /// (§8.2's `_` rule; task ^bw9qt1z).
+    /// (the ACP `_` extension rule; task ^bw9qt1z).
     case truncated
 
     /// The prompt completed, but the output of its last submission ended
@@ -51,14 +51,14 @@ enum PromptStop: Equatable, Sendable {
     /// model or the engine stopped the output, not the ceiling, and the
     /// answer can be empty. A bare `end_turn` would show a cut prompt as a
     /// finished one, and `_truncated` would name the wrong cause. So the arm
-    /// maps to the `_ended_in_reasoning` extension value (§8.2's `_` rule;
+    /// maps to the `_ended_in_reasoning` extension value (the ACP `_` extension rule;
     /// task ^k51h6bb).
     case endedInReasoning
 
     /// The prompt completed, but Router stopped its last submission because
     /// the submission repeated itself and no recovery was left: Router's
     /// `FinishReason` of that submission is `repeatedLines`. The arm maps to
-    /// the `_repeated` extension value (§8.2's `_` rule; task ^k51h6bb).
+    /// the `_repeated` extension value (the ACP `_` extension rule; task ^k51h6bb).
     case repeated
 
     /// The prompt completed, but Router stopped its last submission because
@@ -67,7 +67,7 @@ enum PromptStop: Equatable, Sendable {
     /// submission is `reasoningTokenLimit`. The model reasoned and did not
     /// act. The output token ceiling did not stop it, so `_truncated` would
     /// name the wrong cause. The arm maps to the `_reasoning_limit`
-    /// extension value (§8.2's `_` rule; task ^7fsfw7y).
+    /// extension value (the ACP `_` extension rule; task ^7fsfw7y).
     case reasoningLimit
 
     /// The prompt stopped waiting on a generation that made nothing: the
@@ -75,14 +75,14 @@ enum PromptStop: Equatable, Sendable {
     /// ``PromptExecution/stalledGenerationBound``, so the prompt ended it
     /// rather than hang. The arm carries Router's own report, which
     /// names the times, and maps to the `_stalled` extension value
-    /// (§8.2's `_` rule; task ^s0bw5cv).
+    /// (the ACP `_` extension rule; task ^s0bw5cv).
     case stalled(GenerationStall)
 
     /// The prompt failed for a reason outside the mapped intents.
     case failed(message: String)
 }
 
-/// What the first recorded activity writes (plan.md §9): the
+/// What the first recorded activity writes: the
 /// `sessions.jsonl` index and the record to append, deferred from
 /// `session/new` by the zero-prompt rule.
 struct FirstActivity: Sendable {
@@ -94,8 +94,7 @@ struct FirstActivity: Sendable {
 }
 
 /// The execution of one prompt: one ACP `session/prompt`, from the
-/// response that names the user message to its one `idle` terminator
-/// (plan.md §8.1–§8.3).
+/// response that names the user message to its one `idle` terminator.
 ///
 /// The prompt runs after the response went out, on the request's own
 /// dispatch task through `afterRespondingToCurrentRequest`. The
@@ -105,7 +104,8 @@ struct FirstActivity: Sendable {
 /// ends with one `idle` state update.
 struct PromptExecution: Sendable {
     /// The wire value an unmapped prompt failure stops with, under the
-    /// `_`-prefix extension rule (plan.md §18).
+    /// `_`-prefix extension rule of ACP: a value that starts with `_` is
+    /// implementation-specific, and a bare value is reserved for ACP.
     static let unmappedStopReasonValue = "_error"
 
     /// The wire value a completed prompt that generated nothing stops
@@ -209,31 +209,33 @@ struct PromptExecution: Sendable {
     let modelName: String
 
     /// The expanded command text that replaces the blocks' text as the
-    /// model prompt, or `nil` for a plain prompt (plan.md §14.3). The
+    /// model prompt, or `nil` for a plain prompt. The
     /// echo always carries the original blocks verbatim.
     var modelPrompt: String?
 
     /// The reader of a settled run's stored output, handed to the
-    /// projection for the §11.6 convergence replace. The default finds
+    /// projection for the convergence replace: the settlement update
+    /// carries the complete content, so a client that missed a chunk
+    /// still ends correct. The default finds
     /// no run; the catalog wiring supplies the host-owned stream's
     /// `snapshot(for:)`.
     var shellSnapshot: ShellSnapshotProvider = { _ in nil }
 
-    /// The resolver of the prompt's resource links (plan.md §12). The
+    /// The resolver of the prompt's resource links. The
     /// default holds no read verb and refuses every link with a reason;
     /// the scheduling wiring supplies the session surface's verb.
     var contentResolver = ResourceLinkResolver(readVerb: nil)
 
-    /// The handler of a live elicitation request (plan.md §16), or `nil`
+    /// The handler of a live elicitation request, or `nil`
     /// when no relay is wired — a synthetic projection drive. The
     /// scheduling wiring supplies the session's ``ElicitationRelay``
     /// bound to the prompt's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
     /// Runs the prompt: the first-activity record, and the session's event
-    /// stream to completion (plan.md §8.1). A plain prompt folds through
-    /// `PromptContent` (§12); an expanded command keeps its override text
-    /// (§14.3). The `user_message` echo went out before this work, and it
+    /// stream to completion. A plain prompt folds through
+    /// `PromptContent`; an expanded command keeps its override text.
+    /// The `user_message` echo went out before this work, and it
     /// always carries the original blocks verbatim.
     ///
     /// - Parameter session: The Router session that generates the answer.
@@ -255,8 +257,9 @@ struct PromptExecution: Sendable {
     /// Drives one event stream to completion and closes the prompt: each
     /// event is projected, the summed usage is reported one time, and
     /// exactly one `idle` goes out — keyed on stream completion, never
-    /// on a `submissionEnded` count (plan.md §8.1). A `CancellationError` is
-    /// classified here; it never escapes (§8.2).
+    /// on a `submissionEnded` count, because one prompt can make more than
+    /// one submission. A `CancellationError` is classified here; it never
+    /// escapes as a JSON-RPC error or as `refusal`.
     ///
     /// The loop also carries the stalled-generation guard of task
     /// ^s0bw5cv. Leaving `events` cancels the Router stream, which is that
@@ -292,7 +295,7 @@ struct PromptExecution: Sendable {
                 sessionEvents, after: answerEnd, awaitingIdle: followUp.awaitIdle, projection: &projection)
         }
         sessionEvents?.close()
-        // A cancelled prompt does not always throw (§8.6): model work that
+        // A cancelled prompt does not always throw: model work that
         // never checks for cancellation runs to completion. The recorded
         // request still ends the prompt as cancelled.
         if await promptState.cancelRequested {
@@ -476,7 +479,7 @@ struct PromptExecution: Sendable {
         return false
     }
 
-    // MARK: - The first activity (plan.md §9)
+    // MARK: - The first activity
 
     /// Appends the `sessions.jsonl` record and announces the title with
     /// `session_info_update`. A write failure is logged; it does not end
@@ -497,7 +500,7 @@ struct PromptExecution: Sendable {
                     updatedAt: .value(Self.rfc3339(firstActivity.record.updatedAt)))))
     }
 
-    // MARK: - The stop-reason mapping (plan.md §8.2)
+    // MARK: - The stop-reason mapping
 
     /// Maps a prompt-stop intent to the wire stop reason. Total: every
     /// intent has a wire value, and an unmapped failure degrades to the
@@ -584,7 +587,7 @@ struct PromptExecution: Sendable {
     /// reason.
     ///
     /// The wire carries the ``stalledStopReasonValue`` stop reason and
-    /// nothing else: plan.md §8.4 gives a stall report no wire message,
+    /// nothing else: a stall report has no wire message,
     /// and the terminator of the prompt is what a client reads.
     ///
     /// - Parameter stall: The report the prompt stopped on.
@@ -693,9 +696,9 @@ struct PromptExecution: Sendable {
     // MARK: - Helpers
 
     /// The plain text of the request: the text blocks joined by
-    /// newlines. The session title derives from it (plan.md §4.6); the
+    /// newlines. The session title derives from it; the
     /// model prompt goes through `PromptContent.modelPrompt` instead,
-    /// which also folds resource links and embedded resources (§12).
+    /// which also folds resource links and embedded resources.
     ///
     /// - Parameter blocks: The request's content blocks.
     /// - Returns: The text.
@@ -708,8 +711,9 @@ struct PromptExecution: Sendable {
         }.joined(separator: "\n")
     }
 
-    /// The generated session title (plan.md §4.6): the first user prompt
-    /// cut to a single line.
+    /// The generated session title: the first user prompt
+    /// cut to a single line. `session/list` needs a title, and it is
+    /// not derivable later, so the agent makes and keeps one.
     ///
     /// - Parameter text: The first prompt's text.
     /// - Returns: The first non-empty line, trimmed; empty when the
@@ -725,8 +729,7 @@ struct PromptExecution: Sendable {
         return ""
     }
 
-    /// Formats a date as RFC 3339, the wire form of `updatedAt`
-    /// (plan.md §9).
+    /// Formats a date as RFC 3339, the wire form of `updatedAt`.
     ///
     /// - Parameter date: The date to format.
     /// - Returns: The RFC 3339 string.
@@ -736,14 +739,15 @@ struct PromptExecution: Sendable {
 }
 
 extension RequestError {
-    /// The reason a closed session's refusal reports (plan.md §10.1): a
+    /// The reason a closed session's refusal reports: a
     /// closed session is resumable, not promptable.
     private static let closedSessionReason = "closed; resume it first"
 
-    /// The reason a busy session's refusal reports (plan.md §7.1).
+    /// The reason a busy session's refusal reports: the agent runs one
+    /// prompt for each session at a time.
     private static let busySessionReason = "a prompt is in flight; one prompt for each session at a time"
 
-    /// The unknown-id refusal (plan.md §10.1): JSON-RPC invalid params
+    /// The unknown-id refusal: JSON-RPC invalid params
     /// with the id in `data`, so a client bug is visible, never a silent
     /// `idle` for nothing.
     ///
@@ -756,7 +760,7 @@ extension RequestError {
             data: .object(["sessionId": .string(id.rawValue)]))
     }
 
-    /// The closed-session refusal (plan.md §10.1): invalid params with
+    /// The closed-session refusal: invalid params with
     /// the resume hint in `data`.
     ///
     /// - Parameter id: The closed session's id.
@@ -771,8 +775,9 @@ extension RequestError {
             ]))
     }
 
-    /// The busy-session refusal (plan.md §7.1): a prompt during a
-    /// running prompt is a client error, not a queue entry.
+    /// The busy-session refusal: a prompt during a
+    /// running prompt is a client error, not a queue entry. The client
+    /// composer owns queueing.
     ///
     /// - Parameter id: The busy session's id.
     /// - Returns: The typed invalid-request error.
@@ -788,7 +793,7 @@ extension RequestError {
 }
 
 extension RoutedACPAgent {
-    /// Accepts one prompt (plan.md §8.1): validates the session,
+    /// Accepts one prompt: validates the session,
     /// marks it busy, inserts the user message, defers the prompt to run
     /// after the response through `afterRespondingToCurrentRequest`, and
     /// returns at once a response that names the user message (ACP
@@ -808,9 +813,9 @@ extension RoutedACPAgent {
     ///
     /// - Parameter params: The prompt request.
     /// - Returns: The response that names the user message.
-    /// - Throws: The order rule's error, `unknownSession` (§10.1),
-    ///   `closedSession` (§10.1), `busySession` (§7.1), or a command
-    ///   refusal (§14.3).
+    /// - Throws: The order rule's error, `unknownSession`,
+    ///   `closedSession`, `busySession`, or a command
+    ///   refusal.
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
         let measurement = PromptMeasurement()
         let span = RequestTracing.startRequestSpan(
@@ -875,7 +880,7 @@ extension RoutedACPAgent {
         }
 
         // A leading /name goes through the registry before anything
-        // touches the session (plan.md §14.3). It never reaches the
+        // touches the session. It never reaches the
         // model as a prompt.
         if let command = CommandDispatch.parseCommand(blocks: params.prompt) {
             return try await dispatchCommand(
@@ -910,14 +915,14 @@ extension RoutedACPAgent {
     /// Inserts the user message of one model prompt, defers the prompt to
     /// run after the response through `afterRespondingToCurrentRequest`, and
     /// returns at once a response that names the user message. Never a
-    /// detached task that races the response (plan.md §8.1). The echo of the
+    /// detached task that races the response. The echo of the
     /// user message is deferred first, so it goes out before the prompt
     /// work.
     ///
     /// - Parameters:
     ///   - overridePrompt: The expanded command text that replaces the
     ///     blocks' text as the model prompt, or `nil` for a plain
-    ///     prompt (§14.3).
+    ///     prompt.
     ///   - params: The prompt request.
     ///   - entry: The session's table entry.
     ///   - connection: The bound connection the prompt registers with.
@@ -935,11 +940,11 @@ extension RoutedACPAgent {
     ) -> PromptResponse {
         let sessionId = params.sessionId
         let messageId = insertUserMessage(params, through: connection)
-        // The reader of a settled run's stored output (plan.md §11.8):
+        // The reader of a settled run's stored output:
         // the same host-owned stream the terminal projection consumes.
         let shellOutput = entry.surface.shellOutput
         let session = entry.session
-        // The elicitation relay of this prompt (plan.md §16): it holds the
+        // The elicitation relay of this prompt: it holds the
         // capabilities `initialize` read, and `session/cancel` and
         // `session/close` reach it through the session's table entry. A
         // missing negotiation reads as "supports nothing", the same rule
@@ -973,7 +978,7 @@ extension RoutedACPAgent {
         return PromptResponse(messageId: messageId)
     }
 
-    /// Stops the session's running prompt (plan.md §8.6): records the
+    /// Stops the session's running prompt: records the
     /// request on the prompt owner, answers every pending elicitation with
     /// `cancel` — the suspended tool must resume before the `idle`
     /// terminator, and Router's mailbox does not resume on task
@@ -983,8 +988,7 @@ extension RoutedACPAgent {
     /// the cancel reaches it: the Router removes it from the queue at
     /// once, so the `idle(cancelled)` terminator does not wait for the
     /// submission of another session. A notification has no response, so
-    /// an unknown id or an idle session is logged and ignored (plan.md
-    /// §10.1).
+    /// an unknown id or an idle session is logged and ignored.
     ///
     /// The notification runs in one server span (``RequestTracing``).
     ///
@@ -1031,11 +1035,11 @@ extension RoutedACPAgent {
         }
     }
 
-    /// Marks the session closed. The session-close task (plan.md §10.1)
+    /// Marks the session closed. The session-close task
     /// flips this after its sweep; the prompt refusal reads it.
     ///
-    /// It also finishes the session's host-owned shell output stream
-    /// (plan.md §11.8): a host that stops listening must call
+    /// It also finishes the session's host-owned shell output stream:
+    /// a host that stops listening must call
     /// `finish()`, and the finish ends the terminal projection's
     /// consumer loop.
     ///
@@ -1054,7 +1058,7 @@ extension RoutedACPAgent {
     /// `running` can never pass the first prompt's terminator. It first
     /// writes the retained history of the session (``writeHistory(of:)``),
     /// so a new process can resume the session with the messages of this
-    /// prompt. It then reconciles the config-option state (plan.md §15): a
+    /// prompt. It then reconciles the config-option state: a
     /// prompt that ran on a model the announced options do not show pushes
     /// one `config_option_update`, after the prompt's terminator.
     ///
@@ -1069,7 +1073,8 @@ extension RoutedACPAgent {
     }
 
     /// The first-activity index write, or `nil` when the session already
-    /// has its record (plan.md §9). Marks the record written at
+    /// has its record. A session with zero prompts is not listed, so the
+    /// record waits for the first prompt. Marks the record written at
     /// acceptance, so one session appends at most one record.
     ///
     /// - Parameters:

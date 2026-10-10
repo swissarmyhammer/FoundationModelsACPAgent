@@ -1,7 +1,7 @@
 import Foundation
 import Logging
 
-/// One line of `projects.jsonl` (plan.md §4.5): a project the user worked
+/// One line of `projects.jsonl`: a project the user worked
 /// in. Paths only, never content.
 public struct ProjectRegistryRecord: Codable, Equatable, Sendable {
     /// The absolute path of the project's working directory.
@@ -26,7 +26,7 @@ public struct ProjectRegistryRecord: Codable, Equatable, Sendable {
     }
 }
 
-/// The cross-project registry in the user layer (plan.md §4.5):
+/// The cross-project registry in the user layer:
 /// `~/.config/<name>/projects.jsonl`. The cross-project session browser
 /// reads it to answer "what did I do in repo X last week?". It is a cache,
 /// not a record: the user can delete it, and a stale entry is skipped on
@@ -52,7 +52,7 @@ public struct ProjectRegistry: Sendable {
         directory.appendingPathComponent(Self.registryFileName)
     }
 
-    /// Records a session start (plan.md §4.5): a new working directory
+    /// Records a session start: a new working directory
     /// appends one record, and a revisit updates that record's `lastSeen`
     /// in place — never a second line for the same path.
     ///
@@ -76,7 +76,7 @@ public struct ProjectRegistry: Sendable {
 
     /// The live records: each stored record whose path is still a
     /// directory. A stale entry — a project that was moved or deleted —
-    /// is skipped, not an error (plan.md §4.5).
+    /// is skipped, not an error.
     ///
     /// - Returns: The live records, in file order.
     /// - Throws: A file-system error when an existing registry file cannot

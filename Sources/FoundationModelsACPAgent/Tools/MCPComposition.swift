@@ -20,16 +20,16 @@ enum MCPCompositionError: Error, CustomStringConvertible, Equatable {
     }
 }
 
-/// The MCP composition (plan.md §7.3, §11.5): two sources become one ordered
+/// The MCP composition: two sources become one ordered
 /// server roster, the roster connects before the registry build, and a
 /// surface refresher watches every connected server.
 ///
 /// **The two sources, in order.** The config-derived `mcp:` servers come
 /// first, then the client-supplied per-session `mcpServers`. The client list
-/// has session scope and is never persisted; `session/resume` supplies it
-/// again (§7.3).
+/// has session scope and is never persisted, because the `headers` of an
+/// http entry carry bearer tokens; `session/resume` supplies it again.
 ///
-/// **The collision rule (§7.3).** A client-supplied server whose name
+/// **The collision rule.** A client-supplied server whose name
 /// collides with an already accepted server — a config-derived one, or an
 /// earlier client-supplied one — is refused and logged, and the session
 /// still starts. The server name is the noun of its tools, so a name
@@ -37,16 +37,16 @@ enum MCPCompositionError: Error, CustomStringConvertible, Equatable {
 /// a silent replacement would let a connecting editor shadow a trusted
 /// server.
 ///
-/// **`mcp: false` (§11.2).** MCP is fully off, and the client's servers are
+/// **`mcp: false`.** MCP is fully off, and the client's servers are
 /// refused as well, with one logged refusal that names them. This differs
 /// from `mcp: []`, which still accepts the client's servers.
 ///
-/// **Elicitation (§16).** Every composed server keeps `elicitationHandler`
+/// **Elicitation.** Every composed server keeps `elicitationHandler`
 /// nil on purpose: we are a Router host, and the `ToolContext` of the
 /// calling run answers first through Router's mailbox. Router wins when
 /// present, so a Router host never sets the handler.
 enum MCPComposition {
-    /// One refused client-supplied server, and why (plan.md §7.3, §11.2).
+    /// One refused client-supplied server, and why.
     enum Refusal: Equatable, Sendable {
         /// `mcp: false` turned MCP fully off, so every client-supplied
         /// server is refused in one entry.
@@ -331,7 +331,7 @@ enum MCPComposition {
 
     // MARK: - The roster
 
-    /// Composes the two sources into one ordered roster (plan.md §7.3):
+    /// Composes the two sources into one ordered roster:
     /// config-derived entries first, then each accepted client-supplied
     /// entry, with a refusal for each collision — see the collision rule in
     /// the type documentation — and one refusal for every client server
@@ -438,7 +438,7 @@ enum MCPComposition {
     /// Normalizes one client-supplied server into the config entry shape.
     ///
     /// The wire's `env` and `headers` are `{name, value}` pair lists; a
-    /// repeated name keeps the later value, per plan.md §7.3.
+    /// repeated name keeps the later value.
     ///
     /// - Parameter clientServer: The wire value to normalize.
     /// - Returns: The normalized entry, or the unknown-transport marker.
@@ -503,7 +503,8 @@ enum MCPComposition {
 
     /// Composes the roster, logs each refusal, connects every accepted
     /// entry, and logs the outcome of each server — the async step
-    /// `session/new` awaits before the registry build (plan.md §7.3, §11.5).
+    /// `session/new` awaits before the registry build, because Router's
+    /// tool-instancing pipeline is synchronous.
     ///
     /// Each stdio entry spawns a `StdioServerProcess`, whose `respawn` is
     /// the server's transport factory, so a reconnect respawns the
@@ -729,7 +730,7 @@ enum MCPComposition {
     /// - Parameters:
     ///   - endpoint: The server URL.
     ///   - headers: The headers of the entry — the auth carrier of an http
-    ///     server (plan.md §11.5).
+    ///     server. Authorization stays the job of the host.
     /// - Returns: The factory a server connects and reconnects through.
     private static func httpTransportFactory(
         endpoint: URL, headers: [String: String]
@@ -769,7 +770,7 @@ enum MCPComposition {
     /// Makes a `SurfaceRefresher` over the connected servers, starts it,
     /// and attaches it to `pool` — so `MCPServerPool.shutdownAll()` stops
     /// the watch before it closes any server, and the refresher's deinit
-    /// assertion never trips (plan.md §11.5).
+    /// assertion never trips.
     ///
     /// The refresher consumes each server's `catalogUpdates` stream, which
     /// fires for a connect that reached `.ready`, for a reconnect, and for

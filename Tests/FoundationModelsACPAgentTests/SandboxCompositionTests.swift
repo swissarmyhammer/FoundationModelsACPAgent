@@ -7,7 +7,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The sandbox composition (plan.md §11.7): the seatbelt sandbox over the
+/// The sandbox composition: the seatbelt sandbox over the
 /// session root set is the only gate on the shell capability.
 ///
 /// The proof is filesystem truth: a confined write inside the root set
@@ -120,7 +120,7 @@ import Testing
     /// An empty root set is refused with this package's own error, before
     /// `SeatbeltSandbox.Options` is constructed. The upstream initializer
     /// replaces an empty list with the process working directory — the
-    /// widest grant — so the guard must come first (plan.md §11.7).
+    /// widest grant — so the guard must come first.
     @Test func anEmptyRootSetIsRefusedBeforeOptionsExist() {
         #expect(throws: SandboxCompositionError.emptyRootSet) {
             _ = try SandboxComposition.makeShellSandbox(
@@ -156,8 +156,8 @@ import Testing
     // MARK: - The `/private` symlink regression
 
     /// A root given through a `/tmp` symlink path arrives in the built
-    /// sandbox `realpath(3)`-resolved, with the `/private` prefix kept
-    /// (plan.md §2.5).
+    /// sandbox `realpath(3)`-resolved, with the `/private` prefix kept.
+    /// Seatbelt cannot match the path form without `/private`.
     @Test func aSymlinkedRootArrivesResolvedInTheBuiltSandbox() throws {
         let resolved = Self.makeResolvedDirectory(named: "linked")
         let symlinked = URL(fileURLWithPath: "/tmp", isDirectory: true)
@@ -191,7 +191,8 @@ import Testing
     /// A scripted tool prompt that runs a confined shell command sends no
     /// `session/request_permission` to the client: the collector holds no
     /// notification, and no session has a pending permission request. The
-    /// sandbox is the only gate (plan.md §11.7).
+    /// sandbox is the only gate: the agent never asks the client for a
+    /// permission.
     @Test(.timeLimit(.minutes(1)))
     func aScriptedToolPromptSendsNoPermissionRequest() async throws {
         let harness = try await AgentClientHarness.makeRecording()

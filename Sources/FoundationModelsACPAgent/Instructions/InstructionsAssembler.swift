@@ -3,7 +3,7 @@ import FoundationModelsExtras
 import FoundationModelsSkills
 import Logging
 
-/// A condition the assembler reports and continues past (plan.md §3): a
+/// A condition the assembler reports and continues past: a
 /// missing file is only absent, but a file that is present and not readable
 /// gives a logged warning, not a hard error.
 public enum InstructionsWarning: Equatable, Sendable, CustomStringConvertible {
@@ -41,7 +41,7 @@ public struct AssembledInstructions: Equatable, Sendable {
     public let warnings: [InstructionsWarning]
 }
 
-/// Assembles the per-session instructions (plan.md §3), in this order:
+/// Assembles the per-session instructions, in this order:
 ///
 /// 1. The base prompt: the nearest `Instructions.md` through
 ///    `stack.content(_:)`, which **replaces the builtin wholesale**; with no
@@ -58,10 +58,10 @@ public struct AssembledInstructions: Equatable, Sendable {
 /// The assembly runs once at session creation. A new session gets the
 /// edits; a running session keeps its text through each compaction fold.
 public struct InstructionsAssembler: Sendable {
-    /// The file that replaces the builtin prompt wholesale (plan.md §3.1).
+    /// The file that replaces the builtin prompt wholesale.
     public static let instructionsFileName = "Instructions.md"
 
-    /// The additive agent-instructions file (plan.md §3.2).
+    /// The additive agent-instructions file.
     public static let agentsFileName = "AGENTS.md"
 
     /// The blank line that joins the assembled sections.
@@ -103,7 +103,7 @@ public struct InstructionsAssembler: Sendable {
         var sections = [try basePrompt(renderer: renderer, warnings: &warnings)]
 
         // Already ONE rendered string, joined with blank lines — never
-        // rendered again and never iterated (plan.md §3.1).
+        // rendered again and never iterated.
         if let preloadedBodies = await registry?.preloadedBodies(), !preloadedBodies.isEmpty {
             sections.append(preloadedBodies)
         }
@@ -128,7 +128,7 @@ public struct InstructionsAssembler: Sendable {
 
     /// The rendered base prompt: the nearest `Instructions.md`, which
     /// replaces the builtin wholesale, or the builtin floor when no layer
-    /// has the file (plan.md §3.1).
+    /// has the file.
     private func basePrompt(
         renderer: Renderer, warnings: inout [InstructionsWarning]
     ) throws -> String {
@@ -173,8 +173,8 @@ public struct InstructionsAssembler: Sendable {
     // MARK: - Project documents
 
     /// The rendered project-level AGENTS documents with their path headers,
-    /// from the repository root down to the working directory (plan.md
-    /// §3.2). An unreadable file appends a warning and gives no documents.
+    /// from the repository root down to the working directory. An
+    /// unreadable file appends a warning and gives no documents.
     private func renderedProjectDocuments(
         renderer: Renderer, warnings: inout [InstructionsWarning]
     ) throws -> [String] {
@@ -198,7 +198,7 @@ public struct InstructionsAssembler: Sendable {
 
     /// Puts the divider header that carries `path` above `rendered`, so the
     /// model and each reader of the session instructions can attribute
-    /// each line (plan.md §3.2).
+    /// each line.
     private static func divided(_ rendered: String, byHeaderFor path: String) -> String {
         "===== \(path) =====\(sectionSeparator)\(rendered)"
     }
@@ -206,7 +206,7 @@ public struct InstructionsAssembler: Sendable {
     // MARK: - Rendering
 
     /// Renders each assembled document through one engine, and derives
-    /// trust from the layer source in one place (plan.md §3.1).
+    /// trust from the layer source in one place.
     private struct Renderer {
         /// The engine, built over the assembler's stack so `{% include %}`
         /// resolves `_partials/` through the same layering.
@@ -227,7 +227,7 @@ public struct InstructionsAssembler: Sendable {
             try engine.render(text, context: context, trust: Self.trust(for: source))
         }
 
-        /// The single source-to-trust derivation (plan.md §3.1): the
+        /// The single source-to-trust derivation: the
         /// compiled-in floor (`nil`) and the shipped-defaults layer render
         /// trusted; each file from the user, project, or marketplace layer
         /// renders untrusted. There is no third answer.

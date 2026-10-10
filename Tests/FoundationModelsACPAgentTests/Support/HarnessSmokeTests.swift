@@ -39,7 +39,7 @@ final class PathRecordingTool: Tool, Sendable {
     }
 }
 
-/// The shared harness of plan.md §20.1: construction, the `initialize`
+/// The shared in-process harness: construction, the `initialize`
 /// round trip from the client end, the session of the stub agent, the
 /// coalescing flush, the scripted backend, and the assertion helpers.
 @Suite struct HarnessSmokeTests {

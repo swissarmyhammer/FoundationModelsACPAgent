@@ -4,7 +4,7 @@ import FoundationModelsRouter
 
 /// The composed agent of a host: the configuration stack of a dotfolder
 /// name, a router over a model path, and the `RoutedACPAgent` that
-/// resolves the profile (cli-plan.md §5.10, plan.md §20.2).
+/// resolves the profile (cli-plan.md §5.10).
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
@@ -35,7 +35,7 @@ import FoundationModelsRouter
 /// calls ``waitForConnectionTeardown()``, so the agent can close each
 /// open session.
 ///
-/// Where a frontend appends its own tools (plan.md §11.1): `ToolCatalog`
+/// Where a frontend appends its own tools: `ToolCatalog`
 /// is the one place this package composes the per-session tool surface.
 /// A capability behind the code-mode surface is one
 /// `builder.withCapability(myCapability)` call in
@@ -84,7 +84,7 @@ public struct ComposedAgent: Sendable {
     /// `RoutedACPAgent` construction that resolves the profile.
     ///
     /// The layered `config.yaml` of `workingDirectory` selects the profile
-    /// the agent resolves at start (plan.md §2.2). With no file in any
+    /// the agent resolves at start. With no file in any
     /// layer the in-code default applies. Each session later loads its own
     /// stack again, keyed by the session's `cwd`.
     ///
@@ -92,7 +92,7 @@ public struct ComposedAgent: Sendable {
     /// connection the agent with ``agent(boundTo:)``.
     ///
     /// - Parameters:
-    ///   - name: The dotfolder name the host chose (plan.md §2.1). It
+    ///   - name: The dotfolder name the host chose. It
     ///     roots the configuration stack and the transcript directory.
     ///   - workingDirectory: The directory whose dotfolder stack the
     ///     start-up configuration loads from.
@@ -140,7 +140,7 @@ public struct ComposedAgent: Sendable {
     }
 
     /// Binds ``agent`` to `connection`, so a prompt can notify through it
-    /// (plan.md §8.1), and gives the agent back.
+    /// and gives the agent back.
     ///
     /// Call it from the factory closure of `AgentSideConnection`. It is
     /// synchronous and does not throw. It starts no transport and no serve
@@ -164,7 +164,7 @@ public struct ComposedAgent: Sendable {
     /// - Parameters:
     ///   - transport: The wire end the agent serves on.
     ///   - logger: The diagnostic sink of the connection. It writes
-    ///     to stderr or nowhere, never to stdout (§5.6).
+    ///     to stderr or nowhere, never to stdout (cli-plan.md §5.6).
     /// - Returns: The bound connection.
     public func serve(
         over transport: any ACPTransport, logger: ACPLogger = .disabled
@@ -179,7 +179,8 @@ public struct ComposedAgent: Sendable {
     ///
     /// A host does not have to send `session/close`: the client closes
     /// the wire, and the agent closes each open session itself
-    /// (plan.md §10.1). A host calls this after the connection closed
+    /// with the same teardown as `session/close`. A host calls this
+    /// after the connection closed
     /// and before the process exits, so the agent can write the history
     /// of each session and stop its MCP servers.
     public func waitForConnectionTeardown() async {
@@ -190,7 +191,7 @@ public struct ComposedAgent: Sendable {
     ///
     /// Both paths take the recordings directory, because that directory is
     /// what sets the recorder on: a router built without one holds the
-    /// no-op sink, and every event of every session drops (plan.md §4.1).
+    /// no-op sink, and every event of every session drops.
     /// Each session then names its own root, and Router records the
     /// session to `<root>/<sessionId>/`.
     ///

@@ -9,7 +9,7 @@ import Tracing
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - The shared scripted wire fixture (plan.md §20.1)
+// MARK: - The shared scripted wire fixture
 //
 // `PromptExecutionTests` and `CancellationTests` drive the same wiring: a
 // scripted agent, a recording harness, an initialized wire, and one
@@ -47,7 +47,7 @@ struct ScriptedPromptFixture {
     let cwd: URL
 
     /// The `configOptions` list the `session/new` response announced
-    /// (plan.md §15), for the config-options assertions. The response
+    /// (the model-slot `select`), for the config-options assertions. The response
     /// seeds the list into ``session``, and the fixture reads it there
     /// when `session/new` returns.
     let newSessionConfigOptions: [SessionConfigOption]?
@@ -56,7 +56,7 @@ struct ScriptedPromptFixture {
     /// the harness wire.
     ///
     /// The agent also closes each open session itself when the connection
-    /// closes (plan.md §10.1, task `^56jbp35`), so this explicit
+    /// closes (task `^56jbp35`), so this explicit
     /// `session/close` is not necessary to stop the MCP servers and their
     /// `SurfaceRefresher`. It stays because it is harmless, and because it
     /// ends each session on the request path that a client uses.
@@ -89,7 +89,7 @@ struct ScriptedPromptFixture {
     ///     `nil` for none.
     ///   - tapsAgentWire: Whether the harness stands a `WireTap` on the
     ///     agent end, so a proof can read what the client sent. Only the
-    ///     §5.9 cancel proof needs it.
+    ///     cli-plan.md §5.9 cancel proof needs it.
     ///   - tracer: The tracer of each Router session, or `nil` to read
     ///     `InstrumentationSystem.tracer` at call time. A suite that
     ///     captures the Router spans gives the tracer of its capture.
@@ -145,10 +145,10 @@ struct ScriptedPromptFixture {
     ///     `nil` for none.
     ///   - tapsWire: Whether the harness stands a `WireTap` on the
     ///     client end, so a proof can read the raw line order. Only the
-    ///     §8.1 order proof needs it.
+    ///     prompt order proof needs it.
     ///   - tapsAgentWire: Whether the harness stands a `WireTap` on the
     ///     agent end, so a proof can read what the client sent. Only the
-    ///     §5.9 cancel proof needs it.
+    ///     cli-plan.md §5.9 cancel proof needs it.
     ///   - tracer: The tracer of each Router session, or `nil` to read
     ///     `InstrumentationSystem.tracer` at call time.
     ///   - commandProviders: The command providers that the agent gets
@@ -201,7 +201,8 @@ struct ScriptedPromptFixture {
     }
 
     /// Writes `yaml` as the project-layer `config.yaml` of `cwd`, the
-    /// file the session's configuration load reads (plan.md §2.2).
+    /// file the session's configuration load reads. The project layer
+    /// resolves for each session, from the session working directory.
     ///
     /// - Parameters:
     ///   - yaml: The configuration document to write.

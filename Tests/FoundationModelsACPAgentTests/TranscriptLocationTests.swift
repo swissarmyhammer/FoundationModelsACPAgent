@@ -2,7 +2,7 @@ import Foundation
 import FoundationModelsACPAgent
 import Testing
 
-/// Recording-root resolution for `transcripts.location` (plan.md §4.1):
+/// Recording-root resolution for `transcripts.location`:
 /// `project` gives `<cwd>/.<name>/transcripts/`, `home` gives a shared root
 /// with one `-Users-…` slug per project, and an absolute path is used as
 /// given.

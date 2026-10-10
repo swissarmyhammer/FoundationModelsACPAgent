@@ -8,7 +8,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - Multi-root confinement, end to end (plan.md §7.2)
+// MARK: - Multi-root confinement, end to end
 //
 // The advertised `additionalDirectories: {}` capability must be honest:
 // the agent applies each accepted root, it does not accept and ignore.
@@ -18,7 +18,7 @@ import Testing
 // transcripts under the cwd dotfolder, reports the ordered list through
 // `session/list`, and refuses a relative entry outright.
 
-/// The client-end proofs of plan.md §7.2: the additional roots extend
+/// The client-end proofs of multi-root confinement: the additional roots extend
 /// confinement, and nothing else about the session moves.
 struct MultiRootConfinementTests {
     /// The content the read tests write under the additional root.
@@ -114,7 +114,7 @@ struct MultiRootConfinementTests {
             await fixture.fixture.harness.agent.sessions[fixture.fixture.sessionId])
     }
 
-    // MARK: - The read verb over the union (plan.md §7.2, §11.4)
+    // MARK: - The read verb over the union
 
     /// A session made over the wire with an additional root R reads a
     /// file under R through its mounted `tools.files.read` verb, and the
@@ -157,7 +157,7 @@ struct MultiRootConfinementTests {
         await fixture.fixture.close()
     }
 
-    // MARK: - The refusal rule (plan.md §7.2)
+    // MARK: - The refusal rule
 
     /// The one converter from wire path strings to confinement roots
     /// refuses a relative entry, naming its own field. The wire decode
@@ -212,7 +212,7 @@ struct MultiRootConfinementTests {
             label: "relative-cwd")
     }
 
-    // MARK: - The shell write into the additional root (plan.md §11.7)
+    // MARK: - The shell write into the additional root
 
     /// A shell command run in the additional root writes a file there,
     /// shown by reading the file from disk: the sandbox's writable roots
@@ -245,7 +245,7 @@ struct MultiRootConfinementTests {
         #expect(try String(contentsOf: written, encoding: .utf8) == "reachable")
     }
 
-    // MARK: - The transcript location (plan.md §7.2, §4.1)
+    // MARK: - The transcript location
 
     /// The transcripts stay under `<cwd>/.<name>/` when an additional
     /// root is supplied: the recorded prompt lands under the cwd dotfolder
@@ -271,7 +271,7 @@ struct MultiRootConfinementTests {
         await fixture.fixture.close()
     }
 
-    // MARK: - The `session/list` report (plan.md §9)
+    // MARK: - The `session/list` report
 
     /// `session/list` reports the complete ordered list from the most
     /// recent activation: the two roots come back in wire order after

@@ -6,7 +6,7 @@ import Testing
 
 @testable import acp_agent
 
-/// The discoverability obligation of the compiled-in floor (plan.md §3.1):
+/// The discoverability obligation of the compiled-in instructions floor:
 /// the README points a reader at the one copy of the builtin instructions
 /// text. The README does not repeat the text — a second copy is a copy that
 /// goes stale — so what this suite protects is the link, not the prose.
@@ -43,8 +43,9 @@ import Testing
     static let builtinInstructionsPath =
         "Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift"
 
-    /// The heading of the README's tool roster section (plan.md §11.1,
-    /// catalog contract step 3).
+    /// The heading of the README's tool roster section. Step 3 of the
+    /// `ToolCatalog` contract adds a row to this section for each new
+    /// capability.
     static let toolsHeading = "## Tools"
 
     /// The README links to the builtin instructions source, and that path
@@ -68,7 +69,44 @@ import Testing
         #expect(!readme.contains(BuiltinInstructions.text))
     }
 
-    /// Catalog contract step 3 (plan.md §11.1): the README's `## Tools`
+    // MARK: - The links
+
+    /// The schemes of a README link that goes out of the repository. A
+    /// link with one of these prefixes is not a repository path.
+    static let externalLinkPrefixes = ["http://", "https://", "mailto:", "#"]
+
+    /// The repository-relative target of each Markdown link in `markdown`
+    /// that names a repository path. An external link, and the fragment of a
+    /// link, are not part of a path.
+    ///
+    /// - Parameter markdown: The Markdown text to read.
+    /// - Returns: Each relative link target, in document order.
+    static func relativeLinkTargets(in markdown: String) -> [String] {
+        markdown.matches(of: /\]\(([^)\s]+)\)/).map { String($0.output.1) }
+            .filter { target in
+                !externalLinkPrefixes.contains { target.hasPrefix($0) }
+            }
+            .map { target in
+                String(target.prefix { $0 != "#" })
+            }
+    }
+
+    /// Each relative link of the README names a file or a folder that
+    /// exists. A deleted or moved document fails here, so the README never
+    /// points a reader at nothing.
+    @Test func readmeRelativeLinksResolve() throws {
+        let targets = Self.relativeLinkTargets(in: try Self.readmeText())
+
+        #expect(!targets.isEmpty, "README has no relative link to check")
+        for target in targets {
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: Self.repositoryRootURL.appendingPathComponent(target).path),
+                "README links to \(target), which does not exist")
+        }
+    }
+
+    /// Step 3 of the `ToolCatalog` contract: the README's `## Tools`
     /// table names every capability of the roster. The roster is
     /// `ToolsConfiguration.CodingKeys`, the same list the config codec
     /// decodes, so a new roster entry fails this test until the table

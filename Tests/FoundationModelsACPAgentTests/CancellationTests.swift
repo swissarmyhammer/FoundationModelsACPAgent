@@ -7,10 +7,14 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// Cancellation (plan.md §8.6, §10.1): the `session/cancel`
-/// notification, the two endings of a cancelled prompt, the strict
-/// `idle(cancelled)` terminator, and the no-op cancels for an idle,
-/// unknown, or closed session.
+/// Cancellation: the `session/cancel` notification, the two endings of a
+/// cancelled prompt, the strict `idle(cancelled)` terminator, and the
+/// no-op cancels for an idle, unknown, or closed session.
+///
+/// A cancelled prompt usually throws a `CancellationError`, but model
+/// work that does not check for cancellation runs to completion. The
+/// prompt owner handles both endings. Each update goes before the
+/// `idle(cancelled)` update, and no update goes after it.
 @Suite struct CancellationTests {
     // MARK: - Constants
 
@@ -50,7 +54,7 @@ import Testing
         AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText)
     }
 
-    // MARK: - The throw ending, and the strict terminator (§8.6)
+    // MARK: - The throw ending, and the strict terminator
 
     /// A `session/cancel` during a long-running prompt ends the prompt as
     /// `idle` with `cancelled` — the held pass raises
@@ -82,7 +86,7 @@ import Testing
             "expected idle(cancelled) as the strict terminator, got \(updates)")
     }
 
-    // MARK: - The normal-completion ending (§8.6)
+    // MARK: - The normal-completion ending
 
     /// A prompt that ignores the cancellation and completes normally with
     /// a real answer still ends `idle` with `cancelled`, never
@@ -125,7 +129,7 @@ import Testing
         #expect(idle.stopReason == .cancelled)
     }
 
-    // MARK: - A request that waits for the model queue (§8.6, §10.1)
+    // MARK: - A request that waits for the model queue
     //
     // The two sessions of each proof use one queued scripted model, thus one
     // generation queue. Session A holds its pass until the test releases the
@@ -209,7 +213,7 @@ import Testing
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }
 
-    // MARK: - An answer that mail starts, and that waits for the model queue (§10.1)
+    // MARK: - An answer that mail starts, and that waits for the model queue
     //
     // The prompt of session B starts a shell read of a named pipe in the
     // background. Its caller answer ends, and the prompt waits for the
@@ -304,7 +308,7 @@ import Testing
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }
 
-    // MARK: - The no-op cancels (§8.6, §10.1)
+    // MARK: - The no-op cancels
 
     /// A cancel of an idle session is a no-op: no error, no update, and
     /// no state change. A later prompt runs untouched and ends with

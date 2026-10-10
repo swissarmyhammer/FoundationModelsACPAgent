@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-// MARK: - The shared wait for a fact (plan.md §20.1)
+// MARK: - The shared wait for a fact
 //
 // A case that must let production work happen before it asserts waits
 // for the fact the production code makes true. It never sleeps for a

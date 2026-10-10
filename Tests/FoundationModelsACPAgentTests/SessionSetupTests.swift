@@ -8,7 +8,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The `session/new` composition pipeline (plan.md §7.1 and §4.2): the ACP
+/// The `session/new` composition pipeline: the ACP
 /// session id is the root Router session's ULID, the per-cwd config layer
 /// shapes each session's tool roster, the project registry records the cwd,
 /// and the session index stays empty until the first recorded activity.
@@ -64,7 +64,7 @@ import Testing
     }
 
     /// The project-local transcripts root of `cwd`, the default
-    /// `transcripts.location` (plan.md §4.1).
+    /// `transcripts.location`.
     ///
     /// - Parameter cwd: The session working directory.
     /// - Returns: `<cwd>/.<name>/transcripts/`.
@@ -75,11 +75,11 @@ import Testing
                 TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
     }
 
-    // MARK: Identity (§4.2)
+    // MARK: Identity
 
     /// The sessionId parses as a ULID, names the Router session directory
     /// on disk, and the response carries the one model-slot config
-    /// option (plan.md §15).
+    /// option, a `select` over the `standard` and `flash` slots.
     @Test(.timeLimit(.minutes(1)))
     func sessionIdIsARouterULIDAndNamesTheSessionDirectory() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -107,7 +107,7 @@ import Testing
         #expect(!entry.instructions.isEmpty)
     }
 
-    // MARK: Absolute-path validation (§7.1, §7.2)
+    // MARK: Absolute-path validation
 
     /// The `data` object a relative-path refusal must carry for `field`.
     ///
@@ -237,7 +237,7 @@ import Testing
         #expect(error["data"] == Self.expectedRefusalData(naming: .additionalDirectories))
     }
 
-    // MARK: Concurrent sessions with per-cwd config (§2.2, §7.1)
+    // MARK: Concurrent sessions with per-cwd config
 
     /// Two sessions at once in two repos read two project layers: the repo
     /// whose config disables skills mounts no skills tool, while the plain
@@ -271,7 +271,7 @@ import Testing
         #expect(plainEntry.configuration.tools.skills != .disabled)
     }
 
-    // MARK: Registry now, index at first activity (§4.5, §9)
+    // MARK: Registry now, index at first activity
 
     /// After `session/new` alone, `projects.jsonl` holds the cwd and the
     /// recording root holds no `sessions.jsonl` record yet.
@@ -291,7 +291,7 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: indexFile.path))
     }
 
-    // MARK: The derived compaction budget (§2.4)
+    // MARK: The derived compaction budget
 
     /// The non-default `compaction:` values the budget test writes.
     private static let configuredTrigger = 0.75
@@ -324,7 +324,7 @@ import Testing
     /// A session made with a config `compaction:` section carries the
     /// derived budget: `session/new` builds `TokenBudget` from the
     /// section's fractions and the resolved standard-slot context, and
-    /// the recorded sidecar carries it (plan.md §2.4).
+    /// the recorded sidecar carries it.
     @Test(.timeLimit(.minutes(1)))
     func sessionNewDerivesTheBudgetFromTheCompactionSection() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -412,7 +412,7 @@ import Testing
         #expect(detection.isEnabled == RepetitionDetection.defaultIsEnabled)
     }
 
-    // MARK: The resident profile outlives sessions (§1)
+    // MARK: The resident profile outlives sessions
 
     /// The agent holds the profile strongly, so a second sequential
     /// `session/new` still vends — `makeSession` traps when the owning

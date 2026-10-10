@@ -128,7 +128,7 @@ struct AgentCompositionTests {
     }
 
     /// The recording root of `workspace` under the CLI's own dotfolder
-    /// name, which is the default `project` location (plan.md §4.1).
+    /// name, which is the default `project` location: `<cwd>/.<name>/transcripts/`.
     ///
     /// - Parameter workspace: The session working directory.
     /// - Returns: The recording root.

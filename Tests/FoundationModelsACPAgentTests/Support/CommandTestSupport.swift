@@ -3,7 +3,7 @@ import FoundationModelsExtras
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - The stub command sources (plan.md §20.1)
+// MARK: - The stub command sources
 //
 // `CommandRegistryTests` and `CommandDispatchTests` drive the registry
 // with the same stub conformers. This file owns the stub provider, the
@@ -12,7 +12,8 @@ import FoundationModelsExtras
 
 /// A slash-command provider with a fixed command set and an optional
 /// pushed update stream. The command suites use it as the code-backed
-/// lane (plan.md §14.1, source 2).
+/// lane: a linked `SlashCommandProviding` conformer, the only source
+/// that can construct an `.action` body.
 struct StubCommandProvider: SlashCommandProviding {
     /// The fixed set that `commands(workingDirectory:)` returns.
     let commandSet: [SlashCommand]
@@ -102,7 +103,7 @@ func writeSkillFixture(id: String, markdown: String, under root: URL) throws {
 
 /// The `SKILL.md` content of the `greet` fixture skill. The body keeps
 /// a `$1` token, so a rendered result proves that Skills' argument pass
-/// ran (plan.md §14.2, gap 1).
+/// ran. A raw `.prompt(template:)` body would keep `$1` as literal text.
 let greetSkillMarkdown = """
     ---
     name: greet

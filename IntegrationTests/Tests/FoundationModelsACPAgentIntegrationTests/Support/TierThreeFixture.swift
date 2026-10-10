@@ -24,7 +24,8 @@ enum TierThreeFixture {
     /// every spawn of the wire names this one.
     static let acpSubcommand = "acp"
 
-    /// The dotfolder name the agent CLI chose (plan.md §20.2). The user
+    /// The dotfolder name the agent CLI chose. The frontend chooses the
+    /// name, and every path derives from it. The user
     /// configuration layer is `$XDG_CONFIG_HOME/<name>/config.yaml`.
     static let agentDotfolderName = "acp-agent"
 

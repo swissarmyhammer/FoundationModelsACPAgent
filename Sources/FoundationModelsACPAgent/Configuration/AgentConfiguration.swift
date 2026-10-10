@@ -1,8 +1,8 @@
 import Foundation
 import FoundationModelsRouter
 
-/// A configuration section whose keys the loader checks before the decode
-/// (plan.md §2.4): an unknown key inside the section is an error. The
+/// A configuration section whose keys the loader checks before the decode:
+/// an unknown key inside the section is an error. The
 /// section's `CodingKeys` is the one list of known keys, so the check and
 /// the decode cannot drift apart.
 protocol KeyCheckedSection {
@@ -17,28 +17,30 @@ extension KeyCheckedSection {
     }
 }
 
-/// The `config.yaml` schema (plan.md §2.4). Layer 1 of the stack (§2.2) is
+/// The `config.yaml` schema. Layer 1 of the stack is
 /// the builtin file `builtin.config.yaml`, which names each tool and
 /// its defaults. The property defaults of this type and its sections are the
 /// decode fallback: a section or a key that no layer sets keeps its default.
 /// A test makes sure that the builtin file decodes to exactly
 /// `AgentConfiguration()`.
 ///
-/// There is no `permissions` section: the sandbox is the only gate (§11.7).
-/// There is no `instructions` section: the system prompt is a markdown file
-/// (§3.1). There is no context-size key: the context comes from the model.
+/// There is no `permissions` section: the sandbox is the only gate, and it
+/// has no policy to configure (see ``SandboxConfiguration``).
+/// There is no `instructions` section: the system prompt is the markdown
+/// file `Instructions.md`. There is no context-size key: the context comes
+/// from the model.
 public struct AgentConfiguration: Codable, Equatable, Sendable {
     /// The model profile: the `standard`, `flash` and `embedding` slots.
     public var profile = ProfileConfiguration()
 
-    /// The tool roster (§11.2): per-tool enable and disable through the
+    /// The tool roster: per-tool enable and disable through the
     /// section codec, plus the `mcp:` server list.
     public var tools = ToolsConfiguration()
 
     /// How much of each session is recorded.
     public var recording = RecordingConfiguration()
 
-    /// Where transcripts are written (§4.1).
+    /// Where transcripts are written.
     public var transcripts = TranscriptsConfiguration()
 
     /// The thresholds of the self-folding session's token budget.
@@ -47,7 +49,7 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     /// The settings of Router's repetition detector (task ^k51h6bb).
     public var repetition = RepetitionConfiguration()
 
-    /// The sandbox section (§11.7): the extra write grants beyond the
+    /// The sandbox section: the extra write grants beyond the
     /// session root set.
     public var sandbox = SandboxConfiguration()
 
@@ -86,14 +88,14 @@ extension AgentConfiguration {
     enum SectionSchema: Equatable, Sendable {
         /// The section decodes exactly these keys; any other key is an error.
         case checked(Set<String>)
-        /// The `tools:` roster (§11.2): a known tool's body keys are
+        /// The `tools:` roster: a known tool's body keys are
         /// checked, and an unknown tool key is a warning only.
         case toolRoster
     }
 
     /// The schema of every top-level section, by its YAML spelling. A
     /// top-level key absent from this table is an unknown section, which
-    /// the loader reports as a warning (§2.4).
+    /// the loader reports as a warning.
     static let sectionSchemas: [String: SectionSchema] = [
         CodingKeys.profile.stringValue: .checked(ProfileConfiguration.knownKeys),
         CodingKeys.tools.stringValue: .toolRoster,
@@ -112,7 +114,7 @@ extension AgentConfiguration {
 /// operates on a 32 GB machine (cli-plan.md §7). A 27B model at 4 bits is
 /// approximately 15 GB on its own, and Router's `JointFit` measures the three
 /// models together against the memory budget. Thus a 16 GB machine is too
-/// small, and `plan.md` §2.2, which gives that figure, is out of date.
+/// small.
 ///
 /// No default names an MTP (multi-token prediction) repository
 /// (cli-plan.md §7.1). Router calls the plain generate path and does not read
@@ -145,8 +147,7 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
     /// The default one-line description of the profile's intent.
     public static let defaultDescription = "Local coding assistant."
 
-    /// The profile's name, or `nil` to fall back to the dotfolder name
-    /// (plan.md §2.1).
+    /// The profile's name, or `nil` to fall back to the dotfolder name.
     public var name: String?
 
     /// A short description of the profile's intent.
@@ -189,7 +190,8 @@ public struct RecordingConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
     /// merged tree hands that value on as this string.
     private static let yamlBooleanOff = "false"
 
-    /// The recording level. `full` by default (plan.md §2.2).
+    /// The recording level. `full` by default, because the full transcript
+    /// is the valuable record. There is no level between `full` and `off`.
     public var level = RecordingLevel.full
 
     /// The YAML spelling of each key.
@@ -224,7 +226,7 @@ public struct RecordingConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
 
 // MARK: - transcripts
 
-/// Where a session's transcripts are written (plan.md §4.1).
+/// Where a session's transcripts are written.
 public enum TranscriptLocation: Equatable, Sendable, Codable {
     /// `<cwd>/.<name>/transcripts/`, the project dotfolder. The default.
     case project
@@ -278,7 +280,7 @@ public enum TranscriptLocation: Equatable, Sendable, Codable {
 
 /// The `transcripts:` section.
 public struct TranscriptsConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
-    /// Where transcripts are written. Project-local by default (plan.md §2.2).
+    /// Where transcripts are written. Project-local by default.
     public var location = TranscriptLocation.project
 
     /// The YAML spelling of each key.
@@ -300,7 +302,7 @@ public struct TranscriptsConfiguration: Codable, Equatable, Sendable, KeyChecked
 
 /// The `compaction:` section: the fractions and caps of Router's
 /// `TokenBudget`. The budget's `limit` is not here: the context size comes
-/// from the model (plan.md §2.4).
+/// from the model.
 public struct CompactionConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// The default fraction of the context at which a session folds.
     public static let defaultTrigger = 0.80

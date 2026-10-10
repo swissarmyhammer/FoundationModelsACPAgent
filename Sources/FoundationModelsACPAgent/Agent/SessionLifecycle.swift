@@ -4,7 +4,7 @@ import FoundationModelsRouter
 import Logging
 
 extension RoutedACPAgent {
-    /// Closes one session and releases its resources (plan.md §10.1).
+    /// Closes one session and releases its resources.
     ///
     /// This is a MUST. A close during an active prompt cancels the prompt as
     /// `session/cancel` would, and the `idle` terminator with the `cancelled`
@@ -18,8 +18,7 @@ extension RoutedACPAgent {
     /// - Returns: The empty response. Close is idempotent: a second close of
     ///   the same session answers `{}` as well.
     /// - Throws: The order rule's invalid-request error, or
-    ///   `RequestError.unknownSession` for an id no live session holds
-    ///   (plan.md §10.1).
+    ///   `RequestError.unknownSession` for an id no live session holds.
     public func closeSession(_ params: CloseSessionRequest) async throws -> CloseSessionResponse {
         try requireInitialized(before: ACPMethod.sessionClose)
         guard let entry = sessions[params.sessionId] else {
@@ -29,12 +28,13 @@ extension RoutedACPAgent {
         return CloseSessionResponse()
     }
 
-    /// Deletes one session outright (plan.md §10.2): a real delete of the
+    /// Deletes one session outright: a real delete of the
     /// working-tree transcript directory and the `sessions.jsonl` entry, not a
     /// tombstone. Version control keeps what git recorded, so the response and
     /// the docs never claim the content is unrecoverable.
     ///
-    /// An active session is closed first, with the full §10.1 semantics, then
+    /// An active session is closed first, with the full `session/close`
+    /// semantics (``closeSession(_:)``, descendants included), then
     /// deleted. An id that never existed, or one already deleted, gives silent
     /// success: "nothing to remove" is not an error.
     ///
@@ -45,7 +45,7 @@ extension RoutedACPAgent {
         try requireInitialized(before: ACPMethod.sessionDelete)
         guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
             // A non-ULID id names no session this agent ever minted; a real
-            // delete of nothing is silent success (plan.md §10.2).
+            // delete of nothing is silent success.
             return DeleteSessionResponse()
         }
         var roots = candidateTranscriptRoots()
@@ -60,7 +60,9 @@ extension RoutedACPAgent {
     }
 
     /// Adopts `descendant` as a child of `sessionId`, so `session/close`
-    /// closes it too (plan.md §10.1). A fork is this session's work. The runs
+    /// closes it too. A fork is this session's work: if it continued after
+    /// the close, it would take the model from other sessions with no
+    /// watcher. The runs
     /// of the `agents` tool are not registered here: the teardown stops them
     /// through `SessionSurface.stopAgentRuns()`.
     ///
@@ -71,10 +73,11 @@ extension RoutedACPAgent {
         sessions[sessionId]?.descendants.append(descendant)
     }
 
-    // MARK: - The close of the connection (plan.md §10.1)
+    // MARK: - The close of the connection
 
     /// Closes each open session after the bound connection closed, as
-    /// `session/close` closes one (plan.md §10.1: "so does agent shutdown").
+    /// `session/close` closes one. Agent shutdown must close each session
+    /// too, because `RoutedSession` does not run its sweep in `deinit`.
     ///
     /// The teardown task of ``bind(connection:)`` calls it when
     /// `AgentSideConnection.closed` gives its reason. A client can go away
@@ -117,9 +120,9 @@ extension RoutedACPAgent {
         }
     }
 
-    // MARK: - The teardown (plan.md §10.1)
+    // MARK: - The teardown
 
-    /// Runs the full §10.1 teardown of one session: cancel the running prompt,
+    /// Runs the full `session/close` teardown of one session: cancel the running prompt,
     /// stop the agent runs, run the session sweep, close every descendant,
     /// finish the shell stream, shut the MCP servers down, and write the
     /// retained history to its file — in that order. The entry stays in the
@@ -137,8 +140,9 @@ extension RoutedACPAgent {
         }
         // A close during an active prompt cancels it as `session/cancel` would,
         // and waits for the `idle(cancelled)` terminator to go out before the
-        // close response (plan.md §10.1). Every pending elicitation is
-        // answered with `cancel` first (plan.md §16): the suspended tool must
+        // close response, so a client with a spinner learns that the prompt
+        // ended. Every pending elicitation is
+        // answered with `cancel` first: the suspended tool must
         // resume, or the prompt's drive loop never ends and this wait holds
         // forever — Router's mailbox does not resume on task cancellation.
         if let promptState = entry.activePrompt {
@@ -162,7 +166,7 @@ extension RoutedACPAgent {
         }
         // Mark closed and finish the host-owned shell stream, then shut the
         // MCP servers down — after the sweep, never before, so the settling
-        // runs still have their transports (plan.md §10.1, §11.5). The pool
+        // runs still have their transports. The pool
         // stops the attached `SurfaceRefresher` first.
         markSessionClosed(sessionId)
         await entry.surface.shutdown()
@@ -171,9 +175,10 @@ extension RoutedACPAgent {
         writeHistory(of: sessionId)
     }
 
-    // MARK: - The disk removal (plan.md §10.2)
+    // MARK: - The disk removal
 
-    /// The recording roots of every registered project (plan.md §4.5),
+    /// The recording roots of every project in the user-layer project
+    /// registry,
     /// resolved through each project's own dotfolder stack — the same
     /// resolution `session/list` reads. A delete of a session no longer in
     /// the table searches these for the session's directory.
@@ -193,7 +198,7 @@ extension RoutedACPAgent {
     }
 
     /// Removes the session's transcript directory and its index line under
-    /// each distinct root (plan.md §10.2). A failed removal is logged and the
+    /// each distinct root. A failed removal is logged and the
     /// walk continues, so a delete never fails partway and a shared root is
     /// swept once.
     ///
@@ -210,7 +215,7 @@ extension RoutedACPAgent {
     }
 
     /// Removes `<root>/<ulidString>/` when it is present. An absent directory
-    /// is silent success (plan.md §10.2); a removal error is logged.
+    /// is silent success; a removal error is logged.
     ///
     /// - Parameters:
     ///   - ulidString: The session directory's name.

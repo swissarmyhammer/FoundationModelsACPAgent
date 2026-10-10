@@ -6,11 +6,11 @@ import FoundationModelsRouter
 import FoundationModelsSkills
 import Logging
 
-/// Whether a session can accept a new prompt (plan.md §7.1). `idle` means
+/// Whether a session can accept a new prompt. `idle` means
 /// "ready for a new prompt"; a `session/prompt` that arrives while the
 /// session is `busy` is a client error, not a queue entry — the composer
 /// owns queueing, and Router's own prompt queue is never shown over ACP.
-/// A `closed` session is resumable, not promptable (plan.md §10.1).
+/// A `closed` session is resumable, not promptable.
 enum SessionAvailability: Equatable, Sendable {
     /// The session is ready for a new prompt.
     case idle
@@ -23,86 +23,89 @@ enum SessionAvailability: Equatable, Sendable {
     case closed
 }
 
-/// One live session in the agent's table (plan.md §7.1): the root Router
+/// One live session in the agent's table: the root Router
 /// session plus everything the session composed per cwd — its config, its
 /// assembled instructions, its confinement root set, its transcript
 /// directory, and the mounted tool surface whose pool the session
-/// lifecycle shuts down at close.
+/// lifecycle shuts down at close. One ACP session is one root Router
+/// session, with the same ULID.
 struct ActiveSession: Sendable {
     /// The Router session that answers this ACP session's prompts.
     /// Retaining it is what keeps the resident profile alive for this
     /// session's lifetime. Born as the root session from the standard
-    /// slot; a model-slot switch (plan.md §15) replaces it with one
+    /// slot; a model-slot switch replaces it with one
     /// vended from the selected slot's handle.
     var session: any RoutedSession
 
-    /// The merged per-cwd configuration this session was composed from
-    /// (plan.md §2.2).
+    /// The merged per-cwd configuration this session was composed from.
+    /// The project layer resolves per session, from the session cwd,
+    /// never from the process cwd.
     let configuration: AgentConfiguration
 
-    /// The assembled instructions text the session was born with
-    /// (plan.md §3). A running session keeps this text through each
+    /// The assembled instructions text the session was born with. A
+    /// running session keeps this text through each
     /// compaction fold; only a new session re-assembles.
     let instructions: String
 
     /// The session working directory — the base for relative paths and
-    /// the root set's first member (plan.md §7.2).
+    /// the root set's first member.
     let workingDirectory: URL
 
-    /// The session's additional confinement roots, in wire order
-    /// (plan.md §7.2). They extend confinement only; they never change
+    /// The session's additional confinement roots, in wire order.
+    /// They extend confinement only; they never change
     /// ``workingDirectory``.
     let additionalRoots: [URL]
 
     /// The session's own transcript directory,
-    /// `<recording root>/<sessionId>/` (plan.md §4.1).
+    /// `<recording root>/<sessionId>/`.
     let transcriptDirectory: URL
 
     /// The mounted tool surface. The session-close task calls
-    /// `surface.serverPool.shutdownAll()` after the session sweep
-    /// (plan.md §11.5).
+    /// `surface.serverPool.shutdownAll()` after the session sweep, never
+    /// before, so the settling runs still have their transports.
     let surface: SessionSurface
 
-    /// The session's slash-command registry (plan.md §14.1), assembled
+    /// The session's slash-command registry, assembled
     /// at session creation. The `prompt()` handler dispatches a leading
-    /// `/name` through it before anything touches the session (§14.3).
+    /// `/name` through it before anything touches the session.
     let commands: CommandRegistry
 
-    /// The model slot ``session`` was vended from (plan.md §15). Only
+    /// The model slot ``session`` was vended from. Only
     /// `standard` and `flash` occur; embedding is not a chat slot.
     var selectedSlot: ModelSlot
 
-    /// The config-option state the client last saw (plan.md §15):
+    /// The config-option state the client last saw:
     /// what `session/new` or `session/set_config_option` answered, or a
     /// `config_option_update` pushed. The divergence check compares the
     /// truth against this baseline.
     var announcedConfigOptions: [SessionConfigOption]
 
     /// The running prompt's state owner, or `nil` when no prompt is in
-    /// flight (plan.md §8.2). `session/cancel` reaches the prompt through
+    /// flight. `session/cancel` reaches the prompt through
     /// this reference.
     var activePrompt: PromptStateOwner?
 
     /// The running prompt's elicitation relay, or `nil` when no prompt is in
-    /// flight (plan.md §16). `session/cancel` and `session/close` answer
+    /// flight. `session/cancel` and `session/close` answer
     /// every pending elicitation with `cancel` through this reference,
     /// so the suspended tool resumes before the `idle` terminator.
     var activeElicitationRelay: ElicitationRelay?
 
-    /// The session's descendants — its forks (plan.md §10.1). `session/close`
+    /// The session's descendants — its forks. `session/close`
     /// closes each one, so no orphan keeps a run or a submission in the model
     /// queue after the parent goes. The runs of the `agents` tool are not
     /// here: `SessionSurface.stopAgentRuns()` stops them.
     var descendants: [any RoutedSession] = []
 
-    /// Whether `session/close` released this session (plan.md §10.1).
+    /// Whether `session/close` released this session.
     var isClosed = false
 
     /// Whether the `sessions.jsonl` record was written. The first prompt
-    /// writes it, deferred from `session/new` by §9's zero-prompt rule.
+    /// writes it, not `session/new`: a session with zero prompts is not
+    /// listable, so a persisted transcript is the listability test.
     var indexRecorded = false
 
-    /// The retained history of the session (plan.md §7.4, §8.3): each
+    /// The retained history of the session: each
     /// `session/update` that the agent sent for the session, merged, with
     /// its id. The `session/new` or `session/resume` response seeds it. A
     /// compaction changes only the model context, never this history.
@@ -138,14 +141,14 @@ struct ActiveSession: Sendable {
     }
 }
 
-/// The per-session composition helpers of `session/new` (plan.md §7.1):
+/// The per-session composition helpers of `session/new`:
 /// cwd validation and the config → instructions → tools pipeline that
 /// feeds `profile.standard.makeSession(...)`.
 enum SessionSetup {
     /// The prefix every absolute path starts with.
     private static let absolutePathPrefix = "/"
 
-    /// The request field one wire path came from (plan.md §7.1, §7.2).
+    /// The request field one wire path came from.
     /// A refusal names the field, so a person reads which part of the
     /// request failed rather than guessing.
     enum PathField: String {
@@ -171,7 +174,7 @@ enum SessionSetup {
     }
 
     /// Validates that `path` is absolute and returns it as a directory
-    /// URL. `cwd` MUST be absolute (plan.md §7.1): it keys the config
+    /// URL. `cwd` MUST be absolute: it keys the config
     /// layer, the AGENTS.md walk, and the transcript directory, and a
     /// relative path would key them off the process cwd instead.
     ///
@@ -192,7 +195,7 @@ enum SessionSetup {
     }
 
     /// Converts the wire `additionalDirectories` path strings to
-    /// confinement root URLs, in wire order (plan.md §7.2). Each entry
+    /// confinement root URLs, in wire order. Each entry
     /// goes through the same ``validatedWorkingDirectory(path:field:)``
     /// check the `cwd` goes through, under its own field name.
     ///
@@ -212,8 +215,8 @@ enum SessionSetup {
     }
 
     /// The user layer's root in `stack`, `~/.config/<name>/` in
-    /// production. `ProjectRegistry` lives there (plan.md §4.5), and the
-    /// `home` transcript location resolves against it (§4.1).
+    /// production. `ProjectRegistry` lives there, and the
+    /// `home` transcript location resolves against it.
     ///
     /// - Parameter stack: The session's dotfolder stack.
     /// - Returns: The user layer root.
@@ -229,7 +232,7 @@ extension RequestError {
     /// The `reason` a relative-path refusal reports in `data`.
     private static let mustBeAbsoluteReason = "must be absolute"
 
-    /// The relative-path refusal (plan.md §7.1, §7.2): JSON-RPC invalid
+    /// The relative-path refusal: JSON-RPC invalid
     /// params naming the field that failed and why. This is the `data`
     /// shape `FoundationModelsACP` pins in
     /// `RequestErrorTests.theWireFormRoundTrips`.
@@ -268,13 +271,13 @@ extension AbsolutePath {
 }
 
 /// The per-cwd configuration resolution one session request starts from
-/// (plan.md §2.2, §4.1): the loader whose stack the instructions assembly
+/// of the session cwd: the loader whose stack the instructions assembly
 /// reads, the merged configuration, the user layer root, and the resolved
 /// recording root.
 ///
 /// `session/new` resolves and composes in one motion; `session/resume`
 /// resolves first, runs the cwd pre-check against ``transcriptRoot``, and
-/// composes only after the check passes (plan.md §7.4).
+/// composes only after the check passes.
 struct LoadedSessionContext {
     /// The loader whose dotfolder stack the instructions assembly reads.
     let loader: ConfigurationLoader
@@ -285,24 +288,25 @@ struct LoadedSessionContext {
     /// The user layer root the stack resolved.
     let userLayerRoot: URL
 
-    /// The resolved recording root (plan.md §4.1).
+    /// The resolved recording root: `<cwd>/.<name>/transcripts/` by
+    /// default.
     let transcriptRoot: URL
 }
 
-/// What one `session/new` composed before the session was made
-/// (plan.md §7.1): the merged config, the assembled instructions, the
+/// What one `session/new` composed before the session was made:
+/// the merged config, the assembled instructions, the
 /// mounted tool surface, and the resolved recording root.
 struct SessionComposition {
-    /// The merged per-cwd configuration (plan.md §2.2).
+    /// The merged per-cwd configuration.
     let configuration: AgentConfiguration
 
-    /// The assembled instructions text (plan.md §3).
+    /// The assembled instructions text.
     let instructions: String
 
-    /// The mounted tool surface (plan.md §11.1).
+    /// The mounted tool surface.
     let surface: SessionSurface
 
-    /// The later slash-command sources (plan.md §14.1), in precedence order:
+    /// The later slash-command sources, in precedence order:
     /// the catalog's linked conformers, then the registered providers, then
     /// the skills source. The registry is assembled in `newSession`, once the
     /// live session the builtins capture exists.
@@ -313,7 +317,7 @@ struct SessionComposition {
     let userLayerRoot: URL
 
     /// The recording root `makeSession(recordingRoot:)` receives; Router
-    /// records the session to `<transcriptRoot>/<sessionId>/` (plan.md §4.1).
+    /// records the session to `<transcriptRoot>/<sessionId>/`.
     let transcriptRoot: URL
 }
 
@@ -328,18 +332,20 @@ struct SessionActivation {
     /// The merged command set of the session registry, as the wire list.
     let availableCommands: [AvailableCommand]
 
-    /// The config-option list (plan.md §15).
+    /// The config-option list.
     let configOptions: [SessionConfigOption]
 }
 
 extension RoutedACPAgent {
-    /// Creates one root Router session for `params.cwd` (plan.md §7.1).
+    /// Creates one root Router session for `params.cwd`.
     ///
     /// The ACP `sessionId` IS the root Router session's ULID, serialized —
-    /// there is no mapping table (§4.2). The cwd is registered in the
-    /// project registry now; the `sessions.jsonl` index record waits for
-    /// the first recorded activity, because §9's zero-prompt rule makes a
-    /// persisted transcript the listability test.
+    /// there is no mapping table, because a mapping table can drift and
+    /// a resume would then restore the wrong conversation. The cwd is
+    /// registered in the project registry now; the `sessions.jsonl` index
+    /// record waits for the first recorded activity, because a session
+    /// with zero prompts is not listable: a persisted transcript is the
+    /// listability test.
     ///
     /// The request runs in one server span, and it writes one "enter" record
     /// when it starts, because the tool and MCP server composition can take a
@@ -348,7 +354,7 @@ extension RoutedACPAgent {
     ///
     /// - Parameter params: The request: the absolute `cwd`, the ordered
     ///   `additionalDirectories`, and the client's session-scoped
-    ///   `mcpServers` (§7.2, §7.3).
+    ///   `mcpServers`.
     /// - Returns: The response carrying the new sessionId, the
     ///   `availableCommands` list and the `configOptions` list.
     /// - Throws: The order rule's invalid-request error,
@@ -385,12 +391,13 @@ extension RoutedACPAgent {
             clientMCPServers: params.mcpServers ?? [])
 
         // The session comes from the profile's standard slot, never from
-        // the router (plan.md §7.1). `grammar` stays absent — a plain
+        // the router. `grammar` stays absent — a plain
         // session, not a guided one — and `agentSpawn` stays nil: an agent
         // run starts from the standalone `agents` tool of the surface,
         // never from `session/new`. The budget starts automatic
         // compaction: the fractions come from the `compaction:` section and
-        // the limit from the model's resolved context (plan.md §2.4). The
+        // the limit from the model's resolved context, never from
+        // configuration. The
         // repetition detector takes the `repetition:` section. The settle
         // period is the one that the surface gave the agent runs.
         let session = residentProfile.standard.makeBudgetedSession(
@@ -404,7 +411,7 @@ extension RoutedACPAgent {
 
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt task appends it at the first recorded activity,
-        // with the title (§9).
+        // with the title, because a session with zero prompts is not listable.
         let activation = try await activateSession(
             session,
             composition: composition,
@@ -421,8 +428,8 @@ extension RoutedACPAgent {
         return response
     }
 
-    /// Mounts one made or restored Router session into the agent (plan.md
-    /// §7.1, §7.4): the project-registry record, the command registry with
+    /// Mounts one made or restored Router session into the agent: the
+    /// project-registry record, the command registry with
     /// its bound builtin context, the table entry with its retained
     /// history, the command-set publication, the terminal projection, and
     /// the status report of the MCP servers.
@@ -434,7 +441,7 @@ extension RoutedACPAgent {
     ///   - additionalRoots: The session's additional confinement roots,
     ///     in wire order.
     ///   - indexRecorded: Whether the `sessions.jsonl` record already
-    ///     exists, so the first prompt knows whether to append it (§9).
+    ///     exists, so the first prompt knows whether to append it.
     ///   - history: The retained history of the session: empty for a new
     ///     session, the kept history for a resumed one.
     /// - Returns: The session id, and the command list and the
@@ -448,14 +455,15 @@ extension RoutedACPAgent {
         indexRecorded: Bool,
         history: SessionMergeEngine
     ) async throws -> SessionActivation {
-        // Register the cwd (plan.md §4.5).
+        // Register the cwd in the user-layer project registry, so a
+        // cross-project browser finds this project.
         try ProjectRegistry(directory: composition.userLayerRoot)
             .recordSessionStart(workingDirectory: workingDirectory)
 
         let sessionId = SessionId(rawValue: session.id.description)
 
-        // Assemble the command registry now the session exists (plan.md
-        // §14.1): the six builtins capture a context bound to the live
+        // Assemble the command registry now the session exists: the six
+        // builtins capture a context bound to the live
         // session and, through it, to the registry that carries them, so
         // `/help` can list every registered command. The reserved-name rule
         // is enforced by the registry merge.
@@ -481,8 +489,8 @@ extension RoutedACPAgent {
                 compactionReporter: CompactionReporter(
                     sessionId: sessionId, send: boundHistorySink(for: sessionId))))
 
-        // The first announcement of the config-option list (plan.md
-        // §15): one select over the profile's chat slots, defaulting to
+        // The first announcement of the config-option list: one select
+        // over the profile's chat slots, defaulting to
         // the standard slot the session was just composed from. The
         // announced state is recorded so the divergence check compares
         // against what the client actually saw.
@@ -507,7 +515,7 @@ extension RoutedACPAgent {
         recordActiveSessions()
 
         // The response announces the first command list, and each registry
-        // change after it publishes the new list (plan.md §14.4).
+        // change after it publishes the new list.
         publishAvailableCommands(from: commands, sessionId: sessionId)
 
         startTerminalProjection(over: composition.surface, sessionId: sessionId)
@@ -520,7 +528,7 @@ extension RoutedACPAgent {
             configOptions: configOptions)
     }
 
-    /// Starts the session's terminal projection (plan.md §11.8): the
+    /// Starts the session's terminal projection: the
     /// one consumer loop over the host-owned shell output stream,
     /// posting each terminal update through the bound connection and
     /// keeping it in the retained history (``historySink(for:connection:)``).
@@ -568,8 +576,8 @@ extension RoutedACPAgent {
         }
     }
 
-    /// Resolves the per-cwd configuration one session request starts from
-    /// (plan.md §2.2, §4.1): the config layer, the user layer root, and
+    /// Resolves the per-cwd configuration one session request starts from:
+    /// the config layer, the user layer root, and
     /// the recording root.
     ///
     /// - Parameter workingDirectory: The validated session working
@@ -594,7 +602,7 @@ extension RoutedACPAgent {
                 userDirectory: userLayerRoot))
     }
 
-    /// Runs the per-session composition pipeline (plan.md §7.1): resolve
+    /// Runs the per-session composition pipeline: resolve
     /// the cwd config layer, assemble the instructions, then connect the
     /// MCP servers and build the tool roster through the catalog.
     ///
@@ -603,7 +611,7 @@ extension RoutedACPAgent {
     ///   - additionalRoots: The session's additional confinement roots,
     ///     in wire order.
     ///   - clientMCPServers: The client's session-scoped MCP servers, in
-    ///     wire order (§7.3).
+    ///     wire order.
     /// - Returns: The composed inputs of `makeSession`.
     /// - Throws: Whatever the config load, the instructions assembly, or
     ///   the tool composition throws.
@@ -619,8 +627,8 @@ extension RoutedACPAgent {
             clientMCPServers: clientMCPServers)
     }
 
-    /// Composes one session over an already-resolved configuration
-    /// (plan.md §7.1): assemble the instructions, then connect the MCP
+    /// Composes one session over an already-resolved configuration:
+    /// assemble the instructions, then connect the MCP
     /// servers and build the tool roster through the catalog.
     ///
     /// - Parameters:
@@ -629,7 +637,7 @@ extension RoutedACPAgent {
     ///   - additionalRoots: The session's additional confinement roots,
     ///     in wire order.
     ///   - clientMCPServers: The client's session-scoped MCP servers, in
-    ///     wire order (§7.3).
+    ///     wire order.
     /// - Returns: The composed inputs of `makeSession`.
     /// - Throws: Whatever the instructions assembly or the tool
     ///   composition throws.
@@ -649,7 +657,8 @@ extension RoutedACPAgent {
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs
-        // (plan.md §14.2). `watch: true` is what makes its
+        // (a standalone tool, not a Multitool capability). `watch: true`
+        // is what makes its
         // `commandUpdates` non-nil.
         let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
         let instructions = try await InstructionsAssembler(
@@ -667,8 +676,8 @@ extension RoutedACPAgent {
             transcriptRoot: context.transcriptRoot)
     }
 
-    /// Assembles the registry's later sources in precedence order
-    /// (plan.md §14.1): the catalog's linked `SlashCommandProviding`
+    /// Assembles the registry's later sources in precedence order:
+    /// the catalog's linked `SlashCommandProviding`
     /// conformers first, then the registered providers, then the skills
     /// source last, so skills win a non-builtin collision.
     ///
@@ -688,7 +697,7 @@ extension RoutedACPAgent {
         return providers
     }
 
-    /// Publishes each change of the session's command set (plan.md §14.4):
+    /// Publishes each change of the session's command set:
     /// the `session/new` or `session/resume` response announces the first
     /// list (ACP schema-v2.0.0-alpha.7), and the registry starts to publish
     /// after that response. A publication sends an
@@ -746,8 +755,9 @@ extension RoutedACPAgent {
 }
 
 extension RoutedLLM {
-    /// Vends one session with the derived auto-compaction budget
-    /// (plan.md §2.4): `compaction` carries the fractions and the
+    /// Vends one session with the derived auto-compaction budget (the
+    /// context size comes from the model, never from configuration):
+    /// `compaction` carries the fractions and the
     /// tool-output cap, and this model carries the resolved working
     /// context the fractions measure against. `session/new` and the
     /// model-slot switch both vend through this one door, so the two

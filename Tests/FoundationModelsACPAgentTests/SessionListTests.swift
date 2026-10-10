@@ -6,7 +6,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The `session/list` wire surface (plan.md §9), driven from the client
+/// The `session/list` wire surface, driven from the client
 /// end of the harness: the `SessionInfo` join, the `cwd` filter, the
 /// opaque cursor walk, the invalid-cursor refusal, and the listability
 /// rules as a client observes them.
@@ -208,7 +208,7 @@ struct SessionListTests {
         await fixture.close()
     }
 
-    // MARK: - The absolute-cwd filter (§7.1, §9)
+    // MARK: - The absolute-cwd filter
 
     /// A relative `cwd` filter is refused the same way `session/new` and
     /// `session/resume` refuse one, naming the field that failed and why.

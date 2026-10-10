@@ -21,7 +21,7 @@ enum LayerSelection: String, EnumerableFlag {
     case project
 
     /// The word the `/config export` slash command spells the user layer
-    /// with (plan.md §14.1, cli-plan.md §5.11).
+    /// with (cli-plan.md §5.11).
     ///
     /// The two front doors of one directory take two words: `config init`
     /// takes `--user`, and `/config export` takes `home`. They are one

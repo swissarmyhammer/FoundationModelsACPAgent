@@ -9,7 +9,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The event projection (plan.md §8.4–§8.5, §11.6): the one mapping
+/// The event projection: the one mapping
 /// from Router's `SessionEvent` stream to the wire — the tool-call
 /// upserts, the terminal status from `OperationOutcome`, the
 /// settlement's terminal reference, the compaction meter, and the diff
@@ -248,11 +248,12 @@ import Testing
         return modified
     }
 
-    // MARK: - The terminal status function (§8.4)
+    // MARK: - The terminal status function
 
     /// The `OperationOutcome` to `ToolCallStatus` function is total and
-    /// follows the §8.4 table. `lost` maps to `_lost` and never to
-    /// `failed`.
+    /// follows the outcome table: `succeeded` gives `completed`, `failed`
+    /// and `timedOut` give `failed`, `stopped` and `cancelled` give
+    /// `cancelled`. `lost` maps to `_lost` and never to `failed`.
     @Test func theOutcomeStatusFunctionMapsEveryCasePerTheTable() {
         #expect(EventProjection.wireStatus(for: .succeeded) == .completed)
         #expect(EventProjection.wireStatus(for: OperationOutcome.failed) == .failed)
@@ -266,14 +267,14 @@ import Testing
     }
 
     /// An `other(raw)` outcome passes its raw value through under the
-    /// `_` extension rule (§18): an unprefixed value gains the prefix,
+    /// `_` extension rule of ACP: an unprefixed value gains the prefix,
     /// and a prefixed value stays as it is.
     @Test func anOtherOutcomePassesThroughUnderTheUnderscoreRule() {
         #expect(EventProjection.wireStatus(for: .other("paused")) == .unknown("_paused"))
         #expect(EventProjection.wireStatus(for: .other("_held")) == .unknown("_held"))
     }
 
-    // MARK: - The tool-call upsert (§11.6)
+    // MARK: - The tool-call upsert
 
     /// A scripted tool pass creates the call with a title, an
     /// `in_progress` status and the parsed raw input, keeps the one
@@ -353,7 +354,7 @@ import Testing
         #expect(call.status == .value(.failed))
     }
 
-    // MARK: - The settlement (§8.4, §11.6)
+    // MARK: - The settlement
 
     /// A `.lost` outcome settles as `_lost` — never as `failed` — and
     /// its text says the run's fate is unknown.
@@ -378,7 +379,7 @@ import Testing
     }
 
     /// A `.cancelled` outcome settles as `cancelled` and says "we
-    /// stopped listening" (§8.6): a still-running detached call cannot
+    /// stopped listening": a still-running detached call cannot
     /// be forced to stop past a process boundary, so the honest claim
     /// is that we stopped listening, not that the work stopped.
     @Test func aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening() async throws {
@@ -413,7 +414,7 @@ import Testing
     /// The settlement update replaces the call's content with the run's
     /// `Terminal` reference, keyed by the run's `commandID`, so the
     /// bytes stay on the terminal stream and never come back as coerced
-    /// text (§11.8).
+    /// text.
     @Test func aSettledRunReplacesContentWithTheTerminalReference() async throws {
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: "hello"),
@@ -431,7 +432,7 @@ import Testing
     }
 
     /// A truncated capture is said in the settlement text, so a
-    /// partial record is never presented as complete (§11.8).
+    /// partial record is never presented as complete.
     @Test func aTruncatedCaptureIsSaidInTheSettlementText() async throws {
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: "part", truncated: true),
@@ -450,7 +451,7 @@ import Testing
     }
 
     /// A binary detection is said in the settlement text, beside the
-    /// byte-true record on the terminal stream (§11.8).
+    /// byte-true record on the terminal stream.
     @Test func aBinaryCaptureIsSaidInTheSettlementText() async throws {
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(text: ""),
@@ -468,10 +469,11 @@ import Testing
             })
     }
 
-    // MARK: - The message-closing entry record (§8.4)
+    // MARK: - The message-closing entry record
 
     /// A recorded `.response` entry closes the agent message: the next
-    /// text delta starts a new message id (§8.3).
+    /// text delta starts a new message id, and an update with a new
+    /// `messageId` begins a new message.
     @Test func aRecordedResponseEntryClosesTheAgentMessage() async throws {
         let updates = await Self.drive([
             .textDelta("first"),
@@ -501,7 +503,7 @@ import Testing
         #expect(Set(ids).count == 2)
     }
 
-    // MARK: - The delivery-only and log-only events (§8.4)
+    // MARK: - The delivery-only and log-only events
 
     /// A `toolInvocation` record, a priming failure, and a stall report
     /// send nothing on the wire: the only update of the prompt is its
@@ -640,7 +642,7 @@ import Testing
         #expect(!"\(record.message)".contains("changed no file"))
     }
 
-    // MARK: - The attachment report (§8.4, §11.6)
+    // MARK: - The attachment report
 
     /// A tool call report sends one `tool_call_update` keyed by the
     /// run's completion token: each attached document rides as one
@@ -775,7 +777,7 @@ import Testing
         #expect(updates.map(\.kind) == [.stateUpdate])
     }
 
-    // MARK: - Compaction (§8.5)
+    // MARK: - Compaction
 
     /// A compaction sends its compaction entry, then one `usage_update` —
     /// the meter drops to the post-fold size — and no message update. The
@@ -822,7 +824,7 @@ import Testing
         #expect(updates.count { isRunningState($0) } == 1)
     }
 
-    // MARK: - The NaN meter guard (§8.4)
+    // MARK: - The NaN meter guard
 
     /// A `NaN` context fill means "no stamp": the prompt sends no meter
     /// and never puts a `NaN` on the wire.
@@ -833,7 +835,7 @@ import Testing
         #expect(!updates.contains { $0.kind == .usageUpdate })
     }
 
-    // MARK: - The diff path directions (§11.6)
+    // MARK: - The diff path directions
 
     /// A move maps the source to `oldPath` and the destination to
     /// `path`: ACP's `path` is post-operation.
@@ -882,7 +884,7 @@ import Testing
         #expect(modified.path == path)
     }
 
-    // MARK: - The raw wire shape (plan.md §20.1)
+    // MARK: - The raw wire shape
 
     /// The tool updates cross the transport with the v2 shape: the
     /// `snake_case` `sessionUpdate` discriminator, the `camelCase`

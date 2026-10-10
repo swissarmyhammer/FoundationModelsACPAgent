@@ -3,7 +3,7 @@ import FoundationModelsACP
 import FoundationModelsRouter
 import Logging
 
-/// The replay cursor of one resume (plan.md §7.4): an inclusive position
+/// The replay cursor of one resume: an inclusive position
 /// in the retained history. `start` is the first variant; a resume from a
 /// message id adds a case here and a starting rule in
 /// `SessionMergeEngine.replayUpdates(from:)` — the replay path never
@@ -14,7 +14,7 @@ enum ReplayCursor: Equatable, Sendable {
 }
 
 extension RequestError {
-    /// The cwd-mismatch refusal (plan.md §7.4): the request `cwd` MUST
+    /// The cwd-mismatch refusal: the request `cwd` MUST
     /// equal the recorded original, and a mismatch is an error, never a
     /// silent re-root. Invalid params, with the id and both directories
     /// in `data`.
@@ -37,7 +37,7 @@ extension RequestError {
             ]))
     }
 
-    /// The unknown replay-cursor refusal (plan.md §7.4): a cursor type
+    /// The unknown replay-cursor refusal: a cursor type
     /// this agent cannot honor must not degrade to a silent no-replay.
     /// Invalid params, with the refused type in `data`.
     ///
@@ -53,10 +53,11 @@ extension RequestError {
 
 extension RoutedACPAgent {
     /// The key that carries the missing-tool report in the resume
-    /// response's `_meta` (plan.md §7.4).
+    /// response's `_meta`. An extension goes in `_meta`, never at the root
+    /// of a spec-defined type.
     static let missingToolsMetaKey = "missingTools"
 
-    /// Resumes one recorded root session (plan.md §7.4, §10.1).
+    /// Resumes one recorded root session.
     ///
     /// The order is deliberate: the cwd equality pre-check runs through
     /// the synchronous `recordedWorkingDirectory` BEFORE any composition
@@ -81,7 +82,7 @@ extension RoutedACPAgent {
     ///   recorded tool name.
     /// - Throws: The order rule's invalid-request error;
     ///   `RequestError.unknownSession` for an id no recording holds —
-    ///   a deleted session included (§10.1); the cwd-mismatch and
+    ///   a deleted session included; the cwd-mismatch and
     ///   unknown-cursor refusals; `RequestError.busySession` while a prompt
     ///   runs; or whatever the composition or the restore throws.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
@@ -127,7 +128,7 @@ extension RoutedACPAgent {
         // composed, never after: its code context indexes the same working
         // directory the new composition is about to open a fresh code
         // context over, and two open index databases on the same path
-        // race for the same SQLite write lock (plan.md §7.4, §11.6). The
+        // race for the same SQLite write lock. The
         // retained history of the entry goes over to the resumed session.
         let keptHistory = sessions[params.sessionId]?.history
         await releaseReplacedSession(params.sessionId)
@@ -189,7 +190,7 @@ extension RoutedACPAgent {
         }
     }
 
-    /// The cwd equality pre-check (plan.md §7.4): reads the recorded
+    /// The cwd equality pre-check: reads the recorded
     /// working directory through the synchronous
     /// `recordedWorkingDirectory` — no backend, no session, no write —
     /// and refuses a mismatch before anything is restored.
@@ -230,7 +231,7 @@ extension RoutedACPAgent {
     // MARK: - The restore
 
     /// Restores the recorded root session with the freshly assembled
-    /// instructions and the composed roster (plan.md §7.4). Router
+    /// instructions and the composed roster. Router
     /// matches the roster by recorded name; every recorded name with no
     /// supplied instance lands in the returned report.
     ///
@@ -306,7 +307,7 @@ extension RoutedACPAgent {
         await existing.surface.shutdown()
     }
 
-    // MARK: - The persisted root set (plan.md §7.4, §9)
+    // MARK: - The persisted root set
 
     /// Persists the resumed root set to the `sessions.jsonl` index: the
     /// session's newest record is appended again with the complete new
@@ -315,7 +316,8 @@ extension RoutedACPAgent {
     ///
     /// A session with no record yet — recorded activity without an index
     /// line — appends nothing here; the first prompt writes the record
-    /// with its title, per §9's deferral. A failed index read or write is
+    /// with its title, because a session with zero prompts is not listable.
+    /// A failed index read or write is
     /// logged and treated the same way, so a damaged index never blocks a
     /// resume.
     ///
@@ -355,13 +357,14 @@ extension RoutedACPAgent {
         }
     }
 
-    // MARK: - Replay (plan.md §7.4, §8.3)
+    // MARK: - Replay
 
     /// Replays the retained history of the session (ACP
     /// schema-v2.0.0-alpha.7), before the resume response returns: each
     /// message that the client saw live, as one whole-message upsert with
     /// the id it had live, and never the `*_chunk` forms, so a client that
-    /// saw the live chunk stream converges through §8.3's replace row. The
+    /// saw the live chunk stream converges: a whole-message update with
+    /// `content` replaces everything accumulated, chunks included. The
     /// Router journal is never a source of a replayed message: a compaction
     /// changes only the model context, and the history keeps every message.
     /// The plans that the journal recorded are in the history already
@@ -388,7 +391,7 @@ extension RoutedACPAgent {
         }
     }
 
-    // MARK: - The missing-tool report (plan.md §7.4)
+    // MARK: - The missing-tool report
 
     /// The `_meta` object that reports every recorded tool name the
     /// restore could not match, or `nil` when the report is complete.

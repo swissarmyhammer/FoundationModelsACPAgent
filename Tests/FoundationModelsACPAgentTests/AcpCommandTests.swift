@@ -9,14 +9,14 @@ import Testing
 /// The `acp` subcommand (cli-plan.md §4, §5.3, §5.10): the stdio server
 /// over the shared composition.
 ///
-/// Four claims stand here. The wire ends when stdin ends, because
-/// plan.md §17 gives the agent no teardown handshake. Each session takes
+/// Four claims stand here. The wire ends when stdin ends, because the
+/// ACP stdio transport has no teardown handshake. Each session takes
 /// its project layer from its own `session/new(cwd)`, and never from the
 /// directory the process started in — the "two loads" rule of §5.10.
 /// The answer does not depend on the transport, so `run` mode's
 /// in-process pair and the `acp` mode's stdio pipes give one text. And a
 /// prompt over the stdio wire records its transcript, because both modes
-/// compose one router (§4.1).
+/// compose one router.
 ///
 /// One more proof is about the stub environment that the suites compose
 /// over: a session of it starts no code context.
@@ -62,7 +62,7 @@ struct AcpCommandTests {
                 ".\(AgentComposition.dotfolderName)", isDirectory: true))
     }
 
-    // MARK: - The stdin-EOF lifecycle (plan.md §17)
+    // MARK: - The stdin-EOF lifecycle
 
     /// The wrapper hands every inbound chunk on, and reports the end of
     /// the inbound stream once the peer closes its outgoing direction.
@@ -178,7 +178,7 @@ struct AcpCommandTests {
         #expect(inProcess == overPipes)
     }
 
-    // MARK: - The recording of the stdio wire (plan.md §4.1)
+    // MARK: - The recording of the stdio wire
 
     /// A prompt over the stdio wire writes
     /// `<recording root>/<sessionId>/transcript.jsonl`.

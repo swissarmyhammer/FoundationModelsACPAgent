@@ -7,8 +7,8 @@ import FoundationModelsACP
 /// The ``UpdateCollector`` starts at the client's notification handler,
 /// and the observable container starts further downstream again. Both
 /// are therefore blind to the JSON-RPC responses the same wire carries.
-/// An order claim that spans a response and a notification — plan.md
-/// §8.1's "send the `{}` response first, then `user_message`" — is
+/// An order claim that spans a response and a notification — "send the
+/// `{}` response first, then `user_message`" — is
 /// observable only on the bytes, which is what this tap reads.
 ///
 /// The tap wraps another `ACPTransport` instead of replacing it, so the

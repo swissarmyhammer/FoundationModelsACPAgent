@@ -4,7 +4,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The read side of plan.md §4.6 and §9: the record join of
+/// The read side of the transcripts and of `session/list`: the record join of
 /// `sessions(inProject:)`, the sort-key cursor pagination, the roots-only
 /// and has-transcript listability predicate, `allProjects()`, and
 /// `transcript(for:inProject:)`.

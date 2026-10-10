@@ -5,7 +5,7 @@ import FoundationModelsMultitool
 import MCP
 
 /// One prompt-content kind, one for each `ContentBlock` variant this
-/// revision names (plan.md §12). The `unknown` wire variant has no kind:
+/// revision names. The `unknown` wire variant has no kind:
 /// the prompt path never folds it.
 enum PromptContentKind: CaseIterable, Sendable {
     /// Plain or Markdown text. The unconditional baseline.
@@ -24,7 +24,7 @@ enum PromptContentKind: CaseIterable, Sendable {
     case embeddedContext
 }
 
-/// The prompt-content policy (plan.md §12, §5): the one place that says
+/// The prompt-content policy: the one place that says
 /// which content kinds the composed session consumes, the advertisement
 /// `initialize` derives from it, the fold that builds the model prompt,
 /// and the MCP tool-result passthrough map.
@@ -49,11 +49,12 @@ enum PromptContent {
     /// The member that carries a resource's MIME type.
     private static let mimeTypeMemberName = "mimeType"
 
-    /// The prompt capabilities this agent advertises at `initialize`
-    /// (plan.md §5): `embeddedContext` only, because the fold below can
+    /// The prompt capabilities this agent advertises at `initialize`:
+    /// `embeddedContext` only, because the fold below can
     /// act on it. Text and resource links are the ungated baseline and
     /// have no marker. No `image` and no `audio`: the roster cannot act
-    /// on them on day one.
+    /// on them on day one. An absent capability is better than an image
+    /// that the agent accepts and drops.
     static let advertisedCapabilities = PromptCapabilities(
         embeddedContext: PromptEmbeddedContextCapabilities())
 
@@ -107,13 +108,13 @@ enum PromptContent {
         }
     }
 
-    // MARK: - The model-prompt fold (plan.md §12)
+    // MARK: - The model-prompt fold
 
     /// Folds the prompt's blocks into the model prompt: text carries
     /// through, each `resource_link` resolves through `resolver`, and
     /// each embedded resource folds as its text. Kinds the session does
     /// not consume fold nothing. The `user_message` echo is unaffected:
-    /// it always carries the original blocks verbatim (plan.md §8.3).
+    /// it always carries the original blocks verbatim.
     ///
     /// - Parameters:
     ///   - blocks: The request's content blocks, in order.
@@ -156,7 +157,7 @@ enum PromptContent {
         }
     }
 
-    /// Folds one embedded resource payload (plan.md §12): the text of a
+    /// Folds one embedded resource payload: the text of a
     /// `TextResourceContents`, the decoded blob of a
     /// `BlobResourceContents`, or a reasoned note when neither reads.
     /// `Annotations` are ignored on input.
@@ -208,7 +209,7 @@ enum PromptContent {
         return "unnamed resource"
     }
 
-    // MARK: - The MCP passthrough map (plan.md §12)
+    // MARK: - The MCP passthrough map
 
     /// Maps one MCP tool result's content to `tool_call_update` content
     /// items, in order. ACP's `ContentBlock` IS MCP's, so the map keeps
@@ -309,8 +310,7 @@ enum PromptContent {
     }
 }
 
-/// Resolves a prompt `resource_link` through the mounted files verb
-/// (plan.md §12).
+/// Resolves a prompt `resource_link` through the mounted files verb.
 ///
 /// `resource_link` is not capability-gated and can always arrive. A
 /// `file://` URI resolves through `tools.files.read`, the same bounded
@@ -334,7 +334,8 @@ struct ResourceLinkResolver: Sendable {
 
     /// The slice of the read verb's wire result the resolver reads. The
     /// verb's own output struct is internal upstream; the wire JSON is
-    /// the public shape (plan.md §11.4).
+    /// the public shape. A refusal comes back in band, in the
+    /// `correction` field; the verb does not throw.
     private struct ReadOutcome: Decodable {
         /// Why the read answered no content, or `nil` when the content
         /// stands.

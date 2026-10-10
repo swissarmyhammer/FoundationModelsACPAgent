@@ -5,7 +5,7 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import Testing
 
-/// The `initialize` handshake of `RoutedACPAgent` (plan.md §5 and §6):
+/// The `initialize` handshake of `RoutedACPAgent`:
 /// version negotiation, the advertised capabilities, the order rule, and
 /// the refused authentication methods.
 @Suite struct InitializationTests {
@@ -93,7 +93,8 @@ import Testing
     }
 
     /// A client that sends `1` gets `2` back in a normal, successful
-    /// response, not an error (plan.md §5).
+    /// response, not an error. The agent supports ACP v2 only, and the
+    /// client decides to disconnect.
     @Test func initializeWithVersion1AnswersVersion2Successfully() async throws {
         let agent = try await AgentClientHarness.makeAgent()
         let response = try await agent.initialize(
@@ -123,8 +124,10 @@ import Testing
 
     /// The response carries `capabilities.session` with the four markers as
     /// objects, `mcp` with both transports, `prompt` with the honest
-    /// `embeddedContext` marker (plan.md §12), and nothing else: no auth
-    /// and no permission capability (plan.md §5, §11.7).
+    /// `embeddedContext` marker, and nothing else: no auth and no
+    /// permission capability. The agent has no authentication, and the
+    /// sandbox is the only gate on a command, so the agent never sends
+    /// `session/request_permission`.
     @Test(.timeLimit(.minutes(1)))
     func advertisedCapabilitiesCarryTheFourSessionMarkersAsObjects() async throws {
         let harness = try await AgentClientHarness.make()
@@ -167,7 +170,7 @@ import Testing
     }
 
     /// A `capabilities` value that is not an object degrades to "supports
-    /// nothing" and does not fail `initialize` (plan.md §5).
+    /// nothing" and does not fail `initialize`.
     @Test(.timeLimit(.minutes(1)))
     func malformedClientCapabilitiesDegradeToSupportsNothing() async throws {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
@@ -237,7 +240,8 @@ import Testing
     }
 
     /// Any `session/*` request before `initialize` gets a JSON-RPC
-    /// invalid-request error (plan.md §5).
+    /// invalid-request error, so the agent never acts on capabilities that
+    /// were not negotiated.
     @Test(.timeLimit(.minutes(1)), arguments: SessionMethod.allCases)
     func sessionMethodBeforeInitializeGivesInvalidRequest(method: SessionMethod) async throws {
         let harness = try await AgentClientHarness.make()
@@ -249,8 +253,8 @@ import Testing
 
     // MARK: - No authentication surface
 
-    /// `auth/login` and `auth/logout` get `-32601`, never `-32000`
-    /// (plan.md §6).
+    /// `auth/login` and `auth/logout` get `-32601`, never `-32000`: the
+    /// methods exist in the protocol, but not on this agent.
     @Test(.timeLimit(.minutes(1)))
     func authMethodsGiveMethodNotFound() async throws {
         let harness = try await AgentClientHarness.make()

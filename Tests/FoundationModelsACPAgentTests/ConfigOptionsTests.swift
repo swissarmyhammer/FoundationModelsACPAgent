@@ -7,7 +7,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The session config options surface (plan.md §15): one `select` over the
+/// The session config options surface: one `select` over the
 /// resident profile's `standard` and `flash` slots, announced in the
 /// `session/new` response, applied by `session/set_config_option` with
 /// complete-state semantics, and kept true by the `config_option_update`
@@ -145,7 +145,7 @@ import Testing
         await fixture.close()
     }
 
-    // MARK: - The unknown-id policy (plan.md §10.1)
+    // MARK: - The unknown-id policy
 
     /// `session/set_config_option` with an unknown session id answers
     /// JSON-RPC invalid params with the id in `data`, and pushes no
@@ -263,7 +263,7 @@ import Testing
         await fixture.close()
     }
 
-    // MARK: - The divergence push (plan.md §15)
+    // MARK: - The divergence push
 
     /// When the announced state shows a different model than resolution
     /// runs, the prompt's end pushes exactly one `config_option_update`

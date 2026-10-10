@@ -10,11 +10,11 @@ import Testing
 // `main()` (the approved OpenTelemetry design, items 1 and 6). In `acp` mode
 // stdout carries the ACP frames, so no log record and no exporter output can
 // go there. This suite spawns the built binary and holds its stdout to the
-// plan.md §17 framing rule, with no `OTEL_*` variable, with an OTLP
-// endpoint that has no listener, and with a traces configuration that
-// swift-otel cannot build. It also holds the agent to `OTEL_SDK_DISABLED`,
-// and holds each bootstrap path to a clean exit: a second bootstrap of
-// swift-log stops the process.
+// ACP stdio framing rule (ndJSON only, no other byte), with no `OTEL_*`
+// variable, with an OTLP endpoint that has no listener, and with a traces
+// configuration that swift-otel cannot build. It also holds the agent to
+// `OTEL_SDK_DISABLED`, and holds each bootstrap path to a clean exit: a
+// second bootstrap of swift-log stops the process.
 //
 // Only a spawned process can prove this. The unit target links the
 // `acp-agent` target, and no test in that process may bootstrap logging.

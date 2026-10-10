@@ -4,7 +4,7 @@ import FoundationModelsRouter
 /// Why the read side refused a request.
 public enum TranscriptStoreError: Error, Equatable, Sendable, CustomStringConvertible {
     /// The paged listing received a cursor this store did not mint. Cursor
-    /// tokens are opaque (plan.md §9); a client must not build one.
+    /// tokens are opaque; a client must not parse, store or build one.
     case invalidCursor(String)
 
     /// A human-readable reason that names the refused token.
@@ -16,7 +16,7 @@ public enum TranscriptStoreError: Error, Equatable, Sendable, CustomStringConver
     }
 }
 
-/// One page of the paged session listing (plan.md §9).
+/// One page of the paged session listing.
 public struct SessionPage: Equatable, Sendable {
     /// The page's records, sorted `updatedAt`-descending with a descending
     /// `sessionId` tiebreak.
@@ -37,8 +37,8 @@ public struct SessionPage: Equatable, Sendable {
     }
 }
 
-/// The read side of the transcripts (plan.md §4.6): the browse summaries
-/// `session/list` (§9) serves, the cursor pagination, the cross-project
+/// The read side of the transcripts: the browse summaries
+/// `session/list` serves, the cursor pagination, the cross-project
 /// registry read, and one session's ordered event stream.
 ///
 /// The store is built on `TranscriptEvent.merged(under:)` — the one public
@@ -46,15 +46,15 @@ public struct SessionPage: Equatable, Sendable {
 /// parentage is rebuilt from `parentId`. The store never reads
 /// `session.json` and never reimplements the Router's transcript format.
 ///
-/// **The listability predicate (§9)**: a session lists when it has a
+/// **The listability predicate**: a session lists when it has a
 /// persisted transcript — a zero-prompt session never wrote one — and it is a
 /// root: `parentId == nil` on every event, and no event carries the
 /// `agentSpawn` fact the Router stamps on the `session` event of an
 /// agent-spawned session. Agent spawns do not occur in this iteration
-/// (plan.md §11.3), but the predicate already excludes them, because a
+/// (agents are not implemented yet), but the predicate already excludes them, because a
 /// later Multitool agents capability will make them.
 ///
-/// **The ownership boundary (§4.6)**: this store never records and never
+/// **The ownership boundary**: this store never records and never
 /// restores. The Router owns event writes, entry reconstruction, and
 /// live-session rebuild.
 public struct TranscriptStore: Sendable {
@@ -72,7 +72,7 @@ public struct TranscriptStore: Sendable {
     /// at, which keeps the whole-second RFC 3339 dates lossless.
     private static let millisecondsPerSecond: Double = 1_000
 
-    /// Where a project's recording root resolves (plan.md §4.1).
+    /// Where a project's recording root resolves.
     public let location: TranscriptLocation
 
     /// The validated dotfolder name; the project layer is `.<name>`.
@@ -116,7 +116,8 @@ public struct TranscriptStore: Sendable {
         try sortedListableRecords(inProject: workingDirectory)
     }
 
-    /// One page of ``sessions(inProject:)``, for §9's cursor pagination.
+    /// One page of ``sessions(inProject:)``, for the cursor pagination of
+    /// `session/list`.
     ///
     /// The cursor is an opaque token that encodes the sort key — never an
     /// offset — so a session added between two fetches makes no duplicate
@@ -144,7 +145,7 @@ public struct TranscriptStore: Sendable {
     /// tokens, sort order, and page-size bound as
     /// ``sessions(inProject:limit:cursor:)``.
     ///
-    /// `session/list` (§9) uses this for the unfiltered cross-project
+    /// `session/list` uses this for the unfiltered cross-project
     /// listing: it merges the records of every registered project and
     /// pages the merged list with one cursor implementation, so a token
     /// from the filtered read and a token from the cross-project read
@@ -180,7 +181,7 @@ public struct TranscriptStore: Sendable {
 
     // MARK: - Projects
 
-    /// The live cross-project registry entries (plan.md §4.5), in file
+    /// The live cross-project registry entries, in file
     /// order. A stale entry — a project that was moved or deleted — is
     /// skipped, not an error.
     ///
@@ -194,7 +195,9 @@ public struct TranscriptStore: Sendable {
     // MARK: - Transcripts
 
     /// One session's ordered recorded events. This store never records and
-    /// never restores (plan.md §4.6); live restore belongs to the Router.
+    /// never restores; live restore belongs to the Router. A reimplementation of
+    /// restore over `transcript.jsonl` would fork the Router format, and it
+    /// would break with no error at the next format change.
     ///
     /// - Parameters:
     ///   - sessionID: The session whose events to return.
@@ -215,7 +218,7 @@ public struct TranscriptStore: Sendable {
         min(max(limit, 1), maximumPageSize)
     }
 
-    /// The project's resolved recording root (plan.md §4.1).
+    /// The project's resolved recording root.
     private func recordingRoot(inProject workingDirectory: URL) -> URL {
         location.recordingRoot(
             workingDirectory: workingDirectory, name: name, userDirectory: userDirectory)
@@ -271,7 +274,7 @@ public struct TranscriptStore: Sendable {
             additionalDirectories: [])
     }
 
-    /// The listing order (§9): `updatedAt` descending, then `sessionId`
+    /// The listing order: `updatedAt` descending, then `sessionId`
     /// descending — newest first on both keys, because a ULID sorts by its
     /// creation instant.
     private static func sortsBefore(_ lhs: SessionIndexRecord, _ rhs: SessionIndexRecord) -> Bool {

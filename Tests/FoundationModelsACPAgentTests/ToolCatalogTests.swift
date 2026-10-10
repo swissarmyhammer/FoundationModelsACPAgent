@@ -9,7 +9,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The composition matrix of `ToolCatalog` (plan.md §11.1–§11.4): the
+/// The composition matrix of `ToolCatalog`: the
 /// session tools a default context mounts, the enable and disable codec,
 /// the root-set confinement of the files verbs, and the watched skills
 /// registry.

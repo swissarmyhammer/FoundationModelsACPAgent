@@ -4,7 +4,7 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import Testing
 
-/// The `sandbox:` config section (plan.md §11.7): the decode of
+/// The `sandbox:` config section, whose one key is `extraWritePaths`: the decode of
 /// `extraWritePaths`, the session-root-set default for the writable roots,
 /// and the `realpath(3)` resolution the options initializer applies.
 @Suite struct SandboxConfigTests {
@@ -53,7 +53,8 @@ import Testing
     /// A writable root given as a `/tmp` symlink path arrives resolved with
     /// the `/private` prefix kept: the options build through
     /// `SeatbeltSandbox.Options.init`, which runs `realpath(3)` over both
-    /// lists (plan.md §2.5).
+    /// lists. `URL.resolvingSymlinksInPath()` is not sufficient: on macOS it
+    /// removes `/private`, and Seatbelt cannot match that path form.
     @Test func symlinkedRootArrivesRealpathResolved() throws {
         let resolved = Self.makeResolvedDirectory(named: "linked")
         let symlinked = URL(fileURLWithPath: "/tmp", isDirectory: true)

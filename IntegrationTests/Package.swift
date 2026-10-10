@@ -9,7 +9,7 @@ private let rootPackageName = "FoundationModelsACPAgent"
 /// The name of this package and of its one test target.
 private let integrationTargetName = "\(rootPackageName)IntegrationTests"
 
-/// The root package's shared test-support product (plan.md §20.1): the
+/// The root package's shared test-support product: the
 /// in-process harness, the scripted model, the stub profile fixtures, the
 /// built-product locator, and the assertion helpers. The root unit target
 /// links the same product, so the two sides cannot drift apart.
@@ -21,7 +21,7 @@ private let testSupportProductName = "\(rootPackageName)TestSupport"
 /// and `StdioContractTests` spawns it in `acp` mode.
 private let agentExecutableName = "acp-agent"
 
-/// The one-shot client CLI of the root package (plan.md §20.2), declared
+/// The one-shot client CLI example of the root package, declared
 /// for the same reason as `agentExecutableName`: `ClientServerTests` runs
 /// the built binary.
 private let printExecutableName = "acp-print"
@@ -34,10 +34,10 @@ private let swissArmyHammerOrgURL = "git@github.com:swissarmyhammer/"
 /// declares it.
 private let mainBranch = "main"
 
-/// The ACP wire (plan.md §1). The suites here assert on wire types.
+/// The ACP wire. The suites here assert on wire types.
 private let wireDependencyName = "FoundationModelsACP"
 
-/// The Client role (plan.md §20.1): the driver of every test level above
+/// The Client role: the driver of every test level above
 /// the unit level.
 private let clientDependencyName = "FoundationModelsACPClient"
 
@@ -48,7 +48,7 @@ private let clientDependencyName = "FoundationModelsACPClient"
 /// against the agent binary standing next to it.
 private let clientExecutableName = "acp-client"
 
-/// The runtime (plan.md §1). The skill trigger suite and the tool calling
+/// The runtime. The skill trigger suite and the tool calling
 /// suite build a live router over `LiveModelLoader()`, which loads each
 /// model through the Extras `MLXModelLoader`. Router's test-support product
 /// carries `MetalLibraryTestBootstrap`.

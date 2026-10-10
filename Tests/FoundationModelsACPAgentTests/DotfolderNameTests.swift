@@ -1,7 +1,7 @@
 import FoundationModelsACPAgent
 import Testing
 
-/// The validation matrix of `DotfolderName` (plan.md §2.1). A name becomes a
+/// The validation matrix of `DotfolderName`. A name becomes a
 /// path component, so each bad shape is a hard error at construction.
 @Suite struct DotfolderNameTests {
     /// Each invalid name and the error it must throw.

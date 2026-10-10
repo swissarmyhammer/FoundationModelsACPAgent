@@ -7,12 +7,15 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - Tier 3: the stdio contract (plan.md §17, §20.1, §20.2)
+// MARK: - Tier 3: the stdio contract
 //
 // The suite that spawns the built `acp-agent` example across a real
 // process boundary. It exists for the one thing tier 2 cannot see: does
 // the ndJSON framing survive a real process, while `shell` children
-// write to THEIR stdout.
+// write to THEIR stdout. The framing rules are protocol MUSTs: stdout
+// carries only UTF-8 JSON-RPC messages, `\n` divides them, and no message
+// holds a newline. A `shell` child that inherits the agent's stdout would
+// break them, and only a real process boundary shows that.
 //
 // It carries no gate. The package boundary is the selection: the root
 // `swift test` never sees this target, and
@@ -28,10 +31,9 @@ import Testing
 private let spawnedRunTimeLimitMinutes = 20
 
 /// A transport that records every inbound byte while it forwards the
-/// stream and the writes unchanged (plan.md §20.1: wrap
-/// `agent.transport` in a tap that records the raw inbound bytes).
+/// stream and the writes unchanged. It wraps `agent.transport`.
 ///
-/// The recorded bytes are the assertion surface of the §17 framing
+/// The recorded bytes are the assertion surface of the stdio framing
 /// MUSTs: the codec's own decode is not trusted to prove them, because
 /// the codec would also repair what it can.
 final class InboundTapTransport: ACPTransport, Sendable {
@@ -132,8 +134,9 @@ struct StdioContractTests {
     private static let probeMarker = "tier3-stdout-probe"
 
     /// The file the probe's shell child also writes the marker to, in
-    /// the skill's own directory. The disk is the proof the child ran
-    /// (plan.md §20.1: check the filesystem, never the transcript).
+    /// the skill's own directory. The disk is the proof the child ran:
+    /// check the filesystem, never the transcript, because a test that
+    /// believes a report catches a broken report and not a broken tool.
     private static let probeWitnessFileName = "tier3-probe-ran.txt"
 
     /// The one prompt the suite sends: the probe skill command.
@@ -198,11 +201,11 @@ struct StdioContractTests {
 
     // MARK: - The contract
 
-    /// The whole tier-3 drive, in one case on purpose (plan.md §20.1:
-    /// tiers 3 and 4 stay small): spawn the built
+    /// The whole tier-3 drive, in one case on purpose, because the
+    /// integration level stays small: spawn the built
     /// example, initialize, open a session, run one prompt whose shell
-    /// child writes to ITS stdout, then assert the §17 MUSTs on the
-    /// tapped bytes and the reaped child on teardown.
+    /// child writes to ITS stdout, then assert the stdio framing MUSTs on
+    /// the tapped bytes and the reaped child on teardown.
     @Test func framingSurvivesTheProcessBoundaryWhileAShellChildRuns() async throws {
         let workspace = makeResolvedDirectory(label: "StdioContract-repo")
         let configHome = makeResolvedDirectory(label: "StdioContract-config")
@@ -212,8 +215,8 @@ struct StdioContractTests {
         defer { restoreConfigHome() }
 
         // Spawn the built agent in `acp` mode through the client package's
-        // process owner, with the absolute path it requires (plan.md
-        // §20.1). Bare `acp-agent` is `run` (cli-plan.md §5.3), so the
+        // process owner, with the absolute path it requires. Bare
+        // `acp-agent` is `run` (cli-plan.md §5.3), so the
         // subcommand is named.
         let command = try BuiltProductLocator.executableURL(
             named: TierThreeFixture.agentExecutableName)
@@ -244,19 +247,19 @@ struct StdioContractTests {
         #expect(stopReason != nil, "the prompt never reached an idle state update")
 
         // The child ran, proven on the file system: the probe's `tee`
-        // wrote the marker beside the skill (plan.md §20.1's
-        // discipline — check the filesystem, never the transcript).
+        // wrote the marker beside the skill. Check the filesystem, never
+        // the transcript.
         let witness = try textOnDisk(
             at: skillDirectory.appendingPathComponent(Self.probeWitnessFileName))
         #expect(witness.contains(Self.probeMarker))
 
         // Teardown: close the wire, then prove the reap by pid — the
-        // group kill leaves no child behind (plan.md §20.1).
+        // group kill leaves no child behind.
         await connection.close()
         agent.shutdown()
         #expect(agent.processIdentifier == nil)
 
-        // The §17 MUSTs, on the tapped raw bytes. The marker crossed a
+        // The stdio framing MUSTs, on the tapped raw bytes. The marker crossed a
         // captured pipe into the render, never the agent's stdout: a
         // leak would stand as a bare non-JSON line and fail the parse
         // assertion.

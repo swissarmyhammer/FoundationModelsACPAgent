@@ -192,7 +192,7 @@ enum ACPAgentTelemetry {
         static let modelRef = "model.ref"
 
         /// The id of a tool call on the wire. A run of a tool has the same
-        /// id: its completion token is the tool call id (plan.md §11.8).
+        /// id: its completion token is the tool call id.
         static let toolCallId = "tool_call.id"
 
         /// The name of a tool. Extras uses the same key.

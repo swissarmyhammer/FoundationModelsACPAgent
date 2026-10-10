@@ -7,7 +7,7 @@ import FoundationModelsRanker
 import FoundationModelsRouter
 import FoundationModelsSkills
 
-/// The surface one session mounts (plan.md §11.1, §11.5): the composed
+/// The surface one session mounts: the composed
 /// tools in mount order, and the pool that holds every MCP server, spawned
 /// subprocess and the attached surface refresher.
 ///
@@ -24,11 +24,11 @@ public struct SessionSurface: Sendable {
 
     /// The mounted `tools.files.read` verb, or `nil` when the files
     /// section is off. The prompt's resource-link resolver reads
-    /// through it (plan.md §12), so a linked file is bounded by the same
+    /// through it, so a linked file is bounded by the same
     /// root set the model reads under.
     public let filesReadVerb: (any FoundationModels.Tool)?
 
-    /// The host-owned live shell output stream (plan.md §11.8), or
+    /// The host-owned live shell output stream, or
     /// `nil` when the shell section is off. The session start hands it
     /// to the terminal projection, the prompt reads settlements
     /// through its `snapshot(for:)`, and the session-close task calls
@@ -134,8 +134,9 @@ public struct SessionSurface: Sendable {
 
     /// Releases what the surface holds outside the session: it stops the
     /// agent runs, then the code context, then it shuts the server pool
-    /// down. The session lifecycle calls this after the session sweep
-    /// (plan.md §11.5).
+    /// down. The session lifecycle calls this after the session sweep:
+    /// a pool shutdown before the sweep drops the transports that the
+    /// settling runs still need.
     public func shutdown() async {
         await stopAgentRuns()
         await codeContextStop?()
@@ -143,18 +144,19 @@ public struct SessionSurface: Sendable {
     }
 }
 
-/// The tool catalog (plan.md §11.1): the one place where this package
+/// The tool catalog: the one place where this package
 /// composes the tool surface a session mounts.
 ///
 /// ══════════════════════════════════════════════════════════════════
 ///   ADD NEW CAPABILITIES HERE — and only here.
-///   1. Decode the module's config section (§11.2).
+///   1. Decode the module's config section (a ``ToolSection`` in ``ToolsConfiguration``).
 ///   2. Append its `with…()` call to `makeRegistry(context:)` below.
 ///   3. Add a row to the table in README.md § Tools.
 ///   Nothing else in this package needs to change.
 /// ══════════════════════════════════════════════════════════════════
 ///
-/// The enable and disable rule (plan.md §11.2) is honored here: a
+/// The enable and disable rule is honored here. Each built-in capability
+/// is on unless its section sets it off, so absence enables. A
 /// capability whose section decodes as off gets no `with…()` call, is not
 /// constructed, and never reaches the model.
 public enum ToolCatalog {
@@ -169,7 +171,7 @@ public enum ToolCatalog {
     static let agentsDotfolderName = "agents"
 
     /// The surface path of the files read verb, the door the prompt's
-    /// resource-link resolver reads through (plan.md §12).
+    /// resource-link resolver reads through.
     static let filesReadVerbPath = "files.read"
 
     /// The Multitool group the code context tools mount under. Multitool
@@ -202,7 +204,7 @@ public enum ToolCatalog {
         let mcpServerOutcomes: [MCPComposition.ServerOutcome]
 
         /// The host-owned live shell output stream the build handed to
-        /// `withShell(outputChunkStream:)` (plan.md §11.8), or `nil`
+        /// `withShell(outputChunkStream:)`, or `nil`
         /// when the shell section is off.
         let shellOutput: ShellOutputChunkStream?
 
@@ -213,9 +215,9 @@ public enum ToolCatalog {
 
     /// Builds the composed session surface: the Multitool session tools —
     /// `searchTools` and `runCode`, in that mount order — the
-    /// appended standalone `skills` tool (plan.md §11.3), the appended
+    /// appended standalone `skills` tool, the appended
     /// standalone `agents` tool (``AgentsComposition``), and the server pool
-    /// behind the mounted MCP verbs (§11.5).
+    /// behind the mounted MCP verbs.
     ///
     /// With the `agents:` section on, the `skills` tool of the root session
     /// is `AgentEnvironment.skillsTool`: the environment makes it from the
@@ -225,7 +227,7 @@ public enum ToolCatalog {
     ///
     /// The MCP servers connect inside ``makeRegistry(context:)``, before
     /// the registry build, because Router's tool-instancing pipeline is
-    /// synchronous (plan.md §7.3). The surface refresher starts after the
+    /// synchronous. The surface refresher starts after the
     /// session tools are made and attaches to the pool, so a
     /// `tools/list_changed`, a reconnect, or a late catalog reaches the
     /// surface at the next submission boundary with no further host action.
@@ -310,14 +312,14 @@ public enum ToolCatalog {
 
     /// Builds the Multitool registry over the enabled capability modules.
     ///
-    /// Each enabled section becomes one builder call (plan.md §11.3):
+    /// Each enabled section becomes one builder call:
     /// `files` is confined to the session root set through
-    /// `withFiles(root:additionalRoots:)` (§11.4), and its search verbs skip
+    /// `withFiles(root:additionalRoots:)`, and its search verbs skip
     /// each path that `tools.files.exclude` names (an exclude list that is
     /// `nil` excludes no path; the loader puts the dotfolder default in
     /// before the catalog sees the configuration), `shell` runs under a
     /// `SeatbeltSandbox` over the same root set — the sandbox is the only
-    /// gate (§11.7); there is no policy and no permission layer — `web`
+    /// gate; there is no policy and no permission layer — `web`
     /// mounts `tools.web.search` and `tools.web.fetch` with the providers
     /// that the process environment and `tools.web.apiKeys` select (see
     /// ``WebComposition``), `git` mounts the read-only `tools.git` verbs
@@ -325,7 +327,7 @@ public enum ToolCatalog {
     /// `environment` mounts the read-only `tools.environment` verbs
     /// (`variables`, `os` and `now`) through `withEnvironment()`, and
     /// `mcp` composes the config-derived servers with the client's
-    /// per-session ones (§7.3, §11.5), connects each one, and records the
+    /// per-session ones, connects each one, and records the
     /// spawned subprocesses in the builder's pool. `codeContext` opens and
     /// starts one `CodeContext` over the session working directory, with the
     /// profile's embedding slot as its embedder, and mounts the operations
@@ -350,8 +352,8 @@ public enum ToolCatalog {
         }
         var shellOutput: ShellOutputChunkStream?
         if case .enabled(let options) = context.configuration.tools.shell {
-            // The host-owned live view of every shell run (plan.md
-            // §11.8): the capability tees each raw chunk into it, the
+            // The host-owned live view of every shell run: the
+            // capability tees each raw chunk into it, the
             // terminal projection reads it, and the settlement reads
             // `snapshot(for:)` on the same stream.
             let stream = ShellOutputChunkStream()
@@ -449,8 +451,8 @@ public enum ToolCatalog {
     /// Builds the skills registry over the dotfolder stack, or `nil` when
     /// the `skills:` section is off.
     ///
-    /// The registry is built from the stack, never from bare roots
-    /// (plan.md §14.2): `SkillsRegistry(roots:)` maps every root to
+    /// The registry is built from the stack, never from bare roots:
+    /// `SkillsRegistry(roots:)` maps every root to
     /// `.project`, which Skills renders untrusted, so a trusted defaults
     /// layer would be downgraded. `init(stack:)` passes the layers through
     /// unchanged, and Skills derives trust from each layer's `source`.
@@ -509,7 +511,7 @@ public enum ToolCatalog {
     /// Builds the standalone `skills` tool, or `nil` when the `skills:`
     /// section is off.
     ///
-    /// Skills is not a Multitool capability (plan.md §11.3): the tool is a
+    /// Skills is not a Multitool capability: the tool is a
     /// plain `FoundationModels.Tool` appended beside the Multitool session
     /// tools, so a skill loads in one request/response step. Its selection
     /// tier runs on the profile's flash slot through a

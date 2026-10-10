@@ -6,17 +6,17 @@ import FoundationModelsRouter
 import Logging
 
 /// Reads the stored raw output of a settled run, keyed by the run's
-/// `commandID` — which is its `completionToken` and its `toolCallId`
-/// (plan.md §11.8). The production reader is the host-owned
+/// `commandID` — which is its `completionToken` and its `toolCallId`.
+/// The production reader is the host-owned
 /// `ShellOutputChunkStream.snapshot(for:)`; a prompt with no shell mount
 /// reads nothing.
 typealias ShellSnapshotProvider = @Sendable (_ commandID: String) -> ShellOutputSnapshot?
 
-/// One file change, in this package's own vocabulary (plan.md §11.6).
+/// One file change, in this package's own vocabulary.
 ///
 /// The projection owns this mirror of Multitool's `FileChange`, which
 /// `EventProjection.projectedChange(for:)` maps into. A move and a copy
-/// carry both endpoints, which is what makes the §11.6 path-direction
+/// carry both endpoints, which is what makes the path-direction
 /// mapping total: ACP's `path` is post-operation, so the source becomes
 /// `oldPath` and the destination becomes `path` for those two kinds
 /// only. Each endpoint is an `AbsolutePath`, so a record the wire
@@ -38,33 +38,34 @@ enum ProjectedFileChange: Equatable, Sendable {
     case copy(source: AbsolutePath, destination: AbsolutePath)
 }
 
-/// The one mapping from Router's event stream to the wire
-/// (plan.md §8.4–§8.5, §11.6).
+/// The one mapping from Router's event stream to the wire.
 ///
 /// One value projects one prompt: `project(_:)` maps each
 /// `SessionEvent` case, and `reportUsage()` closes the prompt with its
 /// one summed `usage_update`. The live shell bytes have no
 /// `SessionEvent` source, so their mapping rides ``TerminalStream``
-/// over the host-owned `ShellOutputChunkStream` (§11.8); this
+/// over the host-owned `ShellOutputChunkStream`; this
 /// projection's settlement carries the matching `Terminal` reference.
 struct EventProjection {
     // MARK: - The wire constants
 
-    /// The extensible status a `.lost` outcome reports (plan.md §8.4).
+    /// The extensible status a `.lost` outcome reports.
     /// `.lost` never flattens into `failed`: "we do not know if this
     /// ran" is not the claim "this ran and failed".
     static let lostStatusWireValue = "_lost"
 
     /// The extensible status a terminal event with no outcome reports.
     /// The outcome rule is a doc comment upstream, not a type
-    /// guarantee, so the projection survives the gap (plan.md §8.4).
+    /// guarantee, so the projection survives the gap: it logs the event
+    /// and picks a safe status, and it does not crash.
     static let unknownOutcomeStatusWireValue = "_unknown"
 
-    /// The prefix the §18 extension rule puts on a custom wire value.
+    /// The prefix the ACP extension rule puts on a custom wire value.
+    /// A bare unknown value is reserved for a future ACP variant.
     private static let extensionValuePrefix = "_"
 
     /// The text that rides with the `_lost` status, for clients that
-    /// ignore custom status values (plan.md §8.4).
+    /// ignore custom status values.
     private static let lostNoteText = "we do not know if this ran"
 
     /// The text that names the timeout on a `timedOut` settlement.
@@ -73,7 +74,7 @@ struct EventProjection {
     /// The text of a `stopped` settlement: the kill is authoritative.
     private static let stoppedNoteText = "the run was stopped; the work is dead"
 
-    /// The text of a `cancelled` settlement (plan.md §8.4, §8.6): the
+    /// The text of a `cancelled` settlement: the
     /// request is advisory past a process boundary, so the honest claim
     /// is that we stopped listening, not that the work stopped.
     private static let cancelledNoteText = "we stopped listening; the work can continue"
@@ -86,7 +87,7 @@ struct EventProjection {
     /// The id of the session this projection reports for, in the logs.
     let sessionId: SessionId
 
-    /// The prompt-state owner: `submissionStarted` maps through it (§8.2).
+    /// The prompt-state owner: `submissionStarted` maps through it.
     let promptState: PromptStateOwner
 
     /// The sink every update of this projection goes to.
@@ -97,11 +98,12 @@ struct EventProjection {
     /// the log learns which model was busy.
     let modelName: String
 
-    /// The reader of a settled run's stored output, for the §11.6
-    /// convergence replace. The default finds no run.
+    /// The reader of a settled run's stored output, for the convergence
+    /// replace: the settlement carries the complete content, so a client
+    /// that missed a chunk still ends correct. The default finds no run.
     var shellSnapshot: ShellSnapshotProvider = { _ in nil }
 
-    /// The handler of a live elicitation request (plan.md §16), or `nil`
+    /// The handler of a live elicitation request, or `nil`
     /// when no relay is wired — a synthetic projection drive. The
     /// production wiring supplies ``ElicitationRelay/relay(_:on:promptState:)``
     /// bound to the prompt's session and owner.
@@ -110,13 +112,13 @@ struct EventProjection {
     // MARK: - The prompt's mutable state
 
     /// The one agent message id of the current message, made at the
-    /// first text delta (§8.3: a new id starts a new message).
+    /// first text delta (a new id starts a new message).
     private var agentMessageId: MessageId?
 
     /// The one agent thought id of the current reasoning message.
     private var thoughtMessageId: MessageId?
 
-    /// The prompt tokens summed across every `submissionEnded` (§8.1). A
+    /// The prompt tokens summed across every `submissionEnded`. A
     /// tool loop feeds the whole render again at each generation call, so
     /// this sum is not the size of the context.
     private var tokensIn = 0
@@ -204,7 +206,7 @@ struct EventProjection {
 
     /// The context fill of the last submission: the context that the session
     /// holds after it, over the window. `nan` means "no stamp": send no
-    /// meter for the prompt (§8.4).
+    /// meter for the prompt. A `NaN` never goes on the wire.
     private var contextFill = Double.nan
 
     /// Whether the prompt produced observable output: a text delta, a
@@ -240,7 +242,7 @@ struct EventProjection {
     /// at least one `submissionEnded` arrived and the summed output tokens
     /// are zero. `PromptExecution.drive` reads it to report the honest
     /// `_no_output` stop reason instead of a bare `end_turn`
-    /// (plan.md §8.2's `_` rule; task ^pez780d).
+    /// (the ACP `_` extension rule; task ^pez780d).
     var generatedNothing: Bool {
         !sawOutput && sawUsageReport && tokensOut == 0
     }
@@ -295,7 +297,7 @@ struct EventProjection {
         }
     }
 
-    // MARK: - The SessionEvent cases (§8.4)
+    // MARK: - The SessionEvent cases
 
     /// Projects one event to the wire.
     ///
@@ -325,7 +327,7 @@ struct EventProjection {
         case .textReset:
             // "Discard the text collected so far" cannot ride as a
             // chunk: send the whole-message form, which replaces
-            // everything accumulated (§8.3). With no message yet there
+            // everything accumulated. With no message yet there
             // is nothing to discard.
             guard let messageId = agentMessageId else { return }
             await send(.agentMessage(AgentMessage(messageId: messageId, content: .value([]))))
@@ -363,7 +365,7 @@ struct EventProjection {
             ACPAgentTelemetry.logger(.promptExecution).error(
                 "The discovery priming failed. The answer generates with no seed.", metadata: metadata)
         case .generationStalled(let stall):
-            // A report, not a bound (§8.4): the generation continues.
+            // A report, not a bound: the generation continues.
             var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
             metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stall.description)"
             ACPAgentTelemetry.logger(.promptExecution).notice(
@@ -396,7 +398,7 @@ struct EventProjection {
             recordChangedFiles(in: report)
             await projectToolCallReport(report)
         case .elicitationRequested(let operationEvent):
-            // The relay runs the round trip inline (plan.md §16): the
+            // The relay runs the round trip inline: the
             // asking tool is suspended in Router's mailbox until the
             // answer is delivered, so holding this drive loop holds
             // nothing the prompt could otherwise do.
@@ -410,7 +412,7 @@ struct EventProjection {
             await relayElicitation(operationEvent)
         case .submissionEnded(let end):
             // One event per submission, not per prompt: sum, and never
-            // send `idle` from here (§8.1). The LAST submission is the
+            // send `idle` from here. The LAST submission is the
             // one that ends the prompt, so its finish reason wins over
             // each earlier one.
             lastFinishReason = end.finishReason
@@ -426,17 +428,17 @@ struct EventProjection {
             // window of the context (task ^1x5ksdv).
             contextUsage.record(call)
         case .submissionQueued:
-            // A log line, not a wire message (§8.4).
+            // A log line, not a wire message.
             reportQueueWait()
         case .repetitionStopped(let stop):
-            // A log line, not a wire message (§8.4): the stop reason of
+            // A log line, not a wire message: the stop reason of
             // the prompt carries the end, and the next submission of a
             // recovery carries the text.
             countRouterStop(recovery: stop.recovery)
             reportRouterStop(
                 stop, message: "Router stopped a generate call, because the call repeated itself.")
         case .reasoningStopped(let stop):
-            // A log line, not a wire message (§8.4), as for a repetition
+            // A log line, not a wire message, as for a repetition
             // stop (task ^7fsfw7y).
             countRouterStop(recovery: stop.recovery)
             lastReasoningStop = stop
@@ -492,7 +494,7 @@ struct EventProjection {
     /// Records that a submission of the prompt waits for a place in the
     /// model queue, because the model runs a submission of another session.
     ///
-    /// plan.md §8.4 gives the wait no wire message. The wait is not a
+    /// The wait has no wire message. The wait is not a
     /// stall: the Router stall watch does not count it (Router task
     /// ^ake8sax), so it never ends the prompt with `_stalled`. The record is
     /// a `notice` and not a `debug`, because a person who reads the log of
@@ -508,7 +510,7 @@ struct EventProjection {
     /// call that repeated itself (``RepetitionStop``, task ^k51h6bb), or a
     /// pass that reasoned and did not act (``ReasoningStop``, task ^7fsfw7y).
     ///
-    /// plan.md §8.4 gives the stop no wire message. The record is a `notice`
+    /// The stop has no wire message. The record is a `notice`
     /// and not a `debug`, because a person who reads the log of a slow or
     /// cut prompt must learn that Router stopped a generation, with the
     /// numbers of the stop and the settings in force. A repetition stop
@@ -535,8 +537,7 @@ struct EventProjection {
     /// tokens now in the context. The summed tokens of the prompt are not
     /// the context, because a tool loop feeds the whole render again at
     /// each call. A `nan` context fill means "no stamp", and a prompt with
-    /// no call report has no window: then no meter goes on the wire
-    /// (plan.md §8.4).
+    /// no call report has no window: then no meter goes on the wire.
     func reportUsage() async {
         guard let size = contextUsage.windowTokens, let used = contextUsage.tokens(atFill: contextFill) else {
             return
@@ -544,7 +545,7 @@ struct EventProjection {
         await send(.usageUpdate(UsageUpdate(size: size, used: used)))
     }
 
-    // MARK: - The tool-call upsert (§11.6)
+    // MARK: - The tool-call upsert
 
     /// Sends the creating `tool_call_update`: v2 has no create
     /// variant, so the first update with an unseen `toolCallId` is the
@@ -605,7 +606,7 @@ struct EventProjection {
                     status: .value(Self.wireStatus(for: status)))))
     }
 
-    /// Closes the message the recorded entry ended (§8.3, §8.4): the
+    /// Closes the message the recorded entry ended: the
     /// next delta of that kind starts a new message id.
     ///
     /// - Parameters:
@@ -628,7 +629,7 @@ struct EventProjection {
         }
     }
 
-    // MARK: - Compaction (§8.5)
+    // MARK: - Compaction
 
     /// The reporter of the automatic compactions of the prompt
     /// (``CompactionReporter``). Router reports each automatic compaction
@@ -643,7 +644,7 @@ struct EventProjection {
         CompactionReporter(sessionId: sessionId, send: send)
     }
 
-    // MARK: - The wire call of a run (§8.4, §11.6)
+    // MARK: - The wire call of a run
 
     /// Builds one `tool_call_update` for the wire call of a run. This is the
     /// one place that gives the wire shape of the run updates: the progress
@@ -683,7 +684,7 @@ struct EventProjection {
                 title: .value(op)))
     }
 
-    // MARK: - The settlement (§8.4, §11.6)
+    // MARK: - The settlement
 
     /// Sends the terminal `tool_call_update` of a settled run. The `op`
     /// rides as the title and the tool as the `name`, because a settlement
@@ -696,8 +697,8 @@ struct EventProjection {
     /// event with no outcome reports the unknown status.
     ///
     /// A run the shell store knows replaces the call's content with
-    /// its `Terminal` reference and the capture's honesty notes
-    /// (§11.8): the bytes ride the terminal stream, never coerced to
+    /// its `Terminal` reference and the capture's honesty notes:
+    /// the bytes ride the terminal stream, never coerced to
     /// text, and a reconnecting client takes the
     /// `TerminalUpdate.output` replacement instead.
     ///
@@ -734,7 +735,7 @@ struct EventProjection {
                 status: .value(status)))
     }
 
-    // MARK: - The progress of a run (§8.4, §13)
+    // MARK: - The progress of a run
 
     /// Sends the progress that a run reported through
     /// `ToolContext.progress(_:plan:)` while it continues (task ^jwx92y8).
@@ -770,7 +771,8 @@ struct EventProjection {
 
     /// Maps one plan of a run to the wire: one `plan_update` that holds the
     /// full list of entries, keyed by the id of the plan. The client replaces
-    /// the plan that has the same `planId` with each update (§13).
+    /// the plan that has the same `planId` with each update:
+    /// `plan_update` replaces, and it does not patch.
     ///
     /// The priority and the status of each entry map by their raw values,
     /// which Extras gives as the ACP wire values. Thus the mapping is total:
@@ -789,7 +791,7 @@ struct EventProjection {
         return PlanUpdate(plan: .items(PlanItems(entries: entries, planId: PlanId(rawValue: plan.id))))
     }
 
-    // MARK: - The attachment report (§8.4, §11.6)
+    // MARK: - The attachment report
 
     /// Sends the attachment `tool_call_update` of one closed call: the
     /// update keys on the run's `correlationID` — its
@@ -807,7 +809,7 @@ struct EventProjection {
     /// a path contract: the `FileChangeSet` envelope a mutating files
     /// verb attaches (`schemaName` ``FoundationModelsMultitool/FileChangeSet/operationEventDetailKey``).
     /// The paths come from the structured record, never from a rendered
-    /// string (§11.5), and replace the array as a whole (§11.6). Every
+    /// string, and replace the array as a whole. Every
     /// other attachment is an opaque document with no path contract, so
     /// a report of such documents alone leaves `locations` unchanged
     /// rather than erasing it.
@@ -834,7 +836,7 @@ struct EventProjection {
                 rawOutput: Self.rawOutputPatch(fromDocuments: documents)))
     }
 
-    // MARK: - The status functions (§8.4)
+    // MARK: - The status functions
 
     /// The one total `OperationOutcome` to `ToolCallStatus` function.
     ///
@@ -880,7 +882,7 @@ struct EventProjection {
     }
 
     /// The text that rides with a settlement, or `nil` when the
-    /// status alone says everything (§8.4's text column).
+    /// status alone says everything.
     ///
     /// - Parameter outcome: How the run ended, or `nil` for a
     ///   terminal event that carried no outcome.
@@ -908,7 +910,7 @@ struct EventProjection {
         }
     }
 
-    /// Puts `raw` under the §18 extension rule: a custom wire value
+    /// Puts `raw` under the ACP extension rule: a custom wire value
     /// starts with `_`, and a value that already does stays as it is.
     ///
     /// - Parameter raw: The raw outcome value.
@@ -917,7 +919,7 @@ struct EventProjection {
         raw.hasPrefix(extensionValuePrefix) ? raw : extensionValuePrefix + raw
     }
 
-    // MARK: - The file-change path mappings (§11.6)
+    // MARK: - The file-change path mappings
 
     /// The recorded file changes an attachment report carries, in call
     /// order.
@@ -1015,7 +1017,7 @@ struct EventProjection {
 
     // MARK: - Helpers
 
-    /// Makes one agent-owned message id (plan.md §8.3): a fresh ULID,
+    /// Makes one agent-owned message id: a fresh ULID,
     /// in the id vocabulary the session ids already use.
     static func makeMessageId() -> MessageId {
         MessageId(rawValue: ULID.generate().description)
@@ -1074,7 +1076,7 @@ struct EventProjection {
     }
 
     /// The `rawOutput` patch of a `toolStatus` event, from the
-    /// structured segments — never from a rendered string (§11.6).
+    /// structured segments — never from a rendered string.
     ///
     /// - Parameter output: The answering output segments, or `nil`.
     /// - Returns: The raw-output patch.
@@ -1100,7 +1102,7 @@ struct EventProjection {
         return values.count == 1 ? .value(first) : .value(.array(values))
     }
 
-    /// The settlement content of a stored run (§11.8): the `Terminal`
+    /// The settlement content of a stored run: the `Terminal`
     /// reference first — the bytes ride the terminal stream, never a
     /// coerced text copy — then the honesty notes of each stored
     /// stream. An absent snapshot contributes nothing.

@@ -88,7 +88,7 @@ public struct TranscriptsDoctor: Doctorable {
 
     // MARK: - The recording root
 
-    /// The directory Router records each session under (plan.md §4.1).
+    /// The directory Router records each session under.
     private var recordingRoot: URL {
         configuration.transcripts.location.recordingRoot(
             workingDirectory: workingDirectory, name: name, userDirectory: userDirectory)

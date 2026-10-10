@@ -160,7 +160,7 @@ struct RunCommandTests {
     }
 
     /// The run closes its connection with no `session/close`, so the agent
-    /// closes the session of the prompt itself (plan.md §10.1). The run
+    /// closes the session of the prompt itself. The run
     /// returns only after that close, so the process does not exit before
     /// the agent wrote the history and stopped the MCP servers.
     @Test(.timeLimit(.minutes(1)))

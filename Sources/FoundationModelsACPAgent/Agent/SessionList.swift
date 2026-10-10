@@ -8,7 +8,7 @@ extension RoutedACPAgent {
     /// directory, so any absolute directory gives the same root.
     private static let registryPlaceholderDirectory = URL(fileURLWithPath: "/", isDirectory: true)
 
-    /// Lists the persisted sessions (plan.md §9): the wire surface over
+    /// Lists the persisted sessions: the wire surface over
     /// `TranscriptStore`'s listable-record read and its sort-key cursor
     /// pagination.
     ///
@@ -53,7 +53,7 @@ extension RoutedACPAgent {
     /// The listable records of one project, read through the store the
     /// project's own configuration names: the `transcripts.location` and
     /// the user layer root both come from the project's dotfolder stack,
-    /// the same resolution `session/new` records under (plan.md §4.1).
+    /// the same resolution `session/new` records under.
     ///
     /// - Parameter workingDirectory: The project's absolute working
     ///   directory.
@@ -73,8 +73,8 @@ extension RoutedACPAgent {
         return try store.sessions(inProject: workingDirectory)
     }
 
-    /// The merged listable records of every registered project (plan.md
-    /// §4.5), one record for each session.
+    /// The merged listable records of every project in the user-layer
+    /// project registry, one record for each session.
     ///
     /// Two projects whose configurations name one shared absolute
     /// recording root each list that root's sessions, so the merge keeps
@@ -114,7 +114,7 @@ extension RoutedACPAgent {
 }
 
 extension SessionInfo {
-    /// The wire projection of one index record (plan.md §9): `title`,
+    /// The wire projection of one index record: `title`,
     /// `updatedAt` (RFC 3339), and the complete ordered
     /// `additionalDirectories` are always filled.
     ///
@@ -142,7 +142,7 @@ extension SessionInfo {
 }
 
 extension RequestError {
-    /// The invalid-cursor refusal (plan.md §9): JSON-RPC invalid params
+    /// The invalid-cursor refusal: JSON-RPC invalid params
     /// with the refused token in `data`, so a client that persisted or
     /// built a token — which the spec forbids — sees which one was
     /// refused.

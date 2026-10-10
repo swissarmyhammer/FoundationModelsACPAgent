@@ -8,7 +8,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The six builtin slash commands (plan.md §14.1, source 1): `/compact`,
+/// The six builtin slash commands: `/compact`,
 /// `/context`, `/memory`, `/status`, `/config` and `/help`. Each streams its
 /// text as an `.action` prompt, with no model pass. The suite drives them over
 /// the harness and asserts the streamed text and the filesystem effects.
@@ -112,7 +112,7 @@ struct BuiltinCommandsTests {
         }
     }
 
-    // MARK: - /help (plan.md §14.1)
+    // MARK: - /help
 
     /// `/help` names all six builtins in its streamed output.
     @Test(.timeLimit(.minutes(1)))
@@ -127,7 +127,7 @@ struct BuiltinCommandsTests {
         }
     }
 
-    // MARK: - /status (plan.md §14.1)
+    // MARK: - /status
 
     /// `/status` names the session id, the cwd, the model, the profile and
     /// the transcript path.
@@ -145,7 +145,7 @@ struct BuiltinCommandsTests {
         #expect(result.text.contains(entry.transcriptDirectory.path))
     }
 
-    // MARK: - /context (plan.md §14.1)
+    // MARK: - /context
 
     /// The context report guards a NaN fill with "not measured yet" and never
     /// prints the word NaN.
@@ -176,7 +176,7 @@ struct BuiltinCommandsTests {
         #expect(!result.text.lowercased().contains("nan"))
     }
 
-    // MARK: - /memory (plan.md §14.1, §3.2)
+    // MARK: - /memory
 
     /// `/memory` prints the assembled instructions, including the
     /// absolute-path header of an on-disk `AGENTS.md`.
@@ -195,7 +195,7 @@ struct BuiltinCommandsTests {
         #expect(result.text.contains(agentsBody))
     }
 
-    // MARK: - /compact (plan.md §14.1, §8.5)
+    // MARK: - /compact
 
     /// `/compact` on a session whose fold applies a summary reports the token
     /// counts before and after and names the summarizer model.
@@ -248,7 +248,7 @@ struct BuiltinCommandsTests {
         #expect(!result.text.contains(Self.defaultStandardModel))
     }
 
-    // MARK: - /config (plan.md §14.1, §2.2)
+    // MARK: - /config
 
     /// `/config` prints the effective configuration as YAML: the section keys
     /// and at least one comment line.
@@ -353,7 +353,7 @@ struct BuiltinCommandsTests {
         #expect(reloaded.configuration == configuration)
     }
 
-    // MARK: - No model pass (plan.md §14.3)
+    // MARK: - No model pass
 
     /// The sentinel a scripted model would stream on a model pass. No builtin
     /// output ever carries it, so its absence proves the backend was not
@@ -377,7 +377,7 @@ struct BuiltinCommandsTests {
     }
 }
 
-// MARK: - The compaction stub (plan.md §20.1)
+// MARK: - The compaction stub
 
 /// The typed failure the compaction stub's summarizer throws when it is
 /// scripted to fail, so a caller-driven `/compact` reports it honestly.

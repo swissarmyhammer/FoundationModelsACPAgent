@@ -11,7 +11,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The elicitation relay (plan.md §16): the wire mapping, the capability
+/// The elicitation relay: the wire mapping, the capability
 /// gate, and the round trip from `ToolContext.elicit` to the client and
 /// back through `RoutedSession.respond`.
 struct ElicitationRelayTests {
@@ -141,7 +141,8 @@ struct ElicitationRelayTests {
     }
 
     /// A URL-mode accept never carries content back over ACP: the flow
-    /// returns its data out of band (plan.md §16, the security duty).
+    /// returns its data out of band. This is a security duty of the agent:
+    /// URL-mode credentials must not come back over ACP.
     @Test func aURLModeAcceptNeverCarriesContentBack() {
         let accept = ElicitationRelay.answer(
             from: .object([
@@ -168,7 +169,7 @@ struct ElicitationRelayTests {
                 mode: .form) == .cancel)
     }
 
-    // MARK: - The harness wiring (plan.md §20.1)
+    // MARK: - The harness wiring
 
     /// The name the eliciting MCP test server mounts under.
     private static let serverName = "elicitor"

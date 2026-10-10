@@ -9,7 +9,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// Tier 2 of the test ladder (plan.md §20.1): a real `ToolCatalog`, a
+/// Tier 2 of the test ladder: a real `ToolCatalog`, a
 /// real `MultiTool` with the files and shell capabilities, a real
 /// `RoutedACPAgent`, a real `session/new` on a temp directory, and a
 /// scripted model, driven and asserted through `FoundationModelsACPClient`.
@@ -26,7 +26,7 @@ import Testing
 /// tool result: a run that does not settle inside the inline grace of
 /// `runCode` comes back as mail when it comes back.
 ///
-/// The discipline is §20.1's: check the filesystem, never the
+/// The discipline: check the filesystem, never the
 /// transcript. A "file written" claim is proven by reading the file
 /// from disk.
 @Suite struct TierTwoTests {
@@ -64,7 +64,7 @@ import Testing
     ///
     /// The flag makes each mutating verb call attach its structured
     /// `FileChangeSet`, which is the only permitted source of
-    /// `locations` (plan.md §11.5, §11.6). The builder default is off,
+    /// `locations`, never the rendered string of the model. The builder default is off,
     /// so the proof asks for it the way a user does — in `config.yaml`.
     private static let recordsChangesConfigYAML = """
         tools:
@@ -529,7 +529,8 @@ import Testing
     }
 
     /// The accumulated tool call `id` in the transcript of the session
-    /// model — the primary assertion surface (plan.md §20.1).
+    /// model — the primary assertion surface, the same projection that
+    /// the Mac app binds to.
     ///
     /// - Parameters:
     ///   - fixture: The wired fixture.
@@ -559,7 +560,7 @@ import Testing
     /// both the order marker and the value the wire carries.
     private static let userMessageMarker = "user_message"
 
-    /// The order marker of one notification, for the §8.1 order proof:
+    /// The order marker of one notification, for the prompt order proof:
     /// the echo, the running and idle states, and the tool updates.
     /// Every other update kind is not part of the ordered claim.
     ///
@@ -628,7 +629,7 @@ import Testing
     // MARK: - Proof 1: composition
 
     /// `ToolCatalog` constructs each tool with the `CatalogContext` the
-    /// session was composed from (plan.md §20.1 proof 1).
+    /// session was composed from (proof 1, composition).
     ///
     /// The NAMES come from the built `APISurface`: the files and shell
     /// verbs mount under their nouns with the "verb noun" journal ops,
@@ -737,7 +738,7 @@ import Testing
 
         // The decoded `files` section reached the built verbs: the write
         // answers the read-only correction, and the disk is the truth
-        // that nothing was written (plan.md §20.1).
+        // that nothing was written.
         #expect(
             answerText.contains(
                 outcomeLine(label: refusedWriteLabel, value: readOnlyRefusalMarker)))
@@ -772,12 +773,11 @@ import Testing
         let onDisk = try textOnDisk(at: noteURL)
         await fixture.close()
 
-        // The disk is the truth (plan.md §20.1).
+        // The disk is the truth, not the tool report.
         #expect(onDisk == Self.noteContent)
 
         // The written path rides `locations`, read from the attached
-        // structured record and never from a rendered string
-        // (plan.md §11.5, §11.6).
+        // structured record and never from a rendered string.
         #expect(Self.locationPaths(in: updates).contains(noteURL.path))
 
         // The first report creates the call: title and in_progress.
@@ -808,7 +808,7 @@ import Testing
 
     // MARK: - Proof 4: prompt order
 
-    /// The tool prompt keeps §8.1's order on the wire: the response that
+    /// The tool prompt keeps the prompt order on the wire: the response that
     /// names the user message acknowledges first, then `user_message`, `running`, the tool
     /// updates, and one `idle(end_turn)` as the terminator.
     ///
@@ -832,7 +832,7 @@ import Testing
         let wireLines = await wireTap.lines
         await fixture.close()
 
-        // §8.1's MUST: the acknowledgement of `session/prompt` stands on
+        // The ACP MUST: the acknowledgement of `session/prompt` stands on
         // the wire before the `user_message` echo, and both name the same
         // user message.
         let acknowledgement = try #require(Self.acknowledgement(in: wireLines))
@@ -893,7 +893,7 @@ import Testing
     /// nothing else. Neither assertion can therefore pass on the other
     /// one's source.
     ///
-    /// The correlation is plan.md §20.1's: the MCP call runs inside the
+    /// The correlation: the MCP call runs inside the
     /// snippet, so it opens no ACP tool call of its own, and its answer
     /// reaches the wire under the `runCode` call that carried the
     /// snippet's result.

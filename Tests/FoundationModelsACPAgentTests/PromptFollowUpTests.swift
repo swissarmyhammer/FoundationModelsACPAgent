@@ -95,9 +95,8 @@ import Testing
 
     /// Whether `notification` comes from the terminal stream of the session
     /// and not from the prompt. The terminal stream announces a shell run
-    /// and reports its output and its exit for the life of the session
-    /// (plan.md §11.8), so its updates can come after the `idle` of a
-    /// prompt.
+    /// and reports its output and its exit for the life of the session,
+    /// so its updates can come after the `idle` of a prompt.
     ///
     /// - Parameter notification: The collected notification.
     /// - Returns: Whether the terminal stream sent it.

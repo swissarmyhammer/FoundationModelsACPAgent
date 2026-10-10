@@ -10,7 +10,10 @@ import Tracing
 /// wires none.
 typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 
-/// The relay of a tool's elicitation to the ACP client (plan.md §16).
+/// The relay of a tool's elicitation to the ACP client. This package owns
+/// elicitation, because it is the only layer with a live two-way channel
+/// to a user. An elicitation asks a question that a tool needs answered.
+/// It is not a permission prompt, and it authorizes nothing.
 ///
 /// A tool that calls `ToolContext.elicit` suspends in Router's mailbox, and
 /// the request arrives as `SessionEvent.elicitationRequested`. This actor
@@ -18,17 +21,16 @@ typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 /// client's answer, and delivers it back through
 /// `RoutedSession.respond(elicitationId:response:)`. Each round trip runs
 /// inside ``PromptStateOwner/awaitingUser(_:)``, so the wire shows
-/// `requires_action` before the question and `running` after the answer
-/// (plan.md §8.2).
+/// `requires_action` before the question and `running` after the answer.
 ///
-/// The capability gate (plan.md §16): the client said what it answers at
+/// The capability gate: the client said what it answers at
 /// `initialize`. An absent capability, or an absent mode object, means
 /// unsupported. A request in an unsupported mode gets `decline` at Router,
 /// and no `elicitation/create` goes out. The relay never falls back from
 /// `url` mode to `form` mode. Extras' `ElicitationResponse` carries no
 /// reason field, so the reason for a decline goes to the log only.
 ///
-/// The security duties (plan.md §16): a URL-mode accept never carries
+/// The ACP security duties: a URL-mode accept never carries
 /// content back over ACP — the flow returns its data out of band. The
 /// `elicitationId` stays unique among the outstanding URL elicitations on
 /// the connection; a duplicate gets `decline`. The `elicitation/complete`
@@ -170,7 +172,7 @@ actor ElicitationRelay {
 
     /// Answers every round trip still in flight with `cancel`, so each
     /// suspended tool resumes before the prompt's `idle` terminator.
-    /// `session/cancel` and `session/close` call it (plan.md §8.6, §10.1).
+    /// `session/cancel` and `session/close` call it.
     ///
     /// The tasks that still wait on the client are cancelled too. An
     /// answer that arrives after this call finds no waiter and is
@@ -382,7 +384,8 @@ actor ElicitationRelay {
 
     /// Registers a URL-mode flow, or refuses a duplicate id: the
     /// `elicitationId` stays unique among the outstanding URL
-    /// elicitations on the connection (plan.md §16). A form-mode request
+    /// elicitations on the connection, as the ACP specification requires.
+    /// A form-mode request
     /// registers nothing.
     ///
     /// - Parameters:
@@ -412,8 +415,8 @@ actor ElicitationRelay {
     // MARK: - The wire mapping
 
     /// Maps Extras' request to the wire request, scoped by the session and
-    /// the run's tool call (plan.md §11.8: the run's `completionToken` is
-    /// its `toolCallId`).
+    /// the run's tool call (the run's `completionToken` is its
+    /// `toolCallId`).
     ///
     /// - Parameters:
     ///   - request: The request the tool posted.
@@ -455,7 +458,8 @@ actor ElicitationRelay {
     /// An answer this relay cannot read delivers `cancel`, never a guess:
     /// the tool must not receive an accept whose content was lost. A
     /// URL-mode accept always carries `nil` content — the flow returns its
-    /// data out of band, never over ACP (plan.md §16, the security duty).
+    /// data out of band, never over ACP (a security duty of the ACP
+    /// specification).
     ///
     /// - Parameters:
     ///   - raw: The raw wire answer, or `nil` when the request failed.

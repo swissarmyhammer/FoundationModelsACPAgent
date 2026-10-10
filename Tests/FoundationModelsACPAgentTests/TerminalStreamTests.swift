@@ -6,7 +6,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The terminal display stream (plan.md §11.8): the shell capability's
+/// The terminal display stream: the shell capability's
 /// live bytes ride `terminal_output_chunk` updates, the tool call
 /// carries a `Terminal` content reference, a gap heals through a
 /// `TerminalUpdate.output` replacement built from `snapshot(for:)`, and
@@ -119,7 +119,7 @@ import Testing
         return bytes
     }
 
-    // MARK: - The terminal reference (§11.8)
+    // MARK: - The terminal reference
 
     /// The first event of a run sends one `tool_call_update` whose
     /// content is the `Terminal` reference, keyed by the run's
@@ -139,7 +139,7 @@ import Testing
         #expect(terminalIds(in: call.content) == [Self.completionToken])
     }
 
-    // MARK: - The chunk stream (§11.8)
+    // MARK: - The chunk stream
 
     /// An output event becomes one `terminal_output_chunk` whose data
     /// decodes to the child's bytes exactly — invalid UTF-8 included,
@@ -171,7 +171,7 @@ import Testing
         #expect(try Self.reassembledBytes(in: updates) == first + second + third)
     }
 
-    // MARK: - The gap replacement (§11.8)
+    // MARK: - The gap replacement
 
     /// A gap event replaces the client's view with the authoritative
     /// stored record: one `TerminalUpdate` whose output is the stored
@@ -202,7 +202,7 @@ import Testing
         #expect(Array(data) == stdout + stderr)
     }
 
-    // MARK: - The exit status (§11.8)
+    // MARK: - The exit status
 
     /// The completion marker sends one `TerminalUpdate` whose exit
     /// status is present with neither an exit code nor a signal — the
@@ -259,7 +259,7 @@ import Testing
         #expect(updates.map(\.kind) == [.toolCallUpdate, .terminalOutputChunk, .terminalUpdate])
     }
 
-    // MARK: - The catalog wiring (§11.8)
+    // MARK: - The catalog wiring
 
     /// Builds the catalog registry over `workingDirectory` with the
     /// shell section enabled and the store redirected to a throwaway
@@ -299,7 +299,7 @@ import Testing
         #expect(disabled.shellOutput == nil)
     }
 
-    // MARK: - The end-to-end run (§11.8, plan.md §20.1)
+    // MARK: - The end-to-end run
 
     /// Waits until the recorder holds a terminal update that claims the
     /// exit.
@@ -355,7 +355,7 @@ import Testing
         #expect(snapshot.stdout.bytes == Self.fixtureBytes)
     }
 
-    // MARK: - The session teardown (§11.8)
+    // MARK: - The session teardown
 
     /// Closing a session finishes the host-owned stream, so a stream
     /// nobody listens to keeps nothing.

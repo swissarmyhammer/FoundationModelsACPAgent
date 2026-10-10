@@ -3,7 +3,7 @@ import FoundationModelsACPAgent
 import FoundationModelsSkills
 import Testing
 
-/// The `tools:` enable and disable codec (plan.md §11.2): the five-shape
+/// The `tools:` enable and disable codec: the five-shape
 /// matrix, the `mcp:` tri-state, and the key checks of each tool body.
 /// Every test loads through a throwaway `ConfigurationLoaderTests.Fixture`,
 /// so the codec is proved on the same path production uses.
@@ -16,7 +16,7 @@ import Testing
     /// key: the flag defaults, and the dotfolder exclude list.
     private static let loadedFilesDefaults = FilesToolOptions(exclude: dotfolderExclude)
 
-    // MARK: - The five shapes of §11.2
+    // MARK: - The five shapes
 
     /// Shape 1: with no `tools:` section, every built-in is on with its
     /// defaults, and MCP is on with no configured servers.
@@ -135,7 +135,8 @@ import Testing
     }
 
     /// An unknown key inside a tool body is an error that names the dotted
-    /// section and the key (plan.md §2.4).
+    /// section and the key. An unknown key in a known section is an error;
+    /// an unknown top-level section is only a warning.
     @Test func unknownKeyInsideAToolBodyIsAnError() throws {
         let fixture = ConfigurationLoaderTests.Fixture()
 

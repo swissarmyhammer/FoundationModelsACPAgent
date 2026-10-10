@@ -2,7 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
 
-/// What each builder call of the tool catalog needs (plan.md §11.1): the
+/// What each builder call of the tool catalog needs: the
 /// session working directory, the session's additional roots, the decoded
 /// configuration, the resolved profile, the client's per-session MCP
 /// servers, and the process environment.
@@ -14,28 +14,30 @@ public struct CatalogContext: Sendable {
     /// against, and the root set's first and mandatory member.
     public let workingDirectory: URL
 
-    /// The session's additional roots (plan.md §7.2), in order. Together
+    /// The session's additional roots, in order. Together
     /// with ``workingDirectory`` they are the root set that confines the
     /// files verbs and bounds the shell sandbox's writes.
     public let additionalRoots: [URL]
 
     /// The decoded configuration whose sections decide which capabilities
-    /// the catalog constructs (plan.md §11.2), and with which options.
+    /// the catalog constructs, and with which options. A capability that
+    /// the configuration does not mention is on.
     public let configuration: AgentConfiguration
 
     /// The resolved profile the catalog draws its models from.
     ///
-    /// Held strongly on purpose (plan.md §11.1): each `RoutedModel` holds
+    /// Held strongly on purpose: each `RoutedModel` holds
     /// its owning profile weakly, and `makeSession` traps when the profile
     /// was released before the call.
     public let profile: LanguageModelProfile
 
-    /// The client-supplied per-session MCP servers (plan.md §7.3), in wire
+    /// The client-supplied per-session MCP servers, in wire
     /// order — the `mcpServers` of `session/new` or `session/resume`.
     ///
     /// Session scope only: this list is never persisted, because the
     /// `headers` of an http entry carry bearer tokens and `sessions.jsonl`
-    /// is committed (§4.3). `session/resume` supplies the list again.
+    /// is committed with the transcripts. `session/resume` supplies the
+    /// list again.
     public let clientMCPServers: [FoundationModelsACP.MCPServer]
 
     /// The process environment that the web capability reads its API keys

@@ -47,7 +47,7 @@ enum ScriptedArrival {
     /// A gate that opens once `fact` holds.
     ///
     /// A signal that lands before the prompt is running reaches an agent with
-    /// no active prompt, and that agent ignores the cancel (plan.md §8.6). So
+    /// no active prompt, and that agent ignores the cancel. So
     /// the watch waits for a fact the running prompt made true, and order
     /// decides the result rather than a delay.
     ///

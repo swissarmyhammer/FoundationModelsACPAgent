@@ -5,7 +5,7 @@ import FoundationModelsACPClient
 ///
 /// A `SessionModel` is a projection and keeps no history of the raw
 /// updates, so an order proof — prompt order, cancellation, replay —
-/// reads this raw sequence instead (plan.md §20.1).
+/// reads this raw sequence instead.
 public actor UpdateCollector {
     /// The collected notifications, in arrival order.
     public private(set) var updates: [UpdateSessionNotification] = []
@@ -50,7 +50,7 @@ public actor ElicitationWireRecorder {
     }
 }
 
-/// The forwarding recorder (plan.md §20.1): it appends each
+/// The forwarding recorder: it appends each
 /// `UpdateSessionNotification` to its ``UpdateCollector`` and then
 /// forwards it to the router of a `ConnectionModel`. The elicitation
 /// traffic lands in the ``ElicitationWireRecorder`` the same way.
@@ -64,7 +64,7 @@ public actor ElicitationWireRecorder {
 /// `ConnectionModel.connect(over:client:)`, which gives the router.
 ///
 /// There is no configurable permission answer. This agent never sends
-/// `session/request_permission` (plan.md §11.7), and a test asserts
+/// `session/request_permission` (the sandbox is the only gate), and a test asserts
 /// `pendingPermissions` stays empty as a regression tripwire. Every
 /// request therefore forwards to the router unchanged.
 final class RecordingClient: Client {

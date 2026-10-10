@@ -66,7 +66,7 @@ extension UpdateCollector {
 
 /// The prompt updates of a collected sequence: every notification except
 /// the `available_commands_update` publications, which ride the same
-/// stream at session start and on each registry change (plan.md §14.4).
+/// stream at session start and on each registry change.
 /// A prompt-order proof filters them out, because their timing is the
 /// registry's, not the prompt's.
 ///
@@ -113,7 +113,8 @@ public func encodedWireText(of value: some Encodable) throws -> String {
 }
 
 /// Reads one string field of a wire error's `data` object, so a refusal
-/// assertion names the id or reason the error carried (plan.md §10.1).
+/// assertion names the id or reason the error carried. A refusal of an
+/// unknown or closed session id is `-32602` with the id in `data`.
 ///
 /// - Parameters:
 ///   - name: The field name.
@@ -130,8 +131,8 @@ public func errorDataField(_ name: String, of error: RequestError) -> String? {
 
 /// Reads the UTF-8 text of the file at `url` from disk.
 ///
-/// The disk is the truth a tool-call claim is checked against
-/// (plan.md §20.1): never trust a `tool_call_update` that says a file
+/// The disk is the truth a tool-call claim is checked against:
+/// never trust a `tool_call_update` that says a file
 /// was written — read the file.
 ///
 /// - Parameter url: The file to read.

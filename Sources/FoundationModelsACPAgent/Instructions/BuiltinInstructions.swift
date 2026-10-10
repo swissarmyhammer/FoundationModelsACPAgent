@@ -1,4 +1,4 @@
-/// The compiled-in system prompt floor (plan.md §3.1) — layer 1 of the
+/// The compiled-in system prompt floor — layer 1 of the
 /// `Instructions.md` stack, the one artifact for which *nothing* is not a
 /// valid value: absent config gives defaults, but an absent system prompt
 /// gives an agent with no instructions, silently.

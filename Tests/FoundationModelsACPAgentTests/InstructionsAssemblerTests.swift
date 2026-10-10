@@ -7,8 +7,10 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// Session-instructions assembly through `InstructionsAssembler` (plan.md
-/// §3). Every test builds its own throwaway tree under a temp directory
+/// Session-instructions assembly through `InstructionsAssembler`: the base
+/// prompt, then the preloaded skill bodies, then the user-level
+/// `AGENTS.md`, then the project-level documents from the repository root
+/// down to the cwd. Every test builds its own throwaway tree under a temp directory
 /// and injects the user directory and the environment, so no test touches
 /// the real home directory.
 @Suite struct InstructionsAssemblerTests {

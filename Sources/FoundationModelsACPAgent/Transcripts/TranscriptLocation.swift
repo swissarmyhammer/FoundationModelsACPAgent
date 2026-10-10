@@ -1,7 +1,8 @@
 import Foundation
 
-/// Recording-root resolution for `transcripts.location` (plan.md §4.1).
-/// The resolved root is the directory `makeSession(recordingRoot:)`
+/// Recording-root resolution for `transcripts.location`. The default is
+/// project-local, because a transcript is project context: it goes with the
+/// repo. The resolved root is the directory `makeSession(recordingRoot:)`
 /// receives; Router then records each session to `<root>/<sessionId>/`.
 extension TranscriptLocation {
     /// The directory name every recording root ends in.
@@ -10,8 +11,8 @@ extension TranscriptLocation {
     /// The character the slug substitutes for each unsafe one.
     private static let slugSeparator: Character = "-"
 
-    /// The slug that stands for one project under the shared `home` root
-    /// (plan.md §4.1): the absolute working directory path with each
+    /// The slug that stands for one project under the shared `home` root:
+    /// the absolute working directory path with each
     /// character that is not a letter or a digit replaced by `-`, so
     /// `/Users/dev/example` becomes `-Users-dev-example`. The scheme
     /// applies only to `home`; a project-local root needs no slug because
@@ -26,7 +27,7 @@ extension TranscriptLocation {
             })
     }
 
-    /// Resolves the recording root this location names (plan.md §4.1):
+    /// Resolves the recording root this location names:
     /// `project` gives `<workingDirectory>/.<name>/transcripts/`, `home`
     /// gives `<userDirectory>/transcripts/<slug>/` under the shared user
     /// layer, and an absolute path is used as given.

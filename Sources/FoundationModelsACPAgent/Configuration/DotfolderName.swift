@@ -1,4 +1,4 @@
-/// Why a string was refused as a dotfolder name (plan.md §2.1).
+/// Why a string was refused as a dotfolder name.
 public enum DotfolderNameError: Error, Equatable, Sendable, CustomStringConvertible {
     /// The name is the empty string.
     case empty
@@ -25,7 +25,7 @@ public enum DotfolderNameError: Error, Equatable, Sendable, CustomStringConverti
 }
 
 /// The frontend-supplied `<name>` that roots the configuration stack and the
-/// transcript directory (plan.md §2.1): a bare word such as `"coding"`.
+/// transcript directory: a bare word such as `"coding"`.
 ///
 /// The name becomes a path component under the user config directory and,
 /// with a leading dot added, under the session working directory. So a name

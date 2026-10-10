@@ -1,8 +1,8 @@
 # CLI Plan
 
 This plan adds a command-line frontend to the composed agent. It stands
-on its own. It cites `plan.md` for the rules that it keeps, and it states
-its own rules where the two differ. `plan.md` does not change.
+on its own. It states each rule of the composed agent that it keeps, and
+§12 lists the items where it changed the earlier design of the agent.
 
 Two sibling plans go with it:
 
@@ -61,9 +61,10 @@ connection in every mode. Only the transport changes. The CLI must never
 call `RoutedACPAgent` directly. If we break this rule, the `serve` mode
 of §11 becomes a rewrite, and the CLI stops proving the protocol.
 
-The in-process mode uses the method that the Mac app uses (`plan.md`
-§19): `InMemoryTransport.pair()` binds an `AgentSideConnection` to a
-`ClientSideConnection` with no pipe and no subprocess.
+The in-process mode uses the method that the Mac app uses, because the
+Mac app is an in-process ACP client too: `InMemoryTransport.pair()`
+binds an `AgentSideConnection` to a `ClientSideConnection` with no pipe
+and no subprocess.
 
 ## 5. The command-line surface
 
@@ -117,7 +118,7 @@ acp-agent config show        Print the merged configuration, and where each valu
 acp-agent config init        Write a config.yaml with every key at its default.
 acp-agent config path        Print each layer path, and say which ones exist.
 acp-agent config edit        Open the nearest config.yaml in $EDITOR.
-acp-agent instructions eject Write Instructions.md into a layer (plan.md §3.1).
+acp-agent instructions eject Write the builtin Instructions.md into a layer.
 acp-agent doctor             Check that this configuration will actually work.
 acp-agent --help             Print the usage to stdout, and exit 0.
 acp-agent --version          Print the version to stdout, and exit 0.
@@ -149,8 +150,8 @@ can never surprise it. The short form is for a person at a keyboard.
 | `--quiet` | Draw no progress and no decoration, in a terminal too. See §5.7. |
 
 **The flag rule:** a setting that `config.yaml` already holds gets no
-flag. `plan.md` §2.2 makes the configuration derived, and a flag for the
-same value gives two sources of truth. The profile, the tool roster, the
+flag. The configuration comes only from the dotfolder stack, and a flag
+for the same value gives two sources of truth. The profile, the tool roster, the
 transcript location and the compaction limits stay in the file. `config
 edit` is how you change them, and that is one keystroke more than a flag.
 
@@ -188,7 +189,8 @@ This gives `echo "hello" | acp-agent`, which is what a person expects.
   `--version` write to stdout.
 
 In `acp` mode the older contract applies: stdout carries ndJSON frames
-only, and a shell child never inherits stdout (`plan.md` §17).
+only, and a shell child never inherits stdout. These are ACP stdio
+MUSTs: a message holds no newline, and no non-ACP byte goes to stdout.
 
 ### 5.7 stderr, and the download problem
 
@@ -269,8 +271,8 @@ kill of the client leaves a model process that holds gigabytes.
 
 ### 5.10 Where the configuration comes from
 
-The CLI adds no configuration mechanism. It reads the stack that
-`plan.md` §2.2 already gives, through `ConfigurationLoader`. The layers,
+The CLI adds no configuration mechanism. It reads the dotfolder stack
+that the composed agent already reads, through `ConfigurationLoader`. The layers,
 with the lowest precedence first:
 
 | Layer | Path | On disk? |
@@ -288,7 +290,7 @@ layer first), and `_partials/`.
 | Load | Keyed by | Why |
 |---|---|---|
 | At process start | The process working directory | It resolves `profile`, so the agent can build the Router and load the model. |
-| Per session | `session/new(cwd)` | `plan.md` §2.2: one process serves many sessions in different repos, so two sessions can correctly see different project configuration. |
+| Per session | `session/new(cwd)` | The project layer is the session working directory, not the process working directory: one process serves many sessions in different repos, so two sessions can correctly see different project configuration. |
 
 So `--cwd` behaves differently in each mode:
 
@@ -325,8 +327,8 @@ already returns source data for every key, so the output can say **which
 layer won each value**. That is the question a person actually has, and
 nothing answers it today.
 
-`config init` and the `/config export` slash command (`plan.md` §14.1)
-call one implementation. Two front doors, one behavior.
+`config init` and the `/config export home|project` builtin slash
+command call one implementation. Two front doors, one behavior.
 
 ### 5.12 The `doctor` subcommand
 
@@ -405,7 +407,7 @@ acp-client run "write a haiku" --frames -- acp-agent acp
 
 ## 7. The default configuration
 
-`plan.md` §2.2 fixed the defaults at a profile that runs on a 16 GB
+The earlier design fixed the defaults at a profile that runs on a 16 GB
 machine. This plan replaces that, because the old models are out of date:
 
 | Key | Old default | New default |
@@ -425,8 +427,8 @@ would look like a bug.
 - The `doctor` memory check of §5.12 is not a nicety. It is how a person
   on a 16 GB machine learns the reason in one line instead of reading a
   resolution failure.
-- `README.md` and `plan.md` §2.2 both state the 16 GB figure. They are
-  now wrong. This plan does not edit them; §12 records the difference.
+- The earlier design stated the 16 GB figure. It is now wrong; §12
+  records the difference, and the README states the 32 GB floor.
 
 ### 7.1 No MTP model is a default, and here is why
 
@@ -637,17 +639,17 @@ Only if §11.1 shows a cost. The shape:
 - **`tools.files.recordsChanges` defaults to `false`.** See §7. Should an
   editor see file-change locations without a `config.yaml`?
 
-## 12. Where this plan differs from `plan.md`
+## 12. Where this plan changed the earlier design
 
-These are not edits. `plan.md` keeps its text. This list tells a reader
-which document governs each item.
+The earlier design of the composed agent set the items below. This plan
+replaces them. This list tells a reader what changed, and why.
 
-| Item | `plan.md` says | This plan says |
+| Item | The earlier design | This plan |
 |---|---|---|
-| The default models | §2.2: a profile for a 16 GB machine, on Qwen2.5. | §7: Qwen3 models, and a 32 GB floor. |
-| The flag surface of `acp-agent` | §20.2: no flags, no config wizardry. | §5.4 gives it a small flag surface, because it is now the product. |
-| The place of `acp-agent` | §20.2: an example, under `Examples/`. | §8 moves it to `Sources/`. |
-| The flag surface of `acp-print` | §20.2: no flags. | The same. It does not change. |
-| The name of the production CLI | §17: the CLI and the agent are one binary, in the shape `<cli> acp`. | §2 names it `acp-agent`, and §5.3 keeps that exact shape. |
-| `<cli> instructions --eject` | §3.1 | §5.3 spells it `instructions eject`, to match the other subcommand groups. |
-| The frontends | §19: the Mac app and the CLI consume the composition. | §4 adds one rule: the CLI consumes it through an ACP connection, and never directly. |
+| The default models | A profile for a 16 GB machine, on Qwen2.5. | §7: Qwen3 models, and a 32 GB floor. |
+| The flag surface of `acp-agent` | An example with no flags and no config wizardry. | §5.4 gives it a small flag surface, because it is now the product. |
+| The place of `acp-agent` | An example, under `Examples/`. | §8 moves it to `Sources/`. |
+| The flag surface of `acp-print` | No flags. | The same. It does not change. |
+| The name of the production CLI | The CLI and the agent are one binary, in the shape `<cli> acp`. | §2 names it `acp-agent`, and §5.3 keeps that exact shape. |
+| `<cli> instructions --eject` | A flag that writes the builtin `Instructions.md` into a layer. | §5.3 spells it `instructions eject`, to match the other subcommand groups. |
+| The frontends | The Mac app and the CLI consume the composition. | §4 adds one rule: the CLI consumes it through an ACP connection, and never directly. |

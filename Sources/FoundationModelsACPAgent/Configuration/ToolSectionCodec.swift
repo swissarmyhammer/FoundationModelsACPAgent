@@ -4,7 +4,7 @@ import FoundationModelsSkills
 
 // MARK: - The per-tool codec
 
-/// The option type of one mapping-bodied `tools:` entry (plan.md §11.2).
+/// The option type of one mapping-bodied `tools:` entry.
 /// The body is the tool package's own option type — there is no `enabled:`
 /// key, because `false` sits outside the body — and `init()` is the
 /// defaults an enabling shape (`absent`, `{}`, null, `true`) gives. The
@@ -25,14 +25,15 @@ public protocol SwitchableToolOptions: ToolSectionOptions {
 }
 
 extension SingleValueDecodingContainer {
-    /// The §11.2 scalar probe: the codec first checks for a scalar boolean,
+    /// The scalar probe of a `tools:` entry: the codec first checks for a
+    /// scalar boolean,
     /// then decodes the body. `nil` means the value is not a boolean.
     var scalarBooleanFlag: Bool? {
         try? decode(Bool.self)
     }
 }
 
-/// One tool's decoded `tools:` entry (plan.md §11.2). One rule, five
+/// One tool's decoded `tools:` entry. One rule, five
 /// shapes: an absent key, `{}`, null and `true` each give `.enabled` with
 /// the option defaults; a mapping body gives `.enabled` with the decoded
 /// options; and a scalar `false` gives `.disabled`. Absent and null decode
@@ -71,7 +72,7 @@ public enum ToolSection<Options: ToolSectionOptions>: Codable, Equatable, Sendab
 
 /// The `tools.files:` body — the three flags and the exclude list of
 /// `withFiles(root:additionalRoots:readOnly:allowSymlinks:recordsChanges:excludePatterns:)`
-/// that config may set (plan.md §11.3). The root set is session state, not
+/// that config may set. The root set is session state, not
 /// config, so it is not here.
 ///
 /// ```yaml
@@ -154,8 +155,8 @@ public struct FilesToolOptions: ToolSectionOptions, KeyCheckedSection {
 
 /// The `tools.shell:` body — the one option of
 /// `withShell(storeDirectory:sandbox:outputChunkStream:)` that config may
-/// set (plan.md §11.3). The sandbox comes from the `sandbox:` section
-/// (§11.7) and the chunk stream is runtime wiring, so neither is here.
+/// set. The sandbox comes from the `sandbox:` section and the chunk stream
+/// is runtime wiring, so neither is here.
 public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
     /// Where the shell capability stores command output, or `nil` for the
     /// capability's own default location.
@@ -191,7 +192,7 @@ public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
 }
 
 /// The `tools.skills:` body. The skills package reads its own dotfolder
-/// stack (plan.md §14.2), so the one option is the list of remote skill
+/// stack, so the one option is the list of remote skill
 /// marketplaces. Each entry is a `MarketplaceSource` of the skills package:
 /// `url` is necessary, and `ref`, `sha`, `path`, `alias`, `select`,
 /// `autoUpdate` and `grants` are optional. The marketplace layers are below
@@ -539,11 +540,11 @@ public typealias AgentsToolOptions = SwitchOnlyToolOptions
 
 // MARK: - The mcp entry
 
-/// One config-derived MCP server entry (plan.md §7.3, §11.5): a name and
+/// One config-derived MCP server entry: a name and
 /// exactly one transport. `env` and `headers` are YAML mappings here; the
 /// MCP composition changes them into the wire's `{name, value}` pairs.
 public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
-    /// How a server is reached (plan.md §11.5). There are two transports:
+    /// How a server is reached. There are two transports:
     /// stdio and http. v2 removed `sse`, and the ACP tunnel is
     /// unstable-schema only.
     public enum Transport: Equatable, Sendable {
@@ -635,7 +636,7 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
 }
 
 /// The `mcp:` entry — the one tool section whose body is a list (servers,
-/// not options; plan.md §11.2). The three states: omitted means on with no
+/// not options). The three states: omitted means on with no
 /// configured servers (the client's per-session `mcpServers` still
 /// connect), a list means those servers plus the client's, and a scalar
 /// `false` means fully off — the MCP composition then also refuses
@@ -672,7 +673,7 @@ public enum MCPToolSection: Codable, Equatable, Sendable {
 
 // MARK: - The tools section
 
-/// The `tools:` section (plan.md §11.2): the roster of built-in
+/// The `tools:` section: the roster of built-in
 /// capabilities, each on unless the config sets it off. Absence enables —
 /// a user with no config gets every capability with its defaults — and
 /// disabling is per tool: there is no `tools: false` switch and no `only:`
@@ -764,7 +765,7 @@ extension ToolsConfiguration {
         CodingKeys.environment.stringValue: EnvironmentToolOptions.knownKeys,
     ]
 
-    /// The key checks of the `tools:` body (plan.md §11.2), run by the
+    /// The key checks of the `tools:` body, run by the
     /// loader before the decode.
     ///
     /// - Returns: One warning per unknown tool key, in key order — an

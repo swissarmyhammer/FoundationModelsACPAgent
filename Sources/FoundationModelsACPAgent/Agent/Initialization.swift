@@ -1,12 +1,12 @@
 import FoundationModelsACP
 import Logging
 
-/// The client's capabilities as `initialize` read them (plan.md §5), with
+/// The client's capabilities as `initialize` read them, with
 /// the spec's own rule applied: absent means unsupported.
 ///
 /// Stable v2's `ClientCapabilities` has `auth` and `elicitation`. This agent
-/// reads only `elicitation` (plan.md §16). It never reads `auth.terminal`,
-/// because it has no authentication surface (plan.md §6). A capabilities
+/// reads only `elicitation`, which gates the elicitation relay. It never
+/// reads `auth.terminal`, because it has no authentication surface. A capabilities
 /// object the wire could not parse arrives as the empty value, so it reads
 /// as "supports nothing" and does not fail the handshake.
 public struct NegotiatedClientCapabilities: Hashable, Sendable {
@@ -31,8 +31,10 @@ extension RequestError {
     /// The reason the order rule reports in the error's `data`.
     private static let initializeFirstReason = "initialize must be the first request"
 
-    /// The order-rule refusal (plan.md §5): a JSON-RPC invalid-request
+    /// The order-rule refusal: a JSON-RPC invalid-request
     /// error that names the refused method and the reason in `data`.
+    /// A `session/*` request before `initialize` gets this error, because
+    /// the agent must not act on capabilities that were not negotiated.
     ///
     /// - Parameter method: The wire name of the refused session request.
     /// - Returns: The typed invalid-request error.
@@ -48,10 +50,10 @@ extension RequestError {
 }
 
 extension RoutedACPAgent {
-    /// The build version this agent reports in `initialize` (plan.md §5).
+    /// The build version this agent reports in `initialize`.
     public static let buildVersion = "0.1.0"
 
-    /// The identity this agent reports in `initialize` (plan.md §5).
+    /// The identity this agent reports in `initialize`.
     ///
     /// `name` is the package and product identifier, for programmatic use.
     /// It is never the dotfolder name, which is the user's private
@@ -65,20 +67,21 @@ extension RoutedACPAgent {
     /// The most recent protocol version this agent serves.
     public static let latestProtocolVersion = ProtocolVersion.v2
 
-    /// Every protocol version this agent serves. This agent is v2-only
-    /// (plan.md §1).
+    /// Every protocol version this agent serves. This agent is v2-only: it
+    /// serves the stable ACP v2 method set and no earlier version.
     public static let supportedProtocolVersions: Set<ProtocolVersion> = [latestProtocolVersion]
 
-    /// The capabilities this agent advertises in `initialize` (plan.md §5).
+    /// The capabilities this agent advertises in `initialize`.
     ///
     /// Each marker is an object, never a boolean: `{}` means supported, and
     /// an omitted member means not supported. `capabilities.session` carries
     /// `prompt` — the one `PromptContent` advertisement, next to the
-    /// consumption code it describes (plan.md §12) — `mcp` with both
-    /// `stdio` and `http` (§11.5), `delete` (§10.2), and
-    /// `additionalDirectories` (§7.2). There is no `auth` member (§6), and
-    /// there is no permission capability: the sandbox is the only gate
-    /// (§11.7).
+    /// consumption code it describes — `mcp` with both `stdio` and `http`
+    /// (the two stable MCP transports), `delete` (a real delete, not a
+    /// tombstone), and `additionalDirectories` (multi-root confinement).
+    /// There is no `auth` member, because a local agent has no
+    /// authentication. There is no permission capability: the Seatbelt
+    /// sandbox is the only gate on a command.
     public static let advertisedCapabilities = AgentCapabilities(
         session: SessionCapabilities(
             additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
@@ -86,10 +89,11 @@ extension RoutedACPAgent {
             mcp: MCPCapabilities(http: MCPHTTPCapabilities(), stdio: MCPStdioCapabilities()),
             prompt: PromptContent.advertisedCapabilities))
 
-    /// Negotiates the protocol version and the capabilities (plan.md §5).
+    /// Negotiates the protocol version and the capabilities.
     ///
     /// The response carries ``implementation``, the negotiated version, and
-    /// ``advertisedCapabilities``. It omits `authMethods` (plan.md §6). The
+    /// ``advertisedCapabilities``. It omits `authMethods`, because the agent
+    /// has no authentication. The
     /// client's capabilities are read into
     /// ``negotiatedClientCapabilities``, which also marks the agent as
     /// initialized for the order rule.
@@ -126,8 +130,7 @@ extension RoutedACPAgent {
             capabilities: Self.advertisedCapabilities)
     }
 
-    /// Negotiates the protocol version as behavior, not as a number
-    /// (plan.md §5).
+    /// Negotiates the protocol version as behavior, not as a number.
     ///
     /// If this agent serves the version the client sent, it sends the same
     /// integer back. If not, it sends back ``latestProtocolVersion`` in a

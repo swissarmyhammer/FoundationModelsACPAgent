@@ -10,7 +10,7 @@ import Tracing
 //
 // - The test support's stub agent and stub profile factories, so every
 //   unit suite resolves a profile without MLX, without a download, and
-//   without the network (plan.md §20.1).
+//   without the network.
 // - The agent CLI's `ACP_AGENT_STUB_MODEL=1` composition, so a spawned
 //   `acp-agent` answers deterministically across a real process boundary.
 //   The scripted model of the test support is in-process only, and a

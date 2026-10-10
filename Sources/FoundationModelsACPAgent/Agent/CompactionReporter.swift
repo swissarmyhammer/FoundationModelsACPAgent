@@ -3,7 +3,7 @@ import FoundationModelsACP
 import FoundationModelsRouter
 import Logging
 
-/// The wire report of the Router compactions of one session (plan.md §8.5).
+/// The wire report of the Router compactions of one session.
 ///
 /// A compaction changes only the model context. The ACP history keeps each
 /// message with its id, and the compaction shows as one more entry: an

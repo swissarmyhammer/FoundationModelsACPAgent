@@ -11,7 +11,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The MCP composition (plan.md §7.3, §11.2, §11.5): two sources compose in
+/// The MCP composition: two sources compose in
 /// order, a name collision is refused, `mcp: false` refuses the client's
 /// servers, the servers connect before the registry build, and the surface
 /// refresher stages each catalog change for the next submission boundary.

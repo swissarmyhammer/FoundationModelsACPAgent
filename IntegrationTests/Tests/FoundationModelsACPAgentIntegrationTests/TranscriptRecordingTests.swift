@@ -4,7 +4,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-// MARK: - Tier 3: the agent CLI records what it did (plan.md §4.1)
+// MARK: - Tier 3: the agent CLI records what it did, in the project
 //
 // The suite that spawns the built `acp-agent`, runs one prompt, and reads
 // the file the process left behind. A test at this level cannot pass on a
@@ -147,8 +147,9 @@ struct TranscriptRecordingTests {
 
     // MARK: - Reading the recording root
 
-    /// The `project` recording root of `workspace`, the default location
-    /// (plan.md §4.1): `<workspace>/.acp-agent/transcripts/`.
+    /// The `project` recording root of `workspace`, the default location:
+    /// `<workspace>/.acp-agent/transcripts/`. A transcript is project
+    /// context, so it lives in the repository.
     ///
     /// The shared helper builds the path, so this suite and the unit
     /// suites cannot disagree about where a project records.

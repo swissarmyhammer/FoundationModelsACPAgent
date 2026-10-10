@@ -36,7 +36,7 @@ struct FailingModelLoader: ModelLoader {
     func preload(container: any LoadedModelContainer) async throws {}
 }
 
-/// Profile resolution (plan.md §1, §2.1, §2.2): the mapping from the
+/// Profile resolution: the mapping from the
 /// `profile` config section to Router's `ProfileDefinition`, the dotfolder
 /// name fallback, the resolution at agent construction over a scripted
 /// loader, the readable failure report, and the strongly held resident
@@ -79,7 +79,7 @@ struct FailingModelLoader: ModelLoader {
     // MARK: - The mapping matrix
 
     /// With no configured `profile.name`, the definition's name falls back
-    /// to the dotfolder name (plan.md §2.1).
+    /// to the dotfolder name.
     @Test func defaultNameFallsBackToTheDotfolderName() throws {
         let definition = ProfileConfiguration().definition(
             fallbackName: try Self.makeDotfolderName())
@@ -144,8 +144,9 @@ struct FailingModelLoader: ModelLoader {
         #expect(definition.embedding.map(\.stringValue) == ["org/embedding"])
     }
 
-    /// The config has no context key (plan.md §2.4), so the mapping passes
-    /// `nil` — not the initializer's 8192 default — and the ladder applies.
+    /// The config has no context key, because the context size comes from
+    /// the model. So the mapping passes `nil` — not the initializer's 8192
+    /// default — and the ladder applies.
     @Test func contextStaysNilSoTheLadderApplies() throws {
         let definition = ProfileConfiguration().definition(
             fallbackName: try Self.makeDotfolderName())

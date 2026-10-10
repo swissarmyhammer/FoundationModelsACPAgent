@@ -7,7 +7,8 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The append-only `sessions.jsonl` index and its rebuild from a directory
-/// scan (plan.md §4.1 and §4.3). Every test builds its own throwaway
+/// scan. The index is a cache: a scan of the session directories can
+/// rebuild it, so a damaged index is not load-bearing. Every test builds its own throwaway
 /// transcripts root under a temp directory.
 @Suite struct SessionIndexTests {
     /// A throwaway transcripts root. The OS reclaims the temp directory.
@@ -152,7 +153,7 @@ import Testing
 
     // MARK: - Damage
 
-    /// A torn final line — the crash artifact §4.1 describes — is dropped
+    /// A torn final line — the artifact of a crash during an append — is dropped
     /// with a warning, and every earlier record still reads.
     @Test func tornFinalLineIsDroppedWithAWarning() throws {
         let fixture = Fixture()

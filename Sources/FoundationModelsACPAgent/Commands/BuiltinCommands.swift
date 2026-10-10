@@ -4,8 +4,8 @@ import FoundationModelsExtras
 import FoundationModelsRouter
 import Synchronization
 
-/// The session state the six builtins read, bound in two phases (plan.md
-/// §14.1). The configuration, the instructions, the model and the profile are
+/// The session state the six builtins read, bound in two phases. The
+/// configuration, the instructions, the model and the profile are
 /// known when `session/new` composes the session; the live ``RoutedSession``,
 /// its id, its transcript directory and the assembled registry come only
 /// after the session is made — and `/help` reads the registry that carries
@@ -34,7 +34,7 @@ final class BuiltinCommandContext: Sendable {
         weak var registry: CommandRegistry?
 
         /// The report of each `/compact` on the wire and in the retained
-        /// history of the session (plan.md §8.5).
+        /// history of the session.
         let compactionReporter: CompactionReporter
 
         /// Makes the late-bound references.
@@ -125,7 +125,8 @@ final class BuiltinCommandContext: Sendable {
     }
 }
 
-/// The six reserved builtin slash commands (plan.md §14.1, source 1). Each is
+/// The six reserved builtin slash commands, the first command source.
+/// No later source can replace their names. Each is
 /// an `.action` closure that captures a ``BuiltinCommandContext`` and streams
 /// its text, with no model call: `/compact` folds now, `/context` reads the
 /// fill, `/memory` prints the instructions, `/status` prints the session
@@ -250,7 +251,7 @@ enum BuiltinCommands {
         }
     }
 
-    // MARK: - /compact (plan.md §14.1, §8.5)
+    // MARK: - /compact
 
     /// The `/compact` report: a caller-driven fold, then the before and after
     /// token counts and the summarizer model. A caller-driven fold does not
@@ -262,7 +263,7 @@ enum BuiltinCommands {
     /// compaction, thus the report says so and names the reason, instead of
     /// "Compacted" beside two equal token counts.
     ///
-    /// The fold also shows as one compaction entry (plan.md §8.5): the
+    /// The fold also shows as one compaction entry: the
     /// `in_progress` update before the fold, then `completed` with the
     /// summary, `failed` with the reason, or `cancelled`, all under one id
     /// (``CompactionReporter``). The streamed text stays the report a person
@@ -308,7 +309,7 @@ enum BuiltinCommands {
             """
     }
 
-    // MARK: - /context (plan.md §14.1)
+    // MARK: - /context
 
     /// The `/context` report: the measured fill.
     ///
@@ -321,7 +322,7 @@ enum BuiltinCommands {
         return contextReport(fill: await binding.session.contextFill)
     }
 
-    /// Formats a context fill (plan.md §14.1). The fill is `Double.nan` when
+    /// Formats a context fill. The fill is `Double.nan` when
     /// no submission has stamped a measurement, so the NaN is guarded with "not
     /// measured yet" and never printed.
     ///
@@ -335,7 +336,7 @@ enum BuiltinCommands {
         return "Context fill: \(percent)%."
     }
 
-    // MARK: - /memory (plan.md §14.1, §3.2)
+    // MARK: - /memory
 
     /// The `/memory` report: the assembled instructions, with the per-file
     /// source headers the assembler already carries.
@@ -346,7 +347,7 @@ enum BuiltinCommands {
         context.instructions.isEmpty ? "No instructions were assembled." : context.instructions
     }
 
-    // MARK: - /status (plan.md §14.1)
+    // MARK: - /status
 
     /// The `/status` report: the session id, the cwd, the model, the profile
     /// and the transcript path.
@@ -366,7 +367,7 @@ enum BuiltinCommands {
             """
     }
 
-    // MARK: - /config (plan.md §14.1, §2.2)
+    // MARK: - /config
 
     /// The `/config` report: with no argument it prints the effective
     /// configuration as YAML; `export home|project` writes it to that layer.
@@ -403,8 +404,10 @@ enum BuiltinCommands {
         }
     }
 
-    /// Writes the effective configuration to a layer's `config.yaml`, the
-    /// §2.2 eject counterpart.
+    /// Writes the effective configuration to a layer's `config.yaml`. It
+    /// is the counterpart of `acp-agent instructions eject`: a file in a
+    /// layer shadows each code-level default, so a change of behavior
+    /// needs no rebuild.
     ///
     /// - Parameters:
     ///   - context: The session context.
@@ -426,7 +429,7 @@ enum BuiltinCommands {
         }
     }
 
-    // MARK: - /help (plan.md §14.1)
+    // MARK: - /help
 
     /// The `/help` report: the registered commands, each with its argument
     /// hint and description.

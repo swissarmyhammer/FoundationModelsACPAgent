@@ -8,7 +8,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The prompt-content policy (plan.md §12, §5): the honest capability
+/// The prompt-content policy: the honest capability
 /// advertisement, the resource-link resolution through the files verb,
 /// the embedded-context fold, and the MCP content passthrough map.
 @Suite struct PromptContentTests {
@@ -204,7 +204,7 @@ import Testing
         return text
     }
 
-    // MARK: - The honest advertisement (plan.md §5, §12)
+    // MARK: - The honest advertisement
 
     /// The advertisement and the consumption agree on every content
     /// kind. This is the two-sided honesty test: a kind is advertised
@@ -240,7 +240,7 @@ import Testing
         #expect(session.prompt == PromptContent.advertisedCapabilities)
     }
 
-    // MARK: - The model-prompt fold (plan.md §12)
+    // MARK: - The model-prompt fold
 
     /// Text blocks and embedded text resources fold into the model
     /// prompt in block order.
@@ -350,7 +350,7 @@ import Testing
         #expect(prompt == "annotated")
     }
 
-    // MARK: - The resource-link resolution (plan.md §12)
+    // MARK: - The resource-link resolution
 
     /// A `file://` URI inside the root resolves to the file's text.
     @Test func aFileURIInsideTheRootResolvesToTheFileText() async throws {
@@ -410,7 +410,7 @@ import Testing
         #expect(resolved.contains("was not read"))
     }
 
-    // MARK: - The MCP passthrough map (plan.md §12)
+    // MARK: - The MCP passthrough map
 
     /// MCP text content maps to the ACP text block, type to type.
     @Test func mcpTextContentMapsTypeToType() throws {
@@ -524,7 +524,7 @@ import Testing
         #expect(text.text == "first")
     }
 
-    // MARK: - The prompt on the harness (plan.md §12, §20.1)
+    // MARK: - The prompt on the harness
 
     /// A prompt with a `resource_link` to a file inside the cwd puts
     /// the file's text into the model prompt the scripted backend

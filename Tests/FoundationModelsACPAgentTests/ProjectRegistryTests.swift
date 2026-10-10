@@ -5,7 +5,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The cross-project registry `projects.jsonl` (plan.md §4.5): one appended
+/// The cross-project registry `projects.jsonl` in the user layer: one appended
 /// record per new working directory, `lastSeen` updates on a revisit, and a
 /// stale entry is skipped on read. Every test builds its own throwaway user
 /// directory and project directories under a temp directory.

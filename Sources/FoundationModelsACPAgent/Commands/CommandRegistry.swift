@@ -4,7 +4,7 @@ import FoundationModelsExtras
 import FoundationModelsSkills
 import Logging
 
-/// The per-session slash-command registry (plan.md §14.1).
+/// The per-session slash-command registry.
 ///
 /// One registry is assembled at session creation, from three sources in
 /// precedence order: the builtins, the linked `SlashCommandProviding`
@@ -16,9 +16,9 @@ import Logging
 /// The registry follows each provider's `commandUpdates` stream. An
 /// update replaces that provider's set wholesale, re-merges, and — once
 /// ``beginPublishing(_:)`` set a publisher — publishes the new merged
-/// set, which feeds `available_commands_update` (plan.md §14.4).
+/// set, which feeds `available_commands_update`.
 actor CommandRegistry {
-    /// The reserved source-1 commands (plan.md §14.1). Their names can
+    /// The reserved builtin commands, the first source. Their names can
     /// never be taken by a later source.
     private let builtins: [SlashCommand]
 
@@ -82,7 +82,7 @@ actor CommandRegistry {
 
     /// Sets the publisher and publishes the current merged set at once.
     /// Every later provider update publishes again through the same
-    /// publisher (plan.md §14.4).
+    /// publisher.
     ///
     /// - Parameter publisher: The consumer of each merged-set
     ///   publication.
@@ -117,7 +117,7 @@ actor CommandRegistry {
     private static let maxSuggestionDistance = 3
 
     /// The merged command names closest to `name`, nearest first, for
-    /// the unknown-command error (plan.md §14.3).
+    /// the unknown-command error.
     ///
     /// - Parameter name: The unknown command name.
     /// - Returns: At most ``maxSuggestions`` names within
@@ -132,7 +132,7 @@ actor CommandRegistry {
             .map(\.name)
     }
 
-    /// Maps a merged set to the wire's command list (plan.md §14.4):
+    /// Maps a merged set to the wire's command list:
     /// `name` and `description` map straight across, and the provider's
     /// argument-hint string passes through unchanged as the text
     /// input's `hint`.
@@ -148,7 +148,7 @@ actor CommandRegistry {
         }
     }
 
-    // MARK: - The merge (plan.md §14.1)
+    // MARK: - The merge
 
     /// Rebuilds ``commands`` and the kind of each command from the builtins
     /// and the current provider sets. Logs every collision win and every
@@ -203,8 +203,7 @@ actor CommandRegistry {
     }
 
     /// Starts one follower task per provider with a `commandUpdates`
-    /// stream. Each pushed set replaces that provider's slot wholesale
-    /// (plan.md §14.4).
+    /// stream. Each pushed set replaces that provider's slot wholesale.
     private func subscribe() {
         for (index, provider) in providers.enumerated() {
             guard let updates = provider.commandUpdates else { continue }
@@ -268,10 +267,10 @@ actor CommandRegistry {
 /// span attribute. It is part of the observable surface of the agent, so
 /// change a raw value only as a deliberate break.
 enum CommandKind: String, Sendable {
-    /// A built-in command of the agent (plan.md §14.1, source 1).
+    /// A built-in command of the agent, the first source.
     case builtin
 
-    /// A command of the skills source (plan.md §14.1, source 3).
+    /// A command of the skills source, the third source.
     case skill
 
     /// A command of a linked provider whose text goes to the model as a
@@ -301,7 +300,7 @@ enum CommandKind: String, Sendable {
     }
 }
 
-// MARK: - The skills source (plan.md §14.2)
+// MARK: - The skills source
 
 /// The skills source of the registry: `SkillsRegistry`'s own
 /// `SlashCommandProviding` conformance, with one temporary correction.
@@ -310,15 +309,16 @@ enum CommandKind: String, Sendable {
 /// `.prompt(template:)` carrying the skill's raw, unrendered body. The
 /// harness template engine would render only its own pass, so Skills'
 /// `$`-argument substitution and shell-injection passes would never run
-/// (plan.md §14.2, gap 1). This source therefore replaces each `.prompt`
+/// — the user would see `$0`, `$ARGUMENTS` and backtick-shell syntax as
+/// literal text. This source therefore replaces each `.prompt`
 /// skill body with a `.rendered` body that runs
 /// `registry.call(id:arguments:)` — synchronous, throwing — which runs
 /// all three render passes. Remove this wrap when Skills emits
-/// `.rendered` itself (upstream adoption `c2pad49`, plan.md §21): the
+/// `.rendered` itself (upstream adoption `c2pad49`): the
 /// pass-through arm below already forwards a `.rendered` body unchanged.
 struct SkillCommandSource: SlashCommandProviding {
     /// The session's skills registry, built with `watch: true` so
-    /// `commandUpdates` is non-nil (plan.md §14.1, source 3).
+    /// `commandUpdates` is non-nil.
     let registry: SkillsRegistry
 
     /// The registry's user-invocable skills, one `/id` command each,

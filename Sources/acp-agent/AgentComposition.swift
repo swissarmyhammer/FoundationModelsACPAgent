@@ -2,8 +2,8 @@ import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsRouter
 
-/// The CLI choices every subcommand shares (cli-plan.md §5.10, plan.md
-/// §20.2): the dotfolder name, and the model switch of the environment.
+/// The CLI choices every subcommand shares (cli-plan.md §5.10): the
+/// dotfolder name, and the model switch of the environment.
 /// `run` and `acp` both build their agent through ``compose(workingDirectory:environment:reporting:)``,
 /// so the two modes cannot drift apart.
 ///
@@ -18,8 +18,9 @@ enum AgentComposition {
     /// The name roots the configuration stack — `$XDG_CONFIG_HOME/acp-agent/`
     /// for the user layer, `<cwd>/.acp-agent/` for the project layer — and
     /// the transcript directory, and it is the fallback for the profile's
-    /// name (plan.md §2.1). It never goes on the wire: `initialize` reports
-    /// the package identity instead (§5).
+    /// name. It never goes on the wire: `initialize` reports the package
+    /// identity instead, because the dotfolder name is the private choice
+    /// of the user.
     static let dotfolderName = "acp-agent"
 
     /// The environment variable that selects `ComposedAgent.ModelSource.stub` in place
@@ -51,7 +52,8 @@ enum AgentComposition {
     static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
 
     /// The version the CLI reports. One binary and one version: `--version`
-    /// prints this, and `initialize` reports the same value (plan.md §5).
+    /// prints this, and `initialize` reports the same value as the build
+    /// version of its `info`.
     ///
     /// It stands here because the agent type is named in this file alone
     /// (cli-plan.md §4).

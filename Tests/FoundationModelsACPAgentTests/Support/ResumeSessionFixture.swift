@@ -12,7 +12,7 @@ import Testing
 // events of a recorded session this way.
 @testable import FoundationModelsRouter
 
-// MARK: - The resume model seam (plan.md §7.4, §20.1)
+// MARK: - The resume model seam
 //
 // The resume round trips need two things the scripted fixtures do not
 // give: a backend that appends real transcript entries on the streaming

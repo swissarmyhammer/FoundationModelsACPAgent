@@ -20,9 +20,9 @@ private let testTargetName = "\(packageName)Tests"
 /// under `Tests/`.
 ///
 /// A library target, and not a second test target: the nested
-/// `IntegrationTests` package (plan.md §20.1, and the org test contract's
-/// Shape 2) reaches this code as a product, and a package cannot depend on
-/// another package's test target. Router publishes
+/// `IntegrationTests` package (the second of the two test levels, and the org
+/// test contract's Shape 2) reaches this code as a product, and a package
+/// cannot depend on another package's test target. Router publishes
 /// `FoundationModelsRouterTestSupport` the same way, from the same place
 /// under `Tests/`.
 private let testSupportTargetName = "\(packageName)TestSupport"
@@ -45,24 +45,26 @@ private let swissArmyHammerOrgURL = "git@github.com:swissarmyhammer/"
 /// of it until `swift package update` moves it.
 private let mainBranch = "main"
 
-/// The ACP wire (plan.md §1): the generated types, the role protocols, the
+/// The ACP wire: the generated types, the role protocols, the
 /// connections, and the ndJSON framing. It has zero dependencies.
 private let wireDependencyName = "FoundationModelsACP"
 
-/// The runtime (plan.md §1): self-folding, token-metered, event-streaming,
-/// recorded sessions.
+/// The runtime: self-folding, token-metered, event-streaming, recorded
+/// sessions. This package owns what the runtime does not: file I/O, the
+/// dotfolders, the command registry, the tool roster and the ACP `Agent`
+/// conformance.
 private let routerDependencyName = "FoundationModelsRouter"
 
 /// The dotfolder stack, the template engine, and the operation-event
-/// vocabulary (plan.md §1).
+/// vocabulary (`OperationEvent`, `OperationOutcome`), which Router re-exports.
 private let extrasDependencyName = "FoundationModelsExtras"
 
-/// The consolidated tool surface (plan.md §1): the files, shell and mcp
+/// The consolidated tool surface: the files, shell and mcp
 /// capabilities behind one code-mode tool. The former FileTool, Shelltool
 /// and MCP packages dissolved into it, so none of the three is declared here.
 private let multitoolDependencyName = "FoundationModelsMultitool"
 
-/// The stand-alone skills package (plan.md §1). It gives a plain
+/// The stand-alone skills package. It gives a plain
 /// `FoundationModels.Tool`. It is NOT a Multitool capability, so a skill loads
 /// in one request/response and not through the async code-mode lane.
 private let skillsDependencyName = "FoundationModelsSkills"
@@ -89,7 +91,8 @@ private let codeContextDependencyName = "FoundationModelsCodeContext"
 /// so the package identity stays one.
 private let rankerDependencyName = "FoundationModelsRanker"
 
-/// The Client role (plan.md §20.1): the driver of every integration tier.
+/// The Client role: the driver of every test level above a plain unit test.
+/// Do not write a test client.
 ///
 /// The test target alone links it. The library target never does. The client
 /// depends on the wire and Extras only, so no cycle is possible.
@@ -102,8 +105,8 @@ private let clientDependencyName = "FoundationModelsACPClient"
 /// `StdioContractTests` spawns it.
 private let agentExecutableName = "acp-agent"
 
-/// The one-shot client CLI example (plan.md §20.2): send one prompt,
-/// run the turn, print the answer, exit. It links ONLY the client
+/// The one-shot client CLI example, in the shape of `claude --print`: send
+/// one prompt, run the turn, print the answer, exit. It links ONLY the client
 /// package and the wire — never this package's library — so every byte
 /// crosses ACP into the spawned `agentExecutableName` process. The
 /// nested `IntegrationTests` package declares this product too, so
@@ -260,14 +263,15 @@ private let telemetryTestSupportProduct = Target.Dependency.product(
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
 /// declares, because a second URL for the same package identity makes the
-/// resolve fail. The MCP composition (plan.md §11.5) names the sdk's
+/// resolve fail. Do not also depend on `modelcontextprotocol/swift-sdk`. The
+/// MCP composition names the sdk's
 /// `HTTPClientTransport` for the http transport of a composed server.
 private let mcpSDKPackage = "swift-sdk"
 
 /// The one product of `mcpSDKPackage` this package links.
 private let mcpSDKProduct = Target.Dependency.product(name: "MCP", package: mcpSDKPackage)
 
-/// The test-support products of Multitool (plan.md §20): the `MCPTestServer`
+/// The test-support products of Multitool: the `MCPTestServer`
 /// scripted-server library, and the `mcp-test-server` stdio executable the
 /// MCP composition suite spawns. The executable is a product dependency so
 /// `swift test` builds it into the products directory beside the test
@@ -277,11 +281,13 @@ private let multitoolTestProducts: [Target.Dependency] = [
     .product(name: "mcp-test-server", package: multitoolDependencyName),
 ]
 
-/// The family packages the library target depends on (plan.md §1).
+/// The family packages the library target depends on.
 ///
 /// Router and Extras are declared by name, and not reached through Multitool:
 /// Multitool has no `@_exported import`, so its dependencies do not come for
-/// free. The MCP composition (plan.md §11.5) names `MCP.Transport` types for
+/// free. Only this package names the tool packages; the runtime never does,
+/// and no cycle is possible, because no tool package depends on this
+/// package. The MCP composition names `MCP.Transport` types for
 /// its http path, so `mcpSDKPackage` declares the sdk as well.
 private let familyDependencyNames = [
     wireDependencyName,
@@ -313,7 +319,7 @@ private let familyProducts = familyDependencyNames.map(makeFamilyProduct(name:))
 
 /// SwiftPM manifest for FoundationModelsACPAgent.
 ///
-/// The composed agent (plan.md): `AgentConfiguration` over the dotfolder
+/// The composed agent: `AgentConfiguration` over the dotfolder
 /// stack, the tool roster, the slash-command registry, and `RoutedACPAgent`,
 /// the ACP `Agent` conformance over Router sessions.
 let package = Package(
@@ -393,9 +399,9 @@ let package = Package(
             ],
             path: "Sources/\(agentExecutableName)"
         ),
-        // The one-shot client CLI (plan.md §20.2). It links ONLY the
-        // client package and the wire — see `printExecutableName` — so
-        // every byte reaches the agent over ACP.
+        // The one-shot client CLI. It links ONLY the client package and
+        // the wire — see `printExecutableName` — so every byte reaches the
+        // agent over ACP. A back-door import would break the interop proof.
         .executableTarget(
             name: printExecutableName,
             dependencies: [
@@ -404,7 +410,7 @@ let package = Package(
             ],
             path: "Examples/\(printExecutableName)"
         ),
-        // The shared test support (plan.md §20.1): the in-process
+        // The shared test support: the in-process
         // agent-and-client harness, the scripted model, the stub profile
         // fixtures, the built-product locator, and the assertion helpers.
         // A library target, so the nested `IntegrationTests` package
@@ -424,10 +430,11 @@ let package = Package(
         // `testSupportTargetName` — the client driver — see
         // `clientDependencyName` — Multitool's test-support products —
         // see `multitoolTestProducts` — the MCP sdk, whose tool-result
-        // content types the passthrough-map tests construct (plan.md
-        // §12) — and the agent CLI target with its parser, so the parse
-        // and composition suites drive the command tree in process. The
-        // telemetry suites also link the Extras telemetry test helper — see
+        // content types the passthrough-map tests construct (ACP's
+        // `ContentBlock` is MCP's) — and the agent CLI target with its
+        // parser, so the parse and composition suites drive the command
+        // tree in process. The telemetry suites also link the Extras
+        // telemetry test helper — see
         // `telemetryTestSupportProduct` — swift-log, whose record types
         // they read, and the span API with the in-memory tracer, whose span
         // kinds and span ids they read — see `inMemoryTracingProduct` — and

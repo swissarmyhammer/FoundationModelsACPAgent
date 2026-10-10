@@ -1,8 +1,8 @@
 import Foundation
 import FoundationModelsACPAgent
 
-/// The one writer of a layer's `config.yaml` in a test tree (plan.md
-/// §20.1). Every fixture that seeds a user or project layer calls it, so
+/// The one writer of a layer's `config.yaml` in a test tree. Every fixture
+/// that seeds a user or project layer calls it, so
 /// the file is written the same way in each suite, and the nested
 /// `IntegrationTests` package reaches it as a product.
 public enum ConfigFileFixture {

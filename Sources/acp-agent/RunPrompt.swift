@@ -39,7 +39,7 @@ struct UnknownResumedSessionError: Error, CustomStringConvertible {
 }
 
 /// One `run` prompt, in one process, over `InMemoryTransport.pair()`
-/// (cli-plan.md §4, §5.4, plan.md §19).
+/// (cli-plan.md §4, §5.4).
 ///
 /// **The one architecture rule.** The CLI reaches the agent through an
 /// ACP connection in every mode, and only the transport changes: this
@@ -48,7 +48,7 @@ struct UnknownResumedSessionError: Error, CustomStringConvertible {
 /// the later socket mode becomes a rewrite, and the CLI stops proving the
 /// protocol.
 ///
-/// This is the wiring the Mac app uses as well (plan.md §19): an
+/// This is the wiring the Mac app uses as well: an
 /// `AgentSideConnection` on one end, a `ClientSideConnection` on the
 /// other, with no pipe and no subprocess.
 ///
@@ -180,7 +180,7 @@ enum RunPrompt {
         }
         // The watch is armed here, with a session open and the collector
         // reading: a `session/cancel` that reached the agent before the
-        // prompt ran would find no active prompt and be ignored (§8.6).
+        // prompt ran would find no active prompt and be ignored.
         let watch = install()
         let watching = Task {
             await react(to: watch.arrivals, cancelling: sessionId, over: connection)
@@ -297,9 +297,9 @@ enum RunPrompt {
             return response.sessionId
         case .resumed(let sessionId):
             // The stored session already has a working directory, and it
-            // wins (§5.4). So the run reads that directory off the
-            // listing and sends it back: the agent refuses a resume whose
-            // `cwd` does not equal the recorded one (plan.md §7.4).
+            // wins (cli-plan.md §5.4). So the run reads that directory off
+            // the listing and sends it back: the agent refuses a resume
+            // whose `cwd` does not equal the recorded one.
             let cwd = try await recordedWorkingDirectory(of: sessionId, over: connection)
             _ = try await connection.resumeSession(
                 ResumeSessionRequest(cwd: cwd, sessionId: sessionId))

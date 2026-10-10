@@ -6,7 +6,7 @@ import Testing
 @testable import FoundationModelsACPAgent
 @testable import acp_agent
 
-/// `acp-agent instructions eject` (cli-plan.md §5.3, plan.md §3.1): the
+/// `acp-agent instructions eject` (cli-plan.md §5.3): the
 /// compiled-in `Instructions.md` written into one layer, so a person can
 /// read and edit the prompt that a layer file replaces wholesale.
 ///

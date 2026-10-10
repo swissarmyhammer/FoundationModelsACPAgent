@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModelsACPAgent
 
-/// The `project` recording root of one working directory (plan.md §4.1):
+/// The `project` recording root of one working directory:
 /// `<workspace>/.<name>/transcripts/`.
 ///
 /// This calls the production API, and it never builds the path again. A

@@ -2,7 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
 
-/// The session config options surface (plan.md §15).
+/// The session config options surface.
 ///
 /// Day one ships one real option: a `select` of category `model` over
 /// the resident profile's `standard` and `flash` slots. Both slots are
@@ -33,14 +33,14 @@ enum ConfigOptions {
     /// is not a chat slot, so it is never offered.
     static let selectableSlots: [ModelSlot] = [.standard, .flash]
 
-    /// The default slot (plan.md §15: every option MUST have a default).
+    /// The default slot. Every option MUST have a default.
     /// It is the standard slot — the same slot `session/new` composes
     /// the session from — so a client that ignores config options gets
     /// a session that operates.
     static let defaultSlot: ModelSlot = .standard
 
     /// The complete, priority-ordered option list for one session:
-    /// the one model-slot select (plan.md §15).
+    /// the one model-slot select.
     ///
     /// - Parameters:
     ///   - profile: The resident profile whose slots are offered.
@@ -100,7 +100,7 @@ enum ConfigOptions {
     ///
     /// `SessionConfigSelectOptions` is the wire package's permanently
     /// deferred union (flat list or groups), represented as raw JSON.
-    /// We ship the flat list, without groups (plan.md §15).
+    /// We ship the flat list, without groups.
     ///
     /// - Parameter profile: The resident profile whose slots are shown.
     /// - Returns: The encoded flat list.
@@ -126,13 +126,13 @@ enum ConfigOptions {
 }
 
 extension RequestError {
-    /// The reason an unmatched set value reports (plan.md §15): a
+    /// The reason an unmatched set value reports: a
     /// `.other` value, a value of the wrong type, or an id that names
     /// no offered slot.
     private static let invalidConfigValueReason = "the value does not match the option"
 
     /// The unknown-option refusal: invalid params with the option id in
-    /// `data`, the §10.1 pattern of the session-id refusals.
+    /// `data`, the same pattern as the session-id refusals.
     ///
     /// - Parameter id: The unknown option id.
     /// - Returns: The typed invalid-params error.
@@ -143,7 +143,7 @@ extension RequestError {
             data: .object(["configId": .string(id.rawValue)]))
     }
 
-    /// The mismatched-value refusal (plan.md §15): invalid params with
+    /// The mismatched-value refusal: invalid params with
     /// the option id and the reason in `data`. The state does not
     /// change and no push goes out.
     ///
@@ -161,13 +161,13 @@ extension RequestError {
 }
 
 extension RoutedACPAgent {
-    /// Applies one config-option set (plan.md §15): validates the
+    /// Applies one config-option set: validates the
     /// session and the option, switches the model slot, and answers the
     /// COMPLETE option state — `configOptions` is required and never a
     /// delta. The response is the announcement, so no push follows a
     /// successful set.
     ///
-    /// The unknown-id policy is §10.1's: an unknown `sessionId` is
+    /// The unknown-id policy is the one of every session method: an unknown `sessionId` is
     /// invalid params with the id in `data`; a known but closed session
     /// is invalid params with the resume hint. Neither pushes a
     /// `config_option_update`.
@@ -207,11 +207,12 @@ extension RoutedACPAgent {
     /// session is replaced by one vended from the selected slot's
     /// resident handle, so later prompts generate on the switched slot.
     /// Both slots are resident, so the switch loads nothing and blocks
-    /// on nothing (plan.md §15).
+    /// on nothing. It does not need pooled residency; only a profile
+    /// switch would.
     ///
     /// The replacement records under the session's own transcript
     /// directory, so the lineage stays on disk the way a fork's nesting
-    /// states it (plan.md §4.2). The replaced session is closed when it
+    /// states it: the nesting is the lineage record. The replaced session is closed when it
     /// is idle; a prompt still in flight keeps it and finishes there.
     ///
     /// - Parameters:
@@ -225,7 +226,8 @@ extension RoutedACPAgent {
         guard slot != entry.selectedSlot else { return }
         // The replacement keeps automatic compaction on: the same
         // `compaction:` section the session was composed from, against the
-        // selected slot's resolved context (plan.md §2.4), and the same
+        // selected slot's resolved context (the context size comes from the
+        // model, never from configuration), and the same
         // `repetition:` section.
         let replacement = ConfigOptions.handle(for: slot, of: residentProfile)
             .makeBudgetedSession(
@@ -260,7 +262,7 @@ extension RoutedACPAgent {
     }
 
     /// Pushes one `config_option_update` when the announced state
-    /// diverges from the truth (plan.md §15): when resolution lands on a
+    /// diverges from the truth: when resolution lands on a
     /// different model than the option shows, `currentValue` — and the
     /// labels beside it — must be corrected, or the client's selector
     /// claims a model the agent does not run. The push carries the

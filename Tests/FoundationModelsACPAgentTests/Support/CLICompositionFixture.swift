@@ -16,7 +16,7 @@ import FoundationModelsRouter
 /// The composition of one CLI prompt, over a model the test wrote.
 enum CLICompositionFixture {
     /// Composes over a model that plays `script`, so a prompt gives a text
-    /// the test wrote (plan.md §20.1). Nothing downloads and nothing
+    /// the test wrote. Nothing downloads and nothing
     /// loads.
     ///
     /// - Parameters:

@@ -1,12 +1,13 @@
 import Foundation
 import FoundationModelsExtras
 
-/// Emits an ``AgentConfiguration`` as commented block YAML (plan.md §14.1,
-/// §2.2, cli-plan.md §5.11).
+/// Emits an ``AgentConfiguration`` as commented block YAML (cli-plan.md
+/// §5.11).
 ///
 /// **This is the one generator, and it has four callers.** The `/config`
 /// builtin prints the text; `/config export` writes it to a layer's
-/// `config.yaml` — the §2.2 eject counterpart; `config show` prints it,
+/// `config.yaml`, so a file can shadow each builtin default; `config show`
+/// prints it,
 /// with the layer of each key under `--source`; and `config init` writes
 /// the defaults of a fresh `config.yaml` with it. Two front doors write
 /// the same file, so they must write the same bytes, and one generator is
@@ -99,7 +100,7 @@ public enum ConfigurationYAML {
 
     /// The comment printed at the top of the document.
     private static let headerComment =
-        "# The effective configuration (plan.md §2.2). Edit and reload, or eject with /config export."
+        "# The effective configuration. Edit and reload, or eject with /config export."
 
     /// Renders `configuration` as commented block YAML.
     ///

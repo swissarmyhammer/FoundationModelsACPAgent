@@ -2,9 +2,10 @@
 // `acp-agent acp`.
 //
 // `StdioContractTests` and `TelemetryStdoutTests` both spawn the agent in
-// `acp` mode and hold its stdout to the plan.md §17 framing rule. This one
-// home keeps the rule and the idle wait in one place, so the two suites
-// cannot drift apart.
+// `acp` mode and hold its stdout to the ACP stdio framing rule: stdout
+// carries only UTF-8 JSON-RPC messages, `\n` divides them, and no message
+// holds a newline. This one home keeps the rule and the idle wait in one
+// place, so the two suites cannot drift apart.
 
 import Foundation
 import FoundationModelsACP
@@ -13,13 +14,13 @@ import Testing
 /// The checks on the stdout bytes of a spawned `acp-agent acp`, and the wait
 /// for the end of a prompt.
 enum StdoutFrameChecks {
-    /// The newline byte that divides ndJSON frames (plan.md §17).
+    /// The newline byte that divides ndJSON frames.
     static let newlineByte = UInt8(ascii: "\n")
 
     /// The JSON-RPC version each frame must name.
     private static let jsonRPCVersion = "2.0"
 
-    /// Asserts the §17 framing rules on the tapped raw bytes: the stream
+    /// Asserts the stdio framing rules on the tapped raw bytes: the stream
     /// divides on `\n` into complete frames, each frame parses as one
     /// JSON-RPC message, no frame is empty, and no byte follows the final
     /// newline. A frame with a newline inside it cannot pass: the split

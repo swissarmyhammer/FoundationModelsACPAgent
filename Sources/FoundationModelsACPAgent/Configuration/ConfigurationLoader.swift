@@ -3,7 +3,7 @@ import FoundationModelsExtras
 import Logging
 
 /// A schema failure the loader finds in the merged `config.yaml` tree before
-/// the decode (plan.md §2.4).
+/// the decode.
 public enum ConfigurationError: Error, Equatable, Sendable, CustomStringConvertible {
     /// The document's root is a scalar or a list, so it holds no section.
     case documentNotAMapping
@@ -45,13 +45,12 @@ extension ConfigurationError {
     }
 }
 
-/// A condition the loader reports and continues past (plan.md §2.4).
+/// A condition the loader reports and continues past.
 public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     /// A top-level section no schema section is named after.
     case unknownSection(name: String)
 
-    /// A key under `tools:` that names no tool in the roster (plan.md
-    /// §11.2).
+    /// A key under `tools:` that names no tool in the roster.
     case unknownToolSection(name: String)
 
     /// A human-readable message that names the section.
@@ -119,7 +118,7 @@ public struct LoadedConfiguration: Equatable, Sendable {
     public let sources: [String: DotfolderStack.Source]
 }
 
-/// Loads `config.yaml` through the configuration stack (plan.md §2.2).
+/// Loads `config.yaml` through the configuration stack.
 /// Layer 1 is the builtin file `builtin.config.yaml`, a resource of
 /// this library. Over it is the dotfolder stack: the user layer
 /// `~/.config/<name>/` (or `$XDG_CONFIG_HOME/<name>/` when that variable is

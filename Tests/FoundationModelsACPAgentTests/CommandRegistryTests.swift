@@ -7,8 +7,9 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The registry merge and its sources (plan.md §14.1): the precedence
-/// order, the reserved builtin names, the skills wrap, the pushed
+/// The registry merge and its sources: the precedence order (builtins,
+/// then linked providers, then skills; a later source wins a name
+/// collision), the reserved builtin names, the skills wrap, the pushed
 /// updates, the near-miss search, and the wire mapping.
 struct CommandRegistryTests {
     /// The number of looks a wait makes before it records a failure.
@@ -86,7 +87,7 @@ struct CommandRegistryTests {
         return render
     }
 
-    // MARK: - Precedence and reserved builtins (plan.md §14.1)
+    // MARK: - Precedence and reserved builtins
 
     /// A provider command that collides with a builtin name loses, and
     /// the builtin still dispatches.
@@ -142,7 +143,7 @@ struct CommandRegistryTests {
         #expect(winner.description == "second source")
     }
 
-    // MARK: - The skills source (plan.md §14.2)
+    // MARK: - The skills source
 
     /// The skills source wraps a `.prompt` skill command in a
     /// `.rendered` body that runs `registry.call(id:arguments:)`, so
@@ -198,7 +199,7 @@ struct CommandRegistryTests {
         #expect(await registry.kind(ofCommandNamed: "nosuchcommand") == nil)
     }
 
-    // MARK: - Pushed updates (plan.md §14.4)
+    // MARK: - Pushed updates
 
     /// A provider update replaces that provider's set, re-merges, and
     /// publishes the new merged set.
@@ -236,7 +237,7 @@ struct CommandRegistryTests {
         continuation.finish()
     }
 
-    // MARK: - Near misses (plan.md §14.3)
+    // MARK: - Near misses
 
     /// The near-miss search names the closest command first.
     @Test(.timeLimit(.minutes(1)))
@@ -271,7 +272,7 @@ struct CommandRegistryTests {
         #expect(await registry.nearMisses(to: "qqqqqqqqqqqq").isEmpty)
     }
 
-    // MARK: - The wire mapping (plan.md §14.4)
+    // MARK: - The wire mapping
 
     /// The wire mapping passes the argument-hint string through as the
     /// text input's hint, unchanged.

@@ -95,7 +95,7 @@ struct InterruptTests {
     ///
     /// **The order the case depends on.** A cancel that lands before the
     /// prompt is running reaches an agent with no active prompt, and that
-    /// agent ignores it (plan.md §8.6). A cancel that overtakes the
+    /// agent logs and ignores it. A cancel that overtakes the
     /// first delta gives a prompt with no text, which is not what the case
     /// reads back. One fact settles both: the delta is on the answer
     /// descriptor. The watch waits for that fact and then offers its one
