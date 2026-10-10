@@ -1,81 +1,178 @@
-import Darwin
 import Foundation
+import FoundationModelsACP
+import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsACPClient
 import Testing
 
-// MARK: - Tier 3: the `acp-client` interop contract (cli-plan.md §9)
+// MARK: - Tier 3: the client library interop contract (cli-plan.md §9)
 //
-// The suite that runs the built `acp-client` of the client package against
-// the built `acp-agent` of this one. `acp-print` already proves that an
-// example client can drive this agent; this suite proves it for the
-// client package's own CLI, which is the binary a person reaches for.
+// The suite that drives this agent with the FoundationModelsACPClient
+// library, in this process, over `InMemoryTransport.pair()`. A client is the
+// library (cli-plan.md §6): the client package ships no binary, so no client
+// process is spawned. The agent end is the public `ComposedAgent` of the
+// agent library, which is the same composition `acp-agent` serves.
 //
-// The two binaries stand in one products directory, because this package
-// declares both as product dependencies, so the agent command is an
-// absolute path beside the client's own binary.
+// The agent runs over the stub model, so the answer is deterministic, and
+// the same prompt run through the built `acp-agent run` is the yardstick the
+// library answer is held to.
 //
-// The run carries `ACP_AGENT_STUB_MODEL=1`, and the spawned agent inherits
-// it through `acp-client`. So the answer is deterministic, and the same
-// prompt run through `acp-agent run` is the yardstick the client's stdout
-// is held to.
+// Two checks of the old suite, which ran the `acp-client` binary, have no
+// meaning here, and the suite does not keep them:
+// - "No wire frame leaks onto stdout." The library gives typed session
+//   updates to its caller and writes no stdout, so there is no stream to
+//   read. `StdioContractTests` holds the stdout of the agent side.
+// - "No `acp-agent acp` process outlives the run." The in-process drive
+//   spawns no agent process. Its equivalent is that
+//   `ComposedAgent.waitForConnectionTeardown()` returns after the wire
+//   closes, inside the time limit of the test.
 //
 // It carries no gate. The package boundary is the selection: the root
 // `swift test` never sees this target, and
 // `swift test --package-path IntegrationTests` runs it.
 
-/// The interop contract of `acp-client run … -- acp-agent acp`.
+/// The interop contract of the FoundationModelsACPClient library against
+/// the composed agent, over an in-memory transport.
 ///
-/// Serialized so at most one spawned prompt runs at a time.
+/// Serialized so at most one prompt runs at a time.
 @Suite(.serialized)
 struct ClientInteropTests {
     // MARK: - Constants
 
-    /// The product name of the client package's CLI this suite runs.
-    private static let clientExecutableName = "acp-client"
-
-    /// The subcommand of `acp-client` that runs one prompt.
+    /// The subcommand of `acp-agent` that runs one prompt.
     private static let runSubcommand = "run"
-
-    /// The separator the agent command follows on the client's command line.
-    private static let agentCommandSeparator = "--"
 
     /// The prompt text. The stub model echoes it, so the answer is
     /// deterministic and is not empty.
-    private static let promptText = "the two roles meet on a real pipe"
+    private static let promptText = "the two roles meet on an in-memory wire"
 
-    /// The wire marker that must never appear on the client's stdout: every
-    /// ndJSON frame carries it, and stdout holds only answer text.
-    private static let wireMarker = "\"jsonrpc\""
-
-    /// The exit code of a prompt that reached its end.
+    /// The exit code of an `acp-agent run` prompt that reached its end.
     private static let endTurnExitCode: Int32 = 0
 
-    // MARK: - The subprocess drivers
+    // MARK: - The drivers
 
-    /// Runs the built `acp-client` for one prompt against the built
-    /// `acp-agent`, over the stub model.
-    ///
-    /// - Parameter label: The directory label, so a leftover directory says
-    ///   where it came from.
-    /// - Returns: The finished run.
-    /// - Throws: The locator or spawn error.
-    private static func runClientCLI(label: String) async throws -> BuiltExecutableRun {
-        let agentPath = try BuiltProductLocator.executableURL(
-            named: TierThreeFixture.agentExecutableName
-        ).path
-        return try await BuiltExecutableRun.run(
-            executableNamed: clientExecutableName,
-            arguments: [
-                runSubcommand, promptText,
-                agentCommandSeparator, agentPath, TierThreeFixture.acpSubcommand,
-            ],
-            workspace: makeResolvedDirectory(label: "\(label)-repo"),
-            configHome: makeResolvedDirectory(label: "\(label)-config"),
-            environment: TierThreeFixture.stubModelEnvironment)
+    /// What one library prompt gave back.
+    private struct LibraryAnswer {
+        /// The text of each agent message chunk, joined in arrival order.
+        let text: String
+
+        /// The stop reason of the first idle update, or `nil` when the
+        /// update stream ended before the prompt went idle.
+        let stopReason: StopReason?
     }
 
-    /// Runs the built `acp-agent` for the same prompt in process, which is the
-    /// yardstick the client's answer is held to.
+    /// Composes the agent over the stub model, with each configuration root
+    /// in a throwaway directory.
+    ///
+    /// - Parameters:
+    ///   - workspace: The working directory of the composition.
+    ///   - label: The directory label, so a leftover directory says where it
+    ///     came from.
+    /// - Returns: The composition.
+    /// - Throws: Whatever the composition throws.
+    private static func composeStubAgent(
+        workspace: URL, label: String
+    ) async throws -> ComposedAgent {
+        let configHome = makeResolvedDirectory(label: "\(label)-config")
+        let environment = try StubAgentDefaultsLayer.makeEnvironment(
+            name: TierThreeFixture.agentDotfolderName,
+            base: [TierThreeFixture.configHomeVariable: configHome.path])
+        return try await ComposedAgent.compose(
+            name: DotfolderName(TierThreeFixture.agentDotfolderName),
+            workingDirectory: workspace,
+            environment: environment,
+            modelSource: .stub)
+    }
+
+    /// Runs one prompt with the client library against the composed agent,
+    /// over `InMemoryTransport.pair()`, and then closes the wire and waits
+    /// for the teardown of the agent.
+    ///
+    /// - Parameter label: The directory label.
+    /// - Returns: The answer text and the stop reason.
+    /// - Throws: Whatever the composition, the handshake, the session call
+    ///   or the prompt throws.
+    private static func runClientLibrary(label: String) async throws -> LibraryAnswer {
+        let workspace = makeResolvedDirectory(label: "\(label)-repo")
+        let composed = try await composeStubAgent(workspace: workspace, label: label)
+        #expect(composed.modelSource == .stub)
+        let (clientEnd, agentEnd) = InMemoryTransport.pair()
+        let agentConnection = await composed.serve(over: agentEnd)
+        let model = await ConnectionModel()
+        let connection = await model.connect(over: clientEnd)
+        // Swift has no asynchronous `defer`, and the wire must come down on
+        // the failing path as well, so the outcome is held here and given
+        // back after the teardown.
+        let outcome: Result<LibraryAnswer, any Error>
+        do {
+            outcome = .success(try await prompt(over: connection, in: workspace))
+        } catch {
+            outcome = .failure(error)
+        }
+        await connection.close()
+        await agentConnection.close()
+        clientEnd.close()
+        agentEnd.close()
+        await composed.waitForConnectionTeardown()
+        return try outcome.get()
+    }
+
+    /// Sends `initialize`, `session/new` and one prompt over `connection`,
+    /// and reads the answer off the update stream of the session.
+    ///
+    /// - Parameters:
+    ///   - connection: The client end of the wire.
+    ///   - workspace: The working directory of the session.
+    /// - Returns: The answer text and the stop reason.
+    /// - Throws: Whatever the handshake, the session call or the prompt
+    ///   throws.
+    private static func prompt(
+        over connection: ClientSideConnection, in workspace: URL
+    ) async throws -> LibraryAnswer {
+        _ = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
+        let session = try await connection.newSession(
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+        // Subscribe before the prompt, so the stream holds each update of
+        // the prompt in order.
+        let updates = connection.subscribe(to: session.sessionId).updates
+        let collector = Task { await collectAnswer(from: updates) }
+        do {
+            _ = try await connection.prompt(
+                AgentClientHarness.makePromptRequest(
+                    sessionId: session.sessionId, text: promptText))
+        } catch {
+            collector.cancel()
+            _ = await collector.value
+            throw error
+        }
+        return await collector.value
+    }
+
+    /// Consumes the update stream of a session: joins the text of each agent
+    /// message chunk, and stops at the first idle state update.
+    ///
+    /// - Parameter stream: The update stream, subscribed before the prompt.
+    /// - Returns: The joined text and the stop reason of the idle update.
+    private static func collectAnswer(
+        from stream: AsyncStream<SessionStreamEvent>
+    ) async -> LibraryAnswer {
+        var text = ""
+        for await case .update(let update) in stream {
+            switch update {
+            case .agentMessageChunk(let chunk):
+                guard case .text(let content) = chunk.content else { break }
+                text += content.text
+            case .stateUpdate(.idle(let idle)):
+                return LibraryAnswer(text: text, stopReason: idle.stopReason)
+            default:
+                break
+            }
+        }
+        return LibraryAnswer(text: text, stopReason: nil)
+    }
+
+    /// Runs the built `acp-agent` for the same prompt, which is the yardstick
+    /// the library answer is held to.
     ///
     /// - Parameter label: The directory label.
     /// - Returns: The finished run.
@@ -91,29 +188,27 @@ struct ClientInteropTests {
 
     // MARK: - The contract
 
-    /// `acp-client run "…" -- acp-agent acp` exits 0, writes the answer and
-    /// nothing else to stdout, and leaves no agent process behind.
+    /// The client library drives the composed agent over an in-memory
+    /// transport to `end_turn`, and gets the answer that `acp-agent run`
+    /// gives for the same prompt.
     ///
     /// The answer is compared after the surrounding whitespace is trimmed
-    /// off both sides, because the client completes an answer that does not
-    /// end with a newline and the agent CLI writes the chunks verbatim
-    /// (cli-plan.md §5.6). The text between is the claim.
+    /// off both sides, because the agent CLI completes an answer that does
+    /// not end with a newline (cli-plan.md §5.6). The text between is the
+    /// claim. The teardown of the agent is awaited inside the run, so a
+    /// teardown that does not end fails the time limit.
     @Test(.timeLimit(.minutes(3)))
-    func theClientCLIPrintsOnlyTheAnswerAndLeavesNoAgent() async throws {
+    func theClientLibraryGetsTheAgentAnswerOverAnInMemoryTransport() async throws {
         let yardstick = try await Self.runAgentCLI(label: "ClientInterop-yardstick")
         #expect(yardstick.exitCode == Self.endTurnExitCode, "stderr: \(yardstick.standardError)")
 
-        let run = try await Self.runClientCLI(label: "ClientInterop")
+        let answer = try await Self.runClientLibrary(label: "ClientInterop")
 
-        #expect(run.exitCode == Self.endTurnExitCode, "stderr: \(run.standardError)")
-        let answer = run.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-        #expect(!answer.isEmpty, "the answer text is missing from stdout")
+        #expect(answer.stopReason == .endTurn)
+        let text = answer.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(!text.isEmpty, "the answer text is missing from the update stream")
         #expect(
-            !run.standardOutput.contains(Self.wireMarker),
-            "a wire frame leaked onto stdout: \(run.standardOutput)")
-        #expect(
-            answer == yardstick.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines),
-            "the client answered something else than the agent did: \(answer)")
-        try ProcessCensus.expectNoAgentOutlivedItsRun()
+            text == yardstick.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines),
+            "the client library answered something else than the agent did: \(text)")
     }
 }

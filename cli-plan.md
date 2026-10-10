@@ -4,11 +4,10 @@ This plan adds a command-line frontend to the composed agent. It stands
 on its own. It states each rule of the composed agent that it keeps, and
 §12 lists the items where it changed the earlier design of the agent.
 
-Two sibling plans go with it:
+One sibling plan goes with it:
 
-- `FoundationModelsACPClient/cli-plan.md` — the `acp-client` binary.
 - `FoundationModelsExtras/doctor-plan.md` — the `Doctorable` protocol
-  that §6 builds on.
+  that §5.12 builds on.
 
 ## 1. Purpose
 
@@ -27,7 +26,9 @@ a `doctor` command that says what is wrong and how to fix it.
 |---|---|---|
 | `acp-agent` | this package | The product. A headless CLI, and an ACP server. |
 | `acp-print` | this package | The tier-3 fixture. One prompt, no flags. It does not change. |
-| `acp-client` | `FoundationModelsACPClient` | A client for any ACP agent. It tests our server mode. |
+
+`FoundationModelsACPClient` ships no binary. A client is the library: a
+frontend links it and drives an agent through it (§6).
 
 `acp-agent` keeps its name. The name already roots the configuration
 stack (`$XDG_CONFIG_HOME/acp-agent/` and `<cwd>/.acp-agent/`), so the
@@ -70,7 +71,7 @@ and no subprocess.
 
 ### 5.1 The parser
 
-Both new binaries use **swift-argument-parser**. We write no parser of
+`acp-agent` uses **swift-argument-parser**. We write no parser of
 our own. The library gives `--help`, `--version`, the subcommand tree,
 and the usage errors, and we would otherwise write each of them twice.
 
@@ -95,7 +96,7 @@ comfy-table and owo-colors. The Swift map:
 | indicatif, dialoguer, comfy-table, owo-colors | **Noora** (Tuist) — one CLI design system: spinners, progress, prompts, tables, alerts |
 
 **We adopt Noora.** No package in the family uses a terminal UI library
-today, so this sets the family precedent, and the client CLI follows it.
+today, so this sets the family precedent.
 
 One rule keeps the choice reversible: **`TerminalRenderer.swift` is the
 only file that imports Noora.** It vends a spinner, a progress bar and a
@@ -227,7 +228,7 @@ none of this touches stdout.
 
 ### 5.8 Exit codes
 
-"Nonzero" is not enough for a script. Both binaries share one table:
+"Nonzero" is not enough for a script. `acp-agent` uses this table:
 
 | Code | Meaning |
 |---|---|
@@ -241,6 +242,9 @@ none of this touches stdout.
 
 Code 5 exists because the Rust doctor's code 2 for errors would collide
 with our usage error. See `doctor-plan.md` §5.
+
+The client library has no exit codes. It gives the stop reason to its
+caller, and the caller maps it. `acp-agent` maps it with this table.
 
 ### 5.9 Interrupt
 
@@ -266,8 +270,8 @@ wire is open and a session exists, so the first signal sends
 `session/cancel`. During the composition neither exists, so the first
 signal cancels the composition task instead.
 
-This matters most with `--out-of-process`, and in `acp-client`. A hard
-kill of the client leaves a model process that holds gigabytes.
+This matters most with `--out-of-process`. A hard kill of the client
+leaves a model process that holds gigabytes.
 
 ### 5.10 Where the configuration comes from
 
@@ -372,38 +376,26 @@ failures a person cannot diagnose from the error that Router raises.
 `doctor` exits 0, 1 or 5 (§5.8). `--json` writes the report to stdout for
 a script.
 
-## 6. `acp-client`
+## 6. The client library
 
-`acp-client` is in the client package, and not in this one. It drives any
-ACP agent, so it must not know this package. It links the client package
-and the wire only.
+A client is the library. `FoundationModelsACPClient` is a library only,
+and it ships no binary: its user decided this on 2026-10-10 (client
+`24643be`). The `acp-client` binary, the `AcpClientCore` library and the
+client's own `cli-plan.md` are removed. The client library does not map a
+stop reason to an exit code (§5.8).
 
-**The client package owns this binary.** Its own `cli-plan.md` holds the
-full specification, the tests and the milestones. This section gives the
-part that this package depends on. If the two differ, the client plan
-wins.
+A frontend links the client library and drives an agent through an ACP
+connection. Three frontends in this package do this:
 
-```
-acp-client run <prompt> -- <agent-command> [agent-args...]
-acp-client probe -- <agent-command> [agent-args...]
-acp-client doctor -- <agent-command> [agent-args...]
-```
+| Frontend | Transport | Agent |
+|---|---|---|
+| `acp-agent run` | `InMemoryTransport.pair()`, in one process | the composed agent (§4) |
+| `acp-print` | `AgentProcess`, ndJSON on the pipes of a child | a spawned `acp-agent acp` |
+| `ClientInteropTests` | `InMemoryTransport.pair()`, in the test process | the public `ComposedAgent` of the library |
 
-Everything after `--` is the agent command, with its own arguments. The
-separator means that `acp-client` never splits a command string into
-words, so no quoting rule can go wrong.
-
-It obeys §5.5 to §5.9 without change. It adds `--frames`, which writes
-every ndJSON message to stderr in both directions. That option is the
-reason the binary exists: it shows the protocol exchange, so a person can
-see what an agent sent. `acp-print` cannot do this, and it must not learn
-to.
-
-The test loop is then:
-
-```
-acp-client run "write a haiku" --frames -- acp-agent acp
-```
+So the interop proof of the client role runs in process, with no spawned
+client. `acp-print` stays the example that drives the agent across a
+process boundary, and it links the client library and the wire only.
 
 ## 7. The default configuration
 
@@ -540,7 +532,7 @@ records the question.
 
 **The client package:**
 
-- A new `acp-client` executable target and product.
+- No change. It is a library only, and it ships no binary (§6).
 
 ## 9. Testing
 
@@ -563,7 +555,7 @@ records the question.
 | Integration | With stderr a pipe, a default run writes nothing to it. `--verbose` writes the events, and `--quiet` writes nothing in a terminal. | none |
 | Integration | A scripted `ResolutionProgress` drives the bar, and the bar never touches stdout. | none |
 | Tier 3 | `acp-print` spawns `acp-agent acp`. Unchanged. | `ACP_TIER3=1` |
-| Tier 3 | `acp-client` drives `acp-agent acp`. stdout is only the answer. No process outlives the run. | `ACP_TIER3=1` |
+| Tier 3 | The client library drives the composed agent in process, over `InMemoryTransport.pair()`, to `end_turn`, and gets the answer of `acp-agent run` (§6). | `ACP_TIER3=1` |
 | Tier 3 | `acp-agent --out-of-process` starts its own `acp` mode and gives the same answer. | `ACP_TIER3=1` |
 | Tier 3 | An interrupt of `--out-of-process` gives exit 4, and leaves no agent process. | `ACP_TIER3=1` |
 | Tier 4 | `doctor` on a clean machine reports the models as not downloaded, and gives the size. | `ACP_TIER4=1` |
@@ -582,13 +574,12 @@ records the question.
 | C8 | The `config` subcommands of §5.11. |
 | C9 | The `doctor` subcommand of §5.12. Blocked by Extras D1 to D3. |
 | C10 | The interrupt of §5.9. |
-| C11 | `acp-client` in the client package (its N1 to N6). |
+| C11 | ~~`acp-client` in the client package (its N1 to N6).~~ WITHDRAWN on 2026-10-10: the client package is a library only (§6). |
 | C12 | `--out-of-process`, and the tier-3 tests of §9. |
 
 C1 runs first, because C7, C8 and C9 all draw through
 `TerminalRenderer`. C2 to C6 are in order. C7 and C9 wait on the two
-upstream changes of §8, so start those early. C11 is in another
-repository, so it can run beside everything.
+upstream changes of §8, so start those early.
 
 ## 11. Open items
 
@@ -653,3 +644,4 @@ replaces them. This list tells a reader what changed, and why.
 | The name of the production CLI | The CLI and the agent are one binary, in the shape `<cli> acp`. | §2 names it `acp-agent`, and §5.3 keeps that exact shape. |
 | `<cli> instructions --eject` | A flag that writes the builtin `Instructions.md` into a layer. | §5.3 spells it `instructions eject`, to match the other subcommand groups. |
 | The frontends | The Mac app and the CLI consume the composition. | §4 adds one rule: the CLI consumes it through an ACP connection, and never directly. |
+| The client of the interop tests | A spawned `acp-client` binary of the client package drives `acp-agent acp`. | §6: the client package ships no binary. The tests drive the client library in process, over `InMemoryTransport.pair()`. |

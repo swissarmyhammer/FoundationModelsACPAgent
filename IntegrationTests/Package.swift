@@ -38,15 +38,10 @@ private let mainBranch = "main"
 private let wireDependencyName = "FoundationModelsACP"
 
 /// The Client role: the driver of every test level above
-/// the unit level.
+/// the unit level. The client package is a library only, and it ships no
+/// binary, so `ClientInteropTests` drives the agent with this library in
+/// process.
 private let clientDependencyName = "FoundationModelsACPClient"
-
-/// The one-shot client CLI of the client package (its cli-plan.md §6). It
-/// is a product dependency for the reason `agentExecutableName` is: SwiftPM
-/// builds the binary into the products directory beside this test bundle,
-/// where `BuiltProductLocator` finds it and `ClientInteropTests` runs it
-/// against the agent binary standing next to it.
-private let clientExecutableName = "acp-client"
 
 /// The runtime. The skill trigger suite and the tool calling
 /// suite build a live router over `LiveModelLoader()`, which loads each
@@ -90,7 +85,6 @@ let package = Package(
                 .product(name: printExecutableName, package: rootPackageName),
                 .product(name: wireDependencyName, package: wireDependencyName),
                 .product(name: clientDependencyName, package: clientDependencyName),
-                .product(name: clientExecutableName, package: clientDependencyName),
                 .product(name: routerDependencyName, package: routerDependencyName),
                 .product(
                     name: "\(routerDependencyName)TestSupport", package: routerDependencyName),
