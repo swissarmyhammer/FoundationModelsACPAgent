@@ -38,10 +38,33 @@ comments:
     - evidence: `swift test --scratch-path .build/alt --force-resolved-versions` (SKILLS_MARKETPLACE_CACHE set to an empty scratch folder) — 874 tests in 94 suites passed, 0 failed, 0 skipped, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests). `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 30 tests in 11 suites passed, 0 failed, 0 skipped. The only warning in both runs is the mlx-swift build warning "missing creator for mutated node" for mlx-swift_Cmlx.bundle (dependency, expected). No package file has a warning.
     - next: none. No code changed. Nothing was committed.
   timestamp: 2026-10-10T17:09:53.965948+00:00
+- actor: claude-code
+  id: 01m4kcpbtrkejf3fh8dd1ke5gt
+  text: |-
+    ### commit — changed
+    - evidence: 506c7c1 fix(acp): keep the title that a tool gives its call, and send an op title only on the first update (^w7hzpmq)
+    - next: none. The commit before it is 222a5cf chore(kanban): add task ^531r4r0.
+  timestamp: 2026-10-10T17:10:12.568078+00:00
+- actor: claude-code
+  id: 01m4kcz3wszw6kfz5csmsr30pd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (506c7c1). Counts: 0 findings, 0 confirmed, 0 refuted. 7 files attempted, 0 failed, 0 skipped. The 2 .kanban files are out of scope because of .reviewignore. No validator failed because of the orphan checkout in .build. All 3 acceptance items are [x]. Each named test is in the tests: aMetadataTitleStaysAfterTheProgressTheReportAndTheSettlement, aRunWithNoMetadataTitleShowsItsOp (ToolDisplayProjectionTests.swift), theSdkCallDoesNotWriteItsNameOverAMetadataTitle (ToolCallJoinProjectionTests.swift), theRunCodeCallReachesTheWire (TranscriptFidelityTests.swift), and lastWireTitle(ofToolCall:) (Support/ProjectionTestSupport.swift).
+    - next: none. The task is in done.
+  timestamp: 2026-10-10T17:14:59.353641+00:00
+- actor: claude-code
+  id: 01m4kczg2qfwh2cq8kqvn4m7jf
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files; 3/3 acceptance items marked with their tests
+    - test: green — swift test 874 (1 known issue); IntegrationTests 30
+    - commit: 506c7c1
+    - review: clean — 0 findings; every validator finished; each acceptance item names a test that exists
+  timestamp: 2026-10-10T17:15:11.831235+00:00
 depends_on:
 - 01M4GH55FEFKK2JACVVE1YQ4GH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffb780
 title: 'Keep the title that a tool gives its call: later run updates must not write the op title again'
 ---
 ## Problem
