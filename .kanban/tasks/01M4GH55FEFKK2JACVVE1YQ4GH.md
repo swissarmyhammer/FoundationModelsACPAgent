@@ -125,8 +125,31 @@ comments:
     - evidence: swift test --scratch-path .build/alt --force-resolved-versions (SKILLS_MARKETPLACE_CACHE set to an empty scratch folder) — 871 tests in 94 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests). swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions — 30 tests in 11 suites passed. Zero failures, zero skipped. Only warning in both runs: the mlx-swift dependency warning (missing creator for mutated node, mlx-swift_Cmlx.bundle).
     - next: review. No files were changed in this iteration.
   timestamp: 2026-10-10T16:34:49.010415+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4kapdprzvafhtwbgeva9bwq
+  text: |-
+    ### commit — changed
+    - evidence: 42eb076 refactor(tests): drive each synthetic prompt through one shared driver (^e1yq4gh)
+    - next: review
+  timestamp: 2026-10-10T16:35:17.336615+00:00
+- actor: claude-code
+  id: 01m4kbdpcaga9e2dkq14189hw5
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (42eb076): 0 findings, 0 confirmed, 0 refuted; 7 validator tasks attempted, 0 failed, 0 skipped. The 2 .kanban/ files are excluded by .reviewignore. The 1 prior finding (2026-10-10 11:13) is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-10T16:47:59.882195+00:00
+- actor: claude-code
+  id: 01m4kbdzz71kja4f58rhx9j19v
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 test files (one shared SyntheticPrompt driver)
+    - test: green — swift test 871 (1 known issue); IntegrationTests 30
+    - commit: 42eb076
+    - review: clean — 0 findings; the prior finding is checked; every validator finished
+  timestamp: 2026-10-10T16:48:09.703271+00:00
+position_column: done
+position_ordinal: ffb680
 title: Show one tool call for each tool run
 ---
 ## Goal
