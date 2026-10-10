@@ -66,19 +66,51 @@ enum ProcessCensus {
             .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
     }
 
-    /// The command line an `acp-agent` serving ACP over stdio carries.
-    ///
-    /// It names the built binary's own path beside the `acp` subcommand, so
-    /// a parent `acp-agent run …` of the same binary never matches, and only
-    /// a spawned wire server does.
+    /// The folder macOS keeps `/tmp`, `/var` and `/etc` in. Each of those
+    /// three is a link into it.
+    private static let privateFolder = "/private"
+
+    /// The characters a POSIX extended regular expression reads as
+    /// operators, as `re_format(7)` names them.
+    private static let extendedExpressionOperators: Set<Character> = [
+        "\\", ".", "[", "]", "(", ")", "*", "+", "?", "{", "}", "|", "^", "$",
+    ]
+
+    /// The command line of the built `acp-agent` serving ACP over stdio.
     ///
     /// - Returns: The pattern `pgrep -f` is given.
     /// - Throws: The locator error.
     private static func agentServingACPPattern() throws -> String {
-        let agentPath = try BuiltProductLocator.executableURL(
-            named: TierThreeFixture.agentExecutableName
-        ).path
-        return "\(agentPath) \(TierThreeFixture.acpSubcommand)"
+        agentServingACPPattern(
+            agentPath: try BuiltProductLocator.executableURL(
+                named: TierThreeFixture.agentExecutableName
+            ).path)
+    }
+
+    /// The command line an `acp-agent` at `agentPath` carries when it serves
+    /// ACP over stdio.
+    ///
+    /// It names the binary's own path beside the `acp` subcommand, so a
+    /// parent `acp-agent run …` of the same binary never matches, and only a
+    /// spawned wire server does.
+    ///
+    /// Foundation `Process` removes the `/private` prefix from the path it
+    /// starts, so a binary built under `/private/tmp` runs as `/tmp/…`. The
+    /// pattern holds the path without that prefix, and `pgrep -f` matches it
+    /// anywhere in the command line, thus it finds the child in each of the
+    /// two path forms. Each operator character of the path is escaped, so the
+    /// path matches as literal text.
+    ///
+    /// - Parameter agentPath: The absolute path of the `acp-agent` binary.
+    /// - Returns: The extended regular expression `pgrep -f` is given.
+    static func agentServingACPPattern(agentPath: String) -> String {
+        let pathInEachForm =
+            agentPath.hasPrefix("\(privateFolder)/")
+            ? String(agentPath.dropFirst(privateFolder.count)) : agentPath
+        let literalPath = pathInEachForm.map { character in
+            extendedExpressionOperators.contains(character) ? "\\\(character)" : String(character)
+        }.joined()
+        return "\(literalPath) \(TierThreeFixture.acpSubcommand)"
     }
 
     /// The identifiers of the `acp-agent acp` processes the live process
