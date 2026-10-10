@@ -71,8 +71,10 @@ import Testing
 
     // MARK: - The links
 
-    /// The schemes of a README link that goes out of the repository. A
-    /// link with one of these prefixes is not a repository path.
+    /// The schemes of a README link that goes out of the repository, in
+    /// lowercase. A link with one of these prefixes is not a repository
+    /// path. A URI scheme is case-insensitive (RFC 3986), thus the
+    /// comparison lowercases the link target first.
     static let externalLinkPrefixes = ["http://", "https://", "mailto:", "#"]
 
     /// The repository-relative target of each Markdown link in `markdown`
@@ -84,11 +86,21 @@ import Testing
     static func relativeLinkTargets(in markdown: String) -> [String] {
         markdown.matches(of: /\]\(([^)\s]+)\)/).map { String($0.output.1) }
             .filter { target in
-                !externalLinkPrefixes.contains { target.hasPrefix($0) }
+                let lowercasedTarget = target.lowercased()
+                return !externalLinkPrefixes.contains { lowercasedTarget.hasPrefix($0) }
             }
             .map { target in
                 String(target.prefix { $0 != "#" })
             }
+    }
+
+    /// A URI scheme is case-insensitive (RFC 3986), so a link with an
+    /// uppercase or a mixed-case scheme is external too. Only the
+    /// repository path stays.
+    @Test func relativeLinkTargetsDropsAnUppercaseOrMixedCaseScheme() {
+        let markdown = "[a](HTTPS://example.com) [b](Mailto:someone@example.com) [c](README.md)"
+
+        #expect(Self.relativeLinkTargets(in: markdown) == ["README.md"])
     }
 
     /// Each relative link of the README names a file or a folder that

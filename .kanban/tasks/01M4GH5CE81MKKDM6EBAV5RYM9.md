@@ -43,6 +43,54 @@ comments:
     - evidence: swift test (scratch .build/alt, empty SKILLS_MARKETPLACE_CACHE) 856 tests in 91 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue); swift test IntegrationTests --no-parallel 30 tests in 11 suites passed; python3 -W error -m unittest discover: bench 254 ran OK (skipped=1, swebench not installed), swebench/scripts 38 OK, swebench-score/scripts 34 OK; rg "(^|[^-])plan\.md" outside .kanban: no match. Only warning: mlx-swift "missing creator for mutated node" (dependency).
     - next: none; no code changed, no commit made.
   timestamp: 2026-10-10T13:30:06.851995+00:00
+- actor: claude-code
+  id: 01m4k047046xr9gwcrmzfrqfz4
+  text: |-
+    ### commit — changed
+    - evidence: see the commit sha in the log of this branch. Subject: docs: remove plan.md, and write each decision in the README or in a code comment (^av5rym9). 122 files. A first commit 4db116d holds the .kanban/ comment of ^a6mndxz.
+    - next: review
+  timestamp: 2026-10-10T13:30:34.884889+00:00
+- actor: claude-code
+  id: 01m4k0xe0yra8zqwf60eg8c7cz
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (14d0828): findings 1, confirmed 1, refuted 1, attempted 84, failed 0. Open: Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift:87 (`completeness/case-sensitivity-coverage`).
+    - tool rule `code-hygiene/dead-code-swift` did not finish: SwiftPM could not remove the orphan checkout `.build/checkouts/FoundationModelsMetadataRegistry` (NSCocoaErrorDomain Code=513, Operation not permitted). Its findings are missing.
+    - diff check: in the Swift files, the only changed lines that are not comments are the ConfigurationYAML header string, the test rename `inCodeDefaultsMatchThePlan` to `inCodeDefaultsRecordFullTranscriptsInTheProject`, and the new `relativeLinkTargets` / `readmeRelativeLinksResolve` code in DocumentationSyncTests. `rg "(^|[^-])plan\.md"` finds nothing. The cli-plan.md section headings keep their numbers (only the §12 title changed). No hunk only deletes comment text. The hunks that became shorter removed only the `plan.md §x` reference; the decision text stays.
+    - next: implement the open finding, then run the review again. Remove the orphan `.build/checkouts/FoundationModelsMetadataRegistry` checkout so that `dead-code-swift` can run.
+  timestamp: 2026-10-10T13:44:21.278770+00:00
+- actor: claude-code
+  id: 01m4k0y25954xx4yrww80hcvy0
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 122 files (plan.md removed)
+    - test: green — swift test 856 (1 known issue); IntegrationTests 30; bench 254 (1 skip), swebench 38, swebench-score 34; no plan.md reference
+    - commit: 14d0828
+    - review: findings — Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift:87; code-hygiene/dead-code-swift did not finish (orphan checkout). The comment-only check passed: only the two named changes and the new link test are not comments.
+  timestamp: 2026-10-10T13:44:41.897758+00:00
+- actor: claude-code
+  id: 01m4k17457sn4ryxwmpzthbjhf
+  text: |-
+    Finding `completeness/case-sensitivity-coverage` (DocumentationSyncTests.swift) is fixed.
+    - RED: new test `relativeLinkTargetsDropsAnUppercaseOrMixedCaseScheme` feeds `HTTPS://example.com`, `Mailto:someone@example.com` and `README.md` through `relativeLinkTargets`. It failed: the result kept the two external links.
+    - GREEN: the filter lowercases the link target before the `hasPrefix` check against `externalLinkPrefixes`. The doc comment of `externalLinkPrefixes` says that the prefixes are lowercase and why (RFC 3986).
+    - Same cause in the rest of the file: none. The other comparisons are `readme.contains(...)` checks for exact README text, and the `!= "#"` fragment cut, which has no case.
+    - `.build/checkouts/FoundationModelsMetadataRegistry` (the orphan checkout) is not touched, by order of the user. Thus `dead-code-swift` can fail again in the next review.
+  timestamp: 2026-10-10T13:49:38.855399+00:00
+- actor: claude-code
+  id: 01m4k176srq4yyxq74bfhv5ery
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift. RED: `swift test --scratch-path .build/alt --force-resolved-versions --filter DocumentationSyncTests/relativeLinkTargetsDropsAnUppercaseOrMixedCaseScheme` failed with 1 issue (got ["HTTPS://example.com", "Mailto:someone@example.com", "README.md"]). GREEN: `--filter DocumentationSyncTests` gives 8 tests in 1 suite passed. The only warning is the known mlx-swift "missing creator for mutated node". The finding is now `- [x]`. Not committed.
+    - next: /test, then /review
+  timestamp: 2026-10-10T13:49:41.560037+00:00
+- actor: claude-code
+  id: 01m4k19rv41c010kyxhgaxqeeg
+  text: |-
+    ### test — green
+    - evidence: SKILLS_MARKETPLACE_CACHE=<empty scratch folder> swift test --scratch-path .build/alt --force-resolved-versions — 857 tests in 91 suites passed, 0 failed, 0 skipped, 1 known issue (the intended withKnownIssue in HarnessSmokeTests). Compiler warnings in package files: 0. The only build warning is the mlx-swift dependency (missing creator for mutated node, mlx-swift_Cmlx.bundle). The three "An elicitation answer did not decode" lines are runtime log output of a test that makes that case on purpose.
+    - next: review
+  timestamp: 2026-10-10T13:51:05.572044+00:00
 position_column: doing
 position_ordinal: '80'
 title: Remove plan.md and the references to it
@@ -83,3 +131,23 @@ The user says that the plan is old. Delete `plan.md`. Remove or change each refe
 - [x] No comment has a bare `§` section number of the plan, and no comment says "the plan" for `plan.md`.
 - [x] The sandbox-only permission decision, and each other decision that the code depends on, is in the README or in a code comment.
 - [x] `DocumentationSyncTests` and the full test suite pass.
+
+## Review Findings (2026-10-10 08:30)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 117 file(s) reviewed, 5 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 3 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `cli-plan.md` — no validator matches this file
+> - `plan.md` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/dead-code-swift' failed — the tool judged nothing, so its findings are missing:
+> (SwiftPM dependency update log, 228 lines, not copied. The last line is the cause.)
+> error: 'foundationmodelsmetadataregistry': Error Domain=NSCocoaErrorDomain Code=513 "“FoundationModelsMetadataRegistry” couldn’t be removed because you don’t have permission to access it." UserInfo={NSUserStringVariant=(
+>     Remove
+> ), NSFilePath=/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.build/checkouts/FoundationModelsMetadataRegistry, NSURL=file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.build/checkouts/FoundationModelsMetadataRegistry, NSUnderlyingError=0x7cff168930 {Error Domain=NSPOSIXErrorDomain Code=1 "Operation not permitted"}}
+
+- [x] `Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift:87` `completeness/case-sensitivity-coverage` — The new relative-link filter tests each link target with a case-sensitive hasPrefix against lowercase scheme prefixes (http://, https://, mailto:). URI schemes are case-insensitive (RFC 3986), so a README link written as HTTP://, HTTPS://, or MAILTO: is not recognized as external. It is then treated as a repository path, and readmeRelativeLinksResolve fails on a link that is valid. No test feeds an uppercase or mixed-case scheme through relativeLinkTargets. Compare case-insensitively, for example by lowercasing the target before the hasPrefix check (target.lowercased().hasPrefix($0)). Add one assertion in the suite that passes an uppercase scheme such as HTTPS:// through relativeLinkTargets and expects it to be dropped.
