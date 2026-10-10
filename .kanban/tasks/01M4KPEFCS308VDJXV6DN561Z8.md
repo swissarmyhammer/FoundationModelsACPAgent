@@ -41,8 +41,31 @@ comments:
     - evidence: `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 30 tests in 11 suites passed, 0 failed. `swift test --scratch-path .build/alt --force-resolved-versions` with SKILLS_MARKETPLACE_CACHE set to an empty scratch folder — 883 tests in 96 suites passed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests), 0 failed. `swift build --product acp-print --scratch-path .build/alt --force-resolved-versions` — Build complete. The only warning in all three runs is the mlx-swift_Cmlx.bundle "missing creator for mutated node" warning from the mlx-swift dependency (expected). No package file warnings. No code was changed.
     - next: none
   timestamp: 2026-10-10T21:43:37.469566+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4kwbq504mqdqfe2z8g1bqfg
+  text: |-
+    ### commit — changed
+    - evidence: 19f2e48 test(integration): drive the agent with the client library in process, and remove the acp-client binary (^dn561z8); kanban commit a2ab247
+    - next: none
+  timestamp: 2026-10-10T21:44:00.928887+00:00
+- actor: claude-code
+  id: 01m4kwse3wz0ys79f6rk8pvfwg
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (19f2e48): 0 findings, 0 confirmed, 4 refuted, 7 attempted, 0 failed, 0 skipped. Reviewed: IntegrationTests/Package.swift, ClientInteropTests.swift. Not reviewed: cli-plan.md (no validator matches), 2 .kanban files (.reviewignore). No validator failed because of the orphan checkout in .build. All acceptance items are [x]. Item 1 names the test ClientInteropTests.theClientLibraryGetsTheAgentAnswerOverAnInMemoryTransport, and it exists. Items 2, 3, 4 and the two Tests items name commands or a document change, not a test function.
+    - next: none. The task is in done.
+  timestamp: 2026-10-10T21:51:30.428970+00:00
+- actor: claude-code
+  id: 01m4kwt08tp8321phww01z2tbq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files; IntegrationTests client pin d1cf72d -> 24643be (user-approved resolve method)
+    - test: green — IntegrationTests 30; swift test 883 (1 known issue); acp-print builds
+    - commit: 19f2e48
+    - review: clean — 0 findings; every validator finished; 6/6 acceptance items checked (items 2 to 6 are proved by commands or document changes, item 1 by a named test)
+  timestamp: 2026-10-10T21:51:49.018899+00:00
+position_column: done
+position_ordinal: ffb980
 title: 'IntegrationTests: replace the spawned acp-client binary with the FoundationModelsACPClient library over an in-memory transport'
 ---
 ## Problem
