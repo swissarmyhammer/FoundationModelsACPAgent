@@ -103,13 +103,10 @@ struct FirstActivity: Sendable {
 /// first-activity index record, drives the session's event stream, and
 /// ends with one `idle` state update.
 struct PromptExecution: Sendable {
-    /// The wire value an unmapped prompt failure stops with, under the
-    /// `_`-prefix extension rule of ACP: a value that starts with `_` is
-    /// implementation-specific, and a bare value is reserved for ACP.
-    static let unmappedStopReasonValue = "_error"
-
     /// The wire value a completed prompt that generated nothing stops
-    /// with, under the same `_`-prefix extension rule (task ^pez780d).
+    /// with, under the `_`-prefix extension rule of ACP: a value that starts
+    /// with `_` is implementation-specific, and a bare value is reserved for
+    /// ACP (task ^pez780d).
     static let noOutputStopReasonValue = "_no_output"
 
     /// The wire value a prompt whose last generation reached the output
@@ -271,6 +268,10 @@ struct PromptExecution: Sendable {
     /// (``followSession(_:after:awaitingIdle:projection:)``). The stop reason then comes
     /// from the last answer of the session.
     ///
+    /// A failed or a cancelled prompt closes each tool call that did not
+    /// finish (``closeUnfinishedToolCalls(of:after:)``) before the usage and
+    /// the `idle`, so each final update comes before the terminator.
+    ///
     /// - Parameters:
     ///   - events: The prompt's event stream.
     ///   - followUp: The session-scoped events and the idle wait of the
@@ -280,10 +281,11 @@ struct PromptExecution: Sendable {
     func drive<Events: AsyncSequence>(
         events: Events, followUp: SessionFollowUp? = nil
     ) async -> StopReason where Events.Element == SessionEvent {
+        let toolCalls = PromptToolCalls()
         var projection = EventProjection(
             sessionId: sessionId,
             promptState: promptState,
-            send: send,
+            send: toolCalls.recording(into: send),
             modelName: modelName,
             shellSnapshot: shellSnapshot,
             relayElicitation: relayElicitation)
@@ -317,10 +319,25 @@ struct PromptExecution: Sendable {
             stop = cut
             report(cut: cut, metadata: projection.cutMetadata, changedFileCount: projection.changedFileCount)
         }
+        await closeUnfinishedToolCalls(of: toolCalls, after: stop)
         await projection.reportUsage()
-        let reason = Self.stopReason(for: stop)
-        await promptState.promptDidEnd(reason: reason)
-        return reason
+        return await promptState.promptDidEnd(stop: stop)
+    }
+
+    /// Sends the closing status of `stop` (``closingStatus(for:)``) for each
+    /// tool call of the prompt that did not finish. A stop with no closing
+    /// status sends nothing.
+    ///
+    /// - Parameters:
+    ///   - toolCalls: The tool calls that the prompt sent.
+    ///   - stop: Why the prompt stopped.
+    private func closeUnfinishedToolCalls(of toolCalls: PromptToolCalls, after stop: PromptStop) async {
+        guard let status = Self.closingStatus(for: stop) else {
+            return
+        }
+        for toolCallId in await toolCalls.unfinishedToolCallIds() {
+            await send(.toolCallUpdate(ToolCallUpdate(toolCallId: toolCallId, status: .value(status))))
+        }
     }
 
     // MARK: - The caller stream and the session follow-up (task ^64pav2a)
@@ -503,8 +520,8 @@ struct PromptExecution: Sendable {
     // MARK: - The stop-reason mapping
 
     /// Maps a prompt-stop intent to the wire stop reason. Total: every
-    /// intent has a wire value, and an unmapped failure degrades to the
-    /// ``unmappedStopReasonValue`` extension value, never to an error.
+    /// intent has a wire value. A failure maps to the ACP `error` stop
+    /// reason, and ``idleState(for:)`` gives it the `error` object.
     ///
     /// - Parameter stop: Why the prompt stopped.
     /// - Returns: The wire stop reason.
@@ -521,7 +538,52 @@ struct PromptExecution: Sendable {
         case .repeated: .unknown(repeatedStopReasonValue)
         case .reasoningLimit: .unknown(reasoningLimitStopReasonValue)
         case .stalled: .unknown(stalledStopReasonValue)
-        case .failed: .unknown(unmappedStopReasonValue)
+        case .failed: .error
+        }
+    }
+
+    /// The `idle` state update that ends a prompt that stopped with `stop`:
+    /// the stop reason, and the `error` object of a failed prompt.
+    ///
+    /// - Parameter stop: Why the prompt stopped.
+    /// - Returns: The idle state update.
+    static func idleState(for stop: PromptStop) -> IdleStateUpdate {
+        IdleStateUpdate(error: idleError(for: stop), stopReason: stopReason(for: stop))
+    }
+
+    /// The `error` object of the `idle` of a prompt that stopped with `stop`,
+    /// or `nil` when the prompt did not fail.
+    ///
+    /// A failure is an internal error of the agent: the user message went in,
+    /// and the work after it failed. The message is the failure text.
+    ///
+    /// - Parameter stop: Why the prompt stopped.
+    /// - Returns: The error object, or `nil`.
+    private static func idleError(for stop: PromptStop) -> ACPError? {
+        guard case .failed(let message) = stop else {
+            return nil
+        }
+        return ACPError(code: .internalError, message: message)
+    }
+
+    /// The status that each tool call that did not finish gets at the end of
+    /// a prompt that stopped with `stop`, or `nil` when the stop leaves the
+    /// tool calls as they are.
+    ///
+    /// A failed prompt fails each open tool call, and a cancelled prompt
+    /// cancels each open tool call, before its `idle` (the ACP v2 prompt
+    /// lifecycle). The switch declares no `default`, so a new stop stops the
+    /// build here until somebody decides its status.
+    ///
+    /// - Parameter stop: Why the prompt stopped.
+    /// - Returns: The closing status, or `nil`.
+    static func closingStatus(for stop: PromptStop) -> FoundationModelsACP.ToolCallStatus? {
+        switch stop {
+        case .failed: .failed
+        case .cancelled: .cancelled
+        case .completed, .refusal, .budgetExhausted, .toolLoopCapped, .noOutput, .truncated, .endedInReasoning,
+            .repeated, .reasoningLimit, .stalled:
+            nil
         }
     }
 
@@ -656,10 +718,10 @@ struct PromptExecution: Sendable {
         return "\(cause) \(files)"
     }
 
-    /// Records the error a prompt failed on. The wire carries the
-    /// ``unmappedStopReasonValue`` stop reason alone, thus this record is the
-    /// one place that names the cause. The record holds the type of the
-    /// error and not its message, because a message can hold content.
+    /// Records the error a prompt failed on. The wire gives the error text to
+    /// the client in the `error` object of the `idle`. The record holds the
+    /// type of the error and not its message, because a message can hold
+    /// content, and the log goes to the telemetry backend.
     ///
     /// - Parameter error: The error the prompt's stream finished with.
     private func report(failure error: any Error) {
@@ -669,15 +731,15 @@ struct PromptExecution: Sendable {
     }
 
     /// Classifies a prompt error by intent. Router's error enums are
-    /// internal, so the readable types are Swift's `CancellationError`
-    /// and the SDK's public `LanguageModelError` — the same vocabulary
-    /// Router's own overflow recovery matches; everything else degrades
-    /// to `failed`.
+    /// internal, so the readable types are the abort errors
+    /// (``isAbort(_:)``) and the SDK's public `LanguageModelError` — the same
+    /// vocabulary Router's own overflow recovery matches; everything else
+    /// degrades to `failed`.
     ///
     /// - Parameter error: The error the prompt's stream finished with.
     /// - Returns: The intent.
     static func classify(_ error: any Error) -> PromptStop {
-        if error is CancellationError {
+        if isAbort(error) {
             return .cancelled
         }
         if let modelError = error as? LanguageModelError {
@@ -691,6 +753,29 @@ struct PromptExecution: Sendable {
             }
         }
         return .failed(message: String(describing: error))
+    }
+
+    /// Whether `error` tells that the work was aborted, and did not fail.
+    ///
+    /// Router and Swift concurrency throw `CancellationError`. Foundation
+    /// throws `URLError.cancelled` for a cancelled URL load, and
+    /// `CocoaError.userCancelled` for an operation that the user stopped. The
+    /// ACP prompt lifecycle reports each of them as `cancelled`, never as an
+    /// error.
+    ///
+    /// - Parameter error: The error to read.
+    /// - Returns: Whether the error is an abort.
+    static func isAbort(_ error: any Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+        if let urlError = error as? URLError {
+            return urlError.code == .cancelled
+        }
+        if let cocoaError = error as? CocoaError {
+            return cocoaError.code == .userCancelled
+        }
+        return false
     }
 
     // MARK: - Helpers

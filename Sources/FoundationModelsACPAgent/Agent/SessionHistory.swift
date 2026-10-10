@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
+import Synchronization
 
 // The retained history of a session (ACP schema-v2.0.0-alpha.7).
 //
@@ -80,6 +81,56 @@ enum SessionHistoryFile {
     }
 }
 
+/// The retained history of one session, which the session entry and the
+/// `user_message` recorder of the connection share.
+///
+/// `AgentSideConnection.insertUserMessage(_:messageId:into:)` gives the echo
+/// to a synchronous `@Sendable` closure. The connection calls that closure on
+/// its own dispatch task, after the success response and before the echo goes
+/// out, thus after the prompt handler returned. An actor cannot take a
+/// synchronous write from that closure, so a `Mutex` keeps the engine. Each
+/// write is one locked operation: a read, a change and a write back in two
+/// steps can lose an update that the connection writes between the steps.
+final class RetainedHistory: Sendable {
+    /// The merged history, under the lock.
+    private let engine: Mutex<SessionMergeEngine>
+
+    /// Makes the shared history over `history`.
+    ///
+    /// - Parameter history: The first state of the history.
+    init(_ history: SessionMergeEngine = SessionMergeEngine()) {
+        engine = Mutex(history)
+    }
+
+    /// A copy of the history as it is now.
+    var snapshot: SessionMergeEngine {
+        engine.withLock { $0 }
+    }
+
+    /// Merges one update into the history.
+    ///
+    /// - Parameter update: The update that the agent sends.
+    func apply(_ update: SessionUpdate) {
+        engine.withLock { _ = $0.apply(update) }
+    }
+
+    /// Records the command list and the configuration options of a
+    /// `session/new` response.
+    ///
+    /// - Parameter response: The response.
+    func seed(from response: NewSessionResponse) {
+        engine.withLock { _ = $0.seed(from: response) }
+    }
+
+    /// Records the command list and the configuration options of a
+    /// `session/resume` response.
+    ///
+    /// - Parameter response: The response.
+    func seed(from response: ResumeSessionResponse) {
+        engine.withLock { _ = $0.seed(from: response) }
+    }
+}
+
 extension SessionMergeEngine {
     /// Makes the history that `updates` give, in order.
     ///
@@ -119,7 +170,7 @@ extension RoutedACPAgent {
     ///   - update: The update that the agent sends.
     ///   - sessionId: The session the update belongs to.
     func recordInHistory(_ update: SessionUpdate, of sessionId: SessionId) {
-        sessions[sessionId]?.history.apply(update)
+        sessions[sessionId]?.retainedHistory.apply(update)
     }
 
     /// The sink of the updates of one session: it merges each update into
@@ -169,9 +220,10 @@ extension RoutedACPAgent {
     }
 
     /// Inserts the prompt of `params` as the user message of its session
-    /// (ACP schema-v2.0.0-alpha.7): the retained history gets the
-    /// `user_message` echo at once, and the connection sends the echo after
-    /// the response to the current request.
+    /// (ACP schema-v2.0.0-alpha.7). After the success response to the
+    /// current request, the connection gives the `user_message` echo to the
+    /// retained history and then sends the echo. After an error response the
+    /// history and the client get nothing.
     ///
     /// Call it in the handler of the `session/prompt` request, after each
     /// check that can refuse the prompt and before the prompt defers its

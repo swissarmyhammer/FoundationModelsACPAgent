@@ -134,16 +134,19 @@ enum SyntheticPrompt {
     ///
     /// - Parameters:
     ///   - events: The events of the prompt, in order.
+    ///   - error: The error that ends the stream after the events, or `nil`
+    ///     for a stream that ends by itself.
     ///   - shellSnapshot: The reader of the stored output of a settled
     ///     run; the default finds no run.
     /// - Returns: The updates that the prompt sent, in send order, and the
     ///   stop reason of the prompt.
     static func drive(
         _ events: [SessionEvent],
+        throwing error: (any Error)? = nil,
         shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
     ) async -> (updates: [SessionUpdate], reason: StopReason) {
         let (execution, recorder) = makeSinkedExecution(shellSnapshot: shellSnapshot)
-        let reason = await execution.drive(events: makeEventStream(events))
+        let reason = await execution.drive(events: makeEventStream(events, throwing: error))
         return (await recorder.updates, reason)
     }
 
@@ -153,14 +156,17 @@ enum SyntheticPrompt {
     ///
     /// - Parameters:
     ///   - events: The events of the prompt, in order.
+    ///   - error: The error that ends the stream after the events, or `nil`
+    ///     for a stream that ends by itself.
     ///   - shellSnapshot: The reader of the stored output of a settled
     ///     run; the default finds no run.
     /// - Returns: The updates that the prompt sent, in send order.
     static func sentUpdates(
         _ events: [SessionEvent],
+        throwing error: (any Error)? = nil,
         shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
     ) async -> [SessionUpdate] {
-        await drive(events, shellSnapshot: shellSnapshot).updates
+        await drive(events, throwing: error, shellSnapshot: shellSnapshot).updates
     }
 }
 

@@ -90,14 +90,15 @@ struct ExitCodeTests {
 
     /// Every arm of the stop-reason switch, in source order.
     ///
-    /// Six arms for the six cases the wire declares, and no `default`:
-    /// that is what makes a seventh case upstream a build failure.
+    /// Seven arms for the seven cases the wire declares, and no `default`:
+    /// that is what makes an eighth case upstream a build failure.
     private static let stopReasonSwitchArms = [
         "case .endTurn: .success",
         "case .refusal: .refusal",
         "case .cancelled: .cancelled",
         "case .maxTokens: .error",
         "case .maxTurnRequests: .error",
+        "case .error: .error",
         "case .unknown: .error",
     ]
 
@@ -221,6 +222,12 @@ struct ExitCodeTests {
         ])
     func aCutPromptStopReasonExitsError(wireValue: String) {
         #expect(AgentExitCode(stopReason: .unknown(wireValue)) == .error)
+    }
+
+    /// The ACP `error` stop reason exits 1. The prompt failed after the user
+    /// message went in, and a script must not read that as a finished answer.
+    @Test func theErrorStopReasonExitsError() {
+        #expect(AgentExitCode(stopReason: .error) == .error)
     }
 
     /// A prompt whose wire ended before an idle update arrived exits 1. The

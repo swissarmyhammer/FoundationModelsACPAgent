@@ -686,7 +686,7 @@ struct EventProjection {
     /// update clears or rewrites anything: a compaction changes only the
     /// model context.
     private var compactionReporter: CompactionReporter {
-        CompactionReporter(sessionId: sessionId, send: send)
+        CompactionReporter(send: send)
     }
 
     // MARK: - The wire call of a run

@@ -49,7 +49,7 @@ actor PromptStateOwner {
     private var didStart = false
 
     /// The stop reason that the `idle` terminator carried, or `nil` while the
-    /// prompt runs: a value tells that ``promptDidEnd(reason:)`` sent the
+    /// prompt runs: a value tells that ``promptDidEnd(stop:)`` sent the
     /// terminator. `session/close` reads it, so the close response follows
     /// the terminator, and the prompt span reads it when it
     /// ends.
@@ -107,19 +107,24 @@ actor PromptStateOwner {
     }
 
     /// Sends the one `state_update: idle` that ends the prompt, with its
-    /// stop reason. The end of the prompt task calls it, never a
-    /// `submissionEnded` event, because one prompt can make more than one
-    /// submission.
+    /// stop reason, and with the `error` object of a failed prompt
+    /// (``PromptExecution/idleState(for:)``). The end of the prompt task
+    /// calls it, never a `submissionEnded` event, because one prompt can make
+    /// more than one submission.
     ///
-    /// - Parameter reason: Why the prompt stopped.
-    func promptDidEnd(reason: StopReason) async {
-        await send(.stateUpdate(.idle(IdleStateUpdate(stopReason: reason))))
+    /// - Parameter stop: Why the prompt stopped.
+    /// - Returns: The stop reason that the `idle` carried.
+    @discardableResult
+    func promptDidEnd(stop: PromptStop) async -> StopReason {
+        let reason = PromptExecution.stopReason(for: stop)
+        await send(.stateUpdate(.idle(PromptExecution.idleState(for: stop))))
         stopReason = reason
         let waiters = endWaiters
         endWaiters = []
         for waiter in waiters {
             waiter.resume()
         }
+        return reason
     }
 
     /// Suspends until the prompt's `idle` terminator has gone out. A close

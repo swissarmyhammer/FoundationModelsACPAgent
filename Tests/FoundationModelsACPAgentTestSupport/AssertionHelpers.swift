@@ -21,6 +21,9 @@ public enum SessionUpdateKind: Sendable, Hashable {
     case configOptionUpdate
     case sessionInfoUpdate
     case usageUpdate
+    case notice
+    case compactionUpdate
+    case compactionSummaryChunk
     case unknown
 }
 
@@ -48,6 +51,9 @@ extension SessionUpdate {
         case .configOptionUpdate: .configOptionUpdate
         case .sessionInfoUpdate: .sessionInfoUpdate
         case .usageUpdate: .usageUpdate
+        case .notice: .notice
+        case .compactionUpdate: .compactionUpdate
+        case .compactionSummaryChunk: .compactionSummaryChunk
         case .unknown: .unknown
         }
     }

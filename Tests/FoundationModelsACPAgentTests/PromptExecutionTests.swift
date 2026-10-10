@@ -242,9 +242,7 @@ import Testing
             PromptExecution.stopReason(
                 for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
                 == .unknown(PromptExecution.stalledStopReasonValue))
-        #expect(
-            PromptExecution.stopReason(for: .failed(message: "boom"))
-                == .unknown(PromptExecution.unmappedStopReasonValue))
+        #expect(PromptExecution.stopReason(for: .failed(message: "boom")) == .error)
     }
 
     /// Whether one prompt stop is the `failed` stop. The stop carries a

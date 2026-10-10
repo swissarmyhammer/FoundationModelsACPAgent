@@ -302,18 +302,22 @@ import Testing
         #expect(idleState(of: updates.last)?.stopReason == reason)
     }
 
-    /// A mail answer that fails ends the prompt with the `_error` stop
-    /// reason of a failed prompt.
+    /// A mail answer that fails ends the prompt with the `error` stop reason
+    /// of a failed prompt, and the `error` object of the idle holds the
+    /// failure text.
     @Test func aFailedMailAnswerEndsThePromptWithTheErrorStopReason() async throws {
-        let (execution, _) = makeSinkedExecution()
+        let (execution, recorder) = makeSinkedExecution()
         let failure = SessionEvent.answerFailed(
             AnswerFailure(messageIds: [], reason: .error(Self.mailFailureText)))
         let followUp = Self.makeFollowUp(
             Self.callerEvents + [Self.settledRun, makeSubmissionStarted(cause: .mail), failure])
 
         let reason = await execution.drive(events: makeEventStream(Self.callerEvents), followUp: followUp)
+        let idle = try #require(try (await recorder.updates).last.flatMap(wireObject(of:)))
 
-        #expect(reason == .unknown(PromptExecution.unmappedStopReasonValue))
+        #expect(reason == .error)
+        #expect(jsonString(of: idle["stopReason"]) == "error")
+        #expect(jsonString(of: jsonObject(of: idle["error"])?["message"]) == Self.mailFailureText)
     }
 
     /// A wait that ends with no idle session, because the session closed,

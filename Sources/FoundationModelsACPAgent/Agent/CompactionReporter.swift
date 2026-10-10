@@ -1,13 +1,12 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
-import Logging
 
 /// The wire report of the Router compactions of one session.
 ///
 /// A compaction changes only the model context. The ACP history keeps each
 /// message with its id, and the compaction shows as one more entry: an
-/// UNSTABLE `compaction_update`, keyed by one `compactionId` for each
+/// `compaction_update`, keyed by one `compactionId` for each
 /// compaction. The first update fixes the position of the entry, and each
 /// later update with the same id changes it. A completed compaction also
 /// sends a `usage_update` with the new context use.
@@ -19,9 +18,6 @@ import Logging
 /// Router gives the summary whole, never in parts. Thus the summary goes on
 /// the completed update, and no `compaction_summary_chunk` goes out.
 struct CompactionReporter: Sendable {
-    /// The session the compactions belong to, for the log.
-    let sessionId: SessionId
-
     /// The sink of the updates: the history sink of the session.
     let send: SessionUpdateSink
 
@@ -30,8 +26,8 @@ struct CompactionReporter: Sendable {
     /// and Router names its own id only in the result.
     ///
     /// - Returns: A new id, unique in the session.
-    static func makeCompactionId() -> Unstable.CompactionId {
-        Unstable.CompactionId(rawValue: ULID.generate().description)
+    static func makeCompactionId() -> CompactionId {
+        CompactionId(rawValue: ULID.generate().description)
     }
 
     /// The reason a compaction left the context as it was, in words a user
@@ -59,7 +55,7 @@ struct CompactionReporter: Sendable {
     ///
     /// - Parameter start: The start that Router reported.
     func reportAutomaticStart(_ start: CompactionStart) async {
-        await reportStart(of: Unstable.CompactionId(rawValue: start.id))
+        await reportStart(of: CompactionId(rawValue: start.id))
     }
 
     /// Reports the result of an automatic compaction: the terminal update of
@@ -68,7 +64,7 @@ struct CompactionReporter: Sendable {
     ///
     /// - Parameter result: The result of the compaction.
     func reportAutomaticCompaction(_ result: CompactionResult) async {
-        await reportEnd(of: Unstable.CompactionId(rawValue: result.id), with: result)
+        await reportEnd(of: CompactionId(rawValue: result.id), with: result)
     }
 
     /// Reports an automatic compaction that did not complete: `cancelled` for
@@ -78,7 +74,7 @@ struct CompactionReporter: Sendable {
     ///
     /// - Parameter failure: The failure that Router reported.
     func reportAutomaticFailure(_ failure: CompactionFailure) async {
-        let compactionId = Unstable.CompactionId(rawValue: failure.id)
+        let compactionId = CompactionId(rawValue: failure.id)
         switch failure.outcome {
         case .cancelled:
             await reportCancel(of: compactionId)
@@ -90,8 +86,8 @@ struct CompactionReporter: Sendable {
     /// Reports that a compaction started: the `in_progress` update.
     ///
     /// - Parameter compactionId: The id of the compaction.
-    func reportStart(of compactionId: Unstable.CompactionId) async {
-        await post(.compactionUpdate(Unstable.CompactionUpdate(compactionId: compactionId, status: .inProgress)))
+    func reportStart(of compactionId: CompactionId) async {
+        await send(.compactionUpdate(CompactionUpdate(compactionId: compactionId, status: .inProgress)))
     }
 
     /// Reports the end of a compaction that gave `result`.
@@ -104,14 +100,14 @@ struct CompactionReporter: Sendable {
     /// - Parameters:
     ///   - compactionId: The id of the compaction.
     ///   - result: The result of the compaction.
-    func reportEnd(of compactionId: Unstable.CompactionId, with result: CompactionResult) async {
+    func reportEnd(of compactionId: CompactionId, with result: CompactionResult) async {
         if let shortfall = result.shortfall {
             await reportFailure(of: compactionId, reason: Self.shortfallReason(shortfall))
             return
         }
-        await post(
+        await send(
             .compactionUpdate(
-                Unstable.CompactionUpdate(
+                CompactionUpdate(
                     compactionId: compactionId, status: .completed, summary: Self.summaryPatch(of: result))))
         // The estimates of the compaction are the only sizes it gives. The
         // size before the compaction stands in for the context size, so the
@@ -122,13 +118,14 @@ struct CompactionReporter: Sendable {
     }
 
     /// Reports the end of a compaction that threw `error`: `cancelled` for
-    /// a cancellation, and `failed` with the error for each other error.
+    /// an abort error (``PromptExecution/isAbort(_:)``), and `failed` with
+    /// the error for each other error.
     ///
     /// - Parameters:
     ///   - compactionId: The id of the compaction.
     ///   - error: The error the compaction threw.
-    func reportEnd(of compactionId: Unstable.CompactionId, throwing error: any Error) async {
-        guard error is CancellationError else {
+    func reportEnd(of compactionId: CompactionId, throwing error: any Error) async {
+        guard PromptExecution.isAbort(error) else {
             await reportFailure(of: compactionId, reason: String(describing: error))
             return
         }
@@ -139,8 +136,8 @@ struct CompactionReporter: Sendable {
     /// with no error.
     ///
     /// - Parameter compactionId: The id of the compaction.
-    private func reportCancel(of compactionId: Unstable.CompactionId) async {
-        await post(.compactionUpdate(Unstable.CompactionUpdate(compactionId: compactionId, status: .cancelled)))
+    private func reportCancel(of compactionId: CompactionId) async {
+        await send(.compactionUpdate(CompactionUpdate(compactionId: compactionId, status: .cancelled)))
     }
 
     /// Reports a compaction that failed: the `failed` update with the reason.
@@ -148,10 +145,10 @@ struct CompactionReporter: Sendable {
     /// - Parameters:
     ///   - compactionId: The id of the compaction.
     ///   - reason: Why the compaction failed, in words a user reads.
-    private func reportFailure(of compactionId: Unstable.CompactionId, reason: String) async {
-        await post(
+    private func reportFailure(of compactionId: CompactionId, reason: String) async {
+        await send(
             .compactionUpdate(
-                Unstable.CompactionUpdate(compactionId: compactionId, status: .failed, error: .value(reason))))
+                CompactionUpdate(compactionId: compactionId, status: .failed, error: .value(reason))))
     }
 
     /// The summary patch of a completed compaction: the summary as one text
@@ -164,27 +161,5 @@ struct CompactionReporter: Sendable {
             return .unchanged
         }
         return .value([.text(TextContent(text: summary))])
-    }
-
-    /// Sends one UNSTABLE update as the stable session update that carries
-    /// it.
-    ///
-    /// The payload holds only strings and ids, thus the encode does not
-    /// fail. A failure is a defect: a debug build stops, and a release build
-    /// logs it and sends nothing.
-    ///
-    /// - Parameter update: The unstable update.
-    private func post(_ update: Unstable.SessionUpdate) async {
-        let wire: SessionUpdate
-        do {
-            wire = try SessionUpdate(update)
-        } catch {
-            assertionFailure("A compaction update did not encode: \(error)")
-            ACPAgentTelemetry.logger(.session).error(
-                "A compaction update did not encode. The update is not sent.",
-                metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
-            return
-        }
-        await send(wire)
     }
 }

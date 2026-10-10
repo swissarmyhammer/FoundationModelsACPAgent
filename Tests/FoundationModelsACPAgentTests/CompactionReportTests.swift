@@ -52,9 +52,9 @@ struct CompactionReportTests {
     ///
     /// - Parameter updates: The sent updates.
     /// - Returns: The compaction updates.
-    private static func compactionUpdates(in updates: [SessionUpdate]) -> [Unstable.CompactionUpdate] {
+    private static func compactionUpdates(in updates: [SessionUpdate]) -> [CompactionUpdate] {
         updates.compactMap { update in
-            guard case .compactionUpdate(let compaction)? = try? Unstable.SessionUpdate(update) else {
+            guard case .compactionUpdate(let compaction) = update else {
                 return nil
             }
             return compaction
@@ -389,9 +389,7 @@ struct CompactionReportTests {
     @Test(.timeLimit(.minutes(1)))
     func aCancelledCompactionSendsCancelled() async throws {
         let recorder = SinkRecorder()
-        let reporter = CompactionReporter(
-            sessionId: SessionId(rawValue: syntheticSessionIdValue),
-            send: { update in await recorder.append(update) })
+        let reporter = CompactionReporter(send: { update in await recorder.append(update) })
         let compactionId = CompactionReporter.makeCompactionId()
 
         await reporter.reportStart(of: compactionId)
@@ -404,6 +402,22 @@ struct CompactionReportTests {
         let cancelled = try #require(compactions.last)
         #expect(patchValue(cancelled.error) == nil)
         #expect(updates.compactMap(usageReport(of:)).isEmpty)
+    }
+
+    /// A compaction that an abort error other than `CancellationError`
+    /// stopped is a cancelled entry too, with no error on the wire. The
+    /// prompt reads the same abort errors as a cancel.
+    @Test(arguments: [URLError(.cancelled), CocoaError(.userCancelled)] as [any Error])
+    func anAbortedCompactionSendsCancelled(abort: any Error) async throws {
+        let recorder = SinkRecorder()
+        let reporter = CompactionReporter(send: { update in await recorder.append(update) })
+        let compactionId = CompactionReporter.makeCompactionId()
+
+        await reporter.reportEnd(of: compactionId, throwing: abort)
+
+        let update = try #require(try (await recorder.updates).last.flatMap(wireObject(of:)))
+        #expect(jsonString(of: update["status"]) == "cancelled")
+        #expect(update["error"] == nil)
     }
 
     // MARK: - The retained history

@@ -110,8 +110,14 @@ struct ActiveSession: Sendable {
     /// its id. The `session/new` or `session/resume` response seeds it. A
     /// compaction changes only the model context, never this history.
     /// `session/resume` replays it, and ``SessionHistoryFile`` keeps it on
-    /// disk for a new process.
-    var history = SessionMergeEngine()
+    /// disk for a new process. The `user_message` recorder of the connection
+    /// shares it (``RetainedHistory``).
+    let retainedHistory: RetainedHistory
+
+    /// A copy of the retained history as it is now.
+    var history: SessionMergeEngine {
+        retainedHistory.snapshot
+    }
 
     /// Whether the session can accept a new prompt. Derived, so the
     /// stored prompt reference stays the one source of the busy state.
@@ -122,9 +128,12 @@ struct ActiveSession: Sendable {
         return activePrompt == nil ? .idle : .busy
     }
 
-    /// Inserts the prompt of `request` as the user message of the session:
-    /// the history gets the `user_message` echo at once, and the connection
-    /// sends the echo after the response to the current request.
+    /// Inserts the prompt of `request` as the user message of the session.
+    /// After the success response to the current request, the connection
+    /// gives the `user_message` echo to the retained history and then sends
+    /// the echo. Thus the history gets the message after the handler
+    /// returns. The prompt defers its work after this call, so the history
+    /// holds the message before the first update of the prompt.
     ///
     /// Call it in the handler of the `session/prompt` request, after each
     /// check that can refuse the prompt and before the prompt defers its
@@ -134,10 +143,11 @@ struct ActiveSession: Sendable {
     ///   - request: The prompt request.
     ///   - connection: The connection that sends the echo.
     /// - Returns: The id of the user message, for the prompt response.
-    mutating func insertUserMessage(
+    func insertUserMessage(
         _ request: PromptRequest, through connection: AgentSideConnection
     ) -> MessageId {
-        connection.insertUserMessage(request, into: &history)
+        let history = retainedHistory
+        return connection.insertUserMessage(request) { update in history.apply(update) }
     }
 }
 
@@ -424,7 +434,7 @@ extension RoutedACPAgent {
             sessionId: activation.sessionId,
             availableCommands: activation.availableCommands,
             configOptions: activation.configOptions)
-        sessions[activation.sessionId]?.history.seed(from: response)
+        sessions[activation.sessionId]?.retainedHistory.seed(from: response)
         return response
     }
 
@@ -486,8 +496,7 @@ extension RoutedACPAgent {
                 sessionId: sessionId,
                 transcriptDirectory: session.recordingDirectory,
                 registry: commands,
-                compactionReporter: CompactionReporter(
-                    sessionId: sessionId, send: boundHistorySink(for: sessionId))))
+                compactionReporter: CompactionReporter(send: boundHistorySink(for: sessionId))))
 
         // The first announcement of the config-option list: one select
         // over the profile's chat slots, defaulting to
@@ -511,7 +520,7 @@ extension RoutedACPAgent {
             activePrompt: nil,
             activeElicitationRelay: nil,
             indexRecorded: indexRecorded,
-            history: history)
+            retainedHistory: RetainedHistory(history))
         recordActiveSessions()
 
         // The response announces the first command list, and each registry

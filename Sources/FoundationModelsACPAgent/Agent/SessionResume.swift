@@ -165,7 +165,7 @@ extension RoutedACPAgent {
         // `SessionMergeEngine.seed(from:)` is the FoundationModelsACP method
         // that records the commands and the options of the response, so the
         // state part of a later replay holds them.
-        sessions[params.sessionId]?.history.seed(from: response)
+        sessions[params.sessionId]?.retainedHistory.seed(from: response)
         return response
     }
 

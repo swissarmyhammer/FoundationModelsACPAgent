@@ -766,12 +766,12 @@ import Testing
 
     /// A compaction sends its compaction entry, then one `usage_update` —
     /// the meter drops to the post-fold size — and no message update. The
-    /// entry is the UNSTABLE `compaction_update`, which the stable union
-    /// carries as its `unknown` case (`CompactionReportTests` reads it).
+    /// entry is the stable `compaction_update` (`CompactionReportTests` reads
+    /// its fields).
     @Test func aCompactionSendsItsEntryAndOneUsageUpdateAndNoMessageUpdate() async throws {
         let updates = await SyntheticPrompt.sentUpdates([.compaction(Self.makeFoldResult())])
 
-        #expect(updates.map(\.kind) == [.unknown, .usageUpdate, .stateUpdate])
+        #expect(updates.map(\.kind) == [.compactionUpdate, .usageUpdate, .stateUpdate])
         let usage = try #require(
             updates.lazy.compactMap(usageReport(of:)).first,
             "expected one usage update, got \(updates)")

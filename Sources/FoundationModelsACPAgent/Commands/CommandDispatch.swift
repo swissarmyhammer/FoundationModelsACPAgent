@@ -132,7 +132,7 @@ struct ActionCommandExecution: Sendable {
         if await promptState.cancelRequested {
             stop = .cancelled
         }
-        await promptState.promptDidEnd(reason: PromptExecution.stopReason(for: stop))
+        await promptState.promptDidEnd(stop: stop)
     }
 }
 

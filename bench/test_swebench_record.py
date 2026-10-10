@@ -191,7 +191,7 @@ class TheRecordOfAnInstance(unittest.TestCase):
     def test_it_keeps_a_stop_reason_it_does_not_know(self):
         """A stop reason is a free string on the wire.
 
-        This agent adds `_error`, `_no_output` and `_stalled` to the reasons
+        This agent adds `_no_output` and `_stalled` to the reasons
         of the protocol, and a later version can add more. The record keeps
         whatever the agent said.
         """
