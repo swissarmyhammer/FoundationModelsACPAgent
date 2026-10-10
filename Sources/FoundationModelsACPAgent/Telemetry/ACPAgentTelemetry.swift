@@ -455,6 +455,10 @@ enum ACPAgentTelemetry {
         /// the outcome of each server.
         case mcpComposition = "MCPComposition"
 
+        /// The agents composition: a session tool of an agent run that did
+        /// not build.
+        case agentsComposition = "AgentsComposition"
+
         /// The transcripts module: the damaged lines of the session index
         /// and of the project registry.
         case transcripts = "Transcripts"

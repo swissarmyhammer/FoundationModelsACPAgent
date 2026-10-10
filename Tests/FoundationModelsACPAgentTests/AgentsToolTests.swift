@@ -25,21 +25,17 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 @Suite struct AgentsToolTests {
     // MARK: - Constants
 
-    /// The mount order of a default context: the two Multitool session
-    /// tools, then the `skills` tool, then the `agents` tool.
-    static let defaultToolNames = ["searchTools", "runCode", "skills", "agents"]
-
-    /// The mount order with the agents section off.
-    static let withoutAgentsNames = ["searchTools", "runCode", "skills"]
-
-    /// The mount order with the skills section off.
-    static let withoutSkillsNames = ["searchTools", "runCode", "agents"]
-
     /// The name of the `agents` tool.
     static let agentsToolName = "agents"
 
     /// The name of the `skills` tool.
     static let skillsToolName = "skills"
+
+    /// The name of the Multitool `searchTools` session tool.
+    static let searchToolsName = "searchTools"
+
+    /// The name of the Multitool `runCode` session tool.
+    static let runCodeName = "runCode"
 
     /// The folder of a layer root that holds the agent folders.
     static let agentsFolderName = "agents"
@@ -255,7 +251,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
         let built = try await SurfaceCatalog.makeRegistry(context: context)
 
-        #expect(surface.tools.map(\.name) == Self.defaultToolNames)
+        #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
         #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(Self.agentsToolName) })
         let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
         #expect(agents.agentNames.contains(Self.quickAgent))
@@ -277,7 +273,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == Self.withoutAgentsNames)
+        #expect(surface.tools.map(\.name) == MountOrder.withoutAgentsNames)
         #expect(surface.agents == nil)
     }
 
@@ -291,9 +287,28 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let surface = try await SurfaceCatalog.sessionSurface(context: context, skills: skills)
 
         let agents = try #require(surface.agents)
-        #expect(agents.environment.tools.names == ["runCode", "searchTools", Self.skillsToolName])
+        #expect(agents.environment.tools.names == [Self.runCodeName, Self.searchToolsName, Self.skillsToolName])
         #expect(surface.tools.filter { $0.name == Self.skillsToolName }.count == 1)
         await surface.shutdown()
+    }
+
+    /// A factory of the run tools gives a new session tool of the name it
+    /// asks for, and not the fallback tool, when the session tools build.
+    /// The fallback here has an other name, thus a result that is the
+    /// fallback fails the test.
+    @Test func aFreshSessionToolHasTheAskedNameAndIsNotTheFallback() async throws {
+        let context = try await Self.makeContext(label: "fresh")
+        let built = try await SurfaceCatalog.makeRegistry(context: context)
+        let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
+        let embedder = ProfileEmbedding(embedder: context.profile.embedding)
+        let probes = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
+        let searchTools = try #require(probes.first { $0.name == Self.searchToolsName })
+
+        let tool = AgentsComposition.freshSessionTool(
+            named: Self.runCodeName, registry: built.registry, selection: selection,
+            embedder: embedder, fallback: searchTools)
+
+        #expect(tool.name == Self.runCodeName)
     }
 
     /// With the skills section off, the root session has no `skills` tool,
@@ -305,7 +320,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == Self.withoutSkillsNames)
+        #expect(surface.tools.map(\.name) == MountOrder.withoutSkillsNames)
         let agents = try #require(surface.agents)
         #expect(agents.environment.tools.names.contains(Self.skillsToolName))
         #expect(agents.environment.skills.metadata().isEmpty)

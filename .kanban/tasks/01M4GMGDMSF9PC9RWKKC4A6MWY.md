@@ -143,6 +143,56 @@ comments:
     - note: plain `swift test` in the default .build failed before any test ran. SwiftPM tried to remove the checkout .build/checkouts/FoundationModelsMetadataRegistry (not listed in .build/workspace-state.json) and got "Operation not permitted". A sourcekit-lsp index-build was running inside that checkout. I restored the deleted tracked .kanban files in that checkout with `git checkout -- .`. I used the scratch path .build/alt to get the measurement. No Package.resolved was edited, no resolve or update was run, no source file was changed.
     - next: a person should clear the stale default .build state (or stop the sourcekit-lsp index build in that checkout) so plain `swift test` works again.
   timestamp: 2026-10-10T09:55:34.892695+00:00
+- actor: claude-code
+  id: 01m4jkwwajybxvtjht4m0gr4wm
+  text: |-
+    ### commit — changed
+    - evidence: af04397 feat(tools): mount the standalone agents tool beside the skills tool, with one skills registry (^c4a6mwy). Before it: 8a7d4ef chore(kanban): add the tasks of other sessions, and tasks ^t87yzmg and ^4190rat.
+    - next: review. Not staged: bench/swebench_prompt.py, bench/test_swebench_prompt.py, __pycache__ folders, acp-agent.score_*.json, bench/run.code-context.log.web-off-0717, bench/score.code-context.log.killed-1306, logs/.
+  timestamp: 2026-10-10T09:56:51.666134+00:00
+- actor: claude-code
+  id: 01m4jmsvrzf393h3zvcpdd8e0x
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (af04397): 6 findings (6 confirmed, 7 refuted) — Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:159, Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:168, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:140, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:25, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:29, Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:324. The tool rule code-hygiene/dead-code-swift failed (no permission to remove .build/checkouts/FoundationModelsMetadataRegistry), so that rule gave no result.
+    - next: implement the 6 open items in the "Review Findings (2026-10-10 04:57)" section, then review again.
+  timestamp: 2026-10-10T10:12:41.375540+00:00
+- actor: claude-code
+  id: 01m4jmthg343n0a61c2b9218h7
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 20 files (3 new); FoundationModelsAgents dfd406b added, Extras c18a9aa -> 5bc870a
+    - test: green — swift test 846 and IntegrationTests 30 (in a separate scratch path, because the default .build has a stale MetadataRegistry checkout); bench 254 (1 skip), swebench 38, swebench-score 34
+    - commit: af04397
+    - review: findings — Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:159, Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:168, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:140, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:25, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:29, Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:324
+    - note: the rule code-hygiene/dead-code-swift did not finish, because it could not remove .build/checkouts/FoundationModelsMetadataRegistry (no permission)
+  timestamp: 2026-10-10T10:13:03.619544+00:00
+- actor: claude-code
+  id: 01m4jn94kv9bjnmm615j1hrkdg
+  text: |-
+    ### Review fixes (2026-10-10)
+
+    - RuntimeDoctor: one private `DotfolderSection` value (check name, key, dotfolder name, wording) for each section, `skillsSection` and `agentsSection`. One `checks(of:isMounted:)` gives the off row or one row per layer. One `dotfolderStack(named:)` replaces `skillsStack` and `agentsStack`. `check(ofSkillsLayer:)` is removed. The skills mount test is `configuration.tools.skills != .disabled`.
+    - AgentsComposition: the `try?` and the `?? probe` fallback are removed. The factory calls the new `freshSessionTool(named:registry:selection:embedder:fallback:)`. A failed build or a missing name calls `assertionFailure` and logs an error on the new logger category `agentsComposition` ("AgentsComposition"), with `tool.name` and `error.type` metadata only. Then it gives the probe tool. The factory type of `FoundationModelsAgents::ToolCatalog` cannot throw (`@Sendable () -> any Tool`), thus throw was not possible.
+    - Tests: the mount orders live one time in `Tests/FoundationModelsACPAgentTests/Support/MountOrder.swift` (`defaultToolNames`, `withoutSkillsNames`, `withoutAgentsNames`). ToolCatalogTests and AgentsToolTests read them. AgentsToolTests also uses `searchToolsName`/`runCodeName` constants in place of literals.
+    - New tests: `AgentsToolTests.aFreshSessionToolHasTheAskedNameAndIsNotTheFallback`, and `ToolSectionCodecTests.eachOffShapeOfTheAgentsSectionReadsBackTheSame(section:)` (2 cases: `.disabled`, `.enabled(enabled: false)`).
+    - Note: the failure path of `freshSessionTool` has no unit test, because `assertionFailure` stops a debug test process.
+    - Note: the `dump validators` rules file is 754K characters. I read the rule bodies for duplication, reuse, swift (all sub-rules) and inverse-operation-coverage, not the whole file.
+  timestamp: 2026-10-10T10:21:01.947617+00:00
+- actor: claude-code
+  id: 01m4jn9872pme60n8h84f4gpqk
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Tests/FoundationModelsACPAgentTests/Support/MountOrder.swift (new), Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift, Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift. `swift test --scratch-path .build/alt --force-resolved-versions --filter 'RuntimeDoctorTests|ToolCatalogTests|AgentsToolTests|ToolSectionCodecTests'`: 75 tests in 4 suites passed, no compiler warning or error in this package. All 6 findings flipped to [x].
+    - next: /review. Not committed. Task stays in doing.
+  timestamp: 2026-10-10T10:21:05.634008+00:00
+- actor: claude-code
+  id: 01m4jnk1h4edmrjg5hhzyxy1sk
+  text: |-
+    ### test — green
+    - evidence: `swift test --scratch-path .build/alt --force-resolved-versions` — 848 tests in 90 suites passed, 0 failed, 1 known issue (the intended withKnownIssue in HarnessSmokeTests). `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` — 30 tests in 11 suites passed, 0 failed. The only warning in both runs is the mlx-swift_Cmlx.bundle "missing creator for mutated node" build warning. It comes from a dependency. No warning is in this package's files. No skipped tests.
+    - next: review
+  timestamp: 2026-10-10T10:26:26.468321+00:00
 position_column: doing
 position_ordinal: '80'
 title: Mount the standalone agents tool beside the skills tool, and let the model follow agents tool output
@@ -189,3 +239,27 @@ Another session (`foundationmodelsacpagent-fd`) works in this repository. Tell i
 - [ ] The section `agents:` with `enabled: false` gives a session with no `agents` tool.
 - [ ] The system prompt names both the `skills` tool and the `agents` tool as the exceptions to the Safety rule, and the test checks that text.
 - [ ] The full test suite passes.
+
+## Review Findings (2026-10-10 04:57)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 19 file(s) reviewed, 5 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 3 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+> - `bench/code-context.config.yaml` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/dead-code-swift' failed — the tool judged nothing, so its findings are missing:
+> error: 'foundationmodelsmetadataregistry': Error Domain=NSCocoaErrorDomain Code=513 "“FoundationModelsMetadataRegistry” couldn’t be removed because you don’t have permission to access it." UserInfo={NSUserStringVariant=(
+>     Remove
+> ), NSFilePath=/Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.build/checkouts/FoundationModelsMetadataRegistry, NSURL=file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/.build/checkouts/FoundationModelsMetadataRegistry, NSUnderlyingError=0x7c03988000 {Error Domain=NSPOSIXErrorDomain Code=1 "Operation not permitted"}}
+
+- [x] `Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:159` `reuse/reuse` — `agentsChecks()` repeats the shape of `skillsChecks()` (line 137): a disabled-section guard, then one `DotfolderLayerCheck` per layer of a stack. The agents version does not reuse the skills path, so the two checks are maintained in parallel. Extract one private function that takes the section name, key, enabled flag, stack and wording. Call it from `skillsChecks()` and `agentsChecks()` so each only supplies its own values.
+- [x] `Sources/FoundationModelsACPAgent/Doctor/RuntimeDoctor.swift:168` `duplication/duplication` — `agentsStack` is a copy of `skillsStack` (lines 180-184) with only the dotfolder name constant changed. Both build `DotfolderStack(name:workingDirectory:environment:)` from the same three stored properties. Replace both properties with one `dotfolderStack(named:)` function that takes the dotfolder name and returns the stack, and call it with each constant.
+- [x] `Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:140` `swift/preconditions` — The `try?` on the fresh `makeSessionTools` call discards the error. When the call fails, the tool silently falls back to the probe tool, so the failure leaves no record. The doc comment says the probe proves the call succeeds, so a failure here is an unexpected but recoverable condition, and the code gives no assertion and no log for it. Replace the silent fallback with a logged path. For example, call `assertionFailure` and a `logger.error` when `fresh` is nil or lacks `name`, then return `probe`. Alternatively, make the closure throw so the caller learns the reason.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:25` `reuse/reuse` — defaultToolNames is a second private copy of the same mount-order constant that AgentsToolTests already declares. A change to the mount order would have to be made in two files. Declare the mount-order constant once, for example on ToolCatalogTests as internal static, and have AgentsToolTests read it. Or drop the private copy and reference the shared one.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift:29` `reuse/reuse` — withoutSkillsNames is a second copy of the constant AgentsToolTests declares for the same mount order with skills off. Use one shared declaration for this list, as with defaultToolNames above.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:324` `completeness/inverse-operation-coverage` — The off shapes of the agents section are decoded, but no test encodes them and decodes them back. The only round trip (theConfigInitDocumentReadsBackWithTheAgentsToolOn, line 347) uses the enabled default. The existing codec round trip at about line 452 uses shell and does not cover the agents section. A regression in how the off shapes are written would not be caught. Add one round trip: set configuration.tools.agents to .disabled and to .enabled(AgentsToolOptions(enabled: false)), encode with ConfigurationYAML.documentText, load the text back with fixture.loadProjectConfig, and assert the decoded agents section equals the original. Use the same pattern as theConfigInitDocumentReadsBackWithTheAgentsToolOn.

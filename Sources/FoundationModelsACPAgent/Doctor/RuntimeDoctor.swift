@@ -42,47 +42,60 @@ public struct RuntimeDoctor: Doctorable {
     /// The group every finding of this component belongs to.
     public static let category = "runtime"
 
-    /// The check that states the skills section is off.
-    private static let skillsToolCheckName = "the skills tool"
-
-    /// The dotted key path of the skills section a row names.
-    private static let skillsKey =
-        AgentConfiguration.CodingKeys.tools.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + ToolsConfiguration.CodingKeys.skills.stringValue
-
-    /// The words this component says about the layers of its own stack.
+    /// The skills section: the row of a section that is off names
+    /// `tools.skills`, and a layer row says that skills are optional.
     ///
-    /// A layer that is not on disk is no fault, because skills are
-    /// optional. An unreadable one loses every skill in it, and a person
-    /// either opens the directory or takes it away.
-    private static let layerWording = DotfolderLayerCheck.Wording(
-        missingReason: "skills are optional",
-        noun: ToolCatalog.skillsDotfolderName,
-        unreadableCost: ", so its skills are lost",
-        unreadableFixHint: ", or remove it")
+    /// A layer that is not on disk is no fault, because skills are optional.
+    /// An unreadable one loses every skill in it, and a person either opens
+    /// the directory or takes it away.
+    private static let skillsSection = DotfolderSection(
+        checkName: "the skills tool",
+        key: AgentConfiguration.CodingKeys.tools.stringValue
+            + LoadedConfiguration.keyPathSeparator
+            + ToolsConfiguration.CodingKeys.skills.stringValue,
+        dotfolderName: ToolCatalog.skillsDotfolderName,
+        wording: DotfolderLayerCheck.Wording(
+            missingReason: "skills are optional",
+            noun: ToolCatalog.skillsDotfolderName,
+            unreadableCost: ", so its skills are lost",
+            unreadableFixHint: ", or remove it"))
 
-    /// The check that states the agents section is off.
-    private static let agentsToolCheckName = "the agents tool"
-
-    /// The dotted key path that turns the agents tool off, as the git and
-    /// environment rows of ``ToolsDoctor`` name their `enabled` keys.
-    private static let agentsEnabledKey =
-        AgentConfiguration.CodingKeys.tools.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + ToolsConfiguration.CodingKeys.agents.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + AgentsToolOptions.CodingKeys.enabled.stringValue
-
-    /// The words this component says about the layers of the agents stack.
+    /// The agents section: the row of a section that is off names
+    /// `tools.agents.enabled`, as the git and environment rows of
+    /// ``ToolsDoctor`` name their `enabled` keys, and a layer row says that
+    /// agents are optional.
     ///
-    /// A layer that is not on disk is no fault, because agents are
-    /// optional. An unreadable one loses every agent in it.
-    private static let agentsLayerWording = DotfolderLayerCheck.Wording(
-        missingReason: "agents are optional",
-        noun: ToolCatalog.agentsDotfolderName,
-        unreadableCost: ", so its agents are lost",
-        unreadableFixHint: ", or remove it")
+    /// A layer that is not on disk is no fault, because agents are optional.
+    /// An unreadable one loses every agent in it.
+    private static let agentsSection = DotfolderSection(
+        checkName: "the agents tool",
+        key: AgentConfiguration.CodingKeys.tools.stringValue
+            + LoadedConfiguration.keyPathSeparator
+            + ToolsConfiguration.CodingKeys.agents.stringValue
+            + LoadedConfiguration.keyPathSeparator
+            + AgentsToolOptions.CodingKeys.enabled.stringValue,
+        dotfolderName: ToolCatalog.agentsDotfolderName,
+        wording: DotfolderLayerCheck.Wording(
+            missingReason: "agents are optional",
+            noun: ToolCatalog.agentsDotfolderName,
+            unreadableCost: ", so its agents are lost",
+            unreadableFixHint: ", or remove it"))
+
+    /// The values that make the rows of one dotfolder section different from
+    /// the rows of an other section.
+    private struct DotfolderSection {
+        /// The name of the one row of a section that is off.
+        let checkName: String
+
+        /// The dotted key path that the row of a section that is off names.
+        let key: String
+
+        /// The dotfolder name of the stack that the section reads.
+        let dotfolderName: String
+
+        /// The words of a layer row.
+        let wording: DotfolderLayerCheck.Wording
+    }
 
     // MARK: - Stored state
 
@@ -135,13 +148,7 @@ public struct RuntimeDoctor: Doctorable {
     ///
     /// - Returns: The findings, lowest precedence first.
     private func skillsChecks() -> [HealthCheck] {
-        guard case .enabled = configuration.tools.skills else {
-            return [
-                DisabledSectionCheck.check(
-                    name: Self.skillsToolCheckName, key: Self.skillsKey, category: Self.category)
-            ]
-        }
-        return skillsStack.layers.map(Self.check(ofSkillsLayer:))
+        checks(of: Self.skillsSection, isMounted: configuration.tools.skills != .disabled)
     }
 
     /// The findings of the agents section: one per layer of the agents
@@ -150,46 +157,41 @@ public struct RuntimeDoctor: Doctorable {
     ///
     /// - Returns: The findings, lowest precedence first.
     private func agentsChecks() -> [HealthCheck] {
-        guard configuration.tools.agents.mountedOptions != nil else {
+        checks(
+            of: Self.agentsSection,
+            isMounted: configuration.tools.agents.mountedOptions != nil)
+    }
+
+    /// The findings of one dotfolder section: one per layer of its stack,
+    /// or the one row of a section that is off.
+    ///
+    /// - Parameters:
+    ///   - section: The values of the section.
+    ///   - isMounted: Whether the configuration mounts the tool of the
+    ///     section. When it is `false`, no layer is read.
+    /// - Returns: The findings, lowest precedence first.
+    private func checks(of section: DotfolderSection, isMounted: Bool) -> [HealthCheck] {
+        guard isMounted else {
             return [
                 DisabledSectionCheck.check(
-                    name: Self.agentsToolCheckName, key: Self.agentsEnabledKey, category: Self.category)
+                    name: section.checkName, key: section.key, category: Self.category)
             ]
         }
-        return agentsStack.layers.map { layer in
+        return dotfolderStack(named: section.dotfolderName).layers.map { layer in
             DotfolderLayerCheck.check(
-                of: layer, wording: Self.agentsLayerWording, category: Self.category, requiresWrite: false)
+                of: layer, wording: section.wording, category: Self.category, requiresWrite: false)
         }
     }
 
-    /// The dotfolder stack the agent registry reads, under the dotfolder
-    /// name ``ToolCatalog/agentsDotfolderName``, so this component reports
-    /// the very layers a session reads.
-    private var agentsStack: DotfolderStack {
-        DotfolderStack(
-            name: ToolCatalog.agentsDotfolderName, workingDirectory: workingDirectory,
-            environment: environment)
-    }
-
-    // MARK: - The skills stack
-
-    /// The dotfolder stack the skills registry is built over.
+    /// The dotfolder stack that a registry of the session builds over the
+    /// dotfolder name `name`, so this component reports the very layers a
+    /// session reads.
     ///
-    /// It carries the dotfolder name ``ToolCatalog/skillsDotfolderName``,
-    /// so this component reports the very layers a session reads.
-    private var skillsStack: DotfolderStack {
-        DotfolderStack(
-            name: ToolCatalog.skillsDotfolderName, workingDirectory: workingDirectory,
-            environment: environment)
-    }
-
-    /// The finding of one skills layer: whether it is on disk, and whether
-    /// it can be read.
-    ///
-    /// - Parameter layer: The layer to check.
-    /// - Returns: The finding of that layer.
-    private static func check(ofSkillsLayer layer: DotfolderStack.Layer) -> HealthCheck {
-        DotfolderLayerCheck.check(
-            of: layer, wording: layerWording, category: category, requiresWrite: false)
+    /// - Parameter name: The dotfolder name, for example
+    ///   ``ToolCatalog/skillsDotfolderName``.
+    /// - Returns: The stack, rooted in the working directory and the
+    ///   environment of this component.
+    private func dotfolderStack(named name: String) -> DotfolderStack {
+        DotfolderStack(name: name, workingDirectory: workingDirectory, environment: environment)
     }
 }

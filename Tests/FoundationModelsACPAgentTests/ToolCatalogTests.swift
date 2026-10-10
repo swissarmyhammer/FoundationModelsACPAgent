@@ -19,15 +19,6 @@ import Testing
 /// `APISurface.entries` paths, and a verb is exercised through the public
 /// `ToolInvoker.invoke(_:content:)` door with its wire JSON.
 @Suite struct ToolCatalogTests {
-    /// The mount order a default context gives the model: the two
-    /// Multitool session tools, then the appended standalone `skills` and
-    /// `agents` tools.
-    private static let defaultToolNames = ["searchTools", "runCode", "skills", "agents"]
-
-    /// The mount order with the skills section disabled: the Multitool
-    /// session tools, then the standalone `agents` tool.
-    private static let withoutSkillsNames = ["searchTools", "runCode", "agents"]
-
     /// The surface path of the files read verb.
     private static let readVerbPath = FilesVerbSupport.readVerbPath
 
@@ -163,7 +154,7 @@ import Testing
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == Self.defaultToolNames)
+        #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
         let stop = try #require(surface.codeContextStop)
         await stop()
     }
@@ -175,7 +166,7 @@ import Testing
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == Self.withoutSkillsNames)
+        #expect(surface.tools.map(\.name) == MountOrder.withoutSkillsNames)
     }
 
     // MARK: The profile embedder

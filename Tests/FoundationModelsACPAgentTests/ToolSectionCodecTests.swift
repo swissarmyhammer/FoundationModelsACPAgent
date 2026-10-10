@@ -356,6 +356,26 @@ import Testing
         #expect(loaded.configuration.tools.agents.mountedOptions == AgentsToolOptions())
     }
 
+    /// Each off shape of the agents section, the scalar `agents: false` and
+    /// the body `enabled: false`, encodes to a document that reads back to
+    /// the same section, with the `agents` tool off.
+    @Test(arguments: [
+        ToolSection<AgentsToolOptions>.disabled, .enabled(AgentsToolOptions(enabled: false)),
+    ])
+    func eachOffShapeOfTheAgentsSectionReadsBackTheSame(
+        section: ToolSection<AgentsToolOptions>
+    ) throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+        var configuration = try fixture.makeLoader().builtinConfiguration
+        configuration.tools.agents = section
+
+        let text = try ConfigurationYAML.documentText(for: configuration, secrets: .omitted)
+        let loaded = try fixture.loadProjectConfig(text)
+
+        #expect(loaded.configuration.tools.agents == section)
+        #expect(loaded.configuration.tools.agents.mountedOptions == nil)
+    }
+
     // MARK: - The mcp tri-state
 
     /// Omitted `mcp:` means MCP is on with no configured servers — the

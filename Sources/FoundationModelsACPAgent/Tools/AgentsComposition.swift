@@ -4,6 +4,7 @@ import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsSkills
+import Logging
 
 /// The mounted `agents` tool of one session: the tool that the root session
 /// gets, the runner of its agent runs, and the environment of those runs.
@@ -119,7 +120,9 @@ enum AgentsComposition {
     /// no state of a search, thus the two answer as one pair does. The probe
     /// pair below proves that the call succeeds for this registry. A later
     /// call over the same registry and the same selection gives the same
-    /// result, and the probe tool is the answer of a call that fails.
+    /// result. A later call that fails is a defect, and
+    /// ``freshSessionTool(named:registry:selection:embedder:fallback:)``
+    /// records it.
     ///
     /// - Parameters:
     ///   - registry: The built Multitool registry of the root session.
@@ -137,10 +140,59 @@ enum AgentsComposition {
         for probe in try registry.makeSessionTools(selection: selection, embedder: embedder) {
             let name = probe.name
             tools.register(name) {
-                let fresh = try? registry.makeSessionTools(selection: selection, embedder: embedder)
-                return fresh?.first { $0.name == name } ?? probe
+                freshSessionTool(
+                    named: name, registry: registry, selection: selection, embedder: embedder,
+                    fallback: probe)
             }
         }
         return tools
+    }
+
+    /// Makes a new pair of session tools over `registry`, and gives the tool
+    /// of the name `name` from that pair.
+    ///
+    /// The probe pair of ``makeRunTools(registry:selection:embedder:)``
+    /// proves that the call succeeds for this registry and gives a tool of
+    /// this name. Thus a failure here is unexpected. A debug build stops at
+    /// the assertion. A release build logs the failure and gives `fallback`,
+    /// the tool of the probe pair, because the tool catalog of a run takes
+    /// a factory that cannot throw.
+    ///
+    /// - Parameters:
+    ///   - name: The name of the session tool, `searchTools` or `runCode`.
+    ///   - registry: The built Multitool registry of the root session.
+    ///   - selection: The selection tier of `searchTools`.
+    ///   - embedder: The embedder that `searchTools` and `runCode` rank with.
+    ///   - fallback: The tool of the same name from the probe pair.
+    /// - Returns: The new tool, or `fallback` after a logged failure.
+    static func freshSessionTool(
+        named name: String,
+        registry: MultiTool.Registry,
+        selection: @escaping SearchToolsTool.SelectionFactory,
+        embedder: any PooledEmbedding,
+        fallback: any Tool
+    ) -> any Tool {
+        let fresh: [any Tool]
+        do {
+            fresh = try registry.makeSessionTools(selection: selection, embedder: embedder)
+        } catch {
+            assertionFailure("The session tools of an agent run did not build: \(error)")
+            ACPAgentTelemetry.logger(.agentsComposition).error(
+                "The session tools of an agent run did not build. The run gets the probe tool.",
+                metadata: [
+                    ACPAgentTelemetry.LogMetadataKey.toolName: "\(name)",
+                    ACPAgentTelemetry.LogMetadataKey.errorType:
+                        "\(ACPAgentTelemetry.errorTypeName(of: error))",
+                ])
+            return fallback
+        }
+        guard let tool = fresh.first(where: { $0.name == name }) else {
+            assertionFailure("The session tools of an agent run have no tool named \(name)")
+            ACPAgentTelemetry.logger(.agentsComposition).error(
+                "The session tools of an agent run have no tool of this name. The run gets the probe tool.",
+                metadata: [ACPAgentTelemetry.LogMetadataKey.toolName: "\(name)"])
+            return fallback
+        }
+        return tool
     }
 }
