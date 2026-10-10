@@ -101,7 +101,10 @@ struct SkillTriggerSubject {
     /// The user-layer `config.yaml`: the transcripts record under the user
     /// directory, outside the workspace, so a removed workspace keeps its
     /// transcript. The shell and the code context stay off, because no
-    /// sample needs them and each one makes a prompt slower.
+    /// sample needs them and each one makes a prompt slower. The skills
+    /// marketplace list is empty: the gate measures the skills of its own
+    /// samples, and the skills of the default marketplace would change that
+    /// set and need the network.
     ///
     /// The standard slot is ``skillTriggerModel``, which is the shipped
     /// standard model unless `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another
@@ -113,6 +116,8 @@ struct SkillTriggerSubject {
         tools:
           shell: false
           codeContext: false
+          skills:
+            marketplaces: []
         profile:
           standard: ["\(skillTriggerModel)"]
         """

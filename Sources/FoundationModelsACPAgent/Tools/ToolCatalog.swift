@@ -479,6 +479,11 @@ public enum ToolCatalog {
     /// (``AgentsComposition``), thus a marketplace is fetched one time for
     /// the skills and the agents of a session.
     ///
+    /// The store reads its cache folder and its read-only seed folder from
+    /// ``CatalogContext/environment``: `SKILLS_MARKETPLACE_CACHE` and
+    /// `SKILLS_MARKETPLACE_SEED`. With neither variable, the cache is the
+    /// default folder under the home folder, and there is no seed.
+    ///
     /// - Parameter context: The session whose working directory roots the
     ///   stack's project layer.
     /// - Returns: The skills source, or `nil` when skills is disabled.
@@ -492,7 +497,10 @@ public enum ToolCatalog {
         guard !options.marketplaces.isEmpty else {
             return SkillsSource(registry: SkillsRegistry(stack: stack, watch: true), marketplaces: nil)
         }
-        let store = MarketplaceStore(sources: options.marketplaces, layout: SkillMarketplaceLayout.skills)
+        let store = MarketplaceStore(
+            sources: options.marketplaces, layout: SkillMarketplaceLayout.skills,
+            cacheDirectory: MarketplaceStore.cacheDirectory(environment: context.environment),
+            policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: context.environment)
         await store.start()
         return SkillsSource(
             registry: SkillsRegistry(marketplaces: store, stack: stack, watch: true), marketplaces: store)

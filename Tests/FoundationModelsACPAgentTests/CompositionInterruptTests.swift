@@ -174,7 +174,7 @@ struct CompositionInterruptTests {
         // The watch is armed only once the transfer has stopped, so the
         // signal lands squarely inside the download.
         let result = try await run.perform(
-            environment: fixture.stubEnvironment,
+            environment: fixture.makeStubEnvironment(),
             into: capture.writer,
             interruptedBy: Self.armed(after: parked.parked),
             composedBy: parked.compose)
@@ -196,7 +196,7 @@ struct CompositionInterruptTests {
                 as? AcpAgentCommand.Run)
 
         let result = try await run.perform(
-            environment: fixture.stubEnvironment,
+            environment: fixture.makeStubEnvironment(),
             into: capture.writer,
             interruptedBy: Self.armed(after: parked.parked),
             composedBy: parked.compose)
@@ -238,10 +238,11 @@ struct CompositionInterruptTests {
             try AcpAgentCommand.parseAsRoot(
                 ["run", "--cwd", fixture.workspace.path, Self.promptText])
                 as? AcpAgentCommand.Run)
+        let environment = try fixture.makeStubEnvironment()
 
         let thrown = await #expect(throws: ExitCode.self) {
             _ = try await run.perform(
-                environment: fixture.stubEnvironment,
+                environment: environment,
                 into: capture.writer,
                 interruptedBy: InterruptHandler.unwatched,
                 terminatedBy: Self.terminated(after: parked.parked),

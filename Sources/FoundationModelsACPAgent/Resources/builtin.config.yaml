@@ -37,9 +37,19 @@ tools:
 
   # The skills tool: find and load the skills of the dotfolder stack.
   skills:
-    # The remote skill marketplaces. Each item has a "url" key. An empty
-    # list uses the local dotfolder stack only.
-    marketplaces: []
+    # The remote skill marketplaces. Each item has a "url" key. The default
+    # is the "main" branch of the swissarmyhammer/skills repository. It gives
+    # skills and agents. A marketplace URL must use HTTPS. The SSH form is
+    # not supported. A session start fetches each marketplace, thus it needs
+    # the network. To use the local dotfolder stack only, set an empty list
+    # in a higher layer:
+    #
+    #   tools:
+    #     skills:
+    #       marketplaces: []
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
 
   # The agents tool: start an agent, a folder agents/<name>/AGENT.md of the
   # agents dotfolder stack, in its own session. The agents of a marketplace

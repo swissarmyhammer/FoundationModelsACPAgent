@@ -243,11 +243,11 @@ struct ExitCodeTests {
             try AcpAgentCommand.parseAsRoot(
                 ["run", "--cwd", fixture.workspace.path, Self.promptText])
                 as? AcpAgentCommand.Run)
+        let environment = try fixture.makeStubEnvironment()
 
         let error = try #require(
             await #expect(throws: (any Error).self) {
-                _ = try await run.perform(
-                    environment: fixture.stubEnvironment, into: capture.writer)
+                _ = try await run.perform(environment: environment, into: capture.writer)
             })
 
         #expect(AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.error))

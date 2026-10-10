@@ -90,7 +90,8 @@ import Testing
     }
 
     /// Makes a catalog context over a fresh working directory and a stub
-    /// profile.
+    /// profile. The configuration is ``AgentConfiguration/withoutMarketplaces``,
+    /// thus the skills source needs no network.
     ///
     /// - Parameters:
     ///   - additionalRoots: The session's additional roots, in order.
@@ -117,7 +118,7 @@ import Testing
         keepsCodeContext: Bool = false,
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
-        var configuration = AgentConfiguration()
+        var configuration = AgentConfiguration.withoutMarketplaces
         if !keepsCodeContext {
             configuration.tools.codeContext = .disabled
         }

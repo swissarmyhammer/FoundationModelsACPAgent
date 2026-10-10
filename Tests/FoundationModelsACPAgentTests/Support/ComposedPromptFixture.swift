@@ -30,8 +30,8 @@ enum ComposedPromptFixture {
 
     /// The environment a suite composes the CLI agent over: the stub model,
     /// the user layer rooted at `configHome`, and the defaults layer of
-    /// `StubAgentDefaultsLayer`, which turns the code context off for each
-    /// session.
+    /// `StubAgentDefaultsLayer`, which turns the code context and the skills
+    /// marketplaces off for each session.
     ///
     /// - Parameter configHome: The directory the user layer roots under.
     /// - Returns: The environment.

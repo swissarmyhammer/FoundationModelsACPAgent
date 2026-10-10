@@ -91,7 +91,7 @@ import Testing
     static func makeSurface(
         label: String, configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> SessionSurface {
-        var configuration = AgentConfiguration()
+        var configuration = AgentConfiguration.withoutMarketplaces
         configuration.tools.codeContext = .disabled
         configuration.tools.shell = .disabled
         configure(&configuration)

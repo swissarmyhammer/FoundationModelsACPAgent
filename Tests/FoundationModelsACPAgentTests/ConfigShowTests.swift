@@ -81,11 +81,20 @@ struct ConfigShowTests {
     }
 
     /// The lines of `text` that carry a mapping key: not a comment, not a
-    /// sequence item, and not blank.
+    /// sequence item, and not blank. A sequence item is the `-` line and each
+    /// line under it with a larger indent, for example the keys of one
+    /// `tools.skills.marketplaces` entry. The annotation of a list is on the
+    /// key of the list, thus no line of an item carries one.
     private static func keyLines(in text: String) -> [String] {
-        text.split(separator: "\n").map(String.init).filter { line in
+        var itemIndent: Int?
+        return text.split(separator: "\n").map(String.init).filter { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return !trimmed.isEmpty && !trimmed.hasPrefix("#") && !trimmed.hasPrefix("-")
+            let indent = line.prefix { $0 == " " }.count
+            if let open = itemIndent, indent > open {
+                return false
+            }
+            itemIndent = trimmed.hasPrefix("-") ? indent : nil
+            return !trimmed.isEmpty && !trimmed.hasPrefix("#") && itemIndent == nil
         }
     }
 

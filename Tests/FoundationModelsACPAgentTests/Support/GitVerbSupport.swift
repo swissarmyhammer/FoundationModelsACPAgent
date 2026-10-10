@@ -6,7 +6,8 @@ import Testing
 /// surface path of each verb, a temporary git repository with one commit or
 /// with a detached HEAD, and the invoke of `tools.git.status`,
 /// `tools.git.changes`, and `tools.git.diff`, in the pattern of
-/// ``FilesVerbSupport``.
+/// ``FilesVerbSupport``. `SkillsMarketplaceTests` also makes its local
+/// marketplace repository with these helpers.
 enum GitVerbSupport {
     /// The noun the git capability owns on the surface.
     static let gitNoun = "git"
@@ -202,17 +203,22 @@ enum GitVerbSupport {
     }
 
     /// Writes `text` to the file `name` in `directory`, stages it, and
-    /// commits it with `message`.
+    /// commits it with `message`. The call makes each folder of `name` that
+    /// is not there.
     ///
     /// - Parameters:
-    ///   - name: The name of the file, relative to the work tree.
+    ///   - name: The path of the file, relative to the work tree.
     ///   - text: The text of the file.
     ///   - message: The message of the commit.
     ///   - directory: The work tree of the repository.
-    /// - Throws: Whatever the file write or a git command throws, and an
-    ///   expectation failure when a git command exits with an error.
-    private static func commitFile(named name: String, text: String, message: String, in directory: URL) throws {
-        try text.write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    /// - Throws: Whatever the folder creation, the file write or a git
+    ///   command throws, and an expectation failure when a git command exits
+    ///   with an error.
+    static func commitFile(named name: String, text: String, message: String, in directory: URL) throws {
+        let file = directory.appendingPathComponent(name, isDirectory: false)
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try text.write(to: file, atomically: true, encoding: .utf8)
         try runGit(["add", name], in: directory)
         try runGit(commitConfiguration + ["commit", "--quiet", "--no-verify", "-m", message], in: directory)
     }

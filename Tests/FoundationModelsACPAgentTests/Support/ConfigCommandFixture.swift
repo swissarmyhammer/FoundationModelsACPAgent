@@ -32,13 +32,19 @@ struct ConfigCommandFixture {
         [Self.configHomeVariable: configHome.path]
     }
 
-    /// The environment a composing subcommand reads: ``environment``, and
-    /// the switch that selects the stub model (cli-plan.md §9), so no
-    /// weights load and no network is touched.
-    var stubEnvironment: [String: String] {
-        var stub = environment
-        stub[AgentComposition.stubModelVariable] = AgentComposition.stubModelEnabledValue
-        return stub
+    /// Makes the environment a composing subcommand reads: ``environment``,
+    /// the switch that selects the stub model (cli-plan.md §9), and the
+    /// defaults layer of `StubAgentDefaultsLayer`. Thus no weights load, and
+    /// a session starts no code context and fetches no skills marketplace,
+    /// so no network is touched.
+    ///
+    /// - Returns: The environment.
+    /// - Throws: The write error of the defaults layer.
+    func makeStubEnvironment() throws -> [String: String] {
+        var base = environment
+        base[AgentComposition.stubModelVariable] = AgentComposition.stubModelEnabledValue
+        return try StubAgentDefaultsLayer.makeEnvironment(
+            name: AgentComposition.dotfolderName, base: base)
     }
 
     /// The user layer root, `<configHome>/<name>/`.

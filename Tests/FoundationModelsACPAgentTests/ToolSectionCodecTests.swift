@@ -181,6 +181,43 @@ import Testing
         #expect(loaded.configuration.tools.skills == .enabled(expected))
     }
 
+    // MARK: - The default skills marketplace
+
+    /// The skills options of the default configuration: one marketplace, the
+    /// HTTPS URL of `swissarmyhammer/skills` on its `main` branch.
+    private static let defaultSkillsOptions = SkillsToolOptions(marketplaces: [
+        MarketplaceSource("https://github.com/swissarmyhammer/skills.git", ref: "main")
+    ])
+
+    /// With no layer that sets the skills body, the loaded configuration
+    /// reads the skills and the agents of `swissarmyhammer/skills` on `main`.
+    @Test func theDefaultSkillsMarketplaceIsTheMainBranchOfTheSkillsRepository() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "recording:\n  level: full\n")
+
+        #expect(loaded.configuration.tools.skills == .enabled(Self.defaultSkillsOptions))
+    }
+
+    /// The scalar `skills: true` gives the default marketplace too, because
+    /// it gives the default options.
+    @Test func aScalarTrueSkillsBodyKeepsTheDefaultMarketplace() throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  skills: true\n")
+
+        #expect(loaded.configuration.tools.skills == .enabled(Self.defaultSkillsOptions))
+    }
+
+    /// A user layer that sets `marketplaces: []` gives no marketplace: the
+    /// session then reads the local dotfolder stack only.
+    @Test func aUserLayerWithAnEmptyMarketplaceListGivesNoMarketplace() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+        fixture.writeConfig("tools:\n  skills:\n    marketplaces: []\n", in: fixture.userDirectory)
+
+        let loaded = try fixture.makeLoader().load()
+
+        #expect(loaded.configuration.tools.skills == .enabled(SkillsToolOptions(marketplaces: [])))
+    }
+
     /// The code context body decodes its two policies, and a scalar
     /// `false` disables the capability.
     @Test func codeContextBodyDecodesTheInstallPolicy() throws {

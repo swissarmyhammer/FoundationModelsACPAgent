@@ -218,19 +218,33 @@ shows no variable value.
 
 The `tools.skills.marketplaces` list names remote skill marketplaces. Each entry
 has a `url`, and optionally a `ref` (a branch or a tag), a `sha`, a `path`, an
-`alias`, a `select`, an `autoUpdate` and a `grants` key:
+`alias`, a `select`, an `autoUpdate` and a `grants` key. The default list has
+one marketplace: the `main` branch of `swissarmyhammer/skills`. It gives skills
+and agents:
 
 ```yaml
 tools:
   skills:
     marketplaces:
       - url: https://github.com/swissarmyhammer/skills.git
-        ref: code-context
+        ref: main
+```
+
+A session start fetches each marketplace, thus the default needs the network.
+The fetch goes into the cache folder `SKILLS_MARKETPLACE_CACHE` when that
+variable is set. A fetch that fails gives a diagnostic, and the session starts
+with no marketplace skill. To use only the local `skills` and `agents`
+dotfolder stacks, set an empty list in the user layer or in the project layer:
+
+```yaml
+tools:
+  skills:
+    marketplaces: []
 ```
 
 Use the HTTPS form of a marketplace URL. The SSH form (`git@github.com:…`) is
-not supported for now: the skills package gives `unreachable` for it, and the
-session then has no marketplace skill.
+not supported: the skills package gives `unreachable` for it, and the session
+then has no marketplace skill.
 
 `tools.agents` has one key, `enabled` (default `true`). The `agents` tool
 starts an agent in its own session: an agent is a folder

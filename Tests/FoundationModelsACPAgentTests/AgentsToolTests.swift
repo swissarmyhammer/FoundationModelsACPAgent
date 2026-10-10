@@ -101,7 +101,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     }
 
     /// Makes a catalog context over a fresh working directory that holds
-    /// the quick and the slow agent folders.
+    /// the quick and the slow agent folders. The configuration is
+    /// ``AgentConfiguration/withoutMarketplaces``, thus the skills source
+    /// and the agent registry need no network.
     ///
     /// - Parameters:
     ///   - label: The directory label of the calling test.
@@ -119,7 +121,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let cwd = makeResolvedDirectory(label: "AgentsToolTests-\(label)")
         try writeAgent(named: quickAgent, in: cwd)
         try writeAgent(named: slowAgent, in: cwd)
-        var configuration = AgentConfiguration()
+        var configuration = AgentConfiguration.withoutMarketplaces
         configuration.tools.codeContext = .disabled
         configure(&configuration)
         return CatalogContext(

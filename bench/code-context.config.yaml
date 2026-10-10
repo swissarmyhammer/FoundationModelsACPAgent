@@ -16,17 +16,19 @@
 #   defaults. `exclude` is not set: the default skips the dotfolder of the
 #   agent, `.acp-agent/`, which holds the transcripts.
 # - `shell` is the Multitool group `tools.shell`, with the builtin defaults.
-# - `skills` is the stand-alone `skills` tool. It reads the `code-context`
-#   branch of the skills marketplace, which holds only the five skills that
-#   need the code context tool. The URL is the HTTPS form: the agent of a
-#   run gets a clean environment, and the HTTPS form of this public
-#   repository needs no SSH agent and no credential.
+# - `skills` is the stand-alone `skills` tool. It reads the `main` branch of
+#   the skills marketplace, which holds the full skill set and the agents.
+#   This is the same marketplace as the builtin default; the file names it
+#   so that the run states it. The URL is the HTTPS form: a marketplace URL
+#   is HTTPS only, the agent of a run gets a clean environment, and the
+#   HTTPS form of this public repository needs no SSH agent and no
+#   credential.
 # - `agents` is the stand-alone `agents` tool. It is on by default, and this
 #   run sets `enabled: true` to state it. It starts an agent folder
 #   `agents/<name>/AGENT.md` in its own session. The agents of a marketplace
-#   come from the marketplaces of `skills`; the `code-context` branch holds
-#   no agent folder now, thus the tool lists only the local agents of the
-#   clone and of the user layer.
+#   come from the marketplaces of `skills`. The tool reads only the layout
+#   `agents/<name>/AGENT.md`: an agent file of the old layout
+#   `agents/<name>.md` on `main` gives a warning and no agent.
 # - `codeContext` is the Multitool group `tools.code_context`. It is on by
 #   default; the entry is here so that the run states it.
 #   `semanticSearch: false` stops the embedding pass of the index. Each
@@ -83,7 +85,7 @@ tools:
   skills:
     marketplaces:
       - url: https://github.com/swissarmyhammer/skills.git
-        ref: code-context
+        ref: main
   agents:
     enabled: true
   codeContext:

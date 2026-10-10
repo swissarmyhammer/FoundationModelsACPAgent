@@ -189,7 +189,7 @@ struct RunCommandTests {
         let capture = try AnswerCapture(label: "RunCommandTests-report-answer")
 
         _ = try await Self.parseRun(in: fixture)
-            .perform(environment: fixture.stubEnvironment, into: capture.writer)
+            .perform(environment: fixture.makeStubEnvironment(), into: capture.writer)
 
         #expect(try capture.text().contains(Self.promptText))
     }
@@ -256,9 +256,9 @@ struct RunCommandTests {
         try second.writeProjectCompactionTrigger(Self.secondTrigger)
 
         let firstComposed = try await Self.parseRun(in: first)
-            .compose(environment: first.stubEnvironment)
+            .compose(environment: first.makeStubEnvironment())
         let secondComposed = try await Self.parseRun(in: second)
-            .compose(environment: second.stubEnvironment)
+            .compose(environment: second.makeStubEnvironment())
 
         #expect(firstComposed.configuration.compaction.trigger == Self.firstTrigger)
         #expect(secondComposed.configuration.compaction.trigger == Self.secondTrigger)

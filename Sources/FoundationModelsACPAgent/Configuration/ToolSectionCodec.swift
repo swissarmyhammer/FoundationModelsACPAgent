@@ -197,14 +197,33 @@ public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
 /// `autoUpdate` and `grants` are optional. The marketplace layers are below
 /// the full local stack, and the last entry wins over the entries before it.
 ///
+/// The default list has one marketplace: ``defaultMarketplaceURL`` on the
+/// branch ``defaultMarketplaceRef``. The agent registry reads the same list,
+/// thus this marketplace also gives the marketplace agents. An empty list
+/// turns the marketplaces off.
+///
 /// ```yaml
 /// tools:
 ///   skills:
 ///     marketplaces:
 ///       - url: https://github.com/swissarmyhammer/skills.git
-///         ref: code-context
+///         ref: main
 /// ```
 public struct SkillsToolOptions: ToolSectionOptions, KeyCheckedSection {
+    /// The repository of the default marketplace. It is the HTTPS form: a
+    /// marketplace URL is HTTPS only, and this public repository needs no
+    /// credential.
+    public static let defaultMarketplaceURL = "https://github.com/swissarmyhammer/skills.git"
+
+    /// The branch of the default marketplace.
+    public static let defaultMarketplaceRef = "main"
+
+    /// The default marketplace list: the one marketplace
+    /// ``defaultMarketplaceURL`` on ``defaultMarketplaceRef``.
+    public static let defaultMarketplaces = [
+        MarketplaceSource(defaultMarketplaceURL, ref: defaultMarketplaceRef)
+    ]
+
     /// The remote skill marketplaces, in document order.
     public var marketplaces: [MarketplaceSource]
 
@@ -218,17 +237,19 @@ public struct SkillsToolOptions: ToolSectionOptions, KeyCheckedSection {
         self.marketplaces = marketplaces
     }
 
-    /// The default: no marketplace, thus the local dotfolder stack alone.
+    /// The default: the marketplaces of ``defaultMarketplaces``, below the
+    /// local dotfolder stack.
     public init() {
-        self.init(marketplaces: [])
+        self.init(marketplaces: Self.defaultMarketplaces)
     }
 
-    /// Decodes `marketplaces` when present and keeps the empty default
-    /// when absent.
+    /// Decodes `marketplaces` when present and keeps
+    /// ``defaultMarketplaces`` when absent.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         marketplaces =
-            try container.decodeIfPresent([MarketplaceSource].self, forKey: .marketplaces) ?? []
+            try container.decodeIfPresent([MarketplaceSource].self, forKey: .marketplaces)
+            ?? Self.defaultMarketplaces
     }
 }
 

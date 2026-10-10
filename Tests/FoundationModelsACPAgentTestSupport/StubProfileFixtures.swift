@@ -24,8 +24,8 @@ import Tracing
 /// never reads the real process environment; a suite that composes
 /// sessions injects `userDirectory` so nothing touches the real home
 /// directory either. The environment holds one key only: the defaults
-/// layer of ``StubAgentDefaultsLayer``, which turns the code context off
-/// for each session of the agent.
+/// layer of ``StubAgentDefaultsLayer``, which turns the code context and
+/// the skills marketplaces off for each session of the agent.
 ///
 /// - Parameters:
 ///   - name: The bare dotfolder name to construct the agent with.
@@ -82,11 +82,18 @@ public func makeStubAgent(
 /// `ToolCatalog`. A test that needs it through an agent turns it on in its
 /// project layer, which is higher than this layer.
 ///
+/// The `config.yaml` also sets `tools.skills.marketplaces` to an empty list.
+/// The default list names the `swissarmyhammer/skills` repository on GitHub,
+/// and a session start fetches each marketplace. A unit test must not use the
+/// network, thus a session of a stub agent reads the local dotfolder stack
+/// only. A test that needs a marketplace gives a local git repository in its
+/// own configuration (`SkillsMarketplaceTests`).
+///
 /// A suite that composes the CLI agent through `AgentComposition` gives the
 /// same layer to the environment of that composition.
 public enum StubAgentDefaultsLayer {
     /// The `config.yaml` of the layer.
-    static let configYAML = "tools:\n  codeContext: false\n"
+    static let configYAML = "tools:\n  codeContext: false\n  skills:\n    marketplaces: []\n"
 
     /// The suffix of the environment key that `DotfolderStack` reads the
     /// defaults layer root from: `<NAME>_DEFAULTS_DIR`, with the dotfolder

@@ -70,7 +70,10 @@ struct ToolCallingTests {
 
     /// The user-layer `config.yaml`. The shell is on, because the gate
     /// needs it. The code context is off, because the gate does not need
-    /// it and it makes a prompt slower.
+    /// it and it makes a prompt slower. The skills marketplace list is
+    /// empty: the gate measures the tool calls of a fixed tool set, and the
+    /// skills of the default marketplace would change that set and need the
+    /// network.
     private static var userConfigYAML: String {
         """
         transcripts:
@@ -78,6 +81,8 @@ struct ToolCallingTests {
         tools:
           shell: true
           codeContext: false
+          skills:
+            marketplaces: []
         profile:
           standard: ["\(shippedStandardModel)"]
         """

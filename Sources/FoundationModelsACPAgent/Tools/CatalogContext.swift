@@ -40,7 +40,9 @@ public struct CatalogContext: Sendable {
 
     /// The process environment that the web capability reads its API keys
     /// from (task ^ba231ka). The keys of `tools.web.apiKeys` are put in over
-    /// it, so a configured key wins.
+    /// it, so a configured key wins. The skills marketplace store reads its
+    /// cache folder and its seed folder from it too
+    /// (``ToolCatalog/makeSkillsSource(context:)``).
     public let environment: [String: String]
 
     /// The settle period of each session that this agent makes: the
@@ -69,7 +71,9 @@ public struct CatalogContext: Sendable {
     ///   - clientMCPServers: The client-supplied per-session MCP servers,
     ///     in wire order. Defaults to none.
     ///   - environment: The environment that the web capability reads its
-    ///     API keys from. Defaults to the environment of the process.
+    ///     API keys from, and that the skills marketplace store reads its
+    ///     cache folder and its seed folder from. Defaults to the environment
+    ///     of the process.
     ///   - inlineSettleGrace: The settle period of the sessions of the
     ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
     public init(
