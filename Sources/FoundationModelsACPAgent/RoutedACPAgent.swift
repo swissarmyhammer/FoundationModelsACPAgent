@@ -61,9 +61,9 @@ public actor RoutedACPAgent: Agent {
 
     /// The settle period of each session that this agent makes, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
-    /// The public initializer sets ``CatalogContext/defaultInlineSettleGrace``,
-    /// the one source of the value. A test sets an other value through the
-    /// internal initializer, so that it can see the value in each session.
+    /// The initializer sets ``CatalogContext/defaultInlineSettleGrace``, the
+    /// one source of the value, when the caller gives no value. A test gives
+    /// an other value, so that it can see the value in each session.
     nonisolated let inlineSettleGrace: TimeInterval
 
     /// The live sessions, keyed by the ACP session id. The ACP session
@@ -196,6 +196,9 @@ public actor RoutedACPAgent: Agent {
     ///     `environment` and the home directory. Tests inject a value so
     ///     they never touch the real home directory.
     ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - inlineSettleGrace: The settle period of each session that the
+    ///     agent makes, in seconds. Defaults to
+    ///     ``CatalogContext/defaultInlineSettleGrace``.
     /// - Throws: `ProfileResolutionError` when the profile does not
     ///   resolve.
     public init(
@@ -204,36 +207,8 @@ public actor RoutedACPAgent: Agent {
         configuration: AgentConfiguration = AgentConfiguration(),
         reporting: ResolutionProgress? = nil,
         userDirectory: URL? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) async throws {
-        try await self.init(
-            name: name, router: router, configuration: configuration, reporting: reporting,
-            userDirectory: userDirectory, environment: environment,
-            inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
-    }
-
-    /// Creates an agent as ``init(name:router:configuration:reporting:userDirectory:environment:)``
-    /// does, with the settle period of each session that the agent makes.
-    ///
-    /// - Parameters:
-    ///   - name: The dotfolder name the frontend chose.
-    ///   - router: The router that resolves the profile.
-    ///   - configuration: The agent configuration whose `profile` section
-    ///     is resolved.
-    ///   - reporting: The resolution progress, or `nil` for a fresh one.
-    ///   - userDirectory: The user layer root, or `nil` to derive it.
-    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
-    ///   - inlineSettleGrace: The settle period of each session, in seconds.
-    /// - Throws: `ProfileResolutionError` when the profile does not
-    ///   resolve.
-    init(
-        name: DotfolderName,
-        router: Router,
-        configuration: AgentConfiguration,
-        reporting: ResolutionProgress?,
-        userDirectory: URL?,
-        environment: [String: String],
-        inlineSettleGrace: TimeInterval
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
     ) async throws {
         self.name = name
         self.userDirectory = userDirectory

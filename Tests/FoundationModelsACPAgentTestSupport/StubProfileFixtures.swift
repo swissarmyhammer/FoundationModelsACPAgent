@@ -41,6 +41,10 @@ import Tracing
 ///     read `InstrumentationSystem.tracer` at call time. A suite that
 ///     captures the Router spans gives the tracer of its capture — see
 ///     ``EchoModel/makeRouter(cacheDirectory:recordingsDirectory:loader:tracer:)``.
+///   - inlineSettleGrace: The settle period of each session of the agent,
+///     in seconds. The default is ``CatalogContext/defaultInlineSettleGrace``,
+///     the value of the production agent. A suite that proves the settle
+///     period gives a shorter value.
 /// - Returns: The constructed agent.
 /// - Throws: `DotfolderNameError` when `name` is refused,
 ///   `ProfileResolutionError` when the stub resolution fails, or the
@@ -51,7 +55,8 @@ public func makeStubAgent(
     recordingsDirectory: URL? = nil,
     userDirectory: URL? = nil,
     loader: any ModelLoader = StubModelLoader(),
-    tracer: (any Tracer)? = nil
+    tracer: (any Tracer)? = nil,
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
 ) async throws -> RoutedACPAgent {
     let router = EchoModel.makeRouter(
         cacheDirectory: cacheDirectory,
@@ -62,12 +67,13 @@ public func makeStubAgent(
         name: DotfolderName(name),
         router: router,
         userDirectory: userDirectory,
-        environment: StubAgentDefaultsLayer.makeEnvironment(name: name))
+        environment: StubAgentDefaultsLayer.makeEnvironment(name: name),
+        inlineSettleGrace: inlineSettleGrace)
 }
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

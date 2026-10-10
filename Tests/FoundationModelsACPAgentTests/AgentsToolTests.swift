@@ -371,16 +371,11 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// - Returns: The agent, after `initialize`.
     /// - Throws: Whatever the construction or the handshake throws.
     static func makeAgent(label: String, inlineSettleGrace: TimeInterval) async throws -> RoutedACPAgent {
-        let router = EchoModel.makeRouter(
+        let agent = try await makeStubAgent(
+            name: AgentClientHarness.dotfolderName,
             cacheDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache"),
-            recordingsDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-recordings"))
-        let agent = try await RoutedACPAgent(
-            name: DotfolderName(AgentClientHarness.dotfolderName),
-            router: router,
-            configuration: AgentConfiguration(),
-            reporting: nil,
+            recordingsDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-recordings"),
             userDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-user"),
-            environment: StubAgentDefaultsLayer.makeEnvironment(name: AgentClientHarness.dotfolderName),
             inlineSettleGrace: inlineSettleGrace)
         _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
         return agent

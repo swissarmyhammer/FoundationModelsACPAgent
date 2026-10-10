@@ -85,17 +85,37 @@ struct ConfigShowTests {
     /// line under it with a larger indent, for example the keys of one
     /// `tools.skills.marketplaces` entry. The annotation of a list is on the
     /// key of the list, thus no line of an item carries one.
+    ///
+    /// - Parameter text: The YAML report.
+    /// - Returns: The key lines, in document order.
     private static func keyLines(in text: String) -> [String] {
-        var itemIndent: Int?
-        return text.split(separator: "\n").map(String.init).filter { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            let indent = line.prefix { $0 == " " }.count
-            if let open = itemIndent, indent > open {
-                return false
-            }
-            itemIndent = trimmed.hasPrefix("-") ? indent : nil
-            return !trimmed.isEmpty && !trimmed.hasPrefix("#") && itemIndent == nil
+        let lines = text.split(separator: "\n").map(String.init)
+        let indents = lines.map { line in line.prefix { $0 == " " }.count }
+        let trimmed = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+        let opensItem = trimmed.map { $0.hasPrefix("-") }
+        let isItemLine = lines.indices.map { index in
+            opensItem[index]
+                || lines.indices[..<index].contains { open in
+                    opensItem[open] && isAncestor(open, of: index, indents: indents)
+                }
         }
+        return lines.indices
+            .filter { !isItemLine[$0] && !trimmed[$0].isEmpty && !trimmed[$0].hasPrefix("#") }
+            .map { lines[$0] }
+    }
+
+    /// Tells if the line at `ancestor` holds the line at `index` in its
+    /// block: the ancestor has a smaller indent than the line, and each line
+    /// between the two has a larger indent than the ancestor.
+    ///
+    /// - Parameters:
+    ///   - ancestor: The index of the possible ancestor line.
+    ///   - index: The index of the line. It is larger than `ancestor`.
+    ///   - indents: The indent of each line of the text.
+    /// - Returns: `true` when the line is in the block of the ancestor.
+    private static func isAncestor(_ ancestor: Int, of index: Int, indents: [Int]) -> Bool {
+        indents[ancestor] < indents[index]
+            && indents[(ancestor + 1)..<index].allSatisfy { $0 > indents[ancestor] }
     }
 
     // MARK: - The merged tree

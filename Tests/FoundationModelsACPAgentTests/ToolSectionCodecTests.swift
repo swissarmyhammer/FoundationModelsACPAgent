@@ -250,149 +250,121 @@ import Testing
         #expect(loaded.configuration.tools == (try fixture.makeLoader().builtinConfiguration.tools))
     }
 
-    // MARK: - The git section
+    // MARK: - The switch-only sections
 
-    /// With no `git:` key, the git tools are on, with the defaults.
-    @Test func noGitKeyEnablesTheGitTools() throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
-            "recording:\n  level: full\n")
+    /// One tool section whose body has the `enabled` key only: the git
+    /// tools, the environment tools, and the `agents` tool. Each check below
+    /// runs over each section, thus the checks of the sections cannot drift
+    /// apart.
+    struct SwitchOnlySection: Sendable, CustomTestStringConvertible {
+        /// The key of the section under `tools:`.
+        let key: String
 
-        #expect(loaded.configuration.tools.git == .enabled(GitToolOptions()))
-        #expect(loaded.configuration.tools.git.mountedOptions == GitToolOptions())
+        /// A key that the body of the section does not have.
+        let unknownKey: String
+
+        /// The text that the `config init` document holds for the section.
+        let configInitFragment: String
+
+        /// Reads the section from the tools of a configuration.
+        let section: @Sendable (ToolsConfiguration) -> ToolSection<SwitchOnlyToolOptions>
+
+        /// The name of the case in the test report.
+        var testDescription: String { key }
     }
 
-    /// The scalar `git: false` and the body `enabled: false` each turn the
-    /// git tools off.
-    @Test(arguments: ["git: false", "git:\n    enabled: false"])
-    func eachOffShapeMountsNoGitTools(body: String) throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig("tools:\n  \(body)\n")
+    /// The two off shapes of a switch-only section.
+    enum OffShape: CaseIterable, Sendable {
+        /// The scalar `<key>: false`.
+        case scalar
 
-        #expect(loaded.configuration.tools.git.mountedOptions == nil)
-        #expect(loaded.warnings.isEmpty)
-    }
+        /// The body `<key>: {enabled: false}`.
+        case body
 
-    /// An unknown key in the git body is an error that names `tools.git`
-    /// and the key, as in each other tool body.
-    @Test func anUnknownKeyInTheGitBodyIsAnError() throws {
-        let fixture = ConfigurationLoaderTests.Fixture()
-
-        #expect(throws: ConfigurationError.unknownKey(section: "tools.git", key: "verbs")) {
-            try fixture.loadProjectConfig("tools:\n  git:\n    verbs: []\n")
+        /// The `tools:` entry of this shape for the section `key`.
+        ///
+        /// - Parameter key: The key of the section under `tools:`.
+        /// - Returns: The entry, with no indent on its first line.
+        func entry(for key: String) -> String {
+            switch self {
+            case .scalar: "\(key): false"
+            case .body: "\(key):\n    enabled: false"
+            }
         }
     }
 
-    /// The document that `config init` writes holds `tools.git.enabled:
-    /// true`, and it reads back to exactly the builtin configuration, with
-    /// the git tools on.
-    @Test func theConfigInitDocumentReadsBackWithTheGitToolsOn() throws {
-        let fixture = ConfigurationLoaderTests.Fixture()
-        let builtin = try fixture.makeLoader().builtinConfiguration
+    /// Each switch-only section.
+    static let switchOnlySections = [
+        SwitchOnlySection(
+            key: "git", unknownKey: "verbs",
+            configInitFragment: "  git:\n    enabled: true\n",
+            section: { $0.git }),
+        // A variable filter is not a key of the environment body.
+        SwitchOnlySection(
+            key: "environment", unknownKey: "exclude",
+            configInitFragment: "  environment:\n    enabled: true\n",
+            section: { $0.environment }),
+        // The agent registry reads the skills marketplaces, thus
+        // `marketplaces` is not a key of the agents body.
+        SwitchOnlySection(
+            key: "agents", unknownKey: "marketplaces",
+            configInitFragment: "  agents:\n    enabled: true\n",
+            section: { $0.agents }),
+    ]
 
-        let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
-        let loaded = try fixture.loadProjectConfig(text)
-
-        #expect(text.contains("  git:\n    enabled: true\n"))
-        #expect(loaded.configuration == builtin)
-        #expect(loaded.configuration.tools.git.mountedOptions == GitToolOptions())
-    }
-
-    // MARK: - The environment section
-
-    /// With no `environment:` key, the environment tools are on, with the
-    /// defaults.
-    @Test func noEnvironmentKeyEnablesTheEnvironmentTools() throws {
+    /// With no key for the section, the section is on, with the defaults.
+    @Test(arguments: switchOnlySections)
+    func noKeyEnablesTheSectionWithDefaults(section: SwitchOnlySection) throws {
         let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
             "recording:\n  level: full\n")
 
-        #expect(loaded.configuration.tools.environment == .enabled(EnvironmentToolOptions()))
-        #expect(loaded.configuration.tools.environment.mountedOptions == EnvironmentToolOptions())
+        let read = section.section(loaded.configuration.tools)
+        #expect(read == .enabled(SwitchOnlyToolOptions()))
+        #expect(read.mountedOptions == SwitchOnlyToolOptions())
     }
 
-    /// The scalar `environment: false` and the body `enabled: false` each
-    /// turn the environment tools off.
-    @Test(arguments: ["environment: false", "environment:\n    enabled: false"])
-    func eachOffShapeMountsNoEnvironmentTools(body: String) throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig("tools:\n  \(body)\n")
+    /// The scalar `<key>: false` and the body `enabled: false` each turn the
+    /// section off, with no warning.
+    @Test(arguments: switchOnlySections, OffShape.allCases)
+    func eachOffShapeMountsNothing(section: SwitchOnlySection, shape: OffShape) throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  \(shape.entry(for: section.key))\n")
 
-        #expect(loaded.configuration.tools.environment.mountedOptions == nil)
+        #expect(section.section(loaded.configuration.tools).mountedOptions == nil)
         #expect(loaded.warnings.isEmpty)
     }
 
-    /// An unknown key in the environment body is an error that names
-    /// `tools.environment` and the key. A variable filter is not a key.
-    @Test func anUnknownKeyInTheEnvironmentBodyIsAnError() throws {
+    /// An unknown key in the body is an error that names `tools.<key>` and
+    /// the unknown key, as in each other tool body.
+    @Test(arguments: switchOnlySections)
+    func anUnknownKeyInTheBodyIsAnError(section: SwitchOnlySection) throws {
         let fixture = ConfigurationLoaderTests.Fixture()
 
         #expect(
-            throws: ConfigurationError.unknownKey(section: "tools.environment", key: "exclude")
+            throws: ConfigurationError.unknownKey(
+                section: "tools.\(section.key)", key: section.unknownKey)
         ) {
-            try fixture.loadProjectConfig("tools:\n  environment:\n    exclude: []\n")
+            try fixture.loadProjectConfig("tools:\n  \(section.key):\n    \(section.unknownKey): []\n")
         }
     }
 
-    /// The document that `config init` writes holds
-    /// `tools.environment.enabled: true`, and it reads back to exactly the
-    /// builtin configuration, with the environment tools on.
-    @Test func theConfigInitDocumentReadsBackWithTheEnvironmentToolsOn() throws {
+    /// The document that `config init` writes holds `tools.<key>.enabled:
+    /// true`, and it reads back to exactly the builtin configuration, with
+    /// the section on.
+    @Test(arguments: switchOnlySections)
+    func theConfigInitDocumentReadsBackWithTheSectionOn(section: SwitchOnlySection) throws {
         let fixture = ConfigurationLoaderTests.Fixture()
         let builtin = try fixture.makeLoader().builtinConfiguration
 
         let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
         let loaded = try fixture.loadProjectConfig(text)
 
-        #expect(text.contains("  environment:\n    enabled: true\n"))
+        #expect(text.contains(section.configInitFragment))
         #expect(loaded.configuration == builtin)
-        #expect(loaded.configuration.tools.environment.mountedOptions == EnvironmentToolOptions())
+        #expect(section.section(loaded.configuration.tools).mountedOptions == SwitchOnlyToolOptions())
     }
 
     // MARK: - The agents section
-
-    /// With no `agents:` key, the `agents` tool is on, with the defaults.
-    @Test func noAgentsKeyEnablesTheAgentsTool() throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
-            "recording:\n  level: full\n")
-
-        #expect(loaded.configuration.tools.agents == .enabled(AgentsToolOptions()))
-        #expect(loaded.configuration.tools.agents.mountedOptions == AgentsToolOptions())
-    }
-
-    /// The scalar `agents: false` and the body `enabled: false` each turn
-    /// the `agents` tool off.
-    @Test(arguments: ["agents: false", "agents:\n    enabled: false"])
-    func eachOffShapeMountsNoAgentsTool(body: String) throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig("tools:\n  \(body)\n")
-
-        #expect(loaded.configuration.tools.agents.mountedOptions == nil)
-        #expect(loaded.warnings.isEmpty)
-    }
-
-    /// An unknown key in the agents body is an error that names
-    /// `tools.agents` and the key. The agent registry reads the skills
-    /// marketplaces, thus `marketplaces` is not a key of this body.
-    @Test func anUnknownKeyInTheAgentsBodyIsAnError() throws {
-        let fixture = ConfigurationLoaderTests.Fixture()
-
-        #expect(
-            throws: ConfigurationError.unknownKey(section: "tools.agents", key: "marketplaces")
-        ) {
-            try fixture.loadProjectConfig("tools:\n  agents:\n    marketplaces: []\n")
-        }
-    }
-
-    /// The document that `config init` writes holds
-    /// `tools.agents.enabled: true`, and it reads back to exactly the
-    /// builtin configuration, with the `agents` tool on.
-    @Test func theConfigInitDocumentReadsBackWithTheAgentsToolOn() throws {
-        let fixture = ConfigurationLoaderTests.Fixture()
-        let builtin = try fixture.makeLoader().builtinConfiguration
-
-        let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
-        let loaded = try fixture.loadProjectConfig(text)
-
-        #expect(text.contains("  agents:\n    enabled: true\n"))
-        #expect(loaded.configuration == builtin)
-        #expect(loaded.configuration.tools.agents.mountedOptions == AgentsToolOptions())
-    }
 
     /// Each off shape of the agents section, the scalar `agents: false` and
     /// the body `enabled: false`, encodes to a document that reads back to
