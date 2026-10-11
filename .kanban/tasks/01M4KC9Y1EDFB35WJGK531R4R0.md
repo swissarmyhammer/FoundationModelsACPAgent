@@ -31,7 +31,22 @@ comments:
     - tests: root `swift test --scratch-path .build/alt --force-resolved-versions`: 901 tests in 98 suites passed, 1 known issue (the `withKnownIssue` in HarnessSmokeTests, as before), 0 warnings. IntegrationTests: 35 tests in 13 suites passed. Flaky ^05rmb1p did not occur.
     - next: /review
   timestamp: 2026-10-11T03:40:04.453706+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m4mh7r2q3rarms9t87w2aye9
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (375f4a2): 1 finding (1 confirmed, 0 refuted). Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift:598 `reuse/reuse`. Acceptance: the 2 items are met. `swift test --scratch-path .build/alt --force-resolved-versions --filter "SettledRunStatusProjectionTests|RunProgressTests"`: 14 tests in 2 suites pass.
+    - next: Extract one shared helper for wireStatuses(ofToolCall:) and lastWireTitle(ofToolCall:), then review again.
+  timestamp: 2026-10-11T03:48:50.903793+00:00
+- actor: claude-code
+  id: 01m4mhb4sc72k90bf9mcz4w0ec
+  text: |-
+    ### implement — changed
+    - finding fixed: `ProjectionTestSupport.swift` now has one helper `wireStrings(ofToolCall:key:)`. `lastWireTitle(ofToolCall:)` is its `.last` for `title`, and `wireStatuses(ofToolCall:)` is its full array for `status`. Finding box checked.
+    - evidence: `swift test --scratch-path .build/alt --force-resolved-versions --filter "SettledRunStatusProjectionTests|RunProgressTests|ToolCallJoinProjectionTests|EventProjection"` with a new empty SKILLS_MARKETPLACE_CACHE: 62 tests in 4 suites passed, 0 failures, 0 warnings.
+    - next: /review
+  timestamp: 2026-10-11T03:50:42.220159+00:00
+position_column: review
 position_ordinal: '80'
 title: 'Keep the terminal status of a settled run: the later SDK toolCall and toolStatus updates must not write over it'
 ---
@@ -60,3 +75,12 @@ Thus a run that settled `failed` (for example `timedOut`) or `cancelled` can end
 
 - [x] A test reads the wire messages: an inline run that settles `failed`, then the SDK `toolCall` and `toolStatus` events, ends `failed` on the client.
 - [x] A call with no settlement still ends with the status of `toolStatus`.
+
+## Review Findings (2026-10-10 22:40)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift:598` `reuse/reuse` — The new wireStatuses(ofToolCall:) repeats the same pipeline as lastWireTitle(ofToolCall:). Both map each update to a wire object, filter by toolCallId, and read one string key. The only difference is the key and the last-or-all choice. The second copy diverges from the first and must be fixed twice. Extract a shared helper, for example wireStrings(ofToolCall:key:), that returns the string values of one key for each update of the call. Then define lastWireTitle as its .last and wireStatuses as the full array, so both use one implementation.

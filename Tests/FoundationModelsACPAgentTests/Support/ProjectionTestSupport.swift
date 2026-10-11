@@ -583,10 +583,7 @@ extension Array where Element == SessionUpdate {
     ///   one.
     /// - Throws: The encoding error of an update.
     func lastWireTitle(ofToolCall toolCallId: String) throws -> String? {
-        try compactMap { try wireObject(of: $0) }
-            .filter { jsonString(of: $0["toolCallId"]) == toolCallId }
-            .compactMap { jsonString(of: $0["title"]) }
-            .last
+        try wireStrings(ofToolCall: toolCallId, key: "title").last
     }
 
     /// The `status` of each update of one tool call that put a status on the
@@ -596,9 +593,22 @@ extension Array where Element == SessionUpdate {
     /// - Returns: The wire statuses.
     /// - Throws: The encoding error of an update.
     func wireStatuses(ofToolCall toolCallId: String) throws -> [String] {
+        try wireStrings(ofToolCall: toolCallId, key: "status")
+    }
+
+    /// The string value of one member for each update of one tool call that
+    /// put that member on the wire, in send order. An update that omits the
+    /// member adds nothing.
+    ///
+    /// - Parameters:
+    ///   - toolCallId: The wire id of the tool call.
+    ///   - key: The name of the wire member.
+    /// - Returns: The string values.
+    /// - Throws: The encoding error of an update.
+    func wireStrings(ofToolCall toolCallId: String, key: String) throws -> [String] {
         try compactMap { try wireObject(of: $0) }
             .filter { jsonString(of: $0["toolCallId"]) == toolCallId }
-            .compactMap { jsonString(of: $0["status"]) }
+            .compactMap { jsonString(of: $0[key]) }
     }
 
     /// The status that the client shows at the end for one tool call: the
