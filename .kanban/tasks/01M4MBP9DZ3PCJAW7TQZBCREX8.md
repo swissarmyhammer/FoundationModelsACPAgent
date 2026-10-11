@@ -40,8 +40,20 @@ comments:
     - note: TerminalStreamTests.swift and the ^39h13a1 card had changes from a parallel session during the runs; this task did not touch them.
     - next: /review
   timestamp: 2026-10-11T13:14:12.307622+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m4nj3sgyxagx6399ea3dmwa0
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (294a398): counts findings 0, confirmed 0, refuted 1, attempted 7. The tool rule `code-hygiene/dead-code-swift` failed only because it could not remove the `.build/checkouts` folders (permission error). This failure does not count.
+    - evidence: `swift test --scratch-path .build/alt --force-resolved-versions --filter "ToolCallJoinProjectionTests|AgentsToolTests"` with an empty SKILLS_MARKETPLACE_CACHE: 27 tests in 2 suites pass. No compiler warning (one build-system warning about the mlx bundle only).
+    - check by hand: the observer calls `recordAgentRunEvent`, which only takes the Mutex lock and then calls the join observer outside the lock. That join observer only yields into an unbounded AsyncStream. It does not wait. Two runs that call it at the same time are safe, because each write is one locked operation.
+    - check by hand: the table is on `SessionSurface`. The terminal stream (`startTerminalProjection`) and each prompt projection (`entry.surface.runCallJoins`) read the same table as the agent environment. A slot switch keeps the surface. A session/resume removes the old entry, finishes the old shell output and shuts down the old surface, and the new surface has a new table, a new shell output and a new terminal stream. Thus the terminal stream and the projection never use two different tables.
+    - check by hand: after the removal of `runDidEnd`, a root run gets its entry from its open record, its settlement, `closePrompt`, or "no join at once" when no prompt is open. The terminal stream also releases each waiting run when it stops. The follow loop of an agent run reads its event subscription to the end, so the open record of each tool run of an agent run always gets to the observer. If it comes late, `closePrompt` still releases the run.
+    - note (not a finding): `SinkRecorder.updates(until:)` waits on a CheckedContinuation that ignores cancellation. Thus `.timeLimit` cancels the test but the test does not end, and a failed condition hangs. This helper existed before this change and is not on a changed line. The written review rule drops findings that ask to refactor tests that already existed. A person can make a separate task for it.
+    - next: none. Task moves to done.
+  timestamp: 2026-10-11T13:23:24.318155+00:00
+position_column: done
+position_ordinal: ffc580
 title: Give the host the tool records of an agent run, so the run-call join table gets exact entries
 ---
 ## Problem
