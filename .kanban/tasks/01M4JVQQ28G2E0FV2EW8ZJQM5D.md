@@ -44,6 +44,43 @@ comments:
     - flaky test: AgentsToolTests.closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses passed in this run. No change made.
     - next: none. No file was changed, staged, or committed.
   timestamp: 2026-10-11T00:22:45.935156+00:00
+- actor: claude-code
+  id: 01m4m6p064wh0rbkhqgk4r3tgc
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 6e9bec7). counts: 1 finding, 1 confirmed, 0 refuted. Finding: IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/SkillsMarketplaceProcessTests.swift:50 (reuse/reuse).
+    - acceptance check (2026-10-10): all 5 items are met.
+      - A `--no-parallel` IntegrationTests run with `--skip theShippedMarketplaceListFetchesTheGitHubSkillsRepositoryOverTheNetwork` and an empty probe `SKILLS_MARKETPLACE_CACHE`: exit 0, 34 tests in 13 suites passed. The probe folder holds 0 entries.
+      - A full `--no-parallel` IntegrationTests run: exit 0, 35 tests in 13 suites passed. The default-path test passed.
+      - The root suite (`--scratch-path .build/alt --force-resolved-versions`, empty probe cache): exit 0, 886 tests in 97 suites passed, with 1 known issue. The probe folder holds 0 entries.
+      - Both builds show the SwiftPM build-system warning "missing creator for mutated node" on the `mlx-swift_Cmlx.bundle` product. This change does not touch it.
+    - next: move the shared subprocess driver of `runPrompt` and `CLIProcessTests.runAgentCLI` into `Support/`, then run `/review` again.
+  timestamp: 2026-10-11T00:44:23.620809+00:00
+- actor: claude-code
+  id: 01m4m6ze8j6kms9zyjrf24htce
+  text: 'Picked up the reuse finding. Research: `BuiltExecutableRun.run` with `TierThreeFixture.agentExecutableName`, a fresh workspace and a fresh config home also occurs in OutOfProcessTests, ClientInteropTests and TranscriptRecordingTests. The order limits this fix to `CLIProcessTests.runAgentCLI` and `SkillsMarketplaceProcessTests.runPrompt`, thus those other suites stay as they are. The new shared driver is `BuiltExecutableRun.runAgent(arguments:label:configHome:environment:)` in `Support/BuiltExecutableRun.swift`. This is a refactor of test support with no change of behavior; the existing tests of the two suites are the proof, so no new RED test applies.'
+  timestamp: 2026-10-11T00:49:32.946788+00:00
+- actor: claude-code
+  id: 01m4m77w34c8ffbdanp87n984r
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/BuiltExecutableRun.swift (new `runAgent(arguments:label:configHome:environment:)`), CLIProcessTests.swift (`runAgentCLI` calls it), SkillsMarketplaceProcessTests.swift (`runPrompt` calls it; the stub-model and cache pairs stay at the call site).
+    - run: `SKILLS_MARKETPLACE_CACHE=<scratch>/cache-8zjqm5d-fix swift test --package-path IntegrationTests --scratch-path IntegrationTests/.build/alt --force-resolved-versions --no-parallel` — 35 tests in 13 suites passed. The cache folder holds 0 entries after the run.
+    - warnings: only the SwiftPM "missing creator for mutated node" warning for mlx-swift_Cmlx.bundle (^tvjz12j). No compiler warning.
+    - the review finding box is checked.
+    - next: /review
+  timestamp: 2026-10-11T00:54:09.252019+00:00
+- actor: claude-code
+  id: 01m4m7gv3w0aaps42swxm09723
+  text: |-
+    ### implement — changed
+    - The coordinator asked for the same refactor in three more suites.
+    - evidence: 3 more files. `OutOfProcessTests.runAgentCLI` and `ClientInteropTests.runAgentCLI` now call `BuiltExecutableRun.runAgent`. The header comment of `Support/BuiltExecutableRun.swift` names the new users.
+    - Not moved: `TranscriptRecordingTests.runAgent`. The test reads the recording root under the workspace, and the resume case uses the same workspace and config home for two runs. `runAgent` makes its workspace inside the helper and does not return it, so this call cannot use it. Also not moved: `OutOfProcessTests.runPacedAgentCLI`, because it calls `SignalledExecutableRun.run` (signals, first-output probe), not `BuiltExecutableRun.run`.
+    - run: `SKILLS_MARKETPLACE_CACHE=<scratch>/cache-8zjqm5d-fix2 swift test --package-path IntegrationTests --scratch-path IntegrationTests/.build/alt --force-resolved-versions --no-parallel`: 35 tests in 13 suites passed. The cache folder holds 0 entries after the run.
+    - warnings: only the mlx-swift_Cmlx "missing creator for mutated node" warning (^tvjz12j).
+    - next: /review
+  timestamp: 2026-10-11T00:59:03.164533+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'IntegrationTests: the spawned acp-agent binaries fetch the default skills marketplace from GitHub'
@@ -75,3 +112,12 @@ The end-to-end suites of `IntegrationTests` must be offline and repeatable. They
 - [x] The root suite passes.
 
 #tests #config
+
+## Review Findings (2026-10-10 19:23)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/SkillsMarketplaceProcessTests.swift:50` `reuse/reuse` — The new `runPrompt` repeats the subprocess driver of `CLIProcessTests.runAgentCLI`: the same `BuiltExecutableRun.run` call with an agent executable, a fresh workspace, and a fresh config home. The only differences are the arguments, the stub-model environment, and the cache variable. Two copies of this driver can drift apart, so one canonical driver is the better design. Move the shared driver into `Support/` (for example, next to `TierThreeFixture`) as one helper that takes the arguments and the extra environment pairs. Let `runAgentCLI` and `runPrompt` each call it with their own arguments and environment. Keep the stub-model and cache pairs at the call site in `runPrompt`.

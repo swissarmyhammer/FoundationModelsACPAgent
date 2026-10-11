@@ -128,11 +128,8 @@ struct OutOfProcessTests {
     private static func runAgentCLI(
         arguments: [String], label: String
     ) async throws -> BuiltExecutableRun {
-        try await BuiltExecutableRun.run(
-            executableNamed: TierThreeFixture.agentExecutableName,
-            arguments: arguments,
-            workspace: makeResolvedDirectory(label: "\(label)-repo"),
-            configHome: makeResolvedDirectory(label: "\(label)-config"),
+        try await BuiltExecutableRun.runAgent(
+            arguments: arguments, label: label,
             environment: TierThreeFixture.stubModelEnvironment)
     }
 

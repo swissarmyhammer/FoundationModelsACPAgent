@@ -178,11 +178,8 @@ struct ClientInteropTests {
     /// - Returns: The finished run.
     /// - Throws: The locator or spawn error.
     private static func runAgentCLI(label: String) async throws -> BuiltExecutableRun {
-        try await BuiltExecutableRun.run(
-            executableNamed: TierThreeFixture.agentExecutableName,
-            arguments: [runSubcommand, promptText],
-            workspace: makeResolvedDirectory(label: "\(label)-repo"),
-            configHome: makeResolvedDirectory(label: "\(label)-config"),
+        try await BuiltExecutableRun.runAgent(
+            arguments: [runSubcommand, promptText], label: label,
             environment: TierThreeFixture.stubModelEnvironment)
     }
 

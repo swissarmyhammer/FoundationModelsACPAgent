@@ -67,7 +67,9 @@ struct CLIProcessTests {
 
     // MARK: - The subprocess driver
 
-    /// Runs the built `acp-agent` with `arguments` in fresh directories.
+    /// Runs the built `acp-agent` with `arguments` in fresh directories,
+    /// through the shared driver
+    /// ``BuiltExecutableRun/runAgent(arguments:label:configHome:environment:)``.
     ///
     /// - Parameters:
     ///   - arguments: The command-line arguments for `acp-agent`.
@@ -80,11 +82,8 @@ struct CLIProcessTests {
     private static func runAgentCLI(
         arguments: [String], configHome: URL? = nil, environment: [String: String] = [:]
     ) async throws -> BuiltExecutableRun {
-        try await BuiltExecutableRun.run(
-            executableNamed: TierThreeFixture.agentExecutableName,
-            arguments: arguments,
-            workspace: makeResolvedDirectory(label: "CLIProcess-repo"),
-            configHome: configHome ?? makeResolvedDirectory(label: "CLIProcess-config"),
+        try await BuiltExecutableRun.runAgent(
+            arguments: arguments, label: "CLIProcess", configHome: configHome,
             environment: environment)
     }
 

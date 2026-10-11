@@ -34,7 +34,8 @@ struct SkillsMarketplaceProcessTests {
     // MARK: - The subprocess driver
 
     /// Runs one stub-model prompt through the built `acp-agent run`, with
-    /// `cache` as the marketplace cache folder.
+    /// `cache` as the marketplace cache folder, through the shared driver
+    /// ``BuiltExecutableRun/runAgent(arguments:label:configHome:environment:)``.
     ///
     /// - Parameters:
     ///   - label: The directory label, so a leftover directory says where it
@@ -47,11 +48,9 @@ struct SkillsMarketplaceProcessTests {
     private static func runPrompt(
         label: String, cache: URL, environment: [String: String] = [:]
     ) async throws -> BuiltExecutableRun {
-        try await BuiltExecutableRun.run(
-            executableNamed: TierThreeFixture.agentExecutableName,
+        try await BuiltExecutableRun.runAgent(
             arguments: [runSubcommand, promptText],
-            workspace: makeResolvedDirectory(label: "\(label)-repo"),
-            configHome: makeResolvedDirectory(label: "\(label)-config"),
+            label: label,
             environment: TierThreeFixture.stubModelEnvironment
                 .merging([MarketplaceStore.cacheDirectoryVariable: cache.path]) { _, cache in cache }
                 .merging(environment) { _, extra in extra })

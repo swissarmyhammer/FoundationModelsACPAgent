@@ -2,9 +2,13 @@
 //
 // `ClientServerTests` runs `acp-print` through it and `CLIProcessTests`
 // runs `acp-agent`, so the pipe draining and the exit wait stand in one
-// place, and the two suites cannot drift apart.
+// place, and the two suites cannot drift apart. `runAgent` is the one
+// driver of `acp-agent` in a fresh workspace, which `CLIProcessTests`,
+// `ClientInteropTests`, `OutOfProcessTests` and
+// `SkillsMarketplaceProcessTests` share.
 
 import Foundation
+import FoundationModelsACPAgentTestSupport
 
 /// One finished run of a built executable: its exit code and its captured
 /// stdout and stderr text.
@@ -73,5 +77,36 @@ struct BuiltExecutableRun {
             exitCode: process.terminationStatus,
             standardOutput: String(decoding: try await standardOutputData.value, as: UTF8.self),
             standardError: String(decoding: try await standardErrorData.value, as: UTF8.self))
+    }
+
+    /// Runs the built `acp-agent` with `arguments` in a fresh workspace.
+    ///
+    /// This is the one subprocess driver of the suites that run the agent CLI
+    /// with no setup other than arguments and environment pairs. Each suite
+    /// gives its own arguments and pairs, so the drivers cannot drift apart.
+    ///
+    /// - Parameters:
+    ///   - arguments: The command-line arguments for `acp-agent`.
+    ///   - label: The directory label, so a leftover directory says where it
+    ///     came from. The workspace is `<label>-repo`, and the fresh config
+    ///     home is `<label>-config`.
+    ///   - configHome: The injected `XDG_CONFIG_HOME` root. The default makes
+    ///     a fresh, empty directory.
+    ///   - environment: The extra environment pairs. The default injects
+    ///     none.
+    /// - Returns: The finished run.
+    /// - Throws: The locator or spawn error.
+    static func runAgent(
+        arguments: [String],
+        label: String,
+        configHome: URL? = nil,
+        environment: [String: String] = [:]
+    ) async throws -> BuiltExecutableRun {
+        try await run(
+            executableNamed: TierThreeFixture.agentExecutableName,
+            arguments: arguments,
+            workspace: makeResolvedDirectory(label: "\(label)-repo"),
+            configHome: configHome ?? makeResolvedDirectory(label: "\(label)-config"),
+            environment: environment)
     }
 }
