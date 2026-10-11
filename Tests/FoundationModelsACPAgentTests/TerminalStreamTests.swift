@@ -346,32 +346,28 @@ private actor HeldSink {
         #expect(try Self.clientView(in: updates) == stored + Self.fourthChunk)
     }
 
-    /// Each stream of a run keeps its own byte offset: the replacement ends
-    /// at a different offset in stdout and in stderr, and a queued chunk of
-    /// each stream sends no byte again.
+    /// Each stream of a run keeps its own byte offset. The replacement holds
+    /// the queued stdout chunk but not the stderr chunk after it. Thus the
+    /// stderr chunk goes on the wire and the stdout chunk is dropped. A
+    /// ledger with one offset for the whole run (stdout and stderr added)
+    /// gets both wrong: it drops the stderr chunk and sends the stdout chunk.
     @Test func eachStreamDropsTheBytesThatTheReplacementHolds() async throws {
         let firstStderr = Array("err1".utf8)
-        let queuedStderr = Array("err2".utf8)
-        let lateStderr = Array("err3".utf8)
+        let lateStderr = Array("err2".utf8)
         let stdout = Self.firstChunk + Self.secondChunk + Self.thirdChunk
-        let stderr = firstStderr + queuedStderr
 
         let updates = await Self.project(
             [
                 Self.makeOutputEvent(bytes: Self.firstChunk),
                 Self.makeOutputEvent(bytes: firstStderr, stream: .stderr),
                 Self.makeGapEvent(droppedByteCount: Self.secondChunk.count),
-                Self.makeOutputEvent(bytes: Self.thirdChunk),
-                Self.makeOutputEvent(bytes: queuedStderr, stream: .stderr),
-                Self.makeOutputEvent(bytes: Self.fourthChunk),
                 Self.makeOutputEvent(bytes: lateStderr, stream: .stderr),
+                Self.makeOutputEvent(bytes: Self.thirdChunk),
             ],
-            snapshot: Self.provider(of: Self.makeSnapshot(stdout: stdout, stderr: stderr)))
+            snapshot: Self.provider(of: Self.makeSnapshot(stdout: stdout, stderr: firstStderr)))
 
-        #expect(
-            try Self.reassembledBytes(in: updates)
-                == Self.firstChunk + firstStderr + Self.fourthChunk + lateStderr)
-        #expect(try Self.clientView(in: updates) == stdout + stderr + Self.fourthChunk + lateStderr)
+        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk + firstStderr + lateStderr)
+        #expect(try Self.clientView(in: updates) == stdout + firstStderr + lateStderr)
     }
 
     /// A chunk that crosses the end of the replacement sends only the bytes
