@@ -29,6 +29,10 @@ import Logging
 ///   whose `output` is the authoritative replacement built from
 ///   `snapshot(for:)` — the ACP replace is made for a client that lost
 ///   bytes to backpressure.
+/// - After a replacement, a chunk sends only the bytes past the end of
+///   that replacement in its stream (``ShellRunByteLedger``). The upstream
+///   queue can hold chunks whose bytes the replacement already has, and
+///   no byte of a run goes on the wire two times.
 /// - `.completed` becomes one `TerminalUpdate` whose `exitStatus` is
 ///   present with neither an exit code nor a signal: the presence marks
 ///   exited, which agrees with a soft-deadline kill, and the exit code
@@ -88,6 +92,11 @@ struct TerminalStream {
     /// Each run that waits for its entry in ``runCallJoins``, keyed by the
     /// `commandID` of the run.
     private var waitingRuns: [String: WaitingRun] = [:]
+
+    /// The byte offsets of each run that is not finished, keyed by the
+    /// `commandID` of the run. A run leaves the table at its completion
+    /// marker, because no later event carries its `commandID`.
+    private var byteLedgers: [String: ShellRunByteLedger] = [:]
 
     /// One input of the consumer loop.
     private enum Input: Sendable {
@@ -213,11 +222,13 @@ struct TerminalStream {
 
     /// Projects one live shell event to the wire. The event of a run that
     /// waits for its entry sends nothing: the run keeps only the fact that
-    /// the event gives (``WaitingRun``).
+    /// the event gives (``WaitingRun``). Each event moves the byte offsets
+    /// of its run, also when it sends nothing (``ShellRunByteLedger``).
     ///
     /// - Parameter event: The event to project.
     mutating func project(_ event: ShellOutputEvent) async {
         let commandID = event.commandID
+        let newBytes = byteLedgers[commandID, default: ShellRunByteLedger()].advance(past: event.kind)
         if waitingRuns[commandID] != nil {
             waitingRuns[commandID]?.note(event.kind)
             return
@@ -231,7 +242,7 @@ struct TerminalStream {
             }
             await announce(commandID, on: toolCallId)
         }
-        await emit(event)
+        await emit(event, newBytes: newBytes)
     }
 
     /// Releases a run that waited: the one announce on the id of its entry,
@@ -251,7 +262,6 @@ struct TerminalStream {
         await announce(commandID, on: runCallJoins.toolCallId(for: commandID))
         if waitingRun.hasExited {
             await reportExit(of: commandID)
-            announcedRuns.remove(commandID)
         } else if waitingRun.hasOutput {
             await replaceOutput(of: commandID)
         }
@@ -269,20 +279,26 @@ struct TerminalStream {
 
     /// Sends one live shell event of a run that is announced.
     ///
-    /// - Parameter event: The event to send.
-    private mutating func emit(_ event: ShellOutputEvent) async {
+    /// - Parameters:
+    ///   - event: The event to send.
+    ///   - newBytes: The bytes of an output event that the client view does
+    ///     not hold yet. An output event whose bytes the last replacement
+    ///     holds sends no chunk.
+    private mutating func emit(_ event: ShellOutputEvent, newBytes: ArraySlice<UInt8>) async {
         switch event.kind {
-        case .output(_, let bytes):
+        case .output:
+            guard !newBytes.isEmpty else {
+                return
+            }
             await send(
                 .terminalOutputChunk(
                     TerminalOutputChunk(
-                        data: Data(bytes).base64EncodedString(),
+                        data: Data(newBytes).base64EncodedString(),
                         terminalId: TerminalId(rawValue: event.commandID))))
         case .gap:
             await replaceOutput(of: event.commandID)
         case .completed:
             await reportExit(of: event.commandID)
-            announcedRuns.remove(event.commandID)
         @unknown default:
             // The upstream kind is not frozen: a new case degrades to a
             // log line, never to a broken stream.
@@ -340,16 +356,19 @@ struct TerminalStream {
     /// Replaces the client's view of one run with the stored record: a
     /// gap said bytes went away, and the snapshot is the "replace" half
     /// of the stream's contract. A run the store never saw is logged;
-    /// the client keeps its view until the completion replacement.
+    /// the client keeps its view until the completion replacement. The
+    /// ledger of the run records where the replacement ends, so a later
+    /// chunk sends no byte that the replacement holds.
     ///
     /// - Parameter commandID: The run whose bytes went away.
-    private func replaceOutput(of commandID: String) async {
+    private mutating func replaceOutput(of commandID: String) async {
         guard let stored = snapshot(commandID) else {
             ACPAgentTelemetry.logger(.promptExecution).warning(
                 "A gap arrived, but no stored record can replace the output.",
                 metadata: [ACPAgentTelemetry.LogMetadataKey.toolCallId: "\(commandID)"])
             return
         }
+        byteLedgers[commandID, default: ShellRunByteLedger()].recordReplacement(by: stored)
         await send(
             .terminalUpdate(
                 TerminalUpdate(
@@ -361,10 +380,14 @@ struct TerminalStream {
     /// terminal exited, with neither an exit code nor a signal — the
     /// stream carries no code, and a soft-deadline kill has none. The
     /// final output replacement rides beside it when the store holds a
-    /// record; without one the output honestly stays unchanged.
+    /// record; without one the output honestly stays unchanged. No later
+    /// event carries the `commandID` of the run, so the run leaves the
+    /// announced set and the ledger table.
     ///
     /// - Parameter commandID: The run that ended.
-    private func reportExit(of commandID: String) async {
+    private mutating func reportExit(of commandID: String) async {
+        announcedRuns.remove(commandID)
+        byteLedgers.removeValue(forKey: commandID)
         let output: PatchField<TerminalOutput>
         if let stored = snapshot(commandID) {
             output = .value(Self.output(of: stored))

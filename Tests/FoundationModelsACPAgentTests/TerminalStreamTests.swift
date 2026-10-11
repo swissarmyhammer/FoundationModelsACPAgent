@@ -253,6 +253,166 @@ private actor HeldSink {
         #expect(Array(data) == stdout + stderr)
     }
 
+    // MARK: - The bytes behind a replacement
+
+    /// The first chunk of the replacement tests. Each chunk has its own
+    /// letters, so a byte that goes on the wire two times is visible.
+    private static let firstChunk = Array("AAAA".utf8)
+
+    /// The second chunk of the replacement tests.
+    private static let secondChunk = Array("BBBB".utf8)
+
+    /// The third chunk of the replacement tests.
+    private static let thirdChunk = Array("CCCC".utf8)
+
+    /// The fourth chunk of the replacement tests.
+    private static let fourthChunk = Array("DDDD".utf8)
+
+    /// One gap event of the scripted run.
+    ///
+    /// - Parameters:
+    ///   - droppedByteCount: The bytes that went away upstream.
+    ///   - stream: The stream they went away from.
+    /// - Returns: The event.
+    private static func makeGapEvent(
+        droppedByteCount: Int, stream: ShellOutputStream = .stdout
+    ) -> ShellOutputEvent {
+        ShellOutputEvent(
+            commandID: completionToken,
+            kind: .gap(stream: stream, droppedByteCount: droppedByteCount))
+    }
+
+    /// A snapshot of the scripted run whose stdout is `stdout` and whose
+    /// stderr is `stderr`, both complete and clean.
+    ///
+    /// - Parameters:
+    ///   - stdout: The stored stdout bytes.
+    ///   - stderr: The stored stderr bytes.
+    /// - Returns: The snapshot.
+    private static func makeSnapshot(stdout: [UInt8], stderr: [UInt8] = []) -> ShellOutputSnapshot {
+        ShellOutputSnapshot(stdout: makeRawOutput(bytes: stdout), stderr: makeRawOutput(bytes: stderr))
+    }
+
+    /// Decodes the base64 data of one update.
+    ///
+    /// - Parameter data: The base64 text.
+    /// - Returns: The decoded bytes.
+    /// - Throws: The `#require` failure when the text is not base64.
+    private static func decodedBytes(_ data: String) throws -> [UInt8] {
+        Array(try #require(Data(base64Encoded: data)))
+    }
+
+    /// Replays the updates of the scripted run as a client does: a
+    /// replacement puts its bytes in place of the view, and a chunk appends
+    /// its bytes to the view.
+    ///
+    /// - Parameter sent: The sent updates.
+    /// - Returns: The bytes that the client shows for the run.
+    /// - Throws: The `#require` failure when an update is not base64.
+    private static func clientView(in sent: [SessionUpdate]) throws -> [UInt8] {
+        var view: [UInt8] = []
+        for update in updates(of: completionToken, in: sent) {
+            switch update {
+            case .terminalOutputChunk(let chunk):
+                view += try decodedBytes(chunk.data)
+            case .terminalUpdate(let terminal):
+                if let output = patchValue(terminal.output) {
+                    view = try decodedBytes(output.data)
+                }
+            default:
+                break
+            }
+        }
+        return view
+    }
+
+    /// A chunk that the upstream queue held behind a gap is in the gap
+    /// replacement already, so it sends no byte. A chunk past the
+    /// replacement goes on the wire whole, and the client view is the
+    /// output of the run byte for byte.
+    @Test func aChunkQueuedBehindAGapReplacementSendsNoByteAgain() async throws {
+        let stored = Self.firstChunk + Self.secondChunk + Self.thirdChunk
+
+        let updates = await Self.project(
+            [
+                Self.makeOutputEvent(bytes: Self.firstChunk),
+                Self.makeGapEvent(droppedByteCount: Self.secondChunk.count),
+                Self.makeOutputEvent(bytes: Self.thirdChunk),
+                Self.makeOutputEvent(bytes: Self.fourthChunk),
+            ],
+            snapshot: Self.provider(of: Self.makeSnapshot(stdout: stored)))
+
+        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk + Self.fourthChunk)
+        #expect(try Self.clientView(in: updates) == stored + Self.fourthChunk)
+    }
+
+    /// Each stream of a run keeps its own byte offset: the replacement ends
+    /// at a different offset in stdout and in stderr, and a queued chunk of
+    /// each stream sends no byte again.
+    @Test func eachStreamDropsTheBytesThatTheReplacementHolds() async throws {
+        let firstStderr = Array("err1".utf8)
+        let queuedStderr = Array("err2".utf8)
+        let lateStderr = Array("err3".utf8)
+        let stdout = Self.firstChunk + Self.secondChunk + Self.thirdChunk
+        let stderr = firstStderr + queuedStderr
+
+        let updates = await Self.project(
+            [
+                Self.makeOutputEvent(bytes: Self.firstChunk),
+                Self.makeOutputEvent(bytes: firstStderr, stream: .stderr),
+                Self.makeGapEvent(droppedByteCount: Self.secondChunk.count),
+                Self.makeOutputEvent(bytes: Self.thirdChunk),
+                Self.makeOutputEvent(bytes: queuedStderr, stream: .stderr),
+                Self.makeOutputEvent(bytes: Self.fourthChunk),
+                Self.makeOutputEvent(bytes: lateStderr, stream: .stderr),
+            ],
+            snapshot: Self.provider(of: Self.makeSnapshot(stdout: stdout, stderr: stderr)))
+
+        #expect(
+            try Self.reassembledBytes(in: updates)
+                == Self.firstChunk + firstStderr + Self.fourthChunk + lateStderr)
+        #expect(try Self.clientView(in: updates) == stdout + stderr + Self.fourthChunk + lateStderr)
+    }
+
+    /// A chunk that crosses the end of the replacement sends only the bytes
+    /// past that end.
+    @Test func aChunkThatCrossesTheReplacementSendsOnlyItsNewBytes() async throws {
+        let stored = Self.firstChunk + Self.secondChunk
+
+        let updates = await Self.project(
+            [
+                Self.makeGapEvent(droppedByteCount: Self.firstChunk.count),
+                Self.makeOutputEvent(bytes: Self.secondChunk + Self.thirdChunk),
+            ],
+            snapshot: Self.provider(of: Self.makeSnapshot(stdout: stored)))
+
+        #expect(try Self.reassembledBytes(in: updates) == Self.thirdChunk)
+        #expect(try Self.clientView(in: updates) == stored + Self.thirdChunk)
+    }
+
+    /// A truncated snapshot is not a prefix of the output, so it gives no
+    /// offset. After its replacement the run sends no chunk until the
+    /// completion replacement, so no byte goes on the wire two times.
+    @Test func aTruncatedReplacementStopsTheChunksOfTheRun() async throws {
+        let truncated = ShellOutputSnapshot(
+            stdout: ShellRawOutput(
+                bytes: Self.firstChunk, binaryDetected: false, truncated: true,
+                storedByteCount: Self.firstChunk.count),
+            stderr: Self.makeRawOutput(bytes: []))
+
+        let updates = await Self.project(
+            [
+                Self.makeOutputEvent(bytes: Self.firstChunk),
+                Self.makeGapEvent(droppedByteCount: Self.secondChunk.count),
+                Self.makeOutputEvent(bytes: Self.thirdChunk),
+                Self.makeOutputEvent(bytes: Self.fourthChunk),
+            ],
+            snapshot: Self.provider(of: truncated))
+
+        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk)
+        #expect(try Self.clientView(in: updates) == Self.firstChunk)
+    }
+
     // MARK: - The exit status
 
     /// The completion marker sends one `TerminalUpdate` whose exit
@@ -426,6 +586,50 @@ private actor HeldSink {
         #expect(replacement.exitStatus == .value(TerminalExitStatus()))
         let output = try #require(patchValue(replacement.output))
         #expect(Data(base64Encoded: output.data).map(Array.init) == stored)
+    }
+
+    /// A chunk that the upstream queue held behind the release of a waiting
+    /// run is in the release replacement already, so it sends no byte. A
+    /// chunk past the replacement goes on the wire whole, and the client
+    /// view is the output of the run byte for byte.
+    @Test(.timeLimit(.minutes(1)))
+    func aChunkQueuedBehindAWaitingRunReleaseSendsNoByteAgain() async throws {
+        let stored = Self.firstChunk + Self.secondChunk
+        let table = RunCallJoinTable()
+        table.openPrompt()
+        table.record(toolCallID: Self.joinedSdkCallId, for: Self.joinedRunToken)
+        let recorder = SinkRecorder()
+        let (events, input) = AsyncStream<ShellOutputEvent>.makeStream()
+        let reader = Task {
+            var projection = TerminalStream(
+                snapshot: Self.provider(of: Self.makeSnapshot(stdout: stored)), runCallJoins: table
+            ) { update in
+                await recorder.append(update)
+            }
+            await projection.consume(events)
+        }
+        input.yield(Self.makeOutputEvent(bytes: Self.firstChunk))
+        input.yield(
+            ShellOutputEvent(
+                commandID: Self.joinedRunToken, kind: .output(stream: .stdout, bytes: Self.firstChunk)))
+        _ = await recorder.updates { updates in
+            terminalChunks(in: updates).contains { $0.terminalId.rawValue == Self.joinedRunToken }
+        }
+
+        table.record(toolCallID: nil, for: Self.completionToken)
+        _ = await recorder.updates { updates in
+            terminalUpdates(in: updates).contains { $0.terminalId.rawValue == Self.completionToken }
+        }
+        input.yield(Self.makeOutputEvent(bytes: Self.secondChunk))
+        input.yield(Self.makeOutputEvent(bytes: Self.thirdChunk))
+        input.finish()
+        await reader.value
+        let updates = await recorder.updates
+
+        let runUpdates = Self.updates(of: Self.completionToken, in: updates)
+        #expect(runUpdates.map(\.kind) == [.toolCallUpdate, .terminalUpdate, .terminalOutputChunk])
+        #expect(try Self.reassembledBytes(in: runUpdates) == Self.thirdChunk)
+        #expect(try Self.clientView(in: updates) == stored + Self.thirdChunk)
     }
 
     /// The updates that belong to one run: its announce, its chunks and its
