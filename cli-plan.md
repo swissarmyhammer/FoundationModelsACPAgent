@@ -536,29 +536,43 @@ records the question.
 
 ## 9. Testing
 
-| Tier | Test | Gate |
+The `Target` column names the test target that runs each row, and the
+suite in that target. Two targets exist:
+
+- **Root unit target.** The root `swift test` runs it
+  (`Tests/FoundationModelsACPAgentTests`). The "Unit" rows and the
+  "Integration" rows are in this target. An "Integration" row drives the
+  agent in process, with a scripted model.
+- **`IntegrationTests` package.** `swift test --package-path IntegrationTests`
+  runs it. The root `swift test` does not see this package. Its suites
+  spawn built binaries across a real process boundary.
+
+The package boundary selects the tests. No environment variable selects
+a test.
+
+| Tier | Test | Target |
 |---|---|---|
-| Unit | The subcommand tree, and each subcommand of §5.3. | none |
-| Unit | `acp-agent run doctor` sends the prompt "doctor", and runs no check. | none |
-| Unit | The prompt-source table of §5.5, each row. | none |
-| Unit | The stop reasons and the doctor statuses map to the exit codes of §5.8. | none |
-| Unit | A usage error goes to stderr, and exits 2. stdout stays empty. | none |
-| Unit | `--cwd` with `--resume` is a usage error. | none |
-| Unit | `config init` refuses to overwrite without `--force`. | none |
-| Unit | `config init` writes a file that `ConfigurationLoader` reads back to the same values. | none |
-| Unit | `config show --source` names the layer that set each key, in a two-layer fixture. | none |
-| Unit | Each `Doctorable` conformance, against a fixture that fails and one that passes. | none |
-| Integration | `--cwd` selects the project layer: two directories with different `config.yaml` files give different resolved configurations. | none |
-| Integration | The `acp` subcommand takes the project layer from `session/new(cwd)`, and not from the process working directory. | none |
-| Integration | `run` and `acp` give the same answer for one prompt, with a scripted model. | none |
-| Integration | stdout is byte-identical to the concatenated chunks. Nothing is added. | none |
-| Integration | With stderr a pipe, a default run writes nothing to it. `--verbose` writes the events, and `--quiet` writes nothing in a terminal. | none |
-| Integration | A scripted `ResolutionProgress` drives the bar, and the bar never touches stdout. | none |
-| Tier 3 | `acp-print` spawns `acp-agent acp`. Unchanged. | `ACP_TIER3=1` |
-| Tier 3 | The client library drives the composed agent in process, over `InMemoryTransport.pair()`, to `end_turn`, and gets the answer of `acp-agent run` (§6). | `ACP_TIER3=1` |
-| Tier 3 | `acp-agent --out-of-process` starts its own `acp` mode and gives the same answer. | `ACP_TIER3=1` |
-| Tier 3 | An interrupt of `--out-of-process` gives exit 4, and leaves no agent process. | `ACP_TIER3=1` |
-| Tier 4 | `doctor` on a clean machine reports the models as not downloaded, and gives the size. | `ACP_TIER4=1` |
+| Unit | The subcommand tree, and each subcommand of §5.3. | Root unit target: `CLIParsingTests` |
+| Unit | `acp-agent run doctor` sends the prompt "doctor", and runs no check. | Root unit target: `CLIParsingTests` |
+| Unit | The prompt-source table of §5.5, each row. | Root unit target: `PromptSourceTests` |
+| Unit | The stop reasons and the doctor statuses map to the exit codes of §5.8. | Root unit target: `ExitCodeTests` (stop reasons), `DoctorCommandTests` (doctor statuses) |
+| Unit | A usage error goes to stderr, and exits 2. stdout stays empty. | Root unit target: `CLIParsingTests`, `ExitCodeTests` |
+| Unit | `--cwd` with `--resume` is a usage error. | Root unit target: `CLIParsingTests` |
+| Unit | `config init` refuses to overwrite without `--force`. | Root unit target: `ConfigInitTests` |
+| Unit | `config init` writes a file that `ConfigurationLoader` reads back to the same values. | Root unit target: `ConfigInitTests` |
+| Unit | `config show --source` names the layer that set each key, in a two-layer fixture. | Root unit target: `ConfigShowTests` |
+| Unit | Each `Doctorable` conformance, against a fixture that fails and one that passes. | Root unit target: the suites in `Doctor/` |
+| Integration | `--cwd` selects the project layer: two directories with different `config.yaml` files give different resolved configurations. | Root unit target: `RunCommandTests`, `ConfigShowTests`, `ConfigInitTests` |
+| Integration | The `acp` subcommand takes the project layer from `session/new(cwd)`, and not from the process working directory. | Root unit target: `AcpCommandTests` |
+| Integration | `run` and `acp` give the same answer for one prompt, with a scripted model. | Root unit target: `AcpCommandTests` |
+| Integration | stdout is byte-identical to the concatenated chunks. Nothing is added. | Root unit target: `RunCommandTests`, `AnswerWriterTests` |
+| Integration | With stderr a pipe, a default run writes nothing to it. `--verbose` writes the events, and `--quiet` writes nothing in a terminal. | Root unit target: `EventLineWriterTests` |
+| Integration | A scripted `ResolutionProgress` drives the bar, and the bar never touches stdout. | Root unit target: `ProgressReporterTests` |
+| Tier 3 | `acp-print` spawns `acp-agent acp`. Unchanged. | `IntegrationTests` package: `ClientServerTests` |
+| Tier 3 | The client library drives the composed agent in process, over `InMemoryTransport.pair()`, to `end_turn`, and gets the answer of `acp-agent run` (§6). | `IntegrationTests` package: `ClientInteropTests` |
+| Tier 3 | `acp-agent --out-of-process` starts its own `acp` mode and gives the same answer. | `IntegrationTests` package: `OutOfProcessTests` |
+| Tier 3 | An interrupt of `--out-of-process` gives exit 4, and leaves no agent process. | `IntegrationTests` package: `OutOfProcessTests` |
+| Tier 4 | `doctor` on a clean machine reports the models as not downloaded, and gives the size. | None. No suite does this test. `ProfileDoctorTests` in the root unit target examines the same report against a fixture, but not on a clean machine. |
 
 ## 10. Milestones
 
