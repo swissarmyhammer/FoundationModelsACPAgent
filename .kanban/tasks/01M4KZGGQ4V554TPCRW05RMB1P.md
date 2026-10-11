@@ -46,8 +46,16 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsACPAgentTestSupport/ScriptedModel.swift (changed), Tests/FoundationModelsACPAgentTests/ScriptedTranscriptDeliveryTests.swift (new). Root suite: `swift test --scratch-path .build/alt --force-resolved-versions` -> 902 tests in 99 suites passed, 1 known issue (harness self-test), 0 warnings. IntegrationTests: `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions` -> 35 tests in 13 suites passed.
     - next: /review
   timestamp: 2026-10-11T06:55:16.524771+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4mwkwyskyznqt097zzxj27r
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD`: 0 findings, 0 confirmed, 0 refuted (7 validator runs, 0 failed; the 2 `.kanban/` files are out of scope because of `.reviewignore`). Acceptance: `swift test --scratch-path .build/alt --force-resolved-versions --parallel` with an empty `SKILLS_MARKETPLACE_CACHE` gave 902 tests in 99 suites passed. `closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses()` passed after 12.225 seconds. The 1 known issue is the `withKnownIssue` in `HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps`, which was there before.
+    - extra check: production `onTermination` sites in `Sources/` (`CommandRegistry.swift` SkillCommandSource.commandUpdates, `BuiltinCommands.swift` actionStream, `acp-agent/InboundEndTransport.swift`, `PacedStubModel.swift` streamResponse) only cancel a task or finish a continuation. None takes a lock. No `withLock` body in `Sources/` yields to a stream. The deadlock shape is not in production code. The Router `LiveModelSessionBackend.transcriptUpdates()` (in `LiveModelLoader.swift`) yields outside of a lock, and its `onTermination` (`removePassWatch`) takes the `installation` lock only for a dictionary removal. `withPassWatches` copies the watches under that lock and releases it before it runs them. The Router does not have the same shape.
+    - next: none. The task moves to done.
+  timestamp: 2026-10-11T07:07:43.449858+00:00
+position_column: done
+position_ordinal: ffc180
 title: AgentsToolTests.closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses can hang in the full parallel run
 ---
 ## Problem
