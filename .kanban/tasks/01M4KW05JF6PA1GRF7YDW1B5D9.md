@@ -19,8 +19,19 @@ comments:
     - proof: `rg -n "ACP_TIER" cli-plan.md` gives no match (exit 1). `rg -l "ACP_TIER3|ACP_TIER4" .` gives no match. With `--hidden`, only `.kanban/tasks/*` records match (task history, not doc or source); they are not changed.
     - next: /review
   timestamp: 2026-10-11T04:57:56.498444+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4mnkf16screejnvkvrppm24
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (452f8e8): 0 findings, 0 confirmed, 0 refuted. The engine reviewed 0 files. No validator matches `cli-plan.md`, and `.reviewignore` excludes the 2 `.kanban/` files.
+    - hand check, suites: each suite in the `Target` column exists in the stated target. Root unit target (`Tests/FoundationModelsACPAgentTests`): CLIParsingTests, PromptSourceTests, ExitCodeTests, DoctorCommandTests, ConfigInitTests, ConfigShowTests, RunCommandTests, AcpCommandTests, AnswerWriterTests, EventLineWriterTests, ProgressReporterTests, and `Doctor/` (ConfigurationDoctorTests, DoctorRegistryTests, ProfileDoctorTests, RuntimeDoctorTests, ToolsDoctorTests, TranscriptsDoctorTests). `IntegrationTests` package: ClientServerTests, ClientInteropTests, OutOfProcessTests.
+    - hand check, rows: each named suite has a test for its row. Examples: `cwdWithResumeIsAUsageError`, `runDoctorIsThePromptDoctorAndNotTheCheck`, `aSecondInitWithoutForceRefusesAndChangesNoFile`, `cwdSelectsTheProjectLayer`, `eachSessionResolvesItsOwnProjectLayer`, `aPipedRunWithNeitherFlagWritesZeroBytesToStandardError`, and the interrupt case of OutOfProcessTests that expects exit 4. No test runs `doctor` on a clean machine, so the tier-4 row is correct.
+    - hand check, text: the new text is in ASD-STE100.
+    - acceptance: `rg -n "ACP_TIER" cli-plan.md` gives no match (exit 1). Both task items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-11T05:05:09.158534+00:00
+position_column: done
+position_ordinal: ffc080
 title: 'cli-plan.md §9: the Gate column names ACP_TIER3=1 and ACP_TIER4=1, but no suite has an environment gate'
 ---
 ## Problem
