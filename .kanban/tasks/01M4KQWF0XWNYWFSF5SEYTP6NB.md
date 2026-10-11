@@ -88,8 +88,16 @@ comments:
     - evidence: 5 files — Package.swift, OTelHTTP/Package.swift (new), OTelHTTP/Sources/OTelHTTP/OTelHTTP.swift (new), Sources/acp-agent/TelemetryBootstrap.swift, README.md. Root README command 3/3 pass, no grpc pin; swift build pass; swift test 901 tests / 98 suites pass (1 intentional known issue), EXIT=0.
     - next: /review
   timestamp: 2026-10-11T04:41:12.074158+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4mmw8mmfh2q9t6h48aetrhy
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 85fcb0a). Counts: 0 findings, 0 confirmed, 0 refuted. 4 files reviewed: Package.swift, OTelHTTP/Package.swift, OTelHTTP/Sources/OTelHTTP/OTelHTTP.swift, Sources/acp-agent/TelemetryBootstrap.swift. Not reviewed: README.md (no validator matches it), 2 .kanban files (.reviewignore).
+    - acceptance check: the README command `swift package --scratch-path "$(mktemp -d)" update swift-otel` ran with Swift 6.4 (swiftlang-6.4.0.34.1). It exited 0. Package.resolved held no `"identity" : "grpc-` pin after the update. Package.resolved was backed up before the update and restored after it (no difference).
+    - next: none. The task is in done.
+  timestamp: 2026-10-11T04:52:28.948714+00:00
+position_column: done
+position_ordinal: ffbf80
 title: 'Make `swift package update` work again: SwiftPM 6.4 ignores the root swift-otel traits'
 ---
 ## Problem
