@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
+import FoundationModelsMultitool
 import FoundationModelsRouter
 import Testing
 
@@ -245,5 +246,78 @@ import Testing
 
         #expect(Self.toolCallIds(carrying: Self.progressText, in: updates) == [Self.sdkCallId])
         #expect(Set(ids) == [Self.sdkCallId, Self.secondSdkCallId])
+    }
+
+    // MARK: - The terminal announce of a shell run (task ^9xk3xf4)
+
+    /// The prompt events of one shell run that Router joined to ``sdkCallId``:
+    /// the two records, the SDK call and the settlement.
+    private static let joinedShellRunEvents: [SessionEvent] =
+        [
+            openRecord(runToken, toolCallID: sdkCallId),
+            closeRecord(runToken, toolCallID: sdkCallId),
+        ] + sdkCall(sdkCallId) + [settlement(runToken)]
+
+    /// The live shell events of the run: one output chunk, then the
+    /// completion marker.
+    private static let liveShellEvents: [ShellOutputEvent] = [
+        ShellOutputEvent(commandID: runToken, kind: .output(stream: .stdout, bytes: Array(progressText.utf8))),
+        ShellOutputEvent(commandID: runToken, kind: .completed),
+    ]
+
+    /// The `toolCallId` of each `tool_call_update` that attaches the terminal
+    /// of the run, in send order.
+    ///
+    /// - Parameter updates: The sent updates.
+    /// - Returns: The tool-call ids of the terminal announces.
+    private static func terminalAnnounceIds(in updates: [SessionUpdate]) -> [String] {
+        toolCallUpdates(in: updates).filter { terminalIds(in: $0.content) == [runToken] }.map(\.toolCallId.rawValue)
+    }
+
+    /// A joined shell run with live output gives exactly one `toolCallId` on
+    /// the wire: the SDK id. The terminal stream announces the terminal on
+    /// that id, and the terminal itself keeps the completion token.
+    @Test func aJoinedShellRunWithLiveOutputGivesOnlyTheSdkId() async throws {
+        let updates = await SyntheticPrompt.sentUpdates(
+            Self.joinedShellRunEvents, shellEvents: Self.liveShellEvents, order: .promptFirst)
+
+        #expect(Set(try Self.wireToolCallIds(in: updates)) == [Self.sdkCallId])
+        #expect(Self.terminalAnnounceIds(in: updates) == [Self.sdkCallId])
+        #expect(terminalChunks(in: updates).map(\.terminalId.rawValue) == [Self.runToken])
+    }
+
+    /// A chunk that comes before the prompt handled the open record gives the
+    /// same result: the terminal stream waits for the join, and then sends one
+    /// announce on the SDK id. It never sends on the completion token.
+    @Test func aChunkBeforeTheOpenRecordStillGivesOnlyTheSdkId() async throws {
+        let updates = await SyntheticPrompt.sentUpdates(
+            Self.joinedShellRunEvents, shellEvents: Self.liveShellEvents, order: .terminalFirst)
+
+        #expect(Set(try Self.wireToolCallIds(in: updates)) == [Self.sdkCallId])
+        #expect(Self.terminalAnnounceIds(in: updates) == [Self.sdkCallId])
+    }
+
+    /// A shell run that no SDK call joined gets its announce on the
+    /// completion token, as the run updates of the prompt do.
+    @Test func anUnjoinedShellRunAnnouncesOnTheCompletionToken() async throws {
+        let updates = await SyntheticPrompt.sentUpdates(
+            [Self.openRecord(Self.runToken, toolCallID: nil), Self.settlement(Self.runToken)],
+            shellEvents: Self.liveShellEvents, order: .promptFirst)
+
+        #expect(Set(try Self.wireToolCallIds(in: updates)) == [Self.runToken])
+        #expect(Self.terminalAnnounceIds(in: updates) == [Self.runToken])
+    }
+
+    /// A shell run that the prompt never records and never settles, for
+    /// example a run of an agent run, does not stop the terminal stream: the
+    /// end of the prompt or the wait bound stops the wait, and the announce
+    /// goes on the completion token.
+    @Test(.timeLimit(.minutes(1)))
+    func aRunThatThePromptNeverSeesStillAnnouncesOnTheCompletionToken() async throws {
+        let updates = await SyntheticPrompt.sentUpdates(
+            [], shellEvents: Self.liveShellEvents, order: .terminalFirst)
+
+        #expect(Self.terminalAnnounceIds(in: updates) == [Self.runToken])
+        #expect(terminalChunks(in: updates).count == 1)
     }
 }

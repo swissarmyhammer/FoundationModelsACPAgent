@@ -8,13 +8,16 @@ import Logging
 /// display-only terminal updates.
 ///
 /// The identity rule: a shell run's `commandID` is its
-/// `correlationID`, its `completionToken`, and its `toolCallId` — one
-/// string — and it maps to the run's `terminalId`. Each event kind maps
-/// to one wire shape:
+/// `correlationID` and its `completionToken` — one string — and it maps
+/// to the run's `terminalId`. The `toolCallId` of the run is the SDK
+/// tool-call id that Router joined to the run, or the completion token
+/// when no SDK call joined it (``RunCallJoinTable``, task ^9xk3xf4). Each
+/// event kind maps to one wire shape:
 ///
 /// - The first event of a run sends the `tool_call_update` whose
 ///   content is the `Terminal` reference, so the client can attach the
-///   terminal to the call before any byte arrives.
+///   terminal to the call before any byte arrives. When the join of the
+///   run is not known yet, the update waits for it.
 /// - `.output(stream:bytes:)` becomes one `terminal_output_chunk`,
 ///   base64-encoded on its own. The bytes stay true: no UTF-8 decode
 ///   and no lossy text coercion touches them.
@@ -36,6 +39,12 @@ struct TerminalStream {
     /// stream's `snapshot(for:)`.
     let snapshot: ShellSnapshotProvider
 
+    /// The join of each run of the session to its SDK tool call, which the
+    /// projection of each prompt writes. `nil` means that no projection
+    /// writes joins: each announce then goes on the completion token at
+    /// once.
+    let runCallJoins: RunCallJoinTable?
+
     /// The sink every update of this projection goes to.
     let send: SessionUpdateSink
 
@@ -44,13 +53,20 @@ struct TerminalStream {
     /// carries its `commandID`.
     private var announcedRuns: Set<String> = []
 
-    /// Makes a projection over `snapshot` and `send`.
+    /// Makes a projection over `snapshot`, `runCallJoins` and `send`.
     ///
     /// - Parameters:
     ///   - snapshot: The reader of a run's stored raw output.
+    ///   - runCallJoins: The join table of the session, or `nil` when no
+    ///     projection writes joins.
     ///   - send: The sink every update goes to.
-    init(snapshot: @escaping ShellSnapshotProvider, send: @escaping SessionUpdateSink) {
+    init(
+        snapshot: @escaping ShellSnapshotProvider,
+        runCallJoins: RunCallJoinTable? = nil,
+        send: @escaping SessionUpdateSink
+    ) {
         self.snapshot = snapshot
+        self.runCallJoins = runCallJoins
         self.send = send
     }
 
@@ -63,15 +79,20 @@ struct TerminalStream {
     /// - Parameters:
     ///   - stream: The host-owned stream to consume. Its
     ///     `snapshot(for:)` backs the gap and completion replacements.
+    ///   - runCallJoins: The join table of the session, or `nil` when no
+    ///     projection writes joins.
     ///   - send: The sink every update goes to.
     /// - Returns: The running consumer task.
     @discardableResult
     static func start(
-        over stream: ShellOutputChunkStream, send: @escaping SessionUpdateSink
+        over stream: ShellOutputChunkStream,
+        runCallJoins: RunCallJoinTable? = nil,
+        send: @escaping SessionUpdateSink
     ) -> Task<Void, Never> {
         Task {
             var projection = TerminalStream(
                 snapshot: { commandID in stream.snapshot(for: commandID) },
+                runCallJoins: runCallJoins,
                 send: send)
             await projection.consume(stream)
         }
@@ -136,19 +157,26 @@ struct TerminalStream {
     }
 
     /// Sends the run's `Terminal` reference at its first event: one
-    /// `tool_call_update` keyed by the `commandID`, saying the call
-    /// runs — the first update with an unseen id is the creation, and
-    /// a creation must not leave `pending` in place: a creating update
-    /// that omits `status` defaults to `pending`, and the client then
-    /// shows a running call as queued.
+    /// `tool_call_update`, saying the call runs — the first update with
+    /// an unseen id is the creation, and a creation must not leave
+    /// `pending` in place: a creating update that omits `status` defaults
+    /// to `pending`, and the client then shows a running call as queued.
+    ///
+    /// The update keys on the wire id that ``runCallJoins`` gives the run:
+    /// the joined SDK id, or the `commandID` when no SDK call joined the
+    /// run. When the join is not known yet, it waits for the join, so it
+    /// sends one update on the final id. The `Terminal` reference keeps
+    /// the `commandID`.
     ///
     /// - Parameter commandID: The run the event belongs to.
     private mutating func announceRunIfNew(_ commandID: String) async {
         guard announcedRuns.insert(commandID).inserted else { return }
+        let toolCallId =
+            await runCallJoins?.announceToolCallId(for: commandID) ?? ToolCallId(rawValue: commandID)
         await send(
             .toolCallUpdate(
                 ToolCallUpdate(
-                    toolCallId: ToolCallId(rawValue: commandID),
+                    toolCallId: toolCallId,
                     content: .value([Self.terminalItem(for: commandID)]),
                     status: .value(.inProgress))))
     }

@@ -168,6 +168,57 @@ enum SyntheticPrompt {
     ) async -> [SessionUpdate] {
         await drive(events, throwing: error, shellSnapshot: shellSnapshot).updates
     }
+
+    /// The order in which ``sentUpdates(_:shellEvents:order:)`` starts the two
+    /// consumers of one shell run.
+    enum ShellRunOrder {
+        /// The prompt handles each of its events, the open record too, before
+        /// the terminal stream reads the first shell event.
+        case promptFirst
+
+        /// The terminal stream reads the first shell event before the prompt
+        /// handles the open record of the run.
+        case terminalFirst
+    }
+
+    /// Drives one synthetic prompt of `events` and one terminal stream of
+    /// `shellEvents` into one recorder, as a session does: the prompt and
+    /// the terminal stream send through the same sink, and they share one
+    /// ``RunCallJoinTable``.
+    ///
+    /// - Parameters:
+    ///   - events: The events of the prompt, in order.
+    ///   - shellEvents: The live shell events of the session, in order.
+    ///   - order: Which consumer starts first.
+    /// - Returns: The updates that the prompt and the terminal stream sent,
+    ///   in send order.
+    static func sentUpdates(
+        _ events: [SessionEvent],
+        shellEvents: [ShellOutputEvent],
+        order: ShellRunOrder
+    ) async -> [SessionUpdate] {
+        let (sinkedExecution, recorder) = makeSinkedExecution()
+        let runCallJoins = RunCallJoinTable()
+        var execution = sinkedExecution
+        execution.runCallJoins = runCallJoins
+        let send: SessionUpdateSink = { update in await recorder.append(update) }
+        let terminal = { @Sendable in
+            var stream = TerminalStream(snapshot: { _ in nil }, runCallJoins: runCallJoins, send: send)
+            for event in shellEvents {
+                await stream.project(event)
+            }
+        }
+        switch order {
+        case .promptFirst:
+            await execution.drive(events: makeEventStream(events))
+            await terminal()
+        case .terminalFirst:
+            let terminalTask = Task(operation: terminal)
+            await execution.drive(events: makeEventStream(events))
+            await terminalTask.value
+        }
+        return await recorder.updates
+    }
 }
 
 // MARK: - The update readers

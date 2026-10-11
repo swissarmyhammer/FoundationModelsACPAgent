@@ -109,6 +109,30 @@ struct EventProjection {
     /// bound to the prompt's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
+    /// The SDK tool-call id of each run that Router joined, keyed by the
+    /// completion token of the run (tasks ^e1yq4gh and ^9xk3xf4). The session
+    /// owns the table, and its ``TerminalStream`` reads the same table, so the
+    /// `Terminal` announce of a shell run goes on the same wire id as the run
+    /// updates of this projection.
+    ///
+    /// Router sends the joined id on the `toolInvocation(record, toolCallID:)`
+    /// event of the open record, before each other event of the run. The
+    /// progress, the display events, the attachment report and the settlement
+    /// of a run carry only the completion token, so each one finds its wire id
+    /// here (``runCallId(_:)``). The SDK `toolCall` and `toolStatus` events
+    /// carry the same SDK id, so the client sees one tool call for each run.
+    /// An entry stays after the close record, because the attachment report
+    /// and the settlement of a background run come after the close record.
+    ///
+    /// Known limit: Router joins a record to the first open SDK call that has
+    /// the same tool name, because the record does not hold the arguments.
+    /// When one round calls one tool two times and the SDK runs the two calls
+    /// at the same time, each run can get the id of the other call. The
+    /// projection cannot see this, so it sends each run on the id that Router
+    /// gave. The client still sees one tool call for each run, but the content
+    /// of a run can show on the call that holds the arguments of the other run.
+    let runCallJoins: RunCallJoinTable
+
     // MARK: - The prompt's mutable state
 
     /// The one agent message id of the current message, made at the
@@ -178,27 +202,6 @@ struct EventProjection {
     /// writes a file records no change, thus this set does not hold that
     /// file.
     private var changedFilePaths: Set<String> = []
-
-    /// The SDK tool-call id of each run that Router joined, keyed by the
-    /// completion token of the run (task ^e1yq4gh).
-    ///
-    /// Router sends the joined id on the `toolInvocation(record, toolCallID:)`
-    /// event of the open record, before each other event of the run. The
-    /// progress, the display events, the attachment report and the settlement
-    /// of a run carry only the completion token, so each one finds its wire id
-    /// here (``runCallId(_:)``). The SDK `toolCall` and `toolStatus` events
-    /// carry the same SDK id, so the client sees one tool call for each run.
-    /// An entry stays after the close record, because the attachment report
-    /// and the settlement of a background run come after the close record.
-    ///
-    /// Known limit: Router joins a record to the first open SDK call that has
-    /// the same tool name, because the record does not hold the arguments.
-    /// When one round calls one tool two times and the SDK runs the two calls
-    /// at the same time, each run can get the id of the other call. The
-    /// projection cannot see this, so it sends each run on the id that Router
-    /// gave. The client still sees one tool call for each run, but the content
-    /// of a run can show on the call that holds the arguments of the other run.
-    private var joinedToolCallIds: [String: String] = [:]
 
     /// The wire ids of the tool calls that have a title on the client (task
     /// ^w7hzpmq).
@@ -384,10 +387,10 @@ struct EventProjection {
             // A correlation record only, never a wire message. It joins the
             // completion token of the run to the SDK tool-call id, and each
             // later update of the run goes on that id. A record that no SDK
-            // call joined keeps the completion token as its wire id.
-            if let toolCallID {
-                joinedToolCallIds[record.correlationID] = toolCallID
-            }
+            // call joined keeps the completion token as its wire id. The
+            // first write for a run is final, and the close record carries
+            // the id of its open record.
+            runCallJoins.record(toolCallID: toolCallID, for: record.correlationID)
             ACPAgentTelemetry.logger(.promptExecution).debug(
                 "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
         case .entryRecorded(let id, let kind):
@@ -411,6 +414,9 @@ struct EventProjection {
                 "A generation made no progress for one stall interval.", metadata: metadata)
         case .runSettled(let operationEvent):
             sawOutput = true
+            // A settled run that has no join entry gets "no join", so a
+            // terminal announce that waits for the run stops waiting.
+            runCallJoins.seal(operationEvent.correlationID)
             await projectSettlement(of: operationEvent)
         case .runProgress(let operationEvent):
             // A report of a run, not output of the model: it does not set
@@ -695,7 +701,7 @@ struct EventProjection {
     /// chunk of a run keys on it.
     ///
     /// It is the SDK tool-call id that Router joined to the run
-    /// (``joinedToolCallIds``), so the run events and the SDK `toolCall` and
+    /// (``runCallJoins``), so the run events and the SDK `toolCall` and
     /// `toolStatus` events update one wire call. When no SDK call joined the
     /// run, it is the `correlationID` of the run, which is its completion
     /// token.
@@ -703,7 +709,7 @@ struct EventProjection {
     /// - Parameter correlationID: The correlation token of the run.
     /// - Returns: The tool call id.
     private func runCallId(_ correlationID: String) -> ToolCallId {
-        ToolCallId(rawValue: joinedToolCallIds[correlationID] ?? correlationID)
+        runCallJoins.toolCallId(for: correlationID)
     }
 
     /// Builds one `tool_call_update` for the wire call of a run. This is the

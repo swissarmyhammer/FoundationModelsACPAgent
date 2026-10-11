@@ -229,6 +229,13 @@ struct PromptExecution: Sendable {
     /// bound to the prompt's session and owner.
     var relayElicitation: ElicitationEventHandler?
 
+    /// The join of each run of the session to its SDK tool call, which the
+    /// projection writes and the terminal stream of the session reads
+    /// (``RunCallJoinTable``, task ^9xk3xf4). The scheduling wiring supplies
+    /// the table of the session; the default is a table that no terminal
+    /// stream reads — a synthetic projection drive.
+    var runCallJoins = RunCallJoinTable()
+
     /// Runs the prompt: the first-activity record, and the session's event
     /// stream to completion. A plain prompt folds through
     /// `PromptContent`; an expanded command keeps its override text.
@@ -288,7 +295,8 @@ struct PromptExecution: Sendable {
             send: toolCalls.recording(into: send),
             modelName: modelName,
             shellSnapshot: shellSnapshot,
-            relayElicitation: relayElicitation)
+            relayElicitation: relayElicitation,
+            runCallJoins: runCallJoins)
         let sessionEvents = followUp.map { SessionEventBuffer.reading($0.events) }
         let callerEnd = await driveCallerStream(events, projection: &projection)
         var stop = callerEnd.stop
@@ -297,6 +305,9 @@ struct PromptExecution: Sendable {
                 sessionEvents, after: answerEnd, awaitingIdle: followUp.awaitIdle, projection: &projection)
         }
         sessionEvents?.close()
+        // No projection writes a join after this point, so a terminal
+        // announce that still waits for a run of the prompt stops waiting.
+        runCallJoins.sealWaitingRuns()
         // A cancelled prompt does not always throw: model work that
         // never checks for cancellation runs to completion. The recorded
         // request still ends the prompt as cancelled.
@@ -1053,7 +1064,8 @@ extension RoutedACPAgent {
             contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb),
             relayElicitation: { event in
                 await relay.relay(event, on: session, promptState: owner)
-            })
+            },
+            runCallJoins: entry.runCallJoins)
         // The prompt span context goes with the work, so each Router
         // submission span of the prompt is a child of the prompt span.
         connection.afterRespondingInCurrentServiceContext {
