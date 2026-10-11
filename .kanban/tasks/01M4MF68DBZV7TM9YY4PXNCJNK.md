@@ -28,8 +28,26 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Agent/ShellRunByteLedger.swift (new), Sources/FoundationModelsACPAgent/Agent/TerminalStream.swift, Tests/FoundationModelsACPAgentTests/TerminalStreamTests.swift. `swift test --scratch-path .build/alt --force-resolved-versions`: 907 tests in 99 suites passed (1 planned withKnownIssue in HarnessSmokeTests, there before). `swift test --package-path IntegrationTests --no-parallel --scratch-path IntegrationTests/.build/alt --force-resolved-versions`: 35 tests in 13 suites passed.
     - next: /review
   timestamp: 2026-10-11T07:30:32.974758+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4myc8cytx904fqm3cnwyk3y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 1bb0deb). 3 files reviewed, 7 validator runs attempted, 0 failed. Counts: 0 findings, 0 confirmed, 0 refuted. The .kanban files are excluded by .reviewignore.
+    - acceptance: all 3 acceptance items are checked. No prior review findings sections.
+    - next: none. The task is in done.
+  timestamp: 2026-10-11T07:38:30.174498+00:00
+- actor: claude-code
+  id: 01m4myr2sc1reenkb7zq2vxbr7
+  text: |-
+    ### implement — changed
+    - Coordinator request: make `eachStreamDropsTheBytesThatTheReplacementHolds` fail for a ledger with one shared offset for the run.
+    - New scenario: stdout AAAA, stderr err1, gap(stdout, 4), stderr err2, stdout CCCC. Snapshot stdout AAAABBBBCCCC, stderr err1. Expected wire chunks AAAA + err1 + err2 (CCCC dropped). Expected client view AAAABBBBCCCC + err1 + err2.
+    - Proof: a temporary break in ShellRunByteLedger (all events on one key, replacement end = stdout + stderr counts) made this test fail at both expectations (and also aTruncatedReplacementStopsTheChunksOfTheRun, because the break ignored truncation). The break is removed: `git diff -- Sources/` is empty against 1bb0deb.
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/TerminalStreamTests.swift. `swift test --scratch-path .build/alt --force-resolved-versions --filter TerminalStreamTests` (new empty SKILLS_MARKETPLACE_CACHE): broken ledger 2 tests failed of 17; restored ledger 17 of 17 passed. Not staged, not committed.
+    - next: commit the test change
+  timestamp: 2026-10-11T07:44:57.644747+00:00
+position_column: done
+position_ordinal: ffc380
 title: Do not send shell bytes again after a snapshot replacement
 ---
 ## Problem
