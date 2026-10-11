@@ -1,6 +1,6 @@
 import Foundation
 import Logging
-import OTel
+import OTelHTTP
 import ServiceLifecycle
 import Synchronization
 
