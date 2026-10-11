@@ -46,8 +46,17 @@ comments:
     - evidence: `swift test --scratch-path .build/alt --force-resolved-versions --filter "SettledRunStatusProjectionTests|RunProgressTests|ToolCallJoinProjectionTests|EventProjection"` with a new empty SKILLS_MARKETPLACE_CACHE: 62 tests in 4 suites passed, 0 failures, 0 warnings.
     - next: /review
   timestamp: 2026-10-11T03:50:42.220159+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4mhr4n3jdpwk4pgc9gc2bxq
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 9be33a1): 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed. 1 file reviewed (`Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift`); 2 `.kanban/` files excluded by `.reviewignore`.
+    - The prior finding `reuse/reuse` (2026-10-10 22:40) is resolved. The new helper `wireStrings(ofToolCall:key:)` holds the pipeline. `lastWireTitle(ofToolCall:)` returns its `.last` for key `title`. `wireStatuses(ofToolCall:)` returns the full array for key `status`.
+    - All prior checklist items are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-11T03:57:48.067308+00:00
+position_column: done
+position_ordinal: ffbe80
 title: 'Keep the terminal status of a settled run: the later SDK toolCall and toolStatus updates must not write over it'
 ---
 ## Problem
