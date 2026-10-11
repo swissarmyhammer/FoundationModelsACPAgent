@@ -40,11 +40,24 @@ class ThePromptOfAnInstance(unittest.TestCase):
 class TheInstructionSaysWhatToLeaveOut(unittest.TestCase):
     """The instruction may name no part of the answer."""
 
-    def test_it_refuses_tests_documents_and_release_notes(self):
+    def test_it_refuses_documents_and_release_notes(self):
         """It names each kind of work the score throws away."""
         lowered = BENCH_PREAMBLE.lower()
-        for word in ("test", "release note", "document"):
+        for word in ("release note", "document"):
             self.assertIn(word, lowered)
+
+    def test_it_asks_for_a_test_that_checks_the_fix(self):
+        """It asks for a test that fails before the fix and passes after it.
+
+        In the run of 2026-10-08, each of the 4 unresolved instances had no
+        check whose result changed with its fix. A test that fails first is
+        that check. The score deletes the test, so the instruction says that
+        the test is a check only.
+        """
+        lowered = BENCH_PREAMBLE.lower()
+        self.assertNotIn("write no test", lowered)
+        for words in ("test", "fail before", "pass after", "replaces every test file"):
+            self.assertIn(words, lowered)
 
     def test_it_names_no_file_of_a_project(self):
         """It names no path, so it cannot help the agent find the fix.
