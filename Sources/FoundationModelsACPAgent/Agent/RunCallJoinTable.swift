@@ -17,10 +17,10 @@ import Synchronization
 ///
 /// The two streams have no common order: a shell chunk can come before the
 /// projection handled the open record. Then the run waits for its entry: the
-/// terminal stream keeps the events of that run, and the table tells it when
-/// the entry is written (``observeJoins(_:)``). The terminal stream sends one
-/// announce only after that. It never sends on the completion token and later
-/// on the SDK id.
+/// terminal stream keeps only the fact that the run has output, and the table
+/// tells it when the entry is written (``observeJoins(_:)``). The terminal
+/// stream sends one announce only after that. It never sends on the
+/// completion token and later on the SDK id.
 ///
 /// The first write for a run is final. A later write for the same run changes
 /// nothing. Thus each consumer reads the same entry, and each run has one wire

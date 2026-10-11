@@ -390,7 +390,9 @@ import Testing
             [], shellEvents: Self.liveShellEvents, order: .terminalFirst)
 
         #expect(Self.terminalAnnounceIds(in: updates) == [Self.runToken])
-        #expect(terminalChunks(in: updates).count == 1)
+        // The run exits once, whether its output went out as a chunk or, when
+        // it waited, as the replacement of its exit report.
+        #expect(terminalUpdates(in: updates).count == 1)
     }
 
     /// No time decides the join. An open record that comes long after the
@@ -429,7 +431,9 @@ import Testing
         #expect(Self.terminalAnnounceIds(in: joinedRunUpdates) == [Self.sdkCallId])
         #expect(Self.chunkTerminalIds(in: joinedRunUpdates) == [Self.runToken])
         #expect(Self.terminalAnnounceIds(of: Self.secondRunToken, in: updates) == [Self.secondRunToken])
-        #expect(Self.chunkTerminalIds(in: updates) == [Self.runToken, Self.secondRunToken])
+        // The waiting run keeps no bytes, so its output never goes out as a
+        // chunk.
+        #expect(Self.chunkTerminalIds(in: updates) == [Self.runToken])
     }
 
     /// A shell run of an agent run does not hold up the terminal output of
@@ -448,7 +452,9 @@ import Testing
 
         let rootUpdates = await Self.updatesUntilOutput(of: Self.runToken, in: session)
         session.send(Self.agentRunSettlement)
-        let agentUpdates = await Self.updatesUntilOutput(of: Self.agentShellRunToken, in: session)
+        let agentUpdates = await session.recorder.updates { updates in
+            !Self.terminalAnnounceIds(of: Self.agentShellRunToken, in: updates).isEmpty
+        }
         _ = await session.finish()
 
         #expect(Self.terminalAnnounceIds(in: rootUpdates) == [Self.sdkCallId])

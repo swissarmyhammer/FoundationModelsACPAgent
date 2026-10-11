@@ -233,27 +233,55 @@ enum SyntheticPrompt {
         shellEvents: [ShellOutputEvent],
         order: ShellRunOrder
     ) async -> [SessionUpdate] {
-        let (sinkedExecution, recorder) = makeSinkedExecution()
-        let runCallJoins = RunCallJoinTable()
-        var execution = sinkedExecution
-        execution.runCallJoins = runCallJoins
-        // The prompt opens before its events, as `PromptExecution.run` does.
-        runCallJoins.openPrompt()
-        let send: SessionUpdateSink = { update in await recorder.append(update) }
+        let session = SinkedShellSession(runCallJoins: RunCallJoinTable())
         let terminal = { @Sendable in
-            var stream = TerminalStream(snapshot: { _ in nil }, runCallJoins: runCallJoins, send: send)
+            var stream = session.terminal
             await stream.consume(makeShellEventStream(shellEvents))
         }
         switch order {
         case .promptFirst:
-            await execution.drive(events: makeEventStream(events))
+            await session.execution.drive(events: makeEventStream(events))
             await terminal()
         case .terminalFirst:
             let terminalTask = Task(operation: terminal)
-            await execution.drive(events: makeEventStream(events))
+            await session.execution.drive(events: makeEventStream(events))
             await terminalTask.value
         }
-        return await recorder.updates
+        return await session.recorder.updates
+    }
+}
+
+/// The parts of one sinked session: a prompt execution and a terminal stream
+/// that send through one recorder and share one ``RunCallJoinTable``, as in
+/// a session. The prompt is open when the value is made, as
+/// `PromptExecution.run` opens it before its events.
+struct SinkedShellSession {
+    /// The prompt execution over the join table.
+    let execution: PromptExecution
+
+    /// The recorder of each update that the prompt and the terminal stream
+    /// send.
+    let recorder: SinkRecorder
+
+    /// The terminal stream over the join table.
+    let terminal: TerminalStream
+
+    /// Makes the parts over `runCallJoins`, and opens the prompt.
+    ///
+    /// - Parameters:
+    ///   - runCallJoins: The join table of the session.
+    ///   - snapshot: The reader of the stored output of a run; the default
+    ///     finds no run.
+    init(runCallJoins: RunCallJoinTable, snapshot: @escaping ShellSnapshotProvider = { _ in nil }) {
+        let (sinkedExecution, recorder) = makeSinkedExecution()
+        var execution = sinkedExecution
+        execution.runCallJoins = runCallJoins
+        runCallJoins.openPrompt()
+        self.execution = execution
+        self.recorder = recorder
+        terminal = TerminalStream(snapshot: snapshot, runCallJoins: runCallJoins) { update in
+            await recorder.append(update)
+        }
     }
 }
 
@@ -299,23 +327,18 @@ struct LiveShellSession {
     ///
     /// - Parameter runCallJoins: The join table of the session.
     init(runCallJoins: RunCallJoinTable = RunCallJoinTable()) {
-        let (sinkedExecution, recorder) = makeSinkedExecution()
-        var execution = sinkedExecution
-        execution.runCallJoins = runCallJoins
+        let session = SinkedShellSession(runCallJoins: runCallJoins)
         let (promptStream, promptEvents) = AsyncThrowingStream.makeStream(of: SessionEvent.self)
         let (shellStream, shellEvents) = AsyncStream.makeStream(of: ShellOutputEvent.self)
-        let send: SessionUpdateSink = { update in await recorder.append(update) }
         self.runCallJoins = runCallJoins
-        self.recorder = recorder
+        recorder = session.recorder
         self.promptEvents = promptEvents
         self.shellEvents = shellEvents
-        // The prompt opens before its events, as `PromptExecution.run` does.
-        runCallJoins.openPrompt()
         prompt = Task {
-            await execution.drive(events: promptStream)
+            await session.execution.drive(events: promptStream)
         }
         terminal = Task {
-            var stream = TerminalStream(snapshot: { _ in nil }, runCallJoins: runCallJoins, send: send)
+            var stream = session.terminal
             await stream.consume(shellStream)
         }
     }

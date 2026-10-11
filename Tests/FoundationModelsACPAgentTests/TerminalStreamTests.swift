@@ -1,10 +1,61 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
-import FoundationModelsMultitool
 import Testing
 
 @testable import FoundationModelsACPAgent
+// The producer side of `ShellOutputChunkStream` (`send` and `complete`) is
+// internal: the shell runner owns it. The back-pressure test drives it this
+// way, as a debug build compiles the package with testing enabled.
+@testable import FoundationModelsMultitool
+
+/// A sink that holds its first send until the test releases it: a client
+/// that reads slowly.
+private actor HeldSink {
+    /// The recorder of each update that came to the sink.
+    let recorder = SinkRecorder()
+
+    /// Whether the sink still holds its first send.
+    private var isHolding = true
+
+    /// The first send, while the sink holds it.
+    private var heldSend: CheckedContinuation<Void, Never>?
+
+    /// The test that waits until the sink holds a send.
+    private var holdWaiter: CheckedContinuation<Void, Never>?
+
+    /// Records `update`, and holds the first send until ``release()``.
+    ///
+    /// - Parameter update: The sent update.
+    func receive(_ update: SessionUpdate) async {
+        await recorder.append(update)
+        guard isHolding, heldSend == nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            heldSend = continuation
+            holdWaiter?.resume()
+            holdWaiter = nil
+        }
+    }
+
+    /// Returns when the sink holds its first send.
+    func waitUntilHolding() async {
+        guard heldSend == nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            holdWaiter = continuation
+        }
+    }
+
+    /// Releases the held send. Each later send goes through at once.
+    func release() {
+        isHolding = false
+        heldSend?.resume()
+        heldSend = nil
+    }
+}
 
 /// The terminal display stream: the shell capability's
 /// live bytes ride `terminal_output_chunk` updates, the tool call
@@ -257,6 +308,146 @@ import Testing
         let updates = await recorder.updates
 
         #expect(updates.map(\.kind) == [.toolCallUpdate, .terminalOutputChunk, .terminalUpdate])
+    }
+
+    // MARK: - The upstream budget
+
+    /// The pending-byte budget of the upstream stream in the back-pressure
+    /// test: one chunk of ``budgetChunk`` fills it.
+    private static let smallBudget = 8
+
+    /// One chunk of the back-pressure test. It fills ``smallBudget``.
+    private static let budgetChunk = Array("12345678".utf8)
+
+    /// The count of chunks that the producer sends while the sink holds its
+    /// first send: one fills the budget, and each later one goes over it.
+    private static let overBudgetChunkCount = 3
+
+    /// The cap of the store behind `snapshot(for:)` in the back-pressure
+    /// test. It holds each chunk.
+    private static let storeCap = 1_024
+
+    /// The time the producer gives a reader that reads ahead to take each
+    /// chunk. A reader that reads ahead takes each chunk in this time, and
+    /// then no gap occurs.
+    private static let readAheadWindow: Duration = .milliseconds(50)
+
+    /// The upstream budget stays in force when the client reads slowly: the
+    /// terminal stream takes one event at a time, and takes the next one only
+    /// after it sent the earlier one. Thus the bytes over the budget go away
+    /// upstream, and the gap event replaces them from the stored record. A
+    /// reader that read ahead would keep the bytes in its own memory, and no
+    /// gap would occur.
+    @Test(.timeLimit(.minutes(1)))
+    func aSlowSinkKeepsTheUpstreamBudgetAndGetsAGap() async throws {
+        let upstream = ShellOutputChunkStream(maxPendingBytes: Self.smallBudget)
+        let sink = HeldSink()
+        let reader = TerminalStream.start(over: upstream) { update in
+            await sink.receive(update)
+        }
+        Self.sendBudgetChunk(to: upstream)
+        await sink.waitUntilHolding()
+        for _ in 0..<Self.overBudgetChunkCount {
+            Self.sendBudgetChunk(to: upstream)
+            try await Task.sleep(for: Self.readAheadWindow)
+        }
+        upstream.complete(commandID: Self.completionToken)
+        await sink.release()
+
+        let updates = await sink.recorder.updates { updates in
+            terminalUpdates(in: updates).contains { $0.exitStatus != .unchanged }
+        }
+        upstream.finish()
+        await reader.value
+
+        let gapReplacements = terminalUpdates(in: updates).filter { terminal in
+            terminal.exitStatus == .unchanged && patchValue(terminal.output) != nil
+        }
+        #expect(gapReplacements.count == 1)
+    }
+
+    /// Sends one ``budgetChunk`` of the scripted run to `upstream`.
+    ///
+    /// - Parameter upstream: The host-owned stream.
+    private static func sendBudgetChunk(to upstream: ShellOutputChunkStream) {
+        upstream.send(commandID: completionToken, from: .stdout, bytes: budgetChunk, maxSize: storeCap)
+    }
+
+    // MARK: - The release of a waiting run
+
+    /// The completion token of the run that has its entry from the start, in
+    /// the release test.
+    private static let joinedRunToken = "01TERMINALJOINEDRUN0000000"
+
+    /// The SDK tool-call id of ``joinedRunToken``.
+    private static let joinedSdkCallId = "call-terminal-joined"
+
+    /// A run that waits for its entry keeps no output bytes. At its release
+    /// it sends one announce and one update with the replacement built from
+    /// the stored record, and no chunk. The run ended while it waited, so the
+    /// same update also marks the exit.
+    @Test(.timeLimit(.minutes(1)))
+    func aWaitingRunSendsOneSnapshotReplacementAtItsRelease() async throws {
+        let stored = Array("one two".utf8)
+        let snapshot = ShellOutputSnapshot(
+            stdout: Self.makeRawOutput(bytes: stored), stderr: Self.makeRawOutput(bytes: []))
+        let table = RunCallJoinTable()
+        table.openPrompt()
+        table.record(toolCallID: Self.joinedSdkCallId, for: Self.joinedRunToken)
+        let recorder = SinkRecorder()
+        let (events, input) = AsyncStream<ShellOutputEvent>.makeStream()
+        let reader = Task {
+            var projection = TerminalStream(snapshot: Self.provider(of: snapshot), runCallJoins: table) { update in
+                await recorder.append(update)
+            }
+            await projection.consume(events)
+        }
+        input.yield(Self.makeOutputEvent(bytes: Array("one ".utf8)))
+        input.yield(Self.makeOutputEvent(bytes: Array("two".utf8)))
+        input.yield(ShellOutputEvent(commandID: Self.completionToken, kind: .completed))
+        input.yield(
+            ShellOutputEvent(commandID: Self.joinedRunToken, kind: .output(stream: .stdout, bytes: stored)))
+        _ = await recorder.updates { updates in
+            terminalChunks(in: updates).contains { $0.terminalId.rawValue == Self.joinedRunToken }
+        }
+
+        table.record(toolCallID: nil, for: Self.completionToken)
+        let updates = await recorder.updates { updates in
+            terminalUpdates(in: updates).contains { terminal in
+                terminal.terminalId.rawValue == Self.completionToken && terminal.exitStatus != .unchanged
+            }
+        }
+        input.finish()
+        await reader.value
+
+        let runUpdates = Self.updates(of: Self.completionToken, in: updates)
+        #expect(runUpdates.map(\.kind) == [.toolCallUpdate, .terminalUpdate])
+        let replacement = try #require(terminalUpdates(in: runUpdates).first)
+        #expect(replacement.exitStatus == .value(TerminalExitStatus()))
+        let output = try #require(patchValue(replacement.output))
+        #expect(Data(base64Encoded: output.data).map(Array.init) == stored)
+    }
+
+    /// The updates that belong to one run: its announce, its chunks and its
+    /// terminal updates, in send order.
+    ///
+    /// - Parameters:
+    ///   - token: The completion token of the run.
+    ///   - updates: The sent updates.
+    /// - Returns: The updates of the run.
+    private static func updates(of token: String, in updates: [SessionUpdate]) -> [SessionUpdate] {
+        updates.filter { update in
+            switch update {
+            case .toolCallUpdate(let call):
+                return terminalIds(in: call.content) == [token]
+            case .terminalOutputChunk(let chunk):
+                return chunk.terminalId.rawValue == token
+            case .terminalUpdate(let terminal):
+                return terminal.terminalId.rawValue == token
+            default:
+                return false
+            }
+        }
     }
 
     // MARK: - The catalog wiring
