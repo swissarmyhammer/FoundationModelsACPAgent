@@ -166,14 +166,22 @@ private final class SnapshotSequence: Sendable {
             commandID: completionToken, kind: .output(stream: stream, bytes: bytes))
     }
 
-    /// The stored raw output of one stream, complete and clean.
+    /// The stored raw output of one stream. Without the optional values it
+    /// is complete and clean.
     ///
-    /// - Parameter bytes: The stored bytes.
+    /// - Parameters:
+    ///   - bytes: The stored bytes.
+    ///   - truncated: Tells if the store dropped output to stay under its cap.
+    ///   - arrivedByteCount: The bytes of the stream that arrived at the
+    ///     store, the dropped bytes included. `nil` means the stored byte
+    ///     count, which is correct only for a capture that is not truncated.
     /// - Returns: The raw output.
-    private static func makeRawOutput(bytes: [UInt8]) -> ShellRawOutput {
+    private static func makeRawOutput(
+        bytes: [UInt8], truncated: Bool = false, arrivedByteCount: Int? = nil
+    ) -> ShellRawOutput {
         ShellRawOutput(
-            bytes: bytes, binaryDetected: false, truncated: false,
-            storedByteCount: bytes.count)
+            bytes: bytes, binaryDetected: false, truncated: truncated,
+            storedByteCount: bytes.count, arrivedByteCount: arrivedByteCount ?? bytes.count)
     }
 
     /// A snapshot provider that answers `snapshot` for the scripted run
@@ -184,7 +192,18 @@ private final class SnapshotSequence: Sendable {
     private static func provider(
         of snapshot: ShellOutputSnapshot
     ) -> ShellSnapshotProvider {
-        { commandID in commandID == completionToken ? snapshot : nil }
+        provider { snapshot }
+    }
+
+    /// A snapshot provider that calls `next` for each snapshot of the
+    /// scripted run, and answers nothing for any other token.
+    ///
+    /// - Parameter next: Gives the snapshot of the scripted run for one call.
+    /// - Returns: The provider.
+    private static func provider(
+        next: @escaping @Sendable () -> ShellOutputSnapshot
+    ) -> ShellSnapshotProvider {
+        { commandID in commandID == completionToken ? next() : nil }
     }
 
     // MARK: - Readers
@@ -344,19 +363,8 @@ private final class SnapshotSequence: Sendable {
     /// - Returns: The snapshot.
     private static func makeTruncatedSnapshot(stored: [UInt8], arrivedByteCount: Int) -> ShellOutputSnapshot {
         ShellOutputSnapshot(
-            stdout: ShellRawOutput(
-                bytes: stored, binaryDetected: false, truncated: true,
-                storedByteCount: stored.count, arrivedByteCount: arrivedByteCount),
+            stdout: makeRawOutput(bytes: stored, truncated: true, arrivedByteCount: arrivedByteCount),
             stderr: makeRawOutput(bytes: []))
-    }
-
-    /// A snapshot provider that answers the next snapshot of `store` for the
-    /// scripted run and nothing for any other token.
-    ///
-    /// - Parameter store: The snapshots of the scripted run, in call order.
-    /// - Returns: The provider.
-    private static func provider(of store: SnapshotSequence) -> ShellSnapshotProvider {
-        { commandID in commandID == completionToken ? store.nextSnapshot() : nil }
     }
 
     /// Decodes the base64 data of one update.
@@ -478,15 +486,26 @@ private final class SnapshotSequence: Sendable {
     /// arrived after it.
     private static let fourthChunkBytesBeforeTheFirstSnapshot = 2
 
+    /// The bytes of the fifth chunk that arrived at the store before the
+    /// second snapshot of the straddle test. Thus the second replacement
+    /// ends inside the fifth chunk.
+    private static let fifthChunkBytesBeforeTheSecondSnapshot = 2
+
     /// A gap stands before the next delivered event of its stream. Thus a gap
     /// for bytes that went away before a snapshot can arrive after that
     /// snapshot, and one gap can cover bytes on the two sides of it. The gap
     /// only moves the event offset of the stream forward. The queued chunk
-    /// that the first snapshot holds sends no byte, and the chunk after the
-    /// straddling gap goes on the wire whole.
+    /// that the first snapshot holds sends no byte. The second replacement
+    /// ends inside the chunk after the straddling gap, so that chunk sends
+    /// only its bytes past that end. A ledger that keeps the end of the first
+    /// replacement, or that counts the straddling gap too far, sends the
+    /// chunk whole.
     @Test func aGapThatStraddlesASnapshotMovesTheOffsetPastIt() async throws {
         let firstSnapshotEnd = Self.byteCountThroughTheThirdChunk + Self.fourthChunkBytesBeforeTheFirstSnapshot
-        let secondSnapshotEnd = Self.byteCountThroughTheThirdChunk + Self.fourthChunk.count
+        let secondSnapshotEnd =
+            Self.byteCountThroughTheThirdChunk + Self.fourthChunk.count
+            + Self.fifthChunkBytesBeforeTheSecondSnapshot
+        let newFifthChunkBytes = Array(Self.fifthChunk.dropFirst(Self.fifthChunkBytesBeforeTheSecondSnapshot))
         let store = SnapshotSequence([
             Self.makeTruncatedSnapshot(stored: Self.firstChunk, arrivedByteCount: firstSnapshotEnd),
             Self.makeTruncatedSnapshot(stored: Self.firstChunk, arrivedByteCount: secondSnapshotEnd),
@@ -500,10 +519,10 @@ private final class SnapshotSequence: Sendable {
                 Self.makeGapEvent(droppedByteCount: Self.fourthChunk.count),
                 Self.makeOutputEvent(bytes: Self.fifthChunk),
             ],
-            snapshot: Self.provider(of: store))
+            snapshot: Self.provider { store.nextSnapshot() })
 
-        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk + Self.fifthChunk)
-        #expect(try Self.clientView(in: updates) == Self.firstChunk + Self.fifthChunk)
+        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk + newFifthChunkBytes)
+        #expect(try Self.clientView(in: updates) == Self.firstChunk + newFifthChunkBytes)
     }
 
     // MARK: - The exit status
