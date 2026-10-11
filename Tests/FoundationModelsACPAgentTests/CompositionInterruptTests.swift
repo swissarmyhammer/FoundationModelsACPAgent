@@ -224,8 +224,7 @@ struct CompositionInterruptTests {
 
     /// A `SIGTERM` during the download of `acp-agent run` cancels the
     /// composition, and the run throws the exit code of an end by a signal.
-    /// The code goes to the failure path of ``AcpAgentCommand/main()``, which
-    /// flushes the telemetry before the process exits.
+    /// The code goes to the failure path of ``AcpAgentCommand/main()``.
     ///
     /// The loader stops in the transfer for longer than the time limit of
     /// the case, so only the cancel can end it.

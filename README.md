@@ -356,19 +356,12 @@ line. `swift test` runs the hermetic suites;
 `swift test --package-path IntegrationTests` runs the tiers that spawn a built
 binary or load a real model.
 
-`swift package update` must pass, and `Package.resolved` must hold no gRPC
-pin. The agent exports OTLP over HTTP only. SwiftPM 6.4 `update` loses the
-traits that the root manifest sets on a dependency
-(swiftlang/swift-package-manager#10397, fixed for 6.4.1), so the root does not
-declare `swift-otel`: the local `OTelHTTP` package declares it with the
-`OTLPHTTP` trait. This command proves both. An update takes more than two
-minutes:
-
-```sh
-swift package --scratch-path "$(mktemp -d)" update swift-otel \
-  && ! grep -q '"identity" : "grpc-' Package.resolved \
-  && echo "update passes; no grpc pin"
-```
+The agent uses the telemetry APIs only: swift-log, swift-distributed-tracing
+and swift-metrics. It exports no telemetry. Log records go to stderr, and
+tracing and metrics stay no-op. The OTLP exporter (`swift-otel`) is not a
+dependency until SwiftPM 6.4.1, because SwiftPM 6.4 `update` loses the traits
+that the root manifest sets on a dependency
+(swiftlang/swift-package-manager#10397).
 
 ## License
 

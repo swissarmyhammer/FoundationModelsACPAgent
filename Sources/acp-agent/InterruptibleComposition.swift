@@ -26,8 +26,7 @@ struct CompositionInterrupted: Error {}
 /// **`SIGTERM` stops the composition too.** A process manager that ends the
 /// process during a model download gets the same cancel as the first
 /// `Ctrl-C`. The window then throws ``TerminationHandler/signalEnd``, so the
-/// failure path of ``AcpAgentCommand/main()`` flushes the telemetry and exits
-/// 143.
+/// failure path of ``AcpAgentCommand/main()`` exits 143.
 enum InterruptibleComposition {
     /// Runs `compose` with the composition watches armed, and disarms the
     /// watches on the way out.

@@ -103,9 +103,6 @@ struct SpawnedAgentExit {
 
 /// One spawned `acp-agent acp`.
 struct SpawnedACPAgent {
-    /// The prefix of each standard OpenTelemetry environment variable.
-    static let openTelemetryVariablePrefix = "OTEL_"
-
     /// The transport to give to the ACP client.
     let transport: SpawnedAgentTransport
 
@@ -136,16 +133,10 @@ struct SpawnedACPAgent {
         self.pipeEnds = pipeEnds
     }
 
-    /// The environment of this process with no `OTEL_*` variable, so only
-    /// the pairs a test sets reach the child.
-    static var environmentWithoutOpenTelemetry: [String: String] {
-        ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix(openTelemetryVariablePrefix) }
-    }
-
     /// Spawns the built `acp-agent acp`.
     ///
-    /// The child starts from ``environmentWithoutOpenTelemetry`` and gets
-    /// each pair of `environment` on top of it.
+    /// The child starts from the environment of this process and gets each
+    /// pair of `environment` on top of it.
     ///
     /// - Parameters:
     ///   - workspace: The working directory of the child.
@@ -161,7 +152,7 @@ struct SpawnedACPAgent {
             executableNamed: TierThreeFixture.agentExecutableName,
             arguments: [TierThreeFixture.acpSubcommand],
             workspace: workspace,
-            inheritedEnvironment: environmentWithoutOpenTelemetry,
+            inheritedEnvironment: ProcessInfo.processInfo.environment,
             environment: environment,
             standardInput: inputPipe)
         let process = child.process
@@ -197,17 +188,6 @@ struct SpawnedACPAgent {
     func closeStandardInputAndWait(within limit: Swift.Duration) async throws -> SpawnedAgentExit {
         try await end(within: limit) {
             try transport.input.close()
-        }
-    }
-
-    /// Sends `SIGTERM` to the agent and waits until the agent ends.
-    ///
-    /// - Parameter limit: How long to wait for the end.
-    /// - Returns: How the agent ended.
-    /// - Throws: ``SignalledRunError`` when the wait runs out.
-    func terminateAndWait(within limit: Swift.Duration) async throws -> SpawnedAgentExit {
-        try await end(within: limit) {
-            process.terminate()
         }
     }
 

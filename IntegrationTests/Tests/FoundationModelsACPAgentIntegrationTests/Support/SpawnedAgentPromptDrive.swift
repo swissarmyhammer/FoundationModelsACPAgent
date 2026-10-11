@@ -28,8 +28,7 @@ struct SpawnedAgentPromptDrive {
     /// Spawns `acp-agent acp` over the stub model, runs `initialize`,
     /// `session/new` and one prompt, and then ends the agent with `ending`.
     ///
-    /// The child starts with no `OTEL_*` variable of this process (see
-    /// ``SpawnedACPAgent/environmentWithoutOpenTelemetry``), and gets each
+    /// The child starts from the environment of this process, and gets each
     /// pair of `environment` and its own configuration home on top.
     ///
     /// - Parameters:

@@ -16,12 +16,12 @@ struct TerminationWatch: Sendable {
 /// The `SIGTERM` end of `acp-agent`.
 ///
 /// A process manager ends a process with `SIGTERM`. The default action of
-/// the signal ends the process at once, and the OTLP batch exporters then
-/// lose their last batch. So each long window of `acp` and `run` watches the
-/// signal. On `SIGTERM` the window stops its work and throws ``signalEnd``.
-/// The failure path of ``AcpAgentCommand/main()`` then shuts the telemetry
-/// down (``TelemetryBootstrap/shutdown()``, which flushes the last batch) and
-/// exits ``signalEndExitCode``.
+/// the signal ends the process at once, before the open work stops: the ACP
+/// connection does not close, the open sessions do not write their history,
+/// and the child of `run` is not cancelled. So each long window of `acp` and
+/// `run` watches the signal. On `SIGTERM` the window stops its work and throws
+/// ``signalEnd``. The failure path of ``AcpAgentCommand/main()`` then exits
+/// ``signalEndExitCode``.
 ///
 /// **Each window has its own stop**, because each window has different work
 /// to stop:
@@ -42,7 +42,7 @@ struct TerminationWatch: Sendable {
 ///
 /// A later `SIGTERM` in a window that already stops does nothing more. The
 /// watch still stands, so the signal does not end the process before the
-/// flush.
+/// work stops.
 ///
 /// The watch has the same shape as ``InterruptHandler/onSIGINT``: a
 /// `DispatchSourceSignal` reports each arrival on a normal queue, and the

@@ -170,51 +170,21 @@ private let inMemoryTracingProduct = Target.Dependency.product(
 /// The telemetry API products the library target links (the approved
 /// OpenTelemetry design, items 1 and 3).
 ///
-/// A library links only the APIs. `swift-otel`, the exporter, is for an
-/// executable only, and it is NOT here: an application bootstraps the backend,
-/// and until it does so each API is a no-op.
+/// A library links only the APIs. An application bootstraps the backend, and
+/// until it does so each API is a no-op.
+///
+/// No target of this package links an exporter at this time. The `acp-agent`
+/// executable bootstraps only a stderr log handler, so tracing and metrics
+/// stay no-op. `swift-otel` was removed because of a SwiftPM 6.4 defect,
+/// swiftlang/swift-package-manager#10397: `swift package update` loses the
+/// traits that the root manifest sets on a dependency. When the toolchain is
+/// 6.4.1 or later, the `acp-agent` executable can declare `swift-otel` with
+/// the `OTLPHTTP` trait and bootstrap it.
 private let telemetryAPIProducts: [Target.Dependency] = [
     tracingProduct,
     loggingProduct,
     .product(name: "Metrics", package: metricsPackage),
 ]
-
-/// The telemetry backend of the agent CLI: the local package in the folder of
-/// the same name, its package name and its one library product. It declares
-/// `swift-otel` (the OTLP exporters of traces, logs and metrics, and
-/// `OTel.bootstrap`) with the `OTLPHTTP` trait only, and its module re-exports
-/// `OTel`. Only the `acp-agent` executable links it (the approved
-/// OpenTelemetry design, item 1). The library target, the `acp-print` example
-/// and the test support link the APIs only — see `telemetryAPIProducts`.
-///
-/// This manifest does NOT declare `swift-otel` itself. That is a workaround
-/// for a SwiftPM 6.4 defect, swiftlang/swift-package-manager#10397:
-/// `swift package update` loses the traits that the ROOT manifest sets on a
-/// dependency, and the update then stops with "exhausted attempts to resolve
-/// the dependencies graph" on the gRPC packages of the default traits. The
-/// traits that a local path package sets stay. A second declaration here
-/// makes the result depend on the load order, and the update then fails
-/// sometimes. The doc comment of the local manifest gives the detail, and the
-/// README gives the command that proves the update. The fix (#10547) is in
-/// the `release/6.4.1` branch.
-private let otelHTTPName = "OTelHTTP"
-
-/// The one product of `otelHTTPName` the agent CLI links.
-private let otelHTTPProduct = Target.Dependency.product(name: otelHTTPName, package: otelHTTPName)
-
-/// The service lifecycle package. `OTel.bootstrap` returns a `Service` that
-/// must run in a `ServiceGroup` for the life of the process, and the group
-/// shuts it down (and so flushes it) at the end. `swift-otel` already
-/// declares this package from the same floor, so this declaration adds no
-/// checkout. Only the agent CLI links it.
-private let serviceLifecyclePackage = "swift-service-lifecycle"
-
-/// The version floor of `serviceLifecyclePackage`, matching `swift-otel`.
-private let serviceLifecycleVersionFloor: Version = "2.4.1"
-
-/// The one product of `serviceLifecyclePackage` the agent CLI links.
-private let serviceLifecycleProduct = Target.Dependency.product(
-    name: "ServiceLifecycle", package: serviceLifecyclePackage)
 
 /// Makes the `.package(url:from:)` dependency of a package hosted under the
 /// apple GitHub organization.
@@ -355,12 +325,6 @@ let package = Package(
         makeApplePackage(name: tracingPackage, from: tracingVersionFloor),
         makeApplePackage(name: loggingPackage, from: loggingVersionFloor),
         makeApplePackage(name: metricsPackage, from: metricsVersionFloor),
-        // The telemetry backend of the agent CLI, a local package — see
-        // `otelHTTPName`.
-        .package(path: otelHTTPName),
-        .package(
-            url: "https://github.com/swift-server/\(serviceLifecyclePackage).git",
-            from: serviceLifecycleVersionFloor),
         // The terminal design system of the agent CLI — see
         // `nooraPackage` and `nooraVersion`.
         .package(url: "https://github.com/tuist/\(nooraPackage).git", exact: nooraVersion),
@@ -382,9 +346,9 @@ let package = Package(
         // path `ACP_AGENT_STUB_MODEL=1` selects is the library's own
         // `EchoModel`, never the test support: that target links the
         // `Testing` framework, and a product that carried it would not
-        // start outside a test host. It is the one target that links the
-        // telemetry backend — see `otelHTTPName` — and bootstraps it in
-        // `AcpAgentCommand.main()`.
+        // start outside a test host. It bootstraps the stderr log handler
+        // in `AcpAgentCommand.main()`, and links no telemetry exporter — see
+        // `telemetryAPIProducts`.
         .executableTarget(
             name: agentExecutableName,
             dependencies: [
@@ -394,8 +358,6 @@ let package = Package(
                 makeFamilyProduct(name: clientDependencyName),
                 argumentParserProduct,
                 nooraProduct,
-                otelHTTPProduct,
-                serviceLifecycleProduct,
                 loggingProduct,
             ],
             path: "Sources/\(agentExecutableName)"

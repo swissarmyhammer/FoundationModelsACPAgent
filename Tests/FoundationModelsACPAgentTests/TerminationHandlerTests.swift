@@ -8,8 +8,8 @@ import Testing
 @testable import acp_agent
 
 /// The `SIGTERM` end of `acp-agent`: each watched window stops its work, and
-/// the process ends with the code of an end by a signal, through the exit
-/// path that flushes the telemetry.
+/// the process ends with the code of an end by a signal, through the failure
+/// path of ``AcpAgentCommand/main()``.
 ///
 /// The windows are the ACP serve window of `acp-agent acp`, which closes the
 /// ACP connection, and the prompt window of `acp-agent run`, which sends
@@ -123,8 +123,7 @@ struct TerminationHandlerTests {
 
     /// A `SIGTERM` in the serve window closes the ACP connection, and then
     /// the window throws the exit code of an end by a signal. The code goes
-    /// to ``AcpAgentCommand/main()``, whose failure path flushes the
-    /// telemetry before the process exits.
+    /// to the failure path of ``AcpAgentCommand/main()``.
     @Test(.timeLimit(.minutes(1)))
     func aTerminationClosesTheConnectionAndThrowsTheSignalEndCode() async throws {
         let closes = ReactionCounter()

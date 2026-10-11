@@ -37,8 +37,7 @@ extension AcpAgentCommand {
             // `Ctrl-C` cancels the composition and the process exits 4,
             // leaving the partly downloaded model in the Hugging Face cache.
             // A `SIGTERM` here cancels the composition too, and the thrown
-            // exit code takes the failure path of `main()`, which flushes
-            // the telemetry before the exit.
+            // exit code takes the failure path of `main()`.
             let composed: AgentComposition.Composed
             do {
                 composed = try await InterruptibleComposition.run(
@@ -64,8 +63,7 @@ extension AcpAgentCommand {
             // the process stands here for as long as the client speaks,
             // and ends when the client stops. A process manager can end it
             // earlier with `SIGTERM`: the connection closes, and the thrown
-            // exit code takes the failure path of `main()`, which flushes
-            // the telemetry before the exit. The client sends no
+            // exit code takes the failure path of `main()`. The client sends no
             // `session/close` before it closes stdin, so the agent closes
             // each open session itself after the close; the process waits
             // for that, so the history is written before the exit.
