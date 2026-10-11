@@ -1,5 +1,7 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 
 @testable import FoundationModelsACPAgent
@@ -248,6 +250,54 @@ enum SyntheticPrompt {
             await terminalTask.value
         }
         return await session.recorder.updates
+    }
+}
+
+/// The one driver of a prompt over a real Router session. The scripted model
+/// plays its script, Router mounts and runs the tools, and the prompt sends
+/// each update to a recorder. Thus a test reads the real order of the Router
+/// events on the wire.
+enum RoutedPrompt {
+    /// The text of the prompt when the caller gives none.
+    static let defaultPrompt = "Call the tool."
+
+    /// Runs one prompt over a real routed session whose scripted model plays
+    /// `script`, and gives each update that the prompt sent.
+    ///
+    /// - Parameters:
+    ///   - prompt: The text of the prompt. A script can play a step only for
+    ///     this prompt (``ScriptedPassStep/onPrompt(containing:play:)``), and
+    ///     not for an answer that the mail of a background run starts.
+    ///   - script: The steps that the model plays on each pass.
+    ///   - tools: The tools of the session.
+    ///   - label: The directory label of the calling test.
+    /// - Returns: The sent updates, in send order.
+    /// - Throws: Whatever the profile or the session throws.
+    static func sentUpdates(
+        prompt: String = defaultPrompt, script: [ScriptedPassStep], tools: [any FoundationModels.Tool],
+        label: String
+    ) async throws -> [SessionUpdate] {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let profile = try await makeStubProfile(
+            cacheDirectory: directory.appendingPathComponent("cache", isDirectory: true),
+            loader: makeScriptedModelLoader(script: script))
+        let session = profile.standard.makeBudgetedSession(
+            instructions: "Call the tool.",
+            workingDirectory: directory,
+            recordingRoot: directory.appendingPathComponent("recordings", isDirectory: true),
+            tools: tools,
+            compaction: CompactionConfiguration(),
+            repetition: RepetitionConfiguration(),
+            inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
+        let (sinkedExecution, recorder) = makeSinkedExecution()
+        var execution = sinkedExecution
+        execution.modelPrompt = prompt
+        await execution.run(session: session)
+        await session.close()
+        return await recorder.updates
     }
 }
 
@@ -537,6 +587,33 @@ extension Array where Element == SessionUpdate {
             .filter { jsonString(of: $0["toolCallId"]) == toolCallId }
             .compactMap { jsonString(of: $0["title"]) }
             .last
+    }
+
+    /// The `status` of each update of one tool call that put a status on the
+    /// wire, in send order. An update that omits `status` adds nothing.
+    ///
+    /// - Parameter toolCallId: The wire id of the tool call.
+    /// - Returns: The wire statuses.
+    /// - Throws: The encoding error of an update.
+    func wireStatuses(ofToolCall toolCallId: String) throws -> [String] {
+        try compactMap { try wireObject(of: $0) }
+            .filter { jsonString(of: $0["toolCallId"]) == toolCallId }
+            .compactMap { jsonString(of: $0["status"]) }
+    }
+
+    /// The status that the client shows at the end for one tool call: the
+    /// client merges each update, as ``SessionMergeEngine`` does.
+    ///
+    /// - Parameter toolCallId: The wire id of the tool call.
+    /// - Returns: The merged status, or `nil` when the client has no such
+    ///   call or the call has no status.
+    func clientStatus(ofToolCall toolCallId: String) -> FoundationModelsACP.ToolCallStatus? {
+        let merged = SessionMergeEngine(replaying: self)
+        guard case .toolCall(let call)? = merged.entry(withID: .toolCall(ToolCallId(rawValue: toolCallId)))?.kind
+        else {
+            return nil
+        }
+        return patchValue(call.status)
     }
 }
 

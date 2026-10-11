@@ -216,6 +216,20 @@ struct EventProjection {
     /// events of the call, and it also omits `title` when the call has one.
     private var titledToolCallIds: Set<String> = []
 
+    /// The wire ids of the tool calls whose run settlement sent the terminal
+    /// status (task ^531r4r0).
+    ///
+    /// The SDK `toolCall` event comes after the SDK call returned, thus after
+    /// the settlement of an inline run. Router derives the status of the
+    /// `toolStatus` events from the transcript, and a call with an output
+    /// reads `completed`, also when its run failed or was cancelled. The
+    /// status of the settlement is the true end of the run. Thus after the
+    /// settlement, the SDK updates of the call send no `status`
+    /// (``sdkStatusPatch(for:status:)``). The settlement finds the wire id
+    /// through ``runCallJoins``. A call that no run settled keeps the SDK
+    /// statuses.
+    private var settledToolCallIds: Set<String> = []
+
     /// The number of distinct files that the files verbs of the prompt
     /// changed.
     var changedFileCount: Int { changedFilePaths.count }
@@ -610,7 +624,9 @@ struct EventProjection {
     /// (``titlePatch(for:defaultTitle:toolTitle:)``): the run events of the
     /// call come first, and a title from a metadata event of the tool stays.
     /// It says `in_progress` — the call already runs, and `pending` is the
-    /// default a creating update must not leave in place.
+    /// default a creating update must not leave in place. When a run
+    /// settlement already sent the terminal status of the call, it sends no
+    /// status (``sdkStatusPatch(for:status:)``).
     ///
     /// - Parameters:
     ///   - id: Apple's `Transcript.ToolCall.id`, passed through
@@ -629,19 +645,25 @@ struct EventProjection {
                 "The arguments of a tool call did not parse as JSON.", metadata: metadata)
             rawInput = .unchanged
         }
+        let toolCallId = ToolCallId(rawValue: id)
         await send(
             .toolCallUpdate(
                 ToolCallUpdate(
-                    toolCallId: ToolCallId(rawValue: id),
+                    toolCallId: toolCallId,
                     name: .value(name),
                     rawInput: rawInput,
-                    status: .value(.inProgress),
-                    title: titlePatch(for: ToolCallId(rawValue: id), defaultTitle: name))))
+                    status: sdkStatusPatch(for: toolCallId, status: .inProgress),
+                    title: titlePatch(for: toolCallId, defaultTitle: name))))
     }
 
     /// Sends the lifecycle `tool_call_update` of one SDK tool call:
     /// the status maps from Router's three-case vocabulary, and the
     /// answering output segments replace the call's content.
+    ///
+    /// When a run settlement already sent the terminal status of the call,
+    /// the update sends no status (``sdkStatusPatch(for:status:)``). An
+    /// update that then carries no content and no raw output tells the
+    /// client nothing, so it does not go.
     ///
     /// - Parameters:
     ///   - id: Apple's `Transcript.ToolCall.id`.
@@ -655,13 +677,32 @@ struct EventProjection {
         summary: String?,
         output: [SegmentPayload]?
     ) async {
-        await send(
-            .toolCallUpdate(
-                ToolCallUpdate(
-                    toolCallId: ToolCallId(rawValue: id),
-                    content: Self.contentPatch(summary: summary, output: output),
-                    rawOutput: Self.rawOutputPatch(from: output),
-                    status: .value(Self.wireStatus(for: status)))))
+        let toolCallId = ToolCallId(rawValue: id)
+        let update = ToolCallUpdate(
+            toolCallId: toolCallId,
+            content: Self.contentPatch(summary: summary, output: output),
+            rawOutput: Self.rawOutputPatch(from: output),
+            status: sdkStatusPatch(for: toolCallId, status: Self.wireStatus(for: status)))
+        guard update.status != .unchanged || update.content != .unchanged || update.rawOutput != .unchanged
+        else {
+            return
+        }
+        await send(.toolCallUpdate(update))
+    }
+
+    /// The status patch of one SDK update of a tool call: `status`, or no
+    /// change when a run settlement already sent the terminal status of the
+    /// call (``settledToolCallIds``). Thus no SDK update writes over the
+    /// terminal status of a settled run, and none sends `in_progress` for it.
+    ///
+    /// - Parameters:
+    ///   - toolCallId: The wire id of the call.
+    ///   - status: The status that the SDK event gives.
+    /// - Returns: The status patch.
+    private func sdkStatusPatch(
+        for toolCallId: ToolCallId, status: FoundationModelsACP.ToolCallStatus
+    ) -> PatchField<FoundationModelsACP.ToolCallStatus> {
+        settledToolCallIds.contains(toolCallId.rawValue) ? .unchanged : .value(status)
     }
 
     /// Closes the message the recorded entry ended: the
@@ -839,6 +880,7 @@ struct EventProjection {
         if let note = Self.note(for: operationEvent.outcome) {
             items.append(Self.textItem(note))
         }
+        settledToolCallIds.insert(runCallId(operationEvent.correlationID).rawValue)
         await send(
             runCallUpdate(
                 correlationID: operationEvent.correlationID,

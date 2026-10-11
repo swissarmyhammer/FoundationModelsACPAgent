@@ -177,29 +177,14 @@ import Testing
     /// - Returns: The sent updates.
     /// - Throws: Whatever the profile or the session throws.
     private static func runPrompt(calling tool: ProgressReportingTool, label: String) async throws -> [SessionUpdate] {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let loader = makeScriptedModelLoader(script: [
-            .toolCall(name: reportingToolName, argumentsJSON: "{}"),
-            .textDelta(replyText),
-            .endPass,
-        ])
-        let profile = try await makeStubProfile(
-            cacheDirectory: directory.appendingPathComponent("cache", isDirectory: true), loader: loader)
-        let session = profile.standard.makeBudgetedSession(
-            instructions: "Call the tool.",
-            workingDirectory: directory,
-            recordingRoot: directory.appendingPathComponent("recordings", isDirectory: true),
+        try await RoutedPrompt.sentUpdates(
+            script: [
+                .toolCall(name: reportingToolName, argumentsJSON: "{}"),
+                .textDelta(replyText),
+                .endPass,
+            ],
             tools: [tool],
-            compaction: CompactionConfiguration(),
-            repetition: RepetitionConfiguration(),
-            inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
-        let (execution, recorder) = makeSinkedExecution()
-        await execution.run(session: session)
-        await session.close()
-        return await recorder.updates
+            label: label)
     }
 
     // MARK: - A plan goes as one plan update
