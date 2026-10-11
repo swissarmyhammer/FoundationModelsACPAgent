@@ -81,8 +81,15 @@ comments:
     - warnings: only the mlx-swift_Cmlx "missing creator for mutated node" warning (^tvjz12j).
     - next: /review
   timestamp: 2026-10-11T00:59:03.164533+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4m7yss7vt4wgcesrr7h8f2n
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~2..HEAD` (6e9bec7, 6bf3fba). 8 files reviewed, 7 validator runs, 0 failed. Counts: findings 0, confirmed 0, refuted 1. The prior reuse finding at `SkillsMarketplaceProcessTests.swift:50` is resolved: `runPrompt` and `CLIProcessTests.runAgentCLI` both call the shared driver `BuiltExecutableRun.runAgent`. All prior findings are checked. All acceptance items stay checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-11T01:06:40.551390+00:00
+position_column: done
+position_ordinal: ffbc80
 title: 'IntegrationTests: the spawned acp-agent binaries fetch the default skills marketplace from GitHub'
 ---
 ## State now
