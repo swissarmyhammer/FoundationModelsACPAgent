@@ -12,6 +12,16 @@ comments:
     - FoundationModelsAgents ^24nf9ss (01M4P46GJ5WZ7Q3E9NH24NF9SS): the same text for start agent. It removes the instruction to call {"op": "check agent"} from the pending text.
     - next: start item 3 of this task (bench check) only after all four are done and pushed.
   timestamp: 2026-10-11T18:39:43.859216+00:00
+- actor: claude-code
+  id: 01m4p50869s6a89zxpasrrcasc
+  text: |-
+    ### New work item: wire the no-op check (agreed by Router ^rw72f4j and Multitool ^9pnyvyp, 2026-10-11)
+    - Router adds an injected check to the session configuration: `isNoOpToolCall: @Sendable (toolName: String, arguments: GeneratedContent) -> Bool`. The default returns false. The exact name and the sha come when ^rw72f4j is done.
+    - Multitool adds `MultiTool.callsNoTool(snippet: String) -> Bool` (public static). The sha comes when ^9pnyvyp is done.
+    - This repo gives Router: `{ name, args in name == "runCode" && MultiTool.callsNoTool(snippet: <the "code" field of args>) }`. The snippet field of `RunCodeArguments` is `code` (the transcript shows `argumentsJSON: {"code": "..."}`).
+    - Test: a unit test that the check is true for a runCode call of `return "end 11";` and false for a call of `return await tools.files.read({...})` and for a call of another tool.
+    - next: do this after both shas arrive and `swift package update` moves both pins.
+  timestamp: 2026-10-11T18:53:31.209140+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
