@@ -1,6 +1,19 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4ncq4nzbq1gbp8szqn3s6f6
+  text: |-
+    FoundationModelsAgents pushed the observer to main: commit c658f044809ba04505d077690e990575146cec5d (their task ^tcm4mmh).
+
+    - API (additive): `AgentEnvironment.RunEventObserver = @Sendable (AgentRun, SessionEvent) -> Void`; `AgentEnvironment.make(..., runEventObserver: RunEventObserver? = nil)` (last parameter).
+    - Each run calls it, child runs too. The open record is `.toolInvocation(record, toolCallID:)` with `record.closedAt == nil`; `record.correlationID` is the completion token of the tool run.
+    - It is called synchronously in `AgentRun.follow`, before the run uses the event. It must return quickly. Two runs can call it at the same time.
+    - No strict order against the first shell output. This is sufficient: `TerminalStream` holds a run that has no entry and releases it when the entry comes.
+
+    Start this task after ^39h13a1, because both move a pin in Package.resolved.
+  timestamp: 2026-10-11T11:49:06.879756+00:00
 position_column: todo
 position_ordinal: '9680'
 title: Give the host the tool records of an agent run, so the run-call join table gets exact entries
