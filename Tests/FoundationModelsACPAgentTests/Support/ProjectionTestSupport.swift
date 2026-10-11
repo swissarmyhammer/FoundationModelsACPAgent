@@ -90,6 +90,12 @@ actor SinkRecorder {
         log.value
     }
 
+    /// The count of readers that wait for more updates now. A test reads it
+    /// to know that a wait is kept before it cancels the task of the wait.
+    var keptWaitCount: Int {
+        log.keptWaitCount
+    }
+
     /// Appends one update, and resumes each reader whose updates are now
     /// all recorded.
     ///

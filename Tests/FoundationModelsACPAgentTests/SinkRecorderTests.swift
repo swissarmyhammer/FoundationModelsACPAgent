@@ -16,13 +16,14 @@ import Testing
     /// The one update that the tests record.
     private static let idleUpdate = SessionUpdate.stateUpdate(.idle(IdleStateUpdate(stopReason: .endTurn)))
 
-    /// A wait that is suspended for a condition that never comes ends when
-    /// the test cancels its task. The wait throws at once, and the error
-    /// names the condition.
+    /// A wait that is kept and suspended for a condition that never comes
+    /// ends when the test cancels its task. The cancellation handler removes
+    /// the kept wait and resumes it, and the error names the condition.
     @Test(.timeLimit(.minutes(1)))
     func aSuspendedWaitForAConditionThatNeverComesEndsWhenItsTaskIsCancelled() async throws {
         let recorder = SinkRecorder()
-        let wait = await Self.startWait(on: recorder, for: Self.missingCondition) { _ in false }
+        let wait = try await Self.startWait(on: recorder, for: Self.missingCondition) { _ in false }
+        #expect(await recorder.keptWaitCount == 1)
 
         wait.cancel()
 
@@ -30,6 +31,7 @@ import Testing
             try await wait.value
         }
         #expect(error?.condition == Self.missingCondition)
+        #expect(await recorder.keptWaitCount == 0)
     }
 
     /// A wait in a task that is already cancelled ends at once, and the
@@ -53,7 +55,7 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aSuspendedWaitEndsWithTheUpdatesWhenItsConditionComes() async throws {
         let recorder = SinkRecorder()
-        let wait = await Self.startWait(on: recorder, for: Self.oneUpdateCondition) { updates in
+        let wait = try await Self.startWait(on: recorder, for: Self.oneUpdateCondition) { updates in
             !updates.isEmpty
         }
 
@@ -64,29 +66,34 @@ import Testing
         #expect(isIdleState(updates.first))
     }
 
-    /// Starts a wait on `recorder`, and returns when the wait checked its
-    /// condition the first time. The recorder checks the condition and keeps
-    /// the wait in one step, so the wait is then suspended or ended.
+    /// Starts a wait on `recorder` for a condition that is false now, and
+    /// returns only when the recorder keeps the wait: its kept wait count is
+    /// one. The wait is then suspended, and only a change that makes the
+    /// condition true or the cancellation of its task resumes it.
+    ///
+    /// The loop yields and does not sleep. It checks the cancel flag on each
+    /// pass, so the time limit of the calling test ends it when the wait is
+    /// never kept.
     ///
     /// - Parameters:
-    ///   - recorder: The recorder to wait on.
+    ///   - recorder: The recorder to wait on. It keeps no other wait.
     ///   - condition: The name of the condition.
-    ///   - isComplete: Tells if the updates are all recorded.
-    /// - Returns: The task of the wait.
+    ///   - isComplete: Tells if the updates are all recorded. It is false
+    ///     for the updates of now.
+    /// - Returns: The task of the kept wait.
+    /// - Throws: `CancellationError` when the calling test is cancelled
+    ///   before the recorder keeps the wait.
     private static func startWait(
         on recorder: SinkRecorder,
         for condition: String,
         until isComplete: @escaping SinkRecorder.Completion
-    ) async -> Task<[SessionUpdate], any Error> {
-        let (checks, checked) = AsyncStream<Void>.makeStream()
+    ) async throws -> Task<[SessionUpdate], any Error> {
         let wait = Task {
-            try await recorder.updates(until: condition) { updates in
-                checked.yield()
-                return isComplete(updates)
-            }
+            try await recorder.updates(until: condition, isComplete)
         }
-        for await _ in checks {
-            break
+        while await recorder.keptWaitCount == 0 {
+            try Task.checkCancellation()
+            await Task.yield()
         }
         return wait
     }

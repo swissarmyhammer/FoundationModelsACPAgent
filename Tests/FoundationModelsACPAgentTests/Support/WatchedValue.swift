@@ -62,6 +62,14 @@ final class WatchedValue<Value: Sendable>: Sendable {
         state.withLock { $0.value }
     }
 
+    /// The count of waits that are kept now: each wait that checked its
+    /// condition, found it false, and is suspended until a change or a
+    /// cancellation resumes it. A test reads this count to know that a wait
+    /// is kept before it cancels the task of the wait.
+    var keptWaitCount: Int {
+        state.withLock { $0.waits.count }
+    }
+
     /// Changes the value, and resumes each wait whose condition is now true.
     ///
     /// - Parameter change: The change to the value.
