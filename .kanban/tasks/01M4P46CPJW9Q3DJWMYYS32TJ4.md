@@ -44,6 +44,14 @@ comments:
     - Still open: Agents ^24nf9ss.
     - next: when Multitool and Router are on origin/main, `swift package update`, then wire `isNoOpToolCall` and do items 1-2 of this task.
   timestamp: 2026-10-11T19:52:18.876829+00:00
+- actor: claude-code
+  id: 01m4pdftfc5rdyhfcsx1j0v8zd
+  text: |-
+    ### Router ^4nk083c done (2026-10-11)
+    - Local commits 3b886fd9 and a90c75a4 on main of FoundationModelsRouter, NOT pushed yet.
+    - `RoutedModel.restoreSession(id:recordingRoot:instructions:tools:toolOutputProtection:isNoOpToolCall:)` has a new last argument `isNoOpToolCall: NoOpToolCallCheck` (default `SessionConfiguration.defaultIsNoOpToolCall`). `SessionResume.swift` compiles with no change.
+    - Add to the wiring: pass the same check in `SessionResume.swift` (restoreSession) as in the new-session configuration. Make one shared check value, so the two paths cannot differ. Add a test that a resumed session gets the check.
+  timestamp: 2026-10-11T21:21:50.060975+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
