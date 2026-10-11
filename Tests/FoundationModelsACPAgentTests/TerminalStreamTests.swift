@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -54,6 +55,38 @@ private actor HeldSink {
         isHolding = false
         heldSend?.resume()
         heldSend = nil
+    }
+}
+
+/// A snapshot store whose stored output grows between two calls, as the
+/// store of a live run does. Each call gives the next snapshot of the list,
+/// and the last snapshot after the list ends.
+private final class SnapshotSequence: Sendable {
+    /// The snapshots, in call order.
+    private let snapshots: [ShellOutputSnapshot]
+
+    /// The count of calls that came before the next call.
+    private let callCount = Mutex(0)
+
+    /// Makes a store that gives `snapshots` in order.
+    ///
+    /// - Parameter snapshots: The snapshots, in call order. The list is not
+    ///   empty.
+    init(_ snapshots: [ShellOutputSnapshot]) {
+        precondition(!snapshots.isEmpty, "a snapshot sequence needs a snapshot")
+        self.snapshots = snapshots
+    }
+
+    /// Gives the snapshot of this call, and moves to the next one.
+    ///
+    /// - Returns: The snapshot of this call, or the last snapshot after the
+    ///   list ends.
+    func nextSnapshot() -> ShellOutputSnapshot {
+        let call = callCount.withLock { count in
+            defer { count += 1 }
+            return count
+        }
+        return snapshots[min(call, snapshots.count - 1)]
     }
 }
 
@@ -268,6 +301,13 @@ private actor HeldSink {
     /// The fourth chunk of the replacement tests.
     private static let fourthChunk = Array("DDDD".utf8)
 
+    /// The fifth chunk of the replacement tests.
+    private static let fifthChunk = Array("EEEE".utf8)
+
+    /// The end offset of the third chunk in the stdout stream: the byte count
+    /// of the first three chunks together.
+    private static let byteCountThroughTheThirdChunk = firstChunk.count + secondChunk.count + thirdChunk.count
+
     /// One gap event of the scripted run.
     ///
     /// - Parameters:
@@ -291,6 +331,32 @@ private actor HeldSink {
     /// - Returns: The snapshot.
     private static func makeSnapshot(stdout: [UInt8], stderr: [UInt8] = []) -> ShellOutputSnapshot {
         ShellOutputSnapshot(stdout: makeRawOutput(bytes: stdout), stderr: makeRawOutput(bytes: stderr))
+    }
+
+    /// A snapshot of the scripted run whose stdout capture is truncated: the
+    /// store holds `stored`, and `arrivedByteCount` bytes of stdout arrived
+    /// at the store. The stderr capture is empty.
+    ///
+    /// - Parameters:
+    ///   - stored: The stdout bytes that the store holds.
+    ///   - arrivedByteCount: The stdout bytes that arrived at the store, the
+    ///     dropped bytes included.
+    /// - Returns: The snapshot.
+    private static func makeTruncatedSnapshot(stored: [UInt8], arrivedByteCount: Int) -> ShellOutputSnapshot {
+        ShellOutputSnapshot(
+            stdout: ShellRawOutput(
+                bytes: stored, binaryDetected: false, truncated: true,
+                storedByteCount: stored.count, arrivedByteCount: arrivedByteCount),
+            stderr: makeRawOutput(bytes: []))
+    }
+
+    /// A snapshot provider that answers the next snapshot of `store` for the
+    /// scripted run and nothing for any other token.
+    ///
+    /// - Parameter store: The snapshots of the scripted run, in call order.
+    /// - Returns: The provider.
+    private static func provider(of store: SnapshotSequence) -> ShellSnapshotProvider {
+        { commandID in commandID == completionToken ? store.nextSnapshot() : nil }
     }
 
     /// Decodes the base64 data of one update.
@@ -386,15 +452,13 @@ private actor HeldSink {
         #expect(try Self.clientView(in: updates) == stored + Self.thirdChunk)
     }
 
-    /// A truncated snapshot is not a prefix of the output, so it gives no
-    /// offset. After its replacement the run sends no chunk until the
-    /// completion replacement, so no byte goes on the wire two times.
-    @Test func aTruncatedReplacementStopsTheChunksOfTheRun() async throws {
-        let truncated = ShellOutputSnapshot(
-            stdout: ShellRawOutput(
-                bytes: Self.firstChunk, binaryDetected: false, truncated: true,
-                storedByteCount: Self.firstChunk.count),
-            stderr: Self.makeRawOutput(bytes: []))
+    /// A truncated snapshot is not a prefix of the output, but its arrived
+    /// byte count is the end offset of the stream. The queued chunk that
+    /// arrived before the snapshot sends no byte, and the chunk after it goes
+    /// on the wire. Thus the live view of the run continues.
+    @Test func aTruncatedReplacementSendsTheChunksPastItsArrivedBytes() async throws {
+        let truncated = Self.makeTruncatedSnapshot(
+            stored: Self.firstChunk, arrivedByteCount: Self.byteCountThroughTheThirdChunk)
 
         let updates = await Self.project(
             [
@@ -405,8 +469,41 @@ private actor HeldSink {
             ],
             snapshot: Self.provider(of: truncated))
 
-        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk)
-        #expect(try Self.clientView(in: updates) == Self.firstChunk)
+        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk + Self.fourthChunk)
+        #expect(try Self.clientView(in: updates) == Self.firstChunk + Self.fourthChunk)
+    }
+
+    /// The bytes of the fourth chunk that arrived at the store before the
+    /// first snapshot of the straddle test. The other bytes of that chunk
+    /// arrived after it.
+    private static let fourthChunkBytesBeforeTheFirstSnapshot = 2
+
+    /// A gap stands before the next delivered event of its stream. Thus a gap
+    /// for bytes that went away before a snapshot can arrive after that
+    /// snapshot, and one gap can cover bytes on the two sides of it. The gap
+    /// only moves the event offset of the stream forward. The queued chunk
+    /// that the first snapshot holds sends no byte, and the chunk after the
+    /// straddling gap goes on the wire whole.
+    @Test func aGapThatStraddlesASnapshotMovesTheOffsetPastIt() async throws {
+        let firstSnapshotEnd = Self.byteCountThroughTheThirdChunk + Self.fourthChunkBytesBeforeTheFirstSnapshot
+        let secondSnapshotEnd = Self.byteCountThroughTheThirdChunk + Self.fourthChunk.count
+        let store = SnapshotSequence([
+            Self.makeTruncatedSnapshot(stored: Self.firstChunk, arrivedByteCount: firstSnapshotEnd),
+            Self.makeTruncatedSnapshot(stored: Self.firstChunk, arrivedByteCount: secondSnapshotEnd),
+        ])
+
+        let updates = await Self.project(
+            [
+                Self.makeOutputEvent(bytes: Self.firstChunk),
+                Self.makeGapEvent(droppedByteCount: Self.secondChunk.count),
+                Self.makeOutputEvent(bytes: Self.thirdChunk),
+                Self.makeGapEvent(droppedByteCount: Self.fourthChunk.count),
+                Self.makeOutputEvent(bytes: Self.fifthChunk),
+            ],
+            snapshot: Self.provider(of: store))
+
+        #expect(try Self.reassembledBytes(in: updates) == Self.firstChunk + Self.fifthChunk)
+        #expect(try Self.clientView(in: updates) == Self.firstChunk + Self.fifthChunk)
     }
 
     // MARK: - The exit status

@@ -15,36 +15,30 @@ import FoundationModelsMultitool
 ///   counts each byte that went away. Thus the sum of the output bytes and
 ///   the gap counts of one stream is the end offset of the last event of
 ///   that stream.
-/// - The store behind the snapshot takes each chunk before the upstream
-///   budget test. Thus, when the snapshot is not truncated, the byte count
-///   of one stream of the snapshot is the end offset of that stream at the
-///   time of the call.
+/// - The `arrivedByteCount` of one stream of the snapshot counts each byte
+///   of that stream that came to the store before the call, stored or not.
+///   Thus it is the end offset of that stream at the time of the call, also
+///   for a truncated snapshot whose stored bytes have a hole.
 ///
-/// A truncated snapshot is not necessarily a prefix of the output, so it
-/// gives no offset. After such a replacement the ledger lets no byte of the
-/// run through. The completion replacement, which is the store in all
-/// cases, then gives the final view.
+/// A gap stands before the next delivered event of its stream. Thus a gap
+/// for bytes that went away before a snapshot can come after the
+/// replacement, and one gap can count bytes on the two sides of the end of
+/// the replacement. A gap only moves the event offset of its stream
+/// forward. The ledger then compares the offsets of each later output
+/// chunk with the end of the replacement: it drops a chunk that ends at or
+/// before that end, and it trims a chunk that crosses it.
 struct ShellRunByteLedger {
-    /// Where the client view of one stream ends after the last replacement.
-    enum ReplacementEnd {
-        /// The view holds each byte of the stream before this offset.
-        case offset(Int)
-
-        /// A truncated snapshot replaced the view, so no offset is known.
-        /// No later byte of the stream goes on the wire.
-        case unknown
-    }
-
     /// The offsets of one stream of the run.
     struct StreamOffsets {
         /// The end offset of the last event of the stream that the
         /// projection read: the output bytes and the gap counts together.
         var deliveredEnd = 0
 
-        /// Where the client view of the stream ends after the last
-        /// replacement. Before any replacement it is offset zero, so each
-        /// byte goes on the wire.
-        var replacementEnd = ReplacementEnd.offset(0)
+        /// The offset where the client view of the stream ends after the
+        /// last replacement: the view holds each byte of the stream before
+        /// it. Before any replacement it is zero, so each byte goes on the
+        /// wire.
+        var replacementEnd = 0
     }
 
     /// The offsets of each stream of the run that sent an event.
@@ -94,19 +88,16 @@ struct ShellRunByteLedger {
         let start = offsets.deliveredEnd
         offsets.deliveredEnd += bytes.count
         streams[stream] = offsets
-        guard case .offset(let viewEnd) = offsets.replacementEnd else {
-            return []
-        }
-        return bytes.dropFirst(max(viewEnd - start, 0))
+        return bytes.dropFirst(max(offsets.replacementEnd - start, 0))
     }
 
     /// The end of the client view of one stream after a replacement that
     /// holds `raw`.
     ///
-    /// - Parameter raw: The stored bytes of one stream.
-    /// - Returns: The byte count as the offset, or ``ReplacementEnd/unknown``
-    ///   for a truncated capture.
-    private static func end(of raw: ShellRawOutput) -> ReplacementEnd {
-        raw.truncated ? .unknown : .offset(raw.bytes.count)
+    /// - Parameter raw: The stored output of one stream.
+    /// - Returns: The arrived byte count of the stream, which is its end
+    ///   offset at the time of the snapshot, also for a truncated capture.
+    private static func end(of raw: ShellRawOutput) -> Int {
+        raw.arrivedByteCount
     }
 }
