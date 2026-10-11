@@ -73,16 +73,19 @@ struct CLIProcessTests {
     ///   - arguments: The command-line arguments for `acp-agent`.
     ///   - configHome: The injected `XDG_CONFIG_HOME` root. The default
     ///     makes a fresh, empty directory.
+    ///   - environment: The extra environment pairs. The default injects
+    ///     none.
     /// - Returns: The finished run.
     /// - Throws: The locator or spawn error.
     private static func runAgentCLI(
-        arguments: [String], configHome: URL? = nil
+        arguments: [String], configHome: URL? = nil, environment: [String: String] = [:]
     ) async throws -> BuiltExecutableRun {
         try await BuiltExecutableRun.run(
             executableNamed: TierThreeFixture.agentExecutableName,
             arguments: arguments,
             workspace: makeResolvedDirectory(label: "CLIProcess-repo"),
-            configHome: configHome ?? makeResolvedDirectory(label: "CLIProcess-config"))
+            configHome: configHome ?? makeResolvedDirectory(label: "CLIProcess-config"),
+            environment: environment)
     }
 
     // MARK: - The contract
@@ -163,8 +166,16 @@ struct CLIProcessTests {
     /// stderr, and exits 0. The builtin row names the builtin
     /// configuration file that the built binary finds in its resource
     /// bundle, and marks it `exists`.
+    ///
+    /// The run removes the offline defaults layer of `TierThreeFixture`, so
+    /// it reads the layers of a stock install. `config path` starts no
+    /// session, so the run fetches no skills marketplace.
     @Test func configPathWritesTheLayerRowsToStdoutAndExitsZero() async throws {
-        let run = try await Self.runAgentCLI(arguments: ["config", "path"])
+        let run = try await Self.runAgentCLI(
+            arguments: ["config", "path"],
+            environment: [
+                TierThreeFixture.defaultsDirectoryVariable: TierThreeFixture.noDefaultsLayerValue
+            ])
 
         #expect(run.exitCode == 0, "stderr: \(run.standardError)")
         let rows = run.standardOutput.split(separator: "\n")

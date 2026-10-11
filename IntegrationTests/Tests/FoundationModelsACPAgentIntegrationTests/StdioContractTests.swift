@@ -113,7 +113,8 @@ final class InboundTapTransport: ACPTransport, Sendable {
 /// asserted on the tapped raw bytes.
 ///
 /// Serialized because the suite mutates the process environment —
-/// `XDG_CONFIG_HOME` must reach the spawned child, and `posix_spawn`
+/// `XDG_CONFIG_HOME` and the offline defaults layer must reach the
+/// spawned child, and `posix_spawn`
 /// passes this process's `environ` on. The time limit covers the
 /// first-run model download.
 @Suite(
@@ -180,22 +181,42 @@ struct StdioContractTests {
         return skillDirectory
     }
 
-    /// Sets `TierThreeFixture.configHomeVariable` for this process —
-    /// and so for every child it spawns — and returns the restorer for
-    /// the prior value.
+    /// Sets `TierThreeFixture.configHomeVariable` and the offline defaults
+    /// layer of `TierThreeFixture` for this process — and so for every
+    /// child it spawns — and returns the restorer for the prior values.
+    ///
+    /// `AgentProcess` spawns with the environment of this process, not
+    /// through `PipedChildProcess`, so this suite sets the offline defaults
+    /// layer itself: the child fetches no skills marketplace.
     ///
     /// - Parameter configHome: The directory to point the variable at.
-    /// - Returns: The closure that puts the prior value back.
-    private static func pointConfigHome(at configHome: URL) -> () -> Void {
-        let variable = TierThreeFixture.configHomeVariable
-        let previous = ProcessInfo.processInfo.environment[variable]
-        setenv(variable, configHome.path, 1)
+    /// - Returns: The closure that puts the prior values back.
+    /// - Throws: The write error of the defaults layer.
+    private static func pointEnvironment(at configHome: URL) throws -> () -> Void {
+        var pairs = try TierThreeFixture.makeOfflineDefaultsEnvironment()
+        pairs[TierThreeFixture.configHomeVariable] = configHome.path
+        let previous = pairs.keys.map { ($0, ProcessInfo.processInfo.environment[$0]) }
+        for (variable, value) in pairs {
+            setenv(variable, value, 1)
+        }
         return {
-            if let previous {
-                setenv(variable, previous, 1)
-            } else {
-                unsetenv(variable)
+            for (variable, value) in previous {
+                restore(variable, to: value)
             }
+        }
+    }
+
+    /// Puts one environment variable of this process back to its prior
+    /// value.
+    ///
+    /// - Parameters:
+    ///   - variable: The environment variable.
+    ///   - value: The prior value, or `nil` when the variable was not set.
+    private static func restore(_ variable: String, to value: String?) {
+        if let value {
+            setenv(variable, value, 1)
+        } else {
+            unsetenv(variable)
         }
     }
 
@@ -211,8 +232,8 @@ struct StdioContractTests {
         let configHome = makeResolvedDirectory(label: "StdioContract-config")
         try TierThreeFixture.writeUserConfig(under: configHome)
         let skillDirectory = try Self.writeProbeSkill(under: workspace)
-        let restoreConfigHome = Self.pointConfigHome(at: configHome)
-        defer { restoreConfigHome() }
+        let restoreEnvironment = try Self.pointEnvironment(at: configHome)
+        defer { restoreEnvironment() }
 
         // Spawn the built agent in `acp` mode through the client package's
         // process owner, with the absolute path it requires. Bare

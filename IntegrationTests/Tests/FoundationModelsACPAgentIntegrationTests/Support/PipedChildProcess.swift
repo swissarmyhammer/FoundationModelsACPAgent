@@ -23,8 +23,13 @@ struct PipedChildProcess {
 
     /// Sets up the built executable `executableName` and its pipes.
     ///
-    /// The child starts from `inheritedEnvironment`, and each pair of
-    /// `environment` replaces the value of its key. Each pipe gets
+    /// The child starts from `inheritedEnvironment`, then gets the offline
+    /// defaults layer of ``TierThreeFixture/makeOfflineDefaultsEnvironment()``,
+    /// so it fetches no skills marketplace. Each pair of `environment`
+    /// replaces the value of its key, thus a caller that gives
+    /// ``TierThreeFixture/defaultsDirectoryVariable`` the value
+    /// ``TierThreeFixture/noDefaultsLayerValue`` removes that layer. Each
+    /// pipe gets
     /// `FD_CLOEXEC` (see `Pipe.markCloseOnExec()`), so no other child of this
     /// process holds a copy of it.
     ///
@@ -33,10 +38,11 @@ struct PipedChildProcess {
     ///   - arguments: The command-line arguments for the executable.
     ///   - workspace: The working directory of the child.
     ///   - inheritedEnvironment: The environment the child starts from.
-    ///   - environment: The pairs to set on top of `inheritedEnvironment`.
+    ///   - environment: The pairs to set on top of `inheritedEnvironment` and
+    ///     the offline defaults layer.
     ///   - standardInput: The stdin pipe of the child. The default is `nil`,
     ///     and the child then reads the stdin of this process.
-    /// - Throws: The locator error.
+    /// - Throws: The locator error, or the write error of the defaults layer.
     init(
         executableNamed executableName: String,
         arguments: [String],
@@ -49,7 +55,9 @@ struct PipedChildProcess {
         process.executableURL = try BuiltProductLocator.executableURL(named: executableName)
         process.arguments = arguments
         process.currentDirectoryURL = workspace
-        process.environment = inheritedEnvironment.merging(environment) { _, set in set }
+        process.environment = inheritedEnvironment
+            .merging(try TierThreeFixture.makeOfflineDefaultsEnvironment()) { _, offline in offline }
+            .merging(environment) { _, set in set }
 
         let standardOutput = Pipe()
         let standardError = Pipe()

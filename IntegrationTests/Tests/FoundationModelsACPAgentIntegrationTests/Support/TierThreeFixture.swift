@@ -32,6 +32,44 @@ enum TierThreeFixture {
     /// The environment variable that roots the user configuration layer.
     static let configHomeVariable = "XDG_CONFIG_HOME"
 
+    /// The environment variable that roots the defaults layer of the agent
+    /// configuration: `<NAME>_DEFAULTS_DIR` of `DotfolderStack`, with the
+    /// dotfolder name in upper case. The agent gives no defaults folder of
+    /// its own, so an empty value names no defaults layer.
+    static let defaultsDirectoryVariable =
+        agentDotfolderName.uppercased() + StubAgentDefaultsLayer.environmentKeySuffix
+
+    /// The value of ``defaultsDirectoryVariable`` that names no defaults
+    /// layer. A test that gives it reads the shipped configuration of a
+    /// stock install, with no offline defaults layer.
+    static let noDefaultsLayerValue = ""
+
+    /// The `config.yaml` of the offline defaults layer: an empty skills
+    /// marketplace list.
+    ///
+    /// The shipped list names the `swissarmyhammer/skills` repository on
+    /// GitHub, and a session start fetches each marketplace. The suites of
+    /// this package must be offline and repeatable, thus each child reads
+    /// this layer (see ``makeOfflineDefaultsEnvironment()``). The defaults
+    /// layer is the lowest layer, so the user layer or the project layer of
+    /// a test still sets each other value. `SkillsMarketplaceProcessTests`
+    /// proves the shipped list on purpose.
+    static let offlineDefaultsYAML = "tools:\n  skills:\n    marketplaces: []\n"
+
+    /// Writes the offline defaults layer into a fresh folder, and returns
+    /// the pair that names that folder as the defaults layer of the agent.
+    ///
+    /// `PipedChildProcess` gives the pair to each child it spawns, and
+    /// `StdioContractTests` sets it on this process for its `AgentProcess`.
+    ///
+    /// - Returns: ``defaultsDirectoryVariable`` and the folder of the layer.
+    /// - Throws: The directory-creation or write error.
+    static func makeOfflineDefaultsEnvironment() throws -> [String: String] {
+        let root = makeResolvedDirectory(label: "OfflineDefaultsLayer")
+        try ConfigFileFixture.write(offlineDefaultsYAML, in: root)
+        return [defaultsDirectoryVariable: root.path]
+    }
+
     /// The environment variable that selects the deterministic stub
     /// model, and the value that selects it. `AgentComposition` in the
     /// root package declares both; this package cannot import an
