@@ -33,8 +33,23 @@ comments:
     - acceptance: item 1 met by the mechanism (`.timeLimit` cancels the test task, the wait throws `ConditionWaitCancelled` that names the condition, the run continues); item 2 met by a direct check of the cancelled wait (`SinkRecorderTests`), with no dependence on a time limit.
     - next: /review
   timestamp: 2026-10-11T13:36:54.701051+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4nka6w0at1k1dc0g3zd7qf8
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD`: engine counts findings 0, confirmed 0, refuted 0 (7 attempted). The dead-code-swift failure comes from `.build/checkouts` only and does not count. Manual check: 1 finding — Tests/FoundationModelsACPAgentTests/SinkRecorderTests.swift:84 (`startWait` can return before the wait is kept, so the "suspended" cancel test does not always prove the `onCancel` path). Manual checks that pass: exactly one resume per wait (condition change and `onCancel` both remove the wait under the lock; `admit` reads `Task.isCancelled` under the lock, so a cancel before the wait is kept is not lost); no continuation leak; the held send of `HeldSink` continues on cancel (`try?`); with the old code the two cancel tests would hang. Tests: `swift test --scratch-path .build/alt --force-resolved-versions --filter "SinkRecorderTests|TerminalStreamTests|ToolCallJoinProjectionTests"` with a new empty SKILLS_MARKETPLACE_CACHE: 35 tests in 3 suites passed, exit 0.
+    - next: /implement the open finding, then /review again.
+  timestamp: 2026-10-11T13:44:23.168285+00:00
+- actor: claude-code
+  id: 01m4nky0tcfmj2qwm222wwynfz
+  text: |-
+    ### implement — changed
+    - finding fixed: SinkRecorderTests.swift:84 `manual/test-determinism`. `WatchedValue.keptWaitCount` (read under the lock) and `SinkRecorder.keptWaitCount` were added. `startWait` no longer signals from inside the condition. It returns only when `keptWaitCount` is not 0 (loop: `Task.checkCancellation()` + `Task.yield()`, no sleep; it now throws). Its doc comment states the true condition. The cancel test asserts `keptWaitCount == 1` before `wait.cancel()` and `keptWaitCount == 0` after the throw, so it proves that the `onCancel` handler removed a kept wait.
+    - evidence: 3 files — Tests/FoundationModelsACPAgentTests/Support/WatchedValue.swift, Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift, Tests/FoundationModelsACPAgentTests/SinkRecorderTests.swift. `swift test --scratch-path .build/alt --force-resolved-versions --filter "SinkRecorderTests|TerminalStreamTests|ToolCallJoinProjectionTests"` with a new empty SKILLS_MARKETPLACE_CACHE: 35 tests in 3 suites passed, exit 0, only the accepted mlx-swift_Cmlx.bundle warning. 50 runs of `--skip-build --filter SinkRecorderTests`: pass=50 fail=0.
+    - next: /review
+  timestamp: 2026-10-11T13:55:12.332722+00:00
+position_column: done
+position_ordinal: ffc680
 title: SinkRecorder.updates(until:) ignores cancellation, so a failed wait hangs the test run
 ---
 ## Problem
@@ -51,3 +66,16 @@ title: SinkRecorder.updates(until:) ignores cancellation, so a failed wait hangs
 - [x] A test proves this with a condition that never becomes true and a short time limit (in a `withKnownIssue` block, or by a direct check of the cancelled wait).
 
 #tests
+
+## Review Findings (2026-10-11 08:37)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> Tool rule 'code-hygiene/dead-code-swift' failed only because it could not remove `.build/checkouts` folders (swift-nio, swift-nio-http2, swift-log, swift-nio-extras: "Operation not permitted"). This failure comes from the checkouts only, thus it does not count.
+
+> The engine found 0 findings. The item below comes from the manual check that the review request asked for.
+
+- [x] `Tests/FoundationModelsACPAgentTests/SinkRecorderTests.swift:84` `manual/test-determinism` — `startWait` yields to `checks` from inside `isComplete`. `WatchedValue.admit` calls `isComplete` under the lock BEFORE it reads `Task.isCancelled` and BEFORE it keeps the wait. Thus `startWait` can return, and the test can call `wait.cancel()`, before the wait is kept. `Task.cancel()` sets the cancel flag before it runs the `onCancel` handler, so `admit` then reads `Task.isCancelled == true` and resumes the wait with its "cancelled before the wait is kept" path. The `onCancel` handler then finds no wait. Thus `aSuspendedWaitForAConditionThatNeverComesEndsWhenItsTaskIsCancelled` does not always prove the path that it names (the `onCancel` handler removes and resumes a kept wait), and the doc comment of `startWait` ("so the wait is then suspended or ended") is not correct at the time that `startWait` returns. Make `startWait` return only after the wait is kept. For example, give `WatchedValue` a count of its kept waits (read under the lock), and make `startWait` wait until that count is 1 before it returns. Then correct the doc comment of `startWait` so that it states the true condition.
