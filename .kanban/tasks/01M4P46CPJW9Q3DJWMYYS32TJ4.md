@@ -1,6 +1,17 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4p4707k45p15tbtmvjyk2ss
+  text: |-
+    ### Sibling tasks (2026-10-11)
+    - FoundationModelsMultitool ^1dzf1za (01M4P465D86TRZBJ1V81DZF1ZA): one shared pending text for all background-work places.
+    - FoundationModelsMultitool ^9pnyvyp (01M4P46MBNPN4MWKZKE9PNYVYP): mark a runCode call that calls no tools.* verb as a no-op (information only).
+    - FoundationModelsRouter ^rw72f4j (01M4P46A27T975CVFXYRW72F4J): stop the generation on a no-op tool call while an operation is pending. Depends on the mark of ^9pnyvyp.
+    - FoundationModelsAgents ^24nf9ss (01M4P46GJ5WZ7Q3E9NH24NF9SS): the same text for start agent. It removes the instruction to call {"op": "check agent"} from the pending text.
+    - next: start item 3 of this task (bench check) only after all four are done and pushed.
+  timestamp: 2026-10-11T18:39:43.859216+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
