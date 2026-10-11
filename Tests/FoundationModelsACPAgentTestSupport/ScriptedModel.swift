@@ -130,6 +130,38 @@ public enum ScriptedModelError: Error, Equatable {
     case unknownTool(String)
 }
 
+/// Two points in the delivery of a scripted transcript where a test can hold
+/// the backend (``ScriptedSessionBackend/init(script:tools:instructions:seededEntries:recorder:generationQueue:passCounter:deliveryHooks:)``).
+///
+/// A test uses them to put a cancel of an update reader at an exact point
+/// of a transcript change, with no dependency on timing. A backend that no
+/// test changes has hooks that do nothing.
+public struct TranscriptDeliveryHooks: Sendable {
+    /// Runs after each change of the transcript, before the open
+    /// ``ScriptedSessionBackend/transcriptUpdates()`` streams get the
+    /// changed entries.
+    public var beforeDelivery: @Sendable () -> Void
+
+    /// Runs when a ``ScriptedSessionBackend/transcriptUpdates()`` stream
+    /// ends, before the backend forgets the stream.
+    public var beforeObserverRemoval: @Sendable () -> Void
+
+    /// Makes hooks.
+    ///
+    /// - Parameters:
+    ///   - beforeDelivery: The hook before each delivery. It does nothing
+    ///     by default.
+    ///   - beforeObserverRemoval: The hook before each removal of an
+    ///     update stream. It does nothing by default.
+    public init(
+        beforeDelivery: @escaping @Sendable () -> Void = {},
+        beforeObserverRemoval: @escaping @Sendable () -> Void = {}
+    ) {
+        self.beforeDelivery = beforeDelivery
+        self.beforeObserverRemoval = beforeObserverRemoval
+    }
+}
+
 /// A session backend that plays a fixed script: text deltas, known
 /// tool calls with fixed arguments, and a pass end.
 ///
@@ -240,6 +272,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// the test does not count the passes.
     private let passCounter: ScriptedPassCounter?
 
+    /// The test hooks of the transcript delivery. They do nothing in a
+    /// backend that no test changes.
+    private let deliveryHooks: TranscriptDeliveryHooks
+
     /// Creates a backend that plays `script` against `tools`.
     ///
     /// - Parameters:
@@ -256,6 +292,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///     `nil` (the default) for a backend whose calls run directly.
     ///   - passCounter: The counter of the plays, or `nil` (the default)
     ///     to count nothing.
+    ///   - deliveryHooks: The test hooks of the transcript delivery. The
+    ///     default hooks do nothing.
     public init(
         script: [ScriptedPassStep],
         tools: [any Tool],
@@ -263,7 +301,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         seededEntries: [Transcript.Entry] = [],
         recorder: PromptRecorder? = nil,
         generationQueue: GenerationQueue? = nil,
-        passCounter: ScriptedPassCounter? = nil
+        passCounter: ScriptedPassCounter? = nil,
+        deliveryHooks: TranscriptDeliveryHooks = TranscriptDeliveryHooks()
     ) {
         self.script = script
         self.tools = tools
@@ -271,6 +310,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         self.recorder = recorder
         self.generationQueue = generationQueue
         self.passCounter = passCounter
+        self.deliveryHooks = deliveryHooks
         let opening =
             seededEntries.isEmpty
             ? [Self.instructionsEntry(instructions: instructions, tools: tools)]
@@ -334,7 +374,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             seededEntries: seededEntries,
             recorder: recorder,
             generationQueue: generationQueue,
-            passCounter: passCounter)
+            passCounter: passCounter,
+            deliveryHooks: deliveryHooks)
     }
 
     public func transcriptEntries() -> [Transcript.Entry] {
@@ -361,10 +402,15 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             let key = state.nextObserverKey
             state.nextObserverKey += 1
             state.observers[key] = continuation
+            // This yield under the lock is safe: the stream is new, thus no
+            // reader waits on it and no `onTermination` handler is set yet.
+            // The yield only keeps the value in the buffer. It keeps the
+            // first value and the later changes in order.
             continuation.yield(state.entries)
             return key
         }
         continuation.onTermination = { [weak self] _ in
+            self?.deliveryHooks.beforeObserverRemoval()
             self?.synthesized.withLock { state in
                 _ = state.observers.removeValue(forKey: key)
             }
@@ -441,18 +487,30 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// Changes the synthesized transcript with `change`, and gives the
     /// changed entries to each open ``transcriptUpdates()`` stream.
     ///
+    /// The delivery occurs after the lock is released (task ^05rmb1p). A
+    /// yield can resume a reader task, and the runtime then takes the status
+    /// lock of that task. A cancel of that reader holds the same status lock
+    /// while it runs the `onTermination` handler of the stream, and that
+    /// handler takes the lock of the transcript. A yield under the lock thus
+    /// stops both threads.
+    ///
+    /// The passes of one backend run one at a time, thus the changes come
+    /// from one task, in order, and each delivery goes out before the next
+    /// change.
+    ///
     /// - Parameter change: The change to make, under the lock.
     /// - Returns: What `change` returns.
     private func changeTranscript<Result: Sendable>(
         _ change: (inout SynthesizedTranscript) -> Result
     ) -> Result {
-        synthesized.withLock { state in
-            let result = change(&state)
-            for observer in state.observers.values {
-                observer.yield(state.entries)
-            }
-            return result
+        let (result, entries, observers) = synthesized.withLock { state in
+            (change(&state), state.entries, Array(state.observers.values))
         }
+        deliveryHooks.beforeDelivery()
+        for observer in observers {
+            observer.yield(entries)
+        }
+        return result
     }
 
     /// Adds `text` to the `.reasoning` entry of the pass in flight, and
