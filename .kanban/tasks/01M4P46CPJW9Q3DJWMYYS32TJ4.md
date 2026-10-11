@@ -22,6 +22,18 @@ comments:
     - Test: a unit test that the check is true for a runCode call of `return "end 11";` and false for a call of `return await tools.files.read({...})` and for a call of another tool.
     - next: do this after both shas arrive and `swift package update` moves both pins.
   timestamp: 2026-10-11T18:53:31.209140+00:00
+- actor: claude-code
+  id: 01m4p7prs2zg27wbtx4s7mmbge
+  text: |-
+    ### Router ^rw72f4j done (2026-10-11)
+    - Local commit c5f33e59 on main of FoundationModelsRouter. NOT pushed yet.
+    - API: `SessionConfiguration.isNoOpToolCall: NoOpToolCallCheck`, `public typealias NoOpToolCallCheck = @Sendable (_ toolName: String, _ arguments: GeneratedContent) -> Bool`. Default `SessionConfiguration.defaultIsNoOpToolCall` returns false. A fork keeps the check.
+    - Router asks the check before the tool body runs, only while an operation is pending.
+    - Only no-op calls in a round: the answer ends with an empty reply; the injected result is the next message.
+    - No-op + real call: the real call runs; the no-op is not in the context; one more submission with "Your tool results are above. Continue the task."
+    - Limit: a restored session (session/resume) does not get the check yet: Router task ^4nk083c. The bench does not resume sessions, so the bench check is not affected.
+    - next: wait for the Multitool sha of ^9pnyvyp, and for both commits on origin/main, then wire the check.
+  timestamp: 2026-10-11T19:40:46.242432+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
