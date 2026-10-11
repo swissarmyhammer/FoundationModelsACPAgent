@@ -1,0 +1,1 @@
+{"id":"01M4MF68DDMHGZJT8NDKPKKCS0","timestamp":"2026-10-11T03:13:04.941280Z","op":"create","item_id":"01M4MF68DDZ082JRDHHV062CW5","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: e36209\n+tag_name: terminal\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: e36209\n-tag_name: terminal\n","transaction_id":null}
