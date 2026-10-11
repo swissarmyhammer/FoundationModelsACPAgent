@@ -13,48 +13,50 @@ import Testing
 /// A sink that holds its first send until the test releases it: a client
 /// that reads slowly.
 private actor HeldSink {
+    /// The steps of the hold of the first send.
+    enum Phase {
+        /// No send came to the sink yet.
+        case waitingForFirstSend
+
+        /// The sink holds its first send.
+        case holding
+
+        /// The test released the hold. Each send goes through at once.
+        case released
+    }
+
     /// The recorder of each update that came to the sink.
     let recorder = SinkRecorder()
 
-    /// Whether the sink still holds its first send.
-    private var isHolding = true
-
-    /// The first send, while the sink holds it.
-    private var heldSend: CheckedContinuation<Void, Never>?
-
-    /// The test that waits until the sink holds a send.
-    private var holdWaiter: CheckedContinuation<Void, Never>?
+    /// The step of the hold. A send and the test wait on it.
+    private let phase = WatchedValue(Phase.waitingForFirstSend)
 
     /// Records `update`, and holds the first send until ``release()``.
+    ///
+    /// The hold also ends when the task of the send is cancelled. The sink
+    /// cannot throw, so the send then goes through.
     ///
     /// - Parameter update: The sent update.
     func receive(_ update: SessionUpdate) async {
         await recorder.append(update)
-        guard isHolding, heldSend == nil else {
+        guard phase.value == .waitingForFirstSend else {
             return
         }
-        await withCheckedContinuation { continuation in
-            heldSend = continuation
-            holdWaiter?.resume()
-            holdWaiter = nil
-        }
+        phase.update { $0 = .holding }
+        _ = try? await phase.wait(for: "the release of the held send") { $0 == .released }
     }
 
     /// Returns when the sink holds its first send.
-    func waitUntilHolding() async {
-        guard heldSend == nil else {
-            return
-        }
-        await withCheckedContinuation { continuation in
-            holdWaiter = continuation
-        }
+    ///
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the test is
+    ///   cancelled before the sink holds a send.
+    func waitUntilHolding() async throws {
+        _ = try await phase.wait(for: "the hold of the first send") { $0 != .waitingForFirstSend }
     }
 
     /// Releases the held send. Each later send goes through at once.
     func release() {
-        isHolding = false
-        heldSend?.resume()
-        heldSend = nil
+        phase.update { $0 = .released }
     }
 }
 
@@ -618,7 +620,7 @@ private final class SnapshotSequence: Sendable {
             await sink.receive(update)
         }
         Self.sendBudgetChunk(to: upstream)
-        await sink.waitUntilHolding()
+        try await sink.waitUntilHolding()
         for _ in 0..<Self.overBudgetChunkCount {
             Self.sendBudgetChunk(to: upstream)
             try await Task.sleep(for: Self.readAheadWindow)
@@ -626,7 +628,7 @@ private final class SnapshotSequence: Sendable {
         upstream.complete(commandID: Self.completionToken)
         await sink.release()
 
-        let updates = await sink.recorder.updates { updates in
+        let updates = try await sink.recorder.updates(until: "the exit update") { updates in
             terminalUpdates(in: updates).contains { $0.exitStatus != .unchanged }
         }
         upstream.finish()
@@ -679,12 +681,12 @@ private final class SnapshotSequence: Sendable {
         input.yield(ShellOutputEvent(commandID: Self.completionToken, kind: .completed))
         input.yield(
             ShellOutputEvent(commandID: Self.joinedRunToken, kind: .output(stream: .stdout, bytes: stored)))
-        _ = await recorder.updates { updates in
+        _ = try await recorder.updates(until: "the chunk of the joined run") { updates in
             terminalChunks(in: updates).contains { $0.terminalId.rawValue == Self.joinedRunToken }
         }
 
         table.record(toolCallID: nil, for: Self.completionToken)
-        let updates = await recorder.updates { updates in
+        let updates = try await recorder.updates(until: "the exit update of the released run") { updates in
             terminalUpdates(in: updates).contains { terminal in
                 terminal.terminalId.rawValue == Self.completionToken && terminal.exitStatus != .unchanged
             }
@@ -724,12 +726,12 @@ private final class SnapshotSequence: Sendable {
         input.yield(
             ShellOutputEvent(
                 commandID: Self.joinedRunToken, kind: .output(stream: .stdout, bytes: Self.firstChunk)))
-        _ = await recorder.updates { updates in
+        _ = try await recorder.updates(until: "the chunk of the joined run") { updates in
             terminalChunks(in: updates).contains { $0.terminalId.rawValue == Self.joinedRunToken }
         }
 
         table.record(toolCallID: nil, for: Self.completionToken)
-        _ = await recorder.updates { updates in
+        _ = try await recorder.updates(until: "the release update of the waiting run") { updates in
             terminalUpdates(in: updates).contains { $0.terminalId.rawValue == Self.completionToken }
         }
         input.yield(Self.makeOutputEvent(bytes: Self.secondChunk))

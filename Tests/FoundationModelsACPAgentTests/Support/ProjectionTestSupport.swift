@@ -81,47 +81,36 @@ actor SinkRecorder {
     /// Tells if the updates that a reader waits for are all recorded.
     typealias Completion = @Sendable ([SessionUpdate]) -> Bool
 
-    /// One reader that waits for more updates.
-    private struct Waiter {
-        /// Tells if the updates of the reader are all recorded.
-        let isComplete: Completion
-
-        /// The wait of the reader.
-        let continuation: CheckedContinuation<[SessionUpdate], Never>
-    }
+    /// The collected updates, in send order, and the readers that wait for
+    /// more updates.
+    private let log = WatchedValue<[SessionUpdate]>([])
 
     /// The collected updates, in send order.
-    private(set) var updates: [SessionUpdate] = []
-
-    /// The readers that wait for more updates.
-    private var waiters: [Waiter] = []
+    var updates: [SessionUpdate] {
+        log.value
+    }
 
     /// Appends one update, and resumes each reader whose updates are now
     /// all recorded.
     ///
     /// - Parameter update: The update to record.
     func append(_ update: SessionUpdate) {
-        updates.append(update)
-        let recorded = updates
-        let ready = waiters.filter { $0.isComplete(recorded) }
-        waiters.removeAll { $0.isComplete(recorded) }
-        for waiter in ready {
-            waiter.continuation.resume(returning: recorded)
-        }
+        log.update { $0.append(update) }
     }
 
     /// The recorded updates, as soon as `isComplete` accepts them. When it
     /// does not accept the updates of now, it waits for more updates.
     ///
-    /// - Parameter isComplete: Tells if the updates are all recorded.
+    /// - Parameters:
+    ///   - condition: The name of the updates that the reader waits for.
+    ///     The failure of a cancelled wait gives this name.
+    ///   - isComplete: Tells if the updates are all recorded.
     /// - Returns: The recorded updates, in send order.
-    func updates(until isComplete: @escaping Completion) async -> [SessionUpdate] {
-        if isComplete(updates) {
-            return updates
-        }
-        return await withCheckedContinuation { continuation in
-            waiters.append(Waiter(isComplete: isComplete, continuation: continuation))
-        }
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the reader is
+    ///   cancelled before `isComplete` accepts the updates, as at the time
+    ///   limit of a test.
+    func updates(until condition: String, _ isComplete: @escaping Completion) async throws -> [SessionUpdate] {
+        try await log.wait(for: condition, until: isComplete)
     }
 }
 

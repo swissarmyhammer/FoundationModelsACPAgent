@@ -344,8 +344,10 @@ import Testing
     ///   - session: The live session.
     /// - Returns: The updates that the session sent until then, in send
     ///   order.
-    private static func updatesUntilOutput(of token: String, in session: LiveShellSession) async -> [SessionUpdate] {
-        await session.recorder.updates { updates in
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the test is
+    ///   cancelled before the chunk comes.
+    private static func updatesUntilOutput(of token: String, in session: LiveShellSession) async throws -> [SessionUpdate] {
+        try await session.recorder.updates(until: "an output chunk of the run \(token)") { updates in
             chunkTerminalIds(in: updates).contains(token)
         }
     }
@@ -428,7 +430,7 @@ import Testing
         session.send(Self.outputChunk(Self.secondRunToken))
         session.send(Self.outputChunk(Self.runToken))
 
-        let joinedRunUpdates = await Self.updatesUntilOutput(of: Self.runToken, in: session)
+        let joinedRunUpdates = try await Self.updatesUntilOutput(of: Self.runToken, in: session)
         session.runCallJoins.record(toolCallID: nil, for: Self.secondRunToken)
         let updates = await session.finish()
 
@@ -452,15 +454,15 @@ import Testing
         let session = LiveShellSession()
         session.send(Self.openRecord(Self.runToken, toolCallID: Self.sdkCallId))
         session.send(Self.progress(Self.runToken))
-        _ = await session.recorder.updates { updates in
+        _ = try await session.recorder.updates(until: "the progress update of the root run") { updates in
             !Self.toolCallIds(carrying: Self.progressText, in: updates).isEmpty
         }
         session.send(Self.outputChunk(Self.agentShellRunToken))
         session.send(Self.outputChunk(Self.runToken))
 
-        let rootUpdates = await Self.updatesUntilOutput(of: Self.runToken, in: session)
+        let rootUpdates = try await Self.updatesUntilOutput(of: Self.runToken, in: session)
         session.runCallJoins.recordAgentRunEvent(Self.openRecord(Self.agentShellRunToken, toolCallID: Self.agentSdkCallId))
-        let agentUpdates = await session.recorder.updates { updates in
+        let agentUpdates = try await session.recorder.updates(until: "the announce of the agent shell run") { updates in
             !Self.terminalAnnounceIds(of: Self.agentShellRunToken, in: updates).isEmpty
         }
         _ = await session.finish()
@@ -497,9 +499,9 @@ import Testing
         // The chunk of the joined second run goes out only after the terminal
         // stream read the chunk of the root run, which then waits.
         session.send(Self.outputChunk(Self.secondRunToken))
-        _ = await Self.updatesUntilOutput(of: Self.secondRunToken, in: session)
+        _ = try await Self.updatesUntilOutput(of: Self.secondRunToken, in: session)
         session.send(Self.agentRunSettlement)
-        _ = await session.recorder.updates { updates in
+        _ = try await session.recorder.updates(until: "the settlement update of the agent run") { updates in
             toolCallUpdates(in: updates).contains { $0.toolCallId.rawValue == Self.agentStartToken }
         }
         for event in Self.joinedShellRunEvents {
