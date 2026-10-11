@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsRouter
 import Synchronization
 
 /// The join of each tool run of one session to the SDK tool call that started
@@ -24,29 +25,32 @@ import Synchronization
 ///
 /// The first write for a run is final. A later write for the same run changes
 /// nothing. Thus each consumer reads the same entry, and each run has one wire
-/// id. No time decides an entry. Only the consumers of the event stream of the
-/// root prompt write one:
+/// id. No time decides an entry. Each entry comes from an event of the run
+/// itself, or from the end of the prompt:
 ///
-/// - the open record of the run (``record(toolCallID:for:)``),
-/// - the settlement of the run (``seal(_:)``),
+/// - the open record of a root run (``record(toolCallID:for:)``),
+/// - the settlement of a root run (``seal(_:)``),
+/// - the open record of a run of an agent run (``recordAgentRunEvent(_:)``,
+///   task ^zbcrex8). An agent run (the `agents` tool) uses the shell
+///   capability of the root session, but its tool records go to the event
+///   stream of the agent run, not to the root prompt. The run event observer
+///   of the agent environment gives each of those events to this table. The
+///   agent run sends no wire update of its tool runs, so "no join" is the
+///   correct entry for them.
 /// - the end of the prompt (``closePrompt()``): each waiting run gets "no join".
 ///   A run whose first event comes while no prompt is open gets "no join" at
-///   once, because no projection writes an entry then.
-/// - the end of an agent run (``runDidEnd(tool:)``): each waiting run gets
-///   "no join". An agent run (the `agents` tool) uses the shell capability of
-///   the root session, but its tool records go to the event stream of the
-///   agent run, which FoundationModelsAgents reads in a private loop. No code
-///   of this package sees them, so no projection writes an entry for a shell
-///   run of an agent run. The agent run sends no wire update of its tool runs,
-///   so "no join" is the correct entry for them.
+///   once. This rule stays: no projection writes an entry for a root run
+///   after its prompt ended, for example for a root run whose open record a
+///   cancelled prompt never handled. Without the rule, such a run would wait
+///   until the shell output stream ends.
 ///
-/// Known limit of the agent-run write: a root run that starts just after an
-/// agent run ended, and whose first chunk comes before the projection handled
-/// its open record, also gets "no join". Exact entries for the runs of an
-/// agent run need FoundationModelsAgents to give the host the tool records of
-/// each run.
+/// The end of an agent run writes no entry. Thus a root run that starts just
+/// after an agent run ended keeps the SDK id of its own open record, also
+/// when its first chunk comes before the projection handled the end of the
+/// agent run.
 ///
-/// The session owns one table, because the terminal stream lives for the whole
+/// The session surface owns one table (``SessionSurface/runCallJoins``),
+/// because the terminal stream and the agent environment live for the whole
 /// session and each prompt makes a new projection. An entry stays for the life
 /// of the session: a background run can settle in a later prompt. An entry is
 /// one short string for each run.
@@ -85,21 +89,8 @@ final class RunCallJoinTable: Sendable {
         var isPromptOpen = false
     }
 
-    /// The name of the `agents` tool of the session, or `nil` when the
-    /// session has no `agents` tool. The end of a run of this tool ends an
-    /// agent run (``runDidEnd(tool:)``).
-    let agentsToolName: String?
-
     /// The state of the table.
     private let state = Mutex(State())
-
-    /// Makes an empty table.
-    ///
-    /// - Parameter agentsToolName: The name of the `agents` tool of the
-    ///   session, or `nil` when the session has no `agents` tool.
-    init(agentsToolName: String? = nil) {
-        self.agentsToolName = agentsToolName
-    }
 
     /// Writes the join of the open record of a run, when the run has no entry
     /// yet.
@@ -134,16 +125,24 @@ final class RunCallJoinTable: Sendable {
         sealWaitingRuns()
     }
 
-    /// Writes "no join" for each waiting run when `tool` is the `agents`
-    /// tool: a run of that tool ended, so an agent run ended. The projection
-    /// calls it for each close record and for each settlement.
+    /// Writes "no join" for the run of an open record in the event stream of
+    /// an agent run. Each other event writes nothing.
     ///
-    /// - Parameter tool: The tool of the run that ended.
-    func runDidEnd(tool: String) {
-        guard tool == agentsToolName else {
+    /// The run event observer of the agent environment calls this
+    /// synchronously in the follow loop of each agent run
+    /// (``AgentsComposition/makeRunEventObserver(runCallJoins:)``). Thus it
+    /// only takes the lock, and it does not wait.
+    ///
+    /// An agent run sends no wire update of its tool runs, so a tool run of an
+    /// agent run keeps its completion token, also when Router of the agent run
+    /// joined the record to an SDK call of the agent run.
+    ///
+    /// - Parameter event: One session event of an agent run.
+    func recordAgentRunEvent(_ event: SessionEvent) {
+        guard case .toolInvocation(let record, _) = event, record.closedAt == nil else {
             return
         }
-        sealWaitingRuns()
+        seal(record.correlationID)
     }
 
     /// Sets the receiver of the tokens of the waiting runs whose entry was

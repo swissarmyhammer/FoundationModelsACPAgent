@@ -67,11 +67,15 @@ enum AgentsComposition {
     ///     over an empty skills registry, and the agent registry reads no
     ///     marketplace.
     ///   - runTools: The tools that a run can get, by name.
+    ///   - runCallJoins: The join table of the session. The environment
+    ///     writes the entry of each tool run of each agent run into it
+    ///     (``makeRunEventObserver(runCallJoins:)``).
     /// - Returns: The mount, or `nil` when the section is off.
     /// - Throws: Whatever `AgentRegistry.load()`, `AgentEnvironment.make`
     ///   or `AgentsTool.make(context:)` throws.
     static func compose(
-        context: CatalogContext, skills: SkillsSource?, runTools: FoundationModelsAgents::ToolCatalog
+        context: CatalogContext, skills: SkillsSource?, runTools: FoundationModelsAgents::ToolCatalog,
+        runCallJoins: RunCallJoinTable
     ) async throws -> AgentsMount? {
         guard context.configuration.tools.agents.mountedOptions != nil else {
             return nil
@@ -84,10 +88,36 @@ enum AgentsComposition {
             skillsSelectionModel: RoutedSelectionModel(profile: context.profile),
             workingDirectory: context.workingDirectory,
             tools: runTools,
-            inlineSettleGrace: context.inlineSettleGrace)
+            inlineSettleGrace: context.inlineSettleGrace,
+            runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins))
         let runner = AgentRunner(registry: registry, environment: environment)
         let tool = try await AgentsTool.make(context: AgentsToolContext(runner: runner))
         return AgentsMount(tool: tool, runner: runner, environment: environment)
+    }
+
+    /// Makes the observer of the session events of each agent run of the
+    /// session (task ^zbcrex8). It gives each event to `runCallJoins`, and
+    /// the open record of a tool run writes "no join" for that run
+    /// (``RunCallJoinTable/recordAgentRunEvent(_:)``).
+    ///
+    /// An agent run uses the shell capability of the root session, so the
+    /// output of its shell runs comes on the shell output stream of the
+    /// session, but its tool records go to the event stream of the agent run.
+    /// The terminal stream holds a shell run that has no entry, and this
+    /// entry releases it while the agent run continues.
+    ///
+    /// The environment is made for one session, and the table belongs to the
+    /// same surface, so the observer needs no lookup from the run to the
+    /// session. Each run calls the observer synchronously in its follow loop,
+    /// child runs too, and two runs can call it at the same time. Thus the
+    /// observer only takes the lock of the table, and it does not wait.
+    ///
+    /// - Parameter runCallJoins: The join table of the session.
+    /// - Returns: The observer for `AgentEnvironment.make(runEventObserver:)`.
+    static func makeRunEventObserver(runCallJoins: RunCallJoinTable) -> AgentEnvironment.RunEventObserver {
+        { _, event in
+            runCallJoins.recordAgentRunEvent(event)
+        }
     }
 
     /// Makes the agent registry over the `agents` dotfolder stack, and over

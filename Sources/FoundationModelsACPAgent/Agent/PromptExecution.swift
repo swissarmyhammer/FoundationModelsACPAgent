@@ -1071,7 +1071,7 @@ extension RoutedACPAgent {
             relayElicitation: { event in
                 await relay.relay(event, on: session, promptState: owner)
             },
-            runCallJoins: entry.runCallJoins)
+            runCallJoins: entry.surface.runCallJoins)
         // The prompt span context goes with the work, so each Router
         // submission span of the prompt is a child of the prompt span.
         connection.afterRespondingInCurrentServiceContext {

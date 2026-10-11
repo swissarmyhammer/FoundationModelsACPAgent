@@ -114,13 +114,6 @@ struct ActiveSession: Sendable {
     /// shares it (``RetainedHistory``).
     let retainedHistory: RetainedHistory
 
-    /// The join of each tool run of the session to its SDK tool call
-    /// (task ^9xk3xf4). The projection of each prompt writes it, and the
-    /// terminal stream of the session reads it, so the `Terminal` announce
-    /// of a shell run goes on the same wire id as the other updates of the
-    /// run.
-    let runCallJoins: RunCallJoinTable
-
     /// A copy of the retained history as it is now.
     var history: SessionMergeEngine {
         retainedHistory.snapshot
@@ -513,9 +506,6 @@ extension RoutedACPAgent {
         let configOptions = ConfigOptions.options(
             profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
 
-        // The table knows the `agents` tool, because the end of an agent run
-        // ends the wait of its shell runs (``RunCallJoinTable/runDidEnd(tool:)``).
-        let runCallJoins = RunCallJoinTable(agentsToolName: composition.surface.agents?.tool.name)
         sessions[sessionId] = ActiveSession(
             session: session,
             configuration: composition.configuration,
@@ -530,15 +520,14 @@ extension RoutedACPAgent {
             activePrompt: nil,
             activeElicitationRelay: nil,
             indexRecorded: indexRecorded,
-            retainedHistory: RetainedHistory(history),
-            runCallJoins: runCallJoins)
+            retainedHistory: RetainedHistory(history))
         recordActiveSessions()
 
         // The response announces the first command list, and each registry
         // change after it publishes the new list.
         publishAvailableCommands(from: commands, sessionId: sessionId)
 
-        startTerminalProjection(over: composition.surface, runCallJoins: runCallJoins, sessionId: sessionId)
+        startTerminalProjection(over: composition.surface, sessionId: sessionId)
 
         reportMCPServerStatus(composition.surface.mcpServerOutcomes, of: sessionId)
 
@@ -552,23 +541,21 @@ extension RoutedACPAgent {
     /// one consumer loop over the host-owned shell output stream,
     /// posting each terminal update through the bound connection and
     /// keeping it in the retained history (``historySink(for:connection:)``).
+    /// The join table of the surface (``SessionSurface/runCallJoins``) gives
+    /// the wire id of each `Terminal` announce.
     /// A session with no shell mount, or an agent with no bound
     /// connection, starts nothing. The loop ends when
     /// ``markSessionClosed(_:)`` finishes the stream.
     ///
     /// - Parameters:
     ///   - surface: The session's mounted surface.
-    ///   - runCallJoins: The join table of the session, which gives the
-    ///     wire id of each `Terminal` announce.
     ///   - sessionId: The session the updates belong to.
-    private func startTerminalProjection(
-        over surface: SessionSurface, runCallJoins: RunCallJoinTable, sessionId: SessionId
-    ) {
+    private func startTerminalProjection(over surface: SessionSurface, sessionId: SessionId) {
         guard let shellOutput = surface.shellOutput, let connection = boundConnection else {
             return
         }
         TerminalStream.start(
-            over: shellOutput, runCallJoins: runCallJoins,
+            over: shellOutput, runCallJoins: surface.runCallJoins,
             send: historySink(for: sessionId, connection: connection))
     }
 

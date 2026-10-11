@@ -270,6 +270,10 @@ import Testing
     /// the agent run.
     private static let agentStartToken = "01JOINAGENTSTART0000000004"
 
+    /// The SDK tool-call id that Router of an agent run joined to
+    /// ``agentShellRunToken``. No wire update uses it.
+    private static let agentSdkCallId = "call-agent-shell-3"
+
     /// The name of the `agents` tool of the session.
     private static let agentsToolName = "agents"
 
@@ -437,11 +441,15 @@ import Testing
     }
 
     /// A shell run of an agent run does not hold up the terminal output of
-    /// the root prompt. Its output waits, and the end of the agent run sends
-    /// it on the completion token.
+    /// the root prompt. Its output waits for its entry. The open record of the
+    /// run in the event stream of the agent run writes that entry (the run
+    /// event observer of the agent environment, task ^zbcrex8), while the
+    /// agent run continues. The announce goes on the completion token, also
+    /// when Router of the agent run joined the record to an SDK call of the
+    /// agent run: the agent run sends no wire update of its tool runs.
     @Test(.timeLimit(.minutes(1)))
-    func anAgentShellRunDoesNotHoldUpRootTerminalOutput() async throws {
-        let session = LiveShellSession(runCallJoins: RunCallJoinTable(agentsToolName: Self.agentsToolName))
+    func anAgentShellRunGetsItsEntryFromItsOwnOpenRecord() async throws {
+        let session = LiveShellSession()
         session.send(Self.openRecord(Self.runToken, toolCallID: Self.sdkCallId))
         session.send(Self.progress(Self.runToken))
         _ = await session.recorder.updates { updates in
@@ -451,7 +459,7 @@ import Testing
         session.send(Self.outputChunk(Self.runToken))
 
         let rootUpdates = await Self.updatesUntilOutput(of: Self.runToken, in: session)
-        session.send(Self.agentRunSettlement)
+        session.runCallJoins.recordAgentRunEvent(Self.openRecord(Self.agentShellRunToken, toolCallID: Self.agentSdkCallId))
         let agentUpdates = await session.recorder.updates { updates in
             !Self.terminalAnnounceIds(of: Self.agentShellRunToken, in: updates).isEmpty
         }
@@ -460,5 +468,48 @@ import Testing
         #expect(Self.terminalAnnounceIds(in: rootUpdates) == [Self.sdkCallId])
         #expect(Self.chunkTerminalIds(in: rootUpdates) == [Self.runToken])
         #expect(Self.terminalAnnounceIds(of: Self.agentShellRunToken, in: agentUpdates) == [Self.agentShellRunToken])
+    }
+
+    /// Only the open record of a tool run of an agent run writes an entry.
+    /// A close record, and an event that is not a record, write nothing: the
+    /// run still waits for its entry.
+    @Test func onlyTheOpenRecordOfAnAgentRunWritesAnEntry() {
+        let runCallJoins = RunCallJoinTable()
+        runCallJoins.openPrompt()
+
+        runCallJoins.recordAgentRunEvent(Self.closeRecord(Self.agentShellRunToken, toolCallID: nil))
+        runCallJoins.recordAgentRunEvent(Self.progress(Self.agentShellRunToken))
+
+        #expect(runCallJoins.announceToolCallId(for: Self.agentShellRunToken) == nil)
+    }
+
+    /// A root shell run that starts after an agent run ended keeps its SDK id.
+    /// The first chunk of the root run comes before the projection handled
+    /// the end of the agent run and the open record of the root run, as when
+    /// the projection lags. The end of the agent run writes no entry, so the
+    /// open record of the root run writes the SDK id, and the run gives one
+    /// wire id.
+    @Test(.timeLimit(.minutes(1)))
+    func aRootShellRunThatStartsAfterAnAgentRunEndedKeepsItsSdkId() async throws {
+        let session = LiveShellSession()
+        session.runCallJoins.record(toolCallID: Self.secondSdkCallId, for: Self.secondRunToken)
+        session.send(Self.outputChunk(Self.runToken))
+        // The chunk of the joined second run goes out only after the terminal
+        // stream read the chunk of the root run, which then waits.
+        session.send(Self.outputChunk(Self.secondRunToken))
+        _ = await Self.updatesUntilOutput(of: Self.secondRunToken, in: session)
+        session.send(Self.agentRunSettlement)
+        _ = await session.recorder.updates { updates in
+            toolCallUpdates(in: updates).contains { $0.toolCallId.rawValue == Self.agentStartToken }
+        }
+        for event in Self.joinedShellRunEvents {
+            session.send(event)
+        }
+        session.send(Self.completionMarker(Self.runToken))
+
+        let updates = await session.finish()
+
+        #expect(Self.terminalAnnounceIds(in: updates) == [Self.sdkCallId])
+        #expect(!(try Self.wireToolCallIds(in: updates)).contains(Self.runToken))
     }
 }

@@ -403,12 +403,8 @@ struct EventProjection {
             // later update of the run goes on that id. A record that no SDK
             // call joined keeps the completion token as its wire id. The
             // first write for a run is final, and the close record carries
-            // the id of its open record. The close record of an `agents`
-            // call ends a wait of the shell runs of an agent run.
+            // the id of its open record.
             runCallJoins.record(toolCallID: toolCallID, for: record.correlationID)
-            if record.closedAt != nil {
-                runCallJoins.runDidEnd(tool: record.tool)
-            }
             ACPAgentTelemetry.logger(.promptExecution).debug(
                 "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
         case .entryRecorded(let id, let kind):
@@ -433,11 +429,8 @@ struct EventProjection {
         case .runSettled(let operationEvent):
             sawOutput = true
             // A settled run that has no join entry gets "no join", so a
-            // terminal announce that waits for the run stops waiting. The
-            // settlement of an `agents` run ends a wait of the shell runs of
-            // the agent run.
+            // terminal announce that waits for the run stops waiting.
             runCallJoins.seal(operationEvent.correlationID)
-            runCallJoins.runDidEnd(tool: operationEvent.tool)
             await projectSettlement(of: operationEvent)
         case .runProgress(let operationEvent):
             // A report of a run, not output of the model: it does not set

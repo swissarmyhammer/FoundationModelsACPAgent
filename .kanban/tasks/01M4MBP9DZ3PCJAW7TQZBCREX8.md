@@ -14,8 +14,34 @@ comments:
 
     Start this task after ^39h13a1, because both move a pin in Package.resolved.
   timestamp: 2026-10-11T11:49:06.879756+00:00
-position_column: todo
-position_ordinal: '9680'
+- actor: claude-code
+  id: 01m4ng5bcf4mkfm1nssv6p34as
+  text: |-
+    Picked up. Research:
+    - Pin moved in Package.resolved and IntegrationTests/Package.resolved: FoundationModelsAgents 016945e -> c658f04 (resolve with a new empty scratch path). The diff against the backups shows only that revision line; originHash did not change.
+    - The surface (ToolCatalog.sessionSurface) is made per session: session/new and session/resume each compose one. AgentsComposition.compose runs inside it, so the agent environment is per session, not shared. The shell output stream is also a surface field.
+    - Design: the surface owns the RunCallJoinTable. sessionSurface makes the table, gives it to AgentsComposition.compose (which passes runEventObserver to AgentEnvironment.make) and keeps it as SessionSurface.runCallJoins. ActiveSession reads entry.surface.runCallJoins, so one object owns the table and no token -> session lookup is necessary.
+    - AgentRun has no public init. The wiring test gets a real AgentRun from surface.agents.runner.start (as AgentsToolTests does).
+  timestamp: 2026-10-11T12:49:18.223631+00:00
+- actor: claude-code
+  id: 01m4nh6ty5qyxmjjx3v4akryta
+  text: |-
+    Implementation landed (TDD, two cycles):
+    - Cycle 1 RED (stub `recordAgentRunEvent`): `aRootShellRunThatStartsAfterAnAgentRunEndedKeepsItsSdkId` failed on the old table (announce on the completion token 01JOIN...0001, not call-shell-1): this is the old race. `anAgentShellRunGetsItsEntryFromItsOwnOpenRecord` failed by the 1-minute time limit (no entry). GREEN after `RunCallJoinTable.recordAgentRunEvent(_:)` and the removal of `runDidEnd(tool:)`, `agentsToolName` and the two EventProjection callers: 3/3 pass.
+    - Cycle 2: the surface owns the table (`SessionSurface.runCallJoins`, made in `ToolCatalog.sessionSurface`); `ActiveSession.runCallJoins` is gone, PromptExecution and the terminal stream read `entry.surface.runCallJoins`. RED: `AgentsToolTests.theOpenRecordOfAToolRunOfAnAgentRunWritesItsEntryWhileTheRunIsInOperation` failed (`runEventObserver` nil). GREEN after `AgentsComposition.makeRunEventObserver(runCallJoins:)` was passed to `AgentEnvironment.make(runEventObserver:)`.
+    - Note: when the observer test hangs (no entry), `recorder.updates {}` does not react to the time-limit cancel, so a RED run of that test hangs until a kill. That is the behavior of the existing test helper; it is not new.
+    - The "no prompt open -> no join at once" rule stays: no projection writes an entry for a root run after its prompt ended (for example a root run whose open record a cancelled prompt never handled). Without the rule such a run waits until the shell output stream ends.
+  timestamp: 2026-10-11T13:07:35.493842+00:00
+- actor: claude-code
+  id: 01m4nhjyekemn6vmxkwsv8jskq
+  text: |-
+    ### implement — changed
+    - evidence: pin FoundationModelsAgents 016945e -> c658f04 in Package.resolved and IntegrationTests/Package.resolved (git-ignored; only that revision line changed, originHash the same). 8 files: Sources/FoundationModelsACPAgent/Agent/{RunCallJoinTable,EventProjection,SessionSetup,PromptExecution}.swift, Sources/FoundationModelsACPAgent/Tools/{AgentsComposition,ToolCatalog}.swift, Tests/FoundationModelsACPAgentTests/{ToolCallJoinProjectionTests,AgentsToolTests}.swift. Root `swift test --scratch-path .build/alt --force-resolved-versions`: 911 tests in 99 suites pass (1 known issue: the deliberate withKnownIssue in HarnessSmokeTests). IntegrationTests (`--no-parallel`, IntegrationTests/.build/alt): 35 tests in 13 suites pass. The only build warning is the SwiftPM "missing creator for mutated node ... mlx-swift_Cmlx.bundle" line of the build system, not of a source file.
+    - note: TerminalStreamTests.swift and the ^39h13a1 card had changes from a parallel session during the runs; this task did not touch them.
+    - next: /review
+  timestamp: 2026-10-11T13:14:12.307622+00:00
+position_column: doing
+position_ordinal: '8180'
 title: Give the host the tool records of an agent run, so the run-call join table gets exact entries
 ---
 ## Problem
@@ -35,6 +61,6 @@ A root shell run that starts just after an agent run ended, and whose first chun
 
 ## Acceptance
 
-- [ ] A shell run of an agent run gets its entry from its own open record, not from the end of the agent run.
-- [ ] A root shell run that starts after an agent run ended keeps its SDK id (a test with the root chunk before the root open record and after the agent-end event).
-- [ ] The agent-end write is gone.
+- [x] A shell run of an agent run gets its entry from its own open record, not from the end of the agent run.
+- [x] A root shell run that starts after an agent run ended keeps its SDK id (a test with the root chunk before the root open record and after the agent-end event).
+- [x] The agent-end write is gone.

@@ -2,6 +2,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Foundation
 import Testing
@@ -515,6 +516,45 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         await surface.stopAgentRuns()
 
         #expect(run.state == .cancelled)
+        hold.release()
+        await surface.shutdown()
+    }
+
+    // MARK: - The run event observer (task ^zbcrex8)
+
+    /// The completion token of a tool run of an agent run.
+    static let agentToolRunToken = "01AGENTSTOOLRUNTOKEN000001"
+
+    /// The open record of a tool run of an agent run, which Router of the
+    /// agent run joined to an SDK call of the agent run.
+    static let agentToolRunOpenRecord: SessionEvent = .toolInvocation(
+        ToolInvocationRecord(
+            tool: "shell", op: "execute command", correlationID: agentToolRunToken,
+            sessionID: ULID.generate(), openedAt: Date(timeIntervalSince1970: 0)),
+        toolCallID: "call-of-the-agent-run")
+
+    /// The agent environment gives each session event of an agent run to the
+    /// join table of the surface. The open record of a tool run of the agent
+    /// run writes "no join" for that run while the agent run is in operation,
+    /// so the terminal stream announces the run on its completion token and
+    /// does not wait for the end of the agent run.
+    @Test(.timeLimit(.minutes(1)))
+    func theOpenRecordOfAToolRunOfAnAgentRunWritesItsEntryWhileTheRunIsInOperation() async throws {
+        let hold = ScriptedHold()
+        let context = try await Self.makeContext(
+            label: "observer", script: Self.startAgentScript(hold: hold))
+        let surface = try await SurfaceCatalog.sessionSurface(context: context)
+        let agents = try #require(surface.agents)
+        let run = try await agents.runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
+        let observer = try #require(agents.environment.runEventObserver)
+        surface.runCallJoins.openPrompt()
+
+        observer(run, Self.agentToolRunOpenRecord)
+
+        #expect(run.state == .running)
+        #expect(
+            surface.runCallJoins.announceToolCallId(for: Self.agentToolRunToken)
+                == ToolCallId(rawValue: Self.agentToolRunToken))
         hold.release()
         await surface.shutdown()
     }

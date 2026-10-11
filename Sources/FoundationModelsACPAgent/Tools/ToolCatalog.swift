@@ -58,6 +58,14 @@ public struct SessionSurface: Sendable {
     /// when the `agents:` section is off.
     let agents: AgentsMount?
 
+    /// The join of each tool run of the session to its SDK tool call (tasks
+    /// ^9xk3xf4 and ^zbcrex8). The surface owns it, because the shell output
+    /// stream and the agent environment of the surface live for the whole
+    /// session. The projection of each prompt writes the entries of the root
+    /// runs, the agent environment writes the entries of the runs of each
+    /// agent run, and the terminal stream of the session reads each entry.
+    let runCallJoins: RunCallJoinTable
+
     /// Makes a session surface with no MCP server outcome and no `agents`
     /// tool.
     ///
@@ -83,7 +91,7 @@ public struct SessionSurface: Sendable {
         self.init(
             tools: tools, serverPool: serverPool, filesReadVerb: filesReadVerb,
             shellOutput: shellOutput, codeContextStop: codeContextStop, mcpServerOutcomes: [],
-            inlineSettleGrace: inlineSettleGrace, agents: nil)
+            inlineSettleGrace: inlineSettleGrace, agents: nil, runCallJoins: RunCallJoinTable())
     }
 
     /// Makes a session surface.
@@ -102,6 +110,8 @@ public struct SessionSurface: Sendable {
     ///   - inlineSettleGrace: The settle period of the root session.
     ///   - agents: The mounted `agents` tool, or `nil` when the `agents:`
     ///     section is off.
+    ///   - runCallJoins: The join table of the session, which the agent
+    ///     environment of `agents` writes.
     init(
         tools: [any FoundationModels.Tool],
         serverPool: MCPServerPool,
@@ -110,7 +120,8 @@ public struct SessionSurface: Sendable {
         codeContextStop: (@Sendable () async -> Void)?,
         mcpServerOutcomes: [MCPComposition.ServerOutcome],
         inlineSettleGrace: TimeInterval,
-        agents: AgentsMount?
+        agents: AgentsMount?,
+        runCallJoins: RunCallJoinTable
     ) {
         self.tools = tools
         self.serverPool = serverPool
@@ -120,6 +131,7 @@ public struct SessionSurface: Sendable {
         self.mcpServerOutcomes = mcpServerOutcomes
         self.inlineSettleGrace = inlineSettleGrace
         self.agents = agents
+        self.runCallJoins = runCallJoins
     }
 
     /// Cancels each agent run of the surface, waits for each run to close
@@ -264,10 +276,12 @@ public enum ToolCatalog {
         if skillsSource == nil {
             skillsSource = await makeSkillsSource(context: context)
         }
+        let runCallJoins = RunCallJoinTable()
         let agents = try await AgentsComposition.compose(
             context: context, skills: skillsSource,
             runTools: AgentsComposition.makeRunTools(
-                registry: built.registry, selection: selection, embedder: embedder))
+                registry: built.registry, selection: selection, embedder: embedder),
+            runCallJoins: runCallJoins)
         let tools = try await mounted.tools + makeStandaloneTools(
             context: context, skills: skillsSource, agents: agents)
         await MCPComposition.startSurfaceRefresher(
@@ -281,7 +295,8 @@ public enum ToolCatalog {
             codeContextStop: built.codeContextStop,
             mcpServerOutcomes: built.mcpServerOutcomes,
             inlineSettleGrace: context.inlineSettleGrace,
-            agents: agents)
+            agents: agents,
+            runCallJoins: runCallJoins)
     }
 
     /// The standalone tools that follow the Multitool session tools, in
