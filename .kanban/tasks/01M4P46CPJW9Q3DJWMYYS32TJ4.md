@@ -34,6 +34,16 @@ comments:
     - Limit: a restored session (session/resume) does not get the check yet: Router task ^4nk083c. The bench does not resume sessions, so the bench check is not affected.
     - next: wait for the Multitool sha of ^9pnyvyp, and for both commits on origin/main, then wire the check.
   timestamp: 2026-10-11T19:40:46.242432+00:00
+- actor: claude-code
+  id: 01m4p8bx5wntvsxcwdevepnxhw
+  text: |-
+    ### Multitool ^9pnyvyp and ^1dzf1za done (2026-10-11)
+    - `MultiTool.callsNoTool(snippet: String) -> Bool`: local commit 4c35b7f on main of FoundationModelsMultitool. True for all six no-op forms, also `await new Promise(() => {});`, without running the snippet. False for any snippet with the identifier `tools` or a `\u` escape.
+    - The shared pending text (^1dzf1za): local commit dd32c9e.
+    - Both NOT pushed yet; Router c5f33e59 is not pushed either.
+    - Still open: Agents ^24nf9ss.
+    - next: when Multitool and Router are on origin/main, `swift package update`, then wire `isNoOpToolCall` and do items 1-2 of this task.
+  timestamp: 2026-10-11T19:52:18.876829+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
