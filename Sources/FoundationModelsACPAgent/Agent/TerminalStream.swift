@@ -17,7 +17,9 @@ import Logging
 /// - The first event of a run sends the `tool_call_update` whose
 ///   content is the `Terminal` reference, so the client can attach the
 ///   terminal to the call before any byte arrives. When the join of the
-///   run is not known yet, the update waits for it.
+///   run is not known yet, the events of that run wait, in arrival order,
+///   until the table writes its entry. The events of the other runs do not
+///   wait.
 /// - `.output(stream:bytes:)` becomes one `terminal_output_chunk`,
 ///   base64-encoded on its own. The bytes stay true: no UTF-8 decode
 ///   and no lossy text coercion touches them.
@@ -52,6 +54,23 @@ struct TerminalStream {
     /// leaves the set at its completion marker, because no later event
     /// carries its `commandID`.
     private var announcedRuns: Set<String> = []
+
+    /// The events of each run that waits for its entry in ``runCallJoins``,
+    /// in arrival order, keyed by the `commandID` of the run.
+    private var waitingEvents: [String: [ShellOutputEvent]] = [:]
+
+    /// One input of the consumer loop.
+    private enum Input: Sendable {
+        /// A live shell event.
+        case event(ShellOutputEvent)
+
+        /// The table wrote the entry of the waiting run with this
+        /// `commandID`.
+        case joined(String)
+
+        /// The shell output stream ended.
+        case streamEnded
+    }
 
     /// Makes a projection over `snapshot`, `runCallJoins` and `send`.
     ///
@@ -100,21 +119,105 @@ struct TerminalStream {
 
     /// Consumes `events` to its end, projecting each one.
     ///
+    /// One loop reads two inputs in one order: the live shell events, and
+    /// the entries that ``runCallJoins`` writes for the waiting runs. Thus a
+    /// run that waits for its entry stops only its own events. When the
+    /// shell output stream ends, the loop continues until no run waits. A
+    /// cancelled task stops the loop at once, and each run that still waits
+    /// gets "no join" (``releaseWaitingRuns()``).
+    ///
     /// - Parameter events: The live stream, usually a
     ///   `ShellOutputChunkStream`.
-    mutating func consume<Events: AsyncSequence<ShellOutputEvent, Never>>(
+    mutating func consume<Events: AsyncSequence<ShellOutputEvent, Never> & Sendable>(
         _ events: Events
     ) async {
-        for await event in events {
-            await project(event)
+        let (inputs, continuation) = AsyncStream.makeStream(of: Input.self)
+        runCallJoins?.observeJoins { commandID in
+            continuation.yield(.joined(commandID))
+        }
+        let forwarder = Task {
+            for await event in events {
+                continuation.yield(.event(event))
+            }
+            continuation.yield(.streamEnded)
+        }
+        await handle(inputs)
+        forwarder.cancel()
+        runCallJoins?.observeJoins(nil)
+        continuation.finish()
+        await releaseWaitingRuns()
+    }
+
+    /// Handles each input until the shell output stream ended and no run
+    /// waits, or until the task is cancelled.
+    ///
+    /// - Parameter inputs: The merged inputs of ``consume(_:)``.
+    private mutating func handle(_ inputs: AsyncStream<Input>) async {
+        var isStreamEnded = false
+        for await input in inputs {
+            switch input {
+            case .event(let event):
+                await project(event)
+            case .joined(let commandID):
+                await announceWaitingRun(commandID)
+            case .streamEnded:
+                isStreamEnded = true
+            }
+            if isStreamEnded && waitingEvents.isEmpty {
+                return
+            }
         }
     }
 
-    /// Projects one live shell event to the wire.
+    /// Projects one live shell event to the wire. The event of a run that
+    /// waits for its entry waits too, after the earlier events of its run.
     ///
     /// - Parameter event: The event to project.
     mutating func project(_ event: ShellOutputEvent) async {
-        await announceRunIfNew(event.commandID)
+        let commandID = event.commandID
+        if waitingEvents[commandID] != nil {
+            waitingEvents[commandID]?.append(event)
+            return
+        }
+        if !announcedRuns.contains(commandID) {
+            guard let toolCallId = announceToolCallId(for: commandID) else {
+                waitingEvents[commandID] = [event]
+                return
+            }
+            await announce(commandID, on: toolCallId)
+        }
+        await emit(event)
+    }
+
+    /// Sends the announce of a run that waited, on the id of its entry, and
+    /// then each event of the run that waited, in arrival order.
+    ///
+    /// - Parameter commandID: The run whose entry the table wrote.
+    private mutating func announceWaitingRun(_ commandID: String) async {
+        guard let events = waitingEvents.removeValue(forKey: commandID) else {
+            return
+        }
+        await announce(
+            commandID, on: runCallJoins?.toolCallId(for: commandID) ?? ToolCallId(rawValue: commandID))
+        for event in events {
+            await emit(event)
+        }
+    }
+
+    /// Writes "no join" for each run that still waits, and sends its events:
+    /// the loop ended, so no entry comes to the loop after this point. A run
+    /// whose entry the table wrote before the seal keeps that entry.
+    private mutating func releaseWaitingRuns() async {
+        for commandID in Array(waitingEvents.keys) {
+            runCallJoins?.seal(commandID)
+            await announceWaitingRun(commandID)
+        }
+    }
+
+    /// Sends one live shell event of a run that is announced.
+    ///
+    /// - Parameter event: The event to send.
+    private mutating func emit(_ event: ShellOutputEvent) async {
         switch event.kind {
         case .output(_, let bytes):
             await send(
@@ -164,21 +267,34 @@ struct TerminalStream {
     ///
     /// The update keys on the wire id that ``runCallJoins`` gives the run:
     /// the joined SDK id, or the `commandID` when no SDK call joined the
-    /// run. When the join is not known yet, it waits for the join, so it
-    /// sends one update on the final id. The `Terminal` reference keeps
-    /// the `commandID`.
+    /// run. The caller sends it only when the entry is final, so each run
+    /// gets one update on its final id. The `Terminal` reference keeps the
+    /// `commandID`.
     ///
-    /// - Parameter commandID: The run the event belongs to.
-    private mutating func announceRunIfNew(_ commandID: String) async {
-        guard announcedRuns.insert(commandID).inserted else { return }
-        let toolCallId =
-            await runCallJoins?.announceToolCallId(for: commandID) ?? ToolCallId(rawValue: commandID)
+    /// - Parameters:
+    ///   - commandID: The run the event belongs to.
+    ///   - toolCallId: The final wire id of the run.
+    private mutating func announce(_ commandID: String, on toolCallId: ToolCallId) async {
+        announcedRuns.insert(commandID)
         await send(
             .toolCallUpdate(
                 ToolCallUpdate(
                     toolCallId: toolCallId,
                     content: .value([Self.terminalItem(for: commandID)]),
                     status: .value(.inProgress))))
+    }
+
+    /// The final wire id of a run that has no announce yet, or `nil` when
+    /// the run must wait for its entry in ``runCallJoins``. With no table,
+    /// each run keeps its `commandID`.
+    ///
+    /// - Parameter commandID: The run.
+    /// - Returns: The tool call id, or `nil` when the run waits.
+    private func announceToolCallId(for commandID: String) -> ToolCallId? {
+        guard let runCallJoins else {
+            return ToolCallId(rawValue: commandID)
+        }
+        return runCallJoins.announceToolCallId(for: commandID)
     }
 
     /// Replaces the client's view of one run with the stored record: a

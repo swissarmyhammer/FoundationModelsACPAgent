@@ -260,18 +260,90 @@ import Testing
 
     /// The live shell events of the run: one output chunk, then the
     /// completion marker.
-    private static let liveShellEvents: [ShellOutputEvent] = [
-        ShellOutputEvent(commandID: runToken, kind: .output(stream: .stdout, bytes: Array(progressText.utf8))),
-        ShellOutputEvent(commandID: runToken, kind: .completed),
-    ]
+    private static let liveShellEvents: [ShellOutputEvent] = [outputChunk(runToken), completionMarker(runToken)]
+
+    /// The completion token of a shell run of an agent run. No projection of
+    /// the root prompt sees a record of it.
+    private static let agentShellRunToken = "01JOINAGENTSHELLRUN0000003"
+
+    /// The completion token of the root run of the `agents` tool that started
+    /// the agent run.
+    private static let agentStartToken = "01JOINAGENTSTART0000000004"
+
+    /// The name of the `agents` tool of the session.
+    private static let agentsToolName = "agents"
+
+    /// The op of the `agents` call that starts an agent run.
+    private static let agentStartOp = "start agent"
+
+    /// The time between the first chunk of a run and its open record in the
+    /// late-record case. It is longer than the one-second wait bound that an
+    /// earlier version of the terminal stream had.
+    private static let lateOpenRecordDelay: Duration = .milliseconds(1_500)
+
+    /// The settlement of the root run of the `agents` tool: the agent run
+    /// ended.
+    private static let agentRunSettlement: SessionEvent = .runSettled(
+        OperationEvent(
+            tool: agentsToolName, op: agentStartOp, correlationID: agentStartToken, kind: .completed,
+            detail: "{}", outcome: .succeeded))
+
+    /// One output chunk of a run.
+    ///
+    /// - Parameter token: The completion token of the run.
+    /// - Returns: The live shell event.
+    private static func outputChunk(_ token: String) -> ShellOutputEvent {
+        ShellOutputEvent(commandID: token, kind: .output(stream: .stdout, bytes: Array(progressText.utf8)))
+    }
+
+    /// The completion marker of a run.
+    ///
+    /// - Parameter token: The completion token of the run.
+    /// - Returns: The live shell event.
+    private static func completionMarker(_ token: String) -> ShellOutputEvent {
+        ShellOutputEvent(commandID: token, kind: .completed)
+    }
 
     /// The `toolCallId` of each `tool_call_update` that attaches the terminal
-    /// of the run, in send order.
+    /// of ``runToken``, in send order.
     ///
     /// - Parameter updates: The sent updates.
     /// - Returns: The tool-call ids of the terminal announces.
     private static func terminalAnnounceIds(in updates: [SessionUpdate]) -> [String] {
-        toolCallUpdates(in: updates).filter { terminalIds(in: $0.content) == [runToken] }.map(\.toolCallId.rawValue)
+        terminalAnnounceIds(of: runToken, in: updates)
+    }
+
+    /// The `toolCallId` of each `tool_call_update` that attaches the terminal
+    /// of one run, in send order.
+    ///
+    /// - Parameters:
+    ///   - token: The completion token of the run, which is its terminal id.
+    ///   - updates: The sent updates.
+    /// - Returns: The tool-call ids of the terminal announces.
+    private static func terminalAnnounceIds(of token: String, in updates: [SessionUpdate]) -> [String] {
+        toolCallUpdates(in: updates).filter { terminalIds(in: $0.content) == [token] }.map(\.toolCallId.rawValue)
+    }
+
+    /// The terminal id of each output chunk, in send order.
+    ///
+    /// - Parameter updates: The sent updates.
+    /// - Returns: The terminal ids.
+    private static func chunkTerminalIds(in updates: [SessionUpdate]) -> [String] {
+        terminalChunks(in: updates).map(\.terminalId.rawValue)
+    }
+
+    /// The updates of a live session, as soon as an output chunk of one run
+    /// is among them.
+    ///
+    /// - Parameters:
+    ///   - token: The completion token of the run.
+    ///   - session: The live session.
+    /// - Returns: The updates that the session sent until then, in send
+    ///   order.
+    private static func updatesUntilOutput(of token: String, in session: LiveShellSession) async -> [SessionUpdate] {
+        await session.recorder.updates { updates in
+            chunkTerminalIds(in: updates).contains(token)
+        }
     }
 
     /// A joined shell run with live output gives exactly one `toolCallId` on
@@ -310,8 +382,8 @@ import Testing
 
     /// A shell run that the prompt never records and never settles, for
     /// example a run of an agent run, does not stop the terminal stream: the
-    /// end of the prompt or the wait bound stops the wait, and the announce
-    /// goes on the completion token.
+    /// end of the prompt stops the wait, and the announce goes on the
+    /// completion token.
     @Test(.timeLimit(.minutes(1)))
     func aRunThatThePromptNeverSeesStillAnnouncesOnTheCompletionToken() async throws {
         let updates = await SyntheticPrompt.sentUpdates(
@@ -319,5 +391,68 @@ import Testing
 
         #expect(Self.terminalAnnounceIds(in: updates) == [Self.runToken])
         #expect(terminalChunks(in: updates).count == 1)
+    }
+
+    /// No time decides the join. An open record that comes long after the
+    /// first chunk of its run still gives one wire id: the SDK id, for the
+    /// terminal announce and for each update of the run.
+    @Test(.timeLimit(.minutes(1)))
+    func anOpenRecordLongAfterTheFirstChunkStillGivesOnlyTheSdkId() async throws {
+        let session = LiveShellSession()
+        session.send(Self.outputChunk(Self.runToken))
+        try await Task.sleep(for: Self.lateOpenRecordDelay)
+        for event in Self.joinedShellRunEvents {
+            session.send(event)
+        }
+        session.send(Self.completionMarker(Self.runToken))
+
+        let updates = await session.finish()
+
+        #expect(Set(try Self.wireToolCallIds(in: updates)) == [Self.sdkCallId])
+        #expect(Self.terminalAnnounceIds(in: updates) == [Self.sdkCallId])
+    }
+
+    /// The wait of one run does not stop the terminal stream. The output of
+    /// a joined run goes out at once, while a run with no entry waits. When
+    /// the entry of the waiting run comes, its announce and its output go out.
+    @Test(.timeLimit(.minutes(1)))
+    func aJoinedRunFlowsWhileAnUnjoinedRunWaitsForItsEntry() async throws {
+        let session = LiveShellSession()
+        session.runCallJoins.record(toolCallID: Self.sdkCallId, for: Self.runToken)
+        session.send(Self.outputChunk(Self.secondRunToken))
+        session.send(Self.outputChunk(Self.runToken))
+
+        let joinedRunUpdates = await Self.updatesUntilOutput(of: Self.runToken, in: session)
+        session.runCallJoins.record(toolCallID: nil, for: Self.secondRunToken)
+        let updates = await session.finish()
+
+        #expect(Self.terminalAnnounceIds(in: joinedRunUpdates) == [Self.sdkCallId])
+        #expect(Self.chunkTerminalIds(in: joinedRunUpdates) == [Self.runToken])
+        #expect(Self.terminalAnnounceIds(of: Self.secondRunToken, in: updates) == [Self.secondRunToken])
+        #expect(Self.chunkTerminalIds(in: updates) == [Self.runToken, Self.secondRunToken])
+    }
+
+    /// A shell run of an agent run does not hold up the terminal output of
+    /// the root prompt. Its output waits, and the end of the agent run sends
+    /// it on the completion token.
+    @Test(.timeLimit(.minutes(1)))
+    func anAgentShellRunDoesNotHoldUpRootTerminalOutput() async throws {
+        let session = LiveShellSession(runCallJoins: RunCallJoinTable(agentsToolName: Self.agentsToolName))
+        session.send(Self.openRecord(Self.runToken, toolCallID: Self.sdkCallId))
+        session.send(Self.progress(Self.runToken))
+        _ = await session.recorder.updates { updates in
+            !Self.toolCallIds(carrying: Self.progressText, in: updates).isEmpty
+        }
+        session.send(Self.outputChunk(Self.agentShellRunToken))
+        session.send(Self.outputChunk(Self.runToken))
+
+        let rootUpdates = await Self.updatesUntilOutput(of: Self.runToken, in: session)
+        session.send(Self.agentRunSettlement)
+        let agentUpdates = await Self.updatesUntilOutput(of: Self.agentShellRunToken, in: session)
+        _ = await session.finish()
+
+        #expect(Self.terminalAnnounceIds(in: rootUpdates) == [Self.sdkCallId])
+        #expect(Self.chunkTerminalIds(in: rootUpdates) == [Self.runToken])
+        #expect(Self.terminalAnnounceIds(of: Self.agentShellRunToken, in: agentUpdates) == [Self.agentShellRunToken])
     }
 }

@@ -513,7 +513,9 @@ extension RoutedACPAgent {
         let configOptions = ConfigOptions.options(
             profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
 
-        let runCallJoins = RunCallJoinTable()
+        // The table knows the `agents` tool, because the end of an agent run
+        // ends the wait of its shell runs (``RunCallJoinTable/runDidEnd(tool:)``).
+        let runCallJoins = RunCallJoinTable(agentsToolName: composition.surface.agents?.tool.name)
         sessions[sessionId] = ActiveSession(
             session: session,
             configuration: composition.configuration,

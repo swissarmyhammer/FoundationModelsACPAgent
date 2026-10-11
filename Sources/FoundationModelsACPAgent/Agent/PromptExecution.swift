@@ -252,6 +252,10 @@ struct PromptExecution: Sendable {
             prompt = await PromptContent.modelPrompt(
                 from: promptBlocks, resolver: contentResolver)
         }
+        // The prompt is open before Router can start a tool run of it, so a
+        // shell run of the prompt waits for the entry that the projection
+        // writes (task ^9xk3xf4). `drive` closes it.
+        runCallJoins.openPrompt()
         // The subscription comes before the caller stream, so it holds each
         // event of the prompt (task ^64pav2a).
         let followUp = await SessionFollowUp.subscribing(to: session)
@@ -306,8 +310,10 @@ struct PromptExecution: Sendable {
         }
         sessionEvents?.close()
         // No projection writes a join after this point, so a terminal
-        // announce that still waits for a run of the prompt stops waiting.
-        runCallJoins.sealWaitingRuns()
+        // announce that still waits for a run of the prompt stops waiting,
+        // and a run that starts before the next prompt gets "no join" at
+        // once.
+        runCallJoins.closePrompt()
         // A cancelled prompt does not always throw: model work that
         // never checks for cancellation runs to completion. The recorded
         // request still ends the prompt as cancelled.

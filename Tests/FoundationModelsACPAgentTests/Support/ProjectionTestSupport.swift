@@ -76,14 +76,50 @@ let syntheticModelName = "synthetic-model"
 
 /// A sink that collects every update a prompt sends.
 actor SinkRecorder {
+    /// Tells if the updates that a reader waits for are all recorded.
+    typealias Completion = @Sendable ([SessionUpdate]) -> Bool
+
+    /// One reader that waits for more updates.
+    private struct Waiter {
+        /// Tells if the updates of the reader are all recorded.
+        let isComplete: Completion
+
+        /// The wait of the reader.
+        let continuation: CheckedContinuation<[SessionUpdate], Never>
+    }
+
     /// The collected updates, in send order.
     private(set) var updates: [SessionUpdate] = []
 
-    /// Appends one update.
+    /// The readers that wait for more updates.
+    private var waiters: [Waiter] = []
+
+    /// Appends one update, and resumes each reader whose updates are now
+    /// all recorded.
     ///
     /// - Parameter update: The update to record.
     func append(_ update: SessionUpdate) {
         updates.append(update)
+        let recorded = updates
+        let ready = waiters.filter { $0.isComplete(recorded) }
+        waiters.removeAll { $0.isComplete(recorded) }
+        for waiter in ready {
+            waiter.continuation.resume(returning: recorded)
+        }
+    }
+
+    /// The recorded updates, as soon as `isComplete` accepts them. When it
+    /// does not accept the updates of now, it waits for more updates.
+    ///
+    /// - Parameter isComplete: Tells if the updates are all recorded.
+    /// - Returns: The recorded updates, in send order.
+    func updates(until isComplete: @escaping Completion) async -> [SessionUpdate] {
+        if isComplete(updates) {
+            return updates
+        }
+        return await withCheckedContinuation { continuation in
+            waiters.append(Waiter(isComplete: isComplete, continuation: continuation))
+        }
     }
 }
 
@@ -201,12 +237,12 @@ enum SyntheticPrompt {
         let runCallJoins = RunCallJoinTable()
         var execution = sinkedExecution
         execution.runCallJoins = runCallJoins
+        // The prompt opens before its events, as `PromptExecution.run` does.
+        runCallJoins.openPrompt()
         let send: SessionUpdateSink = { update in await recorder.append(update) }
         let terminal = { @Sendable in
             var stream = TerminalStream(snapshot: { _ in nil }, runCallJoins: runCallJoins, send: send)
-            for event in shellEvents {
-                await stream.project(event)
-            }
+            await stream.consume(makeShellEventStream(shellEvents))
         }
         switch order {
         case .promptFirst:
@@ -217,6 +253,97 @@ enum SyntheticPrompt {
             await execution.drive(events: makeEventStream(events))
             await terminalTask.value
         }
+        return await recorder.updates
+    }
+}
+
+/// Makes a finished stream of live shell events.
+///
+/// - Parameter events: The events to yield, in order.
+/// - Returns: The stream.
+func makeShellEventStream(_ events: [ShellOutputEvent]) -> AsyncStream<ShellOutputEvent> {
+    AsyncStream { continuation in
+        for event in events {
+            continuation.yield(event)
+        }
+        continuation.finish()
+    }
+}
+
+/// One live session for a test that sets the order of the prompt events and
+/// the shell events itself. One prompt and one terminal stream send through
+/// one recorder and share one ``RunCallJoinTable``, as in a session. The
+/// prompt starts when the value is made, and it stays open until
+/// ``finish()``.
+struct LiveShellSession {
+    /// The join table that the prompt and the terminal stream share.
+    let runCallJoins: RunCallJoinTable
+
+    /// The recorder of each update that the prompt and the terminal stream
+    /// sent.
+    let recorder: SinkRecorder
+
+    /// The input of the event stream of the prompt.
+    private let promptEvents: AsyncThrowingStream<SessionEvent, Error>.Continuation
+
+    /// The input of the shell output stream of the session.
+    private let shellEvents: AsyncStream<ShellOutputEvent>.Continuation
+
+    /// The task that drives the prompt.
+    private let prompt: Task<Void, Never>
+
+    /// The task that consumes the shell output stream.
+    private let terminal: Task<Void, Never>
+
+    /// Starts one prompt and one terminal stream over `runCallJoins`.
+    ///
+    /// - Parameter runCallJoins: The join table of the session.
+    init(runCallJoins: RunCallJoinTable = RunCallJoinTable()) {
+        let (sinkedExecution, recorder) = makeSinkedExecution()
+        var execution = sinkedExecution
+        execution.runCallJoins = runCallJoins
+        let (promptStream, promptEvents) = AsyncThrowingStream.makeStream(of: SessionEvent.self)
+        let (shellStream, shellEvents) = AsyncStream.makeStream(of: ShellOutputEvent.self)
+        let send: SessionUpdateSink = { update in await recorder.append(update) }
+        self.runCallJoins = runCallJoins
+        self.recorder = recorder
+        self.promptEvents = promptEvents
+        self.shellEvents = shellEvents
+        // The prompt opens before its events, as `PromptExecution.run` does.
+        runCallJoins.openPrompt()
+        prompt = Task {
+            await execution.drive(events: promptStream)
+        }
+        terminal = Task {
+            var stream = TerminalStream(snapshot: { _ in nil }, runCallJoins: runCallJoins, send: send)
+            await stream.consume(shellStream)
+        }
+    }
+
+    /// Gives one event to the prompt.
+    ///
+    /// - Parameter event: The session event.
+    func send(_ event: SessionEvent) {
+        promptEvents.yield(event)
+    }
+
+    /// Gives one event to the terminal stream.
+    ///
+    /// - Parameter event: The live shell event.
+    func send(_ event: ShellOutputEvent) {
+        shellEvents.yield(event)
+    }
+
+    /// Ends the prompt, then the shell output stream, and waits for both
+    /// consumers.
+    ///
+    /// - Returns: Each update that the prompt and the terminal stream sent,
+    ///   in send order.
+    func finish() async -> [SessionUpdate] {
+        promptEvents.finish()
+        await prompt.value
+        shellEvents.finish()
+        await terminal.value
         return await recorder.updates
     }
 }

@@ -1,5 +1,4 @@
 import FoundationModelsACP
-import Logging
 import Synchronization
 
 /// The join of each tool run of one session to the SDK tool call that started
@@ -17,23 +16,35 @@ import Synchronization
 ///   table (``announceToolCallId(for:)``).
 ///
 /// The two streams have no common order: a shell chunk can come before the
-/// projection handled the open record. Then the terminal stream waits for the
-/// entry, and sends one announce only after that. It never sends on the
-/// completion token and later on the SDK id.
+/// projection handled the open record. Then the run waits for its entry: the
+/// terminal stream keeps the events of that run, and the table tells it when
+/// the entry is written (``observeJoins(_:)``). The terminal stream sends one
+/// announce only after that. It never sends on the completion token and later
+/// on the SDK id.
 ///
 /// The first write for a run is final. A later write for the same run changes
 /// nothing. Thus each consumer reads the same entry, and each run has one wire
-/// id. These events stop a wait, and each one writes "no join" when the run has
-/// no entry yet:
+/// id. No time decides an entry. Only the consumers of the event stream of the
+/// root prompt write one:
 ///
+/// - the open record of the run (``record(toolCallID:for:)``),
 /// - the settlement of the run (``seal(_:)``),
-/// - the end of the prompt (``sealWaitingRuns()``),
-/// - the cancellation of the waiting task,
-/// - the end of ``joinWaitBound``. A shell run of an agent run uses the shell
-///   capability of the root session, but its records go to the event stream of
-///   the agent run, not to the projection of the root prompt. Without this
-///   bound, such a run would stop the terminal stream of the session until the
-///   root prompt ends.
+/// - the end of the prompt (``closePrompt()``): each waiting run gets "no join".
+///   A run whose first event comes while no prompt is open gets "no join" at
+///   once, because no projection writes an entry then.
+/// - the end of an agent run (``runDidEnd(tool:)``): each waiting run gets
+///   "no join". An agent run (the `agents` tool) uses the shell capability of
+///   the root session, but its tool records go to the event stream of the
+///   agent run, which FoundationModelsAgents reads in a private loop. No code
+///   of this package sees them, so no projection writes an entry for a shell
+///   run of an agent run. The agent run sends no wire update of its tool runs,
+///   so "no join" is the correct entry for them.
+///
+/// Known limit of the agent-run write: a root run that starts just after an
+/// agent run ended, and whose first chunk comes before the projection handled
+/// its open record, also gets "no join". Exact entries for the runs of an
+/// agent run need FoundationModelsAgents to give the host the tool records of
+/// each run.
 ///
 /// The session owns one table, because the terminal stream lives for the whole
 /// session and each prompt makes a new projection. An entry stays for the life
@@ -43,17 +54,9 @@ import Synchronization
 /// `EventProjection` reads the table from synchronous code, thus a `Mutex`
 /// keeps the state, as ``RetainedHistory`` does.
 final class RunCallJoinTable: Sendable {
-    /// The seconds ``joinWaitBound`` is built from.
-    private static let joinWaitBoundSeconds = 1
-
-    /// The longest time that the terminal stream waits for the join of a run.
-    /// At the end of the bound, the table writes "no join" for the run, and
-    /// the run keeps its completion token as its wire id.
-    ///
-    /// The projection usually handles the open record before the shell process
-    /// writes its first byte, so the usual wait is zero. The bound stops the
-    /// wait for a run that no projection of this session sees.
-    static let joinWaitBound: Duration = .seconds(joinWaitBoundSeconds)
+    /// Receives the completion token of each waiting run whose entry was
+    /// written.
+    typealias JoinObserver = @Sendable (String) -> Void
 
     /// The join of one run.
     private enum Join: Equatable, Sendable {
@@ -64,22 +67,42 @@ final class RunCallJoinTable: Sendable {
         case unjoined
     }
 
-    /// The entries and the waiting announces, under one lock.
+    /// The entries and the waiting runs, under one lock.
     private struct State {
         /// The join of each run that has an entry, keyed by the completion
         /// token of the run.
         var joins: [String: Join] = [:]
 
-        /// The announces that wait for the entry of a run, keyed by the
-        /// completion token of the run.
-        var waiters: [String: [CheckedContinuation<Join, Never>]] = [:]
+        /// The completion tokens of the runs whose events wait for an entry.
+        var waitingRuns: Set<String> = []
+
+        /// The receiver of the tokens of the waiting runs whose entry was
+        /// written, or `nil` when no terminal stream reads the table.
+        var joinObserver: JoinObserver?
+
+        /// Whether a root prompt is open, so that a projection can write an
+        /// entry.
+        var isPromptOpen = false
     }
+
+    /// The name of the `agents` tool of the session, or `nil` when the
+    /// session has no `agents` tool. The end of a run of this tool ends an
+    /// agent run (``runDidEnd(tool:)``).
+    let agentsToolName: String?
 
     /// The state of the table.
     private let state = Mutex(State())
 
+    /// Makes an empty table.
+    ///
+    /// - Parameter agentsToolName: The name of the `agents` tool of the
+    ///   session, or `nil` when the session has no `agents` tool.
+    init(agentsToolName: String? = nil) {
+        self.agentsToolName = agentsToolName
+    }
+
     /// Writes the join of the open record of a run, when the run has no entry
-    /// yet, and resumes each announce that waits for it.
+    /// yet.
     ///
     /// - Parameters:
     ///   - toolCallID: The SDK tool-call id that Router joined to the run, or
@@ -89,20 +112,46 @@ final class RunCallJoinTable: Sendable {
         store(toolCallID.map { Join.joined(toolCallID: $0) } ?? .unjoined, for: token)
     }
 
-    /// Writes "no join" for a run that has no entry yet, and resumes each
-    /// announce that waits for it. A run that has an entry keeps it.
+    /// Writes "no join" for a run that has no entry yet. A run that has an
+    /// entry keeps it.
     ///
     /// - Parameter token: The completion token of the run.
     func seal(_ token: String) {
         store(.unjoined, for: token)
     }
 
-    /// Writes "no join" for each run that an announce waits for. The end of a
-    /// prompt calls it: no projection writes a join after that.
-    func sealWaitingRuns() {
-        for token in state.withLock({ Array($0.waiters.keys) }) {
-            seal(token)
+    /// Records that a root prompt is open. Call it before the prompt starts
+    /// its Router stream, so that a run of the prompt waits for the entry that
+    /// the projection writes.
+    func openPrompt() {
+        state.withLock { $0.isPromptOpen = true }
+    }
+
+    /// Records that the root prompt ended, and writes "no join" for each
+    /// waiting run: no projection writes an entry after this point.
+    func closePrompt() {
+        state.withLock { $0.isPromptOpen = false }
+        sealWaitingRuns()
+    }
+
+    /// Writes "no join" for each waiting run when `tool` is the `agents`
+    /// tool: a run of that tool ended, so an agent run ended. The projection
+    /// calls it for each close record and for each settlement.
+    ///
+    /// - Parameter tool: The tool of the run that ended.
+    func runDidEnd(tool: String) {
+        guard tool == agentsToolName else {
+            return
         }
+        sealWaitingRuns()
+    }
+
+    /// Sets the receiver of the tokens of the waiting runs whose entry was
+    /// written. The terminal stream of the session is the one receiver.
+    ///
+    /// - Parameter observer: The receiver, or `nil` to remove it.
+    func observeJoins(_ observer: JoinObserver?) {
+        state.withLock { $0.joinObserver = observer }
     }
 
     /// The wire id of a run, as the entry gives it now: the joined SDK id, or
@@ -114,13 +163,30 @@ final class RunCallJoinTable: Sendable {
         Self.toolCallId(of: state.withLock { $0.joins[token] }, token: token)
     }
 
-    /// The wire id of the `Terminal` announce of a run. When the run has no
-    /// entry yet, it waits for the entry first, at most ``joinWaitBound``.
+    /// The wire id of the `Terminal` announce of a run, or `nil` when the run
+    /// must wait for its entry.
+    ///
+    /// A run with an entry gets the id of the entry. A run with no entry while
+    /// no prompt is open gets "no join" at once. Else the run waits, and the
+    /// observer (``observeJoins(_:)``) gets its token when its entry is
+    /// written. The check and the wait are one locked operation, so a write
+    /// between them cannot be lost.
     ///
     /// - Parameter token: The completion token of the run.
-    /// - Returns: The tool call id.
-    func announceToolCallId(for token: String) async -> ToolCallId {
-        Self.toolCallId(of: await join(of: token), token: token)
+    /// - Returns: The tool call id, or `nil` when the run waits.
+    func announceToolCallId(for token: String) -> ToolCallId? {
+        let join = state.withLock { state -> Join? in
+            if let join = state.joins[token] {
+                return join
+            }
+            guard state.isPromptOpen else {
+                state.joins[token] = .unjoined
+                return .unjoined
+            }
+            state.waitingRuns.insert(token)
+            return nil
+        }
+        return join.map { Self.toolCallId(of: $0, token: token) }
     }
 
     /// The wire id that `join` gives a run.
@@ -136,79 +202,30 @@ final class RunCallJoinTable: Sendable {
         return ToolCallId(rawValue: toolCallID)
     }
 
-    /// The entry of a run. When the run has none yet, it waits until a write
-    /// gives one. The end of ``joinWaitBound`` and the cancellation of the
-    /// caller each write "no join", so the wait always ends.
-    ///
-    /// - Parameter token: The completion token of the run.
-    /// - Returns: The entry of the run.
-    private func join(of token: String) async -> Join {
-        if let join = state.withLock({ $0.joins[token] }) {
-            return join
-        }
-        let bound = Task { await self.sealAtBound(token) }
-        defer { bound.cancel() }
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                if let join = enqueue(continuation, for: token) {
-                    continuation.resume(returning: join)
-                }
-            }
-        } onCancel: {
+    /// Writes "no join" for each waiting run.
+    private func sealWaitingRuns() {
+        for token in state.withLock({ Array($0.waitingRuns) }) {
             seal(token)
         }
     }
 
-    /// Waits for ``joinWaitBound``, and then writes "no join" for the run.
-    /// A cancelled wait writes nothing.
-    ///
-    /// - Parameter token: The completion token of the run.
-    private func sealAtBound(_ token: String) async {
-        do {
-            try await Task.sleep(for: Self.joinWaitBound)
-        } catch {
-            return
-        }
-        ACPAgentTelemetry.logger(.promptExecution).debug(
-            "No projection joined a shell run in the wait bound. The terminal announce goes on the completion token.",
-            metadata: [ACPAgentTelemetry.LogMetadataKey.toolCallId: "\(token)"])
-        seal(token)
-    }
-
-    /// Adds `continuation` to the waiters of a run, or gives the entry when
-    /// the run has one. The check and the add are one locked operation, so a
-    /// write between them cannot be lost.
-    ///
-    /// - Parameters:
-    ///   - continuation: The waiting announce.
-    ///   - token: The completion token of the run.
-    /// - Returns: The entry of the run, or `nil` when the continuation waits.
-    private func enqueue(_ continuation: CheckedContinuation<Join, Never>, for token: String) -> Join? {
-        state.withLock { state in
-            if let join = state.joins[token] {
-                return join
-            }
-            state.waiters[token, default: []].append(continuation)
-            return nil
-        }
-    }
-
-    /// Writes `join` for a run that has no entry yet, and resumes each
-    /// announce that waits for the run. A run that has an entry keeps it.
+    /// Writes `join` for a run that has no entry yet, and tells the observer
+    /// when the run waited for it. A run that has an entry keeps it.
     ///
     /// - Parameters:
     ///   - join: The entry to write.
     ///   - token: The completion token of the run.
     private func store(_ join: Join, for token: String) {
-        let waiters = state.withLock { state -> [CheckedContinuation<Join, Never>] in
+        let observer = state.withLock { state -> JoinObserver? in
             guard state.joins[token] == nil else {
-                return []
+                return nil
             }
             state.joins[token] = join
-            return state.waiters.removeValue(forKey: token) ?? []
+            guard state.waitingRuns.remove(token) != nil else {
+                return nil
+            }
+            return state.joinObserver
         }
-        for waiter in waiters {
-            waiter.resume(returning: join)
-        }
+        observer?(token)
     }
 }
