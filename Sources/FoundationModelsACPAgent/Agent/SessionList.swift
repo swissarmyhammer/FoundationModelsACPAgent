@@ -53,7 +53,9 @@ extension RoutedACPAgent {
     /// The listable records of one project, read through the store the
     /// project's own configuration names: the `transcripts.location` and
     /// the user layer root both come from the project's dotfolder stack,
-    /// the same resolution `session/new` records under.
+    /// the same resolution `session/new` records under. A
+    /// ``transcriptLocation`` of the host wins over the stack, as it does
+    /// for `session/new`.
     ///
     /// - Parameter workingDirectory: The project's absolute working
     ///   directory.
@@ -61,11 +63,7 @@ extension RoutedACPAgent {
     /// - Throws: Whatever the configuration load or the store read
     ///   throws.
     private func listableRecords(inProject workingDirectory: URL) throws -> [SessionIndexRecord] {
-        let loader = ConfigurationLoader(
-            name: name,
-            workingDirectory: workingDirectory,
-            userDirectory: userDirectory,
-            environment: environment)
+        let loader = makeConfigurationLoader(workingDirectory: workingDirectory)
         let store = TranscriptStore(
             location: try loader.load().configuration.transcripts.location,
             name: name,
@@ -104,12 +102,7 @@ extension RoutedACPAgent {
     /// - Returns: The user layer root.
     func registryUserLayerRoot() -> URL {
         SessionSetup.userLayerRoot(
-            of: ConfigurationLoader(
-                name: name,
-                workingDirectory: Self.registryPlaceholderDirectory,
-                userDirectory: userDirectory,
-                environment: environment
-            ).stack)
+            of: makeConfigurationLoader(workingDirectory: Self.registryPlaceholderDirectory).stack)
     }
 }
 

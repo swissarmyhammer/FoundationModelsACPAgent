@@ -139,6 +139,16 @@ public struct ConfigurationLoader: Sendable {
     /// The two-layer stack the loader resolves `config.yaml` against.
     public let stack: DotfolderStack
 
+    /// The transcript location that a host gives in code, or `nil` when
+    /// the files decide. When it is not `nil`, each ``load()`` puts it over
+    /// the `transcripts.location` of every layer.
+    ///
+    /// The override is not a layer, so ``LoadedConfiguration/sources`` does
+    /// not show it: the entry of `transcripts.location` names the file
+    /// layer that set the key, or no layer. `config show` does not show a
+    /// code override either; the `acp-agent` CLI never gives one.
+    public let transcriptLocation: TranscriptLocation?
+
     /// Gives the tree of layer 1, under the dotfolder stack.
     private let builtinLayer: @Sendable () throws -> YAMLValue
 
@@ -152,15 +162,20 @@ public struct ConfigurationLoader: Sendable {
     ///     `environment` and the home directory. Tests inject a value so
     ///     they never touch the real home directory.
     ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - transcriptLocation: The transcript location that wins over every
+    ///     layer, or `nil` (the default) to let the files decide — see
+    ///     ``transcriptLocation``.
     public init(
         name: DotfolderName,
         workingDirectory: URL,
         userDirectory: URL? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        transcriptLocation: TranscriptLocation? = nil
     ) {
         self.init(
             name: name, workingDirectory: workingDirectory, userDirectory: userDirectory,
-            environment: environment, builtinLayer: BuiltinConfigurationFile.root)
+            environment: environment, transcriptLocation: transcriptLocation,
+            builtinLayer: BuiltinConfigurationFile.root)
     }
 
     /// Builds the stack for `name`, over the layer 1 tree that
@@ -171,12 +186,15 @@ public struct ConfigurationLoader: Sendable {
     ///   - workingDirectory: The session working directory.
     ///   - userDirectory: The user layer root, or `nil` to derive it.
     ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - transcriptLocation: The transcript location that wins over every
+    ///     layer, or `nil` to let the files decide.
     ///   - builtinLayer: Gives the tree of layer 1. Each load calls it.
     init(
         name: DotfolderName,
         workingDirectory: URL,
         userDirectory: URL?,
         environment: [String: String],
+        transcriptLocation: TranscriptLocation? = nil,
         builtinLayer: @escaping @Sendable () throws -> YAMLValue
     ) {
         self.name = name
@@ -185,6 +203,7 @@ public struct ConfigurationLoader: Sendable {
             workingDirectory: workingDirectory,
             userDirectory: userDirectory,
             environment: environment)
+        self.transcriptLocation = transcriptLocation
         self.builtinLayer = builtinLayer
     }
 
@@ -218,7 +237,8 @@ public struct ConfigurationLoader: Sendable {
     /// dotfolder name gives, such as the default of `tools.files.exclude`,
     /// is put in after the decode. An unknown top-level section is logged
     /// and returned as a warning. An unknown key inside a known section is
-    /// an error.
+    /// an error. A ``transcriptLocation`` that is not `nil` then replaces
+    /// the decoded `transcripts.location`.
     ///
     /// - Returns: The decoded configuration and the warnings.
     /// - Throws: `ConfigurationError` for a schema failure;
@@ -239,9 +259,24 @@ public struct ConfigurationLoader: Sendable {
             warning.log()
         }
         return LoadedConfiguration(
-            configuration: resolvingDotfolderDefaults(of: try Self.configuration(from: root)),
+            configuration: resolvingCodeOverride(
+                of: resolvingDotfolderDefaults(of: try Self.configuration(from: root))),
             warnings: warnings,
             sources: Self.sources(in: document))
+    }
+
+    /// `configuration` with ``transcriptLocation`` over its
+    /// `transcripts.location` when the host gave one.
+    ///
+    /// - Parameter configuration: The decoded configuration.
+    /// - Returns: The configuration in effect.
+    private func resolvingCodeOverride(of configuration: AgentConfiguration) -> AgentConfiguration {
+        guard let transcriptLocation else {
+            return configuration
+        }
+        var resolved = configuration
+        resolved.transcripts.location = transcriptLocation
+        return resolved
     }
 
     /// The tree of layer 1 with the merged dotfolder tree over it.

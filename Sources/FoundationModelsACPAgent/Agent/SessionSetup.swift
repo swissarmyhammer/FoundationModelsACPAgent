@@ -744,6 +744,26 @@ extension RoutedACPAgent {
         }
     }
 
+    /// Makes the configuration loader of one working directory: the one
+    /// place where this agent makes a `ConfigurationLoader`.
+    ///
+    /// Each request path that loads the configuration of a `cwd` calls it,
+    /// so each load gets the same ``name``, ``userDirectory``,
+    /// ``environment`` and ``transcriptLocation``. A new path that calls it
+    /// cannot miss the code override of the host.
+    ///
+    /// - Parameter workingDirectory: The working directory whose project
+    ///   layer the loader reads.
+    /// - Returns: The loader.
+    nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
+        ConfigurationLoader(
+            name: name,
+            workingDirectory: workingDirectory,
+            userDirectory: userDirectory,
+            environment: environment,
+            transcriptLocation: transcriptLocation)
+    }
+
     /// Resolves the per-cwd configuration one session request starts from:
     /// the config layer, the user layer root, and
     /// the recording root.
@@ -753,11 +773,7 @@ extension RoutedACPAgent {
     /// - Returns: The resolved context.
     /// - Throws: Whatever the config load throws.
     func loadSessionContext(workingDirectory: URL) throws -> LoadedSessionContext {
-        let loader = ConfigurationLoader(
-            name: name,
-            workingDirectory: workingDirectory,
-            userDirectory: userDirectory,
-            environment: environment)
+        let loader = makeConfigurationLoader(workingDirectory: workingDirectory)
         let loaded = try loader.load()
         let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
         return LoadedSessionContext(

@@ -97,7 +97,8 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkDelay:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkDelay:transcriptLocation:reporting:)`.
+    /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
     /// The CLI adds its own choices only: ``dotfolderName``, and the model
     /// path and the stub pacing that `environment` selects. The library

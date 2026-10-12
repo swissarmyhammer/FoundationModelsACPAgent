@@ -1,7 +1,31 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+comments:
+- actor: claude-code
+  id: 01m4rejqg1y17p8amcmakj38f9
+  text: |-
+    Research done.
+    - RoutedACPAgent makes a ConfigurationLoader at three sites: `loadSessionContext(workingDirectory:)` (SessionSetup.swift; session/new, session/resume, session/load and the session/delete scan of SessionLifecycle.swift use it), `listableRecords(inProject:)` and `registryUserLayerRoot()` (SessionList.swift). ComposedAgent.compose makes the start-up loader.
+    - Plan: `ConfigurationLoader` gets `transcriptLocation: TranscriptLocation? = nil`; `load()` puts it over the decoded value. RoutedACPAgent keeps the value and makes every loader through one factory `makeConfigurationLoader(workingDirectory:)`, so a later request path cannot miss it.
+    - `config show` is a CLI command, and the CLI never gives a code override. `LoadedConfiguration.sources` is keyed by `DotfolderStack.Source`, which has no case for code. A new source case is not cheap, so the doc comment says that a code override is not shown in `sources` or in `config show`.
+    - A session lists only after a prompt (the first prompt writes the index record), so the tests send one prompt.
+  timestamp: 2026-10-12T16:19:22.753922+00:00
+- actor: claude-code
+  id: 01m4rgrx7vnng0f5zdwhw0n9a8
+  text: |-
+    Implementation landed (not committed).
+    - The shared step: `ConfigurationLoader` has `transcriptLocation: TranscriptLocation?`; `load()` puts it over the decoded `transcripts.location`. `RoutedACPAgent.makeConfigurationLoader(workingDirectory:)` (SessionSetup.swift) is now the one place where the agent makes a loader: `loadSessionContext` (session/new, session/resume, session/delete) and SessionList (cwd path and registry path) use it.
+    - There is no `session/load` handler in this agent; `session/resume` is the restore path.
+    - The stub model records only the `session` event, never a `response` event, so `ResumeSessionFixture.waitForRecordedResponses` times out on a stub agent. The new tests poll for any event of the session.
+    - Mutation check: with `transcriptLocation: nil` in the factory, the two override tests fail (transcripts in the wrong root); with the value, all pass.
+    - The `config show` source is not shown: doc comments on `ConfigurationLoader.transcriptLocation` and `ComposedAgent.compose` say so.
+
+    ### implement — changed
+    - evidence: `swift build` exit 0. `swift test --filter 'TranscriptLocationOverrideTests|ComposedAgentTests|ConfigurationLoaderTests|ConfigShowTests|SessionListTests|SessionLifecycleTests|SessionResumeTests|TranscriptLocationTests|AgentCompositionTests|AgentEnvironmentTests'`: 112 tests in 10 suites passed. Files: README.md, Sources/FoundationModelsACPAgent/{ComposedAgent.swift, RoutedACPAgent.swift, Agent/SessionSetup.swift, Agent/SessionList.swift, Configuration/ConfigurationLoader.swift, Configuration/PacedStubModel.swift}, Sources/acp-agent/AgentComposition.swift, new Tests/FoundationModelsACPAgentTests/TranscriptLocationOverrideTests.swift (3 tests).
+    - next: /review. Then reply to agentviewkit-d0 with the commit and the API.
+  timestamp: 2026-10-12T16:57:42.395009+00:00
+position_column: doing
 position_ordinal: '80'
 title: Let an in-process host set the transcript location in code
 ---

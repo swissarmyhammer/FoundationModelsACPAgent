@@ -10,7 +10,7 @@ import FoundationModelsRouter
 // library's echo backend answers in one chunk and in microseconds, so a
 // signal always lands after the prompt is over.
 //
-// The chunk delay of ``ComposedAgent/compose(name:workingDirectory:environment:modelSource:stubChunkDelay:reporting:)``
+// The chunk delay of ``ComposedAgent/compose(name:workingDirectory:environment:modelSource:stubChunkDelay:transcriptLocation:reporting:)``
 // holds a prompt open. The prompt comes back word by word, with the named
 // pause between the words, so a test can send `SIGINT` into a live prompt
 // across a real process boundary. The `acp-agent` executable reads that

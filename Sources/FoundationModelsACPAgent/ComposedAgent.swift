@@ -8,7 +8,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkDelay:reporting:)``
+/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkDelay:transcriptLocation:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -103,6 +103,15 @@ public struct ComposedAgent: Sendable {
     ///   - stubChunkDelay: The pause a stub answer puts between two
     ///     chunks, or `nil` (the default) for the one-chunk echo. Only
     ///     ``ModelSource/stub`` reads it.
+    ///   - transcriptLocation: The transcript location that wins over the
+    ///     `transcripts.location` of every config layer, or `nil` (the
+    ///     default) to let the config files decide. A host that runs the
+    ///     agent in its own process sets it here, and needs no config file
+    ///     for it. The start-up load and each later session request use
+    ///     it: `session/new`, `session/resume`, `session/list` and
+    ///     `session/delete` (``RoutedACPAgent/transcriptLocation``). The
+    ///     override is not a config layer, so `config show` and
+    ///     `LoadedConfiguration.sources` do not show it.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -121,10 +130,12 @@ public struct ComposedAgent: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         modelSource: ModelSource = .live,
         stubChunkDelay: Swift.Duration? = nil,
+        transcriptLocation: TranscriptLocation? = nil,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
-            name: name, workingDirectory: workingDirectory, environment: environment
+            name: name, workingDirectory: workingDirectory, environment: environment,
+            transcriptLocation: transcriptLocation
         ).load().configuration
         let agent = try await RoutedACPAgent(
             name: name,
@@ -134,7 +145,8 @@ public struct ComposedAgent: Sendable {
                 recordingInto: try makeRecordingsDirectory()),
             configuration: configuration,
             reporting: progress,
-            environment: environment)
+            environment: environment,
+            transcriptLocation: transcriptLocation)
         return ComposedAgent(
             agent: agent, modelSource: modelSource, configuration: configuration)
     }

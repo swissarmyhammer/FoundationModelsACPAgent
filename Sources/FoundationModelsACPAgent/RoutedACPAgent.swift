@@ -61,6 +61,18 @@ public actor RoutedACPAgent: Agent {
     /// host gave (``CatalogContext/environment``).
     nonisolated let environment: [String: String]
 
+    /// The transcript location that the host gave in code, or `nil` when
+    /// the config files decide.
+    ///
+    /// Each session request loads the configuration of its `cwd` again, and
+    /// each of those loads goes through ``makeConfigurationLoader(workingDirectory:)``,
+    /// which gives this value to the loader. Thus `session/new`,
+    /// `session/resume`, `session/list` (with a `cwd` filter and across the
+    /// project registry) and `session/delete` all record or read under this
+    /// location, and it wins over the `transcripts.location` of every config
+    /// layer.
+    public nonisolated let transcriptLocation: TranscriptLocation?
+
     /// The settle period of each session that this agent makes, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
     /// The initializer sets ``CatalogContext/defaultInlineSettleGrace``, the
@@ -204,6 +216,9 @@ public actor RoutedACPAgent: Agent {
     ///   - inlineSettleGrace: The settle period of each session that the
     ///     agent makes, in seconds. Defaults to
     ///     ``CatalogContext/defaultInlineSettleGrace``.
+    ///   - transcriptLocation: The transcript location that wins over every
+    ///     config layer in each session request, or `nil` (the default) to
+    ///     let the config files decide — see ``transcriptLocation``.
     /// - Throws: `ProfileResolutionError` when the profile does not
     ///   resolve.
     public init(
@@ -213,12 +228,14 @@ public actor RoutedACPAgent: Agent {
         reporting: ResolutionProgress? = nil,
         userDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
+        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+        transcriptLocation: TranscriptLocation? = nil
     ) async throws {
         self.name = name
         self.userDirectory = userDirectory
         self.environment = environment
         self.inlineSettleGrace = inlineSettleGrace
+        self.transcriptLocation = transcriptLocation
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

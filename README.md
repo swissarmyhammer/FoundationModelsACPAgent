@@ -325,7 +325,14 @@ code gives the local detail.
 - **Transcripts are project context, and you commit them.** A session records
   to `<cwd>/.<name>/transcripts/<sessionId>/`. Each session has its own
   directory, thus two persons make no merge conflict. `sessions.jsonl` is
-  append-only, and `.gitattributes` sets `merge=union` on it.
+  append-only, and `.gitattributes` sets `merge=union` on it. The
+  `transcripts.location` key of `config.yaml` moves the root: `project` (the
+  default), `home`, or an absolute path. A host that runs the agent in its
+  own process can set the location in code, with no config file:
+  `ComposedAgent.compose(..., transcriptLocation: .path(directory))`. That
+  value wins over every config layer, in `session/new`, `session/resume`,
+  `session/list` and `session/delete`. It is not a config layer, so
+  `config show` does not show it.
 - **No redaction.** The agent records each transcript verbatim. Redaction
   damages the record, and a partial redaction gives false confidence. To
   record less, set `recording.level: off` in the project layer. There is no
