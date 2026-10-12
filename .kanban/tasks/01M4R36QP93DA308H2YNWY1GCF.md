@@ -84,7 +84,44 @@ comments:
     - Known gap: a pending call inside a nested tools.runCode is not yet named in the outer result (Multitool ^tshp2t9, in progress).
     - next: when origin/main has 369a1b5, `swift package update` (root and IntegrationTests; also takes CodeContext d4c4482), release build, full swift test, then a bench run on the same 6 instances as noop-stop-1012.
   timestamp: 2026-10-12T17:49:33.009672+00:00
-position_column: review
+- actor: claude-code
+  id: 01m4ryhht728mpsxeqtf9tfxv7
+  text: |-
+    ### Bench check result: run pending-inner-1012 (2026-10-12)
+    - Build: release with pins Multitool 369a1b5 (^qg52whq: the runCode result names pending inner calls), CodeContext d4c4482 (^dca8jxc: detection does not wait for index work), Router 9de67e9, Extras 36e3abe, Agents de4bed3. Same 6 instances, config bench/code-context.config.yaml, --timeout 5400, 149 minutes, load average about 40.
+    - Score: 5/6 (score_20261012_155403). no-otel-1011 on the same 6: 5/6. noop-stop-1012: 4/6. Fixed against noop-stop-1012: django__django-13964. Unresolved: django__django-14155 (unresolved in all 3 runs).
+
+    | instance | no-op calls | named-pending results | result |
+    |---|---|---|---|
+    | 13447 | 0 | 2 | RESOLVED |
+    | 13964 | 0 | 6 | RESOLVED |
+    | 14016 | 0 | 0 | RESOLVED |
+    | 14382 | 0 | 0 | RESOLVED |
+    | 14411 | 0 | 4 | RESOLVED |
+    | 14155 | 0 | 0 | no |
+
+    - Criterion "0 no-op loops": met, 0 no-op runCode calls in all 6.
+    - Criterion "0 duplicate test commands that a pending result caused": met. 13447 seq 313/314: a test suite went pending, the snippet result named the pending command, and at seq 316 the model wrote "The test run is in progress in the background. While waiting, I can clean up..." and did other work; it did not run the command again. The only repeated commands: 14382 seq 1465 -> 1473 (the first snippet returned only `{"code":1}`, inline, so the model ran it again to read the output; not pending) and 14411 `python -c` calls (different scripts, each inline).
+    - Criterion "score not lower": met, 5/6 = 5/6.
+    - Criterion "a CodeContext task exists": met (^dca8jxc, d4c4482). detectProjects in 13447 seq 173 answered inline (no pending row).
+    - Time: most of the time is output tokens (13964: 65,345 tokens out = about 2,840 s of 4,155 s at about 23 tok/s). The prefix cache works: the time for a short generation stays at 7-10 s from 20k to 100k context.
+    - Not tested in this run: Multitool 8e70406 (^tshp2t9, nested tools.runCode pending calls) was pushed after this run started. No nested runCode case showed in this run.
+  timestamp: 2026-10-12T20:58:21.383736+00:00
+- actor: claude-code
+  id: 01m4rymedd416d3g2fg7t8fh4k
+  text: |-
+    ### implement — no-change
+    - evidence: I checked the files of run pending-inner-1012 again with my own scans (no code edit, no build).
+      - Score file score_20261012_155403: 5/6 resolved; unresolved django__django-14155.
+      - No-op runCode calls (the `code` field has no `tools` identifier): 0 in all 6 transcripts (runCode calls 35/70/28/23/14/49).
+      - Named-pending results ("calls that it started did not finish"): 13447 2, 13964 6, 14411 4, others 0. This agrees with the comment.
+      - 13447 seq 313/314: the snippet result names the pending `tools.shell.execute` (commandID 01M4RPPD5QZJ7A13P4FWHRHSCZ). At seq 316 the model did other work. The runtests command does not occur again in the transcript.
+      - Repeated command literals: 13447 `scratch_verify.py` (277-309), 13964 `repro_tmp.py` (615/955) and `m2m_check_tmp.py` (995/999), 14016 `check_fix.py` (1306-1318), 14155 `check_partial_repr.py` (2137-2193), 14382 `test_startapp_trailing_slash.py` (1465-1485). For each one, the earlier runCode result completed inline (it was not pending). 14382 seq 1465 returned `{"code":1}` because the snippet read `r.stdout`/`r.stderr`, which are not fields. The other repeats come after an edit, a patch, or a git stash. 14411 has no repeated command literal.
+      - Limit: the scan matches only `command:` string literals. It does not find a command that a snippet builds from a variable.
+    - Result: I changed the finding to `- [x]` and added the evidence line under it.
+    - next: /review. The task stays in doing.
+  timestamp: 2026-10-12T20:59:56.205577+00:00
+position_column: doing
 position_ordinal: '80'
 title: Bench check of the no-op stop, and the detectProjects settle task for CodeContext
 ---
@@ -113,4 +150,5 @@ Task ^ys32tj4 wired the no-op tool-call check (commit d29e628): while work is pe
 
 > Scope: `review sha HEAD~1..HEAD` (commit e0222ab). The engine reviewed 0 files: the 2 changed files are in `.kanban/`, which `.reviewignore` excludes. This review checks the acceptance criteria against the bench evidence.
 
-- [ ] `bench/preds.noop-stop-1012.transcripts/django__django-13447/01M4R4DRG48B7KK4HKRF98FVZW/transcript.jsonl` seq 298/302 (real-time rows 152-163) `acceptance/criterion-3` — Criterion 3 ("0 duplicate test commands that a pending result caused") is not met, and the comment "Bench check result: run noop-stop-1012" is not correct when it says that the repeat is "a snippet design error of the model, not a pending result". The snippet at seq 298 (correlation 01M4R5X4HYVS6HQMW96RJ5E7W4) calls `tools.files.grep` and then `tools.shell.execute` for the 2 admin tests. The inner `execute` (commandID 01M4R5XA1ESMK7EP2ZP3ZR7AVF) returned `{"pending":true,...}` at row 154. The snippet completed at row 155 with only `{"remaining":[...]}`, because `r.exitCode` and `r.output` of the pending object are undefined. The command completed at row 157 (1539 ms), after the snippet ended. At seq 301 the model wrote "maybe the shell command is pending ... Let me re-run the shell command", and at seq 302 it ran the same test command again (commandID 01M4R5XXFB6E78T8QXMRTKMTQS, rows 158-163). The session injected the first result later, at prompt row 331. Thus a pending `execute` result inside a `runCode` snippet caused this duplicate test command. Correct the comment. Then make a fix so that a snippet that returns while an inner tool call is still pending does not give a result that hides the pending call (for example, the snippet result must tell the model that the inner call is pending, or the snippet must wait for the inner call). Prove the fix with a bench run that has 0 such repeats.
+- [x] `bench/preds.noop-stop-1012.transcripts/django__django-13447/01M4R4DRG48B7KK4HKRF98FVZW/transcript.jsonl` seq 298/302 (real-time rows 152-163) `acceptance/criterion-3` — Criterion 3 ("0 duplicate test commands that a pending result caused") is not met, and the comment "Bench check result: run noop-stop-1012" is not correct when it says that the repeat is "a snippet design error of the model, not a pending result". The snippet at seq 298 (correlation 01M4R5X4HYVS6HQMW96RJ5E7W4) calls `tools.files.grep` and then `tools.shell.execute` for the 2 admin tests. The inner `execute` (commandID 01M4R5XA1ESMK7EP2ZP3ZR7AVF) returned `{"pending":true,...}` at row 154. The snippet completed at row 155 with only `{"remaining":[...]}`, because `r.exitCode` and `r.output` of the pending object are undefined. The command completed at row 157 (1539 ms), after the snippet ended. At seq 301 the model wrote "maybe the shell command is pending ... Let me re-run the shell command", and at seq 302 it ran the same test command again (commandID 01M4R5XXFB6E78T8QXMRTKMTQS, rows 158-163). The session injected the first result later, at prompt row 331. Thus a pending `execute` result inside a `runCode` snippet caused this duplicate test command. Correct the comment. Then make a fix so that a snippet that returns while an inner tool call is still pending does not give a result that hides the pending call (for example, the snippet result must tell the model that the inner call is pending, or the snippet must wait for the inner call). Prove the fix with a bench run that has 0 such repeats.
+  - Fixed by Multitool ^qg52whq (369a1b5). Proof: run pending-inner-1012 has 0 duplicate commands that a pending result caused (6 instances, 0 no-op runCode calls, 12 named-pending results, score 5/6); in 13447 seq 313/314 the result named the pending test command and the model did not run it again; each other repeat (13447, 13964, 14016, 14155, 14382) follows a completed inline result.
