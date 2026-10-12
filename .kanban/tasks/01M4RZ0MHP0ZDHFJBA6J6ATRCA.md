@@ -42,6 +42,47 @@ comments:
     - evidence: 3 files — .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py (18 new tests in 3 classes: TheTestCommandIsNormalized, TheCommandOfASnippetIsFound, ARepeatedTestRunNamesItsCause), .claude/skills/swebench/SKILL.md (a new "Repeated test runs" row, and the report list). `python3 -W error -m unittest discover --start-directory .claude/skills/swebench/scripts`: 56 tests OK, 0 warnings. Scan: pending-inner-1012 13964 1017->1032 pending (PROBLEM); 13447 286->294 not reported; 14382 1465->1473 complete (not a problem); noop-stop-1012 13447 298->302 no output (PROBLEM); no-otel-1011 13447 428->432 no output (PROBLEM). No item lost on 9 runs.
     - next: review
   timestamp: 2026-10-12T22:07:43.565913+00:00
+- actor: claude-code
+  id: 01m4s3je7ts57f6rdrcezgnwks
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 1a006b7). Counts: 2 findings, 2 confirmed, 0 refuted. .claude/skills/swebench/scripts/scan.py:157 (reuse/reuse), .claude/skills/swebench/scripts/scan.py:1064 (completeness/invariant-propagation).
+    - Acceptance criteria (I ran the scan at HEAD on the three runs):
+      - pending-inner-1012: the PROBLEMS part has "django__django-13964: the test run of seq 1032 repeats the test run of seq 1017, and the result of seq 1017 was pending". PASS.
+      - pending-inner-1012: 13447 shows "none" in the repeated test runs. 14382 seq 1465 -> 1473 shows "the earlier result: complete", and it is not in PROBLEMS. PASS.
+      - noop-stop-1012: 13447 seq 298 -> 302 is in PROBLEMS ("had no output of the run"). no-otel-1011: 13447 seq 428 -> 432 is in PROBLEMS. PASS.
+      - No item is lost: I ran scan.py of HEAD~1 and of HEAD on the three runs, and compared the PROBLEMS items (with no rank number). Each item of HEAD~1 is also in HEAD (3 -> 4, 5 -> 6, 7 -> 13). The other removed lines are only "span ... ago" lines, which use the clock. PASS.
+    - The 3 decisions that are not on the card (a command that deletes its own log is not an edit; a later getLines read with an exit code makes the earlier result complete; test_*.py / *_test.py / tests.py scripts count as test runs for this check) agree with the acceptance criteria. The engine gave no finding on them.
+    - next: implement the 2 findings, then review again.
+  timestamp: 2026-10-12T22:26:13.370060+00:00
+- actor: claude-code
+  id: 01m4s3jx1sfzk92657ny3q89w0
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files (scan.py, test_scan.py new tests, swebench SKILL.md)
+    - test: green — swebench scripts 56 OK, swebench-score scripts 34 OK, smoke runs of scan.py and report.py exit 0
+    - commit: 1a006b7
+    - review: findings — .claude/skills/swebench/scripts/scan.py:157, .claude/skills/swebench/scripts/scan.py:1064
+  timestamp: 2026-10-12T22:26:28.537039+00:00
+- actor: claude-code
+  id: 01m4s3xe522gwxgp7xxkarz4ab
+  text: |-
+    Fix of the 2 review findings (not committed):
+    - Finding 1 (reuse): EDIT_CALL_RE is now built from EDIT_VERBS. The same cause had 3 more copies in scan.py, and I removed them too:
+      - EXECUTE_CALL_RE and EXECUTE_VAR_RE had the text tools.shell.execute. Now they are built from SHELL_VERB.
+      - TEST_CMD_RE had its own list of test runners. Now it is built from TEST_SCRIPTS and TEST_MODULES (it moved below these tables). The only new match is `py.test`. The scan output of the 9 runs did not change.
+      - DURATION_RE had its own copy of the number pattern of NUMBER_RE. Both now use one NUMBER pattern.
+    - Finding 2 (invariant-propagation): WRAPPERS is now a table: each wrapper command, and its options that take a value (timeout -s/--signal/-k/--kill-after, time -o/--output/-f/--format, exec -a, env -u/--unset/-C/--chdir, nice -n/--adjustment). command_words skips the value of such an option. I did not put `env -S` in the table, because its value is the command itself.
+    - Not changed: VALUE_OPTIONS, PYTHON_VALUE_OPTIONS and GIT_VALUE_OPTIONS have "-W" or "-c" in common, but each is the option set of a different program. They are not copies of one list.
+    - New tests in test_scan.py: test_the_value_of_a_wrapper_option_does_not_change_the_test_run (8 wrapper forms, with `timeout -s KILL 600 python tests/runtests.py a`; 7 failed before the fix), test_each_runner_of_the_repeat_check_is_a_test_command (py.test failed before the fix), test_each_verb_that_changes_a_file_is_an_edit_call (a guard for the refactor: it passed before and after).
+  timestamp: 2026-10-12T22:32:13.730402+00:00
+- actor: claude-code
+  id: 01m4s3xh6y9rr71bt8y95m0c4p
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/scripts/test_scan.py. Both findings fixed and checked (scan.py:157 reuse/reuse, scan.py:1064 completeness/invariant-propagation). `python3 -W error -m unittest discover --start-directory .claude/skills/swebench/scripts`: 59 tests OK, 0 warnings. Scan of all 9 runs compared with a baseline from before the edit: only clock lines changed. The 5 cases: pending-inner-1012 13964 1017->1032 pending (PROBLEM); 13447 286->294 not reported; 14382 1465->1473 complete (not a problem); noop-stop-1012 13447 298->302 no output (PROBLEM); no-otel-1011 13447 428->432 no output (PROBLEM).
+    - next: review
+  timestamp: 2026-10-12T22:32:16.862346+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'swebench scan: find a repeated test run when the command text differs'
@@ -70,3 +111,16 @@ Do not edit the harness (`bench/*.py`).
 ## Tests
 
 - Run the scan on pending-inner-1012, noop-stop-1012 and no-otel-1011, and compare the PROBLEMS part with the cases above (no-otel-1011 13447 seq 428-432 and noop-stop-1012 13447 seq 298-302 are pending-caused repeats too). #bench
+
+## Review Findings (2026-10-12 17:09)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `.claude/skills/swebench/SKILL.md` — no validator matches this file
+
+- [x] `.claude/skills/swebench/scripts/scan.py:157` `reuse/reuse` — `EDIT_CALL_RE` hardcodes the verb set {edit, patch, write} that `EDIT_VERBS` (line 115, pre-existing) already defines as `files.edit`, `files.patch`, `files.write`. The two copies can drift: a verb added to `EDIT_VERBS` would still be missed by the call scan, and the reverse. It should be built from the existing set. Derive the pattern from the existing constant, for example `EDIT_CALL_RE = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(v) for v in EDIT_VERBS))`, or keep one list of verb names and build both `EDIT_VERBS` and the regex from it.
+- [x] `.claude/skills/swebench/scripts/scan.py:1064` `completeness/invariant-propagation` — `command_words` drops wrapper options only when they start with `-`, so a `timeout` option that takes a value (for example `timeout -s KILL 600 python tests/runtests.py a`) stops the scan at `KILL`. The value is read as the command, and the test run is missed. `test_args` already knows that some options take a value (`VALUE_OPTIONS`, line 175), so the same rule is not applied at this sibling site. When `wrapped` is true, skip the value of a wrapper option that takes one (for example `-s`, `-k`, `-n`), as `test_args` does with `VALUE_OPTIONS`. Add one test with `timeout -s KILL 600 python tests/runtests.py a` that expects the same normalized run as the plain form.

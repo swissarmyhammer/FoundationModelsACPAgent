@@ -109,8 +109,6 @@ ELAPSED_RE = re.compile(r'("(?:elapsedMs|durationMs)"\s*:\s*)[0-9.]+')
 TOKEN_RE = re.compile(r'completionToken\\*"\s*:\s*\\*"([0-9A-HJKMNP-TV-Z]{26})')
 # The verb that runs a shell command. Only a shell command can start a test run.
 SHELL_VERB = "tools.shell.execute"
-# The command text of a test run.
-TEST_CMD_RE = re.compile(r"runtests\.py|pytest|manage\.py test|-m django test|-m unittest")
 # The verbs that change a file.
 EDIT_VERBS = frozenset({"files.edit", "files.patch", "files.write"})
 # The line number that getLines puts before each output line: "12: text".
@@ -138,7 +136,7 @@ EMPTY_RESULTS = frozenset({"", "null", "undefined", "{}", "[]", '""'})
 # parser rejects the snippet, or the execute call gets an argument that is not valid.
 NOT_STARTED_RE = re.compile(re.escape(SNIPPET_FAIL) + r'\s*(?:Unexpected|SyntaxError|__tool\d*: Tool "execute" argument)')
 # A call of the execute verb with an argument object.
-EXECUTE_CALL_RE = re.compile(r"\btools\.shell\.execute\s*\(\s*\{")
+EXECUTE_CALL_RE = re.compile(rf"\b{re.escape(SHELL_VERB)}\s*\(\s*\{{")
 # The end of the argument object of a call: "})".
 CALL_END_RE = re.compile(r"\}\s*\)")
 # The command property of an argument object: `command: <value>`, or `command` alone.
@@ -146,15 +144,15 @@ COMMAND_PROP_RE = re.compile(r"\bcommand\b\s*(:)?\s*")
 # The start of a variable that the snippet sets: `const name = `.
 VAR_DEF_RE = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*")
 # A variable that holds the result of an execute call.
-EXECUTE_VAR_RE = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+tools\.shell\.execute\b")
+EXECUTE_VAR_RE = re.compile(rf"\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+{re.escape(SHELL_VERB)}\b")
 # The object that a snippet returns: `return {`.
 RETURN_OBJECT_RE = re.compile(r"\breturn\s*\{")
 # The escapes of a JavaScript string literal that give another character.
 JS_ESCAPES = {"n": "\n", "t": "\t", "r": "\r"}
 # The JavaScript quote characters.
 JS_QUOTES = ("'", '"', "`")
-# A call of a verb that changes a file.
-EDIT_CALL_RE = re.compile(r"\btools\.files\.(?:edit|patch|write)\b")
+# A call of a verb that changes a file: a verb of EDIT_VERBS.
+EDIT_CALL_RE = re.compile(rf"\btools\.(?:{'|'.join(re.escape(v) for v in sorted(EDIT_VERBS))})\b")
 # The paths of an edit call: a path property, or a file line of a patch. A
 # patch in a string literal has "\n" escapes, so a path stops at a backslash.
 EDIT_PATH_RE = re.compile(r"""\bpath\s*:\s*["'`]([^"'`]+)["'`]|\*\*\* (?:(?:Add|Update|Delete) File|Move to): ([^\s\\"'`]+)""")
@@ -165,12 +163,22 @@ REDIRECT_RE = re.compile(r"^(\d*|&)(>>?|<)(.*)$")
 DEV_NULL = "/dev/null"
 # A variable setting before a command: NAME=value.
 ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
-# The commands that run the command after them. The scan reads that command.
-WRAPPERS = frozenset({"timeout", "time", "nohup", "exec", "env", "nice"})
-# The time limit of `timeout`, for example 600 or 10m.
-DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
+# The commands that run the command after them, and the options of each
+# command that take a value (`timeout -s KILL`, `nice -n 10`, `env -u VAR`).
+# The scan skips a wrapper, its options and their values, and reads the command after them.
+WRAPPERS = {
+    "timeout": frozenset({"-s", "--signal", "-k", "--kill-after"}),
+    "time": frozenset({"-o", "--output", "-f", "--format"}),
+    "nohup": frozenset(),
+    "exec": frozenset({"-a"}),
+    "env": frozenset({"-u", "--unset", "-C", "--chdir"}),
+    "nice": frozenset({"-n", "--adjustment"}),
+}
 # A number: the value of an option such as `--verbosity 2`.
-NUMBER_RE = re.compile(r"^\d+(?:\.\d+)?$")
+NUMBER = r"\d+(?:\.\d+)?"
+NUMBER_RE = re.compile(rf"^{NUMBER}$")
+# The time limit of `timeout`: a number with an optional unit, for example 600 or 10m.
+DURATION_RE = re.compile(rf"^{NUMBER}[smhd]?$")
 # The options of a test runner that take a value that is not a number.
 VALUE_OPTIONS = frozenset({"--settings", "--tb", "-p", "--rootdir", "-c", "-W", "--log-file", "--junitxml"})
 # The options of a test run that ask for help. Such a run runs no test.
@@ -184,6 +192,12 @@ TEST_MODULES = {"pytest": ("pytest", None), "unittest": ("unittest", None), "dja
 # The test runners that a script name starts, in the same form.
 TEST_SCRIPTS = {"pytest": ("pytest", None), "py.test": ("pytest", None), "runtests.py": ("runtests.py", None),
                 "manage.py": ("manage.py test", "test")}
+# The command text of a test run: a script name of TEST_SCRIPTS, or `-m` and a
+# module of TEST_MODULES, each with the sub-command that it needs.
+TEST_CMD_RE = re.compile("|".join(sorted(
+    re.escape(" ".join(filter(None, (*prefix, name, sub))))
+    for table, prefix in ((TEST_SCRIPTS, ()), (TEST_MODULES, ("-m",)))
+    for name, (_, sub) in table.items())))
 # A test script that the model writes: test_x.py, x_test.py or tests.py.
 TEST_SCRIPT_RE = re.compile(r"^(?:test\w*|\w+_tests?|tests)\.py$")
 # The git commands that change the files of the work tree, and the arguments
@@ -1055,13 +1069,20 @@ def split_redirects(words):
 
 
 def command_words(words):
-    """Drop the variable settings and the wrapper commands (timeout 600, nohup, env) before the command."""
-    i, wrapped = 0, False
+    """Drop the variable settings and the wrapper commands before the command.
+
+    A wrapper is a command of WRAPPERS with its options, the values of these
+    options and its time limit: `timeout -s KILL 600`, `nice -n 10`, `env -u VAR`.
+    """
+    i, options = 0, None
     while i < len(words):
         w = words[i]
-        if ASSIGN_RE.match(w) or w in WRAPPERS:
-            wrapped = wrapped or w in WRAPPERS
-        elif not (wrapped and (w.startswith("-") or DURATION_RE.match(w))):
+        wrapper_word = options is not None and (w.startswith("-") or DURATION_RE.match(w))
+        if w in WRAPPERS:
+            options = WRAPPERS[w]
+        elif options is not None and w in options:
+            i += 1
+        elif not (ASSIGN_RE.match(w) or wrapper_word):
             break
         i += 1
     return words[i:]

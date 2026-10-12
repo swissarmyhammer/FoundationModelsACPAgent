@@ -707,6 +707,31 @@ class TheTestCommandIsNormalized(unittest.TestCase):
         self.assertEqual(scan.normalize_test_command("python test_startapp_trailing_slash.py"),
                          ["test_startapp_trailing_slash.py"])
 
+    def test_the_value_of_a_wrapper_option_does_not_change_the_test_run(self):
+        """A wrapper option that takes a value (`timeout -s KILL`) does not stop
+        the scan at its value. The value is not the command."""
+        plain = scan.normalize_test_command("python tests/runtests.py a")
+        for wrapped in ("timeout -s KILL 600 python tests/runtests.py a",
+                        "timeout --signal KILL -k 5 600 python tests/runtests.py a",
+                        "nice -n 10 python tests/runtests.py a",
+                        "nice --adjustment 10 python tests/runtests.py a",
+                        "env -u HOME VAR=x python tests/runtests.py a",
+                        "env --chdir /repo python tests/runtests.py a",
+                        "time -o times.txt python tests/runtests.py a",
+                        "exec -a runner python tests/runtests.py a"):
+            with self.subTest(command=wrapped):
+                self.assertEqual(scan.normalize_test_command(wrapped), plain)
+
+    def test_each_runner_of_the_repeat_check_is_a_test_command(self):
+        """The before/after timeline and the repeat check know the same test
+        runners. A runner of the repeat check is a test command of the timeline."""
+        for command in ("py.test tests/test_x.py", "pytest tests/test_x.py", "python -m pytest tests",
+                        "python tests/runtests.py a", "python manage.py test a",
+                        "python -m django test a", "python -m unittest a"):
+            with self.subTest(command=command):
+                self.assertTrue(scan.normalize_test_command(command))
+                self.assertTrue(scan.TEST_CMD_RE.search(command))
+
 
 class TheCommandOfASnippetIsFound(unittest.TestCase):
     """The scan reads the command of each tools.shell.execute call of a snippet,
@@ -731,6 +756,14 @@ class TheCommandOfASnippetIsFound(unittest.TestCase):
         """`{ command }` gives the variable named command to the call."""
         code = "const command = `python tests/runtests.py a`;\nconst r = await tools.shell.execute({ command });"
         self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
+
+    def test_each_verb_that_changes_a_file_is_an_edit_call(self):
+        """The call scan finds a call of each verb in EDIT_VERBS, and of no other verb."""
+        for verb in sorted(scan.EDIT_VERBS):
+            with self.subTest(verb=verb):
+                code = f"tools.{verb}({{ path: 'django/a.py' }});"
+                self.assertEqual(scan.edit_calls(code), [(0, ["django/a.py"])])
+        self.assertEqual(scan.edit_calls("await tools.files.read({ path: 'django/a.py' });"), [])
 
 
 class ARepeatedTestRunNamesItsCause(ScanTestCase):
