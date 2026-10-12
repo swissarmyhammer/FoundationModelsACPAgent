@@ -23,7 +23,8 @@ The output has three parts:
      verbs come from the code of each runCode call (the "toolCalls" lines
      keep it). The scan pairs each call with its result by the call id.
      Then the loops of each instance: the tool results that repeat an earlier
-     result, and the test result before and after the last edit.
+     result, the test result before and after the last edit, and the test
+     runs that repeat an earlier test run with no edit between.
 
 Usage:
   python3 scan.py --name code-context --live
@@ -37,6 +38,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -122,6 +124,74 @@ VERDICT_RE = re.compile(r"^(?:OK\b.*|FAILED \(.*\))$", re.M)
 PYTEST_RE = re.compile(r"^=*\s*((?:\d+ [a-z]+(?:, )?)+ in [\d.]+s|no tests ran in [\d.]+s)\s*=*$", re.M)
 # The run time in a test summary. Two summaries that differ only in it are the same.
 RUN_TIME_RE = re.compile(r" in [\d.]+s")
+# What the model saw of the result of a test run: the notice that it still
+# runs, a result with no value of the run, or the result.
+PENDING, NO_OUTPUT, COMPLETE = "pending", "no output", "complete"
+# The words of a problem for each state of a result that the model did not see.
+UNSEEN_TEXT = {PENDING: "was pending", NO_OUTPUT: "had no output of the run"}
+# The text of a snippet result when a tools.* call that the snippet started
+# still runs in the background. The result has no output of that call.
+PENDING_INNER = "did not finish. They continue in the background"
+# The snippet results that hold no value.
+EMPTY_RESULTS = frozenset({"", "null", "undefined", "{}", "[]", '""'})
+# A snippet failure that comes before the execute call starts its command: the
+# parser rejects the snippet, or the execute call gets an argument that is not valid.
+NOT_STARTED_RE = re.compile(re.escape(SNIPPET_FAIL) + r'\s*(?:Unexpected|SyntaxError|__tool\d*: Tool "execute" argument)')
+# A call of the execute verb with an argument object.
+EXECUTE_CALL_RE = re.compile(r"\btools\.shell\.execute\s*\(\s*\{")
+# The end of the argument object of a call: "})".
+CALL_END_RE = re.compile(r"\}\s*\)")
+# The command property of an argument object: `command: <value>`, or `command` alone.
+COMMAND_PROP_RE = re.compile(r"\bcommand\b\s*(:)?\s*")
+# The start of a variable that the snippet sets: `const name = `.
+VAR_DEF_RE = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*")
+# A variable that holds the result of an execute call.
+EXECUTE_VAR_RE = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+tools\.shell\.execute\b")
+# The object that a snippet returns: `return {`.
+RETURN_OBJECT_RE = re.compile(r"\breturn\s*\{")
+# The escapes of a JavaScript string literal that give another character.
+JS_ESCAPES = {"n": "\n", "t": "\t", "r": "\r"}
+# The JavaScript quote characters.
+JS_QUOTES = ("'", '"', "`")
+# A call of a verb that changes a file.
+EDIT_CALL_RE = re.compile(r"\btools\.files\.(?:edit|patch|write)\b")
+# The paths of an edit call: a path property, or a file line of a patch. A
+# patch in a string literal has "\n" escapes, so a path stops at a backslash.
+EDIT_PATH_RE = re.compile(r"""\bpath\s*:\s*["'`]([^"'`]+)["'`]|\*\*\* (?:(?:Add|Update|Delete) File|Move to): ([^\s\\"'`]+)""")
+# A shell redirect: the descriptor, the operator, and the target when it is
+# part of the same word (>file, 2>&1, 2>/dev/null).
+REDIRECT_RE = re.compile(r"^(\d*|&)(>>?|<)(.*)$")
+# The redirect target that keeps no output.
+DEV_NULL = "/dev/null"
+# A variable setting before a command: NAME=value.
+ASSIGN_RE = re.compile(r"^[A-Za-z_]\w*=")
+# The commands that run the command after them. The scan reads that command.
+WRAPPERS = frozenset({"timeout", "time", "nohup", "exec", "env", "nice"})
+# The time limit of `timeout`, for example 600 or 10m.
+DURATION_RE = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
+# A number: the value of an option such as `--verbosity 2`.
+NUMBER_RE = re.compile(r"^\d+(?:\.\d+)?$")
+# The options of a test runner that take a value that is not a number.
+VALUE_OPTIONS = frozenset({"--settings", "--tb", "-p", "--rootdir", "-c", "-W", "--log-file", "--junitxml"})
+# The options of a test run that ask for help. Such a run runs no test.
+HELP_OPTIONS = frozenset({"-h", "--help"})
+# The Python interpreter, for example python3 or .venv/bin/python3.11.
+PYTHON_RE = re.compile(r"^python[\d.]*$")
+# The options of the Python interpreter that take a value.
+PYTHON_VALUE_OPTIONS = frozenset({"-W", "-X"})
+# The test runners that `python -m` starts: (the runner, the sub-command that it needs, or None).
+TEST_MODULES = {"pytest": ("pytest", None), "unittest": ("unittest", None), "django": ("django test", "test")}
+# The test runners that a script name starts, in the same form.
+TEST_SCRIPTS = {"pytest": ("pytest", None), "py.test": ("pytest", None), "runtests.py": ("runtests.py", None),
+                "manage.py": ("manage.py test", "test")}
+# A test script that the model writes: test_x.py, x_test.py or tests.py.
+TEST_SCRIPT_RE = re.compile(r"^(?:test\w*|\w+_tests?|tests)\.py$")
+# The git commands that change the files of the work tree, and the arguments
+# that make them only read.
+GIT_TREE_VERBS = frozenset({"stash", "checkout", "restore", "switch", "reset", "apply"})
+GIT_READ_ARGS = frozenset({"list", "show", "--check", "--stat"})
+# The git options before the sub-command that take a value.
+GIT_VALUE_OPTIONS = frozenset({"-C", "-c"})
 
 
 def note(msg):
@@ -871,6 +941,384 @@ def same_test_result(before, after):
     return bool(before and after) and RUN_TIME_RE.sub("", before[2]) == RUN_TIME_RE.sub("", after[2])
 
 
+def js_literal(code, i):
+    """Give (the text, the index after the end) of the JavaScript string literal at code[i], or None.
+
+    A template literal keeps its ${...} parts as text.
+    """
+    quote = code[i:i + 1]
+    if quote not in JS_QUOTES:
+        return None
+    out, j = [], i + 1
+    while j < len(code) and code[j] != quote:
+        if code[j] == "\\" and j + 1 < len(code):
+            out.append(JS_ESCAPES.get(code[j + 1], code[j + 1]))
+            j += 2
+        else:
+            out.append(code[j])
+            j += 1
+    return "".join(out), j + 1
+
+
+def string_value(code, name, before):
+    """Give the text of the last string literal that the snippet puts in the variable name before the index, or None."""
+    found = None
+    for m in VAR_DEF_RE.finditer(code, 0, before):
+        lit = js_literal(code, m.end()) if m.group(1) == name else None
+        if lit:
+            found = lit[0]
+    return found
+
+
+def shell_commands(code):
+    """Give (the position, the command) of each tools.shell.execute call of a snippet.
+
+    The command is a string literal in the call, or a variable that the
+    snippet sets to a string literal before the call (`command: cmd`, or the
+    shorthand `{ command }`). A call with another form of command is not given.
+    """
+    out = []
+    for call in EXECUTE_CALL_RE.finditer(code):
+        end = CALL_END_RE.search(code, call.end())
+        prop = COMMAND_PROP_RE.search(code, call.end(), end.start() if end else len(code))
+        if not prop:
+            continue
+        lit = js_literal(code, prop.end()) if prop.group(1) else None
+        if lit:
+            out.append((call.start(), lit[0]))
+            continue
+        name = re.match(r"\w+", code[prop.end():]) if prop.group(1) else None
+        command = string_value(code, name.group(0) if name else "command", call.start())
+        if command is not None:
+            out.append((call.start(), command))
+    return out
+
+
+def is_redirect_amp(command, i):
+    """Tell whether the & at command[i] is part of a redirect (2>&1, &>file), not a command separator."""
+    return command[i - 1:i] in (">", "<") or command[i + 1:i + 2] == ">"
+
+
+def shell_segments(command):
+    """Split a shell command into its simple commands at ;, &&, ||, |, & and new lines outside quotes."""
+    parts, cur, quote, i = [], [], None, 0
+    while i < len(command):
+        ch = command[i]
+        if ch == "\\" and quote != "'":
+            cur.append(command[i:i + 2])
+            i += 2
+            continue
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch in ";\n|" or (ch == "&" and not is_redirect_amp(command, i)):
+            parts.append("".join(cur))
+            cur = []
+            i += 2 if command[i:i + 2] in ("&&", "||") else 1
+            continue
+        cur.append(ch)
+        i += 1
+    parts.append("".join(cur))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def segment_words(segment):
+    """Give the words of one simple command, with no group bracket around them."""
+    try:
+        words = shlex.split(segment)
+    except ValueError:
+        words = segment.split()
+    if words:
+        words[0] = words[0].lstrip("({")
+        words[-1] = words[-1].rstrip(")}")
+    return [w for w in words if w]
+
+
+def split_redirects(words):
+    """Give (the words with no redirect, the files that the redirects write)."""
+    kept, outputs, i = [], [], 0
+    while i < len(words):
+        m = REDIRECT_RE.match(words[i])
+        if not m:
+            kept.append(words[i])
+            i += 1
+            continue
+        target = m.group(3)
+        if not target:
+            target = words[i + 1] if i + 1 < len(words) else ""
+            i += 1
+        if m.group(2) != "<" and target and not target.startswith("&") and target != DEV_NULL:
+            outputs.append(target)
+        i += 1
+    return kept, outputs
+
+
+def command_words(words):
+    """Drop the variable settings and the wrapper commands (timeout 600, nohup, env) before the command."""
+    i, wrapped = 0, False
+    while i < len(words):
+        w = words[i]
+        if ASSIGN_RE.match(w) or w in WRAPPERS:
+            wrapped = wrapped or w in WRAPPERS
+        elif not (wrapped and (w.startswith("-") or DURATION_RE.match(w))):
+            break
+        i += 1
+    return words[i:]
+
+
+def runner_from(table, name, rest):
+    """Give (the test runner, its arguments) that the table gives for name, or (None, [])."""
+    runner, sub = table.get(name, (None, None))
+    if runner is None or (sub is not None and rest[:1] != [sub]):
+        return None, []
+    return runner, rest[1:] if sub else rest
+
+
+def script_runner(name, rest):
+    """Give (the test runner, its arguments) of a command or script name, or (None, [])."""
+    if TEST_SCRIPT_RE.match(name):
+        return name, rest
+    return runner_from(TEST_SCRIPTS, name, rest)
+
+
+def python_runner(args):
+    """Give (the test runner, its arguments) of the arguments of the Python interpreter, or (None, [])."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        if args[i] == "-m" and i + 1 < len(args):
+            return runner_from(TEST_MODULES, args[i + 1], args[i + 2:])
+        if args[i] == "-c":
+            return None, []
+        i += 2 if args[i] in PYTHON_VALUE_OPTIONS else 1
+    return script_runner(os.path.basename(args[i]), args[i + 1:]) if i < len(args) else (None, [])
+
+
+def test_args(args):
+    """Give the module or test arguments of a test run: no option, and no value of an option."""
+    out, option = [], None
+    for a in args:
+        if a.startswith("-"):
+            option = None if "=" in a else a
+            continue
+        if not (option and (option in VALUE_OPTIONS or NUMBER_RE.match(a))):
+            out.append(os.path.normpath(a) if "/" in a else a)
+        option = None
+    return out
+
+
+def test_run_key(words):
+    """Give the normalized test run of one simple command: the runner and its sorted test arguments, or None."""
+    if not words:
+        return None
+    first = os.path.basename(words[0])
+    runner, args = python_runner(words[1:]) if PYTHON_RE.match(first) else script_runner(first, words[1:])
+    if runner is None or HELP_OPTIONS.intersection(args):
+        return None
+    return " ".join([runner] + sorted(set(test_args(args))))
+
+
+def changes_tree(words):
+    """Tell whether a simple command is a git command that changes the files of the work tree."""
+    if not words or os.path.basename(words[0]) != "git":
+        return False
+    rest = words[1:]
+    while rest and rest[0].startswith("-"):
+        rest = rest[2:] if rest[0] in GIT_VALUE_OPTIONS else rest[1:]
+    return bool(rest) and rest[0] in GIT_TREE_VERBS and not GIT_READ_ARGS.intersection(rest[1:])
+
+
+def shell_events(command):
+    """Give (the events, the files that the command writes) of one shell command.
+
+    Each event is ("edit", None) for a git command that changes the work tree,
+    or ("run", the normalized test run), in the order of the command.
+    """
+    events, outputs = [], []
+    for segment in shell_segments(command):
+        words, written = split_redirects(segment_words(segment))
+        outputs += written
+        words = command_words(words)
+        if words and os.path.basename(words[0]) == "tee":
+            outputs += [w for w in words[1:] if not w.startswith("-")]
+        if changes_tree(words):
+            events.append(("edit", None))
+        key = test_run_key(words)
+        if key:
+            events.append(("run", key))
+    return events, outputs
+
+
+def normalize_test_command(command):
+    """Give the normalized test runs of a shell command, in its order.
+
+    A test run is the runner (runtests.py, pytest, manage.py test, django
+    test, unittest, or a test script) and its sorted module or test
+    arguments. Redirects, pipes into other commands, `cd ... &&` prefixes,
+    `timeout` values, the path of the interpreter and the options do not count.
+    """
+    return [key for kind, key in shell_events(command)[0] if kind == "run"]
+
+
+def edit_calls(code):
+    """Give (the position, the paths) of each call of a verb that changes a file. The paths can be empty."""
+    starts = [m.start() for m in VERB_RE.finditer(code)]
+    out = []
+    for m in EDIT_CALL_RE.finditer(code):
+        end = next((s for s in starts if s > m.start()), len(code))
+        found = EDIT_PATH_RE.findall(code, m.start(), end)
+        out.append((m.start(), [next(p for p in groups if p) for groups in found]))
+    return out
+
+
+def call_events(code):
+    """Give (the events in the order of the code, the files that the shell commands write) of one snippet.
+
+    Each event is (position, "edit", paths) or (position, "run", (key, command)).
+    The paths are None for a git command, as it can change any file.
+    """
+    events, outputs = [], []
+    for pos, paths in edit_calls(code):
+        events.append((pos, "edit", paths))
+    for pos, command in shell_commands(code):
+        found, written = shell_events(command)
+        outputs += written
+        events += [(pos, kind, None if kind == "edit" else (key, command)) for kind, key in found]
+    return sorted(events, key=lambda e: e[0]), outputs
+
+
+def run_keys(code):
+    """Give the keys of the object that a snippet returns whose values read the result of an execute call."""
+    names = EXECUTE_VAR_RE.findall(code)
+    found = list(RETURN_OBJECT_RE.finditer(code))
+    if not names or not found:
+        return []
+    reads = re.compile(r"\b(?:%s)\b" % "|".join(map(re.escape, names)))
+    keys = []
+    for entry in object_entries(code, found[-1].end()):
+        key, colon, value = entry.partition(":")
+        if reads.search(value if colon else key):
+            keys.append(key.strip().strip("\"'"))
+    return keys
+
+
+def object_entries(code, start):
+    """Give the entries of the object literal whose body starts at code[start], split at its top-level commas."""
+    parts, cur, depth, quote = [], [], 0, None
+    for i in range(start, len(code)):
+        ch = code[i]
+        if quote:
+            quote = None if ch == quote and code[i - 1] != "\\" else quote
+        elif ch in JS_QUOTES:
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+            continue
+        cur.append(ch)
+    parts.append("".join(cur))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def seen_state(code, result):
+    """Tell what the model saw of the test run of a snippet: PENDING, NO_OUTPUT or COMPLETE.
+
+    - code: the code of the snippet.
+    - result: the result that the model got for the snippet.
+
+    PENDING: the result is the notice that the snippet or its command still
+    runs. NO_OUTPUT: the result is empty, the snippet failed, or each value
+    of the returned object that reads the execute result is missing or empty.
+    """
+    text = (result or "").strip()
+    j = json_value(text)
+    values = j.values() if isinstance(j, dict) else []
+    if is_pending(text) or PENDING_INNER in text or any(isinstance(v, dict) and v.get("pending") is True for v in values):
+        return PENDING
+    if text in EMPTY_RESULTS or text.startswith(SNIPPET_FAIL):
+        return NO_OUTPUT
+    keys = run_keys(code)
+    if isinstance(j, dict) and keys and all(j.get(k) in (None, "", [], {}) for k in keys):
+        return NO_OUTPUT
+    return COMPLETE
+
+
+def gives_output(result):
+    """Tell whether a result holds the report of a command that ended: its exit code, or the completed status."""
+    j = json_value(result)
+    return isinstance(j, dict) and ("exitCode" in j or j.get("status") == "completed")
+
+
+def new_repeat_state():
+    """Give the empty state of the repeat check of one instance.
+
+    - runs: the normalized test run -> the last run of it since the last edit.
+    - outputs: the base names of the files that the shell commands write.
+    - repeats: each test run that repeats an earlier one with no edit between.
+    """
+    return {"runs": {}, "outputs": set(), "repeats": []}
+
+
+def is_edit(paths, outputs):
+    """Tell whether an edit changes the files that a test run reads.
+
+    An edit that changes only the files that the shell commands of the
+    instance write (a log of a test run) does not. An edit with no known path
+    does, and so does a git command (paths None).
+    """
+    return not paths or any(os.path.basename(p) not in outputs for p in paths)
+
+
+def track_repeats(state, seq, code, result):
+    """Add the edits and the test runs of one runCode call to the repeat state of its instance.
+
+    - state: the repeat state of the instance (see new_repeat_state).
+    - seq: the seq of the call row. The report names the call by it.
+    - code: the code of the call.
+    - result: the result that the model got for the call.
+    """
+    events, outputs = call_events(code)
+    state["outputs"].update(os.path.basename(o) for o in outputs)
+    started = not NOT_STARTED_RE.match((result or "").lstrip())
+    status = seen_state(code, result)
+    for _, kind, data in events:
+        if kind == "edit" and is_edit(data, state["outputs"]):
+            state["runs"].clear()
+        elif kind == "run" and started:
+            add_run(state, seq, data, status, result)
+    if gives_output(result):
+        for run in state["runs"].values():
+            if run["seq"] != seq and run["ids"].intersection(ULID_RE.findall(code)):
+                run["state"] = COMPLETE
+
+
+def add_run(state, seq, run, status, result):
+    """Add one test run of the call seq. Record a repeat when the same run came before in another call.
+
+    - run: (the normalized test run, the command).
+    - status: what the model saw of the result of the call (see seen_state).
+    """
+    key, command = run
+    before = state["runs"].get(key)
+    if before and before["seq"] != seq:
+        state["repeats"].append({"first": before["seq"], "again": seq, "key": key, "state": before["state"],
+                                 "commands": (before["command"], command)})
+    state["runs"][key] = {"seq": seq, "command": command, "state": status, "ids": set(ULID_RE.findall(result or ""))}
+
+
+def repeats_text(state):
+    """Give the text of the repeated test runs of one instance, or "none"."""
+    found = (state or {}).get("repeats") or []
+    return "; ".join(f"seq {r['first']} -> {r['again']} {r['key']} (the earlier result: {r['state']})"
+                     for r in found) or "none"
+
+
 def skill_name(args, text):
     """Give the name of the skill of a skills call: from its arguments, else from its result."""
     name = args.get("id") or args.get("name")
@@ -939,6 +1387,8 @@ def scan_transcripts(dirs, gap_s, R):
         # The tool calls of the model: call id -> (tool name, arguments).
         # The runCode arguments keep the code of the snippet.
         calls = {}
+        # The seq of the row of each tool call: call id -> seq.
+        call_seq = {}
         # The final operation events: correlation id -> detail. A runCode
         # result that is still pending gets its final detail from here.
         ops = {}
@@ -950,6 +1400,7 @@ def scan_transcripts(dirs, gap_s, R):
                     except (TypeError, ValueError):
                         args = {}
                     calls[c.get("id")] = (c.get("toolName"), args if isinstance(args, dict) else {})
+                    call_seq[c.get("id")] = r.get("seq")
             elif r.get("kind") == "toolOutput":
                 m = STATUS_RE.match(r.get("text", "") or "")
                 if m and m.group(4) != "running":
@@ -1056,6 +1507,9 @@ def scan_transcripts(dirs, gap_s, R):
             add_result(T["results"][inst], (tool, code), detail if seen is None else seen)
             track_tests(T["timeline"][inst], T["test_ids"][inst], r.get("seq"), code, detail,
                         bool(EDIT_VERBS.intersection(verbs)) and not cls)
+            # For a pending snippet, the model got the notice, not the final detail.
+            track_repeats(T["repeat_state"][inst], call_seq.get(cid, r.get("seq")), code,
+                          text if isinstance(c, dict) and c.get("pending") else detail)
             if cls:
                 T["tool_err"][tool] += 1
                 for v in error_verbs(detail, verbs):
@@ -1139,6 +1593,10 @@ def report_loops(R):
     print("== the test result before and after the last edit (from the test runs that the model saw)")
     for inst, timeline in T["timeline"].items():
         print(f"   {inst}: {before_after_text(timeline)}")
+    print("== repeated test runs (the same test run again with no edit between, by the seq of the calls; "
+          "the earlier result as the model saw it: pending, no output or complete)")
+    for inst in T["timeline"]:
+        print(f"   {inst}: {repeats_text(T['repeat_state'].get(inst))}")
 
 
 def loop_problems(R):
@@ -1155,6 +1613,15 @@ def loop_problems(R):
             edit, before, after = found
             R["problems"].append((56, f"{inst}: the test result is the same before and after the last edit",
                                   f"seq {before[0]}: {before[2]}; last edit at seq {edit[0]}; seq {after[0]}: {after[2]}"))
+    for inst, state in T["repeat_state"].items():
+        for rep in state["repeats"]:
+            if rep["state"] != COMPLETE:
+                first, again = rep["commands"]
+                R["problems"].append((59, f"{inst}: the test run of seq {rep['again']} repeats the test run of seq "
+                                          f"{rep['first']}, and the result of seq {rep['first']} "
+                                          f"{UNSEEN_TEXT[rep['state']]} when the model saw it",
+                                      f"seq {rep['first']}: {first[:120]!r}; seq {rep['again']}: {again[:120]!r}; "
+                                      f"no edit between"))
 
 
 # ---------------------------------------------------------------- recordings
@@ -1368,6 +1835,7 @@ def new_result():
                       "running": collections.defaultdict(collections.Counter), "code_context": 0,
                       "results": collections.defaultdict(dict), "timeline": collections.defaultdict(list),
                       "test_ids": collections.defaultdict(set),
+                      "repeat_state": collections.defaultdict(new_repeat_state),
                       "instructions": 0, "gen": 0, "tokens_out": 0, "seq_missing": 0, "exec_nonzero": 0,
                       "pending": 0, "no_code": 0}}
 

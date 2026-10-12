@@ -139,6 +139,14 @@ comments:
     - Root cause (decision): inside a snippet, an awaited inner call that runs past the settle period gives the snippet a pending object, and the snippet continues as if the work were done. Fix: an inner `await` must give the real result (block the snippet until the call ends); when the whole snippet runs past the settle period, the snippet goes pending, and its real return value is injected. This removes the class: no-otel-1011 13447 (`s.output` undefined), noop-stop-1012 13447, and pending-inner-1012 13964.
     - why stuck: the fix is in FoundationModelsMultitool (task requested from foundationmodelsmultitool-57), then a new bench check. The scan gap is a separate task in this repo.
   timestamp: 2026-10-12T21:06:18.566939+00:00
+- actor: claude-code
+  id: 01m4rznn70ew8x4pf8x7dm08xh
+  text: |-
+    ### Multitool task requested (2026-10-12)
+    - FoundationModelsMultitool ^6nnykct (01M4RZN3W00AWTMX02Z6NNYKCT): "runCode: an await of an inner tools.* call always gives the real result". In todo, tag #bug, ready. It has the evidence (13964 seq 1017-1032, and the two 13447 cases), the decision, 4 work items and 3 tests.
+    - The Multitool session (foundationmodelsmultitool-cf) sends the commit sha when it is pushed.
+    - next: take the pin (also Multitool 8e70406 for nested runCode), release build, full swift test, and a bench check on the same 6 instances; run the improved scan (task 01M4RZ0MHP0ZDHFJBA6J6ATRCA) on it.
+  timestamp: 2026-10-12T21:18:04.512426+00:00
 position_column: review
 position_ordinal: '80'
 title: Bench check of the no-op stop, and the detectProjects settle task for CodeContext

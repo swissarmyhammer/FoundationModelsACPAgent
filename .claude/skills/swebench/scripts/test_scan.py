@@ -194,6 +194,34 @@ def edit(seq):
                    json.dumps({"applied": 1, "status": "applied"}))
 
 
+def plain_call(seq, code, text):
+    """Give the rows of one runCode call with the code, whose result is the plain text.
+
+    The transcripts of the runs of 2026-10-11 and later keep the result of a
+    snippet as the text that the model got, with no completionToken wrapper.
+    """
+    return model_call(seq, "runCode", {"code": code}, text)
+
+
+def execute_code(command, returned="r"):
+    """Give the code of a snippet that runs the shell command, and returns the expression returned."""
+    return f"const r = await tools.shell.execute({{ command: {json.dumps(command)}, timeout: 1800 }});\nreturn {returned};"
+
+
+def inline_report(lines, exit_code=0):
+    """Give the report of a shell command that ended inline, with its output lines."""
+    numbered = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
+    return json.dumps({"commandID": ulid(99), "durationMs": 400, "exitCode": exit_code, "lines": len(lines),
+                       "output": numbered, "status": "completed"})
+
+
+# The text that a snippet result gets when a tools.* call of the snippet still
+# runs in the background (django__django-13964 of the run pending-inner-1012).
+PENDING_INNER = ('{"rm":"applied"}\n\nThis snippet ended, but these tools.* calls that it started did not finish. '
+                 'They continue in the background:\n- tools.shell.execute: tool "execute", op "execute shell", '
+                 f'commandID "{ulid(7)}"\nDo not run these calls again. This is not the result.')
+
+
 def quiet(fn, *args):
     """Call fn with args. Give the text that it writes to stdout."""
     out = io.StringIO()
@@ -628,6 +656,185 @@ class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
         self.assertIn(f"{FIRST}: before the last edit: no test run; "
                       f"after it: Ran 1 test in 0.000s FAILED (errors=1)", out)
         self.assertEqual(self.problems_with(self.SAME_TEXT), [])
+
+
+class TheTestCommandIsNormalized(unittest.TestCase):
+    """The scan compares test runs by the test runner and its module or test
+    arguments only (task ^j6atrca). In django__django-13964 of the run
+    pending-inner-1012, seq 1017 and seq 1032 ran the full suite two times,
+    but the two command texts differ, so a compare of the text missed it."""
+
+    # The two commands of django__django-13964, seq 1017 and seq 1032.
+    TO_LOG = (".venv/bin/python tests/runtests.py > full_run_tmp.log 2>&1; "
+              "grep -E '^(FAIL|ERROR):' full_run_tmp.log; tail -3 full_run_tmp.log")
+    PIPED = (".venv/bin/python tests/runtests.py 2>&1 | grep -E '^(FAIL|ERROR):' | sort -u; "
+             ".venv/bin/python tests/runtests.py --help >/dev/null 2>&1; echo DONE")
+
+    def test_a_log_redirect_and_a_pipe_do_not_change_the_test_run(self):
+        """The redirect to a log file, the grep and the tail are not part of
+        the test run. Both commands run the full suite."""
+        self.assertEqual(scan.normalize_test_command(self.TO_LOG), ["runtests.py"])
+        self.assertEqual(scan.normalize_test_command(self.PIPED), ["runtests.py"])
+
+    def test_cd_timeout_and_options_do_not_change_the_test_run(self):
+        """A `cd ... &&` prefix, a `timeout` value, the path of the interpreter,
+        the options and the order of the modules do not change which tests run."""
+        first = "cd /repo && timeout 600 python3 tests/runtests.py b a --verbosity 2 --parallel=1 | tail -20"
+        second = ".venv/bin/python ./tests/runtests.py a b"
+        self.assertEqual(scan.normalize_test_command(first), scan.normalize_test_command(second))
+        self.assertEqual(scan.normalize_test_command(second), ["runtests.py a b"])
+
+    def test_other_modules_are_another_test_run(self):
+        """A run of other modules is not a repeat of the first run."""
+        self.assertNotEqual(scan.normalize_test_command("python tests/runtests.py admin_views"),
+                            scan.normalize_test_command("python tests/runtests.py admin_checks"))
+
+    def test_the_pytest_forms_are_one_runner(self):
+        """`python -m pytest` and `pytest` run the same tests."""
+        self.assertEqual(scan.normalize_test_command("python -m pytest tests/test_x.py -q"),
+                         scan.normalize_test_command("pytest tests/test_x.py"))
+
+    def test_a_help_call_is_not_a_test_run(self):
+        """`runtests.py --help` runs no test."""
+        self.assertEqual(scan.normalize_test_command("python tests/runtests.py --help"), [])
+
+    def test_the_name_of_the_runner_in_another_command_is_not_a_test_run(self):
+        """A grep for the name of the runner does not run the runner."""
+        self.assertEqual(scan.normalize_test_command("grep -n runtests.py docs/README.rst"), [])
+
+    def test_a_test_script_is_a_test_run(self):
+        """django__django-14382 seq 1465 ran a test script of the model two times."""
+        self.assertEqual(scan.normalize_test_command("python test_startapp_trailing_slash.py"),
+                         ["test_startapp_trailing_slash.py"])
+
+
+class TheCommandOfASnippetIsFound(unittest.TestCase):
+    """The scan reads the command of each tools.shell.execute call of a snippet,
+    also when the snippet puts the command in a variable first (task ^j6atrca)."""
+
+    def commands(self, code):
+        """Give the command texts that the scan finds in the code."""
+        return [command for _, command in scan.shell_commands(code)]
+
+    def test_a_string_literal_is_the_command(self):
+        """The usual form: the command is a string literal in the call."""
+        code = "const r = await tools.shell.execute({ command: 'python tests/runtests.py a', timeout: 60 });"
+        self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
+
+    def test_a_command_in_a_string_variable_is_found(self):
+        """The snippet puts the command in a variable, and gives the variable to the call."""
+        code = ('const cmd = "python tests/runtests.py a";\n'
+                "const r = await tools.shell.execute({ command: cmd });")
+        self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
+
+    def test_a_shorthand_property_is_found(self):
+        """`{ command }` gives the variable named command to the call."""
+        code = "const command = `python tests/runtests.py a`;\nconst r = await tools.shell.execute({ command });"
+        self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
+
+
+class ARepeatedTestRunNamesItsCause(ScanTestCase):
+    """The scan reports the same test run again with no edit between, and it
+    says whether the model saw the result of the earlier run (task ^j6atrca).
+    A repeat after a pending result or a result with no output is a problem:
+    the model ran the tests again because it did not see the result."""
+
+    TO_LOG = TheTestCommandIsNormalized.TO_LOG
+    PIPED = TheTestCommandIsNormalized.PIPED
+    # The text of each problem about a repeated test run.
+    REPEAT_TEXT = "repeats the test run of seq"
+    # The output of a run of the full suite that ended inline.
+    SUITE_OUTPUT = ["Ran 14459 tests in 375.2s", "FAILED (failures=5, errors=1)"]
+
+    def run_again(self, seq):
+        """Give the rows of the second run of the full suite, with an inline result."""
+        return plain_call(seq, execute_code(self.PIPED, "r.output"), inline_report(self.SUITE_OUTPUT))
+
+    def test_a_repeat_after_a_pending_result_is_a_problem(self):
+        """django__django-13964 of the run pending-inner-1012: seq 1017 got the
+        notice that the execute call still ran, and seq 1032 ran the suite again."""
+        out = self.scan_rows(FIRST, plain_call(1017, execute_code(self.TO_LOG, "{ r: r.output }"), PENDING_INNER)
+                             + self.run_again(1032))
+        hits = self.problems_with("the test run of seq 1032 repeats the test run of seq 1017", "pending")
+        self.assertEqual(len(hits), 1, self.problem_texts())
+        self.assertIn(f"{FIRST}: seq 1017 -> 1032 runtests.py (the earlier result: pending)", out)
+
+    def test_a_delete_of_the_log_of_the_run_is_not_an_edit(self):
+        """Seq 1017 of django__django-13964 also deleted full_run_tmp.log, the
+        log file of its own test run. That changes no code, so the next run of
+        the suite is still a repeat."""
+        code = (execute_code(self.TO_LOG, "{ r: r.output, rm: rm.status }").replace(
+            "return", 'const rm = await tools.files.patch({ patch: "*** Begin Patch\\n'
+                      '*** Delete File: /tmp/repo/full_run_tmp.log\\n*** End Patch" });\nreturn'))
+        self.scan_rows(FIRST, plain_call(1017, code, PENDING_INNER) + self.run_again(1032))
+        self.assertEqual(len(self.problems_with(self.REPEAT_TEXT, "pending")), 1, self.problem_texts())
+
+    def test_a_repeat_after_an_inline_result_is_not_a_problem(self):
+        """django__django-14382 of the run pending-inner-1012: seq 1465 got
+        `{"code":1}`. The run ended inline, so the model saw its result. The
+        repeat is in the report, but it is not a problem."""
+        command = "python test_startapp_trailing_slash.py"
+        rows = (plain_call(1465, execute_code(command, "{ code: r.exitCode, out: r.stdout, err: r.stderr }"),
+                           json.dumps({"code": 1}))
+                + plain_call(1473, execute_code(command), inline_report(["AssertionError"], exit_code=1)))
+        out = self.scan_rows(SECOND, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
+        self.assertIn(f"{SECOND}: seq 1465 -> 1473 test_startapp_trailing_slash.py (the earlier result: complete)",
+                      out)
+
+    def test_an_edit_between_the_runs_is_not_a_repeat(self):
+        """An edit changes what the next run tests, so that run is not a repeat."""
+        rows = (plain_call(10, execute_code(self.TO_LOG, "{ r: r.output }"), PENDING_INNER)
+                + edit(20) + self.run_again(30))
+        out = self.scan_rows(FIRST, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
+        self.assertIn(f"{FIRST}: none", out)
+
+    def test_a_git_stash_between_the_runs_is_not_a_repeat(self):
+        """`git stash` changes the files of the work tree, as an edit does."""
+        rows = (plain_call(10, execute_code(self.TO_LOG, "{ r: r.output }"), PENDING_INNER)
+                + plain_call(20, execute_code("git stash"), inline_report(["Saved working directory"]))
+                + self.run_again(30))
+        self.scan_rows(FIRST, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
+
+    def test_missing_run_values_are_a_problem(self):
+        """django__django-13447 of the run noop-stop-1012, seq 298: the snippet
+        returned `{ remaining, exit: r.exitCode, out: r.output }`, and the model
+        got `{"remaining": [...]}`. The values of the run were missing."""
+        command = "python tests/runtests.py admin_views.tests.A.test_a admin_views.tests.A.test_b"
+        code = ('const g = await tools.files.grep({ pattern: "_build_app_dict" });\n'
+                + execute_code(command, "{ remaining: g.files, exit: r.exitCode, out: r.output }"))
+        rows = (plain_call(298, code, json.dumps({"remaining": ["tests/admin_views/tests.py"]}))
+                + plain_call(302, execute_code(command, "{ exit: r.exitCode, out: r.output }"),
+                             json.dumps({"exit": 0, "out": ["Ran 2 tests in 0.316s", "OK"]})))
+        self.scan_rows(FIRST, rows)
+        hits = self.problems_with("the test run of seq 302 repeats the test run of seq 298", "no output")
+        self.assertEqual(len(hits), 1, self.problem_texts())
+
+    def test_a_failed_snippet_after_the_start_of_the_run_is_a_problem(self):
+        """django__django-13447 of the run no-otel-1011, seq 428: the snippet
+        read `s.output.slice`, but the run was still pending, so the snippet
+        failed and the model got no output of the run."""
+        command = "python3 runtests.py admin_views admin_checks"
+        rows = (plain_call(428, execute_code(command, "{ code: r.exitCode, tail: r.output.slice(-8) }"),
+                           "The snippet failed: undefined is not an object (evaluating 'r.output.slice') (line 102)")
+                + plain_call(432, execute_code(command), pending_notice(ulid(5))))
+        self.scan_rows(FIRST, rows)
+        self.assertEqual(len(self.problems_with(self.REPEAT_TEXT, "no output")), 1, self.problem_texts())
+
+    def test_a_read_of_the_output_ends_the_pending_state(self):
+        """A getLines call that reads the output of the pending run gives the
+        model the result. A run after that read is a repeat, but not one that
+        a pending result caused."""
+        pending = json.dumps({"commandID": ulid(3), "completionToken": ulid(3), "pending": True})
+        rows = (plain_call(10, execute_code("python tests/runtests.py urls"), pending)
+                + plain_call(20, f'const r = await tools.shell.getLines({{ commandID: "{ulid(3)}" }});\nreturn r;',
+                             shell_lines(ulid(3), ["Ran 3 tests in 0.1s", "OK"]))
+                + plain_call(30, execute_code("python tests/runtests.py urls"), inline_report(["OK"])))
+        out = self.scan_rows(FIRST, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
+        self.assertIn(f"{FIRST}: seq 10 -> 30 runtests.py urls (the earlier result: complete)", out)
 
 
 class TheScoreReportIsClosedAfterTheRead(ScanTestCase):
