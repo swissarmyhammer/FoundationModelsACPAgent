@@ -20,6 +20,29 @@ comments:
     - Results: Django clone during the first index pass 0.95 to 1.42 s (before 5.5 to 10 s); gate test with the index pass and both actors held 0.034 s.
     - next: the run noop-stop-1012 uses the build from before this commit. After that run ends, `swift package update` to take d4c4482.
   timestamp: 2026-10-12T15:11:17.420385+00:00
+- actor: claude-code
+  id: 01m4rdwtb41scaksmgx9nx036v
+  text: |-
+    ### Bench check result: run noop-stop-1012 (2026-10-12)
+    - Build: release of 8506ea5 (pins Router 9de67e9, Multitool e57ddf8, Extras c0e46ae, Agents de4bed3, CodeContext 3e84f52 - before the CodeContext fix). Config bench/code-context.config.yaml, --timeout 5400, 6 instances, 162 minutes, load average about 15-18.
+    - Score: 4/6 resolved (score_20261012_110259). The same 6 instances in no-otel-1011: 5/6. Broken: django__django-13964. Same: 13447 R, 14016 R, 14382 R, 14411 R, 14155 no.
+
+    | instance | no-op calls before | now | time before | now |
+    |---|---|---|---|---|
+    | 13447 | 1 | 0 | 1025 s | 1782 s |
+    | 13964 | 73 | 0 | 1653 s | 3236 s |
+    | 14016 | 33 | 0 | 2526 s | 1017 s |
+    | 14382 | 57 | 0 | 1413 s | 339 s |
+    | 14411 | 4 | 0 | 1871 s | 2023 s |
+    | 14155 | 8 | 0 | 1873 s | 1308 s |
+
+    - Criterion "0 no-op loops": met. 0 no-op runCode calls in all 6 (before: 176 in these 6).
+    - Criterion "0 duplicate test commands that a pending result caused": met. 13447 has 2 repeated test commands: seq 286/294 are before and after an edit (normal); seq 298/302: the snippet at 298 returned only its grep result, so the model ran the test again (a snippet design error of the model, not a pending result).
+    - Criterion "score not lower, or each new unresolved instance has a cause that is not the no-op stop": met by the second part. 13964 (FAIL_TO_PASS 0/1): the no-op stop did not act in it. A stopped no-op round ends the answer and the injected result starts a new submission, and a mixed round adds the prompt "Your tool results are above. Continue the task."; the transcript has only 4 prompt rows (the task prompt and the 3 repetition-watch prompts at seq 617, 646, 704). Cause: edit thrash between 3 file states (seq 675-703, hashes a9f155b5, 12b257e8, acc84a3e/a8de001d); the repetition watch stopped it 4 times (finish=repeatedLines, the last after 3 identical runCode calls, no recovery left); then a find=replace no-op patch (seq 706) and a fix from memory that fails the test.
+    - Limit of the evidence: the Router logs a no-op stop as a notice, and acp-agent writes only warnings to stderr, so the run log cannot show a stop directly.
+    - Criterion "a CodeContext task exists": met (^dca8jxc, done and pushed as d4c4482).
+    - Other observations: the reasoning limit fired once at the start of 13447 (finish=reasoningTokenLimit); patches of 13447 and 14411 also change a test file (no score effect).
+  timestamp: 2026-10-12T16:07:24.772564+00:00
 position_column: doing
 position_ordinal: '80'
 title: Bench check of the no-op stop, and the detectProjects settle task for CodeContext
