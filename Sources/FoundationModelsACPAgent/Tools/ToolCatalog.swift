@@ -134,6 +134,15 @@ public struct SessionSurface: Sendable {
         self.runCallJoins = runCallJoins
     }
 
+    /// Makes a surface that mounts nothing: no tool, no MCP server, no
+    /// shell and no code context. A replay-only session gets it, because
+    /// its working directory does not exist and each mount can make it.
+    ///
+    /// - Returns: The empty surface.
+    static func makeEmpty() -> SessionSurface {
+        SessionSurface(tools: [], serverPool: MCPServerPool())
+    }
+
     /// Cancels each agent run of the surface, waits for each run to close
     /// its session, and starts no more runs.
     ///

@@ -71,6 +71,12 @@ extension RoutedACPAgent {
     /// when asked for, goes out before the response returns
     /// (``resumedHistory(kept:directory:rootId:sessionId:)``).
     ///
+    /// The agent never makes a session directory. When the recorded cwd or
+    /// a requested additional root does not exist, the resume is
+    /// replay-only: it replays the history, mounts no tool surface, and
+    /// each later `session/prompt` is refused. `session/close` and
+    /// `session/delete` work as for each other session.
+    ///
     /// The request runs in one server span, and it writes one "enter" record
     /// when it starts, because the composition and the restore can take a
     /// long time (``RequestTracing``).
@@ -133,27 +139,31 @@ extension RoutedACPAgent {
         let keptHistory = sessions[params.sessionId]?.history
         await releaseReplacedSession(params.sessionId)
 
-        let composition = try await composeSession(
-            from: context,
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
-            clientMCPServers: params.mcpServers ?? [])
+        let composition = try await composeResumedSession(
+            from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
+            params: params)
         let restored = try await restoreRecordedSession(
             rootId, sessionId: params.sessionId, composition: composition)
         let history = resumedHistory(
             kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
             sessionId: params.sessionId)
 
+        // A replay-only session runs no prompt, so it changes no listing:
+        // the `sessions.jsonl` record stays as the session left it, and
+        // only a session that is not replay-only records its root set.
+        let indexRecorded =
+            !composition.isReplayOnly
+            && recordResumedRootSet(
+                sessionId: params.sessionId,
+                transcriptRoot: composition.transcriptRoot,
+                workingDirectory: workingDirectory,
+                additionalRoots: additionalRoots)
         let activation = try await activateSession(
             restored.session,
             composition: composition,
             workingDirectory: workingDirectory,
             additionalRoots: additionalRoots,
-            indexRecorded: recordResumedRootSet(
-                sessionId: params.sessionId,
-                transcriptRoot: composition.transcriptRoot,
-                workingDirectory: workingDirectory,
-                additionalRoots: additionalRoots),
+            indexRecorded: indexRecorded,
             history: history)
 
         try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
@@ -230,10 +240,52 @@ extension RoutedACPAgent {
 
     // MARK: - The restore
 
+    /// Composes the resumed session, or makes the replay-only composition
+    /// when the working directory or an additional root does not exist.
+    ///
+    /// The agent never makes a session directory, and each tool mount can
+    /// make one: the code context index, for example, makes
+    /// `<cwd>/.code-context` and each missing parent. A resume of a session
+    /// whose directory is gone thus mounts nothing. The history is in the
+    /// recording root and not in the cwd, so the replay still works.
+    ///
+    /// - Parameters:
+    ///   - context: The resolved per-cwd configuration.
+    ///   - workingDirectory: The validated session working directory.
+    ///   - additionalRoots: The requested additional roots, in wire order.
+    ///   - params: The resume request.
+    /// - Returns: The full composition, or the replay-only composition.
+    /// - Throws: Whatever ``composeSession(from:workingDirectory:additionalRoots:clientMCPServers:)``
+    ///   throws.
+    private func composeResumedSession(
+        from context: LoadedSessionContext,
+        workingDirectory: URL,
+        additionalRoots: [URL],
+        params: ResumeSessionRequest
+    ) async throws -> SessionComposition {
+        guard
+            SessionSetup.allDirectoriesExist(
+                workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+        else {
+            ACPAgentTelemetry.logger(.sessionResume).notice(
+                "A directory of the resumed session does not exist. The session is replay-only.",
+                metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
+            return .replayOnly(from: context)
+        }
+        return try await composeSession(
+            from: context,
+            workingDirectory: workingDirectory,
+            additionalRoots: additionalRoots,
+            clientMCPServers: params.mcpServers ?? [])
+    }
+
     /// Restores the recorded root session with the freshly assembled
     /// instructions and the composed roster. Router
     /// matches the roster by recorded name; every recorded name with no
     /// supplied instance lands in the returned report.
+    ///
+    /// A replay-only composition assembled no instructions, so the restore
+    /// keeps the recorded instructions and writes no divergence event.
     ///
     /// A restore that throws releases what the composed surface holds —
     /// the surface never mounts, so nothing else would.
@@ -252,7 +304,7 @@ extension RoutedACPAgent {
             let restored = try await residentProfile.standard.restoreSession(
                 id: rootId,
                 recordingRoot: composition.transcriptRoot,
-                instructions: composition.instructions,
+                instructions: composition.isReplayOnly ? nil : composition.instructions,
                 tools: composition.surface.tools,
                 toolOutputProtection: SkillOutputProtection.rule)
             logRestoreReports(of: restored, sessionId: sessionId)
@@ -411,5 +463,24 @@ extension RoutedACPAgent {
             missingToolsMetaKey: .array(
                 report.missingTools.map { .string($0.toolName) })
         ])
+    }
+}
+
+extension SessionComposition {
+    /// The composition of a replay-only resume: the resolved configuration
+    /// and recording root, no instructions, an empty surface, and no
+    /// command source. Nothing in it reads or makes the session directory.
+    ///
+    /// - Parameter context: The resolved per-cwd configuration.
+    /// - Returns: The replay-only composition.
+    static func replayOnly(from context: LoadedSessionContext) -> SessionComposition {
+        SessionComposition(
+            configuration: context.loaded.configuration,
+            instructions: "",
+            surface: .makeEmpty(),
+            commandProviders: [],
+            userLayerRoot: context.userLayerRoot,
+            transcriptRoot: context.transcriptRoot,
+            isReplayOnly: true)
     }
 }

@@ -97,6 +97,12 @@ struct ActiveSession: Sendable {
     /// here: `SessionSurface.stopAgentRuns()` stops them.
     var descendants: [any RoutedSession] = []
 
+    /// Whether the session is replay-only: `session/resume` found its
+    /// working directory or one of its additional roots missing. The agent
+    /// never makes a session directory, so the session mounts no tool
+    /// surface, writes nothing for the session, and refuses each prompt.
+    let isReplayOnly: Bool
+
     /// Whether `session/close` released this session.
     var isClosed = false
 
@@ -204,6 +210,79 @@ enum SessionSetup {
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    /// Why a request directory cannot hold a session. The raw value is the
+    /// `reason` that the refusal reports in `data`.
+    enum DirectoryDefect: String {
+        /// The file system holds nothing at the path.
+        case doesNotExist = "does not exist"
+
+        /// The file system holds a file, not a directory, at the path.
+        case notADirectory = "is not a directory"
+    }
+
+    /// The defect of `directory`, or `nil` when it is an existing
+    /// directory. A symbolic link to a directory is a directory.
+    ///
+    /// - Parameter directory: The request directory.
+    /// - Returns: The defect, or `nil`.
+    static func defect(of directory: URL) -> DirectoryDefect? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory) else {
+            return .doesNotExist
+        }
+        return isDirectory.boolValue ? nil : .notADirectory
+    }
+
+    /// Validates that `directory` is an existing directory.
+    ///
+    /// The agent never makes a session directory. A composition that runs
+    /// over a missing directory makes it: the code context index, for
+    /// example, makes `<cwd>/.code-context` and each missing parent. So
+    /// `session/new` refuses a missing directory before it composes
+    /// anything.
+    ///
+    /// - Parameters:
+    ///   - directory: The request directory.
+    ///   - field: The request field `directory` came from, named in the
+    ///     refusal so the client learns which one to fix.
+    /// - Throws: ``RequestError/missingDirectory(_:field:defect:)`` when
+    ///   `directory` does not exist or is not a directory.
+    static func requireExistingDirectory(_ directory: URL, field: PathField) throws(RequestError) {
+        if let defect = defect(of: directory) {
+            throw .missingDirectory(directory, field: field, defect: defect)
+        }
+    }
+
+    /// Validates that the working directory and each additional root of a
+    /// session are existing directories, in request order: the cwd first,
+    /// then each root in wire order.
+    ///
+    /// - Parameters:
+    ///   - workingDirectory: The session working directory.
+    ///   - additionalRoots: The additional confinement roots, in wire order.
+    /// - Throws: ``RequestError/missingDirectory(_:field:defect:)`` for the
+    ///   first directory that fails the check.
+    static func requireExistingDirectories(
+        workingDirectory: URL, additionalRoots: [URL]
+    ) throws(RequestError) {
+        try requireExistingDirectory(workingDirectory, field: .cwd)
+        for root in additionalRoots {
+            try requireExistingDirectory(root, field: .additionalDirectories)
+        }
+    }
+
+    /// Whether the working directory and each additional root of a session
+    /// are existing directories. `session/resume` reads it: a resumed
+    /// session with a missing directory is replay-only, not refused.
+    ///
+    /// - Parameters:
+    ///   - workingDirectory: The session working directory.
+    ///   - additionalRoots: The additional confinement roots.
+    /// - Returns: `true` when no directory has a defect.
+    static func allDirectoriesExist(workingDirectory: URL, additionalRoots: [URL]) -> Bool {
+        ([workingDirectory] + additionalRoots).allSatisfy { defect(of: $0) == nil }
+    }
+
     /// Converts the wire `additionalDirectories` path strings to
     /// confinement root URLs, in wire order. Each entry
     /// goes through the same ``validatedWorkingDirectory(path:field:)``
@@ -256,6 +335,28 @@ extension RequestError {
             data: .object([
                 "field": .string(field.rawValue),
                 "reason": .string(mustBeAbsoluteReason),
+            ]))
+    }
+
+    /// The missing-directory refusal: JSON-RPC invalid params naming the
+    /// field, the path and the reason. The agent never makes a session
+    /// directory, so a request directory must exist.
+    ///
+    /// - Parameters:
+    ///   - directory: The refused request directory.
+    ///   - field: The request field the directory came from.
+    ///   - defect: Why the directory cannot hold a session.
+    /// - Returns: The typed invalid-params error.
+    static func missingDirectory(
+        _ directory: URL, field: SessionSetup.PathField, defect: SessionSetup.DirectoryDefect
+    ) -> RequestError {
+        RequestError(
+            code: .invalidParams,
+            message: RequestError.invalidParams.message,
+            data: .object([
+                "field": .string(field.rawValue),
+                "path": .string(directory.path),
+                "reason": .string(defect.rawValue),
             ]))
     }
 }
@@ -329,6 +430,11 @@ struct SessionComposition {
     /// The recording root `makeSession(recordingRoot:)` receives; Router
     /// records the session to `<transcriptRoot>/<sessionId>/`.
     let transcriptRoot: URL
+
+    /// Whether the composition is the one of a replay-only resume: no
+    /// instructions, no tool surface, and no command source. The mount
+    /// then writes no project-registry record and announces no command.
+    let isReplayOnly: Bool
 }
 
 /// What one mount of a session announces in the `session/new` or
@@ -368,8 +474,9 @@ extension RoutedACPAgent {
     /// - Returns: The response carrying the new sessionId, the
     ///   `availableCommands` list and the `configOptions` list.
     /// - Throws: The order rule's invalid-request error,
-    ///   `RequestError.invalidParams` for a relative cwd, or whatever the
-    ///   composition pipeline throws.
+    ///   `RequestError.invalidParams` for a relative cwd or for a cwd or an
+    ///   additional directory that is not an existing directory, or
+    ///   whatever the composition pipeline throws.
     public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
         try await RequestTracing.withEnteredRequestSpan(
             ACPAgentTelemetry.SpanName.sessionNew, method: ACPMethod.sessionNew, sessionId: nil,
@@ -394,6 +501,10 @@ extension RoutedACPAgent {
             path: params.cwd.rawValue, field: .cwd)
         let additionalRoots = try SessionSetup.additionalRoots(
             fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
+        // The agent never makes a session directory: the check runs before
+        // the composition, which would make a missing one.
+        try SessionSetup.requireExistingDirectories(
+            workingDirectory: workingDirectory, additionalRoots: additionalRoots)
 
         let composition = try await composeSession(
             workingDirectory: workingDirectory,
@@ -466,9 +577,12 @@ extension RoutedACPAgent {
         history: SessionMergeEngine
     ) async throws -> SessionActivation {
         // Register the cwd in the user-layer project registry, so a
-        // cross-project browser finds this project.
-        try ProjectRegistry(directory: composition.userLayerRoot)
-            .recordSessionStart(workingDirectory: workingDirectory)
+        // cross-project browser finds this project. A replay-only session
+        // has no cwd on disk, so it registers nothing.
+        if !composition.isReplayOnly {
+            try ProjectRegistry(directory: composition.userLayerRoot)
+                .recordSessionStart(workingDirectory: workingDirectory)
+        }
 
         let sessionId = SessionId(rawValue: session.id.description)
 
@@ -485,8 +599,10 @@ extension RoutedACPAgent {
             profileName: residentProfile.definitionName,
             dotfolderName: name,
             userLayerRoot: composition.userLayerRoot)
+        // A replay-only session refuses each prompt, so it announces no
+        // command, the builtins included.
         let commands = CommandRegistry(
-            builtins: BuiltinCommands.make(context: commandContext),
+            builtins: composition.isReplayOnly ? [] : BuiltinCommands.make(context: commandContext),
             providers: composition.commandProviders,
             workingDirectory: workingDirectory)
         await commands.load()
@@ -519,6 +635,7 @@ extension RoutedACPAgent {
             announcedConfigOptions: configOptions,
             activePrompt: nil,
             activeElicitationRelay: nil,
+            isReplayOnly: composition.isReplayOnly,
             indexRecorded: indexRecorded,
             retainedHistory: RetainedHistory(history))
         recordActiveSessions()
@@ -694,7 +811,8 @@ extension RoutedACPAgent {
             surface: surface,
             commandProviders: makeCommandProviders(surface: surface, skills: skills?.registry),
             userLayerRoot: context.userLayerRoot,
-            transcriptRoot: context.transcriptRoot)
+            transcriptRoot: context.transcriptRoot,
+            isReplayOnly: false)
     }
 
     /// Assembles the registry's later sources in precedence order:

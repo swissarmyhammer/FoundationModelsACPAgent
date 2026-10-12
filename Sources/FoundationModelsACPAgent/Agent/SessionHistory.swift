@@ -248,12 +248,14 @@ extension RoutedACPAgent {
     /// Writes the retained history of a session to its file
     /// (``SessionHistoryFile``), so a new process can replay it. A history
     /// with no transcript entry writes nothing, so a session with no prompt
-    /// leaves no directory. A failed write is logged: the history in the
-    /// table stays, and the next write tries again.
+    /// leaves no directory. A replay-only session writes nothing either: it
+    /// ran no prompt, so its file stays as the session that ran left it. A
+    /// failed write is logged: the history in the table stays, and the next
+    /// write tries again.
     ///
     /// - Parameter sessionId: The session whose history to write.
     func writeHistory(of sessionId: SessionId) {
-        guard let entry = sessions[sessionId], !entry.history.entries.isEmpty else {
+        guard let entry = sessions[sessionId], !entry.isReplayOnly, !entry.history.entries.isEmpty else {
             return
         }
         do {

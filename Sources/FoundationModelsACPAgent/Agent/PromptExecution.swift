@@ -849,6 +849,10 @@ extension RequestError {
     /// prompt for each session at a time.
     private static let busySessionReason = "a prompt is in flight; one prompt for each session at a time"
 
+    /// The reason a replay-only session's refusal reports: the agent never
+    /// makes a session directory, so the session cannot run a prompt.
+    private static let missingWorkingDirectoryReason = "the working directory of this session does not exist"
+
     /// The unknown-id refusal: JSON-RPC invalid params
     /// with the id in `data`, so a client bug is visible, never a silent
     /// `idle` for nothing.
@@ -874,6 +878,21 @@ extension RequestError {
             data: .object([
                 "sessionId": .string(id.rawValue),
                 "reason": .string(closedSessionReason),
+            ]))
+    }
+
+    /// The missing-working-directory refusal: a prompt on a replay-only
+    /// session. Invalid params, with the id and the reason in `data`.
+    ///
+    /// - Parameter id: The replay-only session's id.
+    /// - Returns: The typed invalid-params error.
+    static func missingSessionWorkingDirectory(id: SessionId) -> RequestError {
+        RequestError(
+            code: .invalidParams,
+            message: RequestError.invalidParams.message,
+            data: .object([
+                "sessionId": .string(id.rawValue),
+                "reason": .string(missingWorkingDirectoryReason),
             ]))
     }
 
@@ -916,8 +935,8 @@ extension RoutedACPAgent {
     /// - Parameter params: The prompt request.
     /// - Returns: The response that names the user message.
     /// - Throws: The order rule's error, `unknownSession`,
-    ///   `closedSession`, `busySession`, or a command
-    ///   refusal.
+    ///   `closedSession`, `busySession`, `missingSessionWorkingDirectory`
+    ///   for a replay-only session, or a command refusal.
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
         let measurement = PromptMeasurement()
         let span = RequestTracing.startRequestSpan(
@@ -975,6 +994,11 @@ extension RoutedACPAgent {
             throw RequestError.busySession(id: params.sessionId)
         case .idle:
             break
+        }
+        // A replay-only session has no tool surface, because its working
+        // directory does not exist, so no prompt and no command runs in it.
+        guard !entry.isReplayOnly else {
+            throw RequestError.missingSessionWorkingDirectory(id: params.sessionId)
         }
         guard let connection = boundConnection else {
             throw RequestError.internalError(

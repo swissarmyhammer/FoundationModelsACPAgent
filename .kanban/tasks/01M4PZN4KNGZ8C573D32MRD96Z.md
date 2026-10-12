@@ -1,8 +1,39 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+comments:
+- actor: claude-code
+  id: 01m4qx11q5jyhaqjsfv3cy524h
+  text: |-
+    Research done. Findings:
+    - `session/new` (`createSession` in `SessionSetup.swift`) and `session/resume` (`restoreSession` in `SessionResume.swift`) both use `validatedWorkingDirectory`, which checks only the absolute rule.
+    - Places that write to disk for a session: `ProjectRegistry.recordSessionStart` (user layer, in `activateSession`), `recordResumedRootSet` (`sessions.jsonl` append, `SessionIndex.materializeRoot` creates the root), `writeHistory` at teardown (`SessionHistoryFile.write` creates the transcript dir), and the tool surface (code context creates `<cwd>/.code-context`).
+    - With the default `transcripts.location: project`, the transcripts are under `<cwd>/.<name>/transcripts/`. When the cwd is deleted, the resume finds no session and gives `unknownSession`. A replay-only resume is possible only with a `home` or an absolute location (from the user layer, because the project layer is deleted with the cwd).
+    - Router `restoreSession(instructions: nil, tools: [])` keeps the recorded instructions and writes no divergence event. Plan: a replay-only resume restores the Router session with no tools and no instructions override, mounts an empty `SessionSurface`, announces no commands, skips the project registry, the `sessions.jsonl` append and the history-file write, and `session/prompt` refuses with `-32602`.
+    - Test plan: the agent-level test writes the transcripts location in the project layer for `session/new`, then after the close writes the same location plus an enabled `codeContext` (no auto install, no semantic search) in the user layer, deletes the cwd and resumes. The old code then composes the code context, which creates the cwd again (RED).
+  timestamp: 2026-10-12T11:12:37.605769+00:00
+- actor: claude-code
+  id: 01m4qxeyxh0rtw3g9vwwh4nt72
+  text: |-
+    Implementation landed (not committed).
+    - `SessionSetup.DirectoryDefect`, `defect(of:)`, `requireExistingDirectory(_:field:)`, `requireExistingDirectories(workingDirectory:additionalRoots:)` and `allDirectoriesExist(workingDirectory:additionalRoots:)` are next to `validatedWorkingDirectory`. The refusal is `RequestError.missingDirectory(_:field:defect:)`: `-32602`, data `{field, path, reason}`, reason `does not exist` or `is not a directory`.
+    - `session/new` runs the check after the absolute check and before the composition.
+    - `session/resume`: `composeResumedSession` gives `SessionComposition.replayOnly(from:)` (empty `SessionSurface.makeEmpty()`, no instructions, no command source) when the cwd or an additional root is missing. The Router restore then keeps the recorded instructions (`instructions: nil`, so no divergence event) and gets no tools. The `sessions.jsonl` append is skipped.
+    - `activateSession` skips the project registry and the builtin commands for a replay-only composition. `ActiveSession.isReplayOnly` is new.
+    - `session/prompt` refuses a replay-only session with `RequestError.missingSessionWorkingDirectory(id:)`: `-32602`, data `{sessionId, reason: "the working directory of this session does not exist"}`.
+    - `writeHistory` writes nothing for a replay-only session.
+    - RED was seen first: `session/new` made the missing cwd, and the old resume made the deleted cwd again through the code-context index (`<cwd>/.code-context`). The replay itself already worked.
+    - Known behavior: the resume response of a replay-only session still carries the `_meta.missingTools` report, with each recorded tool name, because the restore gets no tools. `session/set_config_option` on a replay-only session is not changed; Router makes no working directory, so it makes no directory.
+  timestamp: 2026-10-12T11:20:13.489964+00:00
+- actor: claude-code
+  id: 01m4qxf26yr8209pth5wk3xyv2
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/Agent/SessionResume.swift, Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift, Sources/FoundationModelsACPAgent/Agent/SessionHistory.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift (5 new tests), Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift (3 new tests). `swift test --filter 'SessionSetupTests|SessionResumeTests'`: 37 tests passed (RED before: 12 issues). Full `swift test`: 911 tests in 98 suites passed, 1 known issue that was there before. `swift build`: no warning but the accepted mlx "missing creator" warning.
+    - next: review
+  timestamp: 2026-10-12T11:20:16.862717+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'Never create a missing session cwd: refuse session/new, replay-only session/resume'
 ---
 ## Why

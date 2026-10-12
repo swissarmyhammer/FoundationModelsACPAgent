@@ -240,6 +240,142 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
+    // MARK: - The missing working directory
+
+    /// The `reason` the prompt refusal of a replay-only session reports.
+    private static let missingWorkingDirectoryReason =
+        "the working directory of this session does not exist"
+
+    /// The user-layer `tools:` section a deleted-cwd resume reads: the code
+    /// context on, with no language-server install and no embedding. The
+    /// code context index makes `<cwd>/.code-context`, so a resume that
+    /// composes the tool surface makes the deleted cwd again.
+    private static let codeContextOnYAML =
+        "tools:\n  codeContext:\n    autoInstall: false\n    semanticSearch: false\n"
+
+    /// One resume of a session whose cwd was deleted after its close.
+    private struct DeletedCwdResume {
+        /// The resumed fixture.
+        let resume: ResumeSessionFixture
+
+        /// The messages the client saw live, before the close.
+        let live: [ReplayedMessage]
+
+        /// The messages the resume replayed.
+        let replayed: [ReplayedMessage]
+    }
+
+    /// Runs one prompt in a new session, closes the session, deletes its
+    /// cwd, and resumes it with a replay from the start.
+    ///
+    /// The transcripts are under an absolute root outside the cwd, so the
+    /// recording stays when the cwd goes. The project layer gives that root
+    /// to `session/new`. The project layer goes with the cwd, so the user
+    /// layer gives the same root to the resume, with the code context on.
+    ///
+    /// - Parameter label: The directory label of the calling test.
+    /// - Returns: The resumed fixture, and the live and the replayed messages.
+    /// - Throws: Whatever the fixture, the wire calls, or the file
+    ///   operations throw.
+    private static func resumeAfterDeletingTheCwd(label: String) async throws -> DeletedCwdResume {
+        let sharedRoot = makeResolvedDirectory(label: "\(label)-root")
+        let locationYAML = "transcripts:\n  location: \(sharedRoot.path)\n"
+        var resume = try await ResumeSessionFixture.make(label: label, projectConfigYAML: locationYAML)
+        try await resume.runPrompt("first question")
+        try await ResumeSessionFixture.waitForRecordedResponses(
+            under: sharedRoot, sessionId: resume.fixture.sessionId, count: 1)
+        let live = ReplayedMessage.live(in: await resume.fixture.collector.updates.map(\.update))
+        _ = try await resume.fixture.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: resume.fixture.sessionId))
+
+        let userDirectory = try #require(resume.fixture.harness.agent.userDirectory)
+        try ConfigFileFixture.write(locationYAML + codeContextOnYAML, in: userDirectory)
+        try FileManager.default.removeItem(at: resume.fixture.cwd)
+
+        let countBefore = await resume.fixture.collector.updates.count
+        _ = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+        let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
+            .map(\.update)
+        return DeletedCwdResume(
+            resume: resume, live: live, replayed: ReplayedMessage.replayed(in: replayUpdates))
+    }
+
+    /// Asserts that a prompt on `sessionId` is refused because the working
+    /// directory of the session does not exist.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The replay-only session.
+    ///   - connection: The client end of the wire.
+    private static func expectMissingWorkingDirectoryRefusal(
+        of sessionId: SessionId, through connection: ClientSideConnection
+    ) async {
+        do {
+            _ = try await connection.prompt(
+                AgentClientHarness.makePromptRequest(sessionId: sessionId, text: "after the delete"))
+            Issue.record("expected the missing-working-directory refusal")
+        } catch let error as RequestError {
+            #expect(error.code == .invalidParams)
+            #expect(errorDataField("sessionId", of: error) == sessionId.rawValue)
+            #expect(errorDataField("reason", of: error) == Self.missingWorkingDirectoryReason)
+        } catch {
+            Issue.record("expected a RequestError, got \(error)")
+        }
+    }
+
+    /// A resume of a session whose cwd was deleted replays every message,
+    /// and the cwd still does not exist after the resume: the agent mounts
+    /// no tool surface, so nothing makes the cwd again.
+    @Test(.timeLimit(.minutes(1)))
+    func resumeAfterTheCwdIsDeletedReplaysTheHistoryAndCreatesNoDirectory() async throws {
+        let deleted = try await Self.resumeAfterDeletingTheCwd(
+            label: "SessionResumeTests-deleted-cwd-replay")
+
+        #expect(!deleted.live.isEmpty)
+        #expect(deleted.replayed == deleted.live)
+        #expect(!FileManager.default.fileExists(atPath: deleted.resume.fixture.cwd.path))
+        let entry = await deleted.resume.fixture.harness.agent.sessions[deleted.resume.fixture.sessionId]
+        #expect(try #require(entry).surface.tools.isEmpty)
+        await deleted.resume.fixture.close()
+    }
+
+    /// A prompt on a session that was resumed with a deleted cwd is refused
+    /// with invalid params and the reason, and the cwd still does not exist.
+    @Test(.timeLimit(.minutes(1)))
+    func aPromptAfterAResumeWithADeletedCwdIsRefused() async throws {
+        let deleted = try await Self.resumeAfterDeletingTheCwd(
+            label: "SessionResumeTests-deleted-cwd-prompt")
+
+        await Self.expectMissingWorkingDirectoryRefusal(
+            of: deleted.resume.fixture.sessionId, through: deleted.resume.fixture.harness.connection)
+
+        #expect(!FileManager.default.fileExists(atPath: deleted.resume.fixture.cwd.path))
+        await deleted.resume.fixture.close()
+    }
+
+    /// A resume whose `additionalDirectories` entry does not exist makes a
+    /// replay-only session too: a prompt is refused, and the entry is not
+    /// made.
+    @Test(.timeLimit(.minutes(1)))
+    func aResumeWithAMissingAdditionalDirectoryRefusesAPrompt() async throws {
+        let extra = makeResolvedDirectory(label: "SessionResumeTests-missing-extra")
+        var resume = try await ResumeSessionFixture.make(
+            label: "SessionResumeTests-missing-extra",
+            additionalDirectories: [AbsolutePath(rawValue: extra.path)])
+        try await resume.runPrompt("one prompt before the delete")
+        _ = try await resume.fixture.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: resume.fixture.sessionId))
+        try FileManager.default.removeItem(at: extra)
+
+        _ = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest(additionalDirectories: [AbsolutePath(rawValue: extra.path)]))
+
+        await Self.expectMissingWorkingDirectoryRefusal(
+            of: resume.fixture.sessionId, through: resume.fixture.harness.connection)
+        #expect(!FileManager.default.fileExists(atPath: extra.path))
+        await resume.fixture.close()
+    }
+
     // MARK: - Replay as whole-message upserts
 
     /// The replay sends the retained history of the session: each message

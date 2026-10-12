@@ -29,6 +29,21 @@ import Testing
     /// The `reason` every relative-path refusal reports in `data`.
     static let mustBeAbsoluteReason = "must be absolute"
 
+    /// The `reason` a refusal reports for a request path that does not
+    /// exist.
+    static let doesNotExistReason = "does not exist"
+
+    /// The `reason` a refusal reports for a request path that holds a file
+    /// and not a directory.
+    static let notADirectoryReason = "is not a directory"
+
+    /// The name of the plain file the existence check test writes in place
+    /// of a directory.
+    private static let plainFileName = "plain.txt"
+
+    /// The name of the directory the existence check tests never create.
+    private static let missingDirectoryName = "missing"
+
     /// The JSON-RPC version every wire frame declares.
     private static let jsonrpcVersion = "2.0"
 
@@ -235,6 +250,130 @@ import Testing
 
         #expect(error["code"] == .number(Double(Self.invalidParamsWireValue)))
         #expect(error["data"] == Self.expectedRefusalData(naming: .additionalDirectories))
+    }
+
+    // MARK: The existence check
+
+    /// The `data` object a refusal must carry for a request path that is
+    /// not an existing directory.
+    ///
+    /// - Parameters:
+    ///   - field: The request field the refusal names.
+    ///   - directory: The refused path.
+    ///   - reason: Why the path is refused.
+    /// - Returns: The expected `data` member.
+    private static func expectedMissingDirectoryData(
+        naming field: SessionSetup.PathField, directory: URL, reason: String
+    ) -> FoundationModelsACP.JSONValue {
+        .object([
+            "field": .string(field.rawValue),
+            "path": .string(directory.path),
+            "reason": .string(reason),
+        ])
+    }
+
+    /// Asserts that `body` refuses with the invalid-params error that
+    /// names `field`, the refused path and the reason.
+    ///
+    /// - Parameters:
+    ///   - field: The request field the refusal must name.
+    ///   - directory: The path the refusal must name.
+    ///   - reason: The reason the refusal must give.
+    ///   - body: The call under test.
+    private static func expectMissingDirectoryRefusal(
+        naming field: SessionSetup.PathField, directory: URL, reason: String,
+        from body: () async throws -> Void
+    ) async {
+        do {
+            try await body()
+            Issue.record("expected an invalidParams error naming \(directory.path)")
+        } catch let error as RequestError {
+            #expect(error.code == .invalidParams)
+            #expect(
+                error.data
+                    == Self.expectedMissingDirectoryData(
+                        naming: field, directory: directory, reason: reason))
+        } catch {
+            Issue.record("expected a RequestError, got \(error)")
+        }
+    }
+
+    /// A path that does not exist fails the existence check, and the
+    /// refusal names the path and the reason.
+    @Test func aMissingDirectoryFailsTheExistenceCheck() async {
+        let missing = makeResolvedDirectory(label: "SessionSetupTests-missing")
+            .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
+
+        await Self.expectMissingDirectoryRefusal(
+            naming: .cwd, directory: missing, reason: Self.doesNotExistReason
+        ) {
+            try SessionSetup.requireExistingDirectory(missing, field: .cwd)
+        }
+    }
+
+    /// A path that holds a file fails the existence check: a session
+    /// directory must be a directory.
+    @Test func aFileInPlaceOfADirectoryFailsTheExistenceCheck() async throws {
+        let file = makeResolvedDirectory(label: "SessionSetupTests-file")
+            .appendingPathComponent(Self.plainFileName)
+        try "not a directory".write(to: file, atomically: true, encoding: .utf8)
+
+        await Self.expectMissingDirectoryRefusal(
+            naming: .additionalDirectories, directory: file, reason: Self.notADirectoryReason
+        ) {
+            try SessionSetup.requireExistingDirectory(file, field: .additionalDirectories)
+        }
+    }
+
+    /// An existing directory passes the existence check.
+    @Test func anExistingDirectoryPassesTheExistenceCheck() throws {
+        let directory = makeResolvedDirectory(label: "SessionSetupTests-existing")
+
+        try SessionSetup.requireExistingDirectory(directory, field: .cwd)
+    }
+
+    /// `session/new` with a cwd that does not exist answers the
+    /// invalid-params refusal, opens no session, and does not create the
+    /// directory.
+    @Test(.timeLimit(.minutes(1)))
+    func sessionNewWithAMissingCwdIsRefusedAndCreatesNoDirectory() async throws {
+        let missing = makeResolvedDirectory(label: "SessionSetupTests-missing-cwd")
+            .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
+        let agent = try await Self.makeInitializedAgent(
+            userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
+
+        await Self.expectMissingDirectoryRefusal(
+            naming: .cwd, directory: missing, reason: Self.doesNotExistReason
+        ) {
+            _ = try await agent.newSession(Self.makeNewSessionRequest(cwd: missing))
+        }
+
+        #expect(await agent.sessions.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
+    }
+
+    /// `session/new` with an `additionalDirectories` entry that does not
+    /// exist answers the same refusal under its own field, and does not
+    /// create the entry.
+    @Test(.timeLimit(.minutes(1)))
+    func sessionNewWithAMissingAdditionalDirectoryIsRefusedAndCreatesNoDirectory() async throws {
+        let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
+        let missing = makeResolvedDirectory(label: "SessionSetupTests-missing-extra")
+            .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
+        let agent = try await Self.makeInitializedAgent(
+            userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
+
+        await Self.expectMissingDirectoryRefusal(
+            naming: .additionalDirectories, directory: missing, reason: Self.doesNotExistReason
+        ) {
+            _ = try await agent.newSession(
+                NewSessionRequest(
+                    cwd: AbsolutePath(rawValue: cwd.path),
+                    additionalDirectories: [AbsolutePath(rawValue: missing.path)]))
+        }
+
+        #expect(await agent.sessions.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
     }
 
     // MARK: Concurrent sessions with per-cwd config
