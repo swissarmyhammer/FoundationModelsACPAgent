@@ -11,9 +11,6 @@ import Testing
 /// opaque cursor walk, the invalid-cursor refusal, and the listability
 /// rules as a client observes them.
 struct SessionListTests {
-    /// The wire value of a JSON-RPC invalid-params error.
-    private static let invalidParamsWireValue = -32602
-
     /// The instant the dated index records count from.
     private static let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
 
@@ -194,13 +191,13 @@ struct SessionListTests {
         try project.appendRecord(id: id, title: "listed", updatedAt: Self.baseDate)
 
         await InitializationTests.expectRequestError(
-            .invalidParams, wireValue: Self.invalidParamsWireValue
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue
         ) {
             _ = try await fixture.connection.listSessions(
                 Self.listRequest(cwd: project.workingDirectory, cursor: "not-a-cursor"))
         }
         await InitializationTests.expectRequestError(
-            .invalidParams, wireValue: Self.invalidParamsWireValue
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue
         ) {
             _ = try await fixture.connection.listSessions(
                 Self.listRequest(cursor: "not-a-cursor"))
@@ -218,9 +215,9 @@ struct SessionListTests {
     func aRelativeCwdFilterGivesAnInvalidParamsErrorNamingTheField() async throws {
         let fixture = try await Self.makeWireFixture()
 
-        await SessionSetupTests.expectRefusal(
-            carrying: SessionSetupTests.expectedRefusalData(naming: .cwd),
-            naming: SessionSetup.PathField.cwd.rawValue
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: SessionSetupTests.expectedRefusalData(naming: .cwd)
         ) {
             _ = try await fixture.connection.listSessions(
                 ListSessionsRequest(cwd: AbsolutePath(rawValue: Self.relativeCwd)))

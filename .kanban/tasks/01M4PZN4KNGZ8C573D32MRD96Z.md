@@ -65,6 +65,40 @@ comments:
     - evidence: 9 files — Sources/FoundationModelsACPAgent/Doctor/PathKind.swift (new), Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/Doctor/ReadableDirectoryState.swift, Sources/FoundationModelsACPAgent/Doctor/WritableDirectoryCheck.swift, Tests/FoundationModelsACPAgentTests/PathKindTests.swift (new), Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift, SessionResumeTests.swift, SessionListTests.swift, MultiRootConfinementTests.swift. 4 of 4 findings checked. `swift build`: no warning but the accepted mlx "missing creator" warning. `swift test --filter 'SessionSetupTests|SessionResumeTests|Doctor|PathKindTests|SessionListTests|MultiRootConfinementTests'`: 117 tests in 13 suites passed.
     - next: review
   timestamp: 2026-10-12T11:35:10.379175+00:00
+- actor: claude-code
+  id: 01m4qymbvm8a20vyc3daevtgs7
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 36eb18c). Counts: 1 finding, 1 confirmed, 0 refuted. Finding: Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:161 (`reuse/reuse`). The engine gives no finding on the 4 items of "Review Findings (2026-10-12 06:23)". All 4 items are checked.
+    - next: Implement the item in "Review Findings (2026-10-12 06:37)". Extend `InitializationTests.expectRequestError` with an optional `data` parameter, and make one helper own the `RequestError` assertion. Then review again.
+  timestamp: 2026-10-12T11:40:39.156645+00:00
+- actor: claude-code
+  id: 01m4qymra7rfev8bsfewbcaf2x
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 9 files (PathKind.swift new, SessionSetup, ReadableDirectoryState, WritableDirectoryCheck, PathKindTests new, SessionSetupTests, SessionResumeTests, SessionListTests, MultiRootConfinementTests); 4/4 prior findings checked
+    - test: green — swift test 915 tests / 99 suites passed; IntegrationTests build complete
+    - commit: 36eb18c
+    - review: findings — Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:161
+  timestamp: 2026-10-12T11:40:51.911428+00:00
+- actor: claude-code
+  id: 01m4qyw0by3ymaehzpd0sraz9r
+  text: |-
+    Review finding of 2026-10-12 06:37 is done (not committed).
+    - `InitializationTests.expectRequestError` has a new optional `data: FoundationModelsACP.JSONValue? = nil` parameter. When the caller gives `data`, the helper also does `#expect(error.data == data)`. Now this helper is the only one that owns the `RequestError` assertion.
+    - `InitializationTests.invalidParamsWireValue` (-32602) is new, next to `methodNotFoundWireValue` and `invalidRequestWireValue`. The private copies in SessionSetupTests and SessionListTests are deleted.
+    - `SessionSetupTests.expectRefusal` is deleted. Each caller in SessionSetupTests, SessionResumeTests, SessionListTests and MultiRootConfinementTests now calls `InitializationTests.expectRequestError(.invalidParams, wireValue:data:)` directly. The why text of the old helper (the ACP schema names no path validator) is now in the doc comment of `expectedRefusalData`.
+    - Same cause in SessionResumeTests: `expectMissingWorkingDirectoryRefusal` had its own do/catch on `RequestError`. Now it only sends the prompt and gives the exact data `{sessionId, reason}` to the shared helper. (`RequestError.missingSessionWorkingDirectory` puts exactly these two members in `data`.)
+    - Not changed: the do/catch blocks in SessionResumeTests for the unknown id, the malformed id, the deleted session dir, the cwd mismatch and the unknown cursor. They were there before this task, and they check only some `data` members with `errorDataField`, not the full `data`.
+    - The rules file from `dump validators` is approx. 750 KB, so it was not possible to read it in full. The edit follows the reuse, duplication, code-hygiene and swift validators by name.
+  timestamp: 2026-10-12T11:44:49.534538+00:00
+- actor: claude-code
+  id: 01m4qyw2xdnw6a2emkw6a0kjh8
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Tests/FoundationModelsACPAgentTests/InitializationTests.swift, SessionSetupTests.swift, SessionResumeTests.swift, SessionListTests.swift, MultiRootConfinementTests.swift. Finding Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:161 checked (1 of 1). `swift test --filter 'SessionSetupTests|SessionResumeTests|SessionListTests|MultiRootConfinementTests|InitializationTests|PathKindTests'`: 67 tests in 6 suites passed. No warning but the accepted mlx "missing creator" warning.
+    - next: review
+  timestamp: 2026-10-12T11:44:52.141655+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Never create a missing session cwd: refuse session/new, replay-only session/resume'
@@ -115,3 +149,12 @@ Reported by: agentviewkit-d0.
 - [x] `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:282` `reuse/reuse` — `allDirectoriesExist` repeats the same ordered walk over the working directory and the additional roots that `requireExistingDirectories` already performs. It is a second, parallel copy of one rule: which directories a session needs. Define one walk that returns the first defect with its field, then have `requireExistingDirectories` throw on it and `allDirectoriesExist` test it for nil. This keeps the cwd-first, wire-order rule in one place.
 - [x] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:265` `reuse/reuse` — `expectedMissingDirectoryData` is a near-match of the existing `expectedRefusalData(naming:)` (line 131). Both build the same refusal `data` object from a `field` and a `reason`. The new helper only adds a `path` member. The right move was to extend `expectedRefusalData` with optional `path` and `reason` parameters, so the refusal shape has one canonical builder. Instead, the file now has two builders that must stay in step with the wire shape. Generalize `expectedRefusalData` to take the reason and an optional path, for example `expectedRefusalData(naming: field, reason: String = Self.mustBeAbsoluteReason, path: URL? = nil)`, and delete `expectedMissingDirectoryData`. Call sites at lines 308, 322, 346, and 367 then pass the reason and path.
 - [x] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:283` `reuse/reuse` — `expectMissingDirectoryRefusal` is a near-copy of the existing `expectRelativePathRefusal` (line 148). Both run the same do/catch around a `body`, assert `.invalidParams`, and compare `error.data` to an expected object. The new helper differs only in the expected data and the failure text. Writing a parallel helper means two refusal assertions that can drift apart. Generalize `expectRelativePathRefusal` into one helper that takes the expected `data` value and a failure label, then have both the relative-path and missing-directory tests call it. Keep the per-case data at the call sites.
+
+## Review Findings (2026-10-12 06:37)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:161` `reuse/reuse` — The new `expectRefusal` helper has the same shape as the existing `InitializationTests.expectRequestError`. Both helpers run a body, expect a `RequestError` with a given code, and record an issue for each other error. The new helper only adds a `data` check. Thus there are now two almost identical test helpers. A correction to one helper does not go into the other helper. Extend the existing helper with an optional `data` parameter. Do not copy it. Add an optional `data: FoundationModelsACP.JSONValue? = nil` parameter to `InitializationTests.expectRequestError`. When the caller gives `data`, the helper adds `#expect(error.data == data)`. Then make `SessionSetupTests.expectRefusal` call it, or make the callers use it directly, so that one helper owns the `RequestError` assertion.

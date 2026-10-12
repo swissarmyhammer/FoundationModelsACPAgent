@@ -108,9 +108,9 @@ struct SessionResumeTests {
     func resumeWithARelativeCwdAnswersInvalidParamsNamingTheField() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-relative")
 
-        await SessionSetupTests.expectRefusal(
-            carrying: SessionSetupTests.expectedRefusalData(naming: .cwd),
-            naming: SessionSetup.PathField.cwd.rawValue
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: SessionSetupTests.expectedRefusalData(naming: .cwd)
         ) {
             _ = try await resume.fixture.harness.connection.resumeSession(
                 ResumeSessionRequest(
@@ -134,9 +134,9 @@ struct SessionResumeTests {
             under: root, sessionId: resume.fixture.sessionId, count: 1)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-        await SessionSetupTests.expectRefusal(
-            carrying: SessionSetupTests.expectedRefusalData(naming: .additionalDirectories),
-            naming: SessionSetup.PathField.additionalDirectories.rawValue
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: SessionSetupTests.expectedRefusalData(naming: .additionalDirectories)
         ) {
             _ = try await resume.fixture.harness.connection.resumeSession(
                 resume.makeResumeRequest(
@@ -308,7 +308,8 @@ struct SessionResumeTests {
     }
 
     /// Asserts that a prompt on `sessionId` is refused because the working
-    /// directory of the session does not exist.
+    /// directory of the session does not exist. The refusal is invalid
+    /// params, with the session id and the reason in `data`.
     ///
     /// - Parameters:
     ///   - sessionId: The replay-only session.
@@ -316,16 +317,15 @@ struct SessionResumeTests {
     private static func expectMissingWorkingDirectoryRefusal(
         of sessionId: SessionId, through connection: ClientSideConnection
     ) async {
-        do {
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: .object([
+                "sessionId": .string(sessionId.rawValue),
+                "reason": .string(Self.missingWorkingDirectoryReason),
+            ])
+        ) {
             _ = try await connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: sessionId, text: "after the delete"))
-            Issue.record("expected the missing-working-directory refusal")
-        } catch let error as RequestError {
-            #expect(error.code == .invalidParams)
-            #expect(errorDataField("sessionId", of: error) == sessionId.rawValue)
-            #expect(errorDataField("reason", of: error) == Self.missingWorkingDirectoryReason)
-        } catch {
-            Issue.record("expected a RequestError, got \(error)")
         }
     }
 

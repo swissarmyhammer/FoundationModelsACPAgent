@@ -22,6 +22,9 @@ import Testing
     /// The JSON-RPC wire value of "invalid request".
     static let invalidRequestWireValue = -32600
 
+    /// The JSON-RPC wire value of "invalid params".
+    static let invalidParamsWireValue = -32602
+
     /// A session id no session has, so that the order rule is the only
     /// thing a pre-initialize session call can trip on.
     static let unknownSessionId = SessionId(rawValue: "01ARZ3NDEKTSV4RRFFQ69G5FAV")
@@ -37,13 +40,18 @@ import Testing
     }
 
     /// Runs `body` and asserts that it throws a `RequestError` with `code`.
+    /// When the caller gives `data`, the error must also carry that `data`
+    /// member.
     ///
     /// - Parameters:
     ///   - code: The expected error code.
     ///   - wireValue: The integer `code` must have on the wire.
+    ///   - data: The `data` member the error must carry, or `nil` to not
+    ///     check `data`.
     ///   - body: The call that must fail.
     static func expectRequestError(
-        _ code: ErrorCode, wireValue: Int, from body: () async throws -> Void
+        _ code: ErrorCode, wireValue: Int, data: FoundationModelsACP.JSONValue? = nil,
+        from body: () async throws -> Void
     ) async {
         do {
             try await body()
@@ -51,6 +59,9 @@ import Testing
         } catch let error as RequestError {
             #expect(error.code == code)
             #expect(error.code.wireValue == wireValue)
+            if let data {
+                #expect(error.data == data)
+            }
         } catch {
             Issue.record("expected a RequestError, got \(error)")
         }

@@ -13,9 +13,6 @@ import Testing
 /// shapes each session's tool roster, the project registry records the cwd,
 /// and the session index stays empty until the first recorded activity.
 @Suite struct SessionSetupTests {
-    /// The JSON-RPC wire value of "invalid params".
-    private static let invalidParamsWireValue = -32602
-
     /// The name of the standalone skills tool in the composed roster.
     private static let skillsToolName = "skills"
 
@@ -126,7 +123,11 @@ import Testing
 
     /// The `data` object a request-path refusal must carry for `field`.
     /// A relative-path refusal names the field and the reason. A
-    /// missing-directory refusal also names the refused path.
+    /// missing-directory refusal also names the refused path. The ACP
+    /// schema states the path rules in prose and names no validator, so
+    /// this agent is the only judge, and the refusal must say which field
+    /// failed and why. A test gives this value as the `data` of
+    /// `InitializationTests.expectRequestError`.
     ///
     /// - Parameters:
     ///   - field: The request field the refusal names.
@@ -146,31 +147,6 @@ import Testing
         ]
         data["path"] = path.map { .string($0.path) }
         return .object(data)
-    }
-
-    /// Asserts that `body` refuses with the invalid-params error that
-    /// carries `data`. The ACP schema states the path rules in prose and
-    /// names no validator, so this agent is the only judge, and the
-    /// refusal must say which field failed and why.
-    ///
-    /// - Parameters:
-    ///   - data: The `data` member the refusal must carry.
-    ///   - label: What the refusal names, for the failure text when
-    ///     `body` does not throw.
-    ///   - body: The call under test.
-    static func expectRefusal(
-        carrying data: FoundationModelsACP.JSONValue, naming label: String,
-        from body: () async throws -> Void
-    ) async {
-        do {
-            try await body()
-            Issue.record("expected an invalidParams error naming \(label)")
-        } catch let error as RequestError {
-            #expect(error.code == .invalidParams)
-            #expect(error.data == data)
-        } catch {
-            Issue.record("expected a RequestError, got \(error)")
-        }
     }
 
     /// Sends one raw `session/new` frame carrying `params` and answers
@@ -221,9 +197,9 @@ import Testing
     /// error before any composition runs, and the refusal names the field
     /// that failed and why.
     @Test func aRelativeCwdIsRefusedWithInvalidParams() async {
-        await Self.expectRefusal(
-            carrying: Self.expectedRefusalData(naming: .cwd),
-            naming: SessionSetup.PathField.cwd.rawValue
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: Self.expectedRefusalData(naming: .cwd)
         ) {
             _ = try SessionSetup.validatedWorkingDirectory(
                 path: Self.relativeCwd, field: .cwd)
@@ -235,9 +211,9 @@ import Testing
     /// so a skip here would drop a confinement root the client asked for
     /// and never say so.
     @Test func aRelativeAdditionalDirectoryIsRefusedWithInvalidParams() async {
-        await Self.expectRefusal(
-            carrying: Self.expectedRefusalData(naming: .additionalDirectories),
-            naming: SessionSetup.PathField.additionalDirectories.rawValue
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: Self.expectedRefusalData(naming: .additionalDirectories)
         ) {
             _ = try SessionSetup.additionalRoots(
                 fromPaths: [Self.relativeAdditionalDirectory])
@@ -251,7 +227,7 @@ import Testing
         let error = try await Self.newSessionWireError(
             params: .object(["cwd": .string(Self.relativeCwd)]))
 
-        #expect(error["code"] == .number(Double(Self.invalidParamsWireValue)))
+        #expect(error["code"] == .number(Double(InitializationTests.invalidParamsWireValue)))
         #expect(error["data"] == Self.expectedRefusalData(naming: .cwd))
     }
 
@@ -268,7 +244,7 @@ import Testing
                 ]),
             ]))
 
-        #expect(error["code"] == .number(Double(Self.invalidParamsWireValue)))
+        #expect(error["code"] == .number(Double(InitializationTests.invalidParamsWireValue)))
         #expect(error["data"] == Self.expectedRefusalData(naming: .additionalDirectories))
     }
 
@@ -280,10 +256,10 @@ import Testing
         let missing = makeResolvedDirectory(label: "SessionSetupTests-missing")
             .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
 
-        await Self.expectRefusal(
-            carrying: Self.expectedRefusalData(
-                naming: .cwd, reason: Self.doesNotExistReason, path: missing),
-            naming: missing.path
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: Self.expectedRefusalData(
+                naming: .cwd, reason: Self.doesNotExistReason, path: missing)
         ) {
             try SessionSetup.requireExistingDirectories(
                 workingDirectory: missing, additionalRoots: [])
@@ -299,10 +275,10 @@ import Testing
             .appendingPathComponent(Self.plainFileName)
         try "not a directory".write(to: file, atomically: true, encoding: .utf8)
 
-        await Self.expectRefusal(
-            carrying: Self.expectedRefusalData(
-                naming: .additionalDirectories, reason: Self.notADirectoryReason, path: file),
-            naming: file.path
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: Self.expectedRefusalData(
+                naming: .additionalDirectories, reason: Self.notADirectoryReason, path: file)
         ) {
             try SessionSetup.requireExistingDirectories(
                 workingDirectory: cwd, additionalRoots: [file])
@@ -329,10 +305,10 @@ import Testing
         let agent = try await Self.makeInitializedAgent(
             userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
 
-        await Self.expectRefusal(
-            carrying: Self.expectedRefusalData(
-                naming: .cwd, reason: Self.doesNotExistReason, path: missing),
-            naming: missing.path
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: Self.expectedRefusalData(
+                naming: .cwd, reason: Self.doesNotExistReason, path: missing)
         ) {
             _ = try await agent.newSession(Self.makeNewSessionRequest(cwd: missing))
         }
@@ -352,10 +328,10 @@ import Testing
         let agent = try await Self.makeInitializedAgent(
             userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
 
-        await Self.expectRefusal(
-            carrying: Self.expectedRefusalData(
-                naming: .additionalDirectories, reason: Self.doesNotExistReason, path: missing),
-            naming: missing.path
+        await InitializationTests.expectRequestError(
+            .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
+            data: Self.expectedRefusalData(
+                naming: .additionalDirectories, reason: Self.doesNotExistReason, path: missing)
         ) {
             _ = try await agent.newSession(
                 NewSessionRequest(
