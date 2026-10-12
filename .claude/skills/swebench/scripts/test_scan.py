@@ -672,62 +672,95 @@ class TheTestCommandIsNormalized(unittest.TestCase):
 
     def test_a_log_redirect_and_a_pipe_do_not_change_the_test_run(self):
         """The redirect to a log file, the grep and the tail are not part of
-        the test run. Both commands run the full suite."""
+        the test run. Both commands run the full suite. If these parts count,
+        the scan misses the repeat of django__django-13964, as the two manual
+        checks of ^nwy1gcf did."""
         self.assertEqual(scan.normalize_test_command(self.TO_LOG), ["runtests.py"])
         self.assertEqual(scan.normalize_test_command(self.PIPED), ["runtests.py"])
 
     def test_cd_timeout_and_options_do_not_change_the_test_run(self):
         """A `cd ... &&` prefix, a `timeout` value, the path of the interpreter,
-        the options and the order of the modules do not change which tests run."""
+        the options and the order of the modules do not change which tests run.
+        The model changes these parts from one run to the next. If they count,
+        the scan misses a repeat of the same tests."""
         first = "cd /repo && timeout 600 python3 tests/runtests.py b a --verbosity 2 --parallel=1 | tail -20"
         second = ".venv/bin/python ./tests/runtests.py a b"
         self.assertEqual(scan.normalize_test_command(first), scan.normalize_test_command(second))
         self.assertEqual(scan.normalize_test_command(second), ["runtests.py a b"])
 
     def test_other_modules_are_another_test_run(self):
-        """A run of other modules is not a repeat of the first run."""
+        """A run of other modules is not a repeat of the first run. The model
+        runs different modules to check different parts of a fix. If the
+        normalization drops the modules, each such run is a false repeat."""
         self.assertNotEqual(scan.normalize_test_command("python tests/runtests.py admin_views"),
                             scan.normalize_test_command("python tests/runtests.py admin_checks"))
 
     def test_the_pytest_forms_are_one_runner(self):
-        """`python -m pytest` and `pytest` run the same tests."""
+        """`python -m pytest` and `pytest` run the same tests. The model uses
+        both forms. If they are two runners, the scan misses a repeat that
+        changes only the form."""
         self.assertEqual(scan.normalize_test_command("python -m pytest tests/test_x.py -q"),
                          scan.normalize_test_command("pytest tests/test_x.py"))
 
     def test_a_help_call_is_not_a_test_run(self):
-        """`runtests.py --help` runs no test."""
-        self.assertEqual(scan.normalize_test_command("python tests/runtests.py --help"), [])
+        """`runtests.py --help` runs no test. Seq 1032 of django__django-13964
+        also ran `runtests.py --help`. If a help call is a test run, two help
+        calls give a false repeat. The options come from HELP_OPTIONS."""
+        for option in sorted(scan.HELP_OPTIONS):
+            with self.subTest(option=option):
+                self.assertEqual(scan.normalize_test_command(f"python tests/runtests.py {option}"), [])
 
     def test_the_name_of_the_runner_in_another_command_is_not_a_test_run(self):
-        """A grep for the name of the runner does not run the runner."""
+        """A grep for the name of the runner does not run the runner. The model
+        often reads the runner or its docs. If such a read is a test run, two
+        reads with no edit between give a false repeat."""
         self.assertEqual(scan.normalize_test_command("grep -n runtests.py docs/README.rst"), [])
 
     def test_a_test_script_is_a_test_run(self):
-        """django__django-14382 seq 1465 ran a test script of the model two times."""
+        """django__django-14382 seq 1465 ran a test script of the model two
+        times. The model often writes such a script to check a fix. If the
+        scan does not know the script as a test run, it misses that repeat."""
         self.assertEqual(scan.normalize_test_command("python test_startapp_trailing_slash.py"),
                          ["test_startapp_trailing_slash.py"])
 
+    def wrapped_commands(self, command):
+        """Give the command after each wrapper of WRAPPERS: one time with no
+        option, and one time with each option of the wrapper and its value."""
+        out = []
+        for wrapper, options in scan.WRAPPERS.items():
+            out += [f"{wrapper} {command}"] + [f"{wrapper} {option} value {command}" for option in sorted(options)]
+        return out
+
     def test_the_value_of_a_wrapper_option_does_not_change_the_test_run(self):
         """A wrapper option that takes a value (`timeout -s KILL`) does not stop
-        the scan at its value. The value is not the command."""
+        the scan at its value. If the scan reads the value as the command, it
+        does not see the test run, and it misses a repeat (review finding of
+        2026-10-12 on task ^j6atrca). The commands come from WRAPPERS, so a new
+        wrapper or option in the table is also checked here. The last forms
+        add a time limit and a variable setting to the options."""
         plain = scan.normalize_test_command("python tests/runtests.py a")
-        for wrapped in ("timeout -s KILL 600 python tests/runtests.py a",
-                        "timeout --signal KILL -k 5 600 python tests/runtests.py a",
-                        "nice -n 10 python tests/runtests.py a",
-                        "nice --adjustment 10 python tests/runtests.py a",
-                        "env -u HOME VAR=x python tests/runtests.py a",
-                        "env --chdir /repo python tests/runtests.py a",
-                        "time -o times.txt python tests/runtests.py a",
-                        "exec -a runner python tests/runtests.py a"):
+        for wrapped in self.wrapped_commands("python tests/runtests.py a") + [
+                "timeout -s KILL 600 python tests/runtests.py a",
+                "timeout --signal KILL -k 5 600 python tests/runtests.py a",
+                "env -u HOME VAR=x python tests/runtests.py a"]:
             with self.subTest(command=wrapped):
                 self.assertEqual(scan.normalize_test_command(wrapped), plain)
 
+    def runner_commands(self):
+        """Give one test command for each runner of TEST_SCRIPTS and TEST_MODULES,
+        and one command that runs a test script of the model."""
+        scripts = [" ".join(filter(None, (name, sub, "a"))) for name, (_, sub) in scan.TEST_SCRIPTS.items()]
+        modules = [" ".join(filter(None, ("python -m", name, sub, "a"))) for name, (_, sub) in scan.TEST_MODULES.items()]
+        return scripts + modules + ["python test_x.py"]
+
     def test_each_runner_of_the_repeat_check_is_a_test_command(self):
-        """The before/after timeline and the repeat check know the same test
-        runners. A runner of the repeat check is a test command of the timeline."""
-        for command in ("py.test tests/test_x.py", "pytest tests/test_x.py", "python -m pytest tests",
-                        "python tests/runtests.py a", "python manage.py test a",
-                        "python -m django test a", "python -m unittest a"):
+        """The before/after timeline finds a test run with TEST_CMD_RE, and the
+        repeat check finds it with normalize_test_command. When the two do not
+        agree, the scan reports a repeat of a run that the timeline does not
+        show, and the report does not agree with itself. The commands come
+        from the tables of the scan, so a new runner in a table is also
+        checked here. The test script is the form of django__django-14382."""
+        for command in self.runner_commands():
             with self.subTest(command=command):
                 self.assertTrue(scan.normalize_test_command(command))
                 self.assertTrue(scan.TEST_CMD_RE.search(command))
@@ -742,23 +775,35 @@ class TheCommandOfASnippetIsFound(unittest.TestCase):
         return [command for _, command in scan.shell_commands(code)]
 
     def test_a_string_literal_is_the_command(self):
-        """The usual form: the command is a string literal in the call."""
+        """The usual form: the command is a string literal in the call. Most
+        test runs of the model have this form. If the scan does not read it,
+        it finds no test run at all."""
         code = "const r = await tools.shell.execute({ command: 'python tests/runtests.py a', timeout: 60 });"
         self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
 
     def test_a_command_in_a_string_variable_is_found(self):
-        """The snippet puts the command in a variable, and gives the variable to the call."""
+        """The snippet puts the command in a variable, and gives the variable
+        to the call. The card of ^j6atrca asks for this form. If the scan reads
+        only a literal in the call, it misses each test run of this form."""
         code = ('const cmd = "python tests/runtests.py a";\n'
                 "const r = await tools.shell.execute({ command: cmd });")
         self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
 
     def test_a_shorthand_property_is_found(self):
-        """`{ command }` gives the variable named command to the call."""
+        """`{ command }` gives the variable named command to the call. This is
+        the short form of the variable form. If the scan reads only
+        `command: name`, it misses each test run of this form."""
         code = "const command = `python tests/runtests.py a`;\nconst r = await tools.shell.execute({ command });"
         self.assertEqual(self.commands(code), ["python tests/runtests.py a"])
 
     def test_each_verb_that_changes_a_file_is_an_edit_call(self):
-        """The call scan finds a call of each verb in EDIT_VERBS, and of no other verb."""
+        """The call scan finds a call of each verb in EDIT_VERBS, and of no other verb.
+        A verb that changes a file must be seen by the edit scan. If the scan
+        misses the edit, it reports a repeat test run as a run with no edit
+        between, and that is a false problem. A read verb must not be an
+        edit, or the scan misses a true repeat. The verbs come from
+        EDIT_VERBS, so this test fails when a new verb in EDIT_VERBS is not
+        found by the call scan."""
         for verb in sorted(scan.EDIT_VERBS):
             with self.subTest(verb=verb):
                 code = f"tools.{verb}({{ path: 'django/a.py' }});"

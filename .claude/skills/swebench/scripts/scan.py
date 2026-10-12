@@ -192,14 +192,16 @@ TEST_MODULES = {"pytest": ("pytest", None), "unittest": ("unittest", None), "dja
 # The test runners that a script name starts, in the same form.
 TEST_SCRIPTS = {"pytest": ("pytest", None), "py.test": ("pytest", None), "runtests.py": ("runtests.py", None),
                 "manage.py": ("manage.py test", "test")}
-# The command text of a test run: a script name of TEST_SCRIPTS, or `-m` and a
-# module of TEST_MODULES, each with the sub-command that it needs.
+# The name of a test script that the model writes: test_x.py, x_test.py or tests.py.
+TEST_SCRIPT = r"(?:test\w*|\w+_tests?|tests)\.py"
+TEST_SCRIPT_RE = re.compile(rf"^{TEST_SCRIPT}$")
+# The command text of a test run: a script name of TEST_SCRIPTS, `-m` and a
+# module of TEST_MODULES, each with the sub-command that it needs, or a test
+# script. These are the runners that the repeat check knows too.
 TEST_CMD_RE = re.compile("|".join(sorted(
     re.escape(" ".join(filter(None, (*prefix, name, sub))))
     for table, prefix in ((TEST_SCRIPTS, ()), (TEST_MODULES, ("-m",)))
-    for name, (_, sub) in table.items())))
-# A test script that the model writes: test_x.py, x_test.py or tests.py.
-TEST_SCRIPT_RE = re.compile(r"^(?:test\w*|\w+_tests?|tests)\.py$")
+    for name, (_, sub) in table.items())) + rf"|\b{TEST_SCRIPT}\b")
 # The git commands that change the files of the work tree, and the arguments
 # that make them only read.
 GIT_TREE_VERBS = frozenset({"stash", "checkout", "restore", "switch", "reset", "apply"})
