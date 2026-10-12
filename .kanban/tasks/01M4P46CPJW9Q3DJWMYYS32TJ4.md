@@ -140,8 +140,26 @@ comments:
     - evidence: 4 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift, Tests/FoundationModelsACPAgentTests/TerminationHandlerTests.swift, Tests/FoundationModelsACPAgentTestSupport/CallCounter.swift (new). 3 of 3 findings fixed and checked. `swift test --filter 'NoOpToolCallTests|TerminationHandlerTests|CompositionInterruptTests|SessionResumeTests'`: 40 tests in 4 suites passed, 0 failures; the only warning is the accepted mlx "missing creator" warning.
     - next: /review. The task stays in doing.
   timestamp: 2026-10-12T13:09:41.700118+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4r44hfsng5wkdhcn5q288b0
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 8506ea5). 0 findings, 0 confirmed, 0 refuted (7 validator runs, 0 failed, 0 skipped). 4 files were examined. 4 files in `.kanban/` were not examined (ignore rule).
+    - prior findings: the 3 items of "## Review Findings (2026-10-12 08:00)" are checked. This review found no new finding on the changed lines of SessionSetup.swift, NoOpToolCallTests.swift, TerminationHandlerTests.swift or CallCounter.swift.
+    - scope: the bench check and the CodeContext task are in task 01M4R36QP93DA308H2YNWY1GCF. This review does not count them.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-12T13:16:52.089025+00:00
+- actor: claude-code
+  id: 01m4r457n2mm06v5hz0ch0pb02
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files (SessionSetup.swift doc, NoOpToolCallTests.swift constant, TerminationHandlerTests.swift, CallCounter.swift new); 3/3 prior findings checked
+    - test: green — swift test 921 tests / 100 suites passed; IntegrationTests build complete
+    - commit: 8506ea5
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-10-12T13:17:14.786026+00:00
+position_column: done
+position_ordinal: ffc880
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
 ---
 ## Why

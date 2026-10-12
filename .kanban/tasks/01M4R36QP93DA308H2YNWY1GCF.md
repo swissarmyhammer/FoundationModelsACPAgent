@@ -1,7 +1,26 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+comments:
+- actor: claude-code
+  id: 01m4r5qqy896jphs0yayywz04e
+  text: |-
+    ### Acceptance criterion 1 — done (2026-10-12)
+    - FoundationModelsCodeContext task ^dca8jxc (01M4R5QEWH1SMFGTK3WDCA8JXC): "Make detectProjects answer in less than 6 s during the first index pass". It is in todo on the CodeContext board. It has the evidence of run no-otel-1011, the likely cause (actor contention with the first index pass), the order to measure first, and the two possible fixes.
+    - The CodeContext session (foundationmodelscodecontext-26) sends the commit sha when the task is done.
+    - Still open: the bench run noop-stop-1012 (started 08:20, 6 instances), and its score.
+  timestamp: 2026-10-12T13:44:49.864231+00:00
+- actor: claude-code
+  id: 01m4rap1xct7wvgydh9j280wh5
+  text: |-
+    ### CodeContext ^dca8jxc done and pushed (2026-10-12)
+    - Commits on origin/main of FoundationModelsCodeContext: 1d13754 (detect projects without waiting for index work), c8f69dc (review fixes), d4c4482 (kanban). Pin CodeContext at d4c4482 or later.
+    - Measured cause (not the guess): the waits for the CodeContext actor and the main actor were 0 ms. All the time was the gitignore-aware tree walk (5.5 to 10 s in a debug build on Django), and the walk ran synchronously on the actor.
+    - Fix: a new ProjectDetector apart from the index, with one marker-file strategy for each project kind (from the LanguageModule markers); detectProjects is nonisolated and walks on a GCD queue; a faster gitignore check; start() uses the same detector.
+    - Results: Django clone during the first index pass 0.95 to 1.42 s (before 5.5 to 10 s); gate test with the index pass and both actors held 0.034 s.
+    - next: the run noop-stop-1012 uses the build from before this commit. After that run ends, `swift package update` to take d4c4482.
+  timestamp: 2026-10-12T15:11:17.420385+00:00
+position_column: doing
 position_ordinal: '80'
 title: Bench check of the no-op stop, and the detectProjects settle task for CodeContext
 ---
