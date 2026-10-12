@@ -25,8 +25,25 @@ comments:
     - evidence: `swift build` exit 0. `swift test --filter 'TranscriptLocationOverrideTests|ComposedAgentTests|ConfigurationLoaderTests|ConfigShowTests|SessionListTests|SessionLifecycleTests|SessionResumeTests|TranscriptLocationTests|AgentCompositionTests|AgentEnvironmentTests'`: 112 tests in 10 suites passed. Files: README.md, Sources/FoundationModelsACPAgent/{ComposedAgent.swift, RoutedACPAgent.swift, Agent/SessionSetup.swift, Agent/SessionList.swift, Configuration/ConfigurationLoader.swift, Configuration/PacedStubModel.swift}, Sources/acp-agent/AgentComposition.swift, new Tests/FoundationModelsACPAgentTests/TranscriptLocationOverrideTests.swift (3 tests).
     - next: /review. Then reply to agentviewkit-d0 with the commit and the API.
   timestamp: 2026-10-12T16:57:42.395009+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4rh6zw3nsaqhr8w81ajq7c7
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit f4d16a3). Counts: findings 0, confirmed 0, refuted 1, attempted 7, failed 0. 8 files reviewed. Not reviewed: 4 `.kanban/` files (ignore rule) and `README.md` (no validator matches this file).
+    - The review accepts the two points from the implementer: this agent has no `session/load` handler (`session/resume` is the restore path), and `config show` does not show the code override as a source (the doc comments say so).
+    - next: Reply to agentviewkit-d0 with the commit f4d16a3 and the final API.
+  timestamp: 2026-10-12T17:05:23.843101+00:00
+- actor: claude-code
+  id: 01m4rh7jfkc47a7xs22df59rzn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 9 files (ComposedAgent, RoutedACPAgent, SessionSetup, SessionList, ConfigurationLoader, PacedStubModel doc, AgentComposition doc, README, TranscriptLocationOverrideTests new)
+    - test: green — swift test 924 tests / 101 suites passed; IntegrationTests build complete
+    - commit: f4d16a3
+    - review: clean — 0 findings; the task is in done
+  timestamp: 2026-10-12T17:05:42.899062+00:00
+position_column: done
+position_ordinal: ffc980
 title: Let an in-process host set the transcript location in code
 ---
 ## Why
