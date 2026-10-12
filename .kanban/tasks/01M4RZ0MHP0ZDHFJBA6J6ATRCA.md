@@ -115,8 +115,24 @@ comments:
     - evidence: 3 files — .claude/skills/swebench/scripts/test_scan.py, .claude/skills/swebench/scripts/scan.py, .claude/skills/swebench/SKILL.md. Both findings fixed and checked (test_scan.py:728 completeness/invariant-propagation, test_scan.py:761 python/testing). `python3 -W error -m unittest discover --start-directory .claude/skills/swebench/scripts`: 59 tests OK, 0 warnings. ruff on test_scan.py: no finding. The 5 cases: pending-inner-1012 13964 1017->1032 pending (PROBLEM); 13447 286->294 not reported; 14382 1465->1473 complete (not a problem); noop-stop-1012 13447 298->302 no output (PROBLEM); no-otel-1011 13447 428->432 no output (PROBLEM). 9 runs: no item changed.
     - next: review
   timestamp: 2026-10-12T22:57:46.643318+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4s68xcseccfee5cr0r5kbf1
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (6212501); counts: findings 0, confirmed 0, refuted 0, attempted 8, failed 0. All items of the 2026-10-12 17:09 and 17:33 sections are checked. SKILL.md had no validator that matched it.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-12T23:13:26.937573+00:00
+- actor: claude-code
+  id: 01m4s6984jgqhgfe7td62y7jdq
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 3 files (scan.py one TEST_SCRIPT pattern for TEST_SCRIPT_RE and TEST_CMD_RE; test_scan.py lists from scan constants, docstrings with the reason; SKILL.md timeline row); 2/2 prior findings checked
+    - test: green — swebench scripts 59 OK, swebench-score scripts 34 OK, smoke runs exit 0
+    - commit: 6212501
+    - review: clean — 0 findings; 4/4 prior items checked; the task is in done
+  timestamp: 2026-10-12T23:13:37.938390+00:00
+position_column: done
+position_ordinal: ffcb80
 title: 'swebench scan: find a repeated test run when the command text differs'
 ---
 ## Why
