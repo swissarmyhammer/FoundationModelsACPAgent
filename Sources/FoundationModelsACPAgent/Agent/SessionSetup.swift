@@ -737,7 +737,7 @@ extension RoutedACPAgent {
             return
         }
         let updates = outcomes.map(MCPServerStatusReport.update(for:))
-        connection.afterRespondingInCurrentServiceContext { [weak connection] in
+        connection.afterRespondingInCurrentInstrumentationContext { [weak connection] in
             for update in updates {
                 await connection?.post(update, in: sessionId)
             }

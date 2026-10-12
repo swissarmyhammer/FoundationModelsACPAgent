@@ -74,6 +74,16 @@ comments:
     ### Multitool task id (2026-10-12)
     - FoundationModelsMultitool ^qg52whq (01M4RJ379CH0XZ2ZFH4QG52WHQ): "Name the pending inner calls in the runCode result when a snippet ends". In todo, not implemented yet. The Multitool session sends the commit sha when it is done.
   timestamp: 2026-10-12T17:21:02.207543+00:00
+- actor: claude-code
+  id: 01m4rkqtyhk6ejytbprkde9327
+  text: |-
+    ### Multitool ^qg52whq done (2026-10-12)
+    - Commit 369a1b5 on main of FoundationModelsMultitool (code in baa22e1, 41f3cb5, 9c9567f). LOCAL ONLY when reported; push requested from foundationmodelsmultitool-57.
+    - Change: when a runCode snippet ends (inline settle, background settle, or a failed snippet) while inner calls are still pending, the result lists each call (tool, op, commandID / completionToken), says "Do not run these calls again.", and gives PendingRunEnvelope.pendingWorkInstruction.
+    - 9c9567f moves to InstrumentationContext, because swift-distributed-tracing 1.6.0 deprecates ServiceContext; expect that in the update.
+    - Known gap: a pending call inside a nested tools.runCode is not yet named in the outer result (Multitool ^tshp2t9, in progress).
+    - next: when origin/main has 369a1b5, `swift package update` (root and IntegrationTests; also takes CodeContext d4c4482), release build, full swift test, then a bench run on the same 6 instances as noop-stop-1012.
+  timestamp: 2026-10-12T17:49:33.009672+00:00
 position_column: review
 position_ordinal: '80'
 title: Bench check of the no-op stop, and the detectProjects settle task for CodeContext

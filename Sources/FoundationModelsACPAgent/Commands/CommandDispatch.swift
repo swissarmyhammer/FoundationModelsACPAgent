@@ -267,7 +267,7 @@ extension RoutedACPAgent {
         case .action(let execution):
             let sessionId = params.sessionId
             let messageId = insertUserMessage(params, through: connection)
-            connection.afterRespondingInCurrentServiceContext {
+            connection.afterRespondingInCurrentInstrumentationContext {
                 await execution.run()
                 await self.promptFinished(sessionId: sessionId)
             }
