@@ -5,11 +5,12 @@ import FoundationModelsRouter
 /// session.
 ///
 /// The stream of a caller answer ends while a background run of that answer
-/// is open (Router's `streamEvents(to:maxTokens:)` contract). The result of
-/// the run comes back as mail, and the answer that the mail starts is
-/// visible only on `streamSessionEvents()`. ``PromptExecution`` reads that
-/// stream after the caller stream, until ``awaitIdle`` returns, so the
-/// prompt does not end before the session has no more work.
+/// is open (Router's `streamEvents(to:maxTokens:)` contract). The session
+/// injects the result of the run as a new message, and the answer that this
+/// message starts is visible only on `streamSessionEvents()`.
+/// ``PromptExecution`` reads that stream after the caller stream, until
+/// ``awaitIdle`` returns, so the prompt does not end before the session has
+/// no more work.
 struct SessionFollowUp: Sendable {
     /// Every event of the session, from a subscription that the prompt took
     /// before its caller stream started. It also carries each event of the

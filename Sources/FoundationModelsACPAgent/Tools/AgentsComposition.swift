@@ -29,7 +29,8 @@ struct AgentsMount: Sendable {
 /// **The tool is standalone, not a Multitool capability.** A `start agent`
 /// call waits for its run for the settle period of the session. A run that
 /// ends in that time gives its final message as the output of the call, and
-/// a longer run goes to the background and gives its final message as mail.
+/// a longer run goes to the background, and the session injects its final
+/// message as a new message.
 /// Inside a `runCode` snippet that wait would be a second background point,
 /// thus the tool mounts beside `searchTools`, `runCode` and `skills`, the
 /// same as the `skills` tool.

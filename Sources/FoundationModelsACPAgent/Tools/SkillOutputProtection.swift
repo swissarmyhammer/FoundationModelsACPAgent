@@ -25,7 +25,7 @@ import FoundationModelsRouter
 /// changes that the model makes are in the files after that answer. A
 /// session that starts many runs would also fill its context with results
 /// that a fold can never remove. Thus a compaction treats a `start agent`
-/// output, and the mail of a run, as each other tool result.
+/// output, and the injected result of a run, as each other tool result.
 enum SkillOutputProtection {
     /// The name of the standalone skills tool.
     static let skillsToolName = "skills"

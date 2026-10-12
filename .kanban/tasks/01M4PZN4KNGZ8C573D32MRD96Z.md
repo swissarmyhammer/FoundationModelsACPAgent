@@ -99,8 +99,24 @@ comments:
     - evidence: 5 files — Tests/FoundationModelsACPAgentTests/InitializationTests.swift, SessionSetupTests.swift, SessionResumeTests.swift, SessionListTests.swift, MultiRootConfinementTests.swift. Finding Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:161 checked (1 of 1). `swift test --filter 'SessionSetupTests|SessionResumeTests|SessionListTests|MultiRootConfinementTests|InitializationTests|PathKindTests'`: 67 tests in 6 suites passed. No warning but the accepted mlx "missing creator" warning.
     - next: review
   timestamp: 2026-10-12T11:44:52.141655+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4r15ky6ynv1wyehrx15srsd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (335a8b2); counts: findings 0, confirmed 0, refuted 0, attempted 7, failed 0; 5 files reviewed, 2 .kanban files ignored. All 5 prior findings (2026-10-12 06:23 and 06:37) are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-10-12T12:25:01.638494+00:00
+- actor: claude-code
+  id: 01m4r164w25cbeqkt7cwh4cwmq
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 5 test files (InitializationTests, SessionSetupTests, SessionResumeTests, SessionListTests, MultiRootConfinementTests); 1/1 prior finding checked
+    - test: green — swift test 915 tests / 99 suites passed; IntegrationTests build complete
+    - commit: 335a8b2 (the first try was stuck: the sah MCP server was disconnected; the retry after the reconnect made the commit)
+    - review: clean — 0 findings; all 5 prior findings checked; the task is in done
+  timestamp: 2026-10-12T12:25:18.978738+00:00
+position_column: done
+position_ordinal: ffc780
 title: 'Never create a missing session cwd: refuse session/new, replay-only session/resume'
 ---
 ## Why

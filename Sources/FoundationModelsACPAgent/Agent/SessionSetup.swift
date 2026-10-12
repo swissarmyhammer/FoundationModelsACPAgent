@@ -953,7 +953,9 @@ extension RoutedLLM {
     ///     thus the same period that each agent run of the surface gets.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
-    ///   loads with `use skill` (``SkillOutputProtection``).
+    ///   loads with `use skill` (``SkillOutputProtection``). While an
+    ///   operation is pending, the session does not run a no-op tool call
+    ///   (``NoOpToolCall``).
     func makeBudgetedSession(
         instructions: String,
         workingDirectory: URL,
@@ -991,6 +993,38 @@ extension RoutedLLM {
                 compaction: CompactionSettings(
                     budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
                 repetitionDetection: repetition.detection,
-                inlineSettleGrace: inlineSettleGrace))
+                inlineSettleGrace: inlineSettleGrace,
+                isNoOpToolCall: NoOpToolCall.check))
+    }
+
+    /// Restores one recorded session with the host rules that
+    /// ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``
+    /// gives a new session. `session/resume` restores through this one door,
+    /// so a restored session and a new session cannot differ.
+    ///
+    /// - Parameters:
+    ///   - id: The id of the recorded root session.
+    ///   - recordingRoot: The recording root that holds the session.
+    ///   - instructions: The freshly assembled instructions, or `nil` to keep
+    ///     the recorded instructions.
+    ///   - tools: The tools the model can call.
+    /// - Returns: The restored session and its reports. The compaction keeps
+    ///   each skill that the model loads with `use skill`
+    ///   (``SkillOutputProtection``). While an operation is pending, the
+    ///   session does not run a no-op tool call (``NoOpToolCall``).
+    /// - Throws: Whatever Router's restore throws.
+    func restoreSessionWithHostChecks(
+        id: ULID,
+        recordingRoot: URL,
+        instructions: String?,
+        tools: [any FoundationModels.Tool]
+    ) async throws -> RestoredSession {
+        try await restoreSession(
+            id: id,
+            recordingRoot: recordingRoot,
+            instructions: instructions,
+            tools: tools,
+            toolOutputProtection: SkillOutputProtection.rule,
+            isNoOpToolCall: NoOpToolCall.check)
     }
 }

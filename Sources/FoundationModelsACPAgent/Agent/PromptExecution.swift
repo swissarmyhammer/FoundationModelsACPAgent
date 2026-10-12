@@ -409,7 +409,7 @@ struct PromptExecution: Sendable {
     /// The session stream also carries each event of the caller answer, in
     /// the same order, so the projection skips each event up to the end of
     /// the caller answer. After that come the settlements of the background
-    /// runs, and the answers that their mail starts.
+    /// runs, and the answers that their injected results start.
     ///
     /// The idle wait runs in its own task. When it returns, the session
     /// stream holds each event of the work, so the task closes the copy

@@ -279,8 +279,8 @@ struct EventProjection {
 
     /// Whether an `answered` event sends its reply as one agent message
     /// (task ^64pav2a). `PromptExecution.drive` sets it for the session
-    /// events that come after the caller answer. An answer that mail
-    /// starts gives its reply whole and streams no text delta, so the
+    /// events that come after the caller answer. An answer that an injected
+    /// result starts gives its reply whole and streams no text delta, so the
     /// reply is the only carrier of its text. The caller stream streams its
     /// text, so its `answered` sends nothing.
     var projectsWholeReplies = false
@@ -438,9 +438,9 @@ struct EventProjection {
             // reason nor the stall guard of the prompt (task ^jwx92y8).
             await projectProgress(of: operationEvent)
         case .runMessage:
-            // Mail of a background run to the model, with no ACP
-            // counterpart: the answer that the mail starts carries the
-            // result to the client.
+            // A message of a background run that the session injects for
+            // the model, with no ACP counterpart: the answer that this
+            // message starts carries the result to the client.
             reportUnsentEvent(event)
         case .toolCallReport(let report):
             // The "at least one attachment" rule is a doc comment

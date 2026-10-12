@@ -98,9 +98,12 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 
 The model-facing surface is two code-mode tools from
 `FoundationModelsMultitool` — `searchTools` and `runCode` — plus the
-standalone `skills` and `agents` tools. There is no `wait` tool. A `runCode`
-run that does not settle in its inline grace continues in the background, and
-its result comes back to the session as mail when it settles. Capability modules mount
+standalone `skills` and `agents` tools. A `runCode` run that does not settle
+in its inline grace continues in the background. When the run settles, its
+result is injected into the session as a new message, and that message starts
+the model working again. While the run continues, the model does other work
+that does not need the result, or it does nothing. The model does not call a
+tool to wait for the result or to check it. Capability modules mount
 inside the Multitool registry, one row here per capability. Each capability
 is on by default. Set its config section to `false` to set it off.
 
@@ -254,7 +257,8 @@ starts an agent in its own session: an agent is a folder
 store as the skills. A `start agent` call waits for its run for the settle
 period of the session. A run that ends in that time gives its final message
 as the output of the call; a longer run goes to the background, and its final
-message comes back to the session as mail. Each run gets the `searchTools`,
+message is injected into the session as a new message, which starts the model
+working again. Each run gets the `searchTools`,
 `runCode` and `skills` tools, and the root session and the runs read one skills
 registry. When the session closes, its agent runs stop first. Set
 `enabled: false` (or `agents: false`) to set the agents tool off; `doctor`

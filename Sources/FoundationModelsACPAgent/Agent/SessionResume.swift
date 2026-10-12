@@ -301,12 +301,11 @@ extension RoutedACPAgent {
         _ rootId: ULID, sessionId: SessionId, composition: SessionComposition
     ) async throws -> RestoredSession {
         do {
-            let restored = try await residentProfile.standard.restoreSession(
+            let restored = try await residentProfile.standard.restoreSessionWithHostChecks(
                 id: rootId,
                 recordingRoot: composition.transcriptRoot,
                 instructions: composition.isReplayOnly ? nil : composition.instructions,
-                tools: composition.surface.tools,
-                toolOutputProtection: SkillOutputProtection.rule)
+                tools: composition.surface.tools)
             logRestoreReports(of: restored, sessionId: sessionId)
             return restored
         } catch {

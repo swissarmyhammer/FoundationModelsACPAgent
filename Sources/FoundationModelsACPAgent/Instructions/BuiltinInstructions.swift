@@ -64,9 +64,9 @@
 /// tool result, so without the exception the prompt tells the model not to
 /// obey the skill that it loads. The same is true of the `agents` tool: the
 /// final message of an agent run, and a message that a run sends to its
-/// caller, come back as tool results or as mail, and the model must act on
-/// them. The exception names the two standalone tools, `skills` and
-/// `agents`, and the rule for every other tool result stays.
+/// caller, come back as tool results or as injected messages, and the model
+/// must act on them. The exception names the two standalone tools, `skills`
+/// and `agents`, and the rule for every other tool result stays.
 ///
 /// ## Why "act first" is the first rule of the section
 ///
