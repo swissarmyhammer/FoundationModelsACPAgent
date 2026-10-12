@@ -108,7 +108,10 @@ struct SessionResumeTests {
     func resumeWithARelativeCwdAnswersInvalidParamsNamingTheField() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-relative")
 
-        await SessionSetupTests.expectRelativePathRefusal(naming: .cwd) {
+        await SessionSetupTests.expectRefusal(
+            carrying: SessionSetupTests.expectedRefusalData(naming: .cwd),
+            naming: SessionSetup.PathField.cwd.rawValue
+        ) {
             _ = try await resume.fixture.harness.connection.resumeSession(
                 ResumeSessionRequest(
                     cwd: AbsolutePath(rawValue: Self.relativeCwd),
@@ -131,7 +134,10 @@ struct SessionResumeTests {
             under: root, sessionId: resume.fixture.sessionId, count: 1)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-        await SessionSetupTests.expectRelativePathRefusal(naming: .additionalDirectories) {
+        await SessionSetupTests.expectRefusal(
+            carrying: SessionSetupTests.expectedRefusalData(naming: .additionalDirectories),
+            naming: SessionSetup.PathField.additionalDirectories.rawValue
+        ) {
             _ = try await resume.fixture.harness.connection.resumeSession(
                 resume.makeResumeRequest(
                     additionalDirectories: [

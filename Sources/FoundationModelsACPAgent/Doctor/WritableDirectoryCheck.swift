@@ -32,7 +32,7 @@ enum WritableDirectoryCheck {
         fix: (URL) -> String
     ) -> HealthCheck {
         let target = directory.standardizedFileURL
-        guard !isFile(target) else {
+        guard PathKind.of(target) != .notADirectory else {
             return .error(
                 name: name,
                 message: "\(target.path) is a file, so no \(subject) can stand there",
@@ -56,17 +56,6 @@ enum WritableDirectoryCheck {
             category: category)
     }
 
-    /// Whether `url` names something on disk that is not a directory.
-    ///
-    /// - Parameter url: The path to test.
-    /// - Returns: `true` when something stands there and it is not a
-    ///   directory.
-    private static func isFile(_ url: URL) -> Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            && !isDirectory.boolValue
-    }
-
     /// The nearest directory of `url`'s path that is on disk: `url` itself
     /// when it exists, else the closest one above it.
     ///
@@ -75,7 +64,7 @@ enum WritableDirectoryCheck {
     ///   system root, which always exists.
     static func nearestExistingDirectory(of url: URL) -> URL {
         var candidate = url
-        while !FileManager.default.fileExists(atPath: candidate.path) {
+        while PathKind.of(candidate) == .missing {
             let parent = candidate.deletingLastPathComponent().standardizedFileURL
             guard parent != candidate else {
                 return candidate

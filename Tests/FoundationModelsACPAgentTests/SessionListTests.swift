@@ -218,7 +218,10 @@ struct SessionListTests {
     func aRelativeCwdFilterGivesAnInvalidParamsErrorNamingTheField() async throws {
         let fixture = try await Self.makeWireFixture()
 
-        await SessionSetupTests.expectRelativePathRefusal(naming: .cwd) {
+        await SessionSetupTests.expectRefusal(
+            carrying: SessionSetupTests.expectedRefusalData(naming: .cwd),
+            naming: SessionSetup.PathField.cwd.rawValue
+        ) {
             _ = try await fixture.connection.listSessions(
                 ListSessionsRequest(cwd: AbsolutePath(rawValue: Self.relativeCwd)))
         }

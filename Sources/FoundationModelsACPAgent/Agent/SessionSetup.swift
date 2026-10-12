@@ -220,42 +220,66 @@ enum SessionSetup {
         case notADirectory = "is not a directory"
     }
 
+    /// One request directory that fails the existence check, with the
+    /// request field it came from and the reason.
+    struct DirectoryFailure {
+        /// The request directory that fails the check.
+        let directory: URL
+
+        /// The request field the directory came from.
+        let field: PathField
+
+        /// Why the directory cannot hold a session.
+        let defect: DirectoryDefect
+    }
+
     /// The defect of `directory`, or `nil` when it is an existing
-    /// directory. A symbolic link to a directory is a directory.
+    /// directory. ``PathKind`` does the probe, so a symbolic link to a
+    /// directory is a directory.
     ///
     /// - Parameter directory: The request directory.
     /// - Returns: The defect, or `nil`.
     static func defect(of directory: URL) -> DirectoryDefect? {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory) else {
+        switch PathKind.of(directory) {
+        case .missing:
             return .doesNotExist
+        case .notADirectory:
+            return .notADirectory
+        case .directory:
+            return nil
         }
-        return isDirectory.boolValue ? nil : .notADirectory
     }
 
-    /// Validates that `directory` is an existing directory.
+    /// The first directory of a session that fails the existence check,
+    /// in request order: the cwd first, then each additional root in wire
+    /// order. This walk is the one statement of which directories a
+    /// session needs.
+    ///
+    /// - Parameters:
+    ///   - workingDirectory: The session working directory.
+    ///   - additionalRoots: The additional confinement roots, in wire order.
+    /// - Returns: The first failure, or `nil` when each directory exists.
+    static func firstDirectoryFailure(
+        workingDirectory: URL, additionalRoots: [URL]
+    ) -> DirectoryFailure? {
+        let requested =
+            [(workingDirectory, PathField.cwd)]
+            + additionalRoots.map { ($0, PathField.additionalDirectories) }
+        return requested.lazy.compactMap { directory, field in
+            defect(of: directory).map {
+                DirectoryFailure(directory: directory, field: field, defect: $0)
+            }
+        }.first
+    }
+
+    /// Validates that the working directory and each additional root of a
+    /// session are existing directories.
     ///
     /// The agent never makes a session directory. A composition that runs
     /// over a missing directory makes it: the code context index, for
     /// example, makes `<cwd>/.code-context` and each missing parent. So
     /// `session/new` refuses a missing directory before it composes
     /// anything.
-    ///
-    /// - Parameters:
-    ///   - directory: The request directory.
-    ///   - field: The request field `directory` came from, named in the
-    ///     refusal so the client learns which one to fix.
-    /// - Throws: ``RequestError/missingDirectory(_:field:defect:)`` when
-    ///   `directory` does not exist or is not a directory.
-    static func requireExistingDirectory(_ directory: URL, field: PathField) throws(RequestError) {
-        if let defect = defect(of: directory) {
-            throw .missingDirectory(directory, field: field, defect: defect)
-        }
-    }
-
-    /// Validates that the working directory and each additional root of a
-    /// session are existing directories, in request order: the cwd first,
-    /// then each root in wire order.
     ///
     /// - Parameters:
     ///   - workingDirectory: The session working directory.
@@ -265,10 +289,13 @@ enum SessionSetup {
     static func requireExistingDirectories(
         workingDirectory: URL, additionalRoots: [URL]
     ) throws(RequestError) {
-        try requireExistingDirectory(workingDirectory, field: .cwd)
-        for root in additionalRoots {
-            try requireExistingDirectory(root, field: .additionalDirectories)
+        guard
+            let failure = firstDirectoryFailure(
+                workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+        else {
+            return
         }
+        throw .missingDirectory(failure.directory, field: failure.field, defect: failure.defect)
     }
 
     /// Whether the working directory and each additional root of a session
@@ -278,9 +305,10 @@ enum SessionSetup {
     /// - Parameters:
     ///   - workingDirectory: The session working directory.
     ///   - additionalRoots: The additional confinement roots.
-    /// - Returns: `true` when no directory has a defect.
+    /// - Returns: `true` when no directory fails the check.
     static func allDirectoriesExist(workingDirectory: URL, additionalRoots: [URL]) -> Bool {
-        ([workingDirectory] + additionalRoots).allSatisfy { defect(of: $0) == nil }
+        firstDirectoryFailure(workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+            == nil
     }
 
     /// Converts the wire `additionalDirectories` path strings to
@@ -329,13 +357,7 @@ extension RequestError {
     /// - Parameter field: The request field the relative path came from.
     /// - Returns: The typed invalid-params error.
     static func relativePath(field: SessionSetup.PathField) -> RequestError {
-        RequestError(
-            code: .invalidParams,
-            message: RequestError.invalidParams.message,
-            data: .object([
-                "field": .string(field.rawValue),
-                "reason": .string(mustBeAbsoluteReason),
-            ]))
+        pathRefusal(field: field, reason: mustBeAbsoluteReason)
     }
 
     /// The missing-directory refusal: JSON-RPC invalid params naming the
@@ -350,14 +372,30 @@ extension RequestError {
     static func missingDirectory(
         _ directory: URL, field: SessionSetup.PathField, defect: SessionSetup.DirectoryDefect
     ) -> RequestError {
-        RequestError(
-            code: .invalidParams,
-            message: RequestError.invalidParams.message,
-            data: .object([
-                "field": .string(field.rawValue),
-                "path": .string(directory.path),
-                "reason": .string(defect.rawValue),
-            ]))
+        pathRefusal(field: field, reason: defect.rawValue, path: directory)
+    }
+
+    /// The one builder of a request-path refusal: JSON-RPC invalid params
+    /// with `data` that names the field, the reason and, when given, the
+    /// refused path.
+    ///
+    /// - Parameters:
+    ///   - field: The request field that failed.
+    ///   - reason: Why the request path is refused.
+    ///   - path: The refused path, or `nil` when the refusal does not name
+    ///     it.
+    /// - Returns: The typed invalid-params error.
+    private static func pathRefusal(
+        field: SessionSetup.PathField, reason: String, path: URL? = nil
+    ) -> RequestError {
+        var data: [String: FoundationModelsACP.JSONValue] = [
+            "field": .string(field.rawValue),
+            "reason": .string(reason),
+        ]
+        data["path"] = path.map { .string($0.path) }
+        return RequestError(
+            code: .invalidParams, message: RequestError.invalidParams.message,
+            data: .object(data))
     }
 }
 

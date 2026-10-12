@@ -124,36 +124,50 @@ import Testing
 
     // MARK: Absolute-path validation
 
-    /// The `data` object a relative-path refusal must carry for `field`.
-    ///
-    /// - Parameter field: The request field the refusal names.
-    /// - Returns: The expected `data` member.
-    static func expectedRefusalData(
-        naming field: SessionSetup.PathField
-    ) -> FoundationModelsACP.JSONValue {
-        .object([
-            "field": .string(field.rawValue),
-            "reason": .string(Self.mustBeAbsoluteReason),
-        ])
-    }
-
-    /// Asserts that `body` refuses with the relative-path invalid-params
-    /// error naming `field`. The ACP schema states the absolute-path rule
-    /// in prose and names no validator, so this agent is the only judge,
-    /// and the refusal must say which field failed and why.
+    /// The `data` object a request-path refusal must carry for `field`.
+    /// A relative-path refusal names the field and the reason. A
+    /// missing-directory refusal also names the refused path.
     ///
     /// - Parameters:
-    ///   - field: The request field the refusal must name.
+    ///   - field: The request field the refusal names.
+    ///   - reason: Why the path is refused. The default is the
+    ///     relative-path reason.
+    ///   - path: The refused path, or `nil` when the refusal does not
+    ///     name it.
+    /// - Returns: The expected `data` member.
+    static func expectedRefusalData(
+        naming field: SessionSetup.PathField,
+        reason: String = SessionSetupTests.mustBeAbsoluteReason,
+        path: URL? = nil
+    ) -> FoundationModelsACP.JSONValue {
+        var data: [String: FoundationModelsACP.JSONValue] = [
+            "field": .string(field.rawValue),
+            "reason": .string(reason),
+        ]
+        data["path"] = path.map { .string($0.path) }
+        return .object(data)
+    }
+
+    /// Asserts that `body` refuses with the invalid-params error that
+    /// carries `data`. The ACP schema states the path rules in prose and
+    /// names no validator, so this agent is the only judge, and the
+    /// refusal must say which field failed and why.
+    ///
+    /// - Parameters:
+    ///   - data: The `data` member the refusal must carry.
+    ///   - label: What the refusal names, for the failure text when
+    ///     `body` does not throw.
     ///   - body: The call under test.
-    static func expectRelativePathRefusal(
-        naming field: SessionSetup.PathField, from body: () async throws -> Void
+    static func expectRefusal(
+        carrying data: FoundationModelsACP.JSONValue, naming label: String,
+        from body: () async throws -> Void
     ) async {
         do {
             try await body()
-            Issue.record("expected an invalidParams error naming \(field.rawValue)")
+            Issue.record("expected an invalidParams error naming \(label)")
         } catch let error as RequestError {
             #expect(error.code == .invalidParams)
-            #expect(error.data == Self.expectedRefusalData(naming: field))
+            #expect(error.data == data)
         } catch {
             Issue.record("expected a RequestError, got \(error)")
         }
@@ -207,7 +221,10 @@ import Testing
     /// error before any composition runs, and the refusal names the field
     /// that failed and why.
     @Test func aRelativeCwdIsRefusedWithInvalidParams() async {
-        await Self.expectRelativePathRefusal(naming: .cwd) {
+        await Self.expectRefusal(
+            carrying: Self.expectedRefusalData(naming: .cwd),
+            naming: SessionSetup.PathField.cwd.rawValue
+        ) {
             _ = try SessionSetup.validatedWorkingDirectory(
                 path: Self.relativeCwd, field: .cwd)
         }
@@ -218,7 +235,10 @@ import Testing
     /// so a skip here would drop a confinement root the client asked for
     /// and never say so.
     @Test func aRelativeAdditionalDirectoryIsRefusedWithInvalidParams() async {
-        await Self.expectRelativePathRefusal(naming: .additionalDirectories) {
+        await Self.expectRefusal(
+            carrying: Self.expectedRefusalData(naming: .additionalDirectories),
+            naming: SessionSetup.PathField.additionalDirectories.rawValue
+        ) {
             _ = try SessionSetup.additionalRoots(
                 fromPaths: [Self.relativeAdditionalDirectory])
         }
@@ -254,82 +274,49 @@ import Testing
 
     // MARK: The existence check
 
-    /// The `data` object a refusal must carry for a request path that is
-    /// not an existing directory.
-    ///
-    /// - Parameters:
-    ///   - field: The request field the refusal names.
-    ///   - directory: The refused path.
-    ///   - reason: Why the path is refused.
-    /// - Returns: The expected `data` member.
-    private static func expectedMissingDirectoryData(
-        naming field: SessionSetup.PathField, directory: URL, reason: String
-    ) -> FoundationModelsACP.JSONValue {
-        .object([
-            "field": .string(field.rawValue),
-            "path": .string(directory.path),
-            "reason": .string(reason),
-        ])
-    }
-
-    /// Asserts that `body` refuses with the invalid-params error that
-    /// names `field`, the refused path and the reason.
-    ///
-    /// - Parameters:
-    ///   - field: The request field the refusal must name.
-    ///   - directory: The path the refusal must name.
-    ///   - reason: The reason the refusal must give.
-    ///   - body: The call under test.
-    private static func expectMissingDirectoryRefusal(
-        naming field: SessionSetup.PathField, directory: URL, reason: String,
-        from body: () async throws -> Void
-    ) async {
-        do {
-            try await body()
-            Issue.record("expected an invalidParams error naming \(directory.path)")
-        } catch let error as RequestError {
-            #expect(error.code == .invalidParams)
-            #expect(
-                error.data
-                    == Self.expectedMissingDirectoryData(
-                        naming: field, directory: directory, reason: reason))
-        } catch {
-            Issue.record("expected a RequestError, got \(error)")
-        }
-    }
-
-    /// A path that does not exist fails the existence check, and the
-    /// refusal names the path and the reason.
+    /// A cwd that does not exist fails the existence check, and the
+    /// refusal names the field, the path and the reason.
     @Test func aMissingDirectoryFailsTheExistenceCheck() async {
         let missing = makeResolvedDirectory(label: "SessionSetupTests-missing")
             .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
 
-        await Self.expectMissingDirectoryRefusal(
-            naming: .cwd, directory: missing, reason: Self.doesNotExistReason
+        await Self.expectRefusal(
+            carrying: Self.expectedRefusalData(
+                naming: .cwd, reason: Self.doesNotExistReason, path: missing),
+            naming: missing.path
         ) {
-            try SessionSetup.requireExistingDirectory(missing, field: .cwd)
+            try SessionSetup.requireExistingDirectories(
+                workingDirectory: missing, additionalRoots: [])
         }
     }
 
-    /// A path that holds a file fails the existence check: a session
-    /// directory must be a directory.
+    /// An additional root that holds a file fails the existence check: a
+    /// session directory must be a directory. The refusal names the
+    /// field of the root, because the cwd passes.
     @Test func aFileInPlaceOfADirectoryFailsTheExistenceCheck() async throws {
+        let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
         let file = makeResolvedDirectory(label: "SessionSetupTests-file")
             .appendingPathComponent(Self.plainFileName)
         try "not a directory".write(to: file, atomically: true, encoding: .utf8)
 
-        await Self.expectMissingDirectoryRefusal(
-            naming: .additionalDirectories, directory: file, reason: Self.notADirectoryReason
+        await Self.expectRefusal(
+            carrying: Self.expectedRefusalData(
+                naming: .additionalDirectories, reason: Self.notADirectoryReason, path: file),
+            naming: file.path
         ) {
-            try SessionSetup.requireExistingDirectory(file, field: .additionalDirectories)
+            try SessionSetup.requireExistingDirectories(
+                workingDirectory: cwd, additionalRoots: [file])
         }
     }
 
-    /// An existing directory passes the existence check.
-    @Test func anExistingDirectoryPassesTheExistenceCheck() throws {
-        let directory = makeResolvedDirectory(label: "SessionSetupTests-existing")
+    /// An existing cwd and an existing additional root pass the existence
+    /// check.
+    @Test func existingDirectoriesPassTheExistenceCheck() throws {
+        let cwd = makeResolvedDirectory(label: "SessionSetupTests-existing")
+        let root = makeResolvedDirectory(label: "SessionSetupTests-existing-extra")
 
-        try SessionSetup.requireExistingDirectory(directory, field: .cwd)
+        try SessionSetup.requireExistingDirectories(workingDirectory: cwd, additionalRoots: [root])
+        #expect(SessionSetup.allDirectoriesExist(workingDirectory: cwd, additionalRoots: [root]))
     }
 
     /// `session/new` with a cwd that does not exist answers the
@@ -342,8 +329,10 @@ import Testing
         let agent = try await Self.makeInitializedAgent(
             userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
 
-        await Self.expectMissingDirectoryRefusal(
-            naming: .cwd, directory: missing, reason: Self.doesNotExistReason
+        await Self.expectRefusal(
+            carrying: Self.expectedRefusalData(
+                naming: .cwd, reason: Self.doesNotExistReason, path: missing),
+            naming: missing.path
         ) {
             _ = try await agent.newSession(Self.makeNewSessionRequest(cwd: missing))
         }
@@ -363,8 +352,10 @@ import Testing
         let agent = try await Self.makeInitializedAgent(
             userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
 
-        await Self.expectMissingDirectoryRefusal(
-            naming: .additionalDirectories, directory: missing, reason: Self.doesNotExistReason
+        await Self.expectRefusal(
+            carrying: Self.expectedRefusalData(
+                naming: .additionalDirectories, reason: Self.doesNotExistReason, path: missing),
+            naming: missing.path
         ) {
             _ = try await agent.newSession(
                 NewSessionRequest(

@@ -32,6 +32,39 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/Agent/SessionResume.swift, Sources/FoundationModelsACPAgent/Agent/PromptExecution.swift, Sources/FoundationModelsACPAgent/Agent/SessionHistory.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift (5 new tests), Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift (3 new tests). `swift test --filter 'SessionSetupTests|SessionResumeTests'`: 37 tests passed (RED before: 12 issues). Full `swift test`: 911 tests in 98 suites passed, 1 known issue that was there before. `swift build`: no warning but the accepted mlx "missing creator" warning.
     - next: review
   timestamp: 2026-10-12T11:20:16.862717+00:00
+- actor: claude-code
+  id: 01m4qxxwp52a105ph1watn4srf
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 613b69d): 4 findings (4 confirmed, 1 refuted). Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:228, Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:282, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:265, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:283. All are `reuse/reuse`.
+    - next: implement — do the 4 items in "## Review Findings (2026-10-12 06:23)". The task stays in review.
+  timestamp: 2026-10-12T11:28:22.725155+00:00
+- actor: claude-code
+  id: 01m4qxydr6np2gwq4fevx01zze
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files (SessionSetup, SessionResume, PromptExecution, SessionHistory, ToolCatalog, SessionSetupTests +5, SessionResumeTests +3)
+    - test: green — swift test 911 tests / 98 suites passed; IntegrationTests build complete
+    - commit: 613b69d
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:228, Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:282, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:265, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:283
+  timestamp: 2026-10-12T11:28:40.198586+00:00
+- actor: claude-code
+  id: 01m4qya6chyzsy3t7cmevtdh6w
+  text: |-
+    Review findings of 2026-10-12 06:23 are done (not committed).
+    - Finding 1: `ReadableDirectoryState.of` answers a different question (readability, and no is-directory test). So the new `PathKind` (`Sources/FoundationModelsACPAgent/Doctor/PathKind.swift`: `missing`, `directory`, `notADirectory`) is the one existence and is-directory probe. `SessionSetup.defect(of:)`, `ReadableDirectoryState.of`, `WritableDirectoryCheck.check` (it had a private `isFile` copy, now deleted) and `WritableDirectoryCheck.nearestExistingDirectory` all call it. `PathKindTests` is new (missing path, directory, plain file, symbolic link to a directory). RED was seen first: "cannot find 'PathKind' in scope".
+    - Finding 2: `SessionSetup.firstDirectoryFailure(workingDirectory:additionalRoots:)` is the one ordered walk (cwd first, then each root in wire order). It returns a `DirectoryFailure` (directory, field, defect). `requireExistingDirectories` throws on it, and `allDirectoriesExist` tests it for nil. `requireExistingDirectory(_:field:)` had no production caller after this, so it is deleted; the unit tests now call `requireExistingDirectories`.
+    - Same cause in the file: `RequestError.relativePath` and `RequestError.missingDirectory` built the same `data` object two times. The private `RequestError.pathRefusal(field:reason:path:)` is now the one builder.
+    - Finding 3: `expectedRefusalData(naming:reason:path:)` takes the reason (default: the relative-path reason) and an optional path. `expectedMissingDirectoryData` is deleted.
+    - Finding 4: `expectRefusal(carrying:naming:from:)` is the one refusal assertion. It takes the expected `data` and a failure label. `expectRelativePathRefusal` and `expectMissingDirectoryRefusal` are deleted. The callers in SessionSetupTests, SessionResumeTests, SessionListTests and MultiRootConfinementTests use it, with the per-case data at the call site.
+  timestamp: 2026-10-12T11:35:05.873859+00:00
+- actor: claude-code
+  id: 01m4qyaasb4dwsvd69a9x9de7p
+  text: |-
+    ### implement — changed
+    - evidence: 9 files — Sources/FoundationModelsACPAgent/Doctor/PathKind.swift (new), Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Sources/FoundationModelsACPAgent/Doctor/ReadableDirectoryState.swift, Sources/FoundationModelsACPAgent/Doctor/WritableDirectoryCheck.swift, Tests/FoundationModelsACPAgentTests/PathKindTests.swift (new), Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift, SessionResumeTests.swift, SessionListTests.swift, MultiRootConfinementTests.swift. 4 of 4 findings checked. `swift build`: no warning but the accepted mlx "missing creator" warning. `swift test --filter 'SessionSetupTests|SessionResumeTests|Doctor|PathKindTests|SessionListTests|MultiRootConfinementTests'`: 117 tests in 13 suites passed.
+    - next: review
+  timestamp: 2026-10-12T11:35:10.379175+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Never create a missing session cwd: refuse session/new, replay-only session/resume'
@@ -70,3 +103,15 @@ Cause: `SessionSetup.validatedWorkingDirectory(path:field:)` (`Sources/Foundatio
 - `session/new` with a missing cwd: the error and the absent dir.
 
 Reported by: agentviewkit-d0.
+
+## Review Findings (2026-10-12 06:23)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:228` `reuse/reuse` — `defect(of:)` reimplements a directory existence and is-directory check that already exists in the Doctor code. Two copies of the same file-system probe can drift apart, for example on how a symbolic link or a file-in-place-of-directory is treated. Check whether `ReadableDirectoryState.of` or a shared helper can return the existence and is-directory answer. If one can, call it from `defect(of:)`. If the Doctor checks answer a different question (readability or writability), extract the shared existence and is-directory probe into one helper that both call.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:282` `reuse/reuse` — `allDirectoriesExist` repeats the same ordered walk over the working directory and the additional roots that `requireExistingDirectories` already performs. It is a second, parallel copy of one rule: which directories a session needs. Define one walk that returns the first defect with its field, then have `requireExistingDirectories` throw on it and `allDirectoriesExist` test it for nil. This keeps the cwd-first, wire-order rule in one place.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:265` `reuse/reuse` — `expectedMissingDirectoryData` is a near-match of the existing `expectedRefusalData(naming:)` (line 131). Both build the same refusal `data` object from a `field` and a `reason`. The new helper only adds a `path` member. The right move was to extend `expectedRefusalData` with optional `path` and `reason` parameters, so the refusal shape has one canonical builder. Instead, the file now has two builders that must stay in step with the wire shape. Generalize `expectedRefusalData` to take the reason and an optional path, for example `expectedRefusalData(naming: field, reason: String = Self.mustBeAbsoluteReason, path: URL? = nil)`, and delete `expectedMissingDirectoryData`. Call sites at lines 308, 322, 346, and 367 then pass the reason and path.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift:283` `reuse/reuse` — `expectMissingDirectoryRefusal` is a near-copy of the existing `expectRelativePathRefusal` (line 148). Both run the same do/catch around a `body`, assert `.invalidParams`, and compare `error.data` to an expected object. The new helper differs only in the expected data and the failure text. Writing a parallel helper means two refusal assertions that can drift apart. Generalize `expectRelativePathRefusal` into one helper that takes the expected `data` value and a failure label, then have both the relative-path and missing-directory tests call it. Keep the per-case data at the call sites.

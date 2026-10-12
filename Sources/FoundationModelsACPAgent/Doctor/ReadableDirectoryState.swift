@@ -33,11 +33,9 @@ enum ReadableDirectoryState {
     /// - Parameter directory: The directory to test.
     /// - Returns: The state of that directory.
     static func of(_ directory: URL) -> ReadableDirectoryState {
-        let path = directory.path
-        let manager = FileManager.default
-        guard manager.fileExists(atPath: path) else {
+        guard PathKind.of(directory) != .missing else {
             return .missing
         }
-        return manager.isReadableFile(atPath: path) ? .readable : .unreadable
+        return FileManager.default.isReadableFile(atPath: directory.path) ? .readable : .unreadable
     }
 }

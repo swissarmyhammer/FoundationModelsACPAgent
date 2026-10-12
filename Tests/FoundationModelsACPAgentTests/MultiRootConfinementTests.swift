@@ -95,7 +95,10 @@ struct MultiRootConfinementTests {
     ) async throws {
         let wired = try await makeWiredAgent(label: label)
 
-        await SessionSetupTests.expectRelativePathRefusal(naming: field) {
+        await SessionSetupTests.expectRefusal(
+            carrying: SessionSetupTests.expectedRefusalData(naming: field),
+            naming: field.rawValue
+        ) {
             _ = try await wired.harness.connection.newSession(request)
         }
         #expect(await wired.agent.sessions.isEmpty)
@@ -164,7 +167,10 @@ struct MultiRootConfinementTests {
     /// carries every entry as sent, so a skip here would drop a
     /// confinement root the client asked for and never say so.
     @Test func aRelativePathStringIsRefusedFromTheAdditionalRoots() async {
-        await SessionSetupTests.expectRelativePathRefusal(naming: .additionalDirectories) {
+        await SessionSetupTests.expectRefusal(
+            carrying: SessionSetupTests.expectedRefusalData(naming: .additionalDirectories),
+            naming: SessionSetup.PathField.additionalDirectories.rawValue
+        ) {
             _ = try SessionSetup.additionalRoots(
                 fromPaths: ["relative/entry", "/extra/a", "/extra/b"])
         }
