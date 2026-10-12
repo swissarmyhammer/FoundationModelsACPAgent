@@ -1008,10 +1008,8 @@ extension RoutedLLM {
     ///   - instructions: The freshly assembled instructions, or `nil` to keep
     ///     the recorded instructions.
     ///   - tools: The tools the model can call.
-    /// - Returns: The restored session and its reports. The compaction keeps
-    ///   each skill that the model loads with `use skill`
-    ///   (``SkillOutputProtection``). While an operation is pending, the
-    ///   session does not run a no-op tool call (``NoOpToolCall``).
+    /// - Returns: The restored session and its reports, with the host rules of
+    ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
     /// - Throws: Whatever Router's restore throws.
     func restoreSessionWithHostChecks(
         id: ULID,

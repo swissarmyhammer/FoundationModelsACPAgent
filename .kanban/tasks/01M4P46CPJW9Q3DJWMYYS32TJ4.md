@@ -98,6 +98,48 @@ comments:
     - Request text, ready to send when a CodeContext session runs: make `detectProjects` answer in less than 6 s on a Django clone during the first index pass. Evidence: run no-otel-1011, every runCode call of detectProjects went pending; the result came 7.4 to 26.7 s after the 6 s settle period (9.4 s in django__django-13964); older runs 3.2 to 7.2 s. Likely cause (not measured): `detectProjects()` walks the full tree on the `CodeContext` actor while the first index pass runs on the same actor. Possible fixes: answer from the projects that `start()` already found, or walk the tree off the actor.
     - Acceptance criterion 2 of this task ("a sibling task exists for it") is open until that task exists.
   timestamp: 2026-10-12T12:58:19.272960+00:00
+- actor: claude-code
+  id: 01m4r36y4206gn2me5tggw4wrp
+  text: |-
+    ### Scope change (2026-10-12)
+    - Item 3 (the bench check) and acceptance criteria 2 (the CodeContext task) and 3 (the bench result) move to the new task 01M4R36QP93DA308H2YNWY1GCF, "Bench check of the no-op stop, and the detectProjects settle task for CodeContext".
+    - Reason: they are not code, and the review gate of this task must not close them as done. This task keeps items 1, 2 (the cause: found and recorded), the no-op wiring and its tests, and acceptance criterion 1 (the README).
+  timestamp: 2026-10-12T13:00:41.986374+00:00
+- actor: claude-code
+  id: 01m4r3fex90mmmsba655nvf2nt
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit d29e628). 3 findings, 3 confirmed, 0 refuted (7 validator runs, 0 failed). Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:1013 (duplication/duplication), Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift:220 (code-hygiene/magic-numbers-swift), Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift:261 (reuse/reuse).
+    - not examined: README.md (no validator applies to it) and the 4 `.kanban/` files (ignore rule).
+    - scope: the bench check and the CodeContext task are in task 01M4R36QP93DA308H2YNWY1GCF. This review does not count them.
+    - next: /implement. Fix the 3 items in "## Review Findings (2026-10-12 08:00)". The task stays in review.
+  timestamp: 2026-10-12T13:05:21.321414+00:00
+- actor: claude-code
+  id: 01m4r3g4jrxkxt9mt207z161tg
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 11 files (NoOpToolCall.swift new, NoOpToolCallTests.swift new, SessionSetup, SessionResume, README, 6 doc comments); pins Router 9de67e9, Multitool e57ddf8, Extras c0e46ae, Agents de4bed3, CodeContext 3e84f52, ACPClient 3c3adb9
+    - test: green — swift test 921 tests / 100 suites passed; IntegrationTests build complete
+    - commit: d29e628
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:1013, Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift:220, Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift:261
+  timestamp: 2026-10-12T13:05:43.512491+00:00
+- actor: claude-code
+  id: 01m4r3qaka1qr8yhgw3fw6gd4e
+  text: |-
+    ### Findings of 2026-10-12 08:00: fixed
+    - duplication: the "Returns" text of `restoreSessionWithHostChecks` now refers to `makeBudgetedSession` with the words of the finding. The rule sentences are only on `makeBudgetedSession`.
+    - magic-numbers-swift: swiftlint `no_magic_numbers` (allowed 0, 1, -1, 100) found one literal only in NoOpToolCallTests.swift: `.seconds(60)`. It is now `.seconds(workSeconds)` with `private static let workSeconds: Int64 = 60`. swiftlint finds 0 now in the changed files.
+    - reuse: new `Tests/FoundationModelsACPAgentTestSupport/CallCounter.swift` (`public final class CallCounter: Sendable`, `record()`, `count`, the names of `ReactionCounter`). `ReactionCounter` (TerminationHandlerTests) and `CountingRunCodeTool.Counter` (NoOpToolCallTests) are deleted, and both suites use `CallCounter`. The unused `import Synchronization` is removed from NoOpToolCallTests.swift.
+    - Discovery: `SnapshotSequence` in TerminalStreamTests.swift also has a `Mutex(0)`, but it gives an index for each call. It is not the same shape, so it stays.
+    - Discovery: `edit file` with `replace_all` changed only 1 of 4 places in TerminationHandlerTests.swift. Check the result of a replace-all edit.
+  timestamp: 2026-10-12T13:09:39.050974+00:00
+- actor: claude-code
+  id: 01m4r3qd6405y61etm898086yd
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift, Tests/FoundationModelsACPAgentTests/TerminationHandlerTests.swift, Tests/FoundationModelsACPAgentTestSupport/CallCounter.swift (new). 3 of 3 findings fixed and checked. `swift test --filter 'NoOpToolCallTests|TerminationHandlerTests|CompositionInterruptTests|SessionResumeTests'`: 40 tests in 4 suites passed, 0 failures; the only warning is the accepted mlx "missing creator" warning.
+    - next: /review. The task stays in doing.
+  timestamp: 2026-10-12T13:09:41.700118+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Use the injection model for pending work: README, detectProjects settle, bench check'
@@ -132,3 +174,13 @@ The user decided: there are no turns, only async queues. The result of pending w
 ## Tests
 
 - The bench run in item 3 is the check. Use `scan.py` and count the `runCode` calls whose snippet calls no `tools.*` verb. #bench
+
+## Review Findings (2026-10-12 08:00)
+
+> Scope: `review sha HEAD~1..HEAD` (commit d29e628). The review examined only the lines that this change added or changed. 10 files were examined. 5 files were not examined: 4 files in `.kanban/` (from `.reviewignore`), and `README.md` (no validator applies to it).
+>
+> Item 3 and acceptance criteria 2 and 3 moved to task 01M4R36QP93DA308H2YNWY1GCF (see the comment "Scope change (2026-10-12)"). This review does not count them against this task.
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:1013` `duplication/duplication` — The "Returns" doc text of `restoreSessionWithHostChecks` has the same two sentences as the doc text of `makeBudgetedSession`, word for word. The text about skill-output protection and the no-op check is copied, thus the two comments can become different when a person edits one of them. Keep the full sentences only on `makeBudgetedSession`. In `restoreSessionWithHostChecks`, write "The restored session and its reports, with the host rules of ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``." Then the rule text is in one doc comment only.
+- [x] `Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift:220` `code-hygiene/magic-numbers-swift` — Replace the magic numbers with named constants. Do this for all magic numbers in the file, not only on this line.
+- [x] `Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift:261` `reuse/reuse` — The new `CountingRunCodeTool.Counter` makes a second thread-safe counter. The test suite has one already: `ReactionCounter`. The two types have the same shape: a `Sendable` final class with a `Mutex(0)`, an increment method, and a read-only count. Two copies of one function will become different over time. Move one counter into the shared test support (for example `Tests/FoundationModelsACPAgentTestSupport`), and use it in the two suites. Keep the current method names, or change them one time to one name.

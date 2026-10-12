@@ -43,23 +43,6 @@ struct TerminationHandlerTests {
 
     // MARK: - Fixtures
 
-    /// Counts the calls of one reaction: the close of the ACP connection, or
-    /// the stop of a window.
-    private final class ReactionCounter: Sendable {
-        /// The number of calls so far.
-        private let calls = Mutex(0)
-
-        /// Records one call.
-        func record() {
-            calls.withLock { $0 += 1 }
-        }
-
-        /// The number of calls so far.
-        var count: Int {
-            calls.withLock { $0 }
-        }
-    }
-
     /// Records whether the window disarmed its watch.
     private final class DisarmFlag: Sendable {
         /// `true` once the watch is disarmed.
@@ -126,7 +109,7 @@ struct TerminationHandlerTests {
     /// to the failure path of ``AcpAgentCommand/main()``.
     @Test(.timeLimit(.minutes(1)))
     func aTerminationClosesTheConnectionAndThrowsTheSignalEndCode() async throws {
-        let closes = ReactionCounter()
+        let closes = CallCounter()
         let disarmed = DisarmFlag()
         let inbound = Self.neverEndingInbound()
         defer { inbound.gate.finish() }
@@ -147,7 +130,7 @@ struct TerminationHandlerTests {
     /// window returns: the process ends on the normal return of `main()`.
     @Test(.timeLimit(.minutes(1)))
     func anInboundEndClosesTheConnectionAndReturns() async throws {
-        let closes = ReactionCounter()
+        let closes = CallCounter()
         let disarmed = DisarmFlag()
 
         try await TerminationHandler.serve(
@@ -166,7 +149,7 @@ struct TerminationHandlerTests {
     /// code of an end by a signal.
     @Test(.timeLimit(.minutes(1)))
     func aTerminationStopsTheWorkAndThrowsTheSignalEndCode() async throws {
-        let stops = ReactionCounter()
+        let stops = CallCounter()
         let disarmed = DisarmFlag()
         let (stopped, stopGate) = AsyncStream<Never>.makeStream()
 
@@ -191,7 +174,7 @@ struct TerminationHandlerTests {
     /// runs no stop, and disarms its watch.
     @Test(.timeLimit(.minutes(1)))
     func aWindowWithNoTerminationReturnsTheWorkValue() async throws {
-        let stops = ReactionCounter()
+        let stops = CallCounter()
         let disarmed = DisarmFlag()
 
         let value = try await TerminationHandler.run(

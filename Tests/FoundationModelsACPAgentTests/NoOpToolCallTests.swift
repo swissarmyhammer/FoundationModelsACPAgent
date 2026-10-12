@@ -2,7 +2,6 @@ import Foundation
 import FoundationModels
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
-import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -215,9 +214,12 @@ struct PendingJobTool: FoundationModels.Tool, BackgroundTool {
     /// The name of the tool.
     static let toolName = "start_job"
 
-    /// The time that the run works. It is much longer than a test, and the
-    /// close of the session cancels the run.
-    private static let work: Duration = .seconds(60)
+    /// The number of seconds that the run works. It is much longer than a
+    /// test, and the close of the session cancels the run.
+    private static let workSeconds: Int64 = 60
+
+    /// The time that the run works: ``workSeconds``.
+    private static let work: Duration = .seconds(workSeconds)
 
     let name = Self.toolName
 
@@ -243,31 +245,17 @@ struct CountingRunCodeTool: FoundationModels.Tool {
     }
 
     /// The count of the runs, shared by each copy of the tool.
-    private let runs = Counter()
+    private let runs = CallCounter()
 
     let name = NoOpToolCall.runCodeToolName
 
     let description = "a stub of runCode that counts its runs"
 
     /// The count of the runs of the body.
-    var runCount: Int { runs.value }
+    var runCount: Int { runs.count }
 
     func call(arguments: Arguments) async throws -> String {
-        runs.increment()
+        runs.record()
         return arguments.code
-    }
-
-    /// A count that each copy of the tool shares.
-    final class Counter: Sendable {
-        /// The count.
-        private let count = Mutex(0)
-
-        /// The current count.
-        var value: Int { count.withLock { $0 } }
-
-        /// Adds one to the count.
-        func increment() {
-            count.withLock { $0 += 1 }
-        }
     }
 }
