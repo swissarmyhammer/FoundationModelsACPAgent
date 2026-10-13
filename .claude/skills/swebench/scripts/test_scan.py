@@ -709,6 +709,18 @@ class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
         out = self.scan_rows(FIRST, rows)
         self.assertIn(f"{FIRST}: before the last edit: no test run; after it: Ran 9 tests in 0.017s OK", out)
 
+    def test_a_getlines_read_of_a_command_that_did_not_finish_is_a_test_result(self):
+        """django__django-13964 of the run pending-inner-1012 (task ^0s686vn):
+        the snippet ended while its execute call ran, and the result names the
+        command as `commandID "<ULID>"`, with no completion token. A later
+        getLines call that reads that command id reads the output of the test
+        run. The summary is in that getLines result."""
+        rows = (edit(10) + plain_call(20, execute_code(self.COMMAND, "{ r: r.output }"), PENDING_INNER)
+                + plain_call(30, f'const r = await tools.shell.getLines({{ commandID: "{ulid(7)}" }});\nreturn r.lines;',
+                             json.dumps(numbered_lines(self.PASSED))))
+        out = self.scan_rows(FIRST, rows)
+        self.assertIn(f"{FIRST}: before the last edit: no test run; after it: Ran 9 tests in 0.017s OK", out)
+
     def test_the_final_result_of_a_pending_snippet_is_a_test_result(self):
         """django__django-14411 of the run inner-await-1013, seq 758: the
         model got the pending notice of the snippet. The final result of the

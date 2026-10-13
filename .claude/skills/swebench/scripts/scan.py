@@ -103,10 +103,14 @@ REPEAT_LIMIT = 8
 ULID_RE = re.compile(r"\b[0-9A-HJKMNP-TV-Z]{26}\b")
 # The time fields of a result. They also change from call to call.
 ELAPSED_RE = re.compile(r'("(?:elapsedMs|durationMs)"\s*:\s*)[0-9.]+')
-# The completion token of a pending notice: the id of the command that runs
-# in the background. The notice can be JSON in a JSON string, so a quote can
-# have a backslash before it.
-TOKEN_RE = re.compile(r'completionToken\\*"\s*:\s*\\*"([0-9A-HJKMNP-TV-Z]{26})')
+# The texts before the id of a command that runs in the background: the
+# completion token of a pending notice (`"completionToken": "<ULID>"`), and the
+# command id of a tools.* call that did not finish (PENDING_INNER:
+# `commandID "<ULID>"`, with no colon).
+RUNNING_ID_KEYS = (r'completionToken\\*"\s*:', r"commandID")
+# The id of a command that runs in the background. The notice can be JSON in a
+# JSON string, so a quote can have a backslash before it.
+TOKEN_RE = re.compile(rf'(?:{"|".join(RUNNING_ID_KEYS)})\s*\\*"([0-9A-HJKMNP-TV-Z]{{26}})')
 # The verb that runs a shell command. Only a shell command can start a test run.
 SHELL_VERB = "tools.shell.execute"
 # The verbs that change a file.
