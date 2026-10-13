@@ -34,8 +34,25 @@ comments:
     - evidence: Only .claude/skills/swebench/ changed. No Swift source changed since the last green swift test, so swift test was not run. `python3 -W error -m unittest` in .claude/skills/swebench/scripts: 64 tests, OK. In .claude/skills/swebench-score/scripts: 34 tests, OK. `uv run --no-project --with swebench==5.0.2 python -W error -m unittest` in bench: 254 tests, OK. Zero failures, zero warnings, zero skipped. No file was changed by this step. No commit was made.
     - next: review
   timestamp: 2026-10-13T14:52:44.061794+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4twq1rcbj8nmr0zwt52793w
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (7eb9f59): 0 findings, 0 confirmed, 0 refuted, 8 attempted, 0 failed. Not reviewed: .claude/skills/swebench/SKILL.md (no validator matches), 2 .kanban files (.reviewignore). There are no prior Review Findings sections.
+    - acceptance: The HEAD~1 scan.py ran from a scratch copy (git archive; scan.py imports only the standard library). `scan.py --name pending-inner-1012 --timeout 5400`: 164 lines before and after. `--name inner-await-1013 --timeout 5400`: 158 lines before and after. The only differences are the clock lines (scan time, "rate per hour over N h", "last line N s ago"). The new case `test_a_getlines_read_of_a_command_that_did_not_finish_is_a_test_result` passes on HEAD (64 tests, OK) and fails on the HEAD~1 scan.py ("after it: no test run"). Thus work items 1 and 2 are done.
+    - next: done
+  timestamp: 2026-10-13T15:04:53.260035+00:00
+- actor: claude-code
+  id: 01m4twqhthfwtp1ep0my64qa3d
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — scan.py, test_scan.py, SKILL.md
+    - test: green — python3 -W error -m unittest: swebench/scripts 64, swebench-score/scripts 34, bench 254 passed, 0 skipped
+    - commit: 7eb9f59
+    - review: clean — 0 findings; scans of pending-inner-1012 and inner-await-1013 differ from HEAD~1 only in clock lines
+  timestamp: 2026-10-13T15:05:09.713219+00:00
+position_column: done
+position_ordinal: ffce80
 title: 'swebench scan: read the commandID of a "did not finish" notice as the id of a test run'
 ---
 ## Why
