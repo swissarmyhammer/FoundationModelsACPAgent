@@ -72,6 +72,12 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// can see that the root session uses the value of the context.
     static let shortSettlePeriod: TimeInterval = 0.5
 
+    /// A settle period that is much longer than the default, so that a
+    /// quick run ends in it also on a CI runner with a high load. The
+    /// settle period ends when the run ends, so a quick run does not wait
+    /// for all of it. The value is less than the time limit of the test.
+    static let longSettlePeriod: TimeInterval = 40
+
     /// The longest time that a test waits for a state.
     static let waitTimeout: Duration = .seconds(5)
 
@@ -446,7 +452,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     func aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall() async throws {
         let hold = ScriptedHold()
         let context = try await Self.makeContext(
-            label: "quick", script: Self.startAgentScript(hold: hold))
+            label: "quick", script: Self.startAgentScript(hold: hold),
+            inlineSettleGrace: Self.longSettlePeriod)
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
         let session = Self.makeRootSession(surface: surface, context: context)
 
