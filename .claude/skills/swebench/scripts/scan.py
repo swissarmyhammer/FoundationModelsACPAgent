@@ -113,6 +113,10 @@ SHELL_VERB = "tools.shell.execute"
 EDIT_VERBS = frozenset({"files.edit", "files.patch", "files.write"})
 # The line number that getLines puts before each output line: "12: text".
 LINE_NO_RE = re.compile(r"^\d+: ")
+# The scan reads the strings of a JSON result to this depth only. A snippet
+# result keeps the output of a command at depth 1 to 3, for example
+# `{ tests: { out: [...] } }`.
+JSON_DEPTH = 8
 # The summary of a unittest run: "Ran 9 tests in 0.017s", then a line with
 # "OK" or "FAILED (errors=1)".
 RAN_RE = re.compile(r"^Ran \d+ tests? in [\d.]+s$", re.M)
@@ -884,18 +888,29 @@ def repeats(groups):
     return sum(g["n"] - 1 for g in groups.values()), largest
 
 
+def string_values(value, depth=0):
+    """Give each string in a JSON value, in the order of the value. Do not go deeper than JSON_DEPTH."""
+    if isinstance(value, str):
+        return [value]
+    if depth >= JSON_DEPTH:
+        return []
+    kids = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+    return [s for kid in kids for s in string_values(kid, depth + 1)]
+
+
 def output_text(result):
-    """Give the output lines of a shell result as text.
+    """Give the output lines of a shell result or a snippet result as text, with no line numbers.
 
     A getLines result has a "lines" list, and an execute result an "output"
-    list, each line with its line number. Remove the line numbers. Give any
-    other result as it is.
+    list, each line with its line number. A snippet result has the shape that
+    the snippet returns: for example `{ exit: r.exitCode, out: r.output }`,
+    `r.output`, or `r.output.join("\\n")`. Read each line of each string in the
+    JSON value. Give a result that is not JSON as it is.
     """
     j = json_value(result)
-    lines = (j.get("lines") or j.get("output")) if isinstance(j, dict) else None
-    if not isinstance(lines, list):
+    if j is None:
         return result or ""
-    return "\n".join(LINE_NO_RE.sub("", str(line)) for line in lines)
+    return "\n".join(LINE_NO_RE.sub("", line) for s in string_values(j) for line in s.splitlines())
 
 
 def run_summary(result):
@@ -1255,11 +1270,15 @@ def seen_state(code, result):
     - code: the code of the snippet.
     - result: the result that the model got for the snippet.
 
-    PENDING: the result is the notice that the snippet or its command still
-    runs. NO_OUTPUT: the result is empty, the snippet failed, or each value
-    of the returned object that reads the execute result is missing or empty.
+    COMPLETE: the result has a test summary (see run_summary), or it is not
+    PENDING or NO_OUTPUT. PENDING: the result is the notice that the snippet
+    or its command still runs. NO_OUTPUT: the result is empty, the snippet
+    failed, or each value of the returned object that reads the execute
+    result is missing or empty.
     """
     text = (result or "").strip()
+    if run_summary(text):
+        return COMPLETE
     j = json_value(text)
     values = j.values() if isinstance(j, dict) else []
     if is_pending(text) or PENDING_INNER in text or any(isinstance(v, dict) and v.get("pending") is True for v in values):
@@ -1270,6 +1289,21 @@ def seen_state(code, result):
     if isinstance(j, dict) and keys and all(j.get(k) in (None, "", [], {}) for k in keys):
         return NO_OUTPUT
     return COMPLETE
+
+
+def repeat_result(notice, detail, pending):
+    """Give the result of a runCode call that the repeat check reads as the result that the model saw.
+
+    - notice: the text that the model got for the call.
+    - detail: the result of the snippet. For a pending snippet, it is the
+      final result of its operation event, or "" when there is none.
+    - pending: True when the call gave the pending notice of the snippet.
+
+    For a pending snippet, the model got the notice. When the final result
+    has a test summary, give the final result: the session gives the model
+    the final result when the snippet ends, so the model saw the test result.
+    """
+    return notice if pending and not run_summary(detail) else detail
 
 
 def gives_output(result):
@@ -1527,12 +1561,14 @@ def scan_transcripts(dirs, gap_s, R):
             if "files.grep" in verbs and ".acp-agent/transcripts" in detail.replace("\\/", "/"):
                 T["self_grep"].append(where)
             cls = runcode_error(detail) or ("outcome failed" if outcome == "failed" else None)
-            add_result(T["results"][inst], (tool, code), detail if seen is None else seen)
-            track_tests(T["timeline"][inst], T["test_ids"][inst], r.get("seq"), code, detail,
+            got = detail if seen is None else seen
+            add_result(T["results"][inst], (tool, code), got)
+            # A pending notice with no final result keeps the completion token
+            # of the command, so the scan can find a later getLines read of it.
+            track_tests(T["timeline"][inst], T["test_ids"][inst], r.get("seq"), code, got,
                         bool(EDIT_VERBS.intersection(verbs)) and not cls)
-            # For a pending snippet, the model got the notice, not the final detail.
             track_repeats(T["repeat_state"][inst], call_seq.get(cid, r.get("seq")), code,
-                          text if isinstance(c, dict) and c.get("pending") else detail)
+                          repeat_result(text, detail, isinstance(c, dict) and bool(c.get("pending"))))
             if cls:
                 T["tool_err"][tool] += 1
                 for v in error_verbs(detail, verbs):

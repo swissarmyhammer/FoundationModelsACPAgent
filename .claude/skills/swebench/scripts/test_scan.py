@@ -172,10 +172,14 @@ def pending_snippet(seq, code):
     return model_call(seq, "runCode", {"code": code}, json.dumps(result))
 
 
+def numbered_lines(lines):
+    """Give the output lines as the shell tool gives them: "1: text", "2: text", ..."""
+    return [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
+
+
 def shell_lines(command_id, lines):
     """Give the detail of a getLines call that read the output lines of the command."""
-    numbered = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
-    return json.dumps({"commandID": command_id, "first": 1, "last": len(lines), "lines": numbered,
+    return json.dumps({"commandID": command_id, "first": 1, "last": len(lines), "lines": numbered_lines(lines),
                        "status": "completed"})
 
 
@@ -210,9 +214,31 @@ def execute_code(command, returned="r"):
 
 def inline_report(lines, exit_code=0):
     """Give the report of a shell command that ended inline, with its output lines."""
-    numbered = [f"{i}: {line}" for i, line in enumerate(lines, start=1)]
     return json.dumps({"commandID": ulid(99), "durationMs": 400, "exitCode": exit_code, "lines": len(lines),
-                       "output": numbered, "status": "completed"})
+                       "output": numbered_lines(lines), "status": "completed"})
+
+
+def awaited_report(lines, exit_code=0):
+    """Give the result of a snippet that returns `{ exit: r.exitCode, out: r.output }` of an awaited execute call.
+
+    Since Multitool 37b9407 an awaited execute call in a snippet gives the
+    real result, so the output of the command is in the snippet result.
+    """
+    return json.dumps({"exit": exit_code, "out": numbered_lines(lines)})
+
+
+def plain_pending(token):
+    """Give the plain result of a runCode call that still runs: the notice with the completion token."""
+    return json.dumps({"pending": True, "completionToken": token,
+                       "next": "The snippet is still running in the background, and this is not its result."})
+
+
+def snippet_end_row(seq, token, detail):
+    """Give the final operation event of the pending snippet token, whose final result is the detail."""
+    return {"kind": "toolOutput", "seq": seq, "ts": apple_time(OLD_START),
+            "text": f"[runCode] runCode ({token}) completed: {detail}",
+            "entry": {"entryId": f"01ENTRY{seq:019d}", "toolName": "runCode",
+                      "segments": [{"contentJSON": json.dumps({"correlationID": token, "detail": detail})}]}}
 
 
 # The text that a snippet result gets when a tools.* call of the snippet still
@@ -623,6 +649,10 @@ class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
     the edit did not change that."""
 
     NOT_LOADED = ["Ran 1 test in 0.000s", "", "FAILED (errors=1)"]
+    # The output of a test run that passed.
+    PASSED = ["Ran 9 tests in 0.017s", "", "OK"]
+    # The test command of the fake runs.
+    COMMAND = "python tests/runtests.py urls 2>&1 | tail -15"
     # The text of each problem about a test result that the edit did not change.
     SAME_TEXT = "same before and after"
 
@@ -656,6 +686,39 @@ class TheTestResultBeforeAndAfterTheLastEdit(ScanTestCase):
         self.assertIn(f"{FIRST}: before the last edit: no test run; "
                       f"after it: Ran 1 test in 0.000s FAILED (errors=1)", out)
         self.assertEqual(self.problems_with(self.SAME_TEXT), [])
+
+    def test_a_summary_in_the_runcode_result_is_a_test_result(self):
+        """django__django-14016 of the run inner-await-1013, seq 226: the
+        awaited execute call ended in the snippet, and the snippet returned
+        `{ exit: r.exitCode, out: r.output }`. The summary is in the runCode
+        result, and no getLines call comes after it."""
+        code = execute_code(self.COMMAND, "{ exit: r.exitCode, out: r.output }")
+        rows = (plain_call(10, code, awaited_report(self.NOT_LOADED, exit_code=1)) + edit(20)
+                + plain_call(30, code, awaited_report(self.PASSED)))
+        out = self.scan_rows(FIRST, rows)
+        self.assertIn(f"{FIRST}: before the last edit: Ran 1 test in 0.000s FAILED (errors=1); "
+                      f"after it: Ran 9 tests in 0.017s OK", out)
+
+    def test_a_summary_in_a_getlines_result_is_a_test_result(self):
+        """The execute call went pending, and the snippet returned its notice.
+        A later getLines call that returns `r.lines` reads the output of the
+        command. The summary is in that getLines result."""
+        rows = (edit(10) + plain_call(20, execute_code(self.COMMAND), plain_pending(ulid(3)))
+                + plain_call(30, f'const r = await tools.shell.getLines({{ commandID: "{ulid(3)}" }});\nreturn r.lines;',
+                             json.dumps(numbered_lines(self.PASSED))))
+        out = self.scan_rows(FIRST, rows)
+        self.assertIn(f"{FIRST}: before the last edit: no test run; after it: Ran 9 tests in 0.017s OK", out)
+
+    def test_the_final_result_of_a_pending_snippet_is_a_test_result(self):
+        """django__django-14411 of the run inner-await-1013, seq 758: the
+        model got the pending notice of the snippet. The final result of the
+        snippet, in the operation event of its completion token, has the
+        summary. The notice itself is not a test result."""
+        code = execute_code(self.COMMAND, "{ exit: r.exitCode, out: r.output }")
+        rows = (edit(10) + plain_call(20, code, plain_pending(ulid(4)))
+                + [snippet_end_row(25, ulid(4), awaited_report(self.PASSED))])
+        out = self.scan_rows(FIRST, rows)
+        self.assertIn(f"{FIRST}: before the last edit: no test run; after it: Ran 9 tests in 0.017s OK", out)
 
 
 class TheTestCommandIsNormalized(unittest.TestCase):
@@ -910,6 +973,18 @@ class ARepeatedTestRunNamesItsCause(ScanTestCase):
                 + plain_call(20, f'const r = await tools.shell.getLines({{ commandID: "{ulid(3)}" }});\nreturn r;',
                              shell_lines(ulid(3), ["Ran 3 tests in 0.1s", "OK"]))
                 + plain_call(30, execute_code("python tests/runtests.py urls"), inline_report(["OK"])))
+        out = self.scan_rows(FIRST, rows)
+        self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
+        self.assertIn(f"{FIRST}: seq 10 -> 30 runtests.py urls (the earlier result: complete)", out)
+
+    def test_a_test_summary_in_the_final_result_of_a_pending_snippet_is_complete(self):
+        """The model got the pending notice of the snippet. The session gives
+        the model the final result of the snippet when it ends. That result has
+        a test summary, so the model saw the result of the run."""
+        code = execute_code("python tests/runtests.py urls", "{ exit: r.exitCode, out: r.output }")
+        rows = (plain_call(10, code, plain_pending(ulid(6)))
+                + [snippet_end_row(15, ulid(6), awaited_report(self.SUITE_OUTPUT))]
+                + plain_call(30, code, awaited_report(self.SUITE_OUTPUT)))
         out = self.scan_rows(FIRST, rows)
         self.assertEqual(self.problems_with(self.REPEAT_TEXT), [])
         self.assertIn(f"{FIRST}: seq 10 -> 30 runtests.py urls (the earlier result: complete)", out)
