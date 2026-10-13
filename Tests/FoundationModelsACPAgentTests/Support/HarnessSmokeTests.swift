@@ -94,7 +94,7 @@ final class PathRecordingTool: Tool, Sendable {
 
         #expect(await collector.updates.isEmpty)
         let pendingPermissionCounts = await MainActor.run {
-            harness.client.openSessions.values.map(\.pendingPermissions.count)
+            harness.client.openSessions.map(\.pendingPermissions.count)
         }
         #expect(pendingPermissionCounts.allSatisfy { $0 == 0 })
         await harness.close()

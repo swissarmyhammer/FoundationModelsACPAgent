@@ -264,7 +264,7 @@ public struct AgentClientHarness: Sendable {
     /// test observes buffered text without sleeping for the cadence.
     @MainActor
     public func flushPendingChunks() {
-        for session in client.openSessions.values {
+        for session in client.openSessions {
             session.flushPendingChunks()
         }
     }
