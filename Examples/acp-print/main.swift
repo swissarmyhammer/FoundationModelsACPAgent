@@ -173,7 +173,7 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
         let stopReason = await answer.value
         await connection.close()
         guard let stopReason else {
-            logToStandardError("the connection ended before the turn reached an idle state")
+            logToStandardError("the connection ended before the prompt reached an idle state")
             return EXIT_FAILURE
         }
         logToStandardError("stop reason: \(stopReason.wireValue)")

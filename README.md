@@ -29,7 +29,11 @@ let composed = try await ComposedAgent.compose(name: name, workingDirectory: cwd
 // streams session/update notifications. stdout carries ndJSON only; logs go
 // to stderr. A read-one-then-write-one loop deadlocks here.
 let connection = await composed.serve(over: .stdio, logger: .standardError)
-while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+// The connection serves until the client closes the wire. Then the agent
+// closes each open session, and the host waits for that before it exits, so
+// the history of each session is written.
+_ = await connection.closed
+await composed.waitForConnectionTeardown()
 ```
 
 A host that makes its own `AgentSideConnection`, for example over an
@@ -307,10 +311,21 @@ code gives the local detail.
   can drift and a resume then restores the wrong conversation. A fork or a
   sub-agent is never an ACP session: `session/list` does not show it, and it
   does not accept `session/prompt`.
-- **One prompt for each session at a time.** A `session/prompt` for a session
-  that is not idle is a client error, not a queue entry. The `idle` update
-  comes at the end of the prompt, never at the end of one Router submission,
-  because one prompt can make more than one submission.
+- **A prompt is mail.** `session/prompt` puts the prompt into the mailbox of
+  the Router session, and the response comes at once: its `messageId` is the
+  `MailID` of the prompt. A prompt that comes while another one is open is
+  accepted too. The prompt ends at the terminal event of its own mail, so a
+  client waits for the first `idle` after the echo of its own `messageId`.
+  `running` goes out when the first open prompt starts, and `idle` when the
+  last open prompt ends, never at the end of one Router submission. No state
+  update goes out while no prompt is open.
+- **`session/cancel` is a signal.** It sends `cancelAll()` to the Router
+  session. Each open prompt ends `cancelled`, no later than the end of the
+  signal. With no prompt open, it sends the signal and no state update.
+- **`/compact` is a signal.** It starts the compaction and returns at once with
+  "Compaction started." and the `SignalID`. The compaction entry of the
+  session gives the result: the summary, the tokens before and after and the
+  summarizer model, or the reason of a failure or a shortfall.
 - **The sandbox is the only gate.** The agent does not advertise or send
   `session/request_permission`. There is no permission mode, no
   `permissions:` section and no stored decision. A denylist over the command
@@ -369,7 +384,9 @@ binary or load a real model.
 
 The agent uses the telemetry APIs only: swift-log, swift-distributed-tracing
 and swift-metrics. It exports no telemetry. Log records go to stderr, and
-tracing and metrics stay no-op. The OTLP exporter (`swift-otel`) is not a
+tracing and metrics stay no-op. The log record of `session/cancel` carries
+`cancel.signal_id`, the `SignalID` of its `cancelAll()` signal. That key
+replaces `cancel.result`, which an earlier version wrote. The OTLP exporter (`swift-otel`) is not a
 dependency until SwiftPM 6.4.1, because SwiftPM 6.4 `update` loses the traits
 that the root manifest sets on a dependency
 (swiftlang/swift-package-manager#10397).

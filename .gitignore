@@ -10,3 +10,6 @@ Package.resolved
 
 # kanban MCP server scratch logs
 .kanban/*.log
+
+# The output log of a scripted test shell, in any folder.
+.shell/
