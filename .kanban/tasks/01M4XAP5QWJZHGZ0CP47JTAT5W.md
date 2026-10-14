@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4xc0qb3s7vzcs61ww1txmms
+  text: 'From the T1 acceptance: record in the docs that the log metadata key of session/cancel changed from cancel.result (requested | nothingToCancel) to cancel.signal_id (the SignalID of cancelAll()). A dashboard that reads cancel.result must change.'
+  timestamp: 2026-10-14T14:10:47.779016+00:00
 depends_on:
 - 01M4XAP084YKF2WYZQ221KSVA4
 position_column: todo
