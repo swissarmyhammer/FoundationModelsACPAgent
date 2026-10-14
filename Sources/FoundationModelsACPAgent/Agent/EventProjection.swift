@@ -513,6 +513,9 @@ struct EventProjection {
             // prompt reads the end of an answer for the stop reason.
             streamedTextInAnswer = false
             reportUnsentEvent(event)
+        case .mailDelivered, .cancelled, .signalDone, .lost:
+            // Mail and signal bookkeeping with no ACP counterpart.
+            reportUnsentEvent(event)
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsExtras
 import FoundationModelsRouter
 
 // MARK: - A Router session double that counts its closes
@@ -16,10 +17,12 @@ import FoundationModelsRouter
 /// keeps it in ``forks``, so a test can read the close count of the
 /// child as well as the count of the parent.
 ///
-/// A synchronous requirement cannot send its call to the actor of the
-/// real session, because that call needs an `await`. The code under test
-/// does not use these requirements, so each one stops the test with a
-/// message that names it.
+/// A `nonisolated` requirement goes to the real session at once, because
+/// the real session declares it `nonisolated` too. A synchronous requirement
+/// that the real session isolates cannot go to the actor of the real
+/// session, because that call needs an `await`. The code under test does not
+/// use these requirements, so each one stops the test with a message that
+/// names it.
 actor CloseCountingRoutedSession: RoutedSession {
     /// The real session that each call goes to.
     private let wrapped: any RoutedSession
@@ -84,25 +87,74 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// - Parameter workingDirectory: The working directory of the child.
     /// - Returns: The new double over the real child.
     /// - Throws: Whatever the fork of the real session throws.
-    func fork(workingDirectory: URL?) async throws -> RoutedSession {
+    func fork(workingDirectory: URL?) async throws -> any RoutedSession {
         let child = CloseCountingRoutedSession(
             wrapping: try await wrapped.fork(workingDirectory: workingDirectory))
         forks.append(child)
         return child
     }
 
-    // MARK: The calls that go to the real session
+    // MARK: The mail and the signals, which go to the real session at once
 
-    /// Sends the call to the real session.
+    /// Sends the mail to the real session.
+    ///
+    /// - Parameter mail: The mail.
+    /// - Returns: The subscription of the real session.
+    /// - Throws: Whatever the real session throws.
+    nonisolated func mail(_ mail: Mail) throws -> MailSubscription<SessionOutput> {
+        try wrapped.mail(mail)
+    }
+
+    /// Sends the prompt to the real session.
+    ///
+    /// - Parameter prompt: The prompt.
+    /// - Returns: The id of the mail.
+    /// - Throws: Whatever the real session throws.
+    @discardableResult
+    nonisolated func send(_ prompt: Transcript.Prompt) throws -> MailID {
+        try wrapped.send(prompt)
+    }
+
+    /// Sends the compaction signal to the real session.
     ///
     /// - Parameters:
     ///   - prompt: The compaction prompt.
     ///   - budget: The token budget.
-    /// - Returns: The result of the real session.
-    /// - Throws: Whatever the real session throws.
-    func compact(prompt: CompactionPrompt, budget: TokenBudget?) async throws -> CompactionResult {
-        try await wrapped.compact(prompt: prompt, budget: budget)
+    /// - Returns: The id of the signal.
+    @discardableResult
+    nonisolated func compact(prompt: CompactionPrompt, budget: TokenBudget?) -> SignalID {
+        wrapped.compact(prompt: prompt, budget: budget)
     }
+
+    /// Sends the cancel signal of one mail to the real session.
+    ///
+    /// - Parameter id: The id of the queued mail.
+    /// - Returns: The id of the signal.
+    @discardableResult
+    nonisolated func cancel(_ id: MailID) -> SignalID {
+        wrapped.cancel(id)
+    }
+
+    /// Sends the cancel signal of all work to the real session.
+    ///
+    /// - Returns: The id of the signal.
+    @discardableResult
+    nonisolated func cancelAll() -> SignalID {
+        wrapped.cancelAll()
+    }
+
+    /// Sends the replace signal to the real session.
+    ///
+    /// - Parameters:
+    ///   - id: The id of the queued mail.
+    ///   - body: The new body of the mail.
+    /// - Returns: The id of the signal.
+    @discardableResult
+    nonisolated func replace(_ id: MailID, with body: MailBody) -> SignalID {
+        wrapped.replace(id, with: body)
+    }
+
+    // MARK: The calls that go to the real session
 
     /// Sends the call to the real session.
     ///
@@ -117,16 +169,29 @@ actor CloseCountingRoutedSession: RoutedSession {
 
     /// Sends the call to the real session.
     ///
-    /// - Returns: The result of the real session.
-    func cancel() async -> CancellationResult {
-        await wrapped.cancel()
+    /// - Parameter id: The id of the mail.
+    /// - Returns: The terminal event of the mail.
+    /// - Throws: Whatever the real session throws.
+    func awaitTerminal(of id: MailID) async throws -> SessionEvent {
+        try await wrapped.awaitTerminal(of: id)
     }
 
     /// Sends the call to the real session.
     ///
-    /// - Returns: Whether the real session drained.
-    func drain() async -> Bool {
-        await wrapped.drain()
+    /// - Parameter id: The id of the mail.
+    /// - Returns: The answer of the mail.
+    /// - Throws: Whatever the real session throws.
+    func awaitAnswer(of id: MailID) async throws -> SessionAnswer {
+        try await wrapped.awaitAnswer(of: id)
+    }
+
+    /// Sends the call to the real session.
+    ///
+    /// - Parameter id: The id of the signal.
+    /// - Returns: The terminal event of the signal.
+    /// - Throws: Whatever the real session throws.
+    func awaitTerminal(of id: SignalID) async throws -> SessionEvent {
+        try await wrapped.awaitTerminal(of: id)
     }
 
     /// Sends the call to the real session.
@@ -138,42 +203,16 @@ actor CloseCountingRoutedSession: RoutedSession {
 
     /// Sends the call to the real session.
     ///
-    /// - Parameter message: The id of the message to take back.
-    /// - Returns: The result of the real session.
-    func cancel(message: MessageID) async -> MessageCancellationResult {
-        await wrapped.cancel(message: message)
-    }
-
-    /// Sends the call to the real session.
-    ///
-    /// - Parameter prompt: The message to send.
-    /// - Returns: The id of the message.
-    func send(_ prompt: Transcript.Prompt) async -> MessageID {
-        await wrapped.send(prompt)
-    }
-
-    /// Sends the call to the real session.
-    ///
-    /// - Returns: The waiting messages of the real session.
-    func pendingMessages() async -> [(id: MessageID, prompt: Transcript.Prompt)] {
+    /// - Returns: The queued mail of the real session.
+    func pendingMessages() async -> [Mail] {
         await wrapped.pendingMessages()
     }
 
     /// Sends the call to the real session.
     ///
-    /// - Parameters:
-    ///   - id: The id of the waiting message.
-    ///   - prompt: The new message.
-    /// - Returns: The result of the real session.
-    func replace(id: MessageID, prompt: Transcript.Prompt) async -> MessageQueueMutationResult {
-        await wrapped.replace(id: id, prompt: prompt)
-    }
-
-    /// Sends the call to the real session.
-    ///
-    /// - Returns: The queue depth of the real session.
-    func messageQueueDepth() async -> MessageQueueDepth {
-        await wrapped.messageQueueDepth()
+    /// - Returns: The mail queue depth of the real session.
+    func mailQueueDepth() async -> MailQueueDepth {
+        await wrapped.mailQueueDepth()
     }
 
     /// Sends the call to the real session.
@@ -222,7 +261,7 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// real session.
     ///
     /// - Returns: Never returns.
-    func streamSessionEvents() -> AsyncStream<SessionEvent> {
+    func streamSessionEvents() -> AsyncStream<SessionOutput> {
         preconditionFailure("CloseCountingRoutedSession does not support streamSessionEvents()")
     }
 

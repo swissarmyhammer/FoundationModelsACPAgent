@@ -1,5 +1,6 @@
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsRouter
 import Logging
 import TelemetryTestSupport
 import Testing
@@ -18,9 +19,6 @@ import Testing
 
     /// The label of each logger of the prompt execution.
     private static let promptExecutionLoggerLabel = "FoundationModelsACPAgent.PromptExecution"
-
-    /// The cancel result name of a cancel that stopped work in flight.
-    private static let requestedCancelResult = "requested"
 
     /// The label of the scripted fixture of this suite.
     private static let fixtureLabel = "SessionSurfaceLoggingTests"
@@ -56,12 +54,11 @@ import Testing
     }
 
     /// A `session/cancel` for a session with a running prompt writes one
-    /// `info` record. The record holds the session id and the name of the
-    /// cancel result in its metadata. The pass of the prompt holds, thus the
-    /// cancel finds work in flight and the result is `requested`.
+    /// `info` record. The record holds the session id and the `SignalID` of
+    /// the `cancelAll()` signal in its metadata.
     @Test(.timeLimit(.minutes(1)))
-    func cancelOfARunningPromptWritesOneInfoWithTheCancelResultInMetadata() async throws {
-        let cancelResultKey = ACPAgentTelemetry.LogMetadataKey.cancelResult
+    func cancelOfARunningPromptWritesOneInfoWithTheCancelSignalInMetadata() async throws {
+        let cancelSignalKey = ACPAgentTelemetry.LogMetadataKey.cancelSignalId
         let records = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await ScriptedPromptFixture.make(
                 script: [.textDelta("working"), .hold], label: Self.fixtureLabel)
@@ -71,7 +68,7 @@ import Testing
             try await fixture.harness.connection.sessionCancel(
                 CancelSessionNotification(sessionId: fixture.sessionId))
             try await Poll.until("the cancel record is in the capture") {
-                context.logRecords.contains { $0.metadata[cancelResultKey] != nil }
+                context.logRecords.contains { $0.metadata[cancelSignalKey] != nil }
             }
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
             try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
@@ -79,11 +76,15 @@ import Testing
             return (sessionId: fixture.sessionId.rawValue, records: context.logRecords)
         }
 
-        let cancelRecords = records.records.filter { $0.metadata[cancelResultKey] != nil }
+        let cancelRecords = records.records.filter { $0.metadata[cancelSignalKey] != nil }
         #expect(cancelRecords.count == 1)
         let record = try #require(cancelRecords.first)
         #expect(record.level == .info)
-        #expect(record.metadata[cancelResultKey] == .string(Self.requestedCancelResult))
+        guard case .string(let signal) = record.metadata[cancelSignalKey] else {
+            Issue.record("expected the signal id as a string")
+            return
+        }
+        #expect(ULID(ulidString: signal) != nil)
         #expect(
             record.metadata[ACPAgentTelemetry.LogMetadataKey.sessionId] == .string(records.sessionId))
     }

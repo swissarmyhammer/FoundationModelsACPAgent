@@ -1142,24 +1142,10 @@ extension RoutedACPAgent {
         }
         await promptState.noteCancelRequested()
         await entry.activeElicitationRelay?.cancelPendingElicitations()
-        let result = await entry.session.cancel()
+        let signal = entry.session.cancelAll()
         var metadata = ACPAgentTelemetry.sessionMetadata(params.sessionId)
-        metadata[ACPAgentTelemetry.LogMetadataKey.cancelResult] = "\(Self.cancelResultName(result))"
+        metadata[ACPAgentTelemetry.LogMetadataKey.cancelSignalId] = "\(signal)"
         ACPAgentTelemetry.logger(.promptExecution).info("The session cancelled its work.", metadata: metadata)
-    }
-
-    /// The name of a cancel result, for the log record of a cancel.
-    ///
-    /// The switch declares no `default`, so a result that Router adds later
-    /// stops the build here until somebody names it.
-    ///
-    /// - Parameter result: What the cancel of the Router session found.
-    /// - Returns: The name of the case.
-    static func cancelResultName(_ result: CancellationResult) -> String {
-        switch result {
-        case .requested: "requested"
-        case .nothingToCancel: "nothingToCancel"
-        }
     }
 
     /// Marks the session closed. The session-close task

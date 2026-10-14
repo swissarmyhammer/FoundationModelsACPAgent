@@ -164,7 +164,7 @@ import Testing
     private static let expectedLogMetadataKeys: Set<String> = [
         ACPAgentTelemetry.LogMetadataKey.clientName, ACPAgentTelemetry.LogMetadataKey.configSection,
         ACPAgentTelemetry.LogMetadataKey.filePath, ACPAgentTelemetry.LogMetadataKey.elicitationId,
-        ACPAgentTelemetry.LogMetadataKey.cancelResult,
+        ACPAgentTelemetry.LogMetadataKey.cancelSignalId,
     ]
 
     /// No telemetry record of the agent holds a text of the client, and each

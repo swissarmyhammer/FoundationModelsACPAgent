@@ -14,8 +14,9 @@ import FoundationModelsRouter
 struct SessionFollowUp: Sendable {
     /// Every event of the session, from a subscription that the prompt took
     /// before its caller stream started. It also carries each event of the
-    /// caller answer.
-    let events: AsyncStream<SessionEvent>
+    /// caller answer. Each output carries its event and the origin of the
+    /// event.
+    let events: AsyncStream<SessionOutput>
 
     /// Waits until the session has no more work: `true` when the session is
     /// idle, and `false` when the wait was cancelled or the session closed
@@ -54,15 +55,15 @@ struct SessionEventBuffer: Sendable {
     /// The task that reads the session stream into ``events``.
     private let reader: Task<Void, Never>
 
-    /// Starts the copy of `source`.
+    /// Starts the copy of the events of `source`.
     ///
-    /// - Parameter source: The session-scoped stream of the prompt.
+    /// - Parameter source: The session-scoped output stream of the prompt.
     /// - Returns: The copy.
-    static func reading(_ source: AsyncStream<SessionEvent>) -> SessionEventBuffer {
+    static func reading(_ source: AsyncStream<SessionOutput>) -> SessionEventBuffer {
         let (events, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
         let reader = Task {
-            for await event in source {
-                continuation.yield(event)
+            for await output in source {
+                continuation.yield(output.event)
             }
             continuation.finish()
         }

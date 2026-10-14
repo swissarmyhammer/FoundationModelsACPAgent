@@ -549,7 +549,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let observer = try #require(agents.environment.runEventObserver)
         surface.runCallJoins.openPrompt()
 
-        observer(run, Self.agentToolRunOpenRecord)
+        observer(run, SessionOutput(origin: .system, event: Self.agentToolRunOpenRecord))
 
         #expect(run.state == .running)
         #expect(

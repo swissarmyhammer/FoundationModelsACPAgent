@@ -147,7 +147,11 @@ import Testing
             _ = try await session.respond(to: "request \(request)")
         }
 
-        let result = try await session.compact(budget: Self.foldBudget)
+        let terminal = try await session.awaitTerminal(of: session.compact(budget: Self.foldBudget))
+        guard case .compaction(let result) = terminal else {
+            Issue.record("expected a completed compaction, got \(terminal)")
+            return
+        }
         // The fold must really fold: a shortfall leaves every output as it
         // was, and the assertions below would then prove nothing.
         #expect(result.shortfall == nil, "shortfall: \(String(describing: result.shortfall))")

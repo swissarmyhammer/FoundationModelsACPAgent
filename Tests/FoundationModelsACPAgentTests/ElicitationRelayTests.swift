@@ -235,7 +235,7 @@ struct ElicitationRelayTests {
                 name: serverName,
                 args: [ServerMode.flagName, ServerMode.loopback.rawValue]))
         return try await ScriptedPromptFixture.make(
-            script: ScriptedPromptFixture.makeToolPromptScript(code: code),
+            script: ScriptedPromptFixture.makeToolPromptScript(code: code, onPromptContaining: promptText),
             label: label,
             capabilities: capabilities,
             mcpServers: [server])

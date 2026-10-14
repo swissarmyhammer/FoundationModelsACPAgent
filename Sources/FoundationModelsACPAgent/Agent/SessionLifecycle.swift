@@ -148,7 +148,7 @@ extension RoutedACPAgent {
         if let promptState = entry.activePrompt {
             await promptState.noteCancelRequested()
             await entry.activeElicitationRelay?.cancelPendingElicitations()
-            await entry.session.cancel()
+            entry.session.cancelAll()
             await promptState.waitForPromptEnd()
         }
         // The agent runs stop first: the Router does not know the runs that

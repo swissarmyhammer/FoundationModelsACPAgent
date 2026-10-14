@@ -31,7 +31,7 @@ func makeSubmissionQueued() -> SessionEvent {
 /// - Returns: The event.
 func makeSubmissionStarted(cause: SubmissionStart.Cause = .message) -> SessionEvent {
     .submissionStarted(
-        SubmissionStart(submissionId: syntheticSubmissionId, messageIds: [], cause: cause))
+        SubmissionStart(submissionId: syntheticSubmissionId, mailIds: [], cause: cause))
 }
 
 /// The `submissionEnded` event of one synthetic submission, with `usage`
@@ -56,7 +56,7 @@ extension SessionAnswer {
     /// - Returns: The answer.
     static func makeSynthetic(usage: TokenUsage) -> SessionAnswer {
         SessionAnswer(
-            reply: "", messageIds: [], usage: usage, compactions: [], toolCalls: [],
+            reply: "", mailIds: [], usage: usage, compactions: [], toolCalls: [],
             toolInvocations: [])
     }
 }

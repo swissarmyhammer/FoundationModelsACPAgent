@@ -180,7 +180,9 @@ import Tracing
         let forbidden = [Self.acceptedAnswer, ScriptedServer.elicitEchoMessage]
         let (run, enterRecordsBeforeAnswer) = try await TelemetryCapture.run(forbidding: forbidden) { context in
             let fixture = try await Self.makeTracedFixture(
-                script: ScriptedPromptFixture.makeToolPromptScript(code: Self.formSnippet), context: context,
+                script: ScriptedPromptFixture.makeToolPromptScript(
+                    code: Self.formSnippet, onPromptContaining: Self.elicitationPromptText),
+                context: context,
                 mcpServers: [try Self.loopbackServer()])
             _ = try await fixture.harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.elicitationPromptText))

@@ -262,9 +262,9 @@ enum ACPAgentTelemetry {
         /// The fraction of the context that the compaction goes down to.
         static let compactionTargetFraction = "compaction.target_fraction"
 
-        /// What a `session/cancel` found to cancel: `requested` or
-        /// `nothingToCancel`.
-        static let cancelResult = "cancel.result"
+        /// The `SignalID` of the `cancelAll()` signal that a `session/cancel`
+        /// sent.
+        static let cancelSignalId = "cancel.signal_id"
 
         /// Why the connection closed: `endOfInput`, `transportFailed` or
         /// `closedLocally`. It is the case name of `ConnectionCloseReason`,

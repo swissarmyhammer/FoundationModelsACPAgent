@@ -232,6 +232,24 @@ struct ScriptedPromptFixture {
         [try makeRunCodeCall(code: code), .endPass]
     }
 
+    /// The script of a tool prompt whose `runCode` call plays only on the
+    /// pass of the caller prompt that contains `marker`. Each other pass
+    /// plays no output.
+    ///
+    /// An elicitation answer is mail to the session, and that mail starts
+    /// an answer of its own (`mailbox.md`, section 5). Each pass plays the
+    /// same script, so with ``makeToolPromptScript(code:)`` the answer of
+    /// that mail would run the eliciting call again, with no end.
+    ///
+    /// - Parameters:
+    ///   - code: The snippet the call runs.
+    ///   - marker: A text that only the caller prompt contains.
+    /// - Returns: The script.
+    /// - Throws: The arguments-encoding error.
+    static func makeToolPromptScript(code: String, onPromptContaining marker: String) throws -> [ScriptedPassStep] {
+        [.onPrompt(containing: marker, play: try makeToolPromptScript(code: code)), .endPass]
+    }
+
     /// The step of one `runCode` call with `code`.
     ///
     /// - Parameter code: The snippet the call runs.

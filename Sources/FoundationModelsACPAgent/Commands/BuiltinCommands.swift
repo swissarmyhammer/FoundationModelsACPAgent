@@ -278,15 +278,52 @@ enum BuiltinCommands {
         let reporter = binding.compactionReporter
         let compactionId = CompactionReporter.makeCompactionId()
         await reporter.reportStart(of: compactionId)
-        let result: CompactionResult
+        let signal = binding.session.compact()
+        let terminal: SessionEvent
         do {
-            result = try await binding.session.compact()
+            terminal = try await binding.session.awaitTerminal(of: signal)
         } catch {
             await reporter.reportEnd(of: compactionId, throwing: error)
             return "Compaction failed: \(error)"
         }
-        await reporter.reportEnd(of: compactionId, with: result)
-        return reportText(of: result)
+        switch terminal {
+        case .compaction(let result):
+            await reporter.reportEnd(of: compactionId, with: result)
+            return reportText(of: result)
+        case .compactionFailed(let failure):
+            let error = CompactionSignalError(failure: failure)
+            await reporter.reportEnd(of: compactionId, throwing: error)
+            return "Compaction failed: \(error)"
+        default:
+            let error = CompactionSignalError(unexpected: terminal)
+            await reporter.reportEnd(of: compactionId, throwing: error)
+            return "Compaction failed: \(error)"
+        }
+    }
+
+    /// The error of a `/compact` whose signal did not end with a
+    /// ``SessionEvent/compaction(_:)`` event.
+    private struct CompactionSignalError: Error, CustomStringConvertible {
+        /// The text of the report.
+        let description: String
+
+        /// Makes the error of a compaction that failed.
+        ///
+        /// - Parameter failure: The failure event of the compaction.
+        init(failure: CompactionFailure) {
+            description = switch failure.outcome {
+            case .cancelled: "the compaction was cancelled"
+            case .failed(let text): text
+            }
+        }
+
+        /// Makes the error of a signal that ended with an event that is not a
+        /// compaction terminal.
+        ///
+        /// - Parameter event: The terminal event of the signal.
+        init(unexpected event: SessionEvent) {
+            description = "the compaction signal ended with \(ACPAgentTelemetry.caseName(of: event))"
+        }
     }
 
     /// The text of the `/compact` report for a fold that returned `result`.

@@ -33,7 +33,7 @@ enum ElicitationPoll {
         in session: SessionModel,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws -> PendingElicitation {
-        let sessionId = await session.sessionId
+        let sessionId = session.sessionId
         try await Poll.until(
             "an elicitation of \(sessionId.rawValue) reaches the client",
             { await !pendingElicitations(in: session).isEmpty },

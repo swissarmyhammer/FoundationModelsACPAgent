@@ -996,7 +996,8 @@ import Testing
     @Test(.timeLimit(.minutes(1)))
     func aSessionInAnElicitationHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
-            script: ScriptedPromptFixture.makeToolPromptScript(code: Self.elicitingSnippet),
+            script: ScriptedPromptFixture.makeToolPromptScript(
+                code: Self.elicitingSnippet, onPromptContaining: Self.promptText),
             label: "PromptExecutionTests-elicitation")
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
         _ = try await ElicitationPoll.firstPendingElicitation(in: fixture.firstSession)

@@ -214,7 +214,7 @@ import Testing
     private static func makeAnswered(reply: String) -> SessionEvent {
         .answered(
             SessionAnswer(
-                reply: reply, messageIds: [], usage: makeUsage(), compactions: [], toolCalls: [],
+                reply: reply, mailIds: [], usage: makeUsage(), compactions: [], toolCalls: [],
                 toolInvocations: []))
     }
 
@@ -254,9 +254,9 @@ import Testing
     ///   - idle: What the idle wait gives.
     /// - Returns: The follow-up over the stream.
     private static func makeFollowUp(_ events: [SessionEvent], idle: Bool = true) -> SessionFollowUp {
-        let (stream, continuation) = AsyncStream.makeStream(of: SessionEvent.self)
+        let (stream, continuation) = AsyncStream.makeStream(of: SessionOutput.self)
         for event in events {
-            continuation.yield(event)
+            continuation.yield(SessionOutput(origin: .system, event: event))
         }
         return SessionFollowUp(events: stream) {
             // The continuation stays alive until the wait ends, so the
@@ -308,7 +308,7 @@ import Testing
     @Test func aFailedMailAnswerEndsThePromptWithTheErrorStopReason() async throws {
         let (execution, recorder) = makeSinkedExecution()
         let failure = SessionEvent.answerFailed(
-            AnswerFailure(messageIds: [], reason: .error(Self.mailFailureText)))
+            AnswerFailure(mailIds: [], reason: .error(Self.mailFailureText)))
         let followUp = Self.makeFollowUp(
             Self.callerEvents + [Self.settledRun, makeSubmissionStarted(cause: .mail), failure])
 

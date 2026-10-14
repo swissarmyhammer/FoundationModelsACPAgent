@@ -423,10 +423,16 @@ import Testing
         _ = try await Self.makeRecordedSession(in: fixture, prompts: ["other session"])
 
         let events = try fixture.store.transcript(for: id, inProject: fixture.workingDirectory)
+        // Router also records the facts of each mail as `.mail` events
+        // (mailbox.md, section 5, problem 10). They belong to the session,
+        // but they are not the conversation.
+        let conversation = events.filter { $0.kind != .mail }
 
-        #expect(events.map(\.kind) == [.session, .prompt, .response, .prompt, .response])
+        #expect(events.allSatisfy { $0.sessionId == id })
+        #expect(events.contains { $0.kind == .mail })
+        #expect(conversation.map(\.kind) == [.session, .prompt, .response, .prompt, .response])
         #expect(
-            events.compactMap(\.text)
+            conversation.compactMap(\.text)
                 == ["first prompt", "first prompt", "second prompt", "second prompt"])
         #expect(events.allSatisfy { $0.sessionId == id })
         #expect(
@@ -478,8 +484,10 @@ import Testing
             for: secondRun, inProject: fixture.workingDirectory)
 
         #expect(ids == Set([firstRun, secondRun].map(\.description)))
-        #expect(firstEvents.map(\.kind) == [.session, .prompt, .response])
-        #expect(secondEvents.map(\.kind) == [.session, .prompt, .response])
+        // The `.mail` events are the mail facts that Router records beside
+        // the conversation (mailbox.md, section 5, problem 10).
+        #expect(firstEvents.filter { $0.kind != .mail }.map(\.kind) == [.session, .prompt, .response])
+        #expect(secondEvents.filter { $0.kind != .mail }.map(\.kind) == [.session, .prompt, .response])
         // Both recorder runs start `seq` at zero, so the merged stream holds
         // colliding sequence numbers and only `ts` keeps the groups apart.
         #expect(firstEvents.first?.seq == 0)

@@ -55,7 +55,7 @@ struct QueuedScriptedFixture {
         let second = try await base.harness.client.newSession(
             NewSessionRequest(cwd: AbsolutePath(rawValue: base.cwd.path)))
         return QueuedScriptedFixture(
-            base: base, secondSessionId: await second.sessionId, secondSession: second,
+            base: base, secondSessionId: second.sessionId, secondSession: second,
             passCounter: passCounter)
     }
 
