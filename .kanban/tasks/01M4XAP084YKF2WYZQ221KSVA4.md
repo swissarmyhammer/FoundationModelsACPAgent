@@ -24,10 +24,14 @@ comments:
 
     Open: part 2, the six telemetry capture waits (AgentSpanTests:127, TelemetryContentSafetyTests:200, RequestTracingTests:138 and :344, SessionSurfaceLoggingTests:70, AgentMetricsTests:112), and the delete of Support/Poll.swift. They wait for the Extras commit.
   timestamp: 2026-10-14T16:34:22.315856+00:00
+- actor: claude-code
+  id: 01m4xsv1tvb19svpkfvh7xe46w
+  text: 'T6 done. Commits 8c7308e (part 1), 89762d2 (ProgressReporter observer order, stub chunk gate ^0mxv, two wait fixes ^ftsb), de1d461 (part 2: the six telemetry capture waits use Extras b68a5d4 TelemetryCapture.Context.wait(until:); Support/Poll.swift deleted). No .timeLimit, sleep, clock wait or poll is left in Tests or IntegrationTests; the remaining ContinuousClock reads are elapsed measurements for reports. Router 6cb38629 builds with Extras b68a5d4 with no new warnings (the one build-system warning about the mlx bundle is in every earlier build). Root suite: one final run, 937 pass, 1 known issue. Note: Package.resolved and IntegrationTests/Package.resolved are gitignored, so the pin moves are local only.'
+  timestamp: 2026-10-14T18:12:21.979290+00:00
 depends_on:
 - 01M4XANTXS2E7ECKH044PJHZ63
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffd380
 title: 'T6: Remove the .timeLimit traits and each sleep, clock wait and poll in the tests'
 ---
 Step 4 of the mail work, part T6. Do this task after T5.

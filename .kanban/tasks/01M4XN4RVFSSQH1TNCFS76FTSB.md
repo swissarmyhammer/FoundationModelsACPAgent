@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 8a80
+position_column: done
+position_ordinal: ffd180
 title: 'T6: two waits of part 1 did not wait for the fact that their test checks'
 ---
 Found in the root full run after T6 part 1 (scratchpad t18.log), fixed in the T6 final commit. #mail-step-4
