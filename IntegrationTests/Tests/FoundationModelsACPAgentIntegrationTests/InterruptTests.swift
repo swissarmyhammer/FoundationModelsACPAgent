@@ -38,29 +38,6 @@ struct InterruptTests {
     /// this pause make a prompt of about one and a half seconds.
     private static let chunkDelayMilliseconds = 180
 
-    /// The pause between the two signals of the second case: none. The
-    /// two `SIGINT`s go out back to back, so both reach a child that is
-    /// still alive. A pause wide enough to be worth naming would let the
-    /// first signal end the run, and the second would then have nothing
-    /// to reach.
-    private static let signalGap: Swift.Duration = .zero
-
-    /// The number of seconds in ``firstOutputLimit``.
-    private static let firstOutputLimitSeconds = 60
-
-    /// How long a child may take to write its first stdout byte. It
-    /// covers the process start and the stub composition, which
-    /// downloads nothing.
-    private static let firstOutputLimit: Swift.Duration = .seconds(firstOutputLimitSeconds)
-
-    /// The number of seconds in ``exitLimit``.
-    private static let exitLimitSeconds = 30
-
-    /// How long a child may take to end after its last signal. A
-    /// cancelled prompt ends in milliseconds, and the whole uninterrupted
-    /// prompt lasts under two seconds, so this bound is generous for both.
-    private static let exitLimit: Swift.Duration = .seconds(exitLimitSeconds)
-
     // MARK: - The subprocess driver
 
     /// Runs `acp-agent run <prompt>` over the paced stub model, and
@@ -87,10 +64,7 @@ struct InterruptTests {
                 TierThreeFixture.stubModelVariable: TierThreeFixture.stubModelEnabledValue,
                 TierThreeFixture.stubChunkDelayVariable: String(Self.chunkDelayMilliseconds),
             ],
-            signalCount: signalCount,
-            gap: Self.signalGap,
-            firstOutputLimit: Self.firstOutputLimit,
-            exitLimit: Self.exitLimit)
+            signalCount: signalCount)
     }
 
     // MARK: - The contract
@@ -108,7 +82,7 @@ struct InterruptTests {
     /// text. The interrupted answer must be a **strict** prefix of it:
     /// not empty, so the chunks that arrived were kept; and not the
     /// whole answer, so the prompt really stopped early.
-    @Test(.timeLimit(.minutes(3)))
+    @Test
     func aSignalDuringAPromptExitsFourWithTheTextThatArrived() async throws {
         let whole = try await Self.runAgentCLI(signalCount: 0, label: "InterruptTests-whole")
         #expect(whole.exitCode == Self.endTurnExitCode, "stderr: \(whole.standardError)")
@@ -126,12 +100,12 @@ struct InterruptTests {
         #expect(run.standardError.isEmpty, "stderr: \(run.standardError)")
     }
 
-    /// Two `SIGINT`s end the process inside ``exitLimit``, on the
-    /// cancelled exit code and with nothing on stderr.
+    /// Two `SIGINT`s, back to back, end the process on the cancelled exit
+    /// code and with nothing on stderr.
     ///
-    /// The time limit is the runner's, not an assertion here: a child
-    /// that outlives ``exitLimit`` raises `SignalledRunError`, which
-    /// names the limit it passed.
+    /// The runner waits for the exit event of the child, with no clock: a
+    /// child that does not end holds the test, and a sample of the test
+    /// process shows where it waits.
     ///
     /// **What this case does and does not prove.** Both signals reach a
     /// live child, so the second-signal path is exercised, and the case
@@ -141,8 +115,8 @@ struct InterruptTests {
     /// stream at its consumer, so the first signal already ends this
     /// prompt, and no spawned prompt of the stub model can be made to ignore
     /// a cancellation.
-    @Test(.timeLimit(.minutes(3)))
-    func twoSignalsEndTheProcessInsideTheTimeLimit() async throws {
+    @Test
+    func twoSignalsEndTheProcess() async throws {
         let run = try await Self.runAgentCLI(signalCount: 2, label: "InterruptTests-second")
 
         #expect(run.exitCode == Self.cancelledExitCode, "stderr: \(run.standardError)")

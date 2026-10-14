@@ -262,20 +262,22 @@ import Testing
 
         let before = try await assembler.assemble(skills: registry)
         #expect(before.text.contains("PRELOADED-BODY-V1"))
+        // The subscription comes before the edit, so no reload of the edit is
+        // lost.
+        let reloads = try #require(registry.onReload)
 
         fixture.writeSkill(
             id: "alpha",
             frontmatter: Self.preloadedFrontmatter,
             body: "PRELOADED-BODY-V2")
 
-        // The watcher rebuilds after a debounce; poll the next assemblies
-        // until the edit shows.
-        let reloadTimeout: Duration = .seconds(10)
-        let pollInterval: Duration = .milliseconds(50)
-        let deadline = ContinuousClock.now.advanced(by: reloadTimeout)
+        // The watcher rebuilds the catalog after its debounce, and then it
+        // sends one reload event. The test assembles again after each reload
+        // event until the edit shows, so it waits for events and not for a
+        // time.
         var after = try await assembler.assemble(skills: registry)
-        while !after.text.contains("PRELOADED-BODY-V2"), ContinuousClock.now < deadline {
-            try await Task.sleep(for: pollInterval)
+        var reloadEvents = reloads.makeAsyncIterator()
+        while !after.text.contains("PRELOADED-BODY-V2"), await reloadEvents.next() != nil {
             after = try await assembler.assemble(skills: registry)
         }
         #expect(after.text.contains("PRELOADED-BODY-V2"))

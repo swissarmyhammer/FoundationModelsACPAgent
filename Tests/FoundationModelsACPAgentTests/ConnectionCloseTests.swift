@@ -47,36 +47,42 @@ import Testing
     /// The error of a failed input stream in the reason-name case.
     private struct StreamFailure: Error {}
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aDroppedWireClosesAnOpenMountedSessionWritesItsHistoryAndReleasesTheAgent() async throws {
-        weak var served: RoutedACPAgent?
-        weak var routerSession: (any RoutedSession)?
+        // The agent and the Router session are actors with no deinit event,
+        // so the case waits for proxies of their release
+        // (`Support/ReleaseWatch.swift`).
+        let lifetimes = BackendLifetimes()
+        let released: WatchedValue<Bool>
+        let updates: [UpdateSessionNotification]
         let transcriptDirectory: URL
         do {
-            let fixture = try await Self.makeMountedFixture()
+            let (sentinel, sentinelReleased) = AgentReleaseSentinel.make()
+            released = sentinelReleased
+            let fixture = try await Self.makeMountedFixture(lifetimes: lifetimes, sentinel: sentinel)
             let agent = fixture.harness.agent
-            served = agent
             let entry = try #require(await agent.sessions[fixture.sessionId])
-            routerSession = entry.session
             transcriptDirectory = entry.transcriptDirectory
             _ = try await fixture.harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            try await ScriptedPromptFixture.waitForAvailability(agent, fixture.sessionId)
+            await ScriptedPromptFixture.waitForPromptsFinished(agent, fixture.sessionId)
             // The end of the prompt wrote the history. The case removes the
             // file, so only the close path of the dropped wire can write it
             // again.
             try FileManager.default.removeItem(
                 at: transcriptDirectory.appendingPathComponent(SessionHistoryFile.fileName))
+            updates = await fixture.collector.updates
             await Self.dropClientEnd(of: fixture.harness)
         }
 
-        try await Poll.until("the agent is released") { served == nil }
-        try await Poll.until("the Router session is released") { routerSession == nil }
+        _ = try await released.wait(for: "the agent is released") { $0 }
+        #expect(!updates.contains { if case .compactionUpdate = $0.update { true } else { false } })
+        try await RouterSessionReleaseWatch.waitForRelease(of: lifetimes)
         #expect(try SessionHistoryFile.read(from: transcriptDirectory) != nil)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aDroppedWireWritesOneNoticeThatNamesTheEndOfInput() async throws {
         let reasonKey = ACPAgentTelemetry.LogMetadataKey.connectionCloseReason
         let records = try await TelemetryCapture.run(forbidding: []) { context in
@@ -106,16 +112,23 @@ import Testing
     /// executable in echo mode, so the session has a running
     /// `SurfaceRefresher`.
     ///
+    /// - Parameters:
+    ///   - lifetimes: The count of the scripted backends of the agent.
+    ///   - sentinel: The provider whose release follows the release of the
+    ///     agent.
     /// - Returns: The fixture.
     /// - Throws: Whatever the wiring throws.
-    private static func makeMountedFixture() async throws -> ScriptedPromptFixture {
+    private static func makeMountedFixture(
+        lifetimes: BackendLifetimes, sentinel: AgentReleaseSentinel
+    ) async throws -> ScriptedPromptFixture {
         let server = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(
                 command: AbsolutePath(rawValue: try BuiltProductLocator.mcpTestServerURL().path),
                 name: serverName,
                 args: [ServerMode.flagName, ServerMode.echo.rawValue]))
         return try await ScriptedPromptFixture.make(
-            script: [.textDelta(answerText), .endPass], label: fixtureLabel, mcpServers: [server])
+            loader: makeScriptedModelLoader(script: [.textDelta(answerText), .endPass], lifetimes: lifetimes),
+            label: fixtureLabel, mcpServers: [server], commandProviders: [sentinel])
     }
 
     /// Drops the client end of the wire with no `session/close`: the client

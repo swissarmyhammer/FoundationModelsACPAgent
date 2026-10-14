@@ -53,7 +53,7 @@ struct TranscriptRecordingTests {
     ///
     /// The run opens one session, so the root holds one session directory,
     /// and that directory holds the recorded file.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func theRunRecordsThePromptUnderTheProjectTranscriptsRoot() async throws {
         let workspace = makeResolvedDirectory(label: "TranscriptRecording-repo")
         let configHome = makeResolvedDirectory(label: "TranscriptRecording-config")
@@ -87,7 +87,7 @@ struct TranscriptRecordingTests {
     /// The run that resumes carries no `--cwd`, because the stored session
     /// already has a working directory and it wins (cli-plan.md §5.4). The
     /// spawn starts in `workspace`, so the composition reads that stack.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func resumeContinuesTheSessionTheFirstRunRecorded() async throws {
         let workspace = makeResolvedDirectory(label: "TranscriptRecording-resume-repo")
         let configHome = makeResolvedDirectory(label: "TranscriptRecording-resume-config")

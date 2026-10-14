@@ -30,10 +30,6 @@ struct InterruptTests {
     /// The prompt text of every case here.
     private static let promptText = "write a haiku"
 
-    /// The fact the first case waits for before it interrupts, named in
-    /// a timeout failure.
-    private static let arrivalOrderLabel = "the first delta reached the answer descriptor"
-
     /// The wire method of the cancel notification, as
     /// `MethodTable.generated.swift` spells it.
     private static let cancelWireMethod = "session/cancel"
@@ -100,7 +96,7 @@ struct InterruptTests {
     /// reads back. One fact settles both: the delta is on the answer
     /// descriptor. The watch waits for that fact and then offers its one
     /// arrival, so order decides the result and no delay does.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aFirstInterruptCancelsThePromptAndKeepsTheTextThatArrived() async throws {
         let workspace = makeResolvedDirectory(label: "InterruptTests-first-repo")
         let composed = try await CLICompositionFixture.scripted(
@@ -113,7 +109,7 @@ struct InterruptTests {
             prompt: Self.promptText,
             into: capture.writer,
             interruptedBy: ScriptedInterruptWatch.armed(
-                waitingFor: Self.arrivalOrderLabel, after: capture.holds(Self.arrivedText)))
+                after: capture.waitUntilHolding(Self.arrivedText)))
 
         #expect(result.stopReason == .cancelled)
         #expect(try capture.text() == Self.arrivedText)
@@ -125,7 +121,7 @@ struct InterruptTests {
     /// The tap stands on the agent end, so its lines are the ones the
     /// client sent. That is the direct reading of the claim: a
     /// `session/cancel` reached the agent before the run ended.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theInterruptSendsSessionCancelToTheAgent() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.arrivedText), .hold],

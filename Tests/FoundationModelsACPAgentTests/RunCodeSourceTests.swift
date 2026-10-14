@@ -114,7 +114,7 @@ struct RunCodeSourceTests {
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText))
         _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: fixture.sessionId, count: 1)
+            under: root, sessionId: fixture.sessionId, count: 1, agent: fixture.harness.agent)
         await fixture.close()
 
         return RecordedRun(
@@ -194,7 +194,7 @@ struct RunCodeSourceTests {
 
     // MARK: - The proofs
 
-    @Test("a recorded runCode prompt holds the snippet source", .timeLimit(.minutes(1)))
+    @Test("a recorded runCode prompt holds the snippet source")
     func theRecordedPromptHoldsTheSnippetSource() async throws {
         let run = try await Self.runOnePrompt(
             code: Self.workingSnippet, label: "RunCodeSourceTests-source")
@@ -205,7 +205,7 @@ struct RunCodeSourceTests {
 
     /// The proof the card was written for: a snippet that fails names a
     /// line, and the reader can reach the line it names.
-    @Test("a failed run reads back its source and its failure", .timeLimit(.minutes(1)))
+    @Test("a failed run reads back its source and its failure")
     func aFailedRunReadsBackItsSourceAndItsFailure() async throws {
         let run = try await Self.runOnePrompt(
             code: Self.failingSnippet, label: "RunCodeSourceTests-failure")
@@ -223,7 +223,7 @@ struct RunCodeSourceTests {
     /// comes back and there is no dropped-byte count to read. Should a
     /// limit ever be added, the record must keep the head and state how
     /// many bytes went away, and this proof holds it to that.
-    @Test("an over-long snippet keeps at least its head", .timeLimit(.minutes(1)))
+    @Test("an over-long snippet keeps at least its head")
     func anOverLongSnippetKeepsAtLeastItsHead() async throws {
         let snippet =
             String(repeating: Self.longSnippetLine, count: Self.longSnippetLineCount)

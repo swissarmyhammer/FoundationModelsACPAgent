@@ -116,7 +116,7 @@ struct BuiltinCommandsTests {
     // MARK: - /help
 
     /// `/help` names all six builtins in its streamed output.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func helpListsAllSixBuiltins() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-help")
         defer { Task { await fixture.close() } }
@@ -132,7 +132,7 @@ struct BuiltinCommandsTests {
 
     /// `/status` names the session id, the cwd, the model, the profile and
     /// the transcript path.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func statusNamesSessionCwdModelAndTranscript() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-status")
         defer { Task { await fixture.close() } }
@@ -166,7 +166,7 @@ struct BuiltinCommandsTests {
 
     /// `/context` before the first model pass streams a line that never
     /// contains the word NaN.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func contextBeforeAnyPromptNeverPrintsNaN() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-context")
         defer { Task { await fixture.close() } }
@@ -181,7 +181,7 @@ struct BuiltinCommandsTests {
 
     /// `/memory` prints the assembled instructions, including the
     /// absolute-path header of an on-disk `AGENTS.md`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func memoryPrintsInstructionsWithSourceHeaders() async throws {
         let agentsBody = "Follow the house rules."
         let fixture = try await Fixture.make(
@@ -243,7 +243,7 @@ struct BuiltinCommandsTests {
     /// `/compact` only starts the compaction: its text says so. The completed
     /// entry of the compaction carries the report: the token counts before
     /// and after, and the summarizer model.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func compactReportsTokenCountsAndSummarizerModel() async throws {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-compact",
@@ -262,7 +262,7 @@ struct BuiltinCommandsTests {
 
     /// A scripted summarizer failure gives a failed entry, not a success:
     /// the error names the failure, and no entry gives token counts.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func compactReportsAFailureHonestly() async throws {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-compact-fail",
@@ -281,7 +281,7 @@ struct BuiltinCommandsTests {
     /// compaction. The oversized seed does not fit the window of any
     /// summarizer, thus Router gives a shortfall and calls no model, and the
     /// failed entry says that nothing was compacted, and why.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func compactReportsAShortfallHonestly() async throws {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-compact-shortfall",
@@ -303,7 +303,7 @@ struct BuiltinCommandsTests {
     /// once. The command ends with its `idle` while the summarizer of its
     /// compaction still waits at the gate, and the report of the
     /// compaction comes after the gate opens, from the compaction events.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func compactReturnsBeforeItsCompactionEnds() async throws {
         let gate = SummarizerGate()
         let fixture = try await Fixture.make(
@@ -336,7 +336,7 @@ struct BuiltinCommandsTests {
 
     /// `/config` prints the effective configuration as YAML: the section keys
     /// and at least one comment line.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func configPrintsYAMLWithSectionsAndComments() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-config")
         defer { Task { await fixture.close() } }
@@ -352,7 +352,7 @@ struct BuiltinCommandsTests {
     /// `/config export project` writes `<cwd>/.<name>/config.yaml`, whose
     /// content round-trips through the loader to the same effective
     /// configuration the session was composed from.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func configExportProjectRoundTripsThroughTheLoader() async throws {
         let seededConfig = "recording:\n  level: off\n"
         let fixture = try await Fixture.make(
@@ -381,7 +381,7 @@ struct BuiltinCommandsTests {
     /// `/config export project` writes no API key value: the file holds
     /// an empty `apiKeys` map, and the confirmation says that the export
     /// wrote no key.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func configExportWritesNoAPIKeyValue() async throws {
         let keyValue = "export-key-value"
         let fixture = try await Fixture.make(
@@ -447,7 +447,7 @@ struct BuiltinCommandsTests {
     /// None of the six builtins invokes the model backend: a scripted model
     /// that would stream a sentinel on any pass is never reached, so no
     /// builtin's streamed text carries the sentinel.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func noBuiltinInvokesTheModelBackend() async throws {
         for name in Self.builtinNames {
             let fixture = try await Fixture.make(

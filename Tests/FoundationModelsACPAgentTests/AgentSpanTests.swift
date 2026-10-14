@@ -116,7 +116,7 @@ import Tracing
     /// A `/help` prompt records one command span with the command name and
     /// the kind, as a child of the prompt span. No span holds the argument
     /// text.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func helpCommandRecordsOneCommandSpanUnderThePromptSpan() async throws {
         let run = try await TelemetryCapture.run(forbidding: [Self.commandArguments]) { context in
             let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
@@ -145,7 +145,7 @@ import Tracing
     /// type of the error. The span records no error, because a tracing
     /// backend exports the description of a recorded error, and a
     /// description can hold content.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func unknownCommandRecordsTheErrorTypeOnItsCommandSpan() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
@@ -175,7 +175,7 @@ import Tracing
     /// and the outcome. The "enter" record of the span is there before the
     /// answer comes, and it carries the trace id and the span id of the span.
     /// No span and no log record holds the message or the answer.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func elicitationRoundTripRecordsOneElicitationSpanAndAnEnterRecordBeforeTheAnswer() async throws {
         let forbidden = [Self.acceptedAnswer, ScriptedServer.elicitEchoMessage]
         let (run, enterRecordsBeforeAnswer) = try await TelemetryCapture.run(forbidding: forbidden) { context in
@@ -186,7 +186,7 @@ import Tracing
                 mcpServers: [try Self.loopbackServer()])
             _ = try await fixture.harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.elicitationPromptText))
-            let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
             let enterRecordsBeforeAnswer = TracedRun(sessionId: fixture.sessionId.rawValue, context: context)
                 .enterRecordCount(forSpanNamed: ACPAgentTelemetry.SpanName.elicitation)
             await MainActor.run {
@@ -227,7 +227,7 @@ import Tracing
     /// the server name and the transport, as a child of the `session/new`
     /// span, and writes one "enter" record with the trace id and the span id
     /// of the connect span.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewRecordsOneConnectSpanForAConfigServer() async throws {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         let yaml = """
@@ -260,7 +260,7 @@ import Tracing
     /// server. The connect span of the server has the error status and the
     /// type of the error, as a child of the `session/new` span. The span
     /// records no error.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func serverThatFailsToConnectRecordsTheErrorTypeOnItsConnectSpan() async throws {
         let brokenServer = FoundationModelsACP.MCPServer.stdio(
             MCPServerStdio(

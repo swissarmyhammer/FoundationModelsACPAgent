@@ -26,10 +26,6 @@ import Testing
 // configuration names the small `mlx-community` models the family's own
 // integration suites already load.
 
-/// The case's time limit in minutes. It covers the first-run model
-/// download and the model load of the spawned example.
-private let spawnedRunTimeLimitMinutes = 20
-
 /// A transport that records every inbound byte while it forwards the
 /// stream and the writes unchanged. It wraps `agent.transport`.
 ///
@@ -115,11 +111,9 @@ final class InboundTapTransport: ACPTransport, Sendable {
 /// Serialized because the suite mutates the process environment —
 /// `XDG_CONFIG_HOME` and the offline defaults layer must reach the
 /// spawned child, and `posix_spawn`
-/// passes this process's `environ` on. The time limit covers the
-/// first-run model download.
-@Suite(
-    .serialized,
-    .timeLimit(.minutes(spawnedRunTimeLimitMinutes)))
+/// passes this process's `environ` on.
+///
+@Suite(.serialized)
 struct StdioContractTests {
     // MARK: - Constants
 

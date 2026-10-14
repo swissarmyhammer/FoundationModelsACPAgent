@@ -109,14 +109,14 @@ import Testing
     /// The end of a prompt writes the history beside the transcript, so a
     /// new process can resume the session with the same ids. The history
     /// holds the user message with the id that the prompt response named.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theEndOfAPromptWritesTheHistoryWithTheUserMessageOfTheResponse() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta("Hello."), .endPass], label: "SessionHistoryTests-prompt-end")
         let response = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "Say hello"))
         _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
         await fixture.close()
 

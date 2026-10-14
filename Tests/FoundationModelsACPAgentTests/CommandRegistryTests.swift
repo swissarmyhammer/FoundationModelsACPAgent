@@ -12,43 +12,37 @@ import Testing
 /// collision), the reserved builtin names, the skills wrap, the pushed
 /// updates, the near-miss search, and the wire mapping.
 struct CommandRegistryTests {
-    /// The number of looks a wait makes before it records a failure.
-    private static let maxPollAttempts = 500
-
-    /// The number of milliseconds between two looks.
-    private static let pollIntervalMilliseconds = 20
-
     /// A collector of published command sets, so a test observes each
-    /// publication in arrival order.
-    private actor PublicationCollector {
+    /// publication in arrival order. A test waits for a publication with
+    /// ``wait(for:until:)``: each append resumes the waits whose condition
+    /// is now true, with no clock.
+    private final class PublicationCollector: Sendable {
+        /// The published sets, in arrival order, with their waits.
+        private let published = WatchedValue<[[SlashCommand]]>([])
+
         /// The published sets, in arrival order.
-        private(set) var publications: [[SlashCommand]] = []
+        var publications: [[SlashCommand]] {
+            published.value
+        }
 
         /// Appends one published set.
         ///
         /// - Parameter commands: The published set.
         func append(_ commands: [SlashCommand]) {
-            publications.append(commands)
+            published.update { $0.append(commands) }
         }
-    }
 
-    /// Polls until `condition` is true, then returns. Records a failure
-    /// when the condition never holds.
-    ///
-    /// - Parameters:
-    ///   - label: What the wait is for, named in the failure.
-    ///   - condition: The acceptance test.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    private static func wait(
-        for label: String, _ condition: @escaping @Sendable () async -> Bool
-    ) async throws {
-        for _ in 0..<maxPollAttempts {
-            if await condition() {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(pollIntervalMilliseconds))
+        /// Waits until `isMet` is true for the published sets.
+        ///
+        /// - Parameters:
+        ///   - condition: The name of the condition, for the error of a
+        ///     cancelled wait.
+        ///   - isMet: Tells if the condition is true for the sets.
+        /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+        ///   first.
+        func wait(for condition: String, until isMet: @escaping @Sendable ([[SlashCommand]]) -> Bool) async throws {
+            _ = try await published.wait(for: condition, until: isMet)
         }
-        Issue.record("the registry never reached: \(label)")
     }
 
     // MARK: - Readers of a command body
@@ -91,7 +85,7 @@ struct CommandRegistryTests {
 
     /// A provider command that collides with a builtin name loses, and
     /// the builtin still dispatches.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aBuiltinNameIsReservedAgainstALaterProvider() async throws {
         let builtin = makeActionCommand(name: "status", output: "BUILTIN STATUS")
         let provider = StubCommandProvider(commandSet: [
@@ -123,7 +117,7 @@ struct CommandRegistryTests {
 
     /// A later source wins a name collision, and the merged set keeps
     /// one entry for the name.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aLaterSourceWinsANameCollision() async throws {
         let first = StubCommandProvider(commandSet: [
             SlashCommand(name: "deploy", description: "first source", body: .prompt(template: "a"))
@@ -148,7 +142,7 @@ struct CommandRegistryTests {
     /// The skills source wraps a `.prompt` skill command in a
     /// `.rendered` body that runs `registry.call(id:arguments:)`, so
     /// the `$`-argument pass runs.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theSkillsSourceRoutesThroughRegistryCall() async throws {
         let root = makeResolvedDirectory(label: "CommandRegistryTests-skills")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -175,7 +169,7 @@ struct CommandRegistryTests {
     /// `builtin`, a skill is `skill`, and a linked provider command is
     /// `action` or `prompt_template` by its body. A name that no source
     /// offers has no kind.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func eachMergedCommandHasTheKindOfItsSource() async throws {
         let root = makeResolvedDirectory(label: "CommandRegistryTests-kinds")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -203,7 +197,7 @@ struct CommandRegistryTests {
 
     /// A provider update replaces that provider's set, re-merges, and
     /// publishes the new merged set.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aProviderUpdateReplacesItsSetAndPublishes() async throws {
         let (stream, continuation) = AsyncStream<[SlashCommand]>.makeStream()
         let provider = StubCommandProvider(
@@ -218,29 +212,27 @@ struct CommandRegistryTests {
 
         let collector = PublicationCollector()
         await registry.beginPublishing { commands in
-            await collector.append(commands)
+            collector.append(commands)
         }
         // The initial publication carries the current merged set.
-        try await Self.wait(for: "the initial publication") {
-            await collector.publications.count >= 1
-        }
-        #expect(await collector.publications.first?.map(\.name) == ["old"])
+        try await collector.wait(for: "the initial publication") { $0.count >= 1 }
+        #expect(collector.publications.first?.map(\.name) == ["old"])
 
         continuation.yield([makeRenderedCommand(name: "new", prefix: "NEW ")])
-        try await Self.wait(for: "the pushed replacement") {
-            await registry.command(named: "new") != nil
+        // The registry merges the pushed set first, and then it publishes the
+        // merge. Thus the replacement publication also shows the registry state.
+        try await collector.wait(for: "the replacement publication") { publications in
+            publications.contains { $0.map(\.name) == ["new"] }
         }
+        #expect(await registry.command(named: "new") != nil)
         #expect(await registry.command(named: "old") == nil)
-        try await Self.wait(for: "the replacement publication") {
-            await collector.publications.contains { $0.map(\.name) == ["new"] }
-        }
         continuation.finish()
     }
 
     // MARK: - Near misses
 
     /// The near-miss search names the closest command first.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func nearMissesNameTheClosestCommandFirst() async throws {
         let provider = StubCommandProvider(commandSet: [
             makeRenderedCommand(name: "deploy", prefix: ""),
@@ -258,7 +250,7 @@ struct CommandRegistryTests {
     }
 
     /// A name far from every command gives no suggestion.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aFarNameGivesNoSuggestion() async throws {
         let provider = StubCommandProvider(commandSet: [
             makeRenderedCommand(name: "deploy", prefix: "")

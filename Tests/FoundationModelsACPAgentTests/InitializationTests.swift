@@ -88,7 +88,7 @@ import Testing
 
     /// A client that sends `2` gets `2` back, with the implementation
     /// identity and no authentication surface.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func initializeEchoesVersion2AndReportsTheImplementation() async throws {
         let harness = try await AgentClientHarness.make()
         let response = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
@@ -117,7 +117,7 @@ import Testing
 
     /// Over the wire, the v2-only client sees the successful `2` answer to
     /// its `1`, and then decides to disconnect with its own mismatch error.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func initializeWithVersion1ReachesTheClientAsASuccessfulVersion2Answer() async throws {
         let harness = try await AgentClientHarness.make()
         do {
@@ -139,7 +139,7 @@ import Testing
     /// permission capability. The agent has no authentication, and the
     /// sandbox is the only gate on a command, so the agent never sends
     /// `session/request_permission`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func advertisedCapabilitiesCarryTheFourSessionMarkersAsObjects() async throws {
         let harness = try await AgentClientHarness.make()
         let response = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
@@ -182,7 +182,7 @@ import Testing
 
     /// A `capabilities` value that is not an object degrades to "supports
     /// nothing" and does not fail `initialize`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func malformedClientCapabilitiesDegradeToSupportsNothing() async throws {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agent = try await AgentClientHarness.makeAgent()
@@ -253,7 +253,7 @@ import Testing
     /// Any `session/*` request before `initialize` gets a JSON-RPC
     /// invalid-request error, so the agent never acts on capabilities that
     /// were not negotiated.
-    @Test(.timeLimit(.minutes(1)), arguments: SessionMethod.allCases)
+    @Test(arguments: SessionMethod.allCases)
     func sessionMethodBeforeInitializeGivesInvalidRequest(method: SessionMethod) async throws {
         let harness = try await AgentClientHarness.make()
         await Self.expectRequestError(.invalidRequest, wireValue: Self.invalidRequestWireValue) {
@@ -266,7 +266,7 @@ import Testing
 
     /// `auth/login` and `auth/logout` get `-32601`, never `-32000`: the
     /// methods exist in the protocol, but not on this agent.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func authMethodsGiveMethodNotFound() async throws {
         let harness = try await AgentClientHarness.make()
         _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())

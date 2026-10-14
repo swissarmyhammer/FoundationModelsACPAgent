@@ -20,15 +20,6 @@ import Tracing
 /// One wired prompt fixture: a scripted agent, a recording
 /// harness, an initialized wire, and one new session in `cwd`.
 struct ScriptedPromptFixture {
-    /// The number of milliseconds in ``pollInterval``.
-    private static let pollIntervalMilliseconds = 20
-
-    /// The pause between two looks at the collector.
-    static let pollInterval: Swift.Duration = .milliseconds(pollIntervalMilliseconds)
-
-    /// The number of looks a wait makes before it records a failure.
-    static let maxPollAttempts = 500
-
     /// The wired harness.
     let harness: AgentClientHarness
 
@@ -262,38 +253,34 @@ struct ScriptedPromptFixture {
 
     // MARK: - Waits
 
-    /// Polls the collector until `condition` accepts the collected
-    /// sequence, then returns that sequence.
+    /// Waits until `condition` accepts the collected sequence, then returns
+    /// that sequence. Each append to the collector checks the condition
+    /// again, so the wait uses no clock and no poll.
     ///
     /// - Parameters:
-    ///   - collector: The collector to poll.
-    ///   - label: What the wait is for, named in the failure.
+    ///   - collector: The collector to watch.
+    ///   - label: What the wait is for, named in the error of a cancelled
+    ///     wait.
     ///   - condition: The acceptance test over the collected sequence.
-    /// - Returns: The first accepted sequence, or the final look.
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Returns: The first accepted sequence.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     static func waitForUpdates(
         of collector: UpdateCollector,
         toReach label: String,
         _ condition: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
     ) async throws -> [UpdateSessionNotification] {
-        for _ in 0..<maxPollAttempts {
-            let updates = await collector.updates
-            if condition(updates) {
-                return updates
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        Issue.record("the collector never reached: \(label)")
-        return await collector.updates
+        try await collector.wait(for: label, until: condition)
     }
 
     /// Waits until the collector holds `count` idle state updates.
     ///
     /// - Parameters:
-    ///   - collector: The collector to poll.
+    ///   - collector: The collector to watch.
     ///   - count: The number of prompt ends to wait for.
     /// - Returns: The collected sequence.
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     static func waitForIdle(
         _ collector: UpdateCollector, count: Int = 1
     ) async throws -> [UpdateSessionNotification] {
@@ -304,8 +291,9 @@ struct ScriptedPromptFixture {
 
     /// Waits for the running state update that starts a prompt.
     ///
-    /// - Parameter collector: The collector to poll.
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Parameter collector: The collector to watch.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     static func waitForRunning(_ collector: UpdateCollector) async throws {
         _ = try await waitForUpdates(of: collector, toReach: "a running update") { updates in
             updates.contains { notification in
@@ -315,28 +303,24 @@ struct ScriptedPromptFixture {
         }
     }
 
-    /// Polls the agent until the session accepts a new prompt again.
-    /// The idle notification goes out before the agent clears the prompt,
-    /// so a follow-up prompt waits here first.
+    /// Waits until the session has no open prompt and the end work of its
+    /// last prompt is done (``RoutedACPAgent/awaitPromptsFinished(of:)``).
+    ///
+    /// The idle update goes out before the end work of the prompt: the
+    /// write of the retained history and the reconcile of the config
+    /// options. A reader of the session table or of the history file waits
+    /// here after the idle. The end work resumes the wait, so it uses no
+    /// clock.
     ///
     /// - Parameters:
     ///   - agent: The agent under test.
     ///   - sessionId: The session to watch.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    static func waitForAvailability(
-        _ agent: RoutedACPAgent, _ sessionId: SessionId
-    ) async throws {
-        for _ in 0..<maxPollAttempts {
-            if await agent.sessions[sessionId]?.availability == .idle {
-                return
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        Issue.record("the session never returned to idle availability")
+    static func waitForPromptsFinished(_ agent: RoutedACPAgent, _ sessionId: SessionId) async {
+        await agent.awaitPromptsFinished(of: sessionId)
     }
 
-    /// Polls the session model until it applied the idle state update
-    /// that ends a prompt.
+    /// Waits until the session model applied the idle state update that
+    /// ends a prompt.
     ///
     /// The collector and the session model read the same updates on two
     /// paths: the collector gets each one from the served `Client`, and
@@ -344,15 +328,15 @@ struct ScriptedPromptFixture {
     /// idle update, the model can still be behind. The agent sends the
     /// idle update last in a prompt, so after the model applied it, the
     /// model holds each earlier update of the prompt. A reader of
-    /// ``session`` waits here first, and never sleeps for it.
+    /// ``session`` waits here first. Each change of the model ends one
+    /// observation, so the wait uses no clock and no poll.
     ///
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     func waitForSessionModelIdle() async throws {
-        try await Poll.until("the session model applied the idle state update") {
-            await MainActor.run {
-                guard case .idle = session.agentState else { return false }
-                return true
-            }
+        try await ObservedValue.wait(for: "the session model applied the idle state update") { [session] in
+            guard case .idle = session.agentState else { return false }
+            return true
         }
     }
 

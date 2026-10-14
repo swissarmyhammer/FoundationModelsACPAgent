@@ -923,6 +923,38 @@ extension RoutedACPAgent {
         sessions[sessionId]?.isClosed = true
         sessions[sessionId]?.surface.shellOutput?.finish()
         recordActiveSessions()
+        resumePromptsFinishedWaits(of: sessionId)
+    }
+
+    /// Waits until the session has no open prompt and the end work of its
+    /// last prompt is done: the write of the retained history and the
+    /// reconcile of the config options (``promptFinished(_:sessionId:)``).
+    /// Returns at once when the session has no open prompt, when it is
+    /// closed, or when the table does not hold it.
+    ///
+    /// The idle of a prompt goes out before its end work, so a reader of
+    /// the session table or of the history file waits here after the idle.
+    /// The wait uses no clock: the end work resumes it.
+    ///
+    /// - Parameter sessionId: The session to wait for.
+    func awaitPromptsFinished(of sessionId: SessionId) async {
+        guard let entry = sessions[sessionId], !entry.isClosed,
+            !entry.openPrompts.isEmpty || promptEndWorkCount[sessionId] != nil
+        else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            promptsFinishedWaits[sessionId, default: []].append(continuation)
+        }
+    }
+
+    /// Resumes each wait of ``awaitPromptsFinished(of:)`` for the session.
+    ///
+    /// - Parameter sessionId: The session whose waits end.
+    private func resumePromptsFinishedWaits(of sessionId: SessionId) {
+        for wait in promptsFinishedWaits.removeValue(forKey: sessionId) ?? [] {
+            wait.resume()
+        }
     }
 
     /// Clears one finished prompt from the list of open prompts. Runs after
@@ -939,12 +971,28 @@ extension RoutedACPAgent {
     ///   - owner: The prompt-state owner of the finished prompt.
     ///   - sessionId: The session whose prompt finished.
     func promptFinished(_ owner: PromptStateOwner, sessionId: SessionId) async {
+        promptEndWorkCount[sessionId, default: 0] += 1
+        defer { endPromptEndWork(of: sessionId) }
         writeHistory(of: sessionId)
         sessions[sessionId]?.openPrompts.removeAll { $0 === owner }
         guard sessions[sessionId]?.openPrompts.isEmpty ?? false else {
             return
         }
         await reconcileConfigOptions(for: sessionId)
+    }
+
+    /// Ends one end work of ``promptFinished(_:sessionId:)``. When no end work
+    /// runs and no prompt is open, it resumes the waits of
+    /// ``awaitPromptsFinished(of:)``. A prompt that opened during the end
+    /// work keeps the waits: they wait for its end work too.
+    ///
+    /// - Parameter sessionId: The session whose end work ended.
+    private func endPromptEndWork(of sessionId: SessionId) {
+        let running = (promptEndWorkCount[sessionId] ?? 1) - 1
+        promptEndWorkCount[sessionId] = running > 0 ? running : nil
+        if running <= 0, sessions[sessionId]?.openPrompts.isEmpty ?? true {
+            resumePromptsFinishedWaits(of: sessionId)
+        }
     }
 
     /// The first-activity index write, or `nil` when the session already

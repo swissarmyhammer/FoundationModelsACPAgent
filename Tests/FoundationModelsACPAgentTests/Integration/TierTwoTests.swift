@@ -650,7 +650,7 @@ import Testing
     ///   librarian that answers one selection. The prompt's `searchTools`
     ///   call records the selection prompt on that slot, and the answer
     ///   reports the verb the librarian selected.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theCatalogComposesTheSurfaceFromTheLoadedConfiguration() async throws {
         let cwd = makeResolvedDirectory(label: "TierTwoTests-composition-repo")
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
@@ -764,7 +764,7 @@ import Testing
     ///
     /// The snippet settles inside the inline grace of `runCode`, so the
     /// `runCode` call's own answer carries the written line.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRealToolCallProjectsAStableUpsertLifecycle() async throws {
         let (fixture, updates) = try await Self.runNotePrompt(label: "TierTwoTests-projection")
         let runCodeUpdates = Self.toolCallUpdates(in: updates, for: Self.runCodeCallId)
@@ -824,7 +824,7 @@ import Testing
     /// `running` arrives, because a second `running` after a
     /// `tool_call_update` also satisfies it, and it says nothing about
     /// the update kinds the ordered claim leaves out.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theToolPromptKeepsTheWireOrder() async throws {
         let (fixture, updates) = try await Self.runNotePrompt(
             label: "TierTwoTests-order", tapsWire: true)
@@ -857,7 +857,7 @@ import Testing
     /// session, confirmed from the client end: the snippet sees no
     /// `tools.shell` while `tools.files` stands, and no terminal
     /// update ever reaches the wire.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aDisabledShellSectionKeepsTheShellNamespaceOffTheSession() async throws {
         let code = """
             return (typeof tools.shell) + "|" + (typeof tools.files);
@@ -900,7 +900,7 @@ import Testing
     /// The proof reads every `tool_call_update` of the prompt and asserts
     /// that the ping stands in exactly one call's ANSWER — that call's —
     /// and in no other.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aClientDeclaredMCPServerMountsUnderItsOwnNoun() async throws {
         let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
         let server = FoundationModelsACP.MCPServer.stdio(

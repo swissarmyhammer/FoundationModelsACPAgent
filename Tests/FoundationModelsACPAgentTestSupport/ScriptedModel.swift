@@ -131,7 +131,7 @@ public enum ScriptedModelError: Error, Equatable {
 }
 
 /// Two points in the delivery of a scripted transcript where a test can hold
-/// the backend (``ScriptedSessionBackend/init(script:tools:instructions:seededEntries:recorder:generationQueue:passCounter:deliveryHooks:)``).
+/// the backend (``ScriptedSessionBackend/init(script:tools:instructions:seededEntries:recorder:generationQueue:passCounter:deliveryHooks:lifetimes:)``).
 ///
 /// A test uses them to put a cancel of an update reader at an exact point
 /// of a transcript change, with no dependency on timing. A backend that no
@@ -276,6 +276,11 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// backend that no test changes.
     private let deliveryHooks: TranscriptDeliveryHooks
 
+    /// The count of the alive backends of the model, or `nil` when the
+    /// test does not count them. Each fork and each replaced transcript
+    /// counts on it too.
+    private let lifetimes: BackendLifetimes?
+
     /// Creates a backend that plays `script` against `tools`.
     ///
     /// - Parameters:
@@ -294,6 +299,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///     to count nothing.
     ///   - deliveryHooks: The test hooks of the transcript delivery. The
     ///     default hooks do nothing.
+    ///   - lifetimes: The count of the alive backends, or `nil` (the
+    ///     default) to count nothing.
     public init(
         script: [ScriptedPassStep],
         tools: [any Tool],
@@ -302,8 +309,11 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         recorder: PromptRecorder? = nil,
         generationQueue: GenerationQueue? = nil,
         passCounter: ScriptedPassCounter? = nil,
-        deliveryHooks: TranscriptDeliveryHooks = TranscriptDeliveryHooks()
+        deliveryHooks: TranscriptDeliveryHooks = TranscriptDeliveryHooks(),
+        lifetimes: BackendLifetimes? = nil
     ) {
+        self.lifetimes = lifetimes
+        lifetimes?.backendMade()
         self.script = script
         self.tools = tools
         self.instructions = instructions
@@ -375,7 +385,12 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             recorder: recorder,
             generationQueue: generationQueue,
             passCounter: passCounter,
-            deliveryHooks: deliveryHooks)
+            deliveryHooks: deliveryHooks,
+            lifetimes: lifetimes)
+    }
+
+    deinit {
+        lifetimes?.backendReleased()
     }
 
     public func transcriptEntries() -> [Transcript.Entry] {
@@ -712,6 +727,10 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     /// generation queue of the pool entry.
     public let passCounter: ScriptedPassCounter?
 
+    /// The count of the alive backends of this model, or `nil` to count
+    /// nothing.
+    public var lifetimes: BackendLifetimes?
+
     /// The generation queue of the pool entry that each backend names, or
     /// `nil` before the Router gives one.
     private var generationQueue: GenerationQueue?
@@ -722,15 +741,16 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     ///   - script: The script every session plays.
     ///   - recorder: The recorder each session's prompts go to, or `nil`
     ///     (the default) to record nothing.
-    ///   - passCounter: The counter of the passes, or `nil` (the default)
-    ///     for a model whose calls run directly, with no queue.
+    ///   - lifetimes: The count of the alive backends, or `nil` (the
+    ///     default) to count nothing.
     public init(
         script: [ScriptedPassStep], recorder: PromptRecorder? = nil,
-        passCounter: ScriptedPassCounter? = nil
+        passCounter: ScriptedPassCounter? = nil, lifetimes: BackendLifetimes? = nil
     ) {
         self.script = script
         self.recorder = recorder
         self.passCounter = passCounter
+        self.lifetimes = lifetimes
     }
 
     /// Gives a copy of this container whose backends name `queue`, the
@@ -789,7 +809,8 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
             seededEntries: seededEntries,
             recorder: recorder,
             generationQueue: generationQueue,
-            passCounter: passCounter)
+            passCounter: passCounter,
+            lifetimes: lifetimes)
     }
 }
 
@@ -803,11 +824,13 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
 ///   - script: The steps every session plays.
 ///   - recorder: The recorder each received prompt goes to, or `nil`
 ///     to record nothing.
+///   - lifetimes: The count of the alive backends of each container, or
+///     `nil` to count nothing.
 /// - Returns: The loader to inject.
 public func makeScriptedModelLoader(
-    script: [ScriptedPassStep], recorder: PromptRecorder? = nil
+    script: [ScriptedPassStep], recorder: PromptRecorder? = nil, lifetimes: BackendLifetimes? = nil
 ) -> StubModelLoader {
     var loader = StubModelLoader()
-    loader.makeLLMContainer = { _ in ScriptedLLMContainer(script: script, recorder: recorder) }
+    loader.makeLLMContainer = { _ in ScriptedLLMContainer(script: script, recorder: recorder, lifetimes: lifetimes) }
     return loader
 }

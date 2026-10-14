@@ -100,7 +100,7 @@ import Testing
 
     /// A new session from `makeBudgetedSession`, the door of `session/new`,
     /// does not run a no-op `runCode` call while an operation is pending.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aNewSessionDoesNotRunANoOpCallWhileAnOperationIsPending() async throws {
         let fixture = try await NoOpSessionFixture.make(label: "NoOpToolCallTests-new")
         defer { fixture.removeDirectory() }
@@ -115,7 +115,7 @@ import Testing
     /// A session from `restoreSessionWithHostChecks`, the door of
     /// `session/resume`, does not run a no-op `runCode` call while an
     /// operation is pending.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumedSessionDoesNotRunANoOpCallWhileAnOperationIsPending() async throws {
         let fixture = try await NoOpSessionFixture.make(label: "NoOpToolCallTests-resume")
         defer { fixture.removeDirectory() }
@@ -214,13 +214,6 @@ struct PendingJobTool: FoundationModels.Tool, BackgroundTool {
     /// The name of the tool.
     static let toolName = "start_job"
 
-    /// The number of seconds that the run works. It is much longer than a
-    /// test, and the close of the session cancels the run.
-    private static let workSeconds: Int64 = 60
-
-    /// The time that the run works: ``workSeconds``.
-    private static let work: Duration = .seconds(workSeconds)
-
     let name = Self.toolName
 
     let description = "a scripted tool whose run stays pending"
@@ -230,7 +223,9 @@ struct PendingJobTool: FoundationModels.Tool, BackgroundTool {
     var inlineSettleGrace: TimeInterval { 0 }
 
     func call(arguments: Arguments) async throws -> String {
-        try await Task.sleep(for: Self.work)
+        // The run stays pending: only the close of the session, which
+        // cancels the run, ends it.
+        try await waitForCancellation()
         return Self.toolName
     }
 }

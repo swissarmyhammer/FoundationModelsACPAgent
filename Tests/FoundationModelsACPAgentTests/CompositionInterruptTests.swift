@@ -13,8 +13,9 @@ import Testing
 ///
 /// It stands for a real download of a many-gigabyte model: the transfer has
 /// started, some bytes are on disk, and the only thing that ends it is the
-/// person who presses `Ctrl-C`. `Task.sleep(for:)` is what makes the stop
-/// cancellable, so the suite needs no network and no weights.
+/// person who presses `Ctrl-C`. ``waitForCancellation()`` is what makes the
+/// stop end only at the cancel, so the suite needs no network, no weights
+/// and no clock.
 private struct ParkingDownloadLoader: ModelLoader {
     /// The directory standing in for the Hugging Face cache.
     let cacheDirectory: URL
@@ -28,13 +29,6 @@ private struct ParkingDownloadLoader: ModelLoader {
 
     /// The bytes the whole transfer would have moved, had it finished.
     static let totalByteCount = 4096
-
-    /// The number of seconds in ``parkDuration``.
-    static let parkSeconds = 600
-
-    /// How long the transfer stops for. Far longer than the suite's own time
-    /// limit, so only a cancellation ever ends the stop.
-    static let parkDuration = Duration.seconds(parkSeconds)
 
     /// The name of the part file the interrupted transfer leaves behind.
     static let partFileName = "weights.safetensors.incomplete"
@@ -67,7 +61,8 @@ private struct ParkingDownloadLoader: ModelLoader {
                 bytesDownloaded: Int64(Self.partFileByteCount),
                 bytesTotal: Int64(Self.totalByteCount)))
         parked.yield()
-        try await Task.sleep(for: Self.parkDuration)
+        // The transfer stops until a cancel: only the cancel ends it.
+        try await waitForCancellation()
         return try await stub.loadLLM(
             ref: ref, slot: slot, context: context, reporting: reporting)
     }
@@ -161,7 +156,7 @@ struct CompositionInterruptTests {
 
     /// The first interrupt during the download stops the run, and the run
     /// reports the `cancelled` stop reason that exit 4 belongs to.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aFirstInterruptDuringTheDownloadEndsTheRunCancelled() async throws {
         let fixture = ConfigCommandFixture(label: "CompositionInterruptTests-download")
         let capture = try AnswerCapture(label: "CompositionInterruptTests-download-answer")
@@ -185,7 +180,7 @@ struct CompositionInterruptTests {
 
     /// The download the interrupt stopped leaves its part file in the cache,
     /// so the next run continues it instead of starting it again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCancelledDownloadKeepsThePartFileInTheCache() async throws {
         let fixture = ConfigCommandFixture(label: "CompositionInterruptTests-parts")
         let capture = try AnswerCapture(label: "CompositionInterruptTests-parts-answer")
@@ -210,7 +205,7 @@ struct CompositionInterruptTests {
     /// The composition window reports the interrupt as
     /// ``CompositionInterrupted`` and not as the resolution failure the
     /// wrapping would otherwise make of it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anInterruptedCompositionIsNotAResolutionFailure() async throws {
         let parked = Self.makeParkedComposer(label: "CompositionInterruptTests-reason")
 
@@ -226,9 +221,9 @@ struct CompositionInterruptTests {
     /// composition, and the run throws the exit code of an end by a signal.
     /// The code goes to the failure path of ``AcpAgentCommand/main()``.
     ///
-    /// The loader stops in the transfer for longer than the time limit of
-    /// the case, so only the cancel can end it.
-    @Test(.timeLimit(.minutes(1)))
+    /// The loader stops in the transfer until a cancel, so only the cancel
+    /// can end it.
+    @Test
     func aTerminationDuringTheDownloadEndsTheRunWithTheSignalEndCode() async throws {
         let fixture = ConfigCommandFixture(label: "CompositionInterruptTests-term-run")
         let capture = try AnswerCapture(label: "CompositionInterruptTests-term-run-answer")
@@ -254,7 +249,7 @@ struct CompositionInterruptTests {
     /// The composition window that `acp-agent acp` uses: a `SIGTERM` cancels
     /// the composition task, and the window throws the exit code of an end
     /// by a signal, not ``CompositionInterrupted``.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aTerminatedCompositionCancelsTheDownloadAndThrowsTheSignalEndCode() async throws {
         let parked = Self.makeParkedComposer(label: "CompositionInterruptTests-term")
         let cancelled = CancelRecord()
@@ -278,7 +273,7 @@ struct CompositionInterruptTests {
     }
 
     /// A composition no signal reaches runs to its end and is returned.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anUnwatchedCompositionIsReturned() async throws {
         let composed = try await InterruptibleComposition.run(
             interruptedBy: InterruptHandler.unwatched

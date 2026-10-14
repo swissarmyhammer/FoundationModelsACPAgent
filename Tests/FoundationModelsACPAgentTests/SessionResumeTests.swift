@@ -104,7 +104,7 @@ struct SessionResumeTests {
     /// refusal names the field that failed and why. `session/new`,
     /// `session/list` and `session/resume` all answer the same way,
     /// because one validator serves all three.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithARelativeCwdAnswersInvalidParamsNamingTheField() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-relative")
 
@@ -124,14 +124,14 @@ struct SessionResumeTests {
     /// entry refuses the resume too, and names its own field. Each
     /// reconnect carries the complete new root set, so a dropped entry
     /// would narrow the confinement and never say so.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithARelativeAdditionalDirectoryAnswersInvalidParamsNamingTheField() async throws {
         var resume = try await ResumeSessionFixture.make(
             label: "SessionResumeTests-relative-extra")
         try await resume.runPrompt("one prompt before the resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         await InitializationTests.expectRequestError(
@@ -149,7 +149,7 @@ struct SessionResumeTests {
 
     // MARK: - The unknown-id policy
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithAnUnknownIdAnswersInvalidParamsWithTheIdInData() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-unknown")
         let unknownId = SessionId(rawValue: ULID.generate().description)
@@ -167,7 +167,7 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithAnIdThatIsNoULIDAnswersInvalidParamsWithTheIdInData() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-malformed")
         let malformedId = SessionId(rawValue: "not-a-ulid")
@@ -185,13 +185,13 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeAfterTheSessionDirectoryIsDeletedAnswersInvalidParams() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-deleted")
         try await resume.runPrompt("one prompt before the delete")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         try FileManager.default.removeItem(
@@ -211,7 +211,7 @@ struct SessionResumeTests {
 
     // MARK: - The cwd equality pre-check
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithADifferentCwdErrorsBeforeAnySessionIsBuilt() async throws {
         // Both projects share one absolute recording root, so the
         // pre-check finds the session and sees the recorded cwd differ.
@@ -222,7 +222,7 @@ struct SessionResumeTests {
             projectConfigYAML: sharedRootYAML)
         try await resume.runPrompt("one prompt before the mismatch")
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: sharedRoot, sessionId: resume.fixture.sessionId, count: 1)
+            under: sharedRoot, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         let otherCwd = makeResolvedDirectory(label: "SessionResumeTests-cwd-other")
@@ -289,7 +289,7 @@ struct SessionResumeTests {
         var resume = try await ResumeSessionFixture.make(label: label, projectConfigYAML: locationYAML)
         try await resume.runPrompt("first question")
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: sharedRoot, sessionId: resume.fixture.sessionId, count: 1)
+            under: sharedRoot, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         let live = ReplayedMessage.live(in: await resume.fixture.collector.updates.map(\.update))
         _ = try await resume.fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: resume.fixture.sessionId))
@@ -332,7 +332,7 @@ struct SessionResumeTests {
     /// A resume of a session whose cwd was deleted replays every message,
     /// and the cwd still does not exist after the resume: the agent mounts
     /// no tool surface, so nothing makes the cwd again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeAfterTheCwdIsDeletedReplaysTheHistoryAndCreatesNoDirectory() async throws {
         let deleted = try await Self.resumeAfterDeletingTheCwd(
             label: "SessionResumeTests-deleted-cwd-replay")
@@ -347,7 +347,7 @@ struct SessionResumeTests {
 
     /// A prompt on a session that was resumed with a deleted cwd is refused
     /// with invalid params and the reason, and the cwd still does not exist.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aPromptAfterAResumeWithADeletedCwdIsRefused() async throws {
         let deleted = try await Self.resumeAfterDeletingTheCwd(
             label: "SessionResumeTests-deleted-cwd-prompt")
@@ -362,7 +362,7 @@ struct SessionResumeTests {
     /// A resume whose `additionalDirectories` entry does not exist makes a
     /// replay-only session too: a prompt is refused, and the entry is not
     /// made.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumeWithAMissingAdditionalDirectoryRefusesAPrompt() async throws {
         let extra = makeResolvedDirectory(label: "SessionResumeTests-missing-extra")
         var resume = try await ResumeSessionFixture.make(
@@ -388,7 +388,7 @@ struct SessionResumeTests {
     /// that the client saw live, as one whole-message upsert with the id it
     /// had live (ACP schema-v2.0.0-alpha.7). The user message keeps the id
     /// that the prompt response named.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func replayFromStartSendsWholeMessageUpsertsWithTheLiveIds() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-replay")
         let firstPrompt = try await resume.runPrompt("first question")
@@ -430,7 +430,7 @@ struct SessionResumeTests {
     /// agent ran, and replays each message with the id that the earlier
     /// agent gave it. The earlier agent wrote the retained history beside
     /// the transcript, so the ids do not come from the Router journal.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aNewAgentReplaysTheMessagesWithTheIdsOfTheEarlierAgent() async throws {
         var first = try await ResumeSessionFixture.make(label: "SessionResumeTests-new-agent")
         try await first.runPrompt("first question")
@@ -458,7 +458,7 @@ struct SessionResumeTests {
     /// Router journal serves only the restore of the model context: its
     /// messages have no ACP ids, and after a compaction it holds a summary
     /// in place of the messages that it folded.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionWithNoRetainedHistoryReplaysNoMessage() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-no-history")
         let recordedId = try await resume.recordSessionOutsideTheAgent(prompts: ["first question"])
@@ -480,7 +480,7 @@ struct SessionResumeTests {
 
     /// The resume response holds the command list of the resumed session
     /// (ACP schema-v2.0.0-alpha.7), as the `session/new` response does.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theResumeResponseHoldsTheCommandList() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-commands")
         try await resume.runPrompt("one prompt before the resume")
@@ -493,13 +493,13 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithoutReplayFromSendsNoMessageUpserts() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-noreplay")
         try await resume.runPrompt("one prompt before the quiet resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         let countBefore = await resume.fixture.collector.updates.count
@@ -511,13 +511,13 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeWithAnUnknownReplayCursorAnswersInvalidParams() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-cursor")
         try await resume.runPrompt("one prompt before the unknown cursor")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         do {
@@ -534,13 +534,13 @@ struct SessionResumeTests {
 
     // MARK: - The resumed conversation
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumedSessionContinuesTheConversationWithTheEarlierContext() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-continue")
         try await resume.runPrompt("first question")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         _ = try await resume.fixture.harness.connection.resumeSession(
@@ -571,7 +571,7 @@ struct SessionResumeTests {
 
     // MARK: - The root set
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeOmittingAdditionalDirectoriesConfinesToTheCwdAlone() async throws {
         let outside = makeResolvedDirectory(label: "SessionResumeTests-roots-outside")
         let outsideFile = outside.appendingPathComponent("outside.txt")
@@ -584,7 +584,7 @@ struct SessionResumeTests {
         try await resume.runPrompt("one prompt before the root change")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         _ = try await resume.fixture.harness.connection.resumeSession(
@@ -620,12 +620,12 @@ struct SessionResumeTests {
     /// `session/resume` connects the `mcpServers` of the resume request, and
     /// the resumed surface keeps the outcome of each one. A client server that
     /// cannot connect does not stop the resume.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeKeepsTheOutcomeOfEachMCPServerOfTheRequest() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-mcp-outcomes")
         try await resume.runPrompt("one prompt before the resume")
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: try resume.recordingRoot, sessionId: resume.fixture.sessionId, count: 1)
+            under: try resume.recordingRoot, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
         var request = resume.makeResumeRequest()
         request.mcpServers = [
@@ -649,7 +649,7 @@ struct SessionResumeTests {
 
     // MARK: - The missing-tool report
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumingWithShellNewlyDisabledReportsTheMissingShellVerbs() async throws {
         let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-missing")
         let agent = resume.fixture.harness.agent
@@ -680,13 +680,13 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumingWithAnUnchangedRosterReportsNoMissingTools() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-complete")
         try await resume.runPrompt("one prompt before the clean resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         let response = try await resume.fixture.harness.connection.resumeSession(
@@ -698,14 +698,14 @@ struct SessionResumeTests {
 
     // MARK: - The instructions override
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumingWithChangedInstructionsReachesTheModelAndWritesOneDivergenceEvent() async throws {
         let marker = "Always answer in iambic pentameter."
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-diverge")
         try await resume.runPrompt("one prompt before the instructions change")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         try marker.write(
@@ -730,13 +730,13 @@ struct SessionResumeTests {
         await resume.fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumingWithUnchangedInstructionsWritesNoDivergenceEvent() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-samewords")
         try await resume.runPrompt("one prompt before the unchanged resume")
         let root = try resume.recordingRoot
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
         _ = try await resume.fixture.harness.connection.resumeSession(

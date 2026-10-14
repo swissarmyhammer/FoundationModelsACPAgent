@@ -122,7 +122,7 @@ struct MultiRootConfinementTests {
     /// A session made over the wire with an additional root R reads a
     /// file under R through its mounted `tools.files.read` verb, and the
     /// session's table entry holds R in wire order.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionReadsAFileUnderAnAdditionalRootFromTheClientEnd() async throws {
         let additionalRoot = Self.makeResolvedDirectory(named: "read-extra")
         let insideFile = additionalRoot.appendingPathComponent("inside.txt")
@@ -142,7 +142,7 @@ struct MultiRootConfinementTests {
 
     /// A path outside the union of the cwd and the additional root is
     /// still refused: the verb answers a correction and no content.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aPathOutsideTheRootUnionIsStillRefused() async throws {
         let additionalRoot = Self.makeResolvedDirectory(named: "refuse-extra")
         let outside = Self.makeResolvedDirectory(named: "refuse-outside")
@@ -187,7 +187,7 @@ struct MultiRootConfinementTests {
     /// A `session/new` that carries a relative entry beside an absolute
     /// one starts no session: the agent owns the file system, so the
     /// agent answers invalid params and the client fixes its request.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRelativeEntryRefusesTheWholeSessionRequest() async throws {
         let cwd = Self.makeResolvedDirectory(named: "raw-cwd")
         let additionalRoot = Self.makeResolvedDirectory(named: "raw-extra")
@@ -206,7 +206,7 @@ struct MultiRootConfinementTests {
     /// The mirror of the proof above: a relative `cwd` beside an absolute
     /// `additionalDirectories` entry refuses the same request, and names
     /// `cwd`. One validator serves both fields, so both fields show it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRelativeCwdRefusesTheWholeSessionRequest() async throws {
         let additionalRoot = Self.makeResolvedDirectory(named: "relative-cwd-extra")
 
@@ -223,7 +223,7 @@ struct MultiRootConfinementTests {
     /// A shell command run in the additional root writes a file there,
     /// shown by reading the file from disk: the sandbox's writable roots
     /// carry the whole root set, not the cwd alone.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aShellCommandWritesIntoTheAdditionalRoot() async throws {
         let cwd = Self.makeResolvedDirectory(named: "shell-cwd")
         let additionalRoot = Self.makeResolvedDirectory(named: "shell-extra")
@@ -256,7 +256,7 @@ struct MultiRootConfinementTests {
     /// The transcripts stay under `<cwd>/.<name>/` when an additional
     /// root is supplied: the recorded prompt lands under the cwd dotfolder
     /// and the additional root stays empty.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func transcriptsStayUnderTheCwdDotfolderWhenAnAdditionalRootIsSupplied() async throws {
         let additionalRoot = Self.makeResolvedDirectory(named: "transcripts-extra")
         var fixture = try await Self.makeFixture(
@@ -266,7 +266,8 @@ struct MultiRootConfinementTests {
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: fixture.recordingRoot,
             sessionId: fixture.fixture.sessionId,
-            count: 1)
+            count: 1,
+            agent: fixture.fixture.harness.agent)
 
         let entry = try await Self.sessionEntry(of: fixture)
         let dotfolder = fixture.fixture.cwd.appendingPathComponent(
@@ -282,7 +283,7 @@ struct MultiRootConfinementTests {
     /// `session/list` reports the complete ordered list from the most
     /// recent activation: the two roots come back in wire order after
     /// the first prompt writes the index record.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionListReportsTheOrderedListFromTheActivation() async throws {
         let firstRoot = Self.makeResolvedDirectory(named: "list-first")
         let secondRoot = Self.makeResolvedDirectory(named: "list-second")

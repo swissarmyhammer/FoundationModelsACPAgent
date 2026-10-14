@@ -43,39 +43,24 @@ enum ScriptedArrival {
             }
         )
     }
-
-    /// A gate that opens once `fact` holds.
-    ///
-    /// A signal that lands before the prompt is running reaches an agent with
-    /// no active prompt, and that agent ignores the cancel. So
-    /// the watch waits for a fact the running prompt made true, and order
-    /// decides the result rather than a delay.
-    ///
-    /// - Parameters:
-    ///   - label: What the gate waits for, named in a timeout failure.
-    ///   - fact: What must hold before the gate opens.
-    /// - Returns: The gate.
-    static func once(
-        _ label: String, holds fact: @escaping @Sendable () -> Bool
-    ) -> @Sendable () async throws -> Void {
-        { try await Poll.until(label) { fact() } }
-    }
 }
 
 /// The `Ctrl-C` watch a case writes, in place of a real signal.
 enum ScriptedInterruptWatch {
-    /// An installer whose first arrival goes out only once `fact` holds.
+    /// An installer whose first arrival goes out only after `gate` returns.
     ///
-    /// - Parameters:
-    ///   - label: What the watch waits for, named in a timeout failure.
-    ///   - fact: What must hold before the arrival goes out.
+    /// A signal that lands before the prompt is running reaches an agent
+    /// with no active prompt, and that agent ignores the cancel. So the gate
+    /// waits for a fact that the running prompt made true, and order decides
+    /// the result rather than a delay.
+    ///
+    /// - Parameter gate: What must end before the arrival goes out.
     /// - Returns: The installer of that watch.
     static func armed(
-        waitingFor label: String, after fact: @escaping @Sendable () -> Bool
+        after gate: @escaping @Sendable () async throws -> Void
     ) -> InterruptHandler.Installer {
         {
-            let arrival = ScriptedArrival.after(
-                ScriptedArrival.once(label, holds: fact), giving: InterruptHandler.firstArrival)
+            let arrival = ScriptedArrival.after(gate, giving: InterruptHandler.firstArrival)
             return InterruptWatch(arrivals: arrival.arrivals, disarm: arrival.disarm)
         }
     }
@@ -94,17 +79,5 @@ enum ScriptedTerminationWatch {
             let arrival = ScriptedArrival.after(gate, giving: ())
             return TerminationWatch(arrivals: arrival.arrivals, disarm: arrival.disarm)
         }
-    }
-
-    /// An installer whose one arrival goes out only once `fact` holds.
-    ///
-    /// - Parameters:
-    ///   - label: What the watch waits for, named in a timeout failure.
-    ///   - fact: What must hold before the arrival goes out.
-    /// - Returns: The installer of that watch.
-    static func armed(
-        waitingFor label: String, after fact: @escaping @Sendable () -> Bool
-    ) -> TerminationHandler.Installer {
-        armed(after: ScriptedArrival.once(label, holds: fact))
     }
 }

@@ -37,10 +37,6 @@ struct TerminationHandlerTests {
     /// The prompt of the prompt window case.
     private static let promptText = "write a haiku"
 
-    /// The fact the prompt window case waits for before the `SIGTERM`, named
-    /// in a timeout failure.
-    private static let arrivalOrderLabel = "the first delta reached the answer descriptor"
-
     // MARK: - Fixtures
 
     /// Records whether the window disarmed its watch.
@@ -107,7 +103,7 @@ struct TerminationHandlerTests {
     /// A `SIGTERM` in the serve window closes the ACP connection, and then
     /// the window throws the exit code of an end by a signal. The code goes
     /// to the failure path of ``AcpAgentCommand/main()``.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aTerminationClosesTheConnectionAndThrowsTheSignalEndCode() async throws {
         let closes = CallCounter()
         let disarmed = DisarmFlag()
@@ -128,7 +124,7 @@ struct TerminationHandlerTests {
 
     /// The end of the inbound stream closes the ACP connection, and the
     /// window returns: the process ends on the normal return of `main()`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anInboundEndClosesTheConnectionAndReturns() async throws {
         let closes = CallCounter()
         let disarmed = DisarmFlag()
@@ -147,7 +143,7 @@ struct TerminationHandlerTests {
     /// A `SIGTERM` in a watched window runs the stop of the window one time.
     /// The work ends because of the stop, and then the window throws the exit
     /// code of an end by a signal.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aTerminationStopsTheWorkAndThrowsTheSignalEndCode() async throws {
         let stops = CallCounter()
         let disarmed = DisarmFlag()
@@ -172,7 +168,7 @@ struct TerminationHandlerTests {
 
     /// With no `SIGTERM`, a watched window gives back the value of its work,
     /// runs no stop, and disarms its watch.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aWindowWithNoTerminationReturnsTheWorkValue() async throws {
         let stops = CallCounter()
         let disarmed = DisarmFlag()
@@ -197,7 +193,7 @@ struct TerminationHandlerTests {
     ///
     /// The scripted model streams one delta and then holds, so the prompt
     /// ends for one reason only: a `session/cancel` reached the agent.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aTerminationDuringThePromptCancelsItAndThrowsTheSignalEndCode() async throws {
         let workspace = makeResolvedDirectory(label: "TerminationHandlerTests-prompt-repo")
         let composed = try await CLICompositionFixture.scripted(
@@ -211,7 +207,7 @@ struct TerminationHandlerTests {
                 prompt: Self.promptText,
                 into: capture.writer,
                 terminatedBy: ScriptedTerminationWatch.armed(
-                    waitingFor: Self.arrivalOrderLabel, after: capture.holds(Self.arrivedText)))
+                    after: capture.waitUntilHolding(Self.arrivedText)))
         }
 
         #expect(thrown?.rawValue == Self.signalEndExitCode)

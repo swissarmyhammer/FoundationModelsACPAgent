@@ -29,25 +29,33 @@ enum NamedPipe {
     /// then closes the write end. The reader thus reads `text` and then the
     /// end of the stream.
     ///
-    /// A write end that opens with `O_NONBLOCK` fails with `ENXIO` while no
-    /// reader holds the pipe open. The poll opens it again until a reader
-    /// holds it. Thus the text never goes into a pipe that no reader holds,
-    /// where the close of the last writer would discard it.
+    /// A write end that opens with no `O_NONBLOCK` blocks in the kernel until
+    /// a reader holds the pipe open. Thus the text never goes into a pipe
+    /// that no reader holds, where the close of the last writer would
+    /// discard it, and the wait uses no clock and no poll. The open blocks a
+    /// thread, so it runs on a thread of its own and not on the cooperative
+    /// pool.
     ///
     /// - Parameters:
     ///   - text: The text to write.
     ///   - pipe: The named pipe.
-    /// - Throws: When no reader opens the pipe before the poll deadline, or
-    ///   when the write fails.
+    /// - Throws: When the open or the write fails.
     static func write(_ text: String, toPipeAt pipe: URL) async throws {
-        var descriptor: Int32 = -1
-        try await Poll.until("a reader opens \(pipe.lastPathComponent)") {
-            descriptor = open(pipe.path, O_WRONLY | O_NONBLOCK)
-            return descriptor >= 0
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            let writer = Thread {
+                let descriptor = open(pipe.path, O_WRONLY)
+                guard descriptor >= 0 else {
+                    continuation.resume(throwing: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+                    return
+                }
+                let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+                continuation.resume(
+                    with: Result {
+                        try handle.write(contentsOf: Data(text.utf8))
+                        try handle.close()
+                    })
+            }
+            writer.start()
         }
-        try #require(descriptor >= 0, "no reader opened \(pipe.path)")
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        try handle.write(contentsOf: Data(text.utf8))
-        try handle.close()
     }
 }

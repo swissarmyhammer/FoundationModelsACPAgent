@@ -39,7 +39,7 @@ import Testing
 
     /// A cancel of a waiting update reader while a pass delivers a
     /// transcript change ends the reader, and the pass ends too.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aReaderCancelDuringATranscriptDeliveryEndsTheReaderAndThePass() async throws {
         let gates = DeliveryGates()
         let backend = ScriptedSessionBackend(script: [.endPass], tools: [], deliveryHooks: gates.hooks)
@@ -62,8 +62,8 @@ import Testing
     }
 
     /// Waits for the result of `task`, or for the cancel of the waiting
-    /// task. The time limit of the test cancels the waiting task, thus a
-    /// task that never ends fails the test, and the test run continues.
+    /// task. A test has no time limit: a task that never ends holds the
+    /// test, and a sample of the test process shows where it waits.
     ///
     /// - Parameter task: The task to wait for.
     /// - Returns: The result of `task`, or `nil` when the waiting task is

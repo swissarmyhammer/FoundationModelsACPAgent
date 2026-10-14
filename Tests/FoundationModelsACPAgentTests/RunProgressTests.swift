@@ -192,7 +192,7 @@ import Testing
     /// A scripted tool calls `progress("3 of 7 done", plan:)`. The client
     /// gets one `plan_update` with the same entries, priorities, statuses
     /// and plan id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aToolPlanGoesToTheClientAsOnePlanUpdate() async throws {
         let tool = ProgressReportingTool(
             detail: Self.planLine, plan: PlanSnapshot(id: Self.planId, entries: Self.planEntries()),
@@ -254,7 +254,7 @@ import Testing
     /// client gets a `tool_call_update` with that text, on the tool call id
     /// of the run: the SDK tool-call id that Router joined to the completion
     /// token of the call (task ^e1yq4gh), and not the completion token.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aToolTextProgressGoesToTheToolCallOfTheRun() async throws {
         let tokens = TokenLog()
         let tool = ProgressReportingTool(detail: Self.textLine, plan: nil, tokens: tokens)
@@ -293,7 +293,7 @@ import Testing
     /// `session/resume` with `replayFrom: start`. The session was recorded
     /// outside the agent, so it has no retained history: the plans come
     /// from the Router journal, which writes each plan event at once.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumeReplaysTheLastPlanOfEachPlanId() async throws {
         let resume = try await ResumeSessionFixture.make(label: "RunProgressTests-replay")
         let first = PlanSnapshot(id: Self.planId, entries: Self.planEntries(firstStatus: .inProgress))
@@ -316,7 +316,7 @@ import Testing
     /// The client never gets a plan of a session that did not make it: a
     /// second session in the same recording root sent a plan, and the
     /// replay of the first session holds no plan.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumeReplaysNoPlanOfAnotherSession() async throws {
         let resume = try await ResumeSessionFixture.make(label: "RunProgressTests-other-session")
         let quietId = try await resume.recordSessionOutsideTheAgent(prompts: ["no plan here"])

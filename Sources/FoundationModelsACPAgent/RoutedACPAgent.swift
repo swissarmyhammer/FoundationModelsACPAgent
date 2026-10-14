@@ -86,6 +86,17 @@ public actor RoutedACPAgent: Agent {
     /// transcript directory, and idle/busy state.
     var sessions: [SessionId: ActiveSession] = [:]
 
+    /// The waits of ``awaitPromptsFinished(of:)``, keyed by the session.
+    /// ``promptFinished(_:sessionId:)`` resumes them when the session has no
+    /// open prompt and the end work of the last prompt is done, and
+    /// ``markSessionClosed(_:)`` resumes them when the session closes.
+    var promptsFinishedWaits: [SessionId: [CheckedContinuation<Void, Never>]] = [:]
+
+    /// The count of the end works of ``promptFinished(_:sessionId:)`` that
+    /// run now, keyed by the session. A session with no running end work has
+    /// no key.
+    var promptEndWorkCount: [SessionId: Int] = [:]
+
     /// Records the number of open sessions in the `active_sessions` gauge
     /// (``AgentMetrics``).
     ///

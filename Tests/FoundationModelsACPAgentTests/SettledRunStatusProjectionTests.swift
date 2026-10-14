@@ -163,11 +163,23 @@ import Testing
     /// Router sends when the transcript diff of the pass goes out. Router
     /// derives `completed` for the call, because the call has an output. The
     /// client ends `failed`, and no `in_progress` comes after the settlement.
-    @Test(.timeLimit(.minutes(1)))
+    ///
+    /// The run clock is a `ManualRunClock`. Two waits sleep on it: the
+    /// settle period of the call and the timeout window of the run. When
+    /// both sleep, the test moves the clock by the timeout, which ends the
+    /// window and not the longer settle period. Thus the run times out
+    /// inside the settle period in a fixed order, with no real clock.
+    @Test
     func aRealInlineRunThatTimesOutEndsFailedOnTheClient() async throws {
-        let updates = try await RoutedPrompt.sentUpdates(
-            script: Self.callScript(StallingTool.toolName), tools: [StallingTool()],
-            label: "SettledRunStatusProjectionTests-inline")
+        let clock = ManualRunClock()
+        let prompt = Task {
+            try await RoutedPrompt.sentUpdates(
+                script: Self.callScript(StallingTool.toolName), tools: [StallingTool()],
+                label: "SettledRunStatusProjectionTests-inline", runClock: clock)
+        }
+        await clock.waitForSleepers(atLeast: 2)
+        clock.advance(by: .seconds(StallingTool.timeoutSeconds))
+        let updates = try await prompt.value
 
         let statuses = try updates.wireStatuses(ofToolCall: Self.scriptedCallId)
         #expect(Array(statuses.drop { $0 != Self.failedWireValue }) == [Self.failedWireValue])
@@ -180,11 +192,20 @@ import Testing
     /// two `toolStatus` events (the last one `completed`), and then the
     /// settlement (`failed`). The settlement comes last, so the client ends
     /// `failed`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRealBackgroundRunThatFailsLaterEndsFailedOnTheClient() async throws {
+        let release = WatchedValue(false)
         let updates = try await RoutedPrompt.sentUpdates(
             prompt: Self.callerPrompt, script: Self.callScript(LateFailingTool.toolName),
-            tools: [LateFailingTool()], label: "SettledRunStatusProjectionTests-background")
+            tools: [LateFailingTool(release: release)], label: "SettledRunStatusProjectionTests-background"
+        ) { update in
+            // The run fails only after the client got the `completed` status
+            // of the call: a fixed order, with no clock.
+            guard case .toolCallUpdate(let call) = update, call.toolCallId.rawValue == Self.scriptedCallId,
+                call.status == .value(.completed)
+            else { return }
+            release.update { $0 = true }
+        }
 
         let statuses = try updates.wireStatuses(ofToolCall: Self.scriptedCallId)
         #expect(Array(statuses.suffix(2)) == [Self.completedWireValue, Self.failedWireValue])
@@ -228,12 +249,9 @@ import Testing
         static let toolName = "stall"
 
         /// The time with no progress, in seconds, after which the mount ends
-        /// the run. It is much shorter than the default settle period.
-        private static let timeoutSeconds: TimeInterval = 0.2
-
-        /// The time that the body waits. The mount cancels the body long
-        /// before this time ends.
-        private static let stall: Duration = .seconds(30)
+        /// the run, on the run clock. It is much shorter than the default
+        /// settle period.
+        static let timeoutSeconds: TimeInterval = 0.2
 
         let name = Self.toolName
 
@@ -242,14 +260,15 @@ import Testing
         var mount: ToolMount? { ToolMount(mode: .background, timeout: Self.timeoutSeconds) }
 
         func call(arguments: Arguments) async throws -> String {
-            try await Task.sleep(for: Self.stall)
+            // The mount cancels the body at the timeout.
+            try await waitForCancellation()
             return Self.toolName
         }
     }
 
     /// A background tool that answers with its pending envelope at once, and
-    /// whose run fails a short time later: a background run that settles
-    /// after the SDK call returned.
+    /// whose run fails when the test opens its gate: a background run that
+    /// settles after the SDK call returned.
     struct LateFailingTool: FoundationModels.Tool, BackgroundTool {
         /// The wire arguments; the tool reads nothing from them.
         @Generable
@@ -258,8 +277,8 @@ import Testing
         /// The name of the tool.
         static let toolName = "fail_later"
 
-        /// The time that the run works before it fails.
-        private static let work: Duration = .milliseconds(300)
+        /// The gate the run waits at before it fails. The test opens it.
+        let release: WatchedValue<Bool>
 
         let name = Self.toolName
 
@@ -270,7 +289,7 @@ import Testing
         var inlineSettleGrace: TimeInterval { 0 }
 
         func call(arguments: Arguments) async throws -> String {
-            try await Task.sleep(for: Self.work)
+            _ = try await release.wait(for: "the gate of the failing run") { $0 }
             throw ScriptedToolError.failedOnPurpose
         }
     }

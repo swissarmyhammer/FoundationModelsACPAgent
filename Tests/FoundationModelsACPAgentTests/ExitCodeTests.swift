@@ -36,10 +36,6 @@ struct ExitCodeTests {
     /// cancelled prompt has text that already arrived.
     private static let arrivedText = "part of an answer"
 
-    /// The fact the cancelled row waits for before it interrupts, named
-    /// in a timeout failure.
-    private static let arrivalOrderLabel = "the first delta reached the answer descriptor"
-
     /// A project `config.yaml` whose key no section declares, so the
     /// start-up load fails and the run never reaches the wire.
     private static let misspelledKeyDocument = "recording:\n  levle: full\n"
@@ -127,7 +123,7 @@ struct ExitCodeTests {
         let install =
             arrivedText.map {
                 ScriptedInterruptWatch.armed(
-                    waitingFor: arrivalOrderLabel, after: capture.holds($0))
+                    after: capture.waitUntilHolding($0))
             } ?? InterruptHandler.unwatched
         let result = try await RunPrompt.answer(
             of: composed,
@@ -176,7 +172,7 @@ struct ExitCodeTests {
     // MARK: - The rows a stop reason decides
 
     /// A scripted `end_turn` exits 0.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedEndTurnExitsSuccess() async throws {
         let code = try await Self.exitCode(
             ofPromptPlaying: [.textDelta(Self.answeredText), .endPass],
@@ -187,7 +183,7 @@ struct ExitCodeTests {
 
     /// A scripted refusal exits 3. The model throws the guardrail
     /// violation, which the prompt owner maps to the `refusal` stop reason.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedRefusalExitsRefusal() async throws {
         let code = try await Self.exitCode(
             ofPromptPlaying: [.fail(.guardrailViolation)],
@@ -199,7 +195,7 @@ struct ExitCodeTests {
     /// A scripted cancellation exits 4. The model streams one delta and
     /// then holds, and the watch offers its one arrival once that delta
     /// is on the answer descriptor, so the prompt ends for one reason only.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedCancellationExitsCancelled() async throws {
         let code = try await Self.exitCode(
             ofPromptPlaying: [.textDelta(Self.arrivedText), .hold],
@@ -241,7 +237,7 @@ struct ExitCodeTests {
 
     /// A configuration that fails to load exits 1, with the reason on
     /// stderr and nothing on stdout.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aConfigurationThatFailsToLoadExitsError() async throws {
         let fixture = ConfigCommandFixture(label: "ExitCodeTests-config")
         try fixture.writeProjectConfig(Self.misspelledKeyDocument)

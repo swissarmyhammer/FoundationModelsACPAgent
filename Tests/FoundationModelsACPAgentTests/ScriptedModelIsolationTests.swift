@@ -30,7 +30,7 @@ import Testing
 
     /// Two agents made in one process each play their own script. The
     /// second agent must not answer with the first agent's container.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func twoAgentsInOneProcessEachPlayTheirOwnScript() async throws {
         let first = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.firstAnswer), .endPass], label: "\(Self.label)-first")

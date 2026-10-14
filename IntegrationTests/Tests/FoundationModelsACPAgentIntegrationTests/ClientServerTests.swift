@@ -20,18 +20,12 @@ import Testing
 // does not always end a prompt. `StdioContractTests` drives the real profile
 // and the live loader behind the spawned binary.
 
-/// The case's time limit in minutes. It covers the first-run model
-/// download and the model load of the spawned agent.
-private let spawnedRunTimeLimitMinutes = 20
-
 /// The tier-3 interop contract: run `acp-print` end to end and assert
 /// the exit code, the stdout purity, the stderr logs, and the agent
 /// reap.
 ///
 /// Serialized so at most one live model prompt runs at a time.
-@Suite(
-    .serialized,
-    .timeLimit(.minutes(spawnedRunTimeLimitMinutes)))
+@Suite(.serialized)
 struct ClientServerTests {
     // MARK: - Constants
 

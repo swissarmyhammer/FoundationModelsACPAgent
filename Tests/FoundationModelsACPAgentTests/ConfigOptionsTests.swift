@@ -125,7 +125,7 @@ import Testing
     /// The `session/new` response carries exactly one config option: a
     /// select of category `model` whose default is the standard slot and
     /// whose labels show each slot's `chosen.stringValue`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewAnnouncesOneModelSlotSelectWithTheStandardDefault() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-announce")
 
@@ -150,7 +150,7 @@ import Testing
     /// `session/set_config_option` with an unknown session id answers
     /// JSON-RPC invalid params with the id in `data`, and pushes no
     /// `config_option_update`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anUnknownSessionIdAnswersInvalidParamsWithTheIdInData() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-unknown")
 
@@ -169,7 +169,7 @@ import Testing
 
     /// `session/set_config_option` on a closed session answers invalid
     /// params with the resume hint, and pushes no `config_option_update`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aClosedSessionAnswersInvalidParamsWithTheResumeHint() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-closed")
         await fixture.harness.agent.markSessionClosed(fixture.sessionId)
@@ -192,7 +192,7 @@ import Testing
 
     /// A set to `flash` answers the complete state showing `flash`, and
     /// the next prompt generates on the flash slot's model.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func settingFlashSwitchesLaterPromptsToTheFlashSlot() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-switch")
 
@@ -200,7 +200,7 @@ import Testing
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
         let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         #expect(ScriptedPromptFixture.agentText(in: firstPrompt).contains(Self.standardAnswer))
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
 
         let response = try await fixture.harness.connection.setSessionConfigOption(
             Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
@@ -216,7 +216,7 @@ import Testing
 
         // The set response already carried the complete state, so no
         // push follows it.
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
         await fixture.close()
     }
@@ -227,7 +227,7 @@ import Testing
     /// session, at the terminal of its own mail, with its standard text. The
     /// projector reads the replacement too, so the next prompt answers on
     /// the flash slot, after the first `idle`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSlotSwitchWhileAPromptIsOpenEndsThatPromptOnTheReplacedSession() async throws {
         let hold = ScriptedHold()
         var loader = StubModelLoader()
@@ -245,7 +245,6 @@ import Testing
             Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
         hold.release()
         let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
         let bothPrompts = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
@@ -263,7 +262,7 @@ import Testing
     /// An invalid set — an unknown option id, a value that is not a
     /// slot, or a value of the wrong type — answers invalid params, and
     /// the state does not change.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anInvalidSetAnswersInvalidParamsAndChangesNothing() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-invalid")
 
@@ -307,7 +306,7 @@ import Testing
     /// When the announced state shows a different model than resolution
     /// runs, the prompt's end pushes exactly one `config_option_update`
     /// carrying the full option list, and `currentValue` is the truth.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedResolutionDivergencePushesOneFullConfigOptionUpdate() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-divergence")
         let agent = fixture.harness.agent
@@ -333,11 +332,10 @@ import Testing
         #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
 
         // The push reconciled the state, so a second prompt pushes nothing.
-        try await ScriptedPromptFixture.waitForAvailability(agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
         _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
-        try await ScriptedPromptFixture.waitForAvailability(agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(agent, fixture.sessionId)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).count == 1)
         await fixture.close()
     }

@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -78,14 +79,57 @@ struct QueuedScriptedFixture {
     ///   - sessionId: The session to watch.
     ///   - count: The number of idle updates to wait for. The default is 1.
     /// - Returns: The collected updates of `sessionId`.
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     func waitForIdle(
         of sessionId: SessionId, count: Int = 1
     ) async throws -> [UpdateSessionNotification] {
-        try await Poll.until("idle update \(count) of \(sessionId.rawValue)") {
-            ScriptedPromptFixture.idleCount(in: await updates(of: sessionId)) >= count
+        let updates = try await base.collector.wait(for: "idle update \(count) of \(sessionId.rawValue)") { updates in
+            ScriptedPromptFixture.idleCount(in: updates.filter { $0.sessionId == sessionId }) >= count
         }
-        return await updates(of: sessionId)
+        return updates.filter { $0.sessionId == sessionId }
+    }
+
+    /// Starts to watch the Router session of `sessionId` for a submission
+    /// that must wait for a place in the generation queue: Router sends
+    /// `SessionEvent.submissionQueued` after the queue took the submission
+    /// as a waiting job. Call it before the prompt, and wait for the value
+    /// of the returned task after the prompt.
+    ///
+    /// The watch reads the event stream of the session, so it uses no clock
+    /// and no poll.
+    ///
+    /// - Parameter sessionId: The session to watch.
+    /// - Returns: The task of the watch. It ends at the first queued
+    ///   submission, or when the session closes.
+    /// - Throws: When the agent has no session `sessionId`.
+    func watchForQueuedSubmission(of sessionId: SessionId) async throws -> Task<Void, Never> {
+        let session = try #require(await base.harness.agent.sessions[sessionId]?.session)
+        let outputs = await session.streamSessionEvents()
+        return Task {
+            for await output in outputs {
+                if case .submissionQueued = output.event {
+                    return
+                }
+            }
+        }
+    }
+
+    /// Waits until the first of `watches` ended, and then cancels each
+    /// watch. A cancel ends the read of the event stream of a watch, so no
+    /// watch stays after the wait.
+    ///
+    /// - Parameter watches: The watches of ``watchForQueuedSubmission(of:)``.
+    static func waitForFirst(of watches: [Task<Void, Never>]) async {
+        await withTaskGroup(of: Void.self) { group in
+            for watch in watches {
+                group.addTask { await watch.value }
+            }
+            await group.next()
+            for watch in watches {
+                watch.cancel()
+            }
+        }
     }
 
     /// The updates that `sessionId` sent until now, in arrival order.
@@ -102,12 +146,13 @@ struct QueuedScriptedFixture {
     ///   or ``secondSession``.
     /// - Returns: The pending elicitations of the session, in arrival order.
     func pendingElicitations(of session: SessionModel) async -> [PendingElicitation] {
-        await ElicitationPoll.pendingElicitations(in: session)
+        await ElicitationWait.pendingElicitations(in: session)
     }
 
     /// Waits until session A and session B each sent an idle state update.
     ///
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     func waitForIdleOfBothSessions() async throws {
         _ = try await waitForIdle(of: firstSessionId)
         _ = try await waitForIdle(of: secondSessionId)

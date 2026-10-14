@@ -101,7 +101,7 @@ import Testing
     /// `prompts{stop_reason=end_turn}` and records one `prompt_duration`
     /// value with the same dimension. No dimension holds the session id, the
     /// prompt text or the answer text.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptThatEndsItsTurnCountsOnePromptAndRecordsOneDuration() async throws {
         let dimensions = [(ACPAgentTelemetry.MetricDimension.stopReason, Self.endTurnStopReason)]
         let metrics = try await TelemetryCapture.run(forbidding: [Self.promptText, Self.answerText]) { context in
@@ -128,7 +128,7 @@ import Testing
 
     /// After two `session/new` and one `session/close`, the last
     /// `active_sessions` value is 1. No dimension holds a session id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func twoNewSessionsAndOneCloseLeaveOneActiveSession() async throws {
         let lastValue = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeFixture(context: context)
@@ -152,7 +152,7 @@ import Testing
 
     /// A `/help` prompt adds one to `commands{command.kind=builtin,outcome=ok}`.
     /// No dimension holds the argument text.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func helpCommandCountsOneBuiltinCommandThatRan() async throws {
         let metrics = try await TelemetryCapture.run(forbidding: [Self.commandArguments]) { context in
             let fixture = try await Self.makeFixture(context: context)
@@ -176,7 +176,7 @@ import Testing
     /// A prompt that names an unknown command adds one to
     /// `commands{command.kind=unknown,outcome=refused}`. No dimension holds the
     /// unknown name, because the set of such names has no bound.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func unknownCommandCountsOneRefusedCommand() async throws {
         let metrics = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeFixture(context: context)

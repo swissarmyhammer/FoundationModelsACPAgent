@@ -110,7 +110,7 @@ struct CommandDispatchTests {
 
     /// A `/nosuchcmd` prompt gives an error that names the nearest
     /// command, and the model backend is never invoked.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anUnknownCommandRefusesWithANearMissAndNoModelPass() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-unknown",
@@ -144,7 +144,7 @@ struct CommandDispatchTests {
     /// A `.rendered` provider body is called, and its output reaches
     /// the model pass. The provider renders, and the dispatcher gives the
     /// result to the model, as it does for `.prompt`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRenderedBodyOutputReachesTheModelPass() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-rendered",
@@ -169,7 +169,7 @@ struct CommandDispatchTests {
     /// path ran all three render passes. A skill command still carries a
     /// raw `.prompt(template:)` body, so the dispatcher sends skill
     /// commands through `registry.call(id:arguments:)` for full fidelity.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSkillCommandRunsThroughRegistryCall() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-skill",
@@ -188,7 +188,7 @@ struct CommandDispatchTests {
 
     /// An `.action` command with an attached resource link is refused
     /// with a reason, and no model pass runs.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anActionCommandWithAnAttachmentIsRefused() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-refused",
@@ -222,7 +222,7 @@ struct CommandDispatchTests {
 
     /// An `.action` command streams its text with no model pass, and
     /// the prompt ends idle with `end_turn`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anActionCommandStreamsWithNoModelPass() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-action",
@@ -248,7 +248,7 @@ struct CommandDispatchTests {
     /// The response to a slash command names the user message of the
     /// command (ACP schema-v2.0.0-alpha.7): its `messageId` is the id of the
     /// one `user_message` echo that reaches the client.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSlashCommandResponseNamesTheEchoedUserMessage() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-message-id",
@@ -272,7 +272,7 @@ struct CommandDispatchTests {
     /// The `session/new` response holds the first command list (ACP
     /// schema-v2.0.0-alpha.7), so no `available_commands_update` repeats
     /// it. A skill file that changes on disk then publishes the new list.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theNewSessionResponseHoldsTheCommandListAndASkillChangePublishesTheNext() async throws {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-publish",

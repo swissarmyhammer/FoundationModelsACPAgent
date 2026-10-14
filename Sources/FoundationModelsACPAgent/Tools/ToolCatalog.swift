@@ -232,6 +232,12 @@ public enum ToolCatalog {
         /// Stops the started code context of the build, or `nil` when the
         /// `codeContext:` section is off.
         let codeContextStop: (@Sendable () async -> Void)?
+
+        /// Waits until the code context of the build ended its first index
+        /// pass, or `nil` when the `codeContext:` section is off. Only a test
+        /// waits on it, to read a fact that the first pass makes true with no
+        /// clock.
+        var codeContextFirstIndexPass: (@Sendable () async -> Void)? = nil
     }
 
     /// Builds the composed session surface: the Multitool session tools —
@@ -415,7 +421,8 @@ public enum ToolCatalog {
         }
         // The code context is the last composition step, so a failure
         // before it leaves no started context behind.
-        let codeContextStop = try await composeCodeContext(into: builder, context: context)
+        let codeContext = try await composeCodeContext(into: builder, context: context)
+        let codeContextStop = codeContext?.stop
         do {
             return BuiltRegistry(
                 registry: try builder.buildRegistry(),
@@ -424,7 +431,8 @@ public enum ToolCatalog {
                 mcpServers: composed.servers,
                 mcpServerOutcomes: composed.outcomes,
                 shellOutput: shellOutput,
-                codeContextStop: codeContextStop)
+                codeContextStop: codeContextStop,
+                codeContextFirstIndexPass: codeContext?.firstIndexPass)
         } catch {
             await codeContextStop?()
             throw error
@@ -450,14 +458,15 @@ public enum ToolCatalog {
     ///   - builder: The builder that gets the tool group.
     ///   - context: The session whose working directory and profile the
     ///     code context reads.
-    /// - Returns: The closure that stops the started code context, or `nil`
-    ///   when the section is off.
+    /// - Returns: The closure that stops the started code context, and the
+    ///   closure that waits for its first index pass, or `nil` when the
+    ///   section is off.
     /// - Throws: Whatever `CodeContext.init`, `start()` or
     ///   `CodeContextTools.make(context:)` throws. After a failure the
     ///   started context is stopped.
     static func composeCodeContext(
         into builder: MultiTool.Builder, context: CatalogContext
-    ) async throws -> (@Sendable () async -> Void)? {
+    ) async throws -> (stop: @Sendable () async -> Void, firstIndexPass: @Sendable () async -> Void)? {
         guard case .enabled(let options) = context.configuration.tools.codeContext else {
             return nil
         }
@@ -477,7 +486,9 @@ public enum ToolCatalog {
             await codeContext.stop()
             throw error
         }
-        return { await codeContext.stop() }
+        return (
+            stop: { await codeContext.stop() },
+            firstIndexPass: { await codeContext.waitForFirstIndexPass() })
     }
 
     /// Builds the skills registry over the dotfolder stack, or `nil` when

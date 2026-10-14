@@ -69,7 +69,7 @@ final class PathRecordingTool: Tool, Sendable {
 
     /// The convenience builds the pair and completes an `initialize` round
     /// trip observed from the client end.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func plainHarnessCompletesAnInitializeRoundTrip() async throws {
         let harness = try await AgentClientHarness.make()
         let response = try await harness.connection.initialize(
@@ -85,7 +85,7 @@ final class PathRecordingTool: Tool, Sendable {
     /// collector holds no session update, because `initialize` streams
     /// none. No permission request is pending on any session either: the
     /// sandbox is the only gate, and this agent never sends one.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func recordingHarnessCollectsNoUpdateAcrossInitialize() async throws {
         let harness = try await AgentClientHarness.makeRecording()
         let collector = try #require(harness.collector)
@@ -106,7 +106,7 @@ final class PathRecordingTool: Tool, Sendable {
     /// registers an FSEvents stream, and fseventsd registers the streams of
     /// the whole machine one at a time. Thus each code context that a unit
     /// fixture starts makes each other fixture of a parallel run wait.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aStubAgentSessionStartsNoCodeContext() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.endPass], label: "HarnessSmokeTests-no-code-context")
@@ -125,7 +125,7 @@ final class PathRecordingTool: Tool, Sendable {
     /// The agent end of the wire sends the chunk, and the update tap of the
     /// model tells when it arrived. The tap gives each update before the
     /// model folds it, so the read before the flush sees the buffered state.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func flushDrainsACoalescedChunkWithoutSleeping() async throws {
         let harness = try await AgentClientHarness.make()
         _ = try await harness.client.initialize(AgentClientHarness.makeInitializeRequest())
@@ -188,7 +188,7 @@ final class PathRecordingTool: Tool, Sendable {
     /// prompt, emits its scripted deltas in order, performs the known tool
     /// call with the fixed arguments, and then ends the pass: the stream
     /// finishes. No model, no download, no network.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func scriptedBackendEmitsDeltasToolCallAndPassEnd() async throws {
         let recorder = PathRecordingTool()
         let loader = makeScriptedModelLoader(script: Self.script)
@@ -208,7 +208,7 @@ final class PathRecordingTool: Tool, Sendable {
     /// The container writes all four session factories, so the tools
     /// reach a transcript-seeded backend as well. The public default
     /// drops `tools`; a container relying on it would record no call.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func scriptedContainerHandsToolsToATranscriptSeededBackend() async throws {
         let recorder = PathRecordingTool()
         let container = ScriptedLLMContainer(script: Self.script)
@@ -222,7 +222,7 @@ final class PathRecordingTool: Tool, Sendable {
 
     /// A scripted tool call that names no handed tool fails the pass
     /// loudly instead of passing silently.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func scriptedToolCallWithoutItsToolThrows() async throws {
         let container = ScriptedLLMContainer(script: Self.script)
         let backend = container.makeSession(instructions: nil)
@@ -233,7 +233,7 @@ final class PathRecordingTool: Tool, Sendable {
     }
 
     /// Steps after `.endPass` are never emitted: the pass ended.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func scriptedStepsAfterThePassEndAreNotEmitted() async throws {
         let trailingDelta = "never emitted"
         let container = ScriptedLLMContainer(

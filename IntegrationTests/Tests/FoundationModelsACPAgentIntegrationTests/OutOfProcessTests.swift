@@ -94,26 +94,6 @@ struct OutOfProcessTests {
     /// The exit code of a cancelled run (§5.8).
     private static let cancelledExitCode: Int32 = 4
 
-    /// The number of seconds in ``firstOutputLimit``.
-    private static let firstOutputLimitSeconds = 60
-
-    /// How long a child may take to write its first stdout byte. It covers
-    /// the process start of two binaries and the stub composition of the
-    /// spawned one, which downloads nothing.
-    private static let firstOutputLimit: Swift.Duration = .seconds(firstOutputLimitSeconds)
-
-    /// The number of seconds in ``exitLimit``.
-    private static let exitLimitSeconds = 30
-
-    /// How long a child may take to end after its last signal. A cancelled
-    /// prompt ends in milliseconds, and the whole uninterrupted prompt lasts
-    /// under two seconds, so this bound is generous for both.
-    private static let exitLimit: Swift.Duration = .seconds(exitLimitSeconds)
-
-    /// The pause between two signals. One signal goes out here, so no pause
-    /// is ever taken.
-    private static let signalGap: Swift.Duration = .zero
-
     // MARK: - The subprocess drivers
 
     /// Runs the built `acp-agent` with `arguments` over the stub model, in
@@ -157,10 +137,7 @@ struct OutOfProcessTests {
             atFirstOutput: { runIdentifier in
                 observed.record(try ProcessCensus.agentsServingACP(startedBy: runIdentifier))
             },
-            signalCount: signalCount,
-            gap: signalGap,
-            firstOutputLimit: firstOutputLimit,
-            exitLimit: exitLimit)
+            signalCount: signalCount)
     }
 
     // MARK: - The contract
@@ -171,7 +148,7 @@ struct OutOfProcessTests {
     /// makes it a proof of the pass-through: an out-of-process run whose
     /// child never saw `ACP_AGENT_STUB_MODEL` would resolve a real model and
     /// write other bytes.
-    @Test(.timeLimit(.minutes(3)))
+    @Test
     func theTwoModesAnswerOnePromptWithTheSameBytes() async throws {
         let inProcess = try await Self.runAgentCLI(
             arguments: [Self.runSubcommand, Self.promptText],
@@ -198,7 +175,7 @@ struct OutOfProcessTests {
     /// whether its whole process group is still alive. The other two rows
     /// never see the child, so each asks whether any agent has outlived the
     /// run that started it — an orphan, which is what a leak is.
-    @Test(.timeLimit(.minutes(5)))
+    @Test
     func noProcessOfTheChildsGroupOutlivesTheRun() async throws {
         let observed = ObservedAgents()
         let completed = try await Self.runPacedAgentCLI(

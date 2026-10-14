@@ -129,6 +129,10 @@ shows it in about 20 seconds. CI runs it on each push:
 swift test --package-path IntegrationTests --filter SkillTriggerTests
 ```
 
+The gate measures what the model chose, not when. A run stops at the first
+`use skill` call of the model, or at the end of the prompt when the model loads
+no skill. No clock decides it.
+
 `ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes` runs the
 slower samples. `ACP_AGENT_SKILL_TRIGGER_MODEL` and
 `ACP_AGENT_SKILL_TRIGGER_REPEATS` set the model and the number of runs.

@@ -72,12 +72,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// can see that the root session uses the value of the context.
     static let shortSettlePeriod: TimeInterval = 0.5
 
-    /// The longest time that a test waits for a state.
-    static let waitTimeout: Duration = .seconds(5)
-
-    /// The pause between two looks at a state.
-    static let pollInterval: Duration = .milliseconds(20)
-
     /// The text that the pending envelope of the Router holds.
     static let pendingMarker = "pending"
 
@@ -233,22 +227,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
             return structure.content.jsonString
         }
         return ""
-    }
-
-    /// Waits until `condition` is true, or until ``waitTimeout``.
-    ///
-    /// - Parameter condition: The state to wait for.
-    /// - Returns: `true` when the state came before the timeout.
-    /// - Throws: `CancellationError` when the test is cancelled.
-    static func waitUntil(_ condition: () async -> Bool) async throws -> Bool {
-        let deadline = ContinuousClock.now.advanced(by: waitTimeout)
-        while ContinuousClock.now < deadline {
-            if await condition() {
-                return true
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        return await condition()
     }
 
     // MARK: - The mount
@@ -413,7 +391,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// settle period of the agent in its `SessionConfiguration`: the sidecar
     /// of the root session records the short period, not the default. The
     /// test reads the sidecar, not a clock.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration() async throws {
         let agent = try await Self.makeAgent(label: "settle-new", inlineSettleGrace: Self.shortSettlePeriod)
         let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-new-repo")
@@ -429,7 +407,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// `SessionConfiguration`: after the switch, the sidecar of the root
     /// session and the sidecar of the replacement both record the short
     /// period. The test reads the sidecars, not a clock.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
         let agent = try await Self.makeAgent(label: "settle-switch", inlineSettleGrace: Self.shortSettlePeriod)
         let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-switch-repo")
@@ -453,7 +431,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// The settle period waits on a `ManualRunClock` that the test never
     /// advances, so the period cannot end before the quick run. On the real
     /// clock, a machine with a high load could end the period first.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall() async throws {
         let hold = ScriptedHold()
         let context = try await Self.makeContext(
@@ -476,21 +454,27 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
     /// A `start agent` call to a run that continues after the settle period
     /// of the context gives the pending envelope. The final message of the
-    /// run comes later as mail, one time. The test does not measure the wait
-    /// with a clock, because a clock limit fails when the machine has a high
-    /// load. These tests prove the settle period without a clock:
+    /// run comes later as mail, one time.
+    ///
+    /// The settle period is zero, on a `ManualRunClock` that the test never
+    /// advances. The deadline of the period is thus reached when the call
+    /// starts to wait, and the held run cannot end before it, so the call
+    /// gives the pending envelope in a fixed order, with no clock. When the
+    /// held run ends, `awaitIdle()` waits for the open run and for the
+    /// answer of its mail. These tests prove the settle period without a
+    /// clock:
     /// ``theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext()``
     /// for the agent environment and the surface,
     /// ``aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration()`` for
     /// the root session, and
     /// ``aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent()``
     /// for the session after a slot switch.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime() async throws {
         let hold = ScriptedHold()
         let context = try await Self.makeContext(
             label: "slow", script: Self.startAgentScript(hold: hold),
-            inlineSettleGrace: Self.shortSettlePeriod)
+            inlineSettleGrace: 0, runClock: ManualRunClock())
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
         let session = Self.makeRootSession(surface: surface, context: context)
 
@@ -500,10 +484,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         #expect(!output.contains(Self.slowFinalText))
         #expect(output.contains(Self.pendingMarker), "\(output)")
         hold.release()
-        let delivered = try await Self.waitUntil {
-            Self.promptTexts(in: await session.transcript).contains { $0.contains(Self.slowFinalText) }
-        }
-        #expect(delivered)
+        // The open run counts as work, so the idle comes after the run ended
+        // and after the answer of its mail.
         #expect(await session.awaitIdle())
         let mail = Self.promptTexts(in: await session.transcript).filter { $0.contains(Self.slowFinalText) }
         #expect(mail.count == 1)
@@ -515,7 +497,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
     /// `stopAgentRuns()` cancels each run of the surface that is in
     /// operation.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func stopAgentRunsCancelsEachRunInOperation() async throws {
         let hold = ScriptedHold()
         let context = try await Self.makeContext(
@@ -549,7 +531,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// run writes "no join" for that run while the agent run is in operation,
     /// so the terminal stream announces the run on its completion token and
     /// does not wait for the end of the agent run.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theOpenRecordOfAToolRunOfAnAgentRunWritesItsEntryWhileTheRunIsInOperation() async throws {
         let hold = ScriptedHold()
         let context = try await Self.makeContext(
@@ -573,7 +555,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// `session/close` stops the agent runs of the session before the root
     /// session closes: when the close sweep of the root session finishes its
     /// event stream, the run is already cancelled.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses() async throws {
         let hold = ScriptedHold()
         let cwd = makeResolvedDirectory(label: "AgentsToolTests-close-repo")

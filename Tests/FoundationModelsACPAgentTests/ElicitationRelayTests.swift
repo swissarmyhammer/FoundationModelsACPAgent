@@ -255,13 +255,13 @@ struct ElicitationRelayTests {
     /// A tool that elicits in form mode produces one `elicitation/create`
     /// at the client, `requires_action` before it and `running` after the
     /// answer, and the tool receives the accepted content.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aFormElicitationRoundTripsTheAcceptedContentToTheTool() async throws {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.formSnippet, label: "ElicitationRelayTests-form-accept")
         try await Self.prompt(fixture)
 
-        let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
+        let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
         #expect(pending.request.message == ScriptedServer.elicitEchoMessage)
         if case .form(let form) = pending.request.mode {
             #expect(form.requestedSchema.required == [ScriptedServer.elicitEchoAnswerField])
@@ -300,12 +300,12 @@ struct ElicitationRelayTests {
 
     /// A declined form elicitation reaches the tool as `decline`, and the
     /// prompt still ends `end_turn`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aDeclinedFormElicitationReachesTheToolAsDecline() async throws {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.formSnippet, label: "ElicitationRelayTests-form-decline")
         try await Self.prompt(fixture)
-        let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
+        let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
 
         await MainActor.run {
             fixture.session.declineElicitation(pending.id)
@@ -323,7 +323,7 @@ struct ElicitationRelayTests {
 
     /// A client with no `elicitation` capability makes the tool receive
     /// `decline`, and no `elicitation/create` is sent.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aClientWithoutTheCapabilityMakesTheToolReceiveDeclineAndNothingIsSent() async throws {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.formSnippet,
@@ -344,7 +344,7 @@ struct ElicitationRelayTests {
     /// A client with `form` only, asked in `url` mode, receives nothing —
     /// the relay never falls back to form — and the tool receives
     /// `decline`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aFormOnlyClientAskedInURLModeReceivesNothingAndTheToolReceivesDecline() async throws {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.urlSnippet,
@@ -370,7 +370,7 @@ struct ElicitationRelayTests {
     /// A decline of a URL-mode request to a client with `form` only writes
     /// one `notice` record. The mode, the decline reason and the session id
     /// are in the metadata of the record.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aDeclineForAnUnsupportedModeWritesOneNoticeWithTheModeInMetadata() async throws {
         let modeKey = ACPAgentTelemetry.LogMetadataKey.elicitationMode
         let captured = try await TelemetryCapture.run(forbidding: []) { context in
@@ -406,13 +406,13 @@ struct ElicitationRelayTests {
 
     /// URL mode: create, accept, then `elicitation/complete` reaches the
     /// client, and the tool resumes with the accept.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aURLElicitationCompletesAfterAcceptAndTheCompletionReachesTheClient() async throws {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.urlSnippet, label: "ElicitationRelayTests-url-accept")
         try await Self.prompt(fixture)
 
-        let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
+        let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
         #expect(pending.request.message == ScriptedServer.elicitURLMessage)
         #expect(pending.url?.absoluteString == ScriptedServer.elicitURLLink)
         let elicitationId = try #require(pending.elicitationId)
@@ -440,12 +440,12 @@ struct ElicitationRelayTests {
     /// post-answer `running` goes out — and only then the idle terminator.
     /// The URL-mode tool is used here, so the cancel also releases an
     /// outstanding URL elicitation id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle() async throws {
         let fixture = try await Self.makeLoopbackFixture(
             code: Self.urlSnippet, label: "ElicitationRelayTests-cancel")
         try await Self.prompt(fixture)
-        _ = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
+        _ = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
 
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))

@@ -159,7 +159,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// the folder that `SKILLS_MARKETPLACE_CACHE` of the host environment
     /// names, and the marketplace skill reaches the skills registry. The
     /// session after the slot switch keeps that registry.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theMarketplaceStoreOfEachSessionUsesTheCacheFolderOfTheHostEnvironment() async throws {
         let repository = try SkillsMarketplaceTests.makeMarketplaceRepository()
         let cache = makeResolvedDirectory(label: "AgentEnvironmentTests-marketplace-cache")
@@ -189,7 +189,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// The `skills` dotfolder stack of each session reads its defaults layer
     /// from the folder that `SKILLS_DEFAULTS_DIR` of the host environment
     /// names. The session after the slot switch keeps that registry.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theSkillsStackOfEachSessionReadsTheDefaultsLayerOfTheHostEnvironment() async throws {
         let defaults = makeResolvedDirectory(label: "AgentEnvironmentTests-skills-defaults")
         let skillFolder = defaults.appendingPathComponent(Self.hostSkillName, isDirectory: true)
@@ -208,7 +208,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// The `agents` dotfolder stack of each session reads its defaults layer
     /// from the folder that `AGENTS_DEFAULTS_DIR` of the host environment
     /// names. The session after the slot switch keeps that `agents` tool.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theAgentsStackOfEachSessionReadsTheDefaultsLayerOfTheHostEnvironment() async throws {
         let defaults = makeResolvedDirectory(label: "AgentEnvironmentTests-agents-defaults")
         let agentFolder = defaults

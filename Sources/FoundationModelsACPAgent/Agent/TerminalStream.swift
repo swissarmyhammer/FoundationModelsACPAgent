@@ -84,6 +84,23 @@ struct TerminalStream {
     /// The sink every update of this projection goes to.
     let send: SessionUpdateSink
 
+    /// Where the forwarder of ``consume(_:)`` waits: for the next shell
+    /// event of the upstream stream, or for its turn after the loop took
+    /// one event. A test reads these steps to prove that the forwarder
+    /// reads no event ahead while the sink holds a send.
+    enum ForwarderStep: Equatable, Sendable {
+        /// The forwarder waits for the next shell event of the stream.
+        case awaitingUpstream
+
+        /// The forwarder handed one event over, and waits until the loop
+        /// handled it.
+        case awaitingTurn
+    }
+
+    /// Gets each step of the forwarder, in order, or `nil` to observe
+    /// nothing. Only a test sets it.
+    var forwarderObserver: (@Sendable (ForwarderStep) -> Void)?
+
     /// The runs whose `Terminal` reference already went out. A run
     /// leaves the set at its completion marker, because no later event
     /// carries its `commandID`.
@@ -140,12 +157,15 @@ struct TerminalStream {
     ///     `snapshot(for:)` backs the gap and completion replacements.
     ///   - runCallJoins: The join table of the session. The default is a
     ///     table that no projector opens.
+    ///   - forwarderObserver: Gets each step of the forwarder, or `nil`
+    ///     (the default) to observe nothing. Only a test gives it.
     ///   - send: The sink every update goes to.
     /// - Returns: The running consumer task.
     @discardableResult
     static func start(
         over stream: ShellOutputChunkStream,
         runCallJoins: RunCallJoinTable = RunCallJoinTable(),
+        forwarderObserver: (@Sendable (ForwarderStep) -> Void)? = nil,
         send: @escaping SessionUpdateSink
     ) -> Task<Void, Never> {
         Task {
@@ -153,6 +173,7 @@ struct TerminalStream {
                 snapshot: { commandID in stream.snapshot(for: commandID) },
                 runCallJoins: runCallJoins,
                 send: send)
+            projection.forwarderObserver = forwarderObserver
             await projection.consume(stream)
         }
     }
@@ -178,9 +199,16 @@ struct TerminalStream {
         runCallJoins.observeJoins { commandID in
             continuation.yield(.joined(commandID))
         }
+        let observe = forwarderObserver ?? { _ in }
         let forwarder = Task {
-            for await event in events {
+            var iterator = events.makeAsyncIterator()
+            while true {
+                observe(.awaitingUpstream)
+                guard let event = await iterator.next(isolation: nil) else {
+                    break
+                }
                 continuation.yield(.event(event))
+                observe(.awaitingTurn)
                 guard await gate.waitForTurn() else {
                     return
                 }

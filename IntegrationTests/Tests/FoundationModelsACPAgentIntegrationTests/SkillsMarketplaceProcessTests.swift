@@ -69,7 +69,7 @@ struct SkillsMarketplaceProcessTests {
 
     /// A spawned agent with the configuration of the suites fetches no
     /// marketplace: the prompt ends, and the cache folder stays empty.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func aSpawnedAgentFetchesNoSkillsMarketplace() async throws {
         let cache = makeResolvedDirectory(label: "SkillsMarketplaceOffline-cache")
 
@@ -87,7 +87,7 @@ struct SkillsMarketplaceProcessTests {
     /// defaults layer, so the child reads the shipped list. The
     /// prompt ends, and the session start fetched a snapshot of the
     /// `swissarmyhammer/skills` repository into the cache folder.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func theShippedMarketplaceListFetchesTheGitHubSkillsRepositoryOverTheNetwork() async throws {
         let cache = makeResolvedDirectory(label: "SkillsMarketplaceShipped-cache")
 

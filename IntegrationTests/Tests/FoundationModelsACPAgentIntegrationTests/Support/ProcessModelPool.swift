@@ -19,33 +19,21 @@ import FoundationModelsExtras
 /// reference to the agent goes, each hold goes, and the pool evicts the models
 /// in its admission queue.
 enum ProcessModelPool {
-    /// The pause between two looks at the pool, in milliseconds.
-    private static let pollIntervalMilliseconds = 100
-
-    /// The pause between two looks at the pool.
-    private static let pollInterval: Duration = .milliseconds(pollIntervalMilliseconds)
-
-    /// How long a look waits for the pool to evict the last model, in
-    /// seconds. An eviction is a job in the admission queue, and it frees
-    /// the memory of a loaded model, so it is short. The deadline is a guard
-    /// against a model that stays, not a budget.
-    private static let deadlineSeconds = 60
-
-    /// How long a look waits for the pool to evict the last model.
-    static let deadline: Duration = .seconds(deadlineSeconds)
-
-    /// Waits until the pool of the process holds no model, or until
-    /// ``deadline``.
+    /// Waits for the event that the pool of the process holds no model.
+    ///
+    /// The wait reads `ModelPool.footprints`: the current footprint first,
+    /// then the footprint after each change. Each release of a hold and the
+    /// end of each evict call publish a new footprint, so the wait ends after
+    /// the last hold is released and each eviction ended, with no clock and
+    /// no poll. It is the wait of the Router helper
+    /// `ModelPool.awaitNoResidentModel()`, which no product exports.
     ///
     /// - Returns: The models the pool still holds: empty when the pool
-    ///   evicted each model before the deadline.
+    ///   evicted each model, and the held models when the calling task was
+    ///   cancelled first.
     static func residentModelsAfterRelease() async -> [ModelPoolKey] {
-        let end = ContinuousClock.now + deadline
-        while ContinuousClock.now < end {
-            if ModelPool.shared.footprint.resident.isEmpty {
-                return []
-            }
-            try? await Task.sleep(for: pollInterval)
+        for await footprint in ModelPool.shared.footprints where footprint.resident.isEmpty {
+            return []
         }
         return Array(ModelPool.shared.footprint.resident.keys)
     }

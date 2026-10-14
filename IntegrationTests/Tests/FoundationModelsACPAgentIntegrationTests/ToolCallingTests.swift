@@ -43,9 +43,7 @@ import Testing
 /// ```sh
 /// swift test --package-path IntegrationTests --filter ToolCallingTests
 /// ```
-@Suite(
-    .serialized,
-    .timeLimit(.minutes(15)))
+@Suite(.serialized)
 struct ToolCallingTests {
     /// The text the model writes into ``probeFileName``.
     private static let marker = "tool-calling-ok"
@@ -55,18 +53,6 @@ struct ToolCallingTests {
 
     /// The file the `shell` command writes.
     private static let hashFileName = "probe.sha256"
-
-    /// The pause between two looks at the disk and the wire.
-    private static let pollInterval: Duration = .milliseconds(100)
-
-    /// How long a run waits for the prompt to end.
-    ///
-    /// The first run of a process also loads the model. On 2026-09-27 the
-    /// whole gate took 90 seconds with that load. The CI machine is
-    /// slower: on 2026-09-21 the skill trigger gate took 76 seconds there,
-    /// and 15 seconds on a warm machine. 600 seconds stands clear of both.
-    /// The deadline is a guard against a hang, not a budget.
-    private static let promptDeadline: Duration = .seconds(600)
 
     /// The user-layer `config.yaml`. The shell is on, because the gate
     /// needs it. The code context is off, because the gate does not need
@@ -122,7 +108,7 @@ struct ToolCallingTests {
             "an earlier suite keeps models resident, so the profile cannot resolve: \(ProcessModelPool.describe(residentBefore))")
         let workspace = makeResolvedDirectory(label: "ToolCalling-workspace")
         let run = try await Self.runPrompt(in: workspace)
-        #expect(run.drained, "the session still had work \(SessionDrain.deadline) after the prompt")
+        #expect(run.drained, "the session closed before it had no work")
 
         // The report goes to the reader whether the gate passes or fails.
         let report =
@@ -163,7 +149,7 @@ struct ToolCallingTests {
 
     /// What the run of the prompt observed.
     private struct PromptRun {
-        /// The stop reason of the prompt, or `nil` when the deadline passed.
+        /// The stop reason of the prompt.
         let stopReason: StopReason?
 
         /// The time from the prompt request to its end.
@@ -172,7 +158,7 @@ struct ToolCallingTests {
         /// The title of every tool call the wire carried, in wire order.
         let toolTitles: [String]
 
-        /// Whether the session drain completed inside its deadline.
+        /// Whether the session became idle before it closed.
         let drained: Bool
     }
 
@@ -216,10 +202,7 @@ struct ToolCallingTests {
         _ = try await harness.connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: sessionId, text: prompt(workspace: workspace)))
-        let stopReason = await waitForIdle(
-            collector: collector,
-            sessionId: sessionId,
-            deadline: ContinuousClock.now + promptDeadline)
+        let stopReason = try await waitForIdle(collector: collector, sessionId: sessionId)
         let elapsed = start.duration(to: ContinuousClock.now)
         await harness.flushPendingChunks()
         let titles = await toolTitles(of: collector, sessionId: sessionId)
@@ -229,29 +212,38 @@ struct ToolCallingTests {
 
     // MARK: - Waiting
 
-    /// Waits for the idle terminator of one session, or for the deadline.
+    /// Waits for the idle terminator of one session. Each update that the
+    /// collector gets checks the sequence again, so the wait uses no clock
+    /// and no poll. The first run of a process also loads the model, so the
+    /// wait can be long; a hang holds the test, and a sample of the test
+    /// process shows where it waits.
     ///
     /// - Parameters:
     ///   - collector: The recorder of the sequence.
     ///   - sessionId: The session to watch.
-    ///   - deadline: The instant the wait gives up at.
-    /// - Returns: The stop reason, or `nil` at the deadline.
+    /// - Returns: The stop reason.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     private static func waitForIdle(
-        collector: UpdateCollector, sessionId: SessionId, deadline: ContinuousClock.Instant
-    ) async -> StopReason? {
-        while ContinuousClock.now < deadline {
-            let reasons = await collector.updates.compactMap { notification -> StopReason? in
-                guard notification.sessionId == sessionId,
-                    case .stateUpdate(.idle(let idle)) = notification.update
-                else { return nil }
-                return idle.stopReason
-            }
-            if let reason = reasons.last {
-                return reason
-            }
-            try? await Task.sleep(for: pollInterval)
+        collector: UpdateCollector, sessionId: SessionId
+    ) async throws -> StopReason? {
+        let updates = try await collector.wait(for: "the idle of \(sessionId.rawValue)") { updates in
+            updates.contains { Self.stopReason(of: $0, in: sessionId) != nil }
         }
-        return nil
+        return updates.compactMap { Self.stopReason(of: $0, in: sessionId) }.last
+    }
+
+    /// The stop reason of an idle state update of one session, or `nil`.
+    ///
+    /// - Parameters:
+    ///   - notification: The update.
+    ///   - sessionId: The session to read.
+    /// - Returns: The stop reason.
+    private static func stopReason(of notification: UpdateSessionNotification, in sessionId: SessionId) -> StopReason? {
+        guard notification.sessionId == sessionId,
+            case .stateUpdate(.idle(let idle)) = notification.update
+        else { return nil }
+        return idle.stopReason
     }
 
     /// The title of every tool call the wire carried for one session. A

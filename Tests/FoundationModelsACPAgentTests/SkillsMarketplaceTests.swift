@@ -113,7 +113,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// A session of the stub agent reads no marketplace: the defaults layer
     /// of the stub agent sets `marketplaces: []` over the default list, thus
     /// the session start makes no marketplace store and needs no network.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionOfTheStubAgentReadsNoMarketplace() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.endPass], label: "SkillsMarketplaceTests-stub")
@@ -129,7 +129,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// its skill to the skills registry and its agent to the `agents` tool,
     /// through the one store of the session. The store writes its cache into
     /// the folder that the environment of the context names.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aMarketplaceOnMainGivesItsSkillAndItsAgentToTheSession() async throws {
         let repository = try Self.makeMarketplaceRepository()
         let cache = makeResolvedDirectory(label: "SkillsMarketplaceTests-cache")

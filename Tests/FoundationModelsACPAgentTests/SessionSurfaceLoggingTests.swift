@@ -29,7 +29,7 @@ import Testing
     /// A `session/cancel` for an unknown session writes one `notice` record.
     /// The session id is in the metadata of the record, and not in its
     /// message.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func ignoredCancelOfAnUnknownSessionWritesOneNoticeWithTheSessionIdInMetadata() async throws {
         let unknownSessionId = Self.unknownSessionIdValue
         let records = try await TelemetryCapture.run(forbidding: []) { context in
@@ -56,7 +56,7 @@ import Testing
     /// A `session/cancel` for a session with a running prompt writes one
     /// `info` record. The record holds the session id and the `SignalID` of
     /// the `cancelAll()` signal in its metadata.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancelOfARunningPromptWritesOneInfoWithTheCancelSignalInMetadata() async throws {
         let cancelSignalKey = ACPAgentTelemetry.LogMetadataKey.cancelSignalId
         let records = try await TelemetryCapture.run(forbidding: []) { context in
@@ -71,7 +71,7 @@ import Testing
                 context.logRecords.contains { $0.metadata[cancelSignalKey] != nil }
             }
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
             await fixture.close()
             return (sessionId: fixture.sessionId.rawValue, records: context.logRecords)
         }

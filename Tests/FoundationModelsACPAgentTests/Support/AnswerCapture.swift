@@ -78,6 +78,18 @@ final class AnswerCapture {
         return { (try? Self.text(at: url)) == text }
     }
 
+    /// Waits until the capture holds exactly `text`. Each write to the
+    /// capture file checks the text again (``FileWriteWatch``), so the wait
+    /// uses no clock and no poll.
+    ///
+    /// - Parameter text: The text the capture must hold.
+    /// - Returns: The wait, for a gate of a scripted watch.
+    func waitUntilHolding(_ text: String) -> @Sendable () async throws -> Void {
+        let url = url
+        let holds = holds(text)
+        return { try await FileWriteWatch.wait(on: url, for: "the capture holds \(text)", until: holds) }
+    }
+
     /// The UTF-8 text of the capture file at `url`.
     ///
     /// - Parameter url: The capture file to read.

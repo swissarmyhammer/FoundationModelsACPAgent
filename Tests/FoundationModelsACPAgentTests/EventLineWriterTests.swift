@@ -379,7 +379,7 @@ struct EventLineWriterTests {
     /// for each event and nothing else: every line is a projected event,
     /// each call the script made has its line, and the prompt's one stop
     /// reason stands last. In a pipe, because a person asked to see them.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func aVerbosePipedRunWritesOneLineForEachEvent() async throws {
         let streams = try await Self.runScriptedPrompt(
             at: .verbose, label: "EventLineWriterTests-verbose")
@@ -403,7 +403,7 @@ struct EventLineWriterTests {
 
     /// A run with neither flag writes zero bytes to stderr, over the same
     /// prompt that fills the stream under `--verbose`.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func aPipedRunWithNeitherFlagWritesZeroBytesToStandardError() async throws {
         let streams = try await Self.runScriptedPrompt(
             at: .normal, label: "EventLineWriterTests-plain")
@@ -414,7 +414,7 @@ struct EventLineWriterTests {
     /// stdout carries the same bytes under each of the four flag
     /// combinations. §5.6 stays byte-exact, because none of §5.7 touches
     /// file descriptor 1.
-    @Test(.timeLimit(.minutes(4)))
+    @Test
     func standardOutputIsIdenticalAcrossTheFourFlagCombinations() async throws {
         var written: [Data] = []
         for (index, flags) in Self.flagCombinations.enumerated() {

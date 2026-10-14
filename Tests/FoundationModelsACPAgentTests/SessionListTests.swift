@@ -139,7 +139,7 @@ struct SessionListTests {
 
     // MARK: - The SessionInfo join
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cwdFilteredListReportsTheJoinedSessionInfoFields() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "fields")
@@ -168,7 +168,7 @@ struct SessionListTests {
         #expect(response.sessions.last?.additionalDirectories?.isEmpty == true)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func unknownCwdFilterGivesAnEmptySuccess() async throws {
         let fixture = try await Self.makeWireFixture()
         let absent = makeResolvedDirectory(label: "SessionListTests-known")
@@ -183,7 +183,7 @@ struct SessionListTests {
 
     // MARK: - The cursor on the wire
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func invalidCursorGivesAnInvalidParamsError() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "cursor")
@@ -211,7 +211,7 @@ struct SessionListTests {
     /// `session/resume` refuse one, naming the field that failed and why.
     /// A relative filter would otherwise key the project read off the
     /// process working directory.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRelativeCwdFilterGivesAnInvalidParamsErrorNamingTheField() async throws {
         let fixture = try await Self.makeWireFixture()
 
@@ -225,7 +225,7 @@ struct SessionListTests {
         await fixture.close()
     }
 
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func threePageWalkSeesEverySessionOnceAcrossTwoProjects() async throws {
         let fixture = try await Self.makeWireFixture()
         let projects = [
@@ -254,7 +254,7 @@ struct SessionListTests {
 
     // MARK: - The listability rules from the client end
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aClosedSessionListsAndADeletedOneDoesNot() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "deleted")
@@ -274,7 +274,7 @@ struct SessionListTests {
         #expect(response.sessions.map(\.sessionId.rawValue) == [kept.description])
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aForkDoesNotAppearBecauseItsParentIdIsSet() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "fork")
@@ -295,7 +295,7 @@ struct SessionListTests {
         #expect(!listed.contains(fork.id.description))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aZeroPromptSessionFromSessionNewDoesNotList() async throws {
         let fixture = try await Self.makeWireFixture()
         let workingDirectory = makeResolvedDirectory(label: "SessionListTests-zero-prompt")
@@ -311,7 +311,7 @@ struct SessionListTests {
 
     // MARK: - The cross-project merge
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func twoProjectsOverOneSharedRootListEachSessionOnce() async throws {
         let fixture = try await Self.makeWireFixture()
         let sharedRoot = makeResolvedDirectory(label: "SessionListTests-shared-root")

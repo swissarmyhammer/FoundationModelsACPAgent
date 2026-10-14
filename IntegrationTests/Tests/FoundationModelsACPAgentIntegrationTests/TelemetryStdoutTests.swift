@@ -20,16 +20,10 @@ import Testing
 // `swift test` never sees this target, and
 // `swift test --package-path IntegrationTests` runs it.
 
-/// The time limit of each case in minutes. The stub model loads nothing, so
-/// the limit covers only the spawn and one prompt.
-private let telemetryRunTimeLimitMinutes = 3
-
 /// The stdout contract of the telemetry bootstrap of `acp-agent acp`.
 ///
 /// Serialized so at most one spawned agent runs at a time.
-@Suite(
-    .serialized,
-    .timeLimit(.minutes(telemetryRunTimeLimitMinutes)))
+@Suite(.serialized)
 struct TelemetryStdoutTests {
     // MARK: - Constants
 
@@ -38,13 +32,6 @@ struct TelemetryStdoutTests {
 
     /// The exit code of a normal end.
     private static let successExitCode: Int32 = 0
-
-    /// The number of seconds in ``exitLimit``.
-    private static let exitLimitSeconds = 30
-
-    /// How long the agent may take to end after the client closes stdin. This
-    /// limit only keeps a hung agent from holding the case.
-    private static let exitLimit: Swift.Duration = .seconds(exitLimitSeconds)
 
     // MARK: - The drive
 
@@ -60,7 +47,7 @@ struct TelemetryStdoutTests {
         try await SpawnedAgentPromptDrive.run(
             label: label, environment: [:], promptText: promptText
         ) { agent in
-            try await agent.closeStandardInputAndWait(within: exitLimit)
+            try await agent.closeStandardInputAndWait()
         }
     }
 

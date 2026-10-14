@@ -78,7 +78,7 @@ struct ComposedAgentTests {
     /// A host gives the composed agent to `AgentSideConnection` through the
     /// sync factory closure, and a client on an in-memory transport gets an
     /// answer to `initialize`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theFactoryClosureServesTheComposedAgent() async throws {
         let composed = try await Self.composeStubAgent(label: "ComposedAgentTests-factory")
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
@@ -95,7 +95,7 @@ struct ComposedAgentTests {
 
     /// `serve(over:logger:)` binds the composed agent to a transport, and a
     /// client on the other end gets an answer to `initialize`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func serveBindsTheComposedAgentToATransport() async throws {
         let composed = try await Self.composeStubAgent(label: "ComposedAgentTests-serve")
         let (clientEnd, agentEnd) = InMemoryTransport.pair()

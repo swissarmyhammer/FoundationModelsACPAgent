@@ -109,6 +109,9 @@ struct SpawnedACPAgent {
     /// The child process.
     private let process: Process
 
+    /// The exit event of the child, made before it ran.
+    private let exit: ProcessExitEvent
+
     /// The stderr bytes of the child.
     private let standardError: StandardErrorRecord
 
@@ -120,14 +123,16 @@ struct SpawnedACPAgent {
     ///
     /// - Parameters:
     ///   - process: The running child.
+    ///   - exit: The exit event of the child, made before it ran.
     ///   - transport: The transport over its pipes.
     ///   - standardError: The record of its stderr.
     ///   - pipeEnds: The end streams of its stdout and stderr.
     private init(
-        process: Process, transport: SpawnedAgentTransport,
+        process: Process, exit: ProcessExitEvent, transport: SpawnedAgentTransport,
         standardError: StandardErrorRecord, pipeEnds: [AsyncStream<Never>]
     ) {
         self.process = process
+        self.exit = exit
         self.transport = transport
         self.standardError = standardError
         self.pipeEnds = pipeEnds
@@ -162,6 +167,7 @@ struct SpawnedACPAgent {
         // signal ends this whole test process. With the flag the write fails
         // with `EPIPE` instead.
         _ = fcntl(inputPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+        let exit = ProcessExitEvent(watching: process)
         try process.run()
 
         let (bytes, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
@@ -173,6 +179,7 @@ struct SpawnedACPAgent {
         let errorEnd = PipeReader.start(errorPipe, receive: { record.append($0) })
         return SpawnedACPAgent(
             process: process,
+            exit: exit,
             transport: SpawnedAgentTransport(bytes: bytes, input: inputPipe.fileHandleForWriting),
             standardError: record,
             pipeEnds: [outputEnd, errorEnd])
@@ -181,31 +188,26 @@ struct SpawnedACPAgent {
     /// Closes the stdin of the agent, which is the end of the ACP wire, and
     /// waits until the agent ends.
     ///
-    /// - Parameter limit: How long to wait for the end.
     /// - Returns: How the agent ended.
-    /// - Throws: ``SignalledRunError`` when the wait runs out, or the close
-    ///   error.
-    func closeStandardInputAndWait(within limit: Swift.Duration) async throws -> SpawnedAgentExit {
-        try await end(within: limit) {
+    /// - Throws: The close error.
+    func closeStandardInputAndWait() async throws -> SpawnedAgentExit {
+        try await end {
             try transport.input.close()
         }
     }
 
     /// Asks the agent to end, and waits until it ends and closes its pipes.
     ///
-    /// - Parameters:
-    ///   - limit: How long to wait for the end.
-    ///   - request: The end request.
+    /// The wait for the end is the exit event of the child, with no clock.
+    ///
+    /// - Parameter request: The end request.
     /// - Returns: How the agent ended.
-    /// - Throws: ``SignalledRunError`` when the wait runs out, or the error
-    ///   of `request`.
-    private func end(within limit: Swift.Duration, request: () throws -> Void) async throws
-        -> SpawnedAgentExit
-    {
+    /// - Throws: The error of `request`.
+    private func end(request: () throws -> Void) async throws -> SpawnedAgentExit {
         let clock = ContinuousClock()
         let start = clock.now
         try request()
-        try await SignalledExecutableRun.waitForExit(of: process, within: limit)
+        try await exit.wait()
         let elapsed = clock.now - start
         for end in pipeEnds {
             for await _ in end {}

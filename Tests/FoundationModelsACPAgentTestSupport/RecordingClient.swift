@@ -6,18 +6,45 @@ import FoundationModelsACPClient
 /// A `SessionModel` is a projection and keeps no history of the raw
 /// updates, so an order proof — prompt order, cancellation, replay —
 /// reads this raw sequence instead.
+///
+/// A test waits for a condition over the sequence with
+/// ``wait(for:until:)``: each append resumes the waits whose condition is
+/// now true, so the wait uses no clock and no poll.
 public actor UpdateCollector {
+    /// The collected notifications, in arrival order, with their waits.
+    private let collected = WatchedValue<[UpdateSessionNotification]>([])
+
     /// The collected notifications, in arrival order.
-    public private(set) var updates: [UpdateSessionNotification] = []
+    public var updates: [UpdateSessionNotification] {
+        collected.value
+    }
 
     /// Creates a collector that has collected nothing.
     public init() {}
 
-    /// Appends one notification.
+    /// Appends one notification, and resumes each wait whose condition is
+    /// now true.
     ///
     /// - Parameter notification: The notification to record.
     public func append(notification: UpdateSessionNotification) {
-        updates.append(notification)
+        collected.update { $0.append(notification) }
+    }
+
+    /// Waits until `isMet` is true for the collected sequence. Returns at
+    /// once when it is true now.
+    ///
+    /// - Parameters:
+    ///   - condition: The name of the condition, for the error of a
+    ///     cancelled wait.
+    ///   - isMet: Tells if the condition is true for a sequence.
+    /// - Returns: The first collected sequence for which `isMet` is true.
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+    ///   cancelled before the condition comes.
+    public nonisolated func wait(
+        for condition: String,
+        until isMet: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
+    ) async throws -> [UpdateSessionNotification] {
+        try await collected.wait(for: condition, until: isMet)
     }
 }
 

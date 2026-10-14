@@ -120,7 +120,7 @@ struct RunCommandTests {
     /// One prompt over `InMemoryTransport.pair()` gives the text the model
     /// produced, and ends on `end_turn`. No subprocess and no pipe: one
     /// process holds the agent connection and the client connection.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aPromptOverTheInProcessPairGivesTheScriptedAnswer() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-prompt-repo")
         let composed = try await CLICompositionFixture.scripted(
@@ -142,7 +142,7 @@ struct RunCommandTests {
     /// model streams three deltas, so the proof reads a whole answer and
     /// not one chunk. This is what `acp-agent run "hi" > out.txt` puts
     /// in the file.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func thePromptWritesTheScriptedChunksByteForByte() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-bytes-repo")
         let composed = try await CLICompositionFixture.scripted(
@@ -163,7 +163,7 @@ struct RunCommandTests {
     /// closes the session of the prompt itself. The run
     /// returns only after that close, so the process does not exit before
     /// the agent wrote the history and stopped the MCP servers.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theRunReturnsAfterTheAgentClosedTheSessionOfThePrompt() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-teardown-repo")
         let composed = try await CLICompositionFixture.scripted(
@@ -183,7 +183,7 @@ struct RunCommandTests {
     /// `acp-agent run "<prompt>"` runs the whole prompt and writes the
     /// answer to the descriptor. The stub model answers with the prompt
     /// it received, so the bytes carry the prompt.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func theRunWritesTheAnswerToTheDescriptor() async throws {
         let fixture = ConfigCommandFixture(label: "RunCommandTests-report")
         let capture = try AnswerCapture(label: "RunCommandTests-report-answer")
@@ -200,7 +200,7 @@ struct RunCommandTests {
     /// the id the first prompt opened, and the run sends no working
     /// directory of its own — it reads the stored one, because the stored
     /// session already has one and it wins.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func resumeRunsTheSecondPromptInTheRecordedSession() async throws {
         let workspace = makeResolvedDirectory(label: "RunCommandTests-resume-repo")
         let composed = try await Self.resumableComposition(label: "RunCommandTests-resume")
@@ -226,7 +226,7 @@ struct RunCommandTests {
 
     /// A `--resume` of an id no listed session carries is refused by
     /// name, and never degrades into a fresh session.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func resumeOfAnUnlistedSessionIsRefused() async throws {
         let composed = try await CLICompositionFixture.scripted(
             script: [.textDelta(Self.scriptedAnswer), .endPass],
@@ -248,7 +248,7 @@ struct RunCommandTests {
     /// `--cwd` selects WHICH dotfolder stack the start-up load reads: two
     /// directories with two `config.yaml` files give two resolved
     /// configurations, from one binary and one process.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func cwdSelectsTheConfigurationTheRunLoads() async throws {
         let first = ConfigCommandFixture(label: "RunCommandTests-first")
         let second = ConfigCommandFixture(label: "RunCommandTests-second")

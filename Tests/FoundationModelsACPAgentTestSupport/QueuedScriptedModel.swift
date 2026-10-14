@@ -120,65 +120,82 @@ public final class ScriptedHold: Sendable, Equatable {
 /// Counts the passes of a queued scripted model: the passes that started,
 /// the passes that run, and the maximum number that ran at the same time.
 ///
+/// A test waits for a count with ``wait(for:until:)``: each start and each
+/// end of a pass resumes the waits whose condition is now true, so the wait
+/// uses no clock and no poll.
+///
 /// It also keeps the generation queue of the pool entry, so a test can see
 /// the passes that wait for a queue place.
 public final class ScriptedPassCounter: Sendable {
-    /// The counts, and the queue of the pool entry.
-    private struct Counts {
+    /// The counts of the passes at one time.
+    public struct Counts: Sendable {
         /// The number of passes that started.
-        var started = 0
+        public var started = 0
 
         /// The number of passes that run now.
-        var running = 0
+        public var running = 0
 
         /// The maximum of ``running``.
-        var maximumRunning = 0
-
-        /// The queue that the Router gave to the model, or `nil` before the
-        /// Router gave one.
-        var queue: GenerationQueue?
+        public var maximumRunning = 0
     }
 
-    /// The counts, guarded because passes start and end on many tasks.
-    private let counts = Mutex(Counts())
+    /// The counts, with their waits. Passes start and end on many tasks.
+    private let counts = WatchedValue(Counts())
+
+    /// The queue that the Router gave to the model, or `nil` before the
+    /// Router gave one.
+    private let queue = Mutex<GenerationQueue?>(nil)
 
     /// Creates a counter that counted nothing.
     public init() {}
 
     /// The number of passes that started.
     public var startedCount: Int {
-        counts.withLock { $0.started }
+        counts.value.started
     }
 
     /// The number of passes that run now.
     public var runningCount: Int {
-        counts.withLock { $0.running }
+        counts.value.running
     }
 
     /// The maximum number of passes that ran at the same time.
     public var maximumRunningCount: Int {
-        counts.withLock { $0.maximumRunning }
+        counts.value.maximumRunning
     }
 
     /// The number of passes that wait for a place in the queue of the pool
     /// entry. `0` before the Router gave a queue.
     public var waitingCount: Int {
         get async {
-            guard let queue = counts.withLock({ $0.queue }) else { return 0 }
+            guard let queue = queue.withLock({ $0 }) else { return 0 }
             return await queue.waitingCount
         }
+    }
+
+    /// Waits until `isMet` is true for the counts. Returns at once when it
+    /// is true now.
+    ///
+    /// - Parameters:
+    ///   - condition: The name of the condition, for the error of a
+    ///     cancelled wait.
+    ///   - isMet: Tells if the condition is true for the counts.
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+    ///   cancelled before the condition comes.
+    public func wait(for condition: String, until isMet: @escaping @Sendable (Counts) -> Bool) async throws {
+        _ = try await counts.wait(for: condition, until: isMet)
     }
 
     /// Keeps `queue`, the queue that the Router gave to the model.
     ///
     /// - Parameter queue: The generation queue of the pool entry.
     func adopt(queue: GenerationQueue) {
-        counts.withLock { $0.queue = queue }
+        self.queue.withLock { $0 = queue }
     }
 
     /// Counts the start of one pass.
     func passDidStart() {
-        counts.withLock { counts in
+        counts.update { counts in
             counts.started += 1
             counts.running += 1
             counts.maximumRunning = max(counts.maximumRunning, counts.running)
@@ -187,7 +204,7 @@ public final class ScriptedPassCounter: Sendable {
 
     /// Counts the end of one pass.
     func passDidEnd() {
-        counts.withLock { $0.running -= 1 }
+        counts.update { $0.running -= 1 }
     }
 }
 

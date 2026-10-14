@@ -298,7 +298,7 @@ import Testing
     /// until the task is cancelled, and the workspace holds a source file,
     /// so a catalog that waits for `start()` never returns. The stop closure
     /// must return too: it cancels the start task before it stops the context.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theCatalogDoesNotWaitForTheCodeContextIndex() async throws {
         var loader = StubModelLoader()
         loader.makeEmbeddingContainer = { _ in NeverAnsweringEmbeddingContainer() }
@@ -328,9 +328,10 @@ import Testing
             atomically: true, encoding: .utf8)
 
         let built = try await ToolCatalog.makeRegistry(context: context)
-        // With the profile's embedder, the index reaches it in less than
-        // this time for the one file of the workspace.
-        try await Task.sleep(for: .seconds(2))
+        // The first index pass reads the one file of the workspace. With
+        // the profile's embedder it would call the embedder in that pass.
+        let firstIndexPass = try #require(built.codeContextFirstIndexPass)
+        await firstIndexPass()
         let stop = try #require(built.codeContextStop)
         await stop()
 
@@ -551,7 +552,7 @@ import Testing
     }
 }
 
-/// An embedding container that never answers. `embed(texts:)` sleeps until
+/// An embedding container that never answers. `embed(texts:)` waits until
 /// its task is cancelled, and then it throws the cancellation.
 private final class NeverAnsweringEmbeddingContainer: LoadedEmbeddingContainer {
     /// An arbitrary vector length; no vector is ever made.
@@ -559,7 +560,7 @@ private final class NeverAnsweringEmbeddingContainer: LoadedEmbeddingContainer {
 
     /// Waits for the cancellation of the task.
     func embed(texts: [String]) async throws -> [[Float]] {
-        try await Task.sleep(for: .seconds(3600))
+        try await waitForCancellation()
         return []
     }
 }

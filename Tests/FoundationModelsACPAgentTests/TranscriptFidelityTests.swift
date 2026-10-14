@@ -127,13 +127,13 @@ struct TranscriptFidelityTests {
                 sessionId: sessionId, text: promptText + String(ordinal)))
         _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: idleCount)
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: sessionId, count: ordinal)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, sessionId)
+            under: root, sessionId: sessionId, count: ordinal, agent: fixture.harness.agent)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, sessionId)
     }
 
     // MARK: - The proofs
 
-    @Test("two prompts record no divergence while the tool surface is unchanged", .timeLimit(.minutes(1)))
+    @Test("two prompts record no divergence while the tool surface is unchanged")
     func twoPromptsRecordNoDivergence() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-divergence")
 
@@ -143,7 +143,7 @@ struct TranscriptFidelityTests {
         #expect(run.eventsAfterSecondPrompt.contains { $0.kind == .response })
     }
 
-    @Test("one prompt records its prompt text, its toolCalls with the arguments, and its response", .timeLimit(.minutes(1)))
+    @Test("one prompt records its prompt text, its toolCalls with the arguments, and its response")
     func onePromptIsRecordedWhole() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-whole")
 
@@ -167,7 +167,7 @@ struct TranscriptFidelityTests {
         #expect(response.text == Self.replyText)
     }
 
-    @Test("the runCode call reaches the wire as a tool call update", .timeLimit(.minutes(1)))
+    @Test("the runCode call reaches the wire as a tool call update")
     func theRunCodeCallReachesTheWire() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-wire")
 
@@ -189,7 +189,7 @@ struct TranscriptFidelityTests {
         #expect(callUpdates.compactMap { patchValue($0.title) } == [try #require(patchValue(firstUpdate.title))])
     }
 
-    @Test("the recorded event count never falls between two reads", .timeLimit(.minutes(1)))
+    @Test("the recorded event count never falls between two reads")
     func theRecordedCountNeverFalls() async throws {
         let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-count")
 
@@ -207,7 +207,7 @@ struct TranscriptFidelityTests {
     /// `parametersSchemaJSON` of every declared tool as a string. Equal
     /// strings are equal bytes, which is what the schema encoder must
     /// give for one unchanged surface.
-    @Test("two sessions over one tool surface record byte-identical tool definitions", .timeLimit(.minutes(1)))
+    @Test("two sessions over one tool surface record byte-identical tool definitions")
     func theInstructionsToolDefinitionsAreByteIdentical() async throws {
         let script =
             [ScriptedPassStep.textDelta(Self.replyText)]

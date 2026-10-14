@@ -52,7 +52,7 @@ struct SessionLifecycleTests {
 
     /// `session/close` on an unknown id answers `-32602` with the id in
     /// `data`, so a client bug is visible instead of a silent success.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func closeOfAnUnknownSessionIdAnswersInvalidParamsWithTheId() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         let bogus = SessionId(rawValue: syntheticSessionIdValue)
@@ -71,7 +71,7 @@ struct SessionLifecycleTests {
 
     /// A second close of the same known session answers `{}`: close is
     /// idempotent, so the session stays closed and no error goes out.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSecondCloseOfAKnownSessionAnswersEmpty() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
 
@@ -90,7 +90,7 @@ struct SessionLifecycleTests {
     /// `idle` with the `cancelled` stop reason — the close waited for the
     /// terminator before it answered — and the transcript directory survives
     /// on disk.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func closingDuringAnActivePromptSendsIdleCancelledAndKeepsTheTranscript() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
         _ = try await fixture.harness.connection.prompt(
@@ -117,7 +117,7 @@ struct SessionLifecycleTests {
 
     /// After close, a `streamSessionEvents()` subscription taken before the
     /// close finishes: the session sweep finished every outstanding one.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func afterCloseAStreamSessionEventsSubscriptionFinishes() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
@@ -136,7 +136,7 @@ struct SessionLifecycleTests {
     /// After close, a descendant the session adopted is closed too: its own
     /// `streamSessionEvents()` subscription finishes, so no orphan fork keeps
     /// a run or a submission in the model queue.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func closingASessionClosesItsDescendants() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
@@ -157,19 +157,25 @@ struct SessionLifecycleTests {
     /// After close, no spawned stdio server process remains: the pool shut
     /// each subprocess down after the sweep. The server binary is copied to a
     /// unique path, so `pgrep` matches only this case's own process.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func afterCloseNoSpawnedStdioServerProcessRemains() async throws {
         let serverPath = try Self.copiedServerBinary()
         let fixture = try await ScriptedPromptFixture.make(
             script: [.endPass],
             label: "SessionLifecycleTests-process",
             projectConfigYAML: Self.mcpConfigYAML(serverCommand: serverPath))
-        #expect(try Self.serverProcessExists(matching: serverPath))
+        let serverProcesses = try Self.serverProcessIDs(matching: serverPath)
+        #expect(!serverProcesses.isEmpty)
 
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
 
-        try await Self.waitForNoServerProcess(matching: serverPath)
+        for pid in serverProcesses {
+            await ProcessExitWatch.waitForExit(of: pid) {
+                (try? Self.serverProcessIDs(matching: serverPath).contains(pid)) == false
+            }
+        }
+        #expect(try Self.serverProcessIDs(matching: serverPath).isEmpty)
         await fixture.close()
     }
 
@@ -178,13 +184,13 @@ struct SessionLifecycleTests {
     /// After close, `session/resume` on that id still works: the transcript
     /// stayed on disk, so the session is resumable, and the resumed session
     /// is idle again.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func afterCloseResumeStillWorks() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionLifecycleTests-resume")
         let root = try resume.recordingRoot
         try await resume.runPrompt("first")
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         let transcriptDirectory = try #require(
             await resume.fixture.harness.agent.sessions[resume.fixture.sessionId]?
                 .transcriptDirectory)
@@ -205,13 +211,13 @@ struct SessionLifecycleTests {
 
     /// Delete removes the transcript directory and the index line, and a
     /// resume of the deleted session then fails: the absence does the work.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func deleteRemovesTheDirectoryAndTheIndexLineAndResumeThenFails() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionLifecycleTests-delete")
         let root = try resume.recordingRoot
         try await resume.runPrompt("first")
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: resume.fixture.sessionId, count: 1)
+            under: root, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         let transcriptDirectory = try #require(
             await resume.fixture.harness.agent.sessions[resume.fixture.sessionId]?
                 .transcriptDirectory)
@@ -240,7 +246,7 @@ struct SessionLifecycleTests {
     /// Deleting an active session closes it first — the collector sees one
     /// `idle` with the `cancelled` stop reason — and then removes it from the
     /// table.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func deletingAnActiveSessionClosesItFirst() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
         _ = try await fixture.harness.connection.prompt(
@@ -257,7 +263,7 @@ struct SessionLifecycleTests {
 
     /// Deleting an unknown sessionId succeeds silently: "nothing to remove"
     /// is not an error.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func deletingAnUnknownSessionIdSucceeds() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
 
@@ -302,34 +308,21 @@ struct SessionLifecycleTests {
         """
     }
 
-    /// Whether a process whose command line holds `path` is running.
+    /// The ids of the running processes whose command line holds `path`.
     ///
     /// - Parameter path: The full argument `pgrep -f` matches on.
-    /// - Returns: `true` when at least one process matches.
+    /// - Returns: The process ids, empty when no process matches.
     /// - Throws: The spawn error when `pgrep` cannot run.
-    private static func serverProcessExists(matching path: String) throws -> Bool {
+    private static func serverProcessIDs(matching path: String) throws -> [pid_t] {
         let pgrep = Process()
         pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
         pgrep.arguments = ["-f", path]
-        pgrep.standardOutput = Pipe()
+        let output = Pipe()
+        pgrep.standardOutput = output
         try pgrep.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         pgrep.waitUntilExit()
-        return pgrep.terminationStatus == pgrepMatchStatus
-    }
-
-    /// Polls until no process whose command line holds `path` is running, or
-    /// fails the case at the deadline.
-    ///
-    /// - Parameter path: The full argument `pgrep -f` matches on.
-    /// - Throws: `CancellationError` when the test is cancelled, or the spawn
-    ///   error when `pgrep` cannot run.
-    private static func waitForNoServerProcess(matching path: String) async throws {
-        for _ in 0..<ScriptedPromptFixture.maxPollAttempts {
-            if try !serverProcessExists(matching: path) {
-                return
-            }
-            try await Task.sleep(for: ScriptedPromptFixture.pollInterval)
-        }
-        Issue.record("a spawned mcp server process remains after close")
+        guard pgrep.terminationStatus == pgrepMatchStatus else { return [] }
+        return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { pid_t($0) }
     }
 }

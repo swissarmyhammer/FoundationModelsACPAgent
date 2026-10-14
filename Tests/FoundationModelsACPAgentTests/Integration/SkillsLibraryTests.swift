@@ -198,7 +198,7 @@ import Testing
         return Self.toolCallText(in: updates)
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aUseSkillCallGivesTheTextOfTheSkillFile() async throws {
         let text = try await Self.runSkillsCall(
             label: "use",
@@ -210,7 +210,7 @@ import Testing
         #expect(!text.contains("\"body\""))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSearchGivesPlainLinesThatNameTheLoadCall() async throws {
         let text = try await Self.runSkillsCall(
             label: "search",
@@ -223,7 +223,7 @@ import Testing
         #expect(!text.contains("\"matches\""))
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aHiddenSkillCannotBeLoaded() async throws {
         let text = try await Self.runSkillsCall(
             label: "hidden",

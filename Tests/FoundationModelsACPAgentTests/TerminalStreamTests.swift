@@ -601,30 +601,40 @@ private final class SnapshotSequence: Sendable {
     /// test. It holds each chunk.
     private static let storeCap = 1_024
 
-    /// The time the producer gives a reader that reads ahead to take each
-    /// chunk. A reader that reads ahead takes each chunk in this time, and
-    /// then no gap occurs.
-    private static let readAheadWindow: Duration = .milliseconds(50)
-
     /// The upstream budget stays in force when the client reads slowly: the
     /// terminal stream takes one event at a time, and takes the next one only
     /// after it sent the earlier one. Thus the bytes over the budget go away
     /// upstream, and the gap event replaces them from the stored record. A
     /// reader that read ahead would keep the bytes in its own memory, and no
     /// gap would occur.
-    @Test(.timeLimit(.minutes(1)))
+    ///
+    /// The test reads the steps of the forwarder of the reader, in a fixed
+    /// order and with no clock. After the forwarder took the first chunk, it
+    /// parks again: the reader that takes one event at a time parks for its
+    /// turn, and a reader that reads ahead parks on the upstream stream for
+    /// the next chunk. The test waits for that park and checks it, so a
+    /// reader that reads ahead fails each time. While the sink holds, the
+    /// forwarder takes no more step.
+    @Test
     func aSlowSinkKeepsTheUpstreamBudgetAndGetsAGap() async throws {
         let upstream = ShellOutputChunkStream(maxPendingBytes: Self.smallBudget)
         let sink = HeldSink()
-        let reader = TerminalStream.start(over: upstream) { update in
+        let steps = WatchedValue<[TerminalStream.ForwarderStep]>([])
+        let reader = TerminalStream.start(
+            over: upstream, forwarderObserver: { step in steps.update { $0.append(step) } }
+        ) { update in
             await sink.receive(update)
         }
         Self.sendBudgetChunk(to: upstream)
         try await sink.waitUntilHolding()
+        let parked = try await steps.wait(for: "the park of the forwarder after the first chunk") { $0.count >= 2 }
+        #expect(parked == [.awaitingUpstream, .awaitingTurn])
         for _ in 0..<Self.overBudgetChunkCount {
             Self.sendBudgetChunk(to: upstream)
-            try await Task.sleep(for: Self.readAheadWindow)
         }
+        // The forwarder still waits for its turn: it took no chunk while the
+        // sink held the first send.
+        #expect(steps.value == [.awaitingUpstream, .awaitingTurn])
         upstream.complete(commandID: Self.completionToken)
         await sink.release()
 
@@ -660,7 +670,7 @@ private final class SnapshotSequence: Sendable {
     /// it sends one announce and one update with the replacement built from
     /// the stored record, and no chunk. The run ended while it waited, so the
     /// same update also marks the exit.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aWaitingRunSendsOneSnapshotReplacementAtItsRelease() async throws {
         let stored = Array("one two".utf8)
         let snapshot = ShellOutputSnapshot(
@@ -706,7 +716,7 @@ private final class SnapshotSequence: Sendable {
     /// run is in the release replacement already, so it sends no byte. A
     /// chunk past the replacement goes on the wire whole, and the client
     /// view is the output of the run byte for byte.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aChunkQueuedBehindAWaitingRunReleaseSendsNoByteAgain() async throws {
         let stored = Self.firstChunk + Self.secondChunk
         let table = RunCallJoinTable()
@@ -813,19 +823,16 @@ private final class SnapshotSequence: Sendable {
     /// Waits until the recorder holds a terminal update that claims the
     /// exit.
     ///
-    /// - Parameter recorder: The recorder to poll.
-    /// - Throws: `CancellationError` when the test is cancelled.
+    /// - Parameter recorder: The recorder to watch.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     private static func waitForExit(on recorder: SinkRecorder) async throws {
-        for _ in 0..<ScriptedPromptFixture.maxPollAttempts {
-            let updates = await recorder.updates
-            let exited = terminalUpdates(in: updates).contains { terminal in
+        _ = try await recorder.updates(until: "the exit update") { updates in
+            terminalUpdates(in: updates).contains { terminal in
                 if case .value = terminal.exitStatus { return true }
                 return false
             }
-            if exited { return }
-            try await Task.sleep(for: ScriptedPromptFixture.pollInterval)
         }
-        Issue.record("the exit update never arrived")
     }
 
     /// A real command's bytes reassemble exactly from the client-end
@@ -833,7 +840,7 @@ private final class SnapshotSequence: Sendable {
     /// words, the chunks decode back to those bytes, the reference and
     /// the chunks agree on the id, and `snapshot(for:)` holds the same
     /// bytes as the stored record.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRealCommandsBytesReassembleFromTheClientEndChunkStream() async throws {
         let root = Self.makeResolvedDirectory(named: "run")
         let built = try await Self.makeBuiltRegistry(workingDirectory: root)
@@ -868,7 +875,7 @@ private final class SnapshotSequence: Sendable {
 
     /// Closing a session finishes the host-owned stream, so a stream
     /// nobody listens to keeps nothing.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func markingASessionClosedFinishesTheHostOwnedStream() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.endPass], label: "TerminalStreamTests-close")

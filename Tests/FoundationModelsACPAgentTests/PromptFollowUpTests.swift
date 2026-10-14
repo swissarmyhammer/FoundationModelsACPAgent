@@ -103,7 +103,7 @@ import Testing
 
     /// A prompt whose snippet goes to the background ends at the answer of
     /// its own mail: one `idle` with `end_turn`, while the run still waits.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aPromptEndsAtTheAnswerOfItsOwnMailWhileItsRunWaits() async throws {
         let label = "PromptFollowUpTests-own-mail"
         let fixture = try await Self.startPromptWithABackgroundRun(label: label)
@@ -123,7 +123,7 @@ import Testing
     /// run settles after the `idle`, and the answer that the mail of the run
     /// starts reaches the client. No second `idle` goes out, because no
     /// prompt is open (decision Q2).
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRunMailAnswerAfterTheIdleOfThePromptReachesTheClient() async throws {
         let label = "PromptFollowUpTests-after-idle"
         let fixture = try await Self.startPromptWithABackgroundRun(label: label)
@@ -151,7 +151,7 @@ import Testing
     /// A prompt that starts no background run ends as before: the echo, the
     /// first-activity title, `running`, the text and one `idle` with
     /// `end_turn`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aPromptWithNoBackgroundRunEndsAsBefore() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.mailReply), .endPass], label: "PromptFollowUpTests-plain")

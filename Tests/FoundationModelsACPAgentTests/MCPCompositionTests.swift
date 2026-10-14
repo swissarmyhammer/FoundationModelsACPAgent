@@ -170,11 +170,11 @@ import Testing
 
     /// A `RegistryStaging` that passes each staged registry on to the staging
     /// the mounted session vended, and then counts it and records its surface
-    /// paths.
+    /// paths. A case waits for a stage with ``wait(for:until:)``: each stage
+    /// resumes the waits whose condition is now true, with no clock.
     private final class RecordingStaging: RegistryStaging, Sendable {
-        /// What the lock guards: the stage count and the paths of the
-        /// newest staged registry.
-        private struct State {
+        /// The stage count and the paths of the newest staged registry.
+        struct State: Sendable {
             /// How many registries were staged so far.
             var count = 0
 
@@ -186,8 +186,8 @@ import Testing
         /// is passed on to.
         private let mounted: any RegistryStaging
 
-        /// The guarded state.
-        private let state = Mutex(State())
+        /// The state, with its waits.
+        private let state = WatchedValue(State())
 
         /// Creates a staging that passes on to `mounted`, and then records.
         ///
@@ -198,12 +198,25 @@ import Testing
 
         /// How many registries this staging recorded so far.
         var count: Int {
-            state.withLock { $0.count }
+            state.value.count
         }
 
         /// The surface paths of the newest staged registry.
         var newestPaths: [String] {
-            state.withLock { $0.newestPaths }
+            state.value.newestPaths
+        }
+
+        /// Waits until `isMet` is true for the state. Returns at once when
+        /// it is true now.
+        ///
+        /// - Parameters:
+        ///   - condition: The name of the condition, for the error of a
+        ///     cancelled wait.
+        ///   - isMet: Tells if the condition is true for the state.
+        /// - Throws: ``ConditionWaitCancelled`` when the case is cancelled
+        ///   first.
+        func wait(for condition: String, until isMet: @escaping @Sendable (State) -> Bool) async throws {
+            _ = try await state.wait(for: condition, until: isMet)
         }
 
         /// Stages `registry` on the mounted staging, and then records it.
@@ -217,7 +230,7 @@ import Testing
         /// - Parameter registry: The registry to stage.
         func stage(_ registry: MultiTool.Registry) {
             mounted.stage(registry)
-            state.withLock {
+            state.update {
                 $0.count += 1
                 $0.newestPaths = registry.surface.entries.map(\.path)
             }
@@ -556,20 +569,20 @@ import Testing
             // The connect snapshot stages one rebuild of its own. Taking a
             // submission boundary here brings that one in, so the next stage the
             // case sees belongs to the change the case makes.
-            try await Poll.until("the connect snapshot staged") { recording.count >= 1 }
+            try await recording.wait(for: "the connect snapshot staged") { $0.count >= 1 }
             await runCode.submissionWillBegin()
             let beforeTheChange = try await Self.helpPaths(of: runCode)
             #expect(beforeTheChange.contains(Self.boundaryEchoPath))
             #expect(!beforeTheChange.contains(Self.boundaryExtraPath))
 
             // The catalog change the case drives: one more tool, and the
-            // notification that tells the client to re-list. The poll ends
+            // notification that tells the client to re-list. The wait ends
             // when the rebuilt registry holds the new tool, so the stage is a
             // fact and not a guess.
             await scripted.addEchoTool(named: Self.extraToolName)
             try await scripted.emitToolListChanged()
-            try await Poll.until("the tool-list change staged") {
-                recording.newestPaths.contains(Self.boundaryExtraPath)
+            try await recording.wait(for: "the tool-list change staged") {
+                $0.newestPaths.contains(Self.boundaryExtraPath)
             }
 
             // Staged, and not applied: the mounted surface holds still.
@@ -617,7 +630,7 @@ import Testing
         let recording = surface.recording
 
         // The connect snapshot always rebuilds one time.
-        try await Poll.until("the connect snapshot staged") { recording.count >= 1 }
+        try await recording.wait(for: "the connect snapshot staged") { $0.count >= 1 }
 
         // A reconnect with the same catalog stages nothing more. The
         // reconnect that follows is what proves it, and no clock does.
@@ -626,14 +639,14 @@ import Testing
         // A reconnect that comes back with a moved catalog stages a rebuild.
         // The refresher reads the snapshots of one server in order, so a
         // stage of the unchanged reconnect above would already be recorded
-        // when this one is. The poll ends on a fact the rebuilt registry
+        // when this one is. The wait ends on a fact the rebuilt registry
         // carries, and the count then tells the whole story: two stages, the
         // connect snapshot and this reconnect. A stage from the unchanged
         // reconnect would make it three.
         publishExtraTool.withLock { $0 = true }
         try await server.reconnect()
-        try await Poll.until("the changed reconnect staged") {
-            recording.newestPaths.contains(Self.reconnectExtraPath)
+        try await recording.wait(for: "the changed reconnect staged") {
+            $0.newestPaths.contains(Self.reconnectExtraPath)
         }
         #expect(recording.count == 2)
 

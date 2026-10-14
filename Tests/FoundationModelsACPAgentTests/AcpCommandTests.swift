@@ -68,7 +68,7 @@ struct AcpCommandTests {
     /// the inbound stream once the peer closes its outgoing direction.
     /// That report is what ends the `acp` process at stdin EOF: the
     /// client owns the lifecycle, and there is no teardown handshake.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theInboundEndIsReportedWhenTheStreamEnds() async throws {
         let (peer, agentEnd) = InMemoryTransport.pair()
         let transport = InboundEndTransport(wrapping: agentEnd)
@@ -95,7 +95,7 @@ struct AcpCommandTests {
     /// key, so each assertion names exactly one layer. The start-up load
     /// is asserted first, so "neither took the process working
     /// directory" rests on a value that layer really held.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func eachSessionResolvesItsOwnProjectLayer() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-config")
         let startDirectory = makeResolvedDirectory(label: "AcpCommandTests-start")
@@ -136,7 +136,7 @@ struct AcpCommandTests {
     /// registers the streams of the whole machine one at a time, so each one
     /// that a unit suite starts makes the parallel run wait (task
     /// `^vjaka1g`).
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionOverTheStubEnvironmentStartsNoCodeContext() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-no-code-context-config")
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-no-code-context-repo")
@@ -160,7 +160,7 @@ struct AcpCommandTests {
     /// pair `run` mode uses, and a pair of real pipes carrying the ndJSON
     /// framing `acp` mode speaks. The answer text is the same, byte for
     /// byte, because only the transport changes.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func bothWiresGiveTheSameAnswer() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-config")
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-repo")
@@ -187,7 +187,7 @@ struct AcpCommandTests {
     /// one mode and off in the other. The assertion reads the recorded
     /// file, and never `sessions.jsonl`: that index is written on a path
     /// that never touches the recorder.
-    @Test(.timeLimit(.minutes(2)))
+    @Test
     func aPromptOverTheStdioWireRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-record-config")
         let workspace = makeResolvedDirectory(label: "AcpCommandTests-record-repo")

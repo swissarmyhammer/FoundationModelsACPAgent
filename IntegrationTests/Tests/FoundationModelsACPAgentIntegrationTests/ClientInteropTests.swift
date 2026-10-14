@@ -25,7 +25,8 @@ import Testing
 // - "No `acp-agent acp` process outlives the run." The in-process drive
 //   spawns no agent process. Its equivalent is that
 //   `ComposedAgent.waitForConnectionTeardown()` returns after the wire
-//   closes, inside the time limit of the test.
+//   closes. A teardown that does not end holds the test, and a sample of
+//   the test process shows where it waits.
 //
 // It carries no gate. The package boundary is the selection: the root
 // `swift test` never sees this target, and
@@ -193,8 +194,8 @@ struct ClientInteropTests {
     /// off both sides, because the agent CLI completes an answer that does
     /// not end with a newline (cli-plan.md §5.6). The text between is the
     /// claim. The teardown of the agent is awaited inside the run, so a
-    /// teardown that does not end fails the time limit.
-    @Test(.timeLimit(.minutes(3)))
+    /// teardown that does not end holds the test.
+    @Test
     func theClientLibraryGetsTheAgentAnswerOverAnInMemoryTransport() async throws {
         let yardstick = try await Self.runAgentCLI(label: "ClientInterop-yardstick")
         #expect(yardstick.exitCode == Self.endTurnExitCode, "stderr: \(yardstick.standardError)")

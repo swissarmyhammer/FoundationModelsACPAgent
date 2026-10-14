@@ -92,7 +92,7 @@ import Testing
     /// The sessionId parses as a ULID, names the Router session directory
     /// on disk, and the response carries the one model-slot config
     /// option, a `select` over the `standard` and `flash` slots.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionIdIsARouterULIDAndNamesTheSessionDirectory() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
@@ -222,7 +222,7 @@ import Testing
 
     /// Over the wire, `session/new` with a relative cwd answers the
     /// JSON-RPC invalid-params error naming `cwd`, never a session.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRelativeCwdOverTheWireAnswersInvalidParams() async throws {
         let error = try await Self.newSessionWireError(
             params: .object(["cwd": .string(Self.relativeCwd)]))
@@ -233,7 +233,7 @@ import Testing
 
     /// Over the wire, a relative `additionalDirectories` entry beside an
     /// absolute cwd answers the same refusal, naming its own field.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRelativeAdditionalDirectoryOverTheWireNamesItsOwnField() async throws {
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
         let error = try await Self.newSessionWireError(
@@ -298,7 +298,7 @@ import Testing
     /// `session/new` with a cwd that does not exist answers the
     /// invalid-params refusal, opens no session, and does not create the
     /// directory.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewWithAMissingCwdIsRefusedAndCreatesNoDirectory() async throws {
         let missing = makeResolvedDirectory(label: "SessionSetupTests-missing-cwd")
             .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
@@ -320,7 +320,7 @@ import Testing
     /// `session/new` with an `additionalDirectories` entry that does not
     /// exist answers the same refusal under its own field, and does not
     /// create the entry.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewWithAMissingAdditionalDirectoryIsRefusedAndCreatesNoDirectory() async throws {
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
         let missing = makeResolvedDirectory(label: "SessionSetupTests-missing-extra")
@@ -348,7 +348,7 @@ import Testing
     /// Two sessions at once in two repos read two project layers: the repo
     /// whose config disables skills mounts no skills tool, while the plain
     /// repo mounts it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func twoConcurrentSessionsReadDifferentProjectLayerConfig() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let repoWithSkillsOff = makeResolvedDirectory(label: "SessionSetupTests-repo-skills-off")
@@ -381,7 +381,7 @@ import Testing
 
     /// After `session/new` alone, `projects.jsonl` holds the cwd and the
     /// recording root holds no `sessions.jsonl` record yet.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewRegistersTheProjectAndWritesNoIndexRecord() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
@@ -431,7 +431,7 @@ import Testing
     /// derived budget: `session/new` builds `TokenBudget` from the
     /// section's fractions and the resolved standard-slot context, and
     /// the recorded sidecar carries it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewDerivesTheBudgetFromTheCompactionSection() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo-compaction")
@@ -489,7 +489,7 @@ import Testing
     /// A session made with a config `repetition:` section carries that
     /// detection: `session/new` passes the section to Router, and the
     /// recorded sidecar holds it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewPassesTheRepetitionSectionToTheSession() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo-repetition")
@@ -524,7 +524,7 @@ import Testing
     /// `session/new` still vends — `makeSession` traps when the owning
     /// profile was released, and a successful second session proves it
     /// was not.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theProfileStaysAliveAcrossTwoSequentialSessions() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")

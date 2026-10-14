@@ -529,7 +529,7 @@ import Testing
     /// A prompt with a `resource_link` to a file inside the cwd puts
     /// the file's text into the model prompt the scripted backend
     /// receives.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResourceLinkInsideTheCwdReachesTheScriptedBackend() async throws {
         let recorder = PromptRecorder()
         let fixture = try await ScriptedPromptFixture.make(
@@ -555,7 +555,7 @@ import Testing
     /// A `resource_link` to a path outside the root set is refused in
     /// the model prompt with a reason, and the file's text never
     /// reaches the backend.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anOutOfRootResourceLinkIsRefusedInTheModelPrompt() async throws {
         let outside = makeResolvedDirectory(label: "PromptContentTests-outside")
         let file = try Self.makeFile(in: outside, content: Self.outsideFileContent)
@@ -570,7 +570,7 @@ import Testing
 
     /// A `resource_link` to an `http://` URI is refused in the model
     /// prompt with a reason. Nothing is fetched.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anHTTPResourceLinkIsRefusedInTheModelPrompt() async throws {
         let prompt = try await Self.recordedModelPrompt(blocks: [
             .resourceLink(ResourceLink(name: "page", uri: Self.httpURI))

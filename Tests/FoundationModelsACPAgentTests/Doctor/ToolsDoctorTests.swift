@@ -424,7 +424,7 @@ struct ToolsDoctorTests {
     /// opens its gate, and the test opens the gate after the run returned.
     /// A run that waited for the probe would never return, and the time
     /// limit would fail the test.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aProberThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
         let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-mcpSilent")
         let prober = StubToolsProber(silentServers: [Self.serverName])

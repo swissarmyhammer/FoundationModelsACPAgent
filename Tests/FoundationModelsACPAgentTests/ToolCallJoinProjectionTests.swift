@@ -280,11 +280,6 @@ import Testing
     /// The op of the `agents` call that starts an agent run.
     private static let agentStartOp = "start agent"
 
-    /// The time between the first chunk of a run and its open record in the
-    /// late-record case. It is longer than the one-second wait bound that an
-    /// earlier version of the terminal stream had.
-    private static let lateOpenRecordDelay: Duration = .milliseconds(1_500)
-
     /// The settlement of the root run of the `agents` tool: the agent run
     /// ended.
     private static let agentRunSettlement: SessionEvent = .runSettled(
@@ -390,7 +385,7 @@ import Testing
     /// example a run of an agent run, does not stop the terminal stream: the
     /// end of the prompt stops the wait, and the announce goes on the
     /// completion token.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRunThatThePromptNeverSeesStillAnnouncesOnTheCompletionToken() async throws {
         let updates = await SyntheticPrompt.sentUpdates(
             [], shellEvents: Self.liveShellEvents, order: .terminalFirst)
@@ -404,11 +399,14 @@ import Testing
     /// No time decides the join. An open record that comes long after the
     /// first chunk of its run still gives one wire id: the SDK id, for the
     /// terminal announce and for each update of the run.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anOpenRecordLongAfterTheFirstChunkStillGivesOnlyTheSdkId() async throws {
         let session = LiveShellSession()
         session.send(Self.outputChunk(Self.runToken))
-        try await Task.sleep(for: Self.lateOpenRecordDelay)
+        // The open record comes only after the terminal stream handled the
+        // first chunk and waits for the next shell event: a fixed order, so
+        // no time can decide the join.
+        try await session.waitUntilTerminalHandled(1)
         for event in Self.joinedShellRunEvents {
             session.send(event)
         }
@@ -423,7 +421,7 @@ import Testing
     /// The wait of one run does not stop the terminal stream. The output of
     /// a joined run goes out at once, while a run with no entry waits. When
     /// the entry of the waiting run comes, its announce and its output go out.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aJoinedRunFlowsWhileAnUnjoinedRunWaitsForItsEntry() async throws {
         let session = LiveShellSession()
         session.runCallJoins.record(toolCallID: Self.sdkCallId, for: Self.runToken)
@@ -449,7 +447,7 @@ import Testing
     /// agent run continues. The announce goes on the completion token, also
     /// when Router of the agent run joined the record to an SDK call of the
     /// agent run: the agent run sends no wire update of its tool runs.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anAgentShellRunGetsItsEntryFromItsOwnOpenRecord() async throws {
         let session = LiveShellSession()
         session.send(Self.openRecord(Self.runToken, toolCallID: Self.sdkCallId))
@@ -491,7 +489,7 @@ import Testing
     /// the projection lags. The end of the agent run writes no entry, so the
     /// open record of the root run writes the SDK id, and the run gives one
     /// wire id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRootShellRunThatStartsAfterAnAgentRunEndedKeepsItsSdkId() async throws {
         let session = LiveShellSession()
         session.runCallJoins.record(toolCallID: Self.secondSdkCallId, for: Self.secondRunToken)

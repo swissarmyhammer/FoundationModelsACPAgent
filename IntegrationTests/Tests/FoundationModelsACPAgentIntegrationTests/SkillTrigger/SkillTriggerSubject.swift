@@ -17,7 +17,7 @@ struct SkillTriggerRun: Sendable {
     /// How many `skills` calls of any operation the model made.
     let skillsCallCount: Int
 
-    /// The stop reason of the prompt, or `nil` when the deadline passed.
+    /// The stop reason of the prompt, or `nil` when no idle came.
     let stopReason: StopReason?
 
     /// The wall-clock seconds of the prompt.
@@ -56,21 +56,6 @@ let skillTriggerModel: String = {
     return (value?.isEmpty == false ? value : nil) ?? shipped
 }()
 
-/// How long a run waits for the decision, from the environment.
-///
-/// The default is 300 seconds. A run stops at the decision, thus a long
-/// deadline costs time only when the model loads no skill. The first run of
-/// a process also pays the load of the model: on the CI machine on
-/// 2026-09-21 the gate sample took 76 seconds, where a warm machine takes
-/// 15. `ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS` raises or lowers the wait.
-let decisionDeadlineFromEnvironment: Duration = {
-    let variable = "ACP_AGENT_SKILL_TRIGGER_DECISION_SECONDS"
-    guard let text = ProcessInfo.processInfo.environment[variable], let seconds = Int(text),
-        seconds > 0
-    else { return .seconds(300) }
-    return .seconds(seconds)
-}()
-
 /// The live subject of the skill trigger gate: one composed agent, one
 /// session for each sample, and a reading of the recorded transcript.
 ///
@@ -80,23 +65,18 @@ let decisionDeadlineFromEnvironment: Duration = {
 /// package (`SkillsLibraryTests`); nothing here would fail because a tool is
 /// unmounted, and nothing there tells us what a model chooses.
 struct SkillTriggerSubject {
-    /// The milliseconds between two looks at the collector.
-    private static let pollInterval: Duration = .milliseconds(20)
-
-    /// How long one sample run waits for the decision of the model.
-    ///
-    /// The measurement is the FIRST move: does the model load a skill for
-    /// this task? A run therefore stops at the decision — it cancels the
-    /// prompt as soon as a `use skill` call reaches the wire, and it cancels
-    /// at this deadline when none does. A sample that no skill covers
-    /// always waits the whole deadline, because nothing can end it early.
-    ///
-    /// Measured on 2026-09-19 with `mlx-community/Qwen3.8-27B-mxfp4`: the
-    /// five covered tasks each made their `use skill` call inside the first
-    /// minute of a prompt that then ran for 202 to 297 seconds. Waiting for
-    /// the idle terminator thus paid three to four minutes for a fact the
-    /// first minute already held.
-    static let decisionDeadline: Duration = decisionDeadlineFromEnvironment
+    // The measurement is the FIRST move: does the model load a skill for
+    // this task? It measures what the model chose, not when. A run stops at
+    // the decision: the first `use skill` call that reaches the wire, or
+    // the idle of the prompt when the model ended with no skill. Then it
+    // cancels the prompt. Each wait is an event wait on the collector, with
+    // no clock: a sample that no skill covers runs until its prompt ends.
+    //
+    // Measured on 2026-09-19 with `mlx-community/Qwen3.8-27B-mxfp4`: the
+    // five covered tasks each made their `use skill` call inside the first
+    // minute of a prompt that then ran for 202 to 297 seconds. Waiting for
+    // the idle terminator thus paid three to four minutes for a fact the
+    // first minute already held.
 
     /// The user-layer `config.yaml`: the transcripts record under the user
     /// directory, outside the workspace, so a removed workspace keeps its
@@ -202,20 +182,14 @@ struct SkillTriggerSubject {
         let start = ContinuousClock.now
         _ = try await harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: sessionId, text: sample.prompt))
-        let decision = await Self.waitForDecision(
-            collector: collector,
-            sessionId: sessionId,
-            deadline: ContinuousClock.now + Self.decisionDeadline)
+        let decision = try await Self.waitForDecision(collector: collector, sessionId: sessionId)
         let elapsed = start.duration(to: ContinuousClock.now)
         // The prompt goes on doing the work of the task, and the work is not
         // the measurement. Cancel it, and wait for the idle the cancel
         // gives, so the next sample starts on a quiet session.
         try await harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: sessionId))
-        let stopReason = await Self.waitForIdle(
-            collector: collector,
-            sessionId: sessionId,
-            deadline: ContinuousClock.now + Self.cancelDeadline)
+        let stopReason = try await Self.waitForIdle(collector: collector, sessionId: sessionId)
         await harness.flushPendingChunks()
         let answer = await Self.answerText(of: collector, sessionId: sessionId)
         // The cancel ends the prompt, but a model call or a background run of
@@ -255,9 +229,6 @@ struct SkillTriggerSubject {
         return chunks.joined().replacingOccurrences(of: "\n", with: " ")
     }
 
-    /// How long a run waits for the idle that its cancel gives.
-    static let cancelDeadline: Duration = .seconds(600)
-
     /// What one run saw before it stopped: the ids the model loaded, and
     /// how many `skills` calls it made.
     struct SkillsDecision: Sendable {
@@ -271,8 +242,9 @@ struct SkillTriggerSubject {
         let toolTitlesSeen: [String]
     }
 
-    /// Waits for the first `use skill` call of one session, or for the
-    /// deadline.
+    /// Waits for the first `use skill` call of one session, or for the idle
+    /// of its prompt. Each update that the collector gets checks the
+    /// sequence again, so the wait uses no clock and no poll.
     ///
     /// The wire carries the name of each tool call in `title` and its
     /// arguments in `rawInput`, so a run reads the decision as it happens
@@ -281,44 +253,32 @@ struct SkillTriggerSubject {
     /// - Parameters:
     ///   - collector: The recorder of the sequence.
     ///   - sessionId: The session to watch.
-    ///   - deadline: The instant the wait gives up at.
     /// - Returns: What the run saw.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     private static func waitForDecision(
-        collector: UpdateCollector, sessionId: SessionId, deadline: ContinuousClock.Instant
-    ) async -> SkillsDecision {
-        var decision = SkillsDecision(loadedIDs: [], skillsCallCount: 0, toolTitlesSeen: [])
-        while ContinuousClock.now < deadline {
-            decision = await skillsDecision(of: collector, sessionId: sessionId)
-            if !decision.loadedIDs.isEmpty {
-                return decision
-            }
-            let idle = await collector.updates.contains { notification in
-                guard notification.sessionId == sessionId,
-                    case .stateUpdate(.idle) = notification.update
-                else { return false }
-                return true
-            }
-            if idle {
-                return decision
-            }
-            try? await Task.sleep(for: pollInterval)
+        collector: UpdateCollector, sessionId: SessionId
+    ) async throws -> SkillsDecision {
+        let updates = try await collector.wait(for: "the decision of \(sessionId.rawValue)") { updates in
+            !skillsDecision(in: updates, sessionId: sessionId).loadedIDs.isEmpty
+                || updates.contains { stopReason(of: $0, in: sessionId) != nil }
         }
-        return decision
+        return skillsDecision(in: updates, sessionId: sessionId)
     }
 
     /// The `skills` calls the wire carries for one session.
     ///
     /// - Parameters:
-    ///   - collector: The recorder of the sequence.
+    ///   - updates: The collected sequence.
     ///   - sessionId: The session to read.
     /// - Returns: The ids the model loaded, and the count of `skills` calls.
     private static func skillsDecision(
-        of collector: UpdateCollector, sessionId: SessionId
-    ) async -> SkillsDecision {
+        in updates: [UpdateSessionNotification], sessionId: SessionId
+    ) -> SkillsDecision {
         var loadedIDs: [String] = []
         var callCount = 0
         var titles: [String] = []
-        for notification in await collector.updates where notification.sessionId == sessionId {
+        for notification in updates where notification.sessionId == sessionId {
             guard case .toolCallUpdate(let update) = notification.update,
                 case .value(let title) = update.title
             else { continue }
@@ -337,28 +297,35 @@ struct SkillTriggerSubject {
             loadedIDs: loadedIDs, skillsCallCount: callCount, toolTitlesSeen: titles)
     }
 
-    /// Waits for the idle terminator of one session.
+    /// Waits for the idle terminator of one session. Each update that the
+    /// collector gets checks the sequence again, so the wait uses no clock
+    /// and no poll.
     ///
     /// - Parameters:
     ///   - collector: The recorder of the sequence.
     ///   - sessionId: The session to watch.
-    ///   - deadline: The instant the wait gives up at.
-    /// - Returns: The stop reason, or `nil` at the deadline.
+    /// - Returns: The stop reason.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     private static func waitForIdle(
-        collector: UpdateCollector, sessionId: SessionId, deadline: ContinuousClock.Instant
-    ) async -> StopReason? {
-        while ContinuousClock.now < deadline {
-            let reasons = await collector.updates.compactMap { notification -> StopReason? in
-                guard notification.sessionId == sessionId,
-                    case .stateUpdate(.idle(let idle)) = notification.update
-                else { return nil }
-                return idle.stopReason
-            }
-            if let reason = reasons.last {
-                return reason
-            }
-            try? await Task.sleep(for: pollInterval)
+        collector: UpdateCollector, sessionId: SessionId
+    ) async throws -> StopReason? {
+        let updates = try await collector.wait(for: "the idle of \(sessionId.rawValue)") { updates in
+            updates.contains { Self.stopReason(of: $0, in: sessionId) != nil }
         }
-        return nil
+        return updates.compactMap { Self.stopReason(of: $0, in: sessionId) }.last
+    }
+
+    /// The stop reason of an idle state update of one session, or `nil`.
+    ///
+    /// - Parameters:
+    ///   - notification: The update.
+    ///   - sessionId: The session to read.
+    /// - Returns: The stop reason.
+    private static func stopReason(of notification: UpdateSessionNotification, in sessionId: SessionId) -> StopReason? {
+        guard notification.sessionId == sessionId,
+            case .stateUpdate(.idle(let idle)) = notification.update
+        else { return nil }
+        return idle.stopReason
     }
 }

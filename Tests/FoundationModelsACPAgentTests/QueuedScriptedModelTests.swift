@@ -14,9 +14,6 @@ import Testing
     /// The prompt text of each prompt of this suite.
     private static let promptText = "Run one pass"
 
-    /// The number of ACP sessions of the fixture.
-    private static let sessionCount = 2
-
     /// Wires the two-session fixture over a script that holds each pass
     /// until `hold` is released.
     ///
@@ -38,22 +35,27 @@ import Testing
         let fixture = try await makeHeldFixture(hold: hold)
         try await fixture.prompt(fixture.firstSessionId, text: promptText)
         let counter = fixture.passCounter
-        try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
+        try await counter.wait(for: "the pass of session A is held") { $0.running == 1 }
         return fixture
     }
 
     /// Two sessions that prompt at the same time over one queued model never
     /// run two passes at the same time.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func twoSessionsNeverRunTwoPassesAtOnce() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.makeHeldFixture(hold: hold)
+        let queuedWatches = [
+            try await fixture.watchForQueuedSubmission(of: fixture.firstSessionId),
+            try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId),
+        ]
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
         let counter = fixture.passCounter
-        try await Poll.until("both prompts reach the model") {
-            await counter.startedCount + counter.waitingCount == Self.sessionCount
-        }
+        // Both prompts reach the model: one pass runs and holds, and the
+        // submission of the other session waits for a queue place.
+        try await counter.wait(for: "one pass is held") { $0.running == 1 }
+        await QueuedScriptedFixture.waitForFirst(of: queuedWatches)
 
         hold.release()
         try await fixture.waitForIdleOfBothSessions()
@@ -63,7 +65,7 @@ import Testing
     }
 
     /// A held pass ends when the test calls `release()`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func releaseEndsAHeldPass() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.startHeldPass(hold: hold)
@@ -77,7 +79,7 @@ import Testing
     }
 
     /// A held pass ends when the client cancels its prompt.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancelEndsAHeldPass() async throws {
         let fixture = try await Self.startHeldPass(hold: ScriptedHold())
 
@@ -92,16 +94,16 @@ import Testing
 
     /// While session A holds a pass, a prompt on session B waits for a queue
     /// place and starts no pass.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSecondSessionWaitsForTheHeldPass() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.startHeldPass(hold: hold)
         let counter = fixture.passCounter
 
+        let queued = try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId)
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        try await Poll.until("the prompt of session B waits for a queue place") {
-            await counter.waitingCount == 1
-        }
+        // The prompt of session B waits for a queue place.
+        await queued.value
         let startedWhileHeld = counter.startedCount
 
         hold.release()

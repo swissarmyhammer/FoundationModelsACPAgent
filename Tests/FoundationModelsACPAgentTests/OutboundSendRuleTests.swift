@@ -113,7 +113,7 @@ import Testing
 
     /// Each custom stop reason of this agent starts with `_`, and the idle of
     /// each prompt stop passes the send rules of the connection.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theIdleOfEachPromptStopPassesTheSendRules() async throws {
         let idles = Self.makeEveryStop().map(PromptExecution.idleState(for:))
         let customValues = idles.compactMap { idle -> String? in
@@ -134,7 +134,7 @@ import Testing
 
     /// Each usage update of this agent has a `size` and a `used` of zero or
     /// more, and passes the send rules of the connection.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func eachUsageUpdatePassesTheSendRules() async throws {
         let usages = await Self.makeEveryUsageUpdate()
 

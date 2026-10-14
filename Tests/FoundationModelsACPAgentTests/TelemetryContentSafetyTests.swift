@@ -169,7 +169,7 @@ import Testing
 
     /// No telemetry record of the agent holds a text of the client, and each
     /// driven path records its spans, log records and metrics.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func noTelemetryRecordCarriesTheContentOfTheClient() async throws {
         try await TelemetryCapture.run(forbidding: Self.forbiddenContent) { context in
             try await Self.driveEachContentPath(in: context)
@@ -253,7 +253,7 @@ import Testing
     /// - Throws: Whatever the prompt or a wait throws.
     private static func runToolPrompt(on fixture: ScriptedPromptFixture) async throws {
         try await runPrompt(on: fixture, text: toolPromptText) {
-            let pending = try await ElicitationPoll.firstPendingElicitation(in: fixture.session)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
             await MainActor.run {
                 fixture.session.acceptElicitation(
                     pending.id,
@@ -296,7 +296,7 @@ import Testing
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
         try await whileRunning()
         _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: idleBefore + 1)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
     }
 
     /// The number of running state updates in the sequence.

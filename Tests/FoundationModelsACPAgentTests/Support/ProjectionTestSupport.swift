@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import Synchronization
 
@@ -98,6 +99,14 @@ actor SinkRecorder {
         log.keptWaitCount
     }
 
+    /// Waits until at least `count` readers wait for more updates. Each
+    /// kept wait checks the count again, so this wait uses no clock.
+    ///
+    /// - Parameter count: The number of kept waits to wait for.
+    nonisolated func waitUntilKept(atLeast count: Int) async {
+        await log.waitUntilKept(atLeast: count)
+    }
+
     /// Appends one update, and resumes each reader whose updates are now
     /// all recorded.
     ///
@@ -115,8 +124,7 @@ actor SinkRecorder {
     ///   - isComplete: Tells if the updates are all recorded.
     /// - Returns: The recorded updates, in send order.
     /// - Throws: ``ConditionWaitCancelled`` when the task of the reader is
-    ///   cancelled before `isComplete` accepts the updates, as at the time
-    ///   limit of a test.
+    ///   cancelled before `isComplete` accepts the updates.
     func updates(until condition: String, _ isComplete: @escaping Completion) async throws -> [SessionUpdate] {
         try await log.wait(for: condition, until: isComplete)
     }
@@ -380,19 +388,30 @@ enum RoutedPrompt {
     ///   - script: The steps that the model plays on each pass.
     ///   - tools: The tools of the session.
     ///   - label: The directory label of the calling test.
+    ///   - runClock: The clock of the runs of the session (their timeouts
+    ///     and settle periods), or `nil` for the real clock. A test that
+    ///     reaches a run timeout gives a `ManualRunClock`, and advances it.
+    ///   - observe: Gets each sent update, after the recorder has it. A test
+    ///     opens a gate of a tool here, at a fixed point of the wire order.
     /// - Returns: The sent updates, in send order.
     /// - Throws: Whatever the profile or the session throws.
     static func sentUpdates(
         prompt: String = defaultPrompt, script: [ScriptedPassStep], tools: [any FoundationModels.Tool],
-        label: String
+        label: String, runClock: (any RunClock)? = nil,
+        observe: @escaping @Sendable (SessionUpdate) -> Void = { _ in }
     ) async throws -> [SessionUpdate] {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let profile = try await makeStubProfile(
-            cacheDirectory: directory.appendingPathComponent("cache", isDirectory: true),
-            loader: makeScriptedModelLoader(script: script))
+        let cacheDirectory = directory.appendingPathComponent("cache", isDirectory: true)
+        let loader = makeScriptedModelLoader(script: script)
+        let profile =
+            if let runClock {
+                try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader, runClock: runClock)
+            } else {
+                try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader)
+            }
         let session = profile.standard.makeBudgetedSession(
             instructions: "Call the tool.",
             workingDirectory: directory,
@@ -402,7 +421,10 @@ enum RoutedPrompt {
             repetition: RepetitionConfiguration(),
             inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
         let recorder = SinkRecorder()
-        let send: SessionUpdateSink = { update in await recorder.append(update) }
+        let send: SessionUpdateSink = { update in
+            await recorder.append(update)
+            observe(update)
+        }
         let projector = SessionProjector(
             sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName, send: send,
             relay: nil, runCallJoins: RunCallJoinTable())
@@ -500,6 +522,11 @@ struct LiveShellSession {
     /// The task that consumes the shell output stream.
     private let terminal: Task<Void, Never>
 
+    /// Each step of the forwarder of the terminal stream, in order, with
+    /// its waits. A test waits here for the point where the terminal stream
+    /// handled each sent shell event and waits for the next one.
+    let forwarderSteps = WatchedValue<[TerminalStream.ForwarderStep]>([])
+
     /// Starts one prompt and one terminal stream over `runCallJoins`.
     ///
     /// - Parameter runCallJoins: The join table of the session.
@@ -514,9 +541,24 @@ struct LiveShellSession {
         prompt = Task {
             await session.execution.drive(events: promptStream)
         }
+        let steps = forwarderSteps
         terminal = Task {
             var stream = session.terminal
+            stream.forwarderObserver = { step in steps.update { $0.append(step) } }
             await stream.consume(shellStream)
+        }
+    }
+
+    /// Waits until the terminal stream handled `count` shell events and
+    /// waits for the next one: the forwarder took each event, had its turn
+    /// after the loop handled it, and waits on the stream again.
+    ///
+    /// - Parameter count: The number of shell events sent so far.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
+    func waitUntilTerminalHandled(_ count: Int) async throws {
+        _ = try await forwarderSteps.wait(for: "the terminal stream handled \(count) shell event(s)") { steps in
+            steps.count(where: { $0 == .awaitingUpstream }) > count
         }
     }
 

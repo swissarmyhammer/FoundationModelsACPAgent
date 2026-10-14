@@ -61,7 +61,7 @@ import Testing
     /// `CancellationError`, which maps to `cancelled`, never to a
     /// JSON-RPC error and never to `refusal` — and the idle update is
     /// strictly the last update: nothing of any kind arrives after it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancellingALongRunningPromptMakesIdleCancelledTheLastUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
         _ = try await fixture.harness.connection.prompt(
@@ -74,7 +74,7 @@ import Testing
         // The agent clears the finished prompt after the idle went out,
         // so the collector holds everything the prompt sent once the
         // session is available again.
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         let updates = await fixture.collector.updates
         await fixture.close()
 
@@ -151,11 +151,11 @@ import Testing
             label: "CancellationTests-queue")
         let counter = fixture.passCounter
         try await fixture.prompt(fixture.firstSessionId, text: promptText)
-        try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
+        try await counter.wait(for: "the pass of session A is held") { $0.running == 1 }
+        let queued = try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId)
         try await fixture.prompt(fixture.secondSessionId, text: promptText)
-        try await Poll.until("the prompt of session B waits for a queue place") {
-            await counter.waitingCount == 1
-        }
+        // The prompt of session B waits for a queue place.
+        await queued.value
         return fixture
     }
 
@@ -163,7 +163,7 @@ import Testing
     /// queue ends it with `idle(cancelled)` while the other session still
     /// holds the model. After the release, the holding session completes,
     /// and a new prompt on the cancelled session completes too.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancelEndsARequestThatWaitsForTheModelQueue() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.startPromptThatWaitsForTheQueue(hold: hold)
@@ -177,7 +177,7 @@ import Testing
 
         hold.release()
         let updatesOfA = try await fixture.waitForIdle(of: sessionA)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.base.harness.agent, sessionB)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.base.harness.agent, sessionB)
         try await fixture.prompt(sessionB, text: Self.promptText)
         let updatesOfB = try await fixture.waitForIdle(of: sessionB, count: 2)
         await fixture.close()
@@ -192,7 +192,7 @@ import Testing
     /// model queue answers after the `idle(cancelled)` of that prompt, while
     /// the other session still holds the model. After the release, the
     /// holding session completes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func closeEndsARequestThatWaitsForTheModelQueue() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.startPromptThatWaitsForTheQueue(hold: hold)
@@ -266,7 +266,7 @@ import Testing
     /// the model. The prompt of that session ended at the answer of its own
     /// mail (task ^9xs24pn, decision Q1), so the close sends no second
     /// `idle`. After the release, the holding session completes.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func closeEndsAMailStartedAnswerThatWaitsForTheModelQueue() async throws {
         let hold = ScriptedHold()
         let directory = try NamedPipe.makeDirectory(
@@ -279,19 +279,23 @@ import Testing
         let counter = fixture.passCounter
 
         try await fixture.prompt(sessionB, text: Self.startRunMarker)
-        try await Poll.until("the runCode call of session B gave its pending answer") {
-            await fixture.updates(of: sessionB).contains { notification in
-                guard case .toolCallUpdate(let update) = notification.update else { return false }
+        _ = try await fixture.base.collector.wait(for: "the runCode call of session B gave its pending answer") { updates in
+            updates.contains { notification in
+                guard notification.sessionId == sessionB,
+                    case .toolCallUpdate(let update) = notification.update
+                else { return false }
                 return update.status == .value(.completed)
             }
         }
+        // Each submission of session B that must wait for a queue place from
+        // now on ends this watch.
+        let queued = try await fixture.watchForQueuedSubmission(of: sessionB)
         try await fixture.prompt(sessionA, text: Self.holdModelMarker)
-        try await Poll.until("the pass of session A is held") { counter.runningCount == 1 }
+        try await counter.wait(for: "the pass of session A is held") { $0.running == 1 }
         try await NamedPipe.write(
             Self.releaseText, toPipeAt: directory.appendingPathComponent(Self.releasePipeName))
-        try await Poll.until("the mail-started answer of session B waits for a queue place") {
-            await counter.waitingCount == 1
-        }
+        // The mail-started answer of session B waits for a queue place.
+        await queued.value
 
         _ = try await fixture.base.harness.connection.closeSession(
             CloseSessionRequest(sessionId: sessionB))
@@ -313,7 +317,7 @@ import Testing
     /// A cancel of an idle session is a no-op: no error, no update, and
     /// no state change. A later prompt runs untouched and ends with
     /// `end_turn`, so the ignored cancel did not leak into it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancelOfAnIdleSessionIsANoOpWithNoStateChange() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("hello"), .endPass])
         try await fixture.harness.connection.sessionCancel(
@@ -331,7 +335,7 @@ import Testing
     /// A cancel with an unknown `sessionId` is logged and ignored: it
     /// is a notification, so there is no error, and no `session/update`
     /// of any kind goes out for it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancelOfAnUnknownSessionIdIsIgnoredAndSendsNoUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("hello"), .endPass])
         try await fixture.harness.connection.sessionCancel(
@@ -350,7 +354,7 @@ import Testing
     /// and no `session/update`. A round trip through `session/new`
     /// proves the notification was consumed before the assertion reads
     /// the collector.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func cancelOfAClosedSessionIsIgnoredAndSendsNoUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         await fixture.harness.agent.markSessionClosed(fixture.sessionId)

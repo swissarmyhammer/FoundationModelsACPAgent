@@ -3,15 +3,21 @@ import Synchronization
 /// The error of a wait for a condition that ended before the condition came:
 /// the task of the wait was cancelled.
 ///
-/// A `.timeLimit` trait cancels the task of its test. Thus a test that waits
-/// for a condition that never comes fails at its time limit with this error,
-/// and the run continues.
-struct ConditionWaitCancelled: Error, CustomStringConvertible {
+/// A test has no time limit. A wait for a condition that never comes thus
+/// ends only when its task is cancelled, and then it throws this error.
+public struct ConditionWaitCancelled: Error, CustomStringConvertible {
     /// The name of the condition that did not come.
-    let condition: String
+    public let condition: String
+
+    /// Makes the error of a cancelled wait.
+    ///
+    /// - Parameter condition: The name of the condition that did not come.
+    public init(condition: String) {
+        self.condition = condition
+    }
 
     /// The failure message. It names the condition that did not come.
-    var description: String {
+    public var description: String {
         "the wait for \(condition) was cancelled before the condition came"
     }
 }
@@ -24,7 +30,7 @@ struct ConditionWaitCancelled: Error, CustomStringConvertible {
 /// its wait at once. Each wait resumes exactly one time: by the change that
 /// makes its condition true, or by the cancellation of its task. The one
 /// that removes the wait from the lock resumes it.
-final class WatchedValue<Value: Sendable>: Sendable {
+public final class WatchedValue<Value: Sendable>: Sendable {
     /// One suspended wait.
     private struct Wait {
         /// Tells if the condition of the wait is true for a value.
@@ -44,6 +50,10 @@ final class WatchedValue<Value: Sendable>: Sendable {
 
         /// The token of the next wait.
         var nextToken = 0
+
+        /// The tests that wait until a count of waits is kept, with that
+        /// count.
+        var keptWatchers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
     }
 
     /// The state, under a lock because a change, a wait and a cancellation
@@ -53,12 +63,12 @@ final class WatchedValue<Value: Sendable>: Sendable {
     /// Makes a watched value.
     ///
     /// - Parameter initialValue: The value before the first change.
-    init(_ initialValue: Value) {
+    public init(_ initialValue: Value) {
         state = Mutex(State(value: initialValue))
     }
 
     /// The value of now.
-    var value: Value {
+    public var value: Value {
         state.withLock { $0.value }
     }
 
@@ -66,14 +76,32 @@ final class WatchedValue<Value: Sendable>: Sendable {
     /// condition, found it false, and is suspended until a change or a
     /// cancellation resumes it. A test reads this count to know that a wait
     /// is kept before it cancels the task of the wait.
-    var keptWaitCount: Int {
+    public var keptWaitCount: Int {
         state.withLock { $0.waits.count }
+    }
+
+    /// Waits until at least `count` waits are kept: each one checked its
+    /// condition, found it false, and is suspended. Each kept wait checks
+    /// the count again, so this wait uses no clock and no poll.
+    ///
+    /// - Parameter count: The number of kept waits to wait for.
+    public func waitUntilKept(atLeast count: Int) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let reached = state.withLock { state -> Bool in
+                guard state.waits.count < count else { return true }
+                state.keptWatchers.append((count, continuation))
+                return false
+            }
+            if reached {
+                continuation.resume()
+            }
+        }
     }
 
     /// Changes the value, and resumes each wait whose condition is now true.
     ///
     /// - Parameter change: The change to the value.
-    func update(_ change: (inout Value) -> Void) {
+    public func update(_ change: (inout Value) -> Void) {
         let (value, metWaits) = state.withLock { state -> (Value, [Wait]) in
             change(&state.value)
             let value = state.value
@@ -95,7 +123,7 @@ final class WatchedValue<Value: Sendable>: Sendable {
     /// - Returns: The first value for which `isMet` is true.
     /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
     ///   cancelled before the condition comes.
-    func wait(
+    public func wait(
         for condition: String, until isMet: @escaping @Sendable (Value) -> Bool
     ) async throws -> Value {
         let token = state.withLock { state in
@@ -136,6 +164,16 @@ final class WatchedValue<Value: Sendable>: Sendable {
         }
         if let outcome {
             wait.continuation.resume(with: outcome)
+            return
+        }
+        let reached = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+            let kept = state.waits.count
+            let reached = state.keptWatchers.filter { $0.count <= kept }.map(\.continuation)
+            state.keptWatchers.removeAll { $0.count <= kept }
+            return reached
+        }
+        for watcher in reached {
+            watcher.resume()
         }
     }
 }

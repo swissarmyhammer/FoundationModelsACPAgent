@@ -157,7 +157,7 @@ import Testing
     /// The acceptance of the card: 10000 single-byte writes give fewer than
     /// ``rowBound`` `toolOutput` rows for the operation, and not one row for
     /// each write.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func manySingleByteWritesGiveABoundedCountOfRows() async throws {
         let writer = try await Self.recordWriterRun(label: "ExecuteProgressRowsTests-rows")
 
@@ -169,7 +169,7 @@ import Testing
 
     /// The bound loses no output: the progress events in the rows of the
     /// operation hold each byte the command wrote.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theBoundedRowsKeepEachWrittenByte() async throws {
         let writer = try await Self.recordWriterRun(label: "ExecuteProgressRowsTests-text")
 

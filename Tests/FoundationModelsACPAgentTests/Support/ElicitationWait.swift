@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import Testing
 
@@ -8,9 +9,9 @@ import Testing
 /// client and that the client did not answer yet.
 ///
 /// Each suite that tests an elicitation round trip uses this one wait. The
-/// wait uses ``Poll/until(_:_:sourceLocation:)``, thus it stops at the fact
-/// and never sleeps for a guessed span.
-enum ElicitationPoll {
+/// wait observes the session model (``ObservedValue``), thus each change of
+/// the model checks the fact again, and the wait uses no clock and no poll.
+enum ElicitationWait {
     /// The elicitations that `session` did not answer yet.
     ///
     /// - Parameter session: The session model that received the
@@ -25,19 +26,18 @@ enum ElicitationPoll {
     ///
     /// - Parameters:
     ///   - session: The session model that receives the elicitations.
-    ///   - sourceLocation: The line a timeout is reported at.
+    ///   - sourceLocation: The line a failed read is reported at.
     /// - Returns: The first pending elicitation of the session.
-    /// - Throws: When no elicitation reaches the session model, and
-    ///   `CancellationError` when the test is cancelled.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
     static func firstPendingElicitation(
         in session: SessionModel,
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws -> PendingElicitation {
         let sessionId = session.sessionId
-        try await Poll.until(
-            "an elicitation of \(sessionId.rawValue) reaches the client",
-            { await !pendingElicitations(in: session).isEmpty },
-            sourceLocation: sourceLocation)
+        try await ObservedValue.wait(for: "an elicitation of \(sessionId.rawValue) reaches the client") {
+            !session.pendingElicitations.isEmpty
+        }
         return try #require(
             await pendingElicitations(in: session).first,
             sourceLocation: sourceLocation)

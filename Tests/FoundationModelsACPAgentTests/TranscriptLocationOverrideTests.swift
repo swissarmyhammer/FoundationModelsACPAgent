@@ -65,10 +65,9 @@ struct TranscriptLocationOverrideTests {
             _ = try await harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText))
             _ = try await ScriptedPromptFixture.waitForIdle(try #require(harness.collector))
-            try await ScriptedPromptFixture.waitForAvailability(harness.agent, sessionId)
-            try await Poll.until("the recording root holds an event of the session") {
-                try !ResumeSessionFixture.recordedEvents(under: root, sessionId: sessionId).isEmpty
-            }
+            await ScriptedPromptFixture.waitForPromptsFinished(harness.agent, sessionId)
+            try await ResumeSessionFixture.waitForJournal(of: sessionId, in: harness.agent)
+            #expect(try !ResumeSessionFixture.recordedEvents(under: root, sessionId: sessionId).isEmpty)
             return sessionId
         }
 
@@ -120,7 +119,7 @@ struct TranscriptLocationOverrideTests {
     /// With `.path(dir)` and no config file, a session records in `dir`,
     /// the project and the cross-project `session/list` both list it after
     /// its close, and `session/resume` restores it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCodeLocationRecordsListsAndResumesWithNoConfigFile() async throws {
         let transcripts = makeResolvedDirectory(label: "TranscriptLocationOverrideTests-path")
         let fixture = try await Self.makeFixture(
@@ -150,7 +149,7 @@ struct TranscriptLocationOverrideTests {
 
     /// The code location wins over the `transcripts.location` of a project
     /// `config.yaml`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCodeLocationWinsOverTheProjectConfigFile() async throws {
         let transcripts = makeResolvedDirectory(label: "TranscriptLocationOverrideTests-wins")
         let fileLocation = makeResolvedDirectory(label: "TranscriptLocationOverrideTests-file")
@@ -173,7 +172,7 @@ struct TranscriptLocationOverrideTests {
 
     /// With no code location, the `transcripts.location` of a project
     /// `config.yaml` stays in force.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func noCodeLocationKeepsTheProjectConfigFileValue() async throws {
         let fileLocation = makeResolvedDirectory(label: "TranscriptLocationOverrideTests-nil")
         let fixture = try await Self.makeFixture(

@@ -193,7 +193,7 @@ struct CompactionReportTests {
         let response = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
         let notifications = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: count)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         return (response, notifications.map(\.update))
     }
 
@@ -257,14 +257,14 @@ struct CompactionReportTests {
     /// for its whole life, so the compaction of a `compact` signal sends its
     /// `in_progress` entry and its terminal entry under the `SignalID`, and
     /// no state update goes out with no prompt open.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCompactionWithNoPromptOpenReachesTheClient() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.automaticSummary), .endPass], label: "CompactionReportTests-no-prompt")
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.earlierPrompt))
         let promptUpdates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
 
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let signal = session.compact()
@@ -286,7 +286,7 @@ struct CompactionReportTests {
     /// An automatic compaction that applied a summary sends one completed
     /// `compaction_update` keyed by Router's compaction id, with the summary,
     /// and then the `usage_update` with the new context use.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anAutomaticCompactionSendsOneCompletedEntryWithItsSummary() async throws {
         let updates = await Self.project(Self.makeAutomaticResult())
 
@@ -307,7 +307,7 @@ struct CompactionReportTests {
     /// An automatic compaction that left the context as it was is a failed
     /// entry, and the error is the reason Router gave. The meter does not
     /// move, so no `usage_update` goes out for it.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anAutomaticShortfallSendsAFailedEntryWithTheReason() async throws {
         let updates = await Self.project(
             CompactionResult(
@@ -327,7 +327,7 @@ struct CompactionReportTests {
     /// An automatic compaction that Router announced sends `in_progress` at
     /// the start, then `completed` with the summary under the same id, then
     /// the `usage_update` with the new context use.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anAutomaticCompactionSendsInProgressThenCompletedUnderOneId() async throws {
         let updates = await SyntheticPrompt.sentUpdates([Self.makeAutomaticStart(), .compaction(Self.makeAutomaticResult())])
 
@@ -343,7 +343,7 @@ struct CompactionReportTests {
     /// An automatic compaction that failed sends `in_progress`, then `failed`
     /// under the same id, with the error text Router gave. The context did
     /// not change, so no `usage_update` goes out.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anAutomaticFailureSendsFailedWithTheErrorText() async throws {
         let updates = await SyntheticPrompt.sentUpdates([
             Self.makeAutomaticStart(), Self.makeAutomaticFailure(.failed(Self.automaticFailureText)),
@@ -359,7 +359,7 @@ struct CompactionReportTests {
 
     /// An automatic compaction that a cancel stopped sends `in_progress`, then
     /// `cancelled` under the same id, with no error and no `usage_update`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anAutomaticCancelSendsCancelled() async throws {
         let updates = await SyntheticPrompt.sentUpdates([Self.makeAutomaticStart(), Self.makeAutomaticFailure(.cancelled)])
 
@@ -376,7 +376,7 @@ struct CompactionReportTests {
     /// `/compact` sends `in_progress` before the fold, then `completed` with
     /// the summary under the same id, then the `usage_update` with the new
     /// context use.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func manualCompactSendsInProgressThenCompletedWithTheSummary() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-manual")
         try await Self.runPrompt("/compact", on: fixture, count: 1)
@@ -398,7 +398,7 @@ struct CompactionReportTests {
 
     /// A `/compact` that Router could not carry out is a failed entry, and
     /// the error is the shortfall reason.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func manualCompactShortfallSendsFailedWithTheReason() async throws {
         let fixture = try await Self.makeFixture(
             label: "CompactionReportTests-shortfall",
@@ -417,7 +417,7 @@ struct CompactionReportTests {
 
     /// A `/compact` whose summarizer throws is a failed entry, and the error
     /// names the failure.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func manualCompactFailureSendsFailedWithTheError() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-failure", shouldFail: true)
         try await Self.runPrompt("/compact", on: fixture, count: 1)
@@ -434,7 +434,7 @@ struct CompactionReportTests {
     /// A compaction that a cancellation stopped is a cancelled entry: the
     /// `cancelled` update under the id of its `in_progress` update, with no
     /// error and no `usage_update`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCancelledCompactionSendsCancelled() async throws {
         let gate = SummarizerGate()
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-cancelled", gate: gate)
@@ -459,7 +459,7 @@ struct CompactionReportTests {
     /// A compaction changes only the model context: each message before it
     /// keeps its id and its content in the retained history, and the
     /// compaction is one more entry after them.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func earlierMessagesKeepTheirIdsAndContentAfterACompaction() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-history")
         try await Self.runPrompt(Self.earlierPrompt, on: fixture, count: 1)
@@ -484,7 +484,7 @@ struct CompactionReportTests {
     /// A new agent resumes the session from the history file of the earlier
     /// agent, and the replay holds the compaction entry with its final
     /// status and summary, and each earlier message with its id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumeReplaysTheCompactionEntryAndTheEarlierMessages() async throws {
         let first = try await Self.makeFixture(label: "CompactionReportTests-resume")
         try await Self.runPrompt(Self.earlierPrompt, on: first, count: 1)
@@ -508,7 +508,7 @@ struct CompactionReportTests {
     /// the session. Thus a new agent that resumes the session replays one
     /// compaction entry with the final status: `failed` with the error text,
     /// not the earlier `in_progress`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumeReplaysTheFinalStatusOfAnAutomaticCompaction() async throws {
         let first = try await Self.makeFixture(label: "CompactionReportTests-automatic-resume")
         try await Self.runPrompt(Self.earlierPrompt, on: first, count: 1)

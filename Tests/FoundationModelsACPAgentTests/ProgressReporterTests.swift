@@ -53,25 +53,13 @@ import Testing
     /// The fraction of the last read: the whole resolution is complete.
     private static let readyFraction = 1.0
 
-    /// The pause between two reads of the progress object, and the pause
-    /// the wait loop sleeps for. It is short, because the script advances
-    /// on each read and nothing here waits for real work.
+    /// The pause of the reporter between two reads of the progress object.
+    /// It is short, because the script advances on each read and nothing
+    /// here waits for real work. The test itself waits on no clock.
     private static let pollInterval = Swift.Duration.milliseconds(1)
-
-    /// How long the wait loop waits for the reporter to read the whole
-    /// script. A reporter that reads nothing must fail the assertions of
-    /// the test, and not hold the suite open.
-    private static let scriptDeadline = Swift.Duration.seconds(5)
 
     /// The line of the one read of ``LateReadProgress``.
     private static let lateLabel = "late read"
-
-    /// How long the one read of ``LateReadProgress`` holds the main thread
-    /// after it tells the work to return, in seconds. It is much longer
-    /// than the steps from the end of the work to the return of
-    /// `report(on:)`, so a reporter that does not wait for its poll returns
-    /// before the read ends.
-    private static let lateReadDelay: TimeInterval = 0.2
 
     // MARK: - The two rows of the §5.7 table
 
@@ -85,7 +73,7 @@ import Testing
             pollInterval: Self.pollInterval)
 
         try await reporter.report(on: progress) {
-            await Self.waitForTheWholeScript(of: progress)
+            try await Self.waitForTheWholeScript(of: progress)
         }
 
         let drawn = capture.text()
@@ -104,7 +92,7 @@ import Testing
             pollInterval: Self.pollInterval)
 
         try await reporter.report(on: progress) {
-            await Self.waitForTheWholeScript(of: progress)
+            try await Self.waitForTheWholeScript(of: progress)
         }
 
         #expect(capture.bytes().isEmpty)
@@ -138,7 +126,7 @@ import Testing
 
         let onStandardOutput = try await Self.capturingStandardOutput {
             try await reporter.report(on: progress) {
-                await Self.waitForTheWholeScript(of: progress)
+                try await Self.waitForTheWholeScript(of: progress)
             }
         }
 
@@ -158,7 +146,7 @@ import Testing
             pollInterval: Self.pollInterval)
 
         try await reporter.report(on: progress) {
-            await Self.waitForTheWholeScript(of: progress)
+            try await Self.waitForTheWholeScript(of: progress)
         }
 
         #expect(await progress.readCount >= Self.script.count)
@@ -170,8 +158,9 @@ import Testing
     /// The last draw of the poll lands before `report(on:)` returns.
     ///
     /// The one read of ``LateReadProgress`` tells the work to return, and
-    /// then holds the main thread for ``lateReadDelay``. The work thus ends
-    /// while that read is still open. A reporter that does not wait for its
+    /// then holds the main thread until the work signals its end. The work
+    /// thus ends while that read is still open, in a fixed order with no
+    /// clock. A reporter that does not wait for its
     /// poll returns first and draws later: at the same time as the
     /// completion line of the bar, and into a destination that the caller
     /// can already have closed. A draw into a pipe with no read end raises
@@ -179,6 +168,7 @@ import Testing
     @Test func theLastDrawLandsBeforeTheReportReturns() async throws {
         let capture = TerminalCapture()
         let (readStarts, readStarted) = AsyncStream<Void>.makeStream()
+        let workEnded = DispatchSemaphore(value: 0)
         let progress = await LateReadProgress(
             snapshot: ResolutionSnapshot(
                 label: Self.lateLabel,
@@ -186,7 +176,7 @@ import Testing
                 bytes: TerminalRenderer.ByteProgress(
                     completed: Self.totalBytes, total: Self.totalBytes),
                 isFinished: true),
-            delay: Self.lateReadDelay,
+            workEnded: workEnded,
             readStarted: readStarted)
         let reporter = ProgressReporter(
             renderer: TerminalRenderer(destination: capture.destination, isTerminal: true),
@@ -194,6 +184,7 @@ import Testing
 
         try await reporter.report(on: progress) {
             for await _ in readStarts { break }
+            workEnded.signal()
         }
 
         #expect(capture.text().contains(Self.lateLabel))
@@ -226,17 +217,15 @@ import Testing
     }
 
     /// Waits until `progress` has given every snapshot of its script away,
-    /// which is what a real resolution does before it returns.
-    ///
-    /// The wait ends at ``scriptDeadline`` as well, so a reporter that reads
-    /// nothing fails the assertions instead of holding the suite open.
+    /// which is what a real resolution does before it returns. Each read
+    /// checks the count again, so the wait uses no clock and no poll.
     ///
     /// - Parameter progress: The scripted progress the reporter reads.
-    private static func waitForTheWholeScript(of progress: ScriptedResolutionProgress) async {
-        let deadline = ContinuousClock.now + scriptDeadline
-        while await !progress.isExhausted, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: pollInterval)
-        }
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
+    private static func waitForTheWholeScript(of progress: ScriptedResolutionProgress) async throws {
+        let scriptLength = progress.scriptLength
+        _ = try await progress.reads.wait(for: "the reporter read the whole script") { $0 >= scriptLength }
     }
 
     /// Runs `body` with descriptor 1 pointed at a throwaway file, and gives
@@ -288,6 +277,12 @@ import Testing
     /// The snapshots to hand out, in order. It is never empty.
     private let script: [ResolutionSnapshot]
 
+    /// The number of snapshots of the script.
+    nonisolated let scriptLength: Int
+
+    /// The count of the reads, with its waits. A test waits on it.
+    nonisolated let reads = WatchedValue(0)
+
     /// How many reads arrived.
     private(set) var readCount = 0
 
@@ -301,12 +296,14 @@ import Testing
     init(script: [ResolutionSnapshot]) {
         precondition(!script.isEmpty, "a scripted resolution needs at least one snapshot")
         self.script = script
+        scriptLength = script.count
     }
 
     var resolutionSnapshot: ResolutionSnapshot {
         wasAlwaysReadOnTheMainThread = wasAlwaysReadOnTheMainThread && Thread.isMainThread
         let snapshot = script[min(readCount, script.count - 1)]
         readCount += 1
+        reads.update { $0 += 1 }
         return snapshot
     }
 
@@ -317,16 +314,18 @@ import Testing
 /// A stand-in for Router's `ResolutionProgress` whose read is slow.
 ///
 /// Each read first tells ``readStarted`` that it began. It then holds the
-/// main thread for ``delay``, and only then gives back its snapshot. A test
-/// whose work returns on that signal thus has a read that is still open
-/// when the work ends, and the draw of that read comes after the end of
-/// the work.
+/// main thread until the work signals ``workEnded``, and only then gives
+/// back its snapshot. A test whose work returns on that signal thus has a
+/// read that is still open when the work ends, and the draw of that read
+/// comes after the end of the work. The work runs off the main actor, so
+/// the hold cannot block it.
 @MainActor final class LateReadProgress: ResolutionProgressReading {
     /// The snapshot each read gives back.
     private let snapshot: ResolutionSnapshot
 
-    /// How long each read holds the main thread, in seconds.
-    private let delay: TimeInterval
+    /// The signal of the end of the work. Each read holds the main thread
+    /// until it comes.
+    private let workEnded: DispatchSemaphore
 
     /// The signal each read sends when it begins.
     private let readStarted: AsyncStream<Void>.Continuation
@@ -335,21 +334,21 @@ import Testing
     ///
     /// - Parameters:
     ///   - snapshot: The snapshot each read gives back.
-    ///   - delay: How long each read holds the main thread, in seconds.
+    ///   - workEnded: The signal of the end of the work.
     ///   - readStarted: The signal each read sends when it begins.
     init(
         snapshot: ResolutionSnapshot,
-        delay: TimeInterval,
+        workEnded: DispatchSemaphore,
         readStarted: AsyncStream<Void>.Continuation
     ) {
         self.snapshot = snapshot
-        self.delay = delay
+        self.workEnded = workEnded
         self.readStarted = readStarted
     }
 
     var resolutionSnapshot: ResolutionSnapshot {
         readStarted.yield()
-        Thread.sleep(forTimeInterval: delay)
+        workEnded.wait()
         return snapshot
     }
 }

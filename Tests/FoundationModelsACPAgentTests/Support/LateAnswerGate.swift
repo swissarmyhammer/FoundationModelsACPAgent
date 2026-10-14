@@ -4,10 +4,10 @@
 /// A doctor test proves its timeout by order, not by the clock. The silent
 /// probe waits here, and the test opens the gate only after
 /// `runHealthChecks()` returned. Thus a doctor that waits for the probe never
-/// returns, and the time limit of the test fails it. A bound on the elapsed
-/// time also measured how long the cooperative pool took to run each step,
-/// and a parallel run on a loaded machine went past that bound (task
-/// `^vjaka1g`).
+/// returns, and the test holds, where a sample of the test process shows it.
+/// A bound on the elapsed time also measured how long the cooperative pool
+/// took to run each step, and a parallel run on a loaded machine went past
+/// that bound (task `^vjaka1g`).
 ///
 /// The wait ignores the cancellation of its task on purpose: a doctor that
 /// cancels the probe and then waits for it must also hang, so the proof

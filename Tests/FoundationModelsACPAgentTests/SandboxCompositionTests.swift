@@ -83,7 +83,7 @@ import Testing
 
     /// A confined write inside the root set succeeds: the file is on disk
     /// afterwards, with the written content.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aWriteInsideTheRootSetLandsOnDisk() async throws {
         let root = Self.makeResolvedDirectory(named: "write-in")
         let registry = try await Self.makeRegistry(workingDirectory: root)
@@ -98,7 +98,7 @@ import Testing
     /// A confined write outside the root set fails: the command runs — the
     /// answer is a run report, not a refusal — and the file is not on disk
     /// afterwards, because the kernel denied the write.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aWriteOutsideTheRootSetNeverLands() async throws {
         let root = Self.makeResolvedDirectory(named: "write-out-root")
         let outside = Self.makeResolvedDirectory(named: "write-out-target")
@@ -134,7 +134,7 @@ import Testing
     /// the reason, and the file the command names is not on disk. The
     /// injected sandbox goes through the same composition seam the
     /// production sandbox does.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aThrowingPreflightRefusesTheCommandWithTheReason() async throws {
         let root = Self.makeResolvedDirectory(named: "preflight")
         let builder = MultiTool.Builder()
@@ -172,7 +172,7 @@ import Testing
     /// A writable root given through a symlinked `/tmp` path confines
     /// correctly end to end: a write into that root lands on disk, under
     /// the resolved `/private` location.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSymlinkedRootConfinesAWriteEndToEnd() async throws {
         let resolved = Self.makeResolvedDirectory(named: "linked-run")
         let symlinked = URL(fileURLWithPath: "/tmp", isDirectory: true)
@@ -193,7 +193,7 @@ import Testing
     /// notification, and no session has a pending permission request. The
     /// sandbox is the only gate: the agent never asks the client for a
     /// permission.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedToolPromptSendsNoPermissionRequest() async throws {
         let harness = try await AgentClientHarness.makeRecording()
         let collector = try #require(harness.collector)

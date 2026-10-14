@@ -2,37 +2,20 @@
 // signal, or two, ended: `SIGINT` by default, or `SIGTERM`.
 //
 // `BuiltExecutableRun` starts a process and waits for it. An interrupt
-// proof needs three things that plain run cannot give: it must know when
+// proof needs two things that plain run cannot give: it must know when
 // the child has begun to answer, so the signal lands inside a live prompt
-// and not before it; it must send more than one signal, and say how many
-// of them reached a child that was still there; and it must bound the
-// wait, so a child that ignores the interrupt fails the test instead of
-// hanging it.
+// and not before it; and it must send more than one signal, and say how
+// many of them reached a child that was still there. Each wait is an
+// event (the first stdout byte, the exit of the child), with no clock: a
+// child that ignores the interrupt holds the test, and a sample of the
+// test process shows where it waits.
 
 import Darwin
 import Foundation
-
-/// What went wrong with a signalled run.
-struct SignalledRunError: Error, CustomStringConvertible {
-    /// The name of the wait that ran out.
-    let wait: String
-
-    /// How long the wait was given.
-    let limit: Swift.Duration
-
-    var description: String {
-        "the child did not \(wait) inside \(limit)"
-    }
-}
+import FoundationModelsACPAgentTestSupport
 
 /// One finished run of a built executable that this process signalled.
 struct SignalledExecutableRun {
-    /// The number of milliseconds in ``pollInterval``.
-    private static let pollIntervalMilliseconds = 20
-
-    /// The pause between two looks at the child.
-    private static let pollInterval: Swift.Duration = .milliseconds(pollIntervalMilliseconds)
-
     /// The process exit code, or the signal number when a signal with no
     /// handler ended the child.
     let exitCode: Int32
@@ -41,7 +24,8 @@ struct SignalledExecutableRun {
     /// handler ended it.
     let didExit: Bool
 
-    /// The time from the last signal to the end of the child.
+    /// The time from the last signal to the end of the child. It is a
+    /// measurement for the report; no wait reads it.
     let exitWait: Swift.Duration
 
     /// The captured stdout text.
@@ -57,31 +41,33 @@ struct SignalledExecutableRun {
     /// signals a pid it no longer owns.
     let signalsSent: Int
 
-    /// The captured output of a running child.
-    private actor Store {
-        /// The stdout bytes so far.
-        private(set) var output = Data()
+    /// The captured output of a running child. A wait for the first stdout
+    /// byte is an event: each append checks it again.
+    private final class Store: Sendable {
+        /// The stdout bytes so far, with their waits.
+        let output = WatchedValue(Data())
 
         /// The stderr bytes so far.
-        private(set) var error = Data()
+        let error = WatchedValue(Data())
 
         /// Appends stdout bytes.
         ///
         /// - Parameter chunk: The bytes read.
         func appendOutput(_ chunk: Data) {
-            output.append(chunk)
+            output.update { $0.append(chunk) }
         }
 
         /// Appends stderr bytes.
         ///
         /// - Parameter chunk: The bytes read.
         func appendError(_ chunk: Data) {
-            error.append(chunk)
+            error.update { $0.append(chunk) }
         }
     }
 
     /// Runs the built executable `executableName`, waits for its first
-    /// stdout byte, sends `signalCount` signals, and waits for it to end.
+    /// stdout byte, sends `signalCount` signals back to back, and waits for
+    /// it to end.
     ///
     /// The child gets `configHome` as `XDG_CONFIG_HOME` and every pair of
     /// `environment` on top of `inheritedEnvironment`.
@@ -103,16 +89,10 @@ struct SignalledExecutableRun {
     ///     says nothing about the live run observes none of it.
     ///   - signalNumber: The signal to send. The default is `SIGINT`, the
     ///     signal of `Ctrl-C`; a `SIGTERM` case gives `SIGTERM`.
-    ///   - signalCount: How many signals to send.
-    ///   - gap: The pause between two signals. A caller that wants both
-    ///     of them to reach a child which ends on the first one gives
-    ///     `.zero`.
-    ///   - firstOutputLimit: How long to wait for the first stdout byte.
-    ///   - exitLimit: How long to wait for the exit after the last
-    ///     signal.
+    ///   - signalCount: How many signals to send, back to back, so each one
+    ///     reaches a child that ends on the first one.
     /// - Returns: The finished run.
-    /// - Throws: ``SignalledRunError`` when a wait runs out, and the
-    ///   locator or spawn error.
+    /// - Throws: The locator or spawn error, or what `atFirstOutput` throws.
     static func run(
         executableNamed executableName: String,
         arguments: [String],
@@ -122,10 +102,7 @@ struct SignalledExecutableRun {
         environment: [String: String],
         atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in },
         signalNumber: Int32 = SIGINT,
-        signalCount: Int,
-        gap: Swift.Duration,
-        firstOutputLimit: Swift.Duration,
-        exitLimit: Swift.Duration
+        signalCount: Int
     ) async throws -> SignalledExecutableRun {
         let child = try PipedChildProcess(
             executableNamed: executableName,
@@ -138,25 +115,22 @@ struct SignalledExecutableRun {
         let standardErrorPipe = child.standardError
 
         let store = Store()
+        let exit = ProcessExitEvent(watching: process)
         try process.run()
         // Read both pipes as the child writes, so the first-output wait
-        // has something to look at and a full pipe buffer never blocks
-        // the child.
+        // gets each byte and a full pipe buffer never blocks the child.
         let draining = Task.detached {
-            async let output: Void = drain(standardOutputPipe) { await store.appendOutput($0) }
-            async let error: Void = drain(standardErrorPipe) { await store.appendError($0) }
+            async let output: Void = drain(standardOutputPipe) { store.appendOutput($0) }
+            async let error: Void = drain(standardErrorPipe) { store.appendError($0) }
             _ = await (output, error)
         }
 
-        try await waitForFirstOutput(of: store, within: firstOutputLimit, killing: process)
+        _ = try await store.output.wait(for: "the first stdout byte of the child") { !$0.isEmpty }
         // The child has answered and has not been signalled, so this is the
         // one moment a caller can read what a live run carries.
         try await atFirstOutput(process.processIdentifier)
         var signalsSent = 0
-        for index in 0..<signalCount {
-            if index > 0 {
-                try await Task.sleep(for: gap)
-            }
+        for _ in 0..<signalCount {
             // A child that already ended has given its pid back, and the
             // system may have handed it to another process. So the run
             // signals only a child it still owns.
@@ -168,7 +142,7 @@ struct SignalledExecutableRun {
         }
         let clock = ContinuousClock()
         let lastSignal = clock.now
-        try await waitForExit(of: process, within: exitLimit)
+        try await exit.wait()
         let exitWait = clock.now - lastSignal
 
         await draining.value
@@ -176,69 +150,25 @@ struct SignalledExecutableRun {
             exitCode: process.terminationStatus,
             didExit: process.terminationReason == .exit,
             exitWait: exitWait,
-            standardOutput: String(decoding: await store.output, as: UTF8.self),
-            standardError: String(decoding: await store.error, as: UTF8.self),
+            standardOutput: String(decoding: store.output.value, as: UTF8.self),
+            standardError: String(decoding: store.error.value, as: UTF8.self),
             signalsSent: signalsSent)
     }
 
-    /// Reads `pipe` until it reaches its end, handing each chunk over.
+    /// Reads `pipe` until it reaches its end, handing each chunk over. Each
+    /// read blocks in the kernel until bytes or the end come.
     ///
     /// - Parameters:
     ///   - pipe: The pipe to read.
     ///   - receive: What each chunk goes to.
-    private static func drain(_ pipe: Pipe, receive: @Sendable (Data) async -> Void) async {
+    private static func drain(_ pipe: Pipe, receive: @Sendable (Data) -> Void) async {
         let handle = pipe.fileHandleForReading
         while true {
             let chunk = handle.availableData
             if chunk.isEmpty {
                 return
             }
-            await receive(chunk)
+            receive(chunk)
         }
-    }
-
-    /// Waits until `store` holds a stdout byte.
-    ///
-    /// - Parameters:
-    ///   - store: The captured output of the child.
-    ///   - limit: How long to wait.
-    ///   - process: The child to end when the wait runs out, so no test
-    ///     leaves a process behind.
-    /// - Throws: ``SignalledRunError`` when the wait runs out.
-    private static func waitForFirstOutput(
-        of store: Store, within limit: Swift.Duration, killing process: Process
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now + limit
-        while clock.now < deadline {
-            if await !store.output.isEmpty {
-                return
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        process.terminate()
-        throw SignalledRunError(wait: "write to stdout", limit: limit)
-    }
-
-    /// Waits until `process` has ended, and ends it with `SIGTERM` when the
-    /// wait runs out, so no test leaves a process behind.
-    ///
-    /// - Parameters:
-    ///   - process: The child to watch.
-    ///   - limit: How long to wait.
-    /// - Throws: ``SignalledRunError`` when the wait runs out.
-    static func waitForExit(
-        of process: Process, within limit: Swift.Duration
-    ) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now + limit
-        while clock.now < deadline {
-            if !process.isRunning {
-                return
-            }
-            try await Task.sleep(for: pollInterval)
-        }
-        process.terminate()
-        throw SignalledRunError(wait: "end", limit: limit)
     }
 }

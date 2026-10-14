@@ -46,9 +46,9 @@ struct AgentCompositionTests {
 
     /// With the stub selected the composition returns the echo model, and
     /// two runs of one prompt give byte-identical text that carries the
-    /// prompt. No weights load and no network is touched: the composition
-    /// finishes inside the time limit on a clean machine.
-    @Test(.timeLimit(.minutes(1)))
+    /// prompt. No weights load and no network is touched, and the test waits
+    /// on no clock.
+    @Test
     func theStubCompositionEchoesByteIdenticalText() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-repo")
@@ -79,7 +79,7 @@ struct AgentCompositionTests {
     /// `sessions.jsonl`: that index is written by this package's own
     /// `SessionIndex`, on a path that never touches the recorder, so it
     /// stays correct while every event drops.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theComposedPromptRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-record-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-record-repo")
@@ -106,7 +106,7 @@ struct AgentCompositionTests {
     /// the agent's own session pipeline and drives the resolved profile
     /// itself, so a pass says the recorder of the composed router writes,
     /// and a failure says the router holds the no-op sink.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theComposedRouterRecordsThroughItsResidentProfile() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-router-config")
         let workspace = makeResolvedDirectory(label: "AgentCompositionTests-router-repo")

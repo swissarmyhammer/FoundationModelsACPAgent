@@ -83,7 +83,7 @@ import Testing
     /// info update, `running`, the chunks, and one `idle` with
     /// `end_turn`. The echo owns the message identity: the agent
     /// chunks ride one different id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedPromptStreamsTheAcknowledgeThenNotifyOrder() async throws {
         let fixture = try await Self.makeFixture(script: [
             .textDelta("Hello "), .textDelta("there."), .endPass,
@@ -126,7 +126,7 @@ import Testing
     /// The prompt response names the user message (ACP
     /// schema-v2.0.0-alpha.7): its `messageId` is the id of the one
     /// `user_message` echo that reaches the client.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func thePromptResponseNamesTheEchoedUserMessage() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
         let response = try await fixture.harness.connection.prompt(
@@ -144,7 +144,7 @@ import Testing
     /// mail waits in the mail queue of the session, and the session stays
     /// `running`. A `session/cancel` then ends both prompts, with one `idle`
     /// and the `cancelled` stop reason.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSecondPromptDuringARunningPromptIsAcceptedAndWaits() async throws {
         let fixture = try await Self.makeFixture(script: [.hold])
         let first = try await fixture.harness.connection.prompt(
@@ -161,7 +161,7 @@ import Testing
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         await fixture.close()
 
         #expect(first.messageId != second.messageId)
@@ -177,7 +177,7 @@ import Testing
     /// `cancelled` stop reason before the resume response. No update of the
     /// old session comes after it, and the new projector serves the session:
     /// the next prompt answers, and it ends with the second `idle`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResumeWhileAPromptIsOpenEndsThatPromptCancelledFirst() async throws {
         let holdMarker = "HOLD-UNTIL-RESUME"
         let fixture = try await Self.makeFixture(
@@ -206,7 +206,7 @@ import Testing
     /// the `cancelled` stop reason, and no mail goes into the session:
     /// `cancelAll()` cannot reach a mail that is not queued (task ^he1rmw6,
     /// difference 3).
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCancelBeforeTheMailEndsThePromptCancelledWithNoMail() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
@@ -234,12 +234,12 @@ import Testing
 
     /// A `session/cancel` with no prompt open sends `cancelAll()` to the
     /// session and no state update (task ^9xs24pn, decisions Q2 and G6).
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCancelWithNoPromptOpenSendsNoStateUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("answered"), .endPass])
         _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
         let first = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
 
         try await fixture.harness.connection.sessionCancel(CancelSessionNotification(sessionId: fixture.sessionId))
         _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
@@ -257,7 +257,7 @@ import Testing
     /// the prompt: the Router session gives the answer of a mail with that
     /// id. The order is the response, the echo, `running`, then the output
     /// of the mail.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theMessageIdOfAPromptIsItsMailId() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
         let response = try await fixture.harness.connection.prompt(
@@ -283,7 +283,7 @@ import Testing
     /// ends: the error text goes out as an agent message, and then the
     /// `idle` with the `error` stop reason. ACP forbids an error response
     /// after the insertion of the user message.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aMailThatTheSessionRefusesAfterTheResponseEndsThePromptWithTheError() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
@@ -305,7 +305,7 @@ import Testing
     // MARK: - The stop-reason matrix
 
     /// A guardrail refusal ends the prompt as `idle` with `refusal`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aGuardrailRefusalEndsThePromptWithTheRefusalStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.fail(.guardrailViolation)])
         _ = try await fixture.harness.connection.prompt(
@@ -317,7 +317,7 @@ import Testing
     }
 
     /// A context overflow ends the prompt as `idle` with `max_tokens`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aContextOverflowEndsThePromptWithTheMaxTokensStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.fail(.exceededContextWindow)])
         _ = try await fixture.harness.connection.prompt(
@@ -330,7 +330,7 @@ import Testing
 
     /// A `session/cancel` during a held prompt surfaces as `idle` with
     /// `cancelled`, not as an error.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aCancelledPromptEndsIdleWithTheCancelledStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("thinking"), .hold])
         _ = try await fixture.harness.connection.prompt(
@@ -742,7 +742,7 @@ import Testing
     /// shape on the wire: the Router pass completes with no output and
     /// a zero-token usage delta. The idle terminator carries
     /// `_no_output`, never a bare `end_turn`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aScriptedPromptWithNoOutputEndsIdleWithTheNoOutputStopReason() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         _ = try await fixture.harness.connection.prompt(
@@ -831,11 +831,10 @@ import Testing
         _ = try await fixture.harness.connection.prompt(makePromptRequest(sessionId: fixture.sessionId))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
-        try await Poll.until("the journal holds a repeatedPartRemoval event") {
-            try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
-                .contains { $0.kind == .repeatedPartRemoval }
-        }
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        // When the Router session is idle, its journal holds each event of
+        // the answer, the repeatedPartRemoval event too.
+        try await ResumeSessionFixture.waitForJournal(of: fixture.sessionId, in: fixture.harness.agent)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         let events = try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
         return (fixture, ScriptedPromptFixture.idleStopReason(in: updates), events)
     }
@@ -847,7 +846,7 @@ import Testing
     /// reasoning line one time. A resume of that session replays each
     /// message that the client saw live, with its live id, and sends no
     /// message for the `repeatedPartRemoval` event.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aRepetitionStopRecordsARepeatedPartRemovalThatAResumeReplays() async throws {
         let (fixture, stopReason, events) = try await Self.runRepeatingPrompt()
         #expect(stopReason == .unknown(PromptExecution.repeatedStopReasonValue))
@@ -897,9 +896,8 @@ import Testing
     /// The stream never finishes, which is the shape of the defect: a
     /// model the loader cannot drive reports a stall on each interval
     /// and yields nothing else, so the guard is the only way out of the
-    /// drive loop. The time limit states the bound of the test, so a
-    /// hang fails it rather than running to the suite ceiling.
-    @Test(.timeLimit(.minutes(1)))
+    /// drive loop. The test thus ends only when the guard ends the prompt.
+    @Test
     func aGenerationWithNoFragmentPastTheBoundEndsThePromptAsStalled() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
@@ -919,7 +917,7 @@ import Testing
 
     /// A stall shorter than the bound is a report and not a bound: the
     /// generation continues, and the prompt ends on its own events.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aStallShorterThanTheBoundDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound - .seconds(1), fragments: 0)
@@ -938,7 +936,7 @@ import Testing
     /// A stall past the bound on a generation that already made a
     /// fragment does not end the prompt: a slow decode is not a model
     /// that cannot generate.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aStallPastTheBoundAfterAFragmentDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound, fragments: 1)
@@ -958,7 +956,7 @@ import Testing
     /// end the prompt. A tool call is observable output, and the fragment
     /// count of the report does not count it, so a report of zero
     /// fragments after a tool call is never a model that cannot generate.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aStallPastTheBoundAfterAToolCallDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
@@ -989,7 +987,7 @@ import Testing
     /// and a `timeWithoutProgress` that does not. The guard must read
     /// only `timeWithoutProgress`, thus the request continues to its
     /// text and its usage, and it ends with `end_turn`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func queueWaitNeverEndsTheRequestAsStalled() async throws {
         let queueWait = PromptExecution.stalledGenerationBound + .seconds(1)
         let interval = Duration.seconds(Self.stallReportIntervalSeconds)
@@ -1030,7 +1028,7 @@ import Testing
     /// whole prompt, while `runCode` and shell calls were completing, so a
     /// fragment count of zero never proves that the model made nothing.
     /// A bound under the measured time therefore ends a healthy prompt.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndThePrompt() async throws {
         let stall = Self.makeStall(
             withoutProgress: .seconds(Self.measuredSecondsToFirstOutput), fragments: 0)
@@ -1064,7 +1062,7 @@ import Testing
 
     /// `awaitingUser` sends `requires_action`, runs the body, and returns
     /// to `running` with the body's value, while the prompt is open.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func awaitingUserPairsRequiresActionWithRunning() async throws {
         let recorder = SinkRecorder()
         let owner = PromptStateOwner(send: { update in await recorder.append(update) })
@@ -1079,7 +1077,7 @@ import Testing
     }
 
     /// A body that throws still returns the state to `running`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func awaitingUserReturnsToRunningWhenTheBodyThrows() async throws {
         let recorder = SinkRecorder()
         let owner = PromptStateOwner(send: { update in await recorder.append(update) })
@@ -1098,7 +1096,7 @@ import Testing
 
     /// While no prompt is open, a wait on the human sends no state update
     /// (task ^9xs24pn, decision Q2).
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func awaitingUserSendsNothingWhileNoPromptIsOpen() async throws {
         let recorder = SinkRecorder()
         let owner = PromptStateOwner(send: { update in await recorder.append(update) })
@@ -1112,7 +1110,7 @@ import Testing
     /// Two prompts share the state of one session: `running` goes out when
     /// the first prompt starts, and the one `idle` goes out when the last
     /// open prompt ends, with the stop reason of that prompt.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theSessionGoesIdleWhenTheLastOpenPromptEnds() async throws {
         let recorder = SinkRecorder()
         let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
@@ -1168,17 +1166,17 @@ import Testing
     /// The prompt of A ends at the answer of its own mail when its snippet
     /// goes to the background (task ^9xs24pn, decision Q1), but the question
     /// of A stays open. Thus A can send an `idle`, and only an `end_turn` one.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionInAnElicitationHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
             script: ScriptedPromptFixture.makeToolPromptScript(
                 code: Self.elicitingSnippet, onPromptContaining: Self.promptText),
             label: "PromptExecutionTests-elicitation")
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
-        _ = try await ElicitationPoll.firstPendingElicitation(in: fixture.firstSession)
+        _ = try await ElicitationWait.firstPendingElicitation(in: fixture.firstSession)
 
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        let questionOfB = try await ElicitationPoll.firstPendingElicitation(in: fixture.secondSession)
+        let questionOfB = try await ElicitationWait.firstPendingElicitation(in: fixture.secondSession)
         await MainActor.run { fixture.secondSession.acceptElicitation(questionOfB.id) }
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
         let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSession)
@@ -1200,7 +1198,7 @@ import Testing
     /// waits. Thus A can send an `idle`, and only an `end_turn` one. B starts
     /// no read, so its prompt ends after its own answer. The close of each
     /// session at the end stops the read of A.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionInAToolBodyHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
             script: [
@@ -1215,7 +1213,7 @@ import Testing
                 holding: Self.pipeName, label: "PromptExecutionTests-pipe-repo"))
         try await fixture.prompt(fixture.firstSessionId, text: Self.waitingMarker)
         let counter = fixture.passCounter
-        try await Poll.until("the pass of session A starts") { counter.startedCount == 1 }
+        try await counter.wait(for: "the pass of session A starts") { $0.started == 1 }
 
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
@@ -1231,7 +1229,7 @@ import Testing
 
     /// An unknown `sessionId` answers `-32602` with the id in `data`,
     /// and sends no `session/update`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func anUnknownSessionIdAnswersInvalidParamsAndSendsNoUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         let bogus = SessionId(rawValue: syntheticSessionIdValue)
@@ -1251,7 +1249,7 @@ import Testing
 
     /// A known but closed session answers `-32602` with the resume
     /// hint, because a closed session is resumable, not promptable.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aClosedSessionIdAnswersInvalidParamsWithTheResumeHint() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         await fixture.harness.agent.markSessionClosed(fixture.sessionId)
@@ -1274,7 +1272,7 @@ import Testing
     /// `sessions.jsonl` is absent before the first prompt, gains the
     /// session's record with a one-line title at the first prompt, and
     /// gains nothing more at the second prompt.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func theFirstPromptWritesTheIndexRecordWithAOneLineTitle() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
         let index = try await Self.sessionIndex(of: fixture)
@@ -1296,7 +1294,6 @@ import Testing
         }
         #expect(titles == [.value(Self.promptTitleLine)])
 
-        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
         let secondPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)

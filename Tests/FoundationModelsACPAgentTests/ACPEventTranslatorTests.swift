@@ -875,7 +875,7 @@ import Testing
     /// `snake_case` `sessionUpdate` discriminator, the `camelCase`
     /// properties, the `in_progress` status spelling, and the `_lost`
     /// extension value.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func toolUpdatesHaveTheV2WireShapeThroughTheTransport() async throws {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agent = try await makeStubAgent(

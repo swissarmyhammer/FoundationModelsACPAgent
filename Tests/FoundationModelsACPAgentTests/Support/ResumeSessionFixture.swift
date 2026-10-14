@@ -288,7 +288,7 @@ struct ResumeSessionFixture {
         completedPromptCount += 1
         _ = try await ScriptedPromptFixture.waitForIdle(
             fixture.collector, count: completedPromptCount)
-        try await ScriptedPromptFixture.waitForAvailability(
+        await ScriptedPromptFixture.waitForPromptsFinished(
             fixture.harness.agent, fixture.sessionId)
         return response
     }
@@ -347,25 +347,45 @@ struct ResumeSessionFixture {
         return try TranscriptEvent.merged(under: root).filter { $0.sessionId == id }
     }
 
-    /// Polls until the session's recording holds `count` response events.
+    /// Waits until the Router session of `sessionId` is idle, and then
+    /// expects that its recording holds at least `count` response events.
+    ///
+    /// When `awaitIdle()` returns `true`, the answer of each mail ended, and
+    /// the session actor awaited each journal append of those answers (the
+    /// pump ends its work only after the chain of the answer, and each
+    /// submission of the chain awaits its record). Thus the one read after
+    /// the wait sees each response, and the wait uses no clock and no poll.
     ///
     /// - Parameters:
     ///   - root: The recording root to read.
     ///   - sessionId: The session to watch.
-    ///   - count: The response-event count to wait for.
-    /// - Throws: `CancellationError` when the test is cancelled.
+    ///   - count: The response-event count to expect.
+    ///   - agent: The agent that holds the session.
+    /// - Throws: When the agent has no session `sessionId`, or the read
+    ///   throws.
     static func waitForRecordedResponses(
-        under root: URL, sessionId: SessionId, count: Int
+        under root: URL, sessionId: SessionId, count: Int, agent: RoutedACPAgent,
+        sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {
-        for _ in 0..<ScriptedPromptFixture.maxPollAttempts {
-            let responses = try recordedEvents(under: root, sessionId: sessionId)
-                .count { $0.kind == .response }
-            if responses >= count {
-                return
-            }
-            try await Task.sleep(for: ScriptedPromptFixture.pollInterval)
-        }
-        Issue.record("the recording never reached \(count) response event(s)")
+        try await waitForJournal(of: sessionId, in: agent, sourceLocation: sourceLocation)
+        let responses = try recordedEvents(under: root, sessionId: sessionId).count { $0.kind == .response }
+        #expect(responses >= count, "the recording holds \(responses) response event(s)", sourceLocation: sourceLocation)
+    }
+
+    /// Waits until the Router session of `sessionId` is idle: then its
+    /// journal holds each event of each answer that ended. See
+    /// ``waitForRecordedResponses(under:sessionId:count:agent:sourceLocation:)``.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session to watch.
+    ///   - agent: The agent that holds the session.
+    /// - Throws: When the agent has no session `sessionId`.
+    static func waitForJournal(
+        of sessionId: SessionId, in agent: RoutedACPAgent,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+        let session = try #require(await agent.sessions[sessionId]?.session, sourceLocation: sourceLocation)
+        #expect(await session.awaitIdle(), "the session closed before it was idle", sourceLocation: sourceLocation)
     }
 
     /// The resume request for the fixture's own session and cwd.

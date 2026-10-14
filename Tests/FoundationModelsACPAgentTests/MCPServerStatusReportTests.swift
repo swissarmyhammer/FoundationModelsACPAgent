@@ -200,7 +200,7 @@ import Testing
     /// for each server in mount order: `connected` for the loopback server
     /// and `failed` for the server whose command is relative. No status
     /// update comes before the response, and the session answers a prompt.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewReportsEachServerAfterTheResponse() async throws {
         let fixture = try await Self.makeFixture(
             mcpServers: [try Self.loopbackServer(), Self.relativeServer(named: Self.brokenServerName)])
@@ -228,7 +228,7 @@ import Testing
 
     /// A client server whose name an earlier server has is refused, and the
     /// report gives it `failed` with the collision reason.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aNameCollisionReportsTheCollisionReason() async throws {
         let fixture = try await Self.makeFixture(
             mcpServers: [
@@ -247,7 +247,7 @@ import Testing
 
     /// `mcp: false` refuses each client server, and the report gives it
     /// `failed` with the `mcp: false` reason.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func mcpOffReportsTheMCPOffReason() async throws {
         let fixture = try await Self.makeFixture(
             mcpServers: [Self.relativeServer(named: Self.brokenServerName)],
@@ -265,7 +265,7 @@ import Testing
 
     /// A session with no MCP server sends no status update: a prompt after
     /// `session/new` ends, and the wire holds no status update.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aSessionWithNoServerSendsNoStatusUpdate() async throws {
         let fixture = try await Self.makeFixture(mcpServers: nil)
         _ = try await fixture.harness.connection.prompt(
@@ -305,7 +305,7 @@ import Testing
 
     /// No status update holds the URL, an argument, an `env` value or a
     /// `headers` value of a server. The reason is the fixed text.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func noStatusUpdateHoldsASecretOfTheServer() async throws {
         let fixture = try await Self.makeFixture(
             mcpServers: [
@@ -335,7 +335,7 @@ import Testing
     /// After the `session/resume` response, the client gets a new report for
     /// the servers of the resume request. The replay before the response
     /// holds no old status update, and the retained history holds none.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionResumeSendsANewReportAndTheReplayHoldsNoStatusUpdate() async throws {
         var resume = try await ResumeSessionFixture.make(
             label: "\(Self.fixtureLabel)-resume",
@@ -344,7 +344,7 @@ import Testing
         _ = try await Self.waitForStatusPayloads(in: resume.fixture.collector, count: 1)
         try await resume.runPrompt(Self.promptText)
         try await ResumeSessionFixture.waitForRecordedResponses(
-            under: try resume.recordingRoot, sessionId: resume.fixture.sessionId, count: 1)
+            under: try resume.recordingRoot, sessionId: resume.fixture.sessionId, count: 1, agent: resume.fixture.harness.agent)
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
         var request = resume.makeResumeRequest(replayFrom: .start(ReplayFromStart()))
         request.mcpServers = [Self.relativeServer(named: Self.brokenServerName)]

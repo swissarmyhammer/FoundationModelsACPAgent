@@ -229,7 +229,7 @@ struct ProfileDoctorTests {
     /// opens its gate, and the test opens the gate after the run returned.
     /// A run that waited for the lookup would never return, and the time
     /// limit would fail the test.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func aResolverThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
         let reference = ProfileConfiguration.defaultStandard[0]
         let resolver = StubModelResolver(silentReferences: [reference.stringValue])

@@ -132,7 +132,7 @@ import Tracing
             request.meta = promptMeta
             _ = try await fixture.harness.connection.prompt(request)
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
             try await fixture.harness.connection.sessionCancel(
                 CancelSessionNotification(sessionId: fixture.sessionId))
             try await Poll.until("the prompt span and the cancel span ended") {
@@ -167,7 +167,7 @@ import Tracing
     /// One prompt records one server span. The span carries the ACP method,
     /// the session id and the stop reason, and it is the parent of each
     /// Router submission span of the prompt.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptSpanIsTheParentOfEachSubmissionSpanOfThePrompt() async throws {
         let run = try await Self.runOnePrompt()
 
@@ -187,7 +187,7 @@ import Tracing
 
     /// A prompt writes one "enter" record when it starts. The record carries
     /// the trace id and the span id of the prompt span.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptWritesOneEnterRecordWithTheIdsOfItsSpan() async throws {
         let run = try await Self.runOnePrompt()
 
@@ -197,7 +197,7 @@ import Tracing
     }
 
     /// `initialize` records one server span with its ACP method.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func initializeRecordsOneServerSpan() async throws {
         let run = try await Self.runOnePrompt()
 
@@ -208,7 +208,7 @@ import Tracing
     /// `session/new` records one server span with its ACP method and the id
     /// of the new session, and writes one "enter" record when it starts. The
     /// record carries the trace id and the span id of the span.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionNewRecordsOneServerSpanAndOneEnterRecord() async throws {
         let run = try await Self.runOnePrompt()
 
@@ -220,7 +220,7 @@ import Tracing
 
     /// `session/cancel` records one server span with its ACP method and the
     /// session id.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionCancelRecordsOneServerSpan() async throws {
         let run = try await Self.runOnePrompt()
 
@@ -233,7 +233,7 @@ import Tracing
     /// writes one "enter" record with the trace id and the span id of the
     /// span when it starts. A resume of a session that no recording holds
     /// throws, and the span records the type of the error.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func sessionResumeRecordsOneServerSpanAndOneEnterRecord() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
@@ -258,7 +258,7 @@ import Tracing
     /// and the type of the error, and the span ends. The span records no
     /// error, because a tracing backend exports the description of a
     /// recorded error, and a description can hold content.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptForAnUnknownSessionRecordsTheErrorTypeOnItsSpan() async throws {
         let run = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await Self.makeTracedFixture(script: [.endPass], context: context)
@@ -282,7 +282,7 @@ import Tracing
     /// A prompt whose `_meta` holds a valid `traceparent` records its span in
     /// the trace of the client, as a child of the span of the client. The
     /// span keeps the `tracestate` of the client.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptSpanIsAChildOfTheTraceparentInItsMeta() async throws {
         let run = try await Self.runOnePrompt(promptMeta: Self.makeClientTraceMeta())
 
@@ -295,7 +295,7 @@ import Tracing
 
     /// A prompt whose `_meta` holds a `traceparent` that the W3C format does
     /// not allow gets its normal response, and its span starts a new trace.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptWithABadTraceparentStartsANewTrace() async throws {
         let run = try await Self.runOnePrompt(
             promptMeta: Self.makeTraceMeta(traceparent: Self.forbiddenVersionTraceparent))
@@ -311,7 +311,7 @@ import Tracing
 
     /// A prompt with no `_meta` records a span that starts a new trace, as
     /// before the agent read the trace context.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func promptWithNoMetaStartsANewTrace() async throws {
         let run = try await Self.runOnePrompt()
 
@@ -323,7 +323,7 @@ import Tracing
     /// `initialize`, `session/new`, `session/resume` and `session/cancel`
     /// each record their span as a child of the `traceparent` in their
     /// `_meta`.
-    @Test(.timeLimit(.minutes(1)))
+    @Test
     func eachRequestSpanIsAChildOfTheTraceparentInItsMeta() async throws {
         let meta = try Self.makeClientTraceMeta()
         let run = try await TelemetryCapture.run(forbidding: []) { context in

@@ -123,9 +123,7 @@ struct SkillTriggerRate: Sendable {
 /// ```sh
 /// swift test --package-path IntegrationTests --filter SkillTriggerTests
 /// ```
-@Suite(
-    .serialized,
-    .timeLimit(.minutes(15)))
+@Suite(.serialized)
 struct SkillTriggerTests {
     /// Runs the selected samples and asserts the bar for each one, then
     /// asserts that the models left the pool.
