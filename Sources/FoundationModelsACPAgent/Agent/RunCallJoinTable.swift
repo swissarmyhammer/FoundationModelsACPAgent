@@ -139,9 +139,9 @@ final class RunCallJoinTable: Sendable {
     /// agent run keeps its completion token, also when Router of the agent run
     /// joined the record to an SDK call of the agent run.
     ///
-    /// - Parameter event: One session event of an agent run.
-    func recordAgentRunEvent(_ event: SessionEvent) {
-        guard case .toolInvocation(let record, _) = event, record.closedAt == nil else {
+    /// - Parameter output: One session output of an agent run.
+    func recordAgentRunEvent(_ output: SessionOutput) {
+        guard case .toolInvocation(let record, _) = output.event, record.closedAt == nil else {
             return
         }
         seal(record.correlationID)

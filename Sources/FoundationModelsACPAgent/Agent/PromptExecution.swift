@@ -862,7 +862,7 @@ extension RoutedACPAgent {
     /// in the model queue is in flight too, and the cancel reaches it: the
     /// Router removes it from the queue at once, so the `idle(cancelled)`
     /// terminator does not wait for the submission of another session. A
-    /// notification has no response, so an unknown id or an idle session is
+    /// notification has no response, so an unknown or a closed session is
     /// logged and ignored.
     ///
     /// The notification runs in one server span (``RequestTracing``).
@@ -877,14 +877,16 @@ extension RoutedACPAgent {
         }
     }
 
-    /// Cancels the open prompts of one session: the work of
-    /// ``sessionCancel(_:)``.
+    /// Cancels the work of one session and its open prompts: the work of
+    /// ``sessionCancel(_:)``. Each open prompt ends with the `cancelled` stop
+    /// reason no later than the `signalDone` of the `cancelAll()` signal, so
+    /// the cancel ends with `idle` and `cancelled` (an ACP rule).
     ///
     /// - Parameter params: The cancellation notification.
     private func cancelRunningPrompt(_ params: CancelSessionNotification) async {
-        guard let entry = sessions[params.sessionId], !entry.openPrompts.isEmpty else {
+        guard let entry = sessions[params.sessionId], !entry.isClosed else {
             ACPAgentTelemetry.logger(.promptExecution).notice(
-                "A session/cancel found no running prompt. The agent ignores it.",
+                "A session/cancel found no open session. The agent ignores it.",
                 metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
             return
         }
@@ -892,7 +894,14 @@ extension RoutedACPAgent {
             await owner.noteCancelRequested()
         }
         await entry.projector.relay?.cancelPendingElicitations()
+        // `cancelAll()` stops all the work of the session, also with no
+        // prompt open: queued mail, the answer in flight, and the background
+        // runs (elicitation-plan task 3). With no prompt open, no state
+        // update goes out (task ^9xs24pn, decisions Q2 and G6).
         let signal = entry.session.cancelAll()
+        if !entry.openPrompts.isEmpty {
+            entry.projector.cancelSent(signal)
+        }
         var metadata = ACPAgentTelemetry.sessionMetadata(params.sessionId)
         metadata[ACPAgentTelemetry.LogMetadataKey.cancelSignalId] = "\(signal)"
         ACPAgentTelemetry.logger(.promptExecution).info("The session cancelled its work.", metadata: metadata)

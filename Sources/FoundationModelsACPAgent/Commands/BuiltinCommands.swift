@@ -33,10 +33,6 @@ final class BuiltinCommandContext: Sendable {
         /// of the agent keeps the registry.
         weak var registry: CommandRegistry?
 
-        /// The report of each `/compact` on the wire and in the retained
-        /// history of the session.
-        let compactionReporter: CompactionReporter
-
         /// Makes the late-bound references.
         ///
         /// - Parameters:
@@ -44,16 +40,14 @@ final class BuiltinCommandContext: Sendable {
         ///   - sessionId: The ACP session id.
         ///   - transcriptDirectory: The session's transcript directory.
         ///   - registry: The session's command registry.
-        ///   - compactionReporter: The report of each `/compact`.
         init(
             session: any RoutedSession, sessionId: SessionId, transcriptDirectory: URL,
-            registry: CommandRegistry, compactionReporter: CompactionReporter
+            registry: CommandRegistry
         ) {
             self.session = session
             self.sessionId = sessionId
             self.transcriptDirectory = transcriptDirectory
             self.registry = registry
-            self.compactionReporter = compactionReporter
         }
     }
 
@@ -128,7 +122,7 @@ final class BuiltinCommandContext: Sendable {
 /// The six reserved builtin slash commands, the first command source.
 /// No later source can replace their names. Each is
 /// an `.action` closure that captures a ``BuiltinCommandContext`` and streams
-/// its text, with no model call: `/compact` folds now, `/context` reads the
+/// its text, with no model call: `/compact` starts a fold, `/context` reads the
 /// fill, `/memory` prints the instructions, `/status` prints the session
 /// facts, `/config` prints or ejects the configuration, and `/help` lists the
 /// registered commands.
@@ -173,16 +167,13 @@ enum BuiltinCommands {
     /// The multiplier that changes a `0...1` fill fraction into a percent.
     private static let percentScale = 100.0
 
-    /// The summarizer-model line a fold that wrote no summary reports.
-    private static let noSummarizerModel = "none (no model wrote a summary)"
-
     /// Builds the six builtins over `context`.
     ///
     /// - Parameter context: The session context the closures capture.
     /// - Returns: The builtins, in registration order.
     static func make(context: BuiltinCommandContext) -> [SlashCommand] {
         [
-            command(name: "compact", description: "Fold the session transcript now.") { _ in
+            command(name: "compact", description: "Start a fold of the session transcript.") { _ in
                 await compactReport(context: context)
             },
             command(name: "context", description: "Show the context fill and tokens.") { _ in
@@ -253,87 +244,31 @@ enum BuiltinCommands {
 
     // MARK: - /compact
 
-    /// The `/compact` report: a caller-driven fold, then the before and after
-    /// token counts and the summarizer model. A caller-driven fold does not
-    /// degrade, so a summarizer failure is reported honestly, not as success.
+    /// The text that `/compact` streams.
     ///
-    /// A fold can also leave the context as it was without an error: Router
-    /// reports that as a ``CompactionShortfall``, for example when the span to
-    /// summarize does not fit the window of any summarizer. That is not a
-    /// compaction, thus the report says so and names the reason, instead of
-    /// "Compacted" beside two equal token counts.
+    /// - Parameter signal: The `SignalID` of the compaction.
+    /// - Returns: The text.
+    static func compactionStartedText(_ signal: SignalID) -> String {
+        "Compaction started. (\(signal))"
+    }
+
+    /// The `/compact` command: it sends the `compact` signal and returns at
+    /// once (`mailbox.md`, section 3, "`/compact` only starts the work").
     ///
-    /// The fold also shows as one compaction entry. The ``SessionProjector``
-    /// reports it from the compaction events of the session, under the
-    /// `SignalID` of the compaction (``CompactionReporter``). The streamed
-    /// text stays the report a person reads.
+    /// The compaction is a long background process. Its report comes from
+    /// its events (``CompactionReporter``), under its `SignalID`: the
+    /// `in_progress` entry, then the `completed` entry with the summary, the
+    /// token counts before and after and the summarizer model, or the
+    /// `failed` entry with the failure or the shortfall. The
+    /// ``SessionProjector`` reads those events also when no prompt is open.
     ///
     /// - Parameter context: The session context.
-    /// - Returns: The report, or the failure.
+    /// - Returns: The text that the command streams.
     private static func compactReport(context: BuiltinCommandContext) async -> String {
         guard let binding = context.binding else {
             return "No active session to compact."
         }
-        let signal = binding.session.compact()
-        let terminal: SessionEvent
-        do {
-            terminal = try await binding.session.awaitTerminal(of: signal)
-        } catch {
-            return "Compaction failed: \(error)"
-        }
-        switch terminal {
-        case .compaction(let result):
-            return reportText(of: result)
-        case .compactionFailed(let failure):
-            return "Compaction failed: \(CompactionSignalError(failure: failure))"
-        default:
-            return "Compaction failed: \(CompactionSignalError(unexpected: terminal))"
-        }
-    }
-
-    /// The error of a `/compact` whose signal did not end with a
-    /// ``SessionEvent/compaction(_:)`` event.
-    private struct CompactionSignalError: Error, CustomStringConvertible {
-        /// The text of the report.
-        let description: String
-
-        /// Makes the error of a compaction that failed.
-        ///
-        /// - Parameter failure: The failure event of the compaction.
-        init(failure: CompactionFailure) {
-            description = switch failure.outcome {
-            case .cancelled: "the compaction was cancelled"
-            case .failed(let text): text
-            }
-        }
-
-        /// Makes the error of a signal that ended with an event that is not a
-        /// compaction terminal.
-        ///
-        /// - Parameter event: The terminal event of the signal.
-        init(unexpected event: SessionEvent) {
-            description = "the compaction signal ended with \(ACPAgentTelemetry.caseName(of: event))"
-        }
-    }
-
-    /// The text of the `/compact` report for a fold that returned `result`.
-    ///
-    /// - Parameter result: The result of the fold.
-    /// - Returns: The report.
-    private static func reportText(of result: CompactionResult) -> String {
-        if let shortfall = result.shortfall {
-            return """
-                The session was not compacted: \(CompactionReporter.shortfallReason(shortfall))
-                tokens: \(result.tokensBefore)
-                """
-        }
-        let model = result.summarizerModel ?? noSummarizerModel
-        return """
-            Compacted the session.
-            tokens before: \(result.tokensBefore)
-            tokens after: \(result.tokensAfter)
-            summarizer model: \(model)
-            """
+        return compactionStartedText(binding.session.compact())
     }
 
     // MARK: - /context

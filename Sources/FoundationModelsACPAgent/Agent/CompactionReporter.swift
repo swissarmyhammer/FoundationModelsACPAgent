@@ -2,7 +2,8 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsRouter
 
-/// The wire report of the Router compactions of one session.
+/// The wire report of the Router compactions of one session, from the
+/// compaction events that the ``SessionProjector`` reads.
 ///
 /// A compaction changes only the model context. The ACP history keeps each
 /// message with its id, and the compaction shows as one more entry: an
@@ -20,15 +21,6 @@ import FoundationModelsRouter
 struct CompactionReporter: Sendable {
     /// The sink of the updates: the history sink of the session.
     let send: SessionUpdateSink
-
-    /// Makes the id of a compaction that the agent starts itself, such as a
-    /// `/compact`. The agent sends `in_progress` before the compaction runs,
-    /// and Router names its own id only in the result.
-    ///
-    /// - Returns: A new id, unique in the session.
-    static func makeCompactionId() -> CompactionId {
-        CompactionId(rawValue: ULID.generate().description)
-    }
 
     /// The reason a compaction left the context as it was, in words a user
     /// reads.
@@ -49,60 +41,35 @@ struct CompactionReporter: Sendable {
         }
     }
 
-    /// Reports the start of an automatic compaction, which Router runs inside
-    /// an answer: the `in_progress` update, keyed by the id that Router gave.
-    /// The result or the failure of the same compaction carries the same id.
+    /// Reports the start of a compaction: the `in_progress` update, keyed by
+    /// the id in the event. The id is the string form of the `SignalID` of
+    /// the compaction signal, for a requested compaction (`/compact`, a
+    /// library caller, a tool) and for an automatic one. The result or the
+    /// failure of the same compaction carries the same id, so each compaction
+    /// has one id (`mailbox.md`, section 3, work item 2).
     ///
     /// - Parameter start: The start that Router reported.
-    func reportAutomaticStart(_ start: CompactionStart) async {
-        await reportStart(of: CompactionId(rawValue: start.id))
+    func reportStart(_ start: CompactionStart) async {
+        await send(
+            .compactionUpdate(CompactionUpdate(compactionId: CompactionId(rawValue: start.id), status: .inProgress)))
     }
 
-    /// Reports the result of an automatic compaction: the terminal update of
-    /// the entry that ``reportAutomaticStart(_:)`` opened, keyed by the id of
-    /// the result.
-    ///
-    /// - Parameter result: The result of the compaction.
-    func reportAutomaticCompaction(_ result: CompactionResult) async {
-        await reportEnd(of: CompactionId(rawValue: result.id), with: result)
-    }
-
-    /// Reports an automatic compaction that did not complete: `cancelled` for
-    /// a cancel, and `failed` with the error text that Router gave for each
-    /// other failure. The context did not change, thus no `usage_update` goes
-    /// out.
-    ///
-    /// - Parameter failure: The failure that Router reported.
-    func reportAutomaticFailure(_ failure: CompactionFailure) async {
-        let compactionId = CompactionId(rawValue: failure.id)
-        switch failure.outcome {
-        case .cancelled:
-            await reportCancel(of: compactionId)
-        case .failed(let reason):
-            await reportFailure(of: compactionId, reason: reason)
-        }
-    }
-
-    /// Reports that a compaction started: the `in_progress` update.
-    ///
-    /// - Parameter compactionId: The id of the compaction.
-    func reportStart(of compactionId: CompactionId) async {
-        await send(.compactionUpdate(CompactionUpdate(compactionId: compactionId, status: .inProgress)))
-    }
-
-    /// Reports the end of a compaction that gave `result`.
+    /// Reports the end of a compaction that gave `result`: the terminal update
+    /// of the entry that ``reportStart(_:)`` opened.
     ///
     /// A result with a shortfall left the context as it was: the update is
-    /// `failed`, and the error is the reason. Each other result is
-    /// `completed`, with the summary when Router wrote one, and then the
-    /// `usage_update` with the new context use.
+    /// `failed`, and the error says that the session was not compacted, why,
+    /// and its tokens (``shortfallText(of:)``). Each other result is
+    /// `completed`, with the summary when Router wrote one and the report of
+    /// the fold (``reportText(of:)``), and then the `usage_update` with the
+    /// new context use. The entry carries each fact that the text of
+    /// `/compact` gave before the compaction was a signal.
     ///
-    /// - Parameters:
-    ///   - compactionId: The id of the compaction.
-    ///   - result: The result of the compaction.
-    func reportEnd(of compactionId: CompactionId, with result: CompactionResult) async {
-        if let shortfall = result.shortfall {
-            await reportFailure(of: compactionId, reason: Self.shortfallReason(shortfall))
+    /// - Parameter result: The result of the compaction.
+    func reportCompaction(_ result: CompactionResult) async {
+        let compactionId = CompactionId(rawValue: result.id)
+        if result.shortfall != nil {
+            await reportFailure(of: compactionId, reason: Self.shortfallText(of: result))
             return
         }
         await send(
@@ -117,19 +84,60 @@ struct CompactionReporter: Sendable {
                 UsageUpdate(size: max(result.tokensBefore, result.tokensAfter), used: result.tokensAfter)))
     }
 
-    /// Reports the end of a compaction that threw `error`: `cancelled` for
-    /// an abort error (``PromptExecution/isAbort(_:)``), and `failed` with
-    /// the error for each other error.
+    /// Reports a compaction that did not complete: `cancelled` for a cancel,
+    /// and `failed` with the error text that Router gave for each other
+    /// failure. The context did not change, thus no `usage_update` goes
+    /// out.
     ///
-    /// - Parameters:
-    ///   - compactionId: The id of the compaction.
-    ///   - error: The error the compaction threw.
-    func reportEnd(of compactionId: CompactionId, throwing error: any Error) async {
-        guard PromptExecution.isAbort(error) else {
-            await reportFailure(of: compactionId, reason: String(describing: error))
-            return
+    /// - Parameter failure: The failure that Router reported.
+    func reportFailure(_ failure: CompactionFailure) async {
+        let compactionId = CompactionId(rawValue: failure.id)
+        switch failure.outcome {
+        case .cancelled:
+            await reportCancel(of: compactionId)
+        case .failed(let reason):
+            await reportFailure(of: compactionId, reason: Self.failureText(reason))
         }
-        await reportCancel(of: compactionId)
+    }
+
+    /// The text of the summarizer-model line of a fold that wrote no
+    /// summary.
+    static let noSummarizerModel = "none (no model wrote a summary)"
+
+    /// The report of a fold that changed the context: the token counts
+    /// before and after, and the summarizer model.
+    ///
+    /// - Parameter result: The result of the fold.
+    /// - Returns: The report.
+    static func reportText(of result: CompactionResult) -> String {
+        let model = result.summarizerModel ?? noSummarizerModel
+        return """
+            Compacted the session.
+            tokens before: \(result.tokensBefore)
+            tokens after: \(result.tokensAfter)
+            summarizer model: \(model)
+            """
+    }
+
+    /// The error text of a fold that left the context as it was: the
+    /// shortfall reason and the tokens of the context.
+    ///
+    /// - Parameter result: The result of the fold, with its shortfall.
+    /// - Returns: The text.
+    static func shortfallText(of result: CompactionResult) -> String {
+        let reason = result.shortfall.map(shortfallReason) ?? ""
+        return """
+            The session was not compacted: \(reason)
+            tokens: \(result.tokensBefore)
+            """
+    }
+
+    /// The error text of a compaction that failed.
+    ///
+    /// - Parameter error: The error text that Router gave.
+    /// - Returns: The text.
+    static func failureText(_ error: String) -> String {
+        "Compaction failed: \(error)"
     }
 
     /// Reports a compaction that a cancel stopped: the `cancelled` update,
@@ -151,15 +159,14 @@ struct CompactionReporter: Sendable {
                 CompactionUpdate(compactionId: compactionId, status: .failed, error: .value(reason))))
     }
 
-    /// The summary patch of a completed compaction: the summary as one text
-    /// block, or no change when Router wrote no summary.
+    /// The summary patch of a completed compaction: the summary as the first
+    /// text block when Router wrote one, and then the report of the fold
+    /// (``reportText(of:)``) as the last text block.
     ///
     /// - Parameter result: The result of the compaction.
     /// - Returns: The patch.
     private static func summaryPatch(of result: CompactionResult) -> PatchField<[ContentBlock]> {
-        guard let summary = result.summary else {
-            return .unchanged
-        }
-        return .value([.text(TextContent(text: summary))])
+        let summary = result.summary.map { [ContentBlock.text(TextContent(text: $0))] } ?? []
+        return .value(summary + [.text(TextContent(text: reportText(of: result)))])
     }
 }

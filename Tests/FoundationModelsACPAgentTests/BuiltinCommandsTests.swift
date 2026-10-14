@@ -4,6 +4,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
+import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -197,8 +198,51 @@ struct BuiltinCommandsTests {
 
     // MARK: - /compact
 
-    /// `/compact` on a session whose fold applies a summary reports the token
-    /// counts before and after and names the summarizer model.
+    /// Runs `/compact`, and waits for the terminal entry of its compaction,
+    /// which comes from the compaction events after the end of the command.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The streamed text of the command, and the compaction
+    ///   updates of its compaction in order.
+    /// - Throws: Whatever the prompt or the wait throws.
+    private static func compactAndReadTheEntry(
+        on fixture: Fixture
+    ) async throws -> (text: String, entry: [CompactionUpdate]) {
+        let result = try await fixture.runCommand("/compact")
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the terminal compaction entry"
+        ) { updates in
+            Self.compactionUpdates(in: updates).contains { $0.status != .inProgress }
+        }
+        return (result.text, Self.compactionUpdates(in: updates))
+    }
+
+    /// The compaction updates in a collected sequence, in order.
+    ///
+    /// - Parameter updates: The collected notifications.
+    /// - Returns: The compaction updates.
+    private static func compactionUpdates(in updates: [UpdateSessionNotification]) -> [CompactionUpdate] {
+        updates.compactMap { notification in
+            if case .compactionUpdate(let update) = notification.update { return update }
+            return nil
+        }
+    }
+
+    /// The joined text of the summary blocks of an entry.
+    ///
+    /// - Parameter update: The compaction update.
+    /// - Returns: The text.
+    private static func summaryText(of update: CompactionUpdate?) -> String {
+        guard case .value(let blocks) = update?.summary else { return "" }
+        return blocks.map { block in
+            guard case .text(let text) = block else { return "" }
+            return text.text
+        }.joined(separator: "\n")
+    }
+
+    /// `/compact` only starts the compaction: its text says so. The completed
+    /// entry of the compaction carries the report: the token counts before
+    /// and after, and the summarizer model.
     @Test(.timeLimit(.minutes(1)))
     func compactReportsTokenCountsAndSummarizerModel() async throws {
         let fixture = try await Fixture.make(
@@ -206,15 +250,18 @@ struct BuiltinCommandsTests {
             loader: CompactionStubBackend.makeLoader(shouldFail: false))
         defer { Task { await fixture.close() } }
 
-        let result = try await fixture.runCommand("/compact")
+        let (text, entry) = try await Self.compactAndReadTheEntry(on: fixture)
+        let report = Self.summaryText(of: entry.last)
 
-        #expect(result.text.contains("tokens before"))
-        #expect(result.text.contains("tokens after"))
-        #expect(result.text.contains(Self.defaultStandardModel))
+        #expect(text.contains("Compaction started."))
+        #expect(entry.last?.status == .completed)
+        #expect(report.contains("tokens before"))
+        #expect(report.contains("tokens after"))
+        #expect(report.contains(Self.defaultStandardModel))
     }
 
-    /// A scripted summarizer failure makes `/compact` report the failure and
-    /// not a success: the streamed text names the failure and no token counts.
+    /// A scripted summarizer failure gives a failed entry, not a success:
+    /// the error names the failure, and no entry gives token counts.
     @Test(.timeLimit(.minutes(1)))
     func compactReportsAFailureHonestly() async throws {
         let fixture = try await Fixture.make(
@@ -222,16 +269,18 @@ struct BuiltinCommandsTests {
             loader: CompactionStubBackend.makeLoader(shouldFail: true))
         defer { Task { await fixture.close() } }
 
-        let result = try await fixture.runCommand("/compact")
+        let (_, entry) = try await Self.compactAndReadTheEntry(on: fixture)
+        let error = try #require(entry.last.flatMap { patchValue($0.error) })
 
-        #expect(result.text.lowercased().contains("failed"))
-        #expect(!result.text.contains("tokens after"))
+        #expect(entry.last?.status == .failed)
+        #expect(error.lowercased().contains("failed"))
+        #expect(!Self.summaryText(of: entry.last).contains("tokens after"))
     }
 
     /// A fold that leaves the context as it was is not reported as a
     /// compaction. The oversized seed does not fit the window of any
-    /// summarizer, thus Router gives a shortfall and calls no model, and
-    /// `/compact` says that nothing was compacted, and why.
+    /// summarizer, thus Router gives a shortfall and calls no model, and the
+    /// failed entry says that nothing was compacted, and why.
     @Test(.timeLimit(.minutes(1)))
     func compactReportsAShortfallHonestly() async throws {
         let fixture = try await Fixture.make(
@@ -240,12 +289,47 @@ struct BuiltinCommandsTests {
                 shouldFail: false, phraseRepeat: CompactionStubBackend.oversizedPhraseRepeat))
         defer { Task { await fixture.close() } }
 
-        let result = try await fixture.runCommand("/compact")
+        let (_, entry) = try await Self.compactAndReadTheEntry(on: fixture)
+        let error = try #require(entry.last.flatMap { patchValue($0.error) })
 
-        #expect(result.text.contains("not compacted"))
-        #expect(result.text.contains("does not fit the window of any summarizer"))
-        #expect(!result.text.contains("Compacted the session"))
-        #expect(!result.text.contains(Self.defaultStandardModel))
+        #expect(entry.last?.status == .failed)
+        #expect(error.contains("not compacted"))
+        #expect(error.contains("does not fit the window of any summarizer"))
+        #expect(!error.contains("Compacted the session"))
+        #expect(!error.contains(Self.defaultStandardModel))
+    }
+
+    /// The check of row 4 of `mailbox.md`, section 8: `/compact` returns at
+    /// once. The command ends with its `idle` while the summarizer of its
+    /// compaction still waits at the gate, and the report of the
+    /// compaction comes after the gate opens, from the compaction events.
+    @Test(.timeLimit(.minutes(1)))
+    func compactReturnsBeforeItsCompactionEnds() async throws {
+        let gate = SummarizerGate()
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-compact-at-once",
+            loader: CompactionStubBackend.makeLoader(shouldFail: false, gate: gate))
+        defer { Task { await fixture.close() } }
+
+        let result = try await fixture.runCommand("/compact")
+        await gate.waitForArrival()
+        let whileHeld = Self.compactionUpdates(in: await fixture.collector.updates)
+        gate.open()
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the completed compaction entry"
+        ) { updates in
+            Self.compactionUpdates(in: updates).contains { $0.status == .completed }
+        }
+
+        #expect(ScriptedPromptFixture.idleCount(in: result.updates) == 1)
+        #expect(!whileHeld.contains { $0.status != .inProgress })
+        let idle = try #require(updates.firstIndex { isIdleState($0.update) })
+        let completed = try #require(
+            updates.firstIndex { notification in
+                if case .compactionUpdate(let update) = notification.update { return update.status == .completed }
+                return false
+            })
+        #expect(idle < completed)
     }
 
     // MARK: - /config
@@ -429,14 +513,19 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     /// Whether the summarizer call throws instead of returning a summary.
     private let shouldFail: Bool
 
+    /// The gate that each summarizer call waits at, or `nil` for none.
+    private let gate: SummarizerGate?
+
     /// Creates a seeded backend.
     ///
     /// - Parameters:
     ///   - entries: The seed transcript.
     ///   - shouldFail: Whether the summarizer call throws.
-    init(entries: [Transcript.Entry], shouldFail: Bool) {
+    ///   - gate: The gate that each summarizer call waits at, or `nil`.
+    init(entries: [Transcript.Entry], shouldFail: Bool, gate: SummarizerGate? = nil) {
         self.entries = entries
         self.shouldFail = shouldFail
+        self.gate = gate
     }
 
     /// Makes a loader whose LLM containers vend seeded compaction backends.
@@ -445,13 +534,14 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     ///   - shouldFail: Whether each backend's summarizer call throws.
     ///   - phraseRepeat: How many times the seed phrase repeats in one
     ///     segment.
+    ///   - gate: The gate that each summarizer call waits at, or `nil`.
     /// - Returns: The loader to inject into the stub agent.
     static func makeLoader(
-        shouldFail: Bool, phraseRepeat: Int = seedPhraseRepeat
+        shouldFail: Bool, phraseRepeat: Int = seedPhraseRepeat, gate: SummarizerGate? = nil
     ) -> StubModelLoader {
         var loader = StubModelLoader()
         loader.makeLLMContainer = { _ in
-            CompactionStubContainer(shouldFail: shouldFail, phraseRepeat: phraseRepeat)
+            CompactionStubContainer(shouldFail: shouldFail, phraseRepeat: phraseRepeat, gate: gate)
         }
         return loader
     }
@@ -477,6 +567,12 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     }
 
     func respond(to prompt: String, maxTokens: Int?) async throws -> String {
+        // Only the summarizer call waits at the gate: its prompt holds the
+        // compaction instructions verbatim. Each other model call of the
+        // session passes.
+        if prompt.contains(CompactionPrompt.default.text) {
+            try await gate?.pass()
+        }
         if shouldFail {
             throw CompactionStubError.summarizerUnavailable
         }
@@ -504,11 +600,13 @@ final class CompactionStubBackend: LanguageModelSessionBackend, @unchecked Senda
     }
 
     func makeFork() -> any LanguageModelSessionBackend {
-        CompactionStubBackend(entries: entries, shouldFail: shouldFail)
+        CompactionStubBackend(entries: entries, shouldFail: shouldFail, gate: gate)
     }
 
+    /// The summarizer of a compaction calls the blank backend that this
+    /// method makes, so the blank backend keeps the gate.
     func replacingTranscript(_ transcript: Transcript) -> any LanguageModelSessionBackend {
-        CompactionStubBackend(entries: Array(transcript), shouldFail: shouldFail)
+        CompactionStubBackend(entries: Array(transcript), shouldFail: shouldFail, gate: gate)
     }
 
     func transcriptEntries() -> [Transcript.Entry] {
@@ -535,10 +633,13 @@ struct CompactionStubContainer: LoadedLLMContainer {
     /// How many times the seed phrase repeats in one segment.
     let phraseRepeat: Int
 
+    /// The gate that each summarizer call waits at, or `nil` for none.
+    var gate: SummarizerGate?
+
     func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
         CompactionStubBackend(
             entries: CompactionStubBackend.makeSeedEntries(phraseRepeat: phraseRepeat),
-            shouldFail: shouldFail)
+            shouldFail: shouldFail, gate: gate)
     }
 
     func makeSession(
@@ -546,16 +647,114 @@ struct CompactionStubContainer: LoadedLLMContainer {
     ) -> any LanguageModelSessionBackend {
         CompactionStubBackend(
             entries: CompactionStubBackend.makeSeedEntries(phraseRepeat: phraseRepeat),
-            shouldFail: shouldFail)
+            shouldFail: shouldFail, gate: gate)
     }
 
     func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        CompactionStubBackend(entries: Array(transcript), shouldFail: shouldFail)
+        CompactionStubBackend(entries: Array(transcript), shouldFail: shouldFail, gate: gate)
     }
 
     func makeSession(
         transcript: Transcript, tools: [any Tool]
     ) -> any LanguageModelSessionBackend {
-        CompactionStubBackend(entries: Array(transcript), shouldFail: shouldFail)
+        CompactionStubBackend(entries: Array(transcript), shouldFail: shouldFail, gate: gate)
+    }
+}
+
+/// A gate that the summarizer call of a ``CompactionStubBackend`` waits at,
+/// so a test keeps a compaction running in a fixed order, with no clock.
+///
+/// The test waits until a summarizer call arrived (``waitForArrival()``),
+/// does its work, and then opens the gate (``open()``). A cancel of the
+/// summarizer call, for example by `close()`, ends its wait with
+/// `CancellationError`.
+final class SummarizerGate: Sendable {
+    /// The state of the gate.
+    private struct State {
+        /// Whether the gate is open.
+        var isOpen = false
+
+        /// The waits of the summarizer calls, keyed by a token.
+        var passes: [Int: CheckedContinuation<Void, any Error>] = [:]
+
+        /// The token of the next wait.
+        var nextToken = 0
+
+        /// The number of summarizer calls that arrived.
+        var arrivals = 0
+
+        /// The tests that wait for an arrival.
+        var arrivalWaiters: [CheckedContinuation<Void, Never>] = []
+    }
+
+    /// The state, under one lock.
+    private let state = Mutex(State())
+
+    /// Waits until the gate opens. Each call counts as one arrival.
+    ///
+    /// - Throws: `CancellationError` when the calling task is cancelled
+    ///   first.
+    func pass() async throws {
+        let token = state.withLock { state -> Int in
+            state.nextToken += 1
+            return state.nextToken
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let (resumeNow, arrivalWaiters) = state.withLock { state -> (Bool, [CheckedContinuation<Void, Never>]) in
+                    state.arrivals += 1
+                    let waiters = state.arrivalWaiters
+                    state.arrivalWaiters = []
+                    if state.isOpen || Task.isCancelled {
+                        return (true, waiters)
+                    }
+                    state.passes[token] = continuation
+                    return (false, waiters)
+                }
+                for waiter in arrivalWaiters {
+                    waiter.resume()
+                }
+                if resumeNow {
+                    if Task.isCancelled {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        continuation.resume()
+                    }
+                }
+            }
+        } onCancel: {
+            let pass = state.withLock { $0.passes.removeValue(forKey: token) }
+            pass?.resume(throwing: CancellationError())
+        }
+    }
+
+    /// Waits until at least one summarizer call arrived at the gate.
+    func waitForArrival() async {
+        await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
+            let arrived = state.withLock { state -> Bool in
+                if state.arrivals > 0 {
+                    return true
+                }
+                state.arrivalWaiters.append(waiter)
+                return false
+            }
+            if arrived {
+                waiter.resume()
+            }
+        }
+    }
+
+    /// Opens the gate: each waiting summarizer call and each later one
+    /// passes.
+    func open() {
+        let passes = state.withLock { state -> [CheckedContinuation<Void, any Error>] in
+            state.isOpen = true
+            let passes = Array(state.passes.values)
+            state.passes = [:]
+            return passes
+        }
+        for pass in passes {
+            pass.resume()
+        }
     }
 }

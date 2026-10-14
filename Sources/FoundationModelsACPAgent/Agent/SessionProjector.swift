@@ -80,6 +80,9 @@ actor SessionProjector {
         /// the session.
         case mailCancelled(MailID)
 
+        /// `session/cancel` sent the `cancelAll()` signal with this id.
+        case cancelSent(SignalID)
+
         /// One update of a slash command, which sends no Router event, and
         /// the wait of the sender for its send.
         case update(SessionUpdate, sent: CheckedContinuation<Void, Never>?)
@@ -208,6 +211,17 @@ actor SessionProjector {
         inbox.yield(.mailCancelled(mailId))
     }
 
+    /// Tells the projector the id of the `cancelAll()` signal of a
+    /// `session/cancel`. Each open prompt that the cancel reached ends as
+    /// `cancelled` no later than the `signalDone` event of that signal, so
+    /// the `idle` with the `cancelled` stop reason ends the cancel (an ACP
+    /// rule; task ^9xs24pn, decision G6).
+    ///
+    /// - Parameter signal: The id of the `cancelAll()` signal.
+    nonisolated func cancelSent(_ signal: SignalID) {
+        inbox.yield(.cancelSent(signal))
+    }
+
     /// The sink of a slash command: each update goes through the inbox, so it
     /// keeps its order with the events of the session. The sink returns when
     /// the update went out, so the end of the command, which the state
@@ -290,6 +304,18 @@ private struct ProjectionState {
     /// most one prompt.
     var open: [OpenPrompt] = []
 
+    /// The `cancelAll()` signals of `session/cancel` whose `signalDone` did
+    /// not come yet.
+    var pendingCancels: Set<SignalID> = []
+
+    /// The ids of the last `signalDone` events, so a ``SessionProjector/Input/cancelSent(_:)``
+    /// that comes after the event of its signal still finds it. The
+    /// reader of the session and the sender of the cancel are two tasks.
+    var recentSignalsDone: [SignalID] = []
+
+    /// The number of ids that ``recentSignalsDone`` keeps.
+    static let recentSignalsDoneLimit = 64
+
     /// Handles one item of the inbox.
     ///
     /// - Parameter input: The item.
@@ -318,6 +344,12 @@ private struct ProjectionState {
             await endPrompt(mailId, stop: .failed(message: message))
         case .mailCancelled(let mailId):
             await endPrompt(mailId, stop: .cancelled)
+        case .cancelSent(let signal):
+            if recentSignalsDone.contains(signal) {
+                await endCancelledPrompts()
+            } else {
+                pendingCancels.insert(signal)
+            }
         case .update(let update, let sent):
             await send(update)
             sent?.resume()
@@ -359,6 +391,36 @@ private struct ProjectionState {
         for prompt in open.map(\.prompt) {
             if let stop = await Self.stop(of: event, ending: prompt, sessionId: translator.sessionId) {
                 await endPrompt(prompt.mailId, stop: stop)
+            }
+        }
+        if case .signalDone(let signal) = event {
+            await signalDone(signal)
+        }
+    }
+
+    /// Ends each prompt that a `session/cancel` reached when the `signalDone`
+    /// of its `cancelAll()` signal comes, and keeps the id of each other
+    /// signal for a ``SessionProjector/Input/cancelSent(_:)`` that comes
+    /// later.
+    ///
+    /// - Parameter signal: The id of the signal that ended.
+    private mutating func signalDone(_ signal: SignalID) async {
+        if pendingCancels.remove(signal) != nil {
+            await endCancelledPrompts()
+            return
+        }
+        recentSignalsDone.append(signal)
+        if recentSignalsDone.count > Self.recentSignalsDoneLimit {
+            recentSignalsDone.removeFirst()
+        }
+    }
+
+    /// Ends each open prompt that a `session/cancel` reached, as
+    /// `cancelled`. A prompt that opened after the cancel stays open.
+    private mutating func endCancelledPrompts() async {
+        for prompt in open.map(\.prompt) {
+            if await prompt.owner.cancelRequested {
+                await endPrompt(prompt.mailId, stop: .cancelled)
             }
         }
     }

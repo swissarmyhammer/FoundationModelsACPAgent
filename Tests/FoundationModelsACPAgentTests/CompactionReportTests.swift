@@ -61,12 +61,15 @@ struct CompactionReportTests {
         }
     }
 
-    /// The text of each text block in a summary.
+    /// The text of the summary in a summary patch: its first text block. The
+    /// last text block of a completed entry is the report of the fold
+    /// (``CompactionReporter/reportText(of:)``).
     ///
     /// - Parameter summary: The summary patch.
-    /// - Returns: The joined text, or `nil` when the patch carries no value.
+    /// - Returns: The text of the first block, or `nil` when the patch
+    ///   carries no value.
     private static func summaryText(of summary: PatchField<[ContentBlock]>) -> String? {
-        patchValue(summary).map(joinedText(of:))
+        patchValue(summary).map { blocks in joinedText(of: Array(blocks.prefix(1))) }
     }
 
     /// The joined text of the text blocks in `blocks`.
@@ -158,16 +161,19 @@ struct CompactionReportTests {
     ///     segment.
     ///   - workingDirectory: The session working directory, or `nil` for a
     ///     fresh one.
+    ///   - gate: The gate that each summarizer call waits at, or `nil`.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     private static func makeFixture(
         label: String,
         shouldFail: Bool = false,
         phraseRepeat: Int = CompactionStubBackend.seedPhraseRepeat,
-        workingDirectory: URL? = nil
+        workingDirectory: URL? = nil,
+        gate: SummarizerGate? = nil
     ) async throws -> ScriptedPromptFixture {
         try await ScriptedPromptFixture.make(
-            loader: CompactionStubBackend.makeLoader(shouldFail: shouldFail, phraseRepeat: phraseRepeat),
+            loader: CompactionStubBackend.makeLoader(
+                shouldFail: shouldFail, phraseRepeat: phraseRepeat, gate: gate),
             label: label,
             workingDirectory: workingDirectory)
     }
@@ -189,6 +195,21 @@ struct CompactionReportTests {
         let notifications = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: count)
         try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         return (response, notifications.map(\.update))
+    }
+
+    /// Waits until the collector of `fixture` holds the terminal entry of a
+    /// compaction. The entry comes from the compaction events, after the end
+    /// of the `/compact` command.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The raw updates collected so far.
+    /// - Throws: `CancellationError` when the test is cancelled.
+    private static func waitForTerminalEntry(of fixture: ScriptedPromptFixture) async throws -> [SessionUpdate] {
+        try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the terminal entry of the compaction"
+        ) { updates in
+            compactionUpdates(in: updates.map(\.update)).contains { $0.status != .inProgress }
+        }.map(\.update)
     }
 
     /// Projects synthetic Router events through the history sink of the
@@ -332,7 +353,7 @@ struct CompactionReportTests {
         #expect(compactions.map(\.status) == [.inProgress, .failed])
         #expect(compactions.allSatisfy { $0.compactionId.rawValue == Self.automaticCompactionId })
         let failed = try #require(compactions.last)
-        #expect(patchValue(failed.error) == Self.automaticFailureText)
+        #expect(patchValue(failed.error) == CompactionReporter.failureText(Self.automaticFailureText))
         #expect(updates.compactMap(usageReport(of:)).isEmpty)
     }
 
@@ -358,7 +379,8 @@ struct CompactionReportTests {
     @Test(.timeLimit(.minutes(1)))
     func manualCompactSendsInProgressThenCompletedWithTheSummary() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-manual")
-        let (_, updates) = try await Self.runPrompt("/compact", on: fixture, count: 1)
+        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        let updates = try await Self.waitForTerminalEntry(of: fixture)
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .completed])
@@ -381,7 +403,8 @@ struct CompactionReportTests {
         let fixture = try await Self.makeFixture(
             label: "CompactionReportTests-shortfall",
             phraseRepeat: CompactionStubBackend.oversizedPhraseRepeat)
-        let (_, updates) = try await Self.runPrompt("/compact", on: fixture, count: 1)
+        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        let updates = try await Self.waitForTerminalEntry(of: fixture)
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .failed])
@@ -397,7 +420,8 @@ struct CompactionReportTests {
     @Test(.timeLimit(.minutes(1)))
     func manualCompactFailureSendsFailedWithTheError() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-failure", shouldFail: true)
-        let (_, updates) = try await Self.runPrompt("/compact", on: fixture, count: 1)
+        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        let updates = try await Self.waitForTerminalEntry(of: fixture)
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .failed])
@@ -412,36 +436,22 @@ struct CompactionReportTests {
     /// error and no `usage_update`.
     @Test(.timeLimit(.minutes(1)))
     func aCancelledCompactionSendsCancelled() async throws {
-        let recorder = SinkRecorder()
-        let reporter = CompactionReporter(send: { update in await recorder.append(update) })
-        let compactionId = CompactionReporter.makeCompactionId()
+        let gate = SummarizerGate()
+        let fixture = try await Self.makeFixture(label: "CompactionReportTests-cancelled", gate: gate)
+        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        await gate.waitForArrival()
 
-        await reporter.reportStart(of: compactionId)
-        await reporter.reportEnd(of: compactionId, throwing: CancellationError())
+        // Only `close` stops a running compaction (`mailbox.md`, section 5).
+        _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
+        let updates = try await Self.waitForTerminalEntry(of: fixture)
+        await fixture.close()
 
-        let updates = await recorder.updates
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .cancelled])
-        #expect(compactions.allSatisfy { $0.compactionId == compactionId })
+        #expect(Set(compactions.map(\.compactionId)).count == 1)
         let cancelled = try #require(compactions.last)
         #expect(patchValue(cancelled.error) == nil)
         #expect(updates.compactMap(usageReport(of:)).isEmpty)
-    }
-
-    /// A compaction that an abort error other than `CancellationError`
-    /// stopped is a cancelled entry too, with no error on the wire. The
-    /// prompt reads the same abort errors as a cancel.
-    @Test(arguments: [URLError(.cancelled), CocoaError(.userCancelled)] as [any Error])
-    func anAbortedCompactionSendsCancelled(abort: any Error) async throws {
-        let recorder = SinkRecorder()
-        let reporter = CompactionReporter(send: { update in await recorder.append(update) })
-        let compactionId = CompactionReporter.makeCompactionId()
-
-        await reporter.reportEnd(of: compactionId, throwing: abort)
-
-        let update = try #require(try (await recorder.updates).last.flatMap(wireObject(of:)))
-        #expect(jsonString(of: update["status"]) == "cancelled")
-        #expect(update["error"] == nil)
     }
 
     // MARK: - The retained history
@@ -458,6 +468,7 @@ struct CompactionReportTests {
         #expect(earlier.first?.text == Self.earlierPrompt)
 
         try await Self.runPrompt("/compact", on: fixture, count: 2)
+        _ = try await Self.waitForTerminalEntry(of: fixture)
 
         let after = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.history)
         #expect(Array(Self.messages(of: after).prefix(earlier.count)) == earlier)
@@ -477,7 +488,8 @@ struct CompactionReportTests {
     func aResumeReplaysTheCompactionEntryAndTheEarlierMessages() async throws {
         let first = try await Self.makeFixture(label: "CompactionReportTests-resume")
         try await Self.runPrompt(Self.earlierPrompt, on: first, count: 1)
-        let (_, liveUpdates) = try await Self.runPrompt("/compact", on: first, count: 2)
+        try await Self.runPrompt("/compact", on: first, count: 2)
+        let liveUpdates = try await Self.waitForTerminalEntry(of: first)
         let earlier = ReplayedMessage.live(in: liveUpdates)
         let liveCompaction = try #require(Self.compactionUpdates(in: liveUpdates).last)
 
@@ -511,6 +523,6 @@ struct CompactionReportTests {
         let compaction = try #require(replayed.first)
         #expect(compaction.compactionId.rawValue == Self.automaticCompactionId)
         #expect(compaction.status == .failed)
-        #expect(patchValue(compaction.error) == Self.automaticFailureText)
+        #expect(patchValue(compaction.error) == CompactionReporter.failureText(Self.automaticFailureText))
     }
 }

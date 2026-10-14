@@ -117,7 +117,7 @@ enum AgentsComposition {
     /// - Returns: The observer for `AgentEnvironment.make(runEventObserver:)`.
     static func makeRunEventObserver(runCallJoins: RunCallJoinTable) -> AgentEnvironment.RunEventObserver {
         { _, output in
-            runCallJoins.recordAgentRunEvent(output.event)
+            runCallJoins.recordAgentRunEvent(output)
         }
     }
 

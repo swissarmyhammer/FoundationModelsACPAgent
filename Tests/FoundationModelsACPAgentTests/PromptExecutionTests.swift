@@ -202,6 +202,55 @@ import Testing
         #expect(idleState(of: afterResume.last(where: { isIdleState($0.update) })?.update)?.stopReason == .endTurn)
     }
 
+    /// A cancel that comes before the mail of a prompt ends that prompt with
+    /// the `cancelled` stop reason, and no mail goes into the session:
+    /// `cancelAll()` cannot reach a mail that is not queued (task ^he1rmw6,
+    /// difference 3).
+    @Test(.timeLimit(.minutes(1)))
+    func aCancelBeforeTheMailEndsThePromptCancelledWithNoMail() async throws {
+        let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
+        let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+        let owner = PromptStateOwner(ledger: entry.stateLedger)
+        await owner.noteCancelRequested()
+        let execution = PromptExecution(
+            sessionId: fixture.sessionId, promptBlocks: [], promptState: owner, send: { _ in },
+            firstActivity: nil, modelName: syntheticModelName, modelPrompt: "never sent")
+        let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
+
+        await execution.run(session: entry.session, projector: entry.projector) { reason in
+            end.yield(reason)
+            end.finish()
+        }
+        var reason: StopReason?
+        for await ended in ends {
+            reason = ended
+        }
+        let transcript = await entry.session.transcript
+        await fixture.close()
+
+        #expect(reason == .cancelled)
+        #expect(!transcript.contains { if case .prompt = $0 { true } else { false } })
+    }
+
+    /// A `session/cancel` with no prompt open sends `cancelAll()` to the
+    /// session and no state update (task ^9xs24pn, decisions Q2 and G6).
+    @Test(.timeLimit(.minutes(1)))
+    func aCancelWithNoPromptOpenSendsNoStateUpdate() async throws {
+        let fixture = try await Self.makeFixture(script: [.textDelta("answered"), .endPass])
+        _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
+        let first = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+
+        try await fixture.harness.connection.sessionCancel(CancelSessionNotification(sessionId: fixture.sessionId))
+        _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        await fixture.close()
+
+        let between = updates[first.count...].prefix { userMessageEcho(of: $0.update) == nil }
+        #expect(!between.contains { if case .stateUpdate = $0.update { true } else { false } })
+        #expect(ScriptedPromptFixture.idleStopReason(in: Array(updates[first.count...])) == .endTurn)
+    }
+
     // MARK: - The fixed order of a prompt (elicitation-plan task 49)
 
     /// The `messageId` of the response and of the echo is the `MailID` of

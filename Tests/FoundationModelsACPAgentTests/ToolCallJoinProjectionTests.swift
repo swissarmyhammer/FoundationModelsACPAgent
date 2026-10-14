@@ -461,7 +461,7 @@ import Testing
         session.send(Self.outputChunk(Self.runToken))
 
         let rootUpdates = try await Self.updatesUntilOutput(of: Self.runToken, in: session)
-        session.runCallJoins.recordAgentRunEvent(Self.openRecord(Self.agentShellRunToken, toolCallID: Self.agentSdkCallId))
+        session.runCallJoins.recordAgentRunEvent(SessionOutput(origin: .system, event: Self.openRecord(Self.agentShellRunToken, toolCallID: Self.agentSdkCallId)))
         let agentUpdates = try await session.recorder.updates(until: "the announce of the agent shell run") { updates in
             !Self.terminalAnnounceIds(of: Self.agentShellRunToken, in: updates).isEmpty
         }
@@ -479,8 +479,8 @@ import Testing
         let runCallJoins = RunCallJoinTable()
         runCallJoins.openProjection()
 
-        runCallJoins.recordAgentRunEvent(Self.closeRecord(Self.agentShellRunToken, toolCallID: nil))
-        runCallJoins.recordAgentRunEvent(Self.progress(Self.agentShellRunToken))
+        runCallJoins.recordAgentRunEvent(SessionOutput(origin: .system, event: Self.closeRecord(Self.agentShellRunToken, toolCallID: nil)))
+        runCallJoins.recordAgentRunEvent(SessionOutput(origin: .system, event: Self.progress(Self.agentShellRunToken)))
 
         #expect(runCallJoins.announceToolCallId(for: Self.agentShellRunToken) == nil)
     }

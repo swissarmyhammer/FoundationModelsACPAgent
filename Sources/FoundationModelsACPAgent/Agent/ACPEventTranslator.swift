@@ -281,11 +281,11 @@ struct ACPEventTranslator {
         case .entryRecorded(let id, let kind):
             closeMessage(recordedEntryId: id, kind: kind)
         case .compactionStarted(let start):
-            await compactionReporter.reportAutomaticStart(start)
+            await compactionReporter.reportStart(start)
         case .compaction(let result):
-            await compactionReporter.reportAutomaticCompaction(result)
+            await compactionReporter.reportCompaction(result)
         case .compactionFailed(let failure):
-            await compactionReporter.reportAutomaticFailure(failure)
+            await compactionReporter.reportFailure(failure)
         case .discoveryPrimingFailed(let failure):
             var metadata = ACPAgentTelemetry.errorMetadata(failure, sessionId: sessionId)
             metadata[ACPAgentTelemetry.LogMetadataKey.errorCase] = "\(ACPAgentTelemetry.caseName(of: failure))"
@@ -573,10 +573,11 @@ struct ACPEventTranslator {
 
     // MARK: - Compaction
 
-    /// The reporter of the automatic compactions of the prompt
-    /// (``CompactionReporter``). Router reports each automatic compaction
-    /// with `compactionStarted`, then `compaction` or `compactionFailed`
-    /// with the same id. The reporter sends the `in_progress` update, then
+    /// The reporter of the compactions of the session
+    /// (``CompactionReporter``), automatic or requested. Router reports each
+    /// compaction with `compactionStarted`, then `compaction` or
+    /// `compactionFailed`, with the same id: the `SignalID` of the
+    /// compaction. The reporter sends the `in_progress` update, then
     /// the terminal update, keyed by that id, and the `usage_update` of a
     /// completed compaction. It sends them through ``send``, the history
     /// sink, thus the retained history keeps the final status. No message
