@@ -117,6 +117,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         label: String,
         script: [ScriptedPassStep] = [.endPass],
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+        runClock: (any RunClock)? = nil,
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         let cwd = makeResolvedDirectory(label: "AgentsToolTests-\(label)")
@@ -125,12 +126,18 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         var configuration = AgentConfiguration.withoutMarketplaces
         configuration.tools.codeContext = .disabled
         configure(&configuration)
+        let cacheDirectory = makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache")
+        let loader = makeScriptedModelLoader(script: script)
+        let profile =
+            if let runClock {
+                try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader, runClock: runClock)
+            } else {
+                try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader)
+            }
         return CatalogContext(
             workingDirectory: cwd,
             configuration: configuration,
-            profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache"),
-                loader: makeScriptedModelLoader(script: script)),
+            profile: profile,
             environment: [:],
             inlineSettleGrace: inlineSettleGrace)
     }
@@ -442,11 +449,15 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// A `start agent` call to a run that ends in the settle period gives
     /// the final message of the run as the output of the call, with no
     /// pending envelope, and no mail comes after it.
+    ///
+    /// The settle period waits on a `ManualRunClock` that the test never
+    /// advances, so the period cannot end before the quick run. On the real
+    /// clock, a machine with a high load could end the period first.
     @Test(.timeLimit(.minutes(1)))
     func aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall() async throws {
         let hold = ScriptedHold()
         let context = try await Self.makeContext(
-            label: "quick", script: Self.startAgentScript(hold: hold))
+            label: "quick", script: Self.startAgentScript(hold: hold), runClock: ManualRunClock())
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
         let session = Self.makeRootSession(surface: surface, context: context)
 
