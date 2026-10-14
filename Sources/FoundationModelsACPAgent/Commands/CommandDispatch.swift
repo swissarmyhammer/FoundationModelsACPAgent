@@ -270,7 +270,7 @@ extension RoutedACPAgent {
             let sessionId = params.sessionId
             let messageId = insertUserMessage(params, through: connection)
             let owner = execution.promptState
-            connection.afterRespondingInCurrentServiceContext {
+            connection.afterRespondingInCurrentInstrumentationContext {
                 await execution.run()
                 await self.promptFinished(owner, sessionId: sessionId)
             }

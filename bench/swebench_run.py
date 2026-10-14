@@ -528,7 +528,7 @@ if outpath.exists() and outpath.stat().st_size and not args.force:
 log(
     "[green]the instances of this run[/]",
     instances=len(instances),
-    to_do=len(instances) - len(done),
+    to_do=sum(1 for inst in instances if inst["instance_id"] not in done),
     predictions=outpath,
 )
 log("the record of each instance", record=runs_path(outpath))

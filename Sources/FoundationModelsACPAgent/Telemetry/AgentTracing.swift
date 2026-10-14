@@ -7,8 +7,9 @@ import Tracing
 /// OpenTelemetry design, items 3, 4 and 8).
 ///
 /// Each span has the kind `.internal`. It opens through
-/// ``ACPAgentTelemetry/tracer(explicit:)`` in the current `ServiceContext`,
-/// thus it is a child of the span of the request that does the work.
+/// ``ACPAgentTelemetry/tracer(explicit:)`` in the current
+/// `InstrumentationContext`, thus it is a child of the span of the request
+/// that does the work.
 /// ``RequestTracing`` also opens its server spans through
 /// ``withSpan(_:context:ofKind:_:)``, with a different kind and parent. A body
 /// that throws gives the span the error status and the type of the error,
@@ -29,23 +30,23 @@ enum AgentTracing {
     /// - Parameters:
     ///   - spanName: The name of the span.
     ///   - context: The parent context of the span. The default is the
-    ///     current `ServiceContext`.
+    ///     current `InstrumentationContext`.
     ///   - kind: The kind of the span. The default is `.internal`.
     ///   - body: The work. It gets the open span, and it runs on the actor of
-    ///     the caller, in the `ServiceContext` of the span.
+    ///     the caller, in the `InstrumentationContext` of the span.
     /// - Returns: The value of `body`.
     /// - Throws: The error of `body`. The span gets the error status and the
     ///   error type first.
     nonisolated(nonsending) static func withSpan<Output>(
         _ spanName: String,
-        context: @autoclosure () -> ServiceContext = .current ?? .topLevel,
+        context: @autoclosure () -> InstrumentationContext = .current ?? .topLevel,
         ofKind kind: SpanKind = .internal,
         _ body: nonisolated(nonsending) (any Span) async throws -> Output
     ) async rethrows -> Output {
         let span = ACPAgentTelemetry.tracer(explicit: nil).startSpan(spanName, context: context(), ofKind: kind)
         defer { span.end() }
         do {
-            return try await ServiceContext.withValue(span.context) {
+            return try await InstrumentationContext.withValue(span.context) {
                 try await body(span)
             }
         } catch {

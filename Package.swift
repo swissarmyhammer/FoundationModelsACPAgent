@@ -129,13 +129,15 @@ private let argumentParserProduct = Target.Dependency.product(
     name: "ArgumentParser", package: argumentParserPackage)
 
 /// The tracing API package: the `Tracer` protocol and the span API. It is an
-/// abstraction and not an exporter. Router already declares it from the same
-/// floor, so it stands in `Package.resolved` and this declaration adds no
-/// checkout.
+/// abstraction and not an exporter. Router already declares it, so it stands
+/// in `Package.resolved` and this declaration adds no checkout.
 private let tracingPackage = "swift-distributed-tracing"
 
-/// The version floor of `tracingPackage`, matching Router and Extras.
-private let tracingVersionFloor: Version = "1.5.0"
+/// The version floor of `tracingPackage`. Version 1.6.0 is the first version
+/// that has `InstrumentationContext`, the new name of the deprecated
+/// `ServiceContext`. This floor is higher than the floor of Router and
+/// Extras (1.5.0).
+private let tracingVersionFloor: Version = "1.6.0"
 
 /// The logging API package: `Logging.Logger` and its metadata. Router
 /// already declares it from the same floor.

@@ -15,17 +15,17 @@ import Tracing
 /// ``ACPAgentTelemetry``, and the "No content" rule of that type applies.
 ///
 /// The span opens through ``ACPAgentTelemetry/tracer(explicit:)`` when the
-/// request starts. The work of the request runs in the `ServiceContext` of the
-/// span, so a span that Router opens for that work is a child of the request
-/// span.
+/// request starts. The work of the request runs in the
+/// `InstrumentationContext` of the span, so a span that Router opens for that
+/// work is a child of the request span.
 ///
 /// Trace context (design item 7): when the `_meta` of the request holds a
 /// valid W3C `traceparent`, the span of the request is a child of that remote
 /// span, and it keeps the `tracestate` of the client. Thus the trace of the
 /// client and the trace of the agent are one trace. When the `_meta` holds no
 /// `traceparent`, or a `traceparent` that is not valid, the span has the
-/// current `ServiceContext` as its parent, as before, and the request does
-/// not fail.
+/// current `InstrumentationContext` as its parent, as before, and the request
+/// does not fail.
 ///
 /// Hang detection (design item 8): a request that can wait for a long time
 /// also writes one "enter" log record when it starts. A tracing backend
@@ -88,7 +88,7 @@ enum RequestTracing {
         logger: Logger,
         _ body: nonisolated(nonsending) (any Span) async throws -> Output
     ) async throws -> Output {
-        try await ServiceContext.withValue(parentContext(meta: meta)) {
+        try await InstrumentationContext.withValue(parentContext(meta: meta)) {
             try await TracedCall.run(
                 spanName,
                 ofKind: .server,
@@ -119,7 +119,7 @@ enum RequestTracing {
     ///     of the client.
     ///   - logger: The logger of the "enter" record.
     /// - Returns: The open span. Its parent is the remote span that the
-    ///   `_meta` names, or else the current `ServiceContext`.
+    ///   `_meta` names, or else the current `InstrumentationContext`.
     static func startRequestSpan(
         _ spanName: String, method: String, sessionId: SessionId, meta: JSONValue?, logger: Logger
     ) -> any Span {
@@ -205,15 +205,15 @@ enum RequestTracing {
     /// The `TraceContextMeta` codec of FoundationModelsACP reads the
     /// `traceparent` and `tracestate` values of the `_meta`. The instrument
     /// of `InstrumentationSystem` then extracts them into the current
-    /// `ServiceContext`, so a span that starts in the result is a child of
-    /// the remote span of the client.
+    /// `InstrumentationContext`, so a span that starts in the result is a
+    /// child of the remote span of the client.
     ///
     /// - Parameter meta: The `_meta` of the request, or `nil`.
-    /// - Returns: The current `ServiceContext` with the remote span context of
-    ///   the client. When `meta` holds no valid `traceparent`, the current
-    ///   `ServiceContext` with no change.
-    private static func parentContext(meta: JSONValue?) -> ServiceContext {
-        var context = ServiceContext.current ?? .topLevel
+    /// - Returns: The current `InstrumentationContext` with the remote span
+    ///   context of the client. When `meta` holds no valid `traceparent`, the
+    ///   current `InstrumentationContext` with no change.
+    private static func parentContext(meta: JSONValue?) -> InstrumentationContext {
+        var context = InstrumentationContext.current ?? .topLevel
         if let traceContext = TraceContextMeta.extract(from: meta) {
             InstrumentationSystem.instrument.extract(traceContext, into: &context, using: TraceContextMetaExtractor())
         }
@@ -247,18 +247,18 @@ private struct TraceContextMetaExtractor: Extractor {
 extension AgentSideConnection {
     /// Registers `work` to run after the response of the current request,
     /// as `afterRespondingToCurrentRequest(_:)` does, and runs it in the
-    /// `ServiceContext` of the caller.
+    /// `InstrumentationContext` of the caller.
     ///
     /// The connection runs the deferred work after the handler returned, so
-    /// the task-local `ServiceContext` of the handler does not reach it. This
-    /// method keeps that context, thus a span that the work opens, such as a
-    /// Router submission span, is a child of the request span.
+    /// the task-local `InstrumentationContext` of the handler does not reach
+    /// it. This method keeps that context, thus a span that the work opens,
+    /// such as a Router submission span, is a child of the request span.
     ///
     /// - Parameter work: The deferred work.
-    func afterRespondingInCurrentServiceContext(_ work: @escaping @Sendable () async -> Void) {
-        let serviceContext = ServiceContext.current
+    func afterRespondingInCurrentInstrumentationContext(_ work: @escaping @Sendable () async -> Void) {
+        let instrumentationContext = InstrumentationContext.current
         afterRespondingToCurrentRequest {
-            await ServiceContext.withValue(serviceContext) {
+            await InstrumentationContext.withValue(instrumentationContext) {
                 await work()
             }
         }

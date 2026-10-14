@@ -697,7 +697,7 @@ extension RoutedACPAgent {
             ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
             sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.promptExecution))
         do {
-            let (response, owner) = try await ServiceContext.withValue(span.context) {
+            let (response, owner) = try await InstrumentationContext.withValue(span.context) {
                 try await acceptPrompt(params)
             }
             endTelemetryAfterPrompt(span: span, measurement: measurement, owner: owner)
@@ -846,7 +846,7 @@ extension RoutedACPAgent {
             contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb))
         // The prompt span context goes with the work, so each Router
         // submission span of the prompt is a child of the prompt span.
-        connection.afterRespondingInCurrentServiceContext {
+        connection.afterRespondingInCurrentInstrumentationContext {
             await execution.run(mailId: mailId, session: session, projector: projector) { _ in
                 await self.promptFinished(owner, sessionId: sessionId)
             }
