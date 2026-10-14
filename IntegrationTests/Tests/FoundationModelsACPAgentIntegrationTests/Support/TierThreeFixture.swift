@@ -79,11 +79,11 @@ enum TierThreeFixture {
     /// The value of ``stubModelVariable`` that selects the stub model.
     static let stubModelEnabledValue = "1"
 
-    /// The environment variable that paces the stub model: the pause, in
-    /// milliseconds, between two chunks of the echoed prompt. It is what
-    /// holds a prompt open long enough for a signal to land inside it
-    /// (cli-plan.md §5.9).
-    static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
+    /// The environment variable that gates the stub model: the path of a
+    /// named pipe that the stub reads one byte from before each chunk of
+    /// the echoed prompt. It is what holds a prompt open until a signal
+    /// landed inside it (cli-plan.md §5.9), with no clock.
+    static let stubChunkGateVariable = "ACP_AGENT_STUB_CHUNK_GATE"
 
     /// The environment pairs that select the deterministic stub model.
     ///
@@ -91,17 +91,20 @@ enum TierThreeFixture {
     /// pair reaches an agent standing two process boundaries away.
     static let stubModelEnvironment = [stubModelVariable: stubModelEnabledValue]
 
-    /// The environment pairs that select the stub model and pace it, so a
-    /// prompt stays open long enough for this process to read what a live run
-    /// carries.
+    /// Makes the named pipe of a chunk gate in a fresh directory, and the
+    /// environment pairs that select the stub model and gate it. The run
+    /// (``SignalledExecutableRun``) holds the write end, so a prompt stays
+    /// open until this process read what a live run carries, or sent its
+    /// signal.
     ///
-    /// - Parameter chunkDelayMilliseconds: The pause between two chunks of
-    ///   the echoed prompt.
-    /// - Returns: The pairs to give a spawned run.
-    static func pacedStubModelEnvironment(chunkDelayMilliseconds: Int) -> [String: String] {
-        stubModelEnvironment.merging(
-            [stubChunkDelayVariable: String(chunkDelayMilliseconds)]
-        ) { _, paced in paced }
+    /// - Parameter label: The directory label, so a leftover directory says
+    ///   where it came from.
+    /// - Returns: The pipe, and the pairs to give a spawned run.
+    /// - Throws: The `mkfifo` error.
+    static func gatedStubModel(label: String) throws -> (gate: URL, environment: [String: String]) {
+        let gate = makeResolvedDirectory(label: "\(label)-gate").appendingPathComponent("chunks")
+        try StubChunkGateWriter.makePipe(at: gate)
+        return (gate, stubModelEnvironment.merging([stubChunkGateVariable: gate.path]) { _, gated in gated })
     }
 
     /// The user-layer `config.yaml` the spawned agent resolves its

@@ -380,7 +380,17 @@ struct CompactionReportTests {
     func manualCompactSendsInProgressThenCompletedWithTheSummary() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-manual")
         try await Self.runPrompt("/compact", on: fixture, count: 1)
-        let updates = try await Self.waitForTerminalEntry(of: fixture)
+        // The reporter sends the `usage_update` after the completed entry, so
+        // the wait is for that update, and not only for the entry.
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the usage update after the completed compaction entry"
+        ) { updates in
+            let sent = updates.map(\.update)
+            guard let completed = sent.lastIndex(where: { !Self.compactionUpdates(in: [$0]).isEmpty }),
+                Self.compactionUpdates(in: [sent[completed]]).first?.status != .inProgress
+            else { return false }
+            return sent.dropFirst(completed + 1).contains { usageReport(of: $0) != nil }
+        }.map(\.update)
 
         let compactions = Self.compactionUpdates(in: updates)
         #expect(compactions.map(\.status) == [.inProgress, .completed])

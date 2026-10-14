@@ -195,6 +195,21 @@ struct ProgressReporter: Sendable {
     /// The pause between two reads of the progress object.
     var pollInterval = ProgressReporter.defaultPollInterval
 
+    /// One step of a report that a test can observe.
+    enum Step: Equatable, Sendable {
+        /// The work ended, the poll is cancelled, and the report waits for
+        /// the poll to end.
+        case waitingForPoll
+
+        /// The poll drew one line.
+        case drew
+    }
+
+    /// Gets each step of each report, in order, or `nil` to observe
+    /// nothing. Only a test sets it, to prove that the last draw of the
+    /// poll comes before the report returns.
+    var observer: (@Sendable (Step) -> Void)? = nil
+
     // MARK: - Drawing
 
     /// Runs `work`, and draws `progress` beside a bar while it runs.
@@ -220,11 +235,26 @@ struct ProgressReporter: Sendable {
         while work: @escaping @Sendable () async throws -> Value
     ) async throws -> Value {
         let interval = pollInterval
+        let observe = observer ?? { _ in }
         return try await renderer.progressBar(message: Self.startMessage) { report in
             try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask { await Self.poll(progress, every: interval, into: report) }
-                defer { group.cancelAll() }
-                return try await work()
+                group.addTask {
+                    await Self.poll(progress, every: interval) { label, fraction, bytes in
+                        report(label, fraction, bytes)
+                        observe(.drew)
+                    }
+                }
+                let value: Value
+                do {
+                    value = try await work()
+                } catch {
+                    group.cancelAll()
+                    throw error
+                }
+                group.cancelAll()
+                observe(.waitingForPoll)
+                try await group.waitForAll()
+                return value
             }
         }
     }

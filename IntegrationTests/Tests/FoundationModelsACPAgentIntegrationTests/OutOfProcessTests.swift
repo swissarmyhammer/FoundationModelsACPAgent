@@ -75,12 +75,7 @@ struct OutOfProcessTests {
 
     /// The text of the cases that must hold a prompt open. The stub model
     /// echoes it word by word, so eight words are eight chunks.
-    private static let pacedPromptText = "one two three four five six seven eight"
-
-    /// The pause between two chunks, in milliseconds. Eight chunks at this
-    /// pause make a prompt of about one and a half seconds, which is long
-    /// enough to read the live process table inside it.
-    private static let chunkDelayMilliseconds = 180
+    private static let gatedPromptText = "one two three four five six seven eight"
 
     /// How many agents one `--out-of-process` run starts: one.
     private static let expectedChildCount = 1
@@ -113,9 +108,10 @@ struct OutOfProcessTests {
             environment: TierThreeFixture.stubModelEnvironment)
     }
 
-    /// Runs the built `acp-agent` over the paced stub model, records the
+    /// Runs the built `acp-agent` over the gated stub model, records the
     /// agents the run has started once its first answer bytes arrive, and
-    /// sends `signalCount` interrupts.
+    /// sends `signalCount` interrupts. The gate holds the prompt after its
+    /// first chunk, so the live process table is read inside the prompt.
     ///
     /// - Parameters:
     ///   - label: The directory label.
@@ -124,20 +120,21 @@ struct OutOfProcessTests {
     ///   - observed: Where the reading of the live run goes.
     /// - Returns: The finished run.
     /// - Throws: The wait, locator or spawn error.
-    private static func runPacedAgentCLI(
+    private static func runGatedAgentCLI(
         label: String, signalCount: Int, observed: ObservedAgents
     ) async throws -> SignalledExecutableRun {
-        try await SignalledExecutableRun.run(
+        let gated = try TierThreeFixture.gatedStubModel(label: label)
+        return try await SignalledExecutableRun.run(
             executableNamed: TierThreeFixture.agentExecutableName,
-            arguments: [runSubcommand, outOfProcessFlag, pacedPromptText],
+            arguments: [runSubcommand, outOfProcessFlag, gatedPromptText],
             workspace: makeResolvedDirectory(label: "\(label)-repo"),
             configHome: makeResolvedDirectory(label: "\(label)-config"),
-            environment: TierThreeFixture.pacedStubModelEnvironment(
-                chunkDelayMilliseconds: chunkDelayMilliseconds),
+            environment: gated.environment,
             atFirstOutput: { runIdentifier in
                 observed.record(try ProcessCensus.agentsServingACP(startedBy: runIdentifier))
             },
-            signalCount: signalCount)
+            signalCount: signalCount,
+            chunkGate: gated.gate)
     }
 
     // MARK: - The contract
@@ -178,7 +175,7 @@ struct OutOfProcessTests {
     @Test
     func noProcessOfTheChildsGroupOutlivesTheRun() async throws {
         let observed = ObservedAgents()
-        let completed = try await Self.runPacedAgentCLI(
+        let completed = try await Self.runGatedAgentCLI(
             label: "OutOfProcess-success", signalCount: 0, observed: observed)
         #expect(completed.exitCode == Self.endTurnExitCode, "stderr: \(completed.standardError)")
         #expect(
@@ -206,7 +203,7 @@ struct OutOfProcessTests {
 
         // The interrupted row. The first `Ctrl-C` sends `session/cancel` over
         // the real pipe, and the run ends itself with exit 4 (§5.9).
-        let interrupted = try await Self.runPacedAgentCLI(
+        let interrupted = try await Self.runGatedAgentCLI(
             label: "OutOfProcess-interrupt", signalCount: 1, observed: ObservedAgents())
         #expect(
             interrupted.exitCode == Self.cancelledExitCode,

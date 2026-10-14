@@ -16,8 +16,8 @@ import Testing
 // `swift test --package-path IntegrationTests` runs it.
 //
 // `ACP_AGENT_STUB_MODEL=1` makes the child deterministic and needs no
-// weights, and `ACP_AGENT_STUB_CHUNK_DELAY_MS` holds its prompt open long
-// enough for the signal to land inside it.
+// weights, and `ACP_AGENT_STUB_CHUNK_GATE` holds its prompt open until the
+// signal landed inside it, with no clock.
 
 /// The `SIGINT` contract of a running `acp-agent run`.
 struct InterruptTests {
@@ -34,15 +34,12 @@ struct InterruptTests {
     /// with room for a signal in the middle of it.
     private static let prompt = "one two three four five six seven eight"
 
-    /// The pause between two chunks, in milliseconds. Eight chunks at
-    /// this pause make a prompt of about one and a half seconds.
-    private static let chunkDelayMilliseconds = 180
-
     // MARK: - The subprocess driver
 
-    /// Runs `acp-agent run <prompt>` over the paced stub model, and
+    /// Runs `acp-agent run <prompt>` over the gated stub model, and
     /// sends `signalCount` interrupts once its first answer bytes
-    /// arrive.
+    /// arrive. The gate holds the prompt after its first chunk, so each
+    /// signal lands inside the prompt.
     ///
     /// - Parameters:
     ///   - signalCount: How many `SIGINT`s to send. Zero runs the prompt
@@ -55,16 +52,15 @@ struct InterruptTests {
     private static func runAgentCLI(
         signalCount: Int, label: String
     ) async throws -> SignalledExecutableRun {
-        try await SignalledExecutableRun.run(
+        let gated = try TierThreeFixture.gatedStubModel(label: label)
+        return try await SignalledExecutableRun.run(
             executableNamed: TierThreeFixture.agentExecutableName,
             arguments: ["run", Self.prompt],
             workspace: makeResolvedDirectory(label: "\(label)-repo"),
             configHome: makeResolvedDirectory(label: "\(label)-config"),
-            environment: [
-                TierThreeFixture.stubModelVariable: TierThreeFixture.stubModelEnabledValue,
-                TierThreeFixture.stubChunkDelayVariable: String(Self.chunkDelayMilliseconds),
-            ],
-            signalCount: signalCount)
+            environment: gated.environment,
+            signalCount: signalCount,
+            chunkGate: gated.gate)
     }
 
     // MARK: - The contract

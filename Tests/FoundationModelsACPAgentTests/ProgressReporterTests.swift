@@ -155,20 +155,34 @@ import Testing
 
     // MARK: - Every draw ends before the report returns
 
+    /// One step of the late-read test, in the order it came.
+    enum ReportStep: Equatable, Sendable {
+        /// A step that the reporter gave to its observer.
+        case reporter(acp_agent.ProgressReporter.Step)
+
+        /// `report(on:)` returned to the test.
+        case returned
+    }
+
     /// The last draw of the poll lands before `report(on:)` returns.
     ///
     /// The one read of ``LateReadProgress`` tells the work to return, and
-    /// then holds the main thread until the work signals its end. The work
-    /// thus ends while that read is still open, in a fixed order with no
-    /// clock. A reporter that does not wait for its
-    /// poll returns first and draws later: at the same time as the
-    /// completion line of the bar, and into a destination that the caller
-    /// can already have closed. A draw into a pipe with no read end raises
-    /// `SIGPIPE`, which ends the whole test process.
+    /// then holds the main thread until a release. The test releases it at
+    /// one of two events, whichever comes first: the reporter waits for its
+    /// poll (``ProgressReporter/Step/waitingForPoll``), or `report(on:)`
+    /// returned. A reporter that waits for its poll thus draws, and then
+    /// returns. A reporter that does not wait returns while the read is still
+    /// held, and draws only after its return. The test checks the order of
+    /// the steps, so such a reporter fails each time, with no clock. Such a
+    /// late draw goes at the same time as the completion line of the bar,
+    /// and into a destination that the caller can already have closed. A
+    /// draw into a pipe with no read end raises `SIGPIPE`, which ends the
+    /// whole test process.
     @Test func theLastDrawLandsBeforeTheReportReturns() async throws {
         let capture = TerminalCapture()
         let (readStarts, readStarted) = AsyncStream<Void>.makeStream()
-        let workEnded = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let steps = WatchedValue<[ReportStep]>([])
         let progress = await LateReadProgress(
             snapshot: ResolutionSnapshot(
                 label: Self.lateLabel,
@@ -176,17 +190,30 @@ import Testing
                 bytes: TerminalRenderer.ByteProgress(
                     completed: Self.totalBytes, total: Self.totalBytes),
                 isFinished: true),
-            workEnded: workEnded,
+            release: release,
             readStarted: readStarted)
-        let reporter = ProgressReporter(
+        var reporter = ProgressReporter(
             renderer: TerminalRenderer(destination: capture.destination, isTerminal: true),
             pollInterval: Self.pollInterval)
+        reporter.observer = { step in
+            steps.update { $0.append(.reporter(step)) }
+            if step == .waitingForPoll {
+                release.signal()
+            }
+        }
 
         try await reporter.report(on: progress) {
             for await _ in readStarts { break }
-            workEnded.signal()
         }
+        steps.update { $0.append(.returned) }
+        // A reporter that did not wait for its poll gets its read back only
+        // now, after its return.
+        release.signal()
 
+        let order = steps.value
+        let drawn = try #require(order.firstIndex(of: .reporter(.drew)), "no draw before the return: \(order)")
+        let returned = try #require(order.firstIndex(of: .returned))
+        #expect(drawn < returned)
         #expect(capture.text().contains(Self.lateLabel))
     }
 
@@ -314,18 +341,17 @@ import Testing
 /// A stand-in for Router's `ResolutionProgress` whose read is slow.
 ///
 /// Each read first tells ``readStarted`` that it began. It then holds the
-/// main thread until the work signals ``workEnded``, and only then gives
-/// back its snapshot. A test whose work returns on that signal thus has a
-/// read that is still open when the work ends, and the draw of that read
-/// comes after the end of the work. The work runs off the main actor, so
-/// the hold cannot block it.
+/// main thread until the test signals ``release``, and only then gives back
+/// its snapshot. A test whose work returns on the first signal thus has a
+/// read that is still open when the work ends. The work runs off the main
+/// actor, so the hold cannot block it.
 @MainActor final class LateReadProgress: ResolutionProgressReading {
     /// The snapshot each read gives back.
     private let snapshot: ResolutionSnapshot
 
-    /// The signal of the end of the work. Each read holds the main thread
-    /// until it comes.
-    private let workEnded: DispatchSemaphore
+    /// The release of the held read. Each read holds the main thread until
+    /// it comes.
+    private let release: DispatchSemaphore
 
     /// The signal each read sends when it begins.
     private let readStarted: AsyncStream<Void>.Continuation
@@ -334,21 +360,21 @@ import Testing
     ///
     /// - Parameters:
     ///   - snapshot: The snapshot each read gives back.
-    ///   - workEnded: The signal of the end of the work.
+    ///   - release: The release of the held read.
     ///   - readStarted: The signal each read sends when it begins.
     init(
         snapshot: ResolutionSnapshot,
-        workEnded: DispatchSemaphore,
+        release: DispatchSemaphore,
         readStarted: AsyncStream<Void>.Continuation
     ) {
         self.snapshot = snapshot
-        self.workEnded = workEnded
+        self.release = release
         self.readStarted = readStarted
     }
 
     var resolutionSnapshot: ResolutionSnapshot {
         readStarted.yield()
-        workEnded.wait()
+        release.wait()
         return snapshot
     }
 }

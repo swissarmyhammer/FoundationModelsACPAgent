@@ -171,11 +171,12 @@ struct SessionLifecycleTests {
             CloseSessionRequest(sessionId: fixture.sessionId))
 
         for pid in serverProcesses {
-            await ProcessExitWatch.waitForExit(of: pid) {
-                (try? Self.serverProcessIDs(matching: serverPath).contains(pid)) == false
-            }
+            await ProcessExitWatch.waitForExit(of: pid) { ProcessExitWatch.hasExited(pid) }
         }
-        #expect(try Self.serverProcessIDs(matching: serverPath).isEmpty)
+        // No server process runs any more. `pgrep` can still list a server
+        // that exited and that its parent did not reap yet, a zombie, so the
+        // check reads the state of each listed process.
+        #expect(try Self.serverProcessIDs(matching: serverPath).allSatisfy(ProcessExitWatch.hasExited))
         await fixture.close()
     }
 

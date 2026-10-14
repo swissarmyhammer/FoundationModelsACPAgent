@@ -36,20 +36,21 @@ enum AgentComposition {
     /// other value, and an absent variable, select the live loader.
     static let stubModelEnabledValue = "1"
 
-    /// The environment variable that paces the stub model: the pause, in
-    /// milliseconds, between two chunks of the echoed prompt.
+    /// The environment variable that gates the stub model: the path of a
+    /// named pipe that the stub reads one byte from before each chunk of
+    /// the echoed prompt.
     ///
     /// It exists for one reason. ``stubModelVariable`` gives a spawned
     /// binary a deterministic model, but that model answers in one chunk
     /// and in microseconds, so a prompt is over before a signal can reach
     /// it. The interrupt of cli-plan.md §5.9 is a claim about a prompt
     /// that is still running, and this is what holds one open across a
-    /// process boundary.
+    /// process boundary. The test lets each chunk go, so a signal always
+    /// lands before the chunks end, with no clock.
     ///
-    /// It is read only on the stub path. An absent value, a value that
-    /// is not a number, and a value that is not positive all pace
+    /// It is read only on the stub path. An absent or empty value gates
     /// nothing, and the library's one-chunk echo answers as before.
-    static let stubChunkDelayVariable = "ACP_AGENT_STUB_CHUNK_DELAY_MS"
+    static let stubChunkGateVariable = "ACP_AGENT_STUB_CHUNK_GATE"
 
     /// The version the CLI reports. One binary and one version: `--version`
     /// prints this, and `initialize` reports the same value as the build
@@ -82,26 +83,24 @@ enum AgentComposition {
         environment[stubModelVariable] == stubModelEnabledValue ? .stub : .live
     }
 
-    /// Reads ``stubChunkDelayVariable`` out of `environment`.
+    /// Reads ``stubChunkGateVariable`` out of `environment`.
     ///
     /// - Parameter environment: The environment to read.
-    /// - Returns: The pause between two chunks of a stub answer, or
-    ///   `nil` when the variable is absent, unreadable, or not positive.
-    static func stubChunkDelay(environment: [String: String]) -> Swift.Duration? {
-        guard let raw = environment[stubChunkDelayVariable],
-            let milliseconds = Int(raw), milliseconds > 0
-        else {
+    /// - Returns: The path of the named pipe of a stub answer, or `nil`
+    ///   when the variable is absent or empty.
+    static func stubChunkGate(environment: [String: String]) -> String? {
+        guard let path = environment[stubChunkGateVariable], !path.isEmpty else {
             return nil
         }
-        return .milliseconds(milliseconds)
+        return path
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkDelay:transcriptLocation:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
     /// The CLI adds its own choices only: ``dotfolderName``, and the model
-    /// path and the stub pacing that `environment` selects. The library
+    /// path and the stub gate that `environment` selects. The library
     /// does the composition, so the CLI holds no copy of it.
     ///
     /// - Parameters:
@@ -109,7 +108,7 @@ enum AgentComposition {
     ///     start-up configuration loads from.
     ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
     ///     from, and ``modelSource(environment:)`` and
-    ///     ``stubChunkDelay(environment:)`` read the model switch from.
+    ///     ``stubChunkGate(environment:)`` read the model switch from.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws the
     ///     download bar of cli-plan.md §5.7 makes the object first, hands
@@ -129,7 +128,7 @@ enum AgentComposition {
             workingDirectory: workingDirectory,
             environment: environment,
             modelSource: modelSource(environment: environment),
-            stubChunkDelay: stubChunkDelay(environment: environment),
+            stubChunkGate: stubChunkGate(environment: environment),
             reporting: progress)
     }
 

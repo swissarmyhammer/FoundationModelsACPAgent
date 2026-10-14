@@ -8,7 +8,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkDelay:transcriptLocation:reporting:)``
+/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -100,9 +100,10 @@ public struct ComposedAgent: Sendable {
     ///     from. The process environment by default.
     ///   - modelSource: The model path to build the router over.
     ///     ``ModelSource/live`` by default.
-    ///   - stubChunkDelay: The pause a stub answer puts between two
-    ///     chunks, or `nil` (the default) for the one-chunk echo. Only
-    ///     ``ModelSource/stub`` reads it.
+    ///   - stubChunkGate: The path of a named pipe that a stub answer reads
+    ///     one byte from before each chunk, or `nil` (the default) for the
+    ///     one-chunk echo. Only ``ModelSource/stub`` reads it. A test holds
+    ///     a prompt open with it, with no clock.
     ///   - transcriptLocation: The transcript location that wins over the
     ///     `transcripts.location` of every config layer, or `nil` (the
     ///     default) to let the config files decide. A host that runs the
@@ -129,7 +130,7 @@ public struct ComposedAgent: Sendable {
         workingDirectory: URL,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         modelSource: ModelSource = .live,
-        stubChunkDelay: Swift.Duration? = nil,
+        stubChunkGate: String? = nil,
         transcriptLocation: TranscriptLocation? = nil,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
@@ -141,7 +142,7 @@ public struct ComposedAgent: Sendable {
             name: name,
             router: try makeRouter(
                 for: modelSource,
-                pacedBy: stubChunkDelay,
+                gatedBy: stubChunkGate,
                 recordingInto: try makeRecordingsDirectory()),
             configuration: configuration,
             reporting: progress,
@@ -214,9 +215,9 @@ public struct ComposedAgent: Sendable {
     ///
     /// - Parameters:
     ///   - modelSource: The model path to build the router over.
-    ///   - chunkDelay: The pause a stub answer puts between two chunks,
-    ///     or `nil` for the library's one-chunk echo. The live path
-    ///     ignores it.
+    ///   - chunkGate: The path of the named pipe of a stub answer, or
+    ///     `nil` for the library's one-chunk echo. The live path ignores
+    ///     it.
     ///   - recordingsDirectory: The router's own recordings root — see
     ///     ``makeRecordingsDirectory()``.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
@@ -225,7 +226,7 @@ public struct ComposedAgent: Sendable {
     /// - Throws: The directory-creation error of the stub cache.
     private static func makeRouter(
         for modelSource: ModelSource,
-        pacedBy chunkDelay: Swift.Duration?,
+        gatedBy chunkGate: String?,
         recordingInto recordingsDirectory: URL
     ) throws -> Router {
         switch modelSource {
@@ -235,20 +236,22 @@ public struct ComposedAgent: Sendable {
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
                 recordingsDirectory: recordingsDirectory,
-                loader: makeStubLoader(pacedBy: chunkDelay))
+                loader: makeStubLoader(gatedBy: chunkGate))
         }
     }
 
     /// Makes the loader of the stub path.
     ///
-    /// - Parameter chunkDelay: The pause between two chunks, or `nil`.
-    /// - Returns: The library's own stub loader when `chunkDelay` is
-    ///   `nil`, and one over ``PacedEchoLLMContainer`` otherwise.
-    private static func makeStubLoader(pacedBy chunkDelay: Swift.Duration?) -> StubModelLoader {
-        guard let chunkDelay else {
+    /// - Parameter chunkGate: The path of the named pipe, or `nil`.
+    /// - Returns: The library's own stub loader when `chunkGate` is
+    ///   `nil`, and one over ``GatedEchoLLMContainer`` otherwise. Each
+    ///   container of the loader shares one ``StubChunkGate``.
+    private static func makeStubLoader(gatedBy chunkGate: String?) -> StubModelLoader {
+        guard let chunkGate else {
             return StubModelLoader()
         }
-        return StubModelLoader { _ in PacedEchoLLMContainer(pause: chunkDelay) }
+        let gate = StubChunkGate(path: chunkGate)
+        return StubModelLoader { _ in GatedEchoLLMContainer(gate: gate) }
     }
 
     /// Makes a fresh throwaway directory for a stub router's cache — see

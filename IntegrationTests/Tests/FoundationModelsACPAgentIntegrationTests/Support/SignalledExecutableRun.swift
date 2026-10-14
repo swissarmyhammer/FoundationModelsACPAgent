@@ -91,6 +91,13 @@ struct SignalledExecutableRun {
     ///     signal of `Ctrl-C`; a `SIGTERM` case gives `SIGTERM`.
     ///   - signalCount: How many signals to send, back to back, so each one
     ///     reaches a child that ends on the first one.
+    ///   - chunkGate: The named pipe of the chunk gate of the stub model
+    ///     (`ACP_AGENT_STUB_CHUNK_GATE`), or `nil` (the default) for a child
+    ///     with no gate. With a gate, the run lets only the first chunk go.
+    ///     After `atFirstOutput`, a run with no signal lets each later chunk
+    ///     go. A run with signals sends them while the prompt is held, so
+    ///     each signal lands before the chunks end, and it lets the chunks
+    ///     go only after the child ended.
     /// - Returns: The finished run.
     /// - Throws: The locator or spawn error, or what `atFirstOutput` throws.
     static func run(
@@ -102,7 +109,8 @@ struct SignalledExecutableRun {
         environment: [String: String],
         atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in },
         signalNumber: Int32 = SIGINT,
-        signalCount: Int
+        signalCount: Int,
+        chunkGate: URL? = nil
     ) async throws -> SignalledExecutableRun {
         let child = try PipedChildProcess(
             executableNamed: executableName,
@@ -125,10 +133,19 @@ struct SignalledExecutableRun {
             _ = await (output, error)
         }
 
+        var gate: StubChunkGateWriter?
+        if let chunkGate {
+            gate = try await StubChunkGateWriter.open(at: chunkGate)
+            try gate?.releaseOneChunk()
+        }
         _ = try await store.output.wait(for: "the first stdout byte of the child") { !$0.isEmpty }
         // The child has answered and has not been signalled, so this is the
-        // one moment a caller can read what a live run carries.
+        // one moment a caller can read what a live run carries. The gate
+        // holds the prompt open here.
         try await atFirstOutput(process.processIdentifier)
+        if signalCount == 0 {
+            try gate?.releaseAllChunks()
+        }
         var signalsSent = 0
         for _ in 0..<signalCount {
             // A child that already ended has given its pid back, and the
@@ -144,6 +161,9 @@ struct SignalledExecutableRun {
         let lastSignal = clock.now
         try await exit.wait()
         let exitWait = clock.now - lastSignal
+        if signalCount > 0 {
+            try gate?.releaseAllChunks()
+        }
 
         await draining.value
         return SignalledExecutableRun(
