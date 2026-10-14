@@ -547,7 +547,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let agents = try #require(surface.agents)
         let run = try await agents.runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
         let observer = try #require(agents.environment.runEventObserver)
-        surface.runCallJoins.openPrompt()
+        surface.runCallJoins.openProjection()
 
         observer(run, SessionOutput(origin: .system, event: Self.agentToolRunOpenRecord))
 

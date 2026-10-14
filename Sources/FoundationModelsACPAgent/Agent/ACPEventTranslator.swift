@@ -14,8 +14,8 @@ typealias ShellSnapshotProvider = @Sendable (_ commandID: String) -> ShellOutput
 
 /// One file change, in this package's own vocabulary.
 ///
-/// The projection owns this mirror of Multitool's `FileChange`, which
-/// `EventProjection.projectedChange(for:)` maps into. A move and a copy
+/// The translator owns this mirror of Multitool's `FileChange`, which
+/// `ACPEventTranslator.projectedChange(for:)` maps into. A move and a copy
 /// carry both endpoints, which is what makes the path-direction
 /// mapping total: ACP's `path` is post-operation, so the source becomes
 /// `oldPath` and the destination becomes `path` for those two kinds
@@ -40,13 +40,13 @@ enum ProjectedFileChange: Equatable, Sendable {
 
 /// The one mapping from Router's event stream to the wire.
 ///
-/// One value projects one prompt: `project(_:)` maps each
-/// `SessionEvent` case, and `reportUsage()` closes the prompt with its
-/// one summed `usage_update`. The live shell bytes have no
-/// `SessionEvent` source, so their mapping rides ``TerminalStream``
-/// over the host-owned `ShellOutputChunkStream`; this
-/// projection's settlement carries the matching `Terminal` reference.
-struct EventProjection {
+/// One value translates the events of one session for the life of the
+/// session (``SessionProjector``): `project(_:)` maps each `SessionEvent`
+/// case. The live shell bytes have no `SessionEvent` source, so their
+/// mapping rides ``TerminalStream`` over the host-owned
+/// `ShellOutputChunkStream`; this translator's settlement carries the
+/// matching `Terminal` reference.
+struct ACPEventTranslator {
     // MARK: - The wire constants
 
     /// The extensible status a `.lost` outcome reports.
@@ -56,7 +56,7 @@ struct EventProjection {
 
     /// The extensible status a terminal event with no outcome reports.
     /// The outcome rule is a doc comment upstream, not a type
-    /// guarantee, so the projection survives the gap: it logs the event
+    /// guarantee, so the translator survives the gap: it logs the event
     /// and picks a safe status, and it does not crash.
     static let unknownOutcomeStatusWireValue = "_unknown"
 
@@ -82,21 +82,21 @@ struct EventProjection {
     /// The text of a terminal event that carries no outcome.
     private static let missingOutcomeNoteText = "the run ended with no recorded outcome"
 
-    // MARK: - The prompt's wiring
+    // MARK: - The wiring
 
-    /// The id of the session this projection reports for, in the logs.
+    /// The id of the session this translator reports for, in the logs.
     let sessionId: SessionId
 
-    /// The prompt-state owner: `submissionStarted` maps through it.
-    let promptState: PromptStateOwner
-
-    /// The sink every update of this projection goes to.
-    let send: SessionUpdateSink
+    /// The sink every update of this translator goes to. The
+    /// ``SessionProjector`` sets the record of the tool calls of an open
+    /// prompt in front of the history sink.
+    var send: SessionUpdateSink
 
     /// The model reference the session generates with. The log line of a
     /// wait for a place in the model queue names it, so a person who reads
-    /// the log learns which model was busy.
-    let modelName: String
+    /// the log learns which model was busy. A model slot switch changes it
+    /// at the next prompt.
+    var modelName: String
 
     /// The reader of a settled run's stored output, for the convergence
     /// replace: the settlement carries the complete content, so a client
@@ -104,16 +104,17 @@ struct EventProjection {
     var shellSnapshot: ShellSnapshotProvider = { _ in nil }
 
     /// The handler of a live elicitation request, or `nil`
-    /// when no relay is wired — a synthetic projection drive. The
-    /// production wiring supplies ``ElicitationRelay/relay(_:on:promptState:)``
-    /// bound to the prompt's session and owner.
+    /// when no relay is wired — a synthetic translation. The
+    /// ``SessionProjector`` supplies a handler that starts the round trip of
+    /// the ``ElicitationRelay`` in its own task, so the translation does not
+    /// wait for the user (elicitation-plan task 5).
     var relayElicitation: ElicitationEventHandler?
 
     /// The SDK tool-call id of each run that Router joined, keyed by the
     /// completion token of the run (tasks ^e1yq4gh and ^9xk3xf4). The session
     /// owns the table, and its ``TerminalStream`` reads the same table, so the
     /// `Terminal` announce of a shell run goes on the same wire id as the run
-    /// updates of this projection.
+    /// updates of this translator.
     ///
     /// Router sends the joined id on the `toolInvocation(record, toolCallID:)`
     /// event of the open record, before each other event of the run. The
@@ -128,12 +129,18 @@ struct EventProjection {
     /// the same tool name, because the record does not hold the arguments.
     /// When one round calls one tool two times and the SDK runs the two calls
     /// at the same time, each run can get the id of the other call. The
-    /// projection cannot see this, so it sends each run on the id that Router
+    /// translator cannot see this, so it sends each run on the id that Router
     /// gave. The client still sees one tool call for each run, but the content
     /// of a run can show on the call that holds the arguments of the other run.
     let runCallJoins: RunCallJoinTable
 
-    // MARK: - The prompt's mutable state
+    // MARK: - The mutable state
+
+    /// The counts of the prompt that the event in translation belongs to.
+    /// The ``SessionProjector`` sets it before each event and reads it after:
+    /// the tally of the open prompt for an event of that prompt, and a
+    /// scratch tally for each other event.
+    var tally = PromptTally()
 
     /// The one agent message id of the current message, made at the
     /// first text delta (a new id starts a new message).
@@ -141,67 +148,6 @@ struct EventProjection {
 
     /// The one agent thought id of the current reasoning message.
     private var thoughtMessageId: MessageId?
-
-    /// The prompt tokens summed across every `submissionEnded`. A
-    /// tool loop feeds the whole render again at each generation call, so
-    /// this sum is not the size of the context.
-    private var tokensIn = 0
-
-    /// The completion tokens summed across every `submissionEnded`.
-    private var tokensOut = 0
-
-    /// The fill of the last generation call, the peak fill and the context
-    /// window, from the `generationCall` reports of the prompt (task
-    /// ^1x5ksdv).
-    private var contextUsage = PromptContextUsage()
-
-    /// The finish reason of the last submission of the prompt, or `nil`
-    /// before the first `submissionEnded`.
-    ///
-    /// `PromptExecution.drive` reads it to report the honest stop reason of
-    /// a prompt whose last submission did not end by itself (tasks ^bw9qt1z,
-    /// ^k51h6bb and ^7fsfw7y): the text, the reasoning or the tool call of
-    /// that generation is cut, so the prompt must not read as a normal
-    /// `end_turn`.
-    private(set) var lastFinishReason: FinishReason?
-
-    /// The numbers behind a stop reason, as log metadata, for the record of a
-    /// prompt that ended cut or empty.
-    ///
-    /// A `_truncated`, `_ended_in_reasoning`, `_repeated` or
-    /// `_reasoning_limit` prompt says how the last submission stopped, and
-    /// nothing more. The reader then cannot
-    /// tell a model that reasoned too long in one round from a context that
-    /// filled up. These numbers name the difference: the tokens that all the
-    /// generation calls of the prompt fed and generated, summed, and from the
-    /// call reports, the fill of the last call, the peak fill and the context
-    /// window (``PromptContextUsage/metadata``).
-    var usageMetadata: Logger.Metadata {
-        var metadata: Logger.Metadata = [
-            ACPAgentTelemetry.LogMetadataKey.tokensIn: "\(tokensIn)",
-            ACPAgentTelemetry.LogMetadataKey.tokensOut: "\(tokensOut)",
-        ]
-        metadata.merge(contextUsage.metadata) { current, _ in current }
-        return metadata
-    }
-
-    /// The number of generate calls of the prompt that Router stopped: the
-    /// repetition stops and the reasoning stops (task ^dcmsxpw).
-    private var routerStopCount = 0
-
-    /// The number of Router stops of the prompt that a recovery followed.
-    private var routerRecoveryCount = 0
-
-    /// The report of the last reasoning stop of the prompt, or `nil` when
-    /// Router stopped no pass for its reasoning.
-    private var lastReasoningStop: ReasoningStop?
-
-    /// The paths of the files that a `FileChangeSet` of the prompt recorded.
-    ///
-    /// Only a mutating files verb attaches a change set. A shell command that
-    /// writes a file records no change, thus this set does not hold that
-    /// file.
-    private var changedFilePaths: Set<String> = []
 
     /// The wire ids of the tool calls that have a title on the client (task
     /// ^w7hzpmq).
@@ -230,75 +176,14 @@ struct EventProjection {
     /// statuses.
     private var settledToolCallIds: Set<String> = []
 
-    /// The number of distinct files that the files verbs of the prompt
-    /// changed.
-    var changedFileCount: Int { changedFilePaths.count }
-
-    /// The metadata of the record of a cut prompt (task ^dcmsxpw): the
-    /// ``usageMetadata``, the Router stops and the recoveries that ran, the
-    /// number of changed files, and the reasoning tokens and the limit of
-    /// the last reasoning stop.
-    ///
-    /// The Router writes its own stop records at the `notice` level, and a
-    /// run that logs at `warning` or above does not keep them. So this one
-    /// `error` record must name the cause by itself.
-    var cutMetadata: Logger.Metadata {
-        typealias Key = ACPAgentTelemetry.LogMetadataKey
-        var metadata = usageMetadata
-        metadata[Key.routerStops] = "\(routerStopCount)"
-        metadata[Key.routerRecoveries] = "\(routerRecoveryCount)"
-        metadata[Key.filesChanged] = "\(changedFileCount)"
-        if let stop = lastReasoningStop {
-            metadata[Key.reasoningTokens] = "\(stop.reasoningTokens)"
-            metadata[Key.reasoningLimit] = "\(stop.limit.map(String.init) ?? "none")"
-        }
-        return metadata
-    }
-
-    /// The context fill of the last submission: the context that the session
-    /// holds after it, over the window. `nan` means "no stamp": send no
-    /// meter for the prompt. A `NaN` never goes on the wire.
-    private var contextFill = Double.nan
-
-    /// Whether the prompt produced observable output: a text delta, a
-    /// reasoning delta, a tool call or status, an invocation record,
-    /// an attachment report, a display event of a tool, a relayed
-    /// elicitation, or a run settlement (task ^pez780d).
-    ///
-    /// The progress of a run does not count (task ^jwx92y8): a text progress
-    /// and a plan tell about a run, not about the generation of the model.
-    ///
-    /// `PromptExecution.drive` reads it beside a stall report as well: a
-    /// prompt that already produced something is not waiting on a model
-    /// that cannot generate (task ^s0bw5cv).
-    private(set) var sawOutput = false
-
-    /// Whether at least one `submissionEnded` usage report arrived
-    /// (task ^pez780d).
-    private var sawUsageReport = false
-
-    /// Whether an `answered` event sends its reply as one agent message
-    /// (task ^64pav2a). `PromptExecution.drive` sets it for the session
-    /// events that come after the caller answer. An answer that an injected
-    /// result starts gives its reply whole and streams no text delta, so the
-    /// reply is the only carrier of its text. The caller stream streams its
-    /// text, so its `answered` sends nothing.
-    var projectsWholeReplies = false
-
     /// Whether a text delta arrived since the last end of an answer. An
-    /// answer that streamed its text does not send its reply again.
+    /// answer that streamed its text does not send its reply again. An
+    /// answer that mail starts can give its reply whole and stream no text
+    /// delta, so its reply is then the only carrier of its text (task
+    /// ^64pav2a).
     private var streamedTextInAnswer = false
 
-    /// Whether the prompt generated nothing: no observable output, while
-    /// at least one `submissionEnded` arrived and the summed output tokens
-    /// are zero. `PromptExecution.drive` reads it to report the honest
-    /// `_no_output` stop reason instead of a bare `end_turn`
-    /// (the ACP `_` extension rule; task ^pez780d).
-    var generatedNothing: Bool {
-        !sawOutput && sawUsageReport && tokensOut == 0
-    }
-
-    /// The metadata of a record about one run of this prompt: the session id
+    /// The metadata of a record about one run: the session id
     /// and the completion token of the run, under the tool-call id key. The
     /// Router records of the run use the same token.
     ///
@@ -311,7 +196,7 @@ struct EventProjection {
         return metadata
     }
 
-    /// The metadata of a record about one Router event that the projection
+    /// The metadata of a record about one Router event that the translator
     /// does not send: the session id and the case of the event. The payload
     /// of the event is not in the record, because it can hold content.
     ///
@@ -323,18 +208,6 @@ struct EventProjection {
         return metadata
     }
 
-    /// Counts one generate call that Router stopped, and the recovery that
-    /// follows it, for the record of a cut prompt (task ^dcmsxpw).
-    ///
-    /// - Parameter recovery: The number of the recovery that follows the
-    ///   stop, or `nil` when no recovery was left.
-    private mutating func countRouterStop(recovery: Int?) {
-        routerStopCount += 1
-        if recovery != nil {
-            routerRecoveryCount += 1
-        }
-    }
-
     /// Records the files that the change sets of `report` name, for the
     /// record of a cut prompt (task ^dcmsxpw). A move or a copy adds its
     /// source and its destination.
@@ -342,9 +215,9 @@ struct EventProjection {
     /// - Parameter report: The report of the attachments of one call.
     private mutating func recordChangedFiles(in report: ToolCallReport) {
         for change in Self.fileChanges(in: report.attachments) {
-            changedFilePaths.insert(change.path)
+            tally.changedFilePaths.insert(change.path)
             if let destination = change.destinationPath {
-                changedFilePaths.insert(destination)
+                tally.changedFilePaths.insert(destination)
             }
         }
     }
@@ -359,17 +232,15 @@ struct EventProjection {
     /// break.
     ///
     /// A prompt can make more than one Router submission: a tool call, a
-    /// retry after an overflow, or a continuation starts a new one. The
-    /// first `submissionStarted` sends `running`. Each `submissionEnded`
-    /// adds its usage to the one sum of the prompt.
+    /// retry after an overflow, or a continuation starts a new one. Each
+    /// `submissionEnded` adds its usage to ``tally``. The state updates of a
+    /// prompt are the work of the ``SessionProjector``.
     ///
     /// - Parameter event: The event to project.
     mutating func project(_ event: SessionEvent) async {
         switch event {
-        case .submissionStarted:
-            await promptState.promptDidStart()
         case .textDelta(let text):
-            sawOutput = true
+            tally.sawOutput = true
             streamedTextInAnswer = true
             let messageId = agentMessageId ?? Self.makeMessageId()
             agentMessageId = messageId
@@ -384,20 +255,20 @@ struct EventProjection {
             guard let messageId = agentMessageId else { return }
             await send(.agentMessage(AgentMessage(messageId: messageId, content: .value([]))))
         case .reasoningDelta(let text):
-            sawOutput = true
+            tally.sawOutput = true
             let messageId = thoughtMessageId ?? Self.makeMessageId()
             thoughtMessageId = messageId
             await send(
                 .agentThoughtChunk(
                     ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
         case .toolCall(let id, let name, let argumentsJSON):
-            sawOutput = true
+            tally.sawOutput = true
             await projectToolCall(id: id, name: name, argumentsJSON: argumentsJSON)
         case .toolStatus(let id, let status, let summary, let output):
-            sawOutput = true
+            tally.sawOutput = true
             await projectToolStatus(id: id, status: status, summary: summary, output: output)
         case .toolInvocation(let record, let toolCallID):
-            sawOutput = true
+            tally.sawOutput = true
             // A correlation record only, never a wire message. It joins the
             // completion token of the run to the SDK tool-call id, and each
             // later update of the run goes on that id. A record that no SDK
@@ -427,7 +298,7 @@ struct EventProjection {
             ACPAgentTelemetry.logger(.promptExecution).notice(
                 "A generation made no progress for one stall interval.", metadata: metadata)
         case .runSettled(let operationEvent):
-            sawOutput = true
+            tally.sawOutput = true
             // A settled run that has no join entry gets "no join", so a
             // terminal announce that waits for the run stops waiting.
             runCallJoins.seal(operationEvent.correlationID)
@@ -453,42 +324,34 @@ struct EventProjection {
                     metadata: runMetadata(report.correlationID))
                 return
             }
-            sawOutput = true
+            tally.sawOutput = true
             recordChangedFiles(in: report)
             await projectToolCallReport(report)
         case .toolDisplay(let display):
-            sawOutput = true
+            tally.sawOutput = true
             await projectDisplay(display)
         case .elicitationRequested(let operationEvent):
-            // The relay runs the round trip inline: the
-            // asking tool is suspended in Router's mailbox until the
-            // answer is delivered, so holding this drive loop holds
-            // nothing the prompt could otherwise do.
+            // The handler starts the round trip in its own task: the
+            // asking tool waits for the answer, and the other events of
+            // the session still go out (elicitation-plan task 5).
             guard let relayElicitation else {
                 ACPAgentTelemetry.logger(.promptExecution).notice(
                     "A run requested an elicitation, but no relay is wired. The agent only logs the request.",
                     metadata: runMetadata(operationEvent.correlationID))
                 return
             }
-            sawOutput = true
+            tally.sawOutput = true
             await relayElicitation(operationEvent)
         case .submissionEnded(let end):
             // One event per submission, not per prompt: sum, and never
-            // send `idle` from here. The LAST submission is the
-            // one that ends the prompt, so its finish reason wins over
-            // each earlier one.
-            lastFinishReason = end.finishReason
-            guard let usage = end.usage else { return }
-            sawUsageReport = true
-            tokensIn += usage.tokensIn
-            tokensOut += usage.tokensOut
-            contextFill = usage.contextFill
+            // send `idle` from here.
+            tally.record(end)
         case .generationCall(let call):
             // The usage of one generation call alone. The
             // `submissionEnded` sum above already counts these tokens,
             // so no wire update goes out. The call gives the fills and the
             // window of the context (task ^1x5ksdv).
-            contextUsage.record(call)
+            tally.contextUsage.record(call)
         case .submissionQueued:
             // A log line, not a wire message.
             reportQueueWait()
@@ -496,24 +359,24 @@ struct EventProjection {
             // A log line, not a wire message: the stop reason of
             // the prompt carries the end, and the next submission of a
             // recovery carries the text.
-            countRouterStop(recovery: stop.recovery)
+            tally.countRouterStop(recovery: stop.recovery)
             reportRouterStop(
                 stop, message: "Router stopped a generate call, because the call repeated itself.")
         case .reasoningStopped(let stop):
             // A log line, not a wire message, as for a repetition
             // stop (task ^7fsfw7y).
-            countRouterStop(recovery: stop.recovery)
-            lastReasoningStop = stop
+            tally.countRouterStop(recovery: stop.recovery)
+            tally.lastReasoningStop = stop
             reportRouterStop(
                 stop, message: "Router stopped a pass, because the pass reasoned and did not act.")
         case .answered(let answer):
             await projectReply(of: answer)
         case .answerFailed, .mailDeliveryPaused:
-            // Router bookkeeping with no ACP counterpart: the drive of the
-            // prompt reads the end of an answer for the stop reason.
+            // Router bookkeeping with no ACP counterpart: the projector
+            // reads the end of an answer for the stop reason.
             streamedTextInAnswer = false
             reportUnsentEvent(event)
-        case .mailDelivered, .cancelled, .signalDone, .lost:
+        case .submissionStarted, .mailDelivered, .cancelled, .signalDone, .lost:
             // Mail and signal bookkeeping with no ACP counterpart.
             reportUnsentEvent(event)
         @unknown default:
@@ -521,39 +384,38 @@ struct EventProjection {
             // contract: a new case degrades to a log line, never to a
             // broken stream.
             ACPAgentTelemetry.logger(.promptExecution).debug(
-                "The projection does not know a Router event.", metadata: eventMetadata(event))
+                "The translator does not know a Router event.", metadata: eventMetadata(event))
         }
     }
 
     /// Sends the reply of `answer` as one agent message when the reply is
-    /// the only carrier of the answer text (``projectsWholeReplies``, task
-    /// ^64pav2a). An answer that streamed its text, and an empty reply,
-    /// send nothing. The usage of `answer` is the total of the chain, and
-    /// the `submissionEnded` sum already counts it, so the projection does
+    /// the only carrier of the answer text (task ^64pav2a). An answer that
+    /// streamed its text, and an empty reply, send nothing. The usage of `answer` is the total of the chain, and
+    /// the `submissionEnded` sum already counts it, so the translator does
     /// not add it again.
     ///
     /// - Parameter answer: The final answer of one chain of submissions.
     private mutating func projectReply(of answer: SessionAnswer) async {
         let streamedText = streamedTextInAnswer
         streamedTextInAnswer = false
-        guard projectsWholeReplies, !streamedText, !answer.reply.isEmpty else {
+        guard !streamedText, !answer.reply.isEmpty else {
             reportUnsentEvent(.answered(answer))
             return
         }
-        sawOutput = true
+        tally.sawOutput = true
         await send(
             .agentMessageChunk(
                 ContentChunk(content: .text(TextContent(text: answer.reply)), messageId: Self.makeMessageId())))
     }
 
-    /// Records a Router event that the projection does not send. The record
+    /// Records a Router event that the translator does not send. The record
     /// is a `debug`, because the event is bookkeeping with no ACP
     /// counterpart.
     ///
     /// - Parameter event: The event.
     private func reportUnsentEvent(_ event: SessionEvent) {
         ACPAgentTelemetry.logger(.promptExecution).debug(
-            "The projection sends nothing for a Router event.", metadata: eventMetadata(event))
+            "The translator sends nothing for a Router event.", metadata: eventMetadata(event))
     }
 
     /// Records that a submission of the prompt waits for a place in the
@@ -593,21 +455,6 @@ struct EventProjection {
         var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
         metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stop.description)"
         ACPAgentTelemetry.logger(.promptExecution).notice(message, metadata: metadata)
-    }
-
-    /// Sends the one `usage_update` of the prompt (task ^1x5ksdv).
-    ///
-    /// `size` is the context window that the generation calls measured, and
-    /// `used` is the fill of the last submission over that window: the
-    /// tokens now in the context. The summed tokens of the prompt are not
-    /// the context, because a tool loop feeds the whole render again at
-    /// each call. A `nan` context fill means "no stamp", and a prompt with
-    /// no call report has no window: then no meter goes on the wire.
-    func reportUsage() async {
-        guard let size = contextUsage.windowTokens, let used = contextUsage.tokens(atFill: contextFill) else {
-            return
-        }
-        await send(.usageUpdate(UsageUpdate(size: size, used: used)))
     }
 
     // MARK: - The tool-call upsert
@@ -720,7 +567,7 @@ struct EventProjection {
             var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
             metadata[ACPAgentTelemetry.LogMetadataKey.entryId] = "\(recordedEntryId)"
             ACPAgentTelemetry.logger(.promptExecution).debug(
-                "The projection sends nothing for a recorded entry of an unmapped kind.", metadata: metadata)
+                "The translator sends nothing for a recorded entry of an unmapped kind.", metadata: metadata)
         }
     }
 
@@ -857,7 +704,7 @@ struct EventProjection {
         guard operationEvent.kind == .completed else {
             if operationEvent.outcome != nil {
                 ACPAgentTelemetry.logger(.promptExecution).warning(
-                    "A run carried an outcome on an event that is not terminal. The projection ignores the outcome.",
+                    "A run carried an outcome on an event that is not terminal. The translator ignores the outcome.",
                     metadata: runMetadata(operationEvent.correlationID))
             }
             return
@@ -960,7 +807,7 @@ struct EventProjection {
     ///   the tool stays on the client: no later update of the call sends the
     ///   `op` or the tool name over it.
     ///
-    /// The projection sends each event at once, in the order Router gives.
+    /// The translator sends each event at once, in the order Router gives.
     /// The settlement of the run comes after the display events of the run,
     /// so its content replace stays the last update of the call. This holds
     /// for a background run that settles in its settle period too: such a
@@ -1002,7 +849,7 @@ struct EventProjection {
     /// rides as a `diff` item with a ``WholeFilePatch``. The wire requires an
     /// absolute path in a diff, so a change at another path rides as a text
     /// item that holds the same patch: the client still shows the change,
-    /// and the projection never invents a path.
+    /// and the translator never invents a path.
     ///
     /// - Parameters:
     ///   - content: The display part.
@@ -1056,7 +903,7 @@ struct EventProjection {
 
     /// The `rawInput` patch of a metadata event: the parsed JSON of the
     /// input. `nil` leaves the raw input unchanged, and so does a text that
-    /// is not JSON: the projection never invents a value from it.
+    /// is not JSON: the translator never invents a value from it.
     ///
     /// - Parameters:
     ///   - rawInput: The input of the call as a JSON text, or `nil`.
@@ -1231,7 +1078,7 @@ struct EventProjection {
     ///
     /// Returns `nil` for a record the vocabulary cannot carry: a path
     /// the wire refuses because it is not absolute, or a move or a copy
-    /// with no destination. The projection reports what the record
+    /// with no destination. The translator reports what the record
     /// says and never invents a path.
     ///
     /// - Parameter change: The recorded change.

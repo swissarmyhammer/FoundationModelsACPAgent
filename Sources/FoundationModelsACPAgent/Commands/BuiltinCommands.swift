@@ -263,11 +263,10 @@ enum BuiltinCommands {
     /// compaction, thus the report says so and names the reason, instead of
     /// "Compacted" beside two equal token counts.
     ///
-    /// The fold also shows as one compaction entry: the
-    /// `in_progress` update before the fold, then `completed` with the
-    /// summary, `failed` with the reason, or `cancelled`, all under one id
-    /// (``CompactionReporter``). The streamed text stays the report a person
-    /// reads.
+    /// The fold also shows as one compaction entry. The ``SessionProjector``
+    /// reports it from the compaction events of the session, under the
+    /// `SignalID` of the compaction (``CompactionReporter``). The streamed
+    /// text stays the report a person reads.
     ///
     /// - Parameter context: The session context.
     /// - Returns: The report, or the failure.
@@ -275,29 +274,20 @@ enum BuiltinCommands {
         guard let binding = context.binding else {
             return "No active session to compact."
         }
-        let reporter = binding.compactionReporter
-        let compactionId = CompactionReporter.makeCompactionId()
-        await reporter.reportStart(of: compactionId)
         let signal = binding.session.compact()
         let terminal: SessionEvent
         do {
             terminal = try await binding.session.awaitTerminal(of: signal)
         } catch {
-            await reporter.reportEnd(of: compactionId, throwing: error)
             return "Compaction failed: \(error)"
         }
         switch terminal {
         case .compaction(let result):
-            await reporter.reportEnd(of: compactionId, with: result)
             return reportText(of: result)
         case .compactionFailed(let failure):
-            let error = CompactionSignalError(failure: failure)
-            await reporter.reportEnd(of: compactionId, throwing: error)
-            return "Compaction failed: \(error)"
+            return "Compaction failed: \(CompactionSignalError(failure: failure))"
         default:
-            let error = CompactionSignalError(unexpected: terminal)
-            await reporter.reportEnd(of: compactionId, throwing: error)
-            return "Compaction failed: \(error)"
+            return "Compaction failed: \(CompactionSignalError(unexpected: terminal))"
         }
     }
 

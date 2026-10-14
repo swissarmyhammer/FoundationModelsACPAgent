@@ -14,7 +14,7 @@ import Testing
 /// upserts, the terminal status from `OperationOutcome`, the
 /// settlement's terminal reference, the compaction meter, and the diff
 /// path directions.
-@Suite struct EventProjectionTests {
+@Suite struct ACPEventTranslatorTests {
     // MARK: - Constants
 
     /// The SDK tool-call id the scripted tool events carry. It is
@@ -240,23 +240,23 @@ import Testing
     /// and `timedOut` give `failed`, `stopped` and `cancelled` give
     /// `cancelled`. `lost` maps to `_lost` and never to `failed`.
     @Test func theOutcomeStatusFunctionMapsEveryCasePerTheTable() {
-        #expect(EventProjection.wireStatus(for: .succeeded) == .completed)
-        #expect(EventProjection.wireStatus(for: OperationOutcome.failed) == .failed)
-        #expect(EventProjection.wireStatus(for: .timedOut) == .failed)
-        #expect(EventProjection.wireStatus(for: .stopped) == .cancelled)
-        #expect(EventProjection.wireStatus(for: .cancelled) == .cancelled)
+        #expect(ACPEventTranslator.wireStatus(for: .succeeded) == .completed)
+        #expect(ACPEventTranslator.wireStatus(for: OperationOutcome.failed) == .failed)
+        #expect(ACPEventTranslator.wireStatus(for: .timedOut) == .failed)
+        #expect(ACPEventTranslator.wireStatus(for: .stopped) == .cancelled)
+        #expect(ACPEventTranslator.wireStatus(for: .cancelled) == .cancelled)
         #expect(
-            EventProjection.wireStatus(for: .lost)
-                == .unknown(EventProjection.lostStatusWireValue))
-        #expect(EventProjection.wireStatus(for: .lost) != .failed)
+            ACPEventTranslator.wireStatus(for: .lost)
+                == .unknown(ACPEventTranslator.lostStatusWireValue))
+        #expect(ACPEventTranslator.wireStatus(for: .lost) != .failed)
     }
 
     /// An `other(raw)` outcome passes its raw value through under the
     /// `_` extension rule of ACP: an unprefixed value gains the prefix,
     /// and a prefixed value stays as it is.
     @Test func anOtherOutcomePassesThroughUnderTheUnderscoreRule() {
-        #expect(EventProjection.wireStatus(for: .other("paused")) == .unknown("_paused"))
-        #expect(EventProjection.wireStatus(for: .other("_held")) == .unknown("_held"))
+        #expect(ACPEventTranslator.wireStatus(for: .other("paused")) == .unknown("_paused"))
+        #expect(ACPEventTranslator.wireStatus(for: .other("_held")) == .unknown("_held"))
     }
 
     // MARK: - The tool-call upsert
@@ -348,7 +348,7 @@ import Testing
         let call = try #require(toolCallUpdates(in: updates).first)
 
         #expect(call.toolCallId.rawValue == Self.completionToken)
-        #expect(call.status == .value(.unknown(EventProjection.lostStatusWireValue)))
+        #expect(call.status == .value(.unknown(ACPEventTranslator.lostStatusWireValue)))
         #expect(call.status != .value(.failed))
         #expect(texts(in: call.content).contains { $0.contains("do not know") })
     }
@@ -384,7 +384,7 @@ import Testing
 
         #expect(
             call.status
-                == .value(.unknown(EventProjection.unknownOutcomeStatusWireValue)))
+                == .value(.unknown(ACPEventTranslator.unknownOutcomeStatusWireValue)))
     }
 
     /// An outcome on a non-terminal event is ignored: a `.progress`
@@ -827,7 +827,7 @@ import Testing
     @Test func aMoveMapsTheSourceToOldPathAndTheDestinationToPath() throws {
         let source = AbsolutePath(rawValue: "/repo/old.txt")
         let destination = AbsolutePath(rawValue: "/repo/new.txt")
-        let change = EventProjection.diffChange(
+        let change = ACPEventTranslator.diffChange(
             for: .move(source: source, destination: destination))
 
         let pair = try #require(
@@ -841,7 +841,7 @@ import Testing
     @Test func aCopyMapsTheSourceToOldPathAndTheDestinationToPath() throws {
         let source = AbsolutePath(rawValue: "/repo/a.txt")
         let destination = AbsolutePath(rawValue: "/repo/b.txt")
-        let change = EventProjection.diffChange(
+        let change = ACPEventTranslator.diffChange(
             for: .copy(source: source, destination: destination))
 
         let pair = try #require(
@@ -856,13 +856,13 @@ import Testing
         let path = AbsolutePath(rawValue: "/repo/file.txt")
 
         let added = try #require(
-            Self.addPath(of: EventProjection.diffChange(for: .add(path: path))),
+            Self.addPath(of: ACPEventTranslator.diffChange(for: .add(path: path))),
             "expected add, delete and modify operations")
         let deleted = try #require(
-            Self.deletePath(of: EventProjection.diffChange(for: .delete(path: path))),
+            Self.deletePath(of: ACPEventTranslator.diffChange(for: .delete(path: path))),
             "expected add, delete and modify operations")
         let modified = try #require(
-            Self.modifyPath(of: EventProjection.diffChange(for: .modify(path: path))),
+            Self.modifyPath(of: ACPEventTranslator.diffChange(for: .modify(path: path))),
             "expected add, delete and modify operations")
         #expect(added.path == path)
         #expect(deleted.path == path)
@@ -880,18 +880,12 @@ import Testing
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agent = try await makeStubAgent(
             name: AgentClientHarness.dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "EventProjectionTests-cache"))
+            cacheDirectory: makeResolvedDirectory(label: "ACPEventTranslatorTests-cache"))
         let connection = await AgentSideConnection(stream: agentEnd) { _ in agent }
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
         let sessionId = SessionId(rawValue: syntheticSessionIdValue)
         let send: SessionUpdateSink = { update in await connection.post(update, in: sessionId) }
-        let execution = PromptExecution(
-            sessionId: sessionId,
-            promptBlocks: [],
-            promptState: PromptStateOwner(send: send),
-            send: send,
-            firstActivity: nil,
-            modelName: syntheticModelName)
+        let execution = SyntheticExecution(send: send)
 
         _ = await execution.drive(
             events: makeEventStream([
@@ -927,6 +921,6 @@ import Testing
         #expect(jsonString(of: creation["title"]) == Self.scriptedToolName)
         let settlement = try #require(notifications.dropFirst().first)
         #expect(
-            jsonString(of: settlement["status"]) == EventProjection.lostStatusWireValue)
+            jsonString(of: settlement["status"]) == ACPEventTranslator.lostStatusWireValue)
     }
 }

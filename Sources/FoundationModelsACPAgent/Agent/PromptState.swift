@@ -89,13 +89,19 @@ actor PromptStateOwner {
     /// The wait is an ACP state only. Router has no call for it: its
     /// generation queue gives a wait for a person no release of the model.
     ///
+    /// The round trip runs in its own task, so the prompt can end before the
+    /// body ends, for example at a cancel. After the `idle` of the prompt,
+    /// no state update of the wait goes out.
+    ///
     /// - Parameter body: The wait on the human.
     /// - Returns: The body's value.
     /// - Throws: The body's error, after the state returns to `running`.
     func awaitingUser<T: Sendable>(
         _ body: @Sendable () async throws -> T
     ) async rethrows -> T {
-        await send(.stateUpdate(.requiresAction(RequiresActionStateUpdate())))
+        if stopReason == nil {
+            await send(.stateUpdate(.requiresAction(RequiresActionStateUpdate())))
+        }
         do {
             let value = try await body()
             await sendRunning()
@@ -170,8 +176,12 @@ actor PromptStateOwner {
         cancelHandlers.append(handler)
     }
 
-    /// Sends `state_update: running`.
+    /// Sends `state_update: running`, but not after the `idle` of the
+    /// prompt went out.
     private func sendRunning() async {
+        guard stopReason == nil else {
+            return
+        }
         await send(.stateUpdate(.running(RunningStateUpdate())))
     }
 }

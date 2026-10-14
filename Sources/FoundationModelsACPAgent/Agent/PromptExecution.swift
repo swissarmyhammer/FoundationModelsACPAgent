@@ -93,15 +93,16 @@ struct FirstActivity: Sendable {
     let record: SessionIndexRecord
 }
 
-/// The execution of one prompt: one ACP `session/prompt`, from the
-/// response that names the user message to its one `idle` terminator.
+/// The input side of one prompt: one ACP `session/prompt`, from the
+/// response that names the user message to the mail of the prompt.
 ///
 /// The prompt runs after the response went out, on the request's own
 /// dispatch task through `afterRespondingToCurrentRequest`. The
 /// `user_message` echo goes out before it, through the same response hooks
 /// (``RoutedACPAgent/insertUserMessage(_:through:)``). The prompt writes the
-/// first-activity index record, drives the session's event stream, and
-/// ends with one `idle` state update.
+/// first-activity index record, opens itself in the ``SessionProjector`` of
+/// the session, and mails its text into the Router session. The projector
+/// sends the events and the one `idle` state update of the prompt.
 struct PromptExecution: Sendable {
     /// The wire value a completed prompt that generated nothing stops
     /// with, under the `_`-prefix extension rule of ACP: a value that starts
@@ -188,10 +189,10 @@ struct PromptExecution: Sendable {
     /// model prompt; the `user_message` echo carries them verbatim.
     let promptBlocks: [ContentBlock]
 
-    /// The prompt-state owner of the session.
+    /// The prompt-state owner of the prompt.
     let promptState: PromptStateOwner
 
-    /// The sink every update of this prompt goes to.
+    /// The sink of the first-activity update of this prompt.
     let send: SessionUpdateSink
 
     /// The first-activity index write, or `nil` when the record exists.
@@ -210,40 +211,36 @@ struct PromptExecution: Sendable {
     /// echo always carries the original blocks verbatim.
     var modelPrompt: String?
 
-    /// The reader of a settled run's stored output, handed to the
-    /// projection for the convergence replace: the settlement update
-    /// carries the complete content, so a client that missed a chunk
-    /// still ends correct. The default finds
-    /// no run; the catalog wiring supplies the host-owned stream's
-    /// `snapshot(for:)`.
-    var shellSnapshot: ShellSnapshotProvider = { _ in nil }
-
     /// The resolver of the prompt's resource links. The
     /// default holds no read verb and refuses every link with a reason;
     /// the scheduling wiring supplies the session surface's verb.
     var contentResolver = ResourceLinkResolver(readVerb: nil)
 
-    /// The handler of a live elicitation request, or `nil`
-    /// when no relay is wired — a synthetic projection drive. The
-    /// scheduling wiring supplies the session's ``ElicitationRelay``
-    /// bound to the prompt's session and owner.
-    var relayElicitation: ElicitationEventHandler?
-
-    /// The join of each run of the session to its SDK tool call, which the
-    /// projection writes and the terminal stream of the session reads
-    /// (``RunCallJoinTable``, task ^9xk3xf4). The scheduling wiring supplies
-    /// the table of the session; the default is a table that no terminal
-    /// stream reads — a synthetic projection drive.
-    var runCallJoins = RunCallJoinTable()
-
-    /// Runs the prompt: the first-activity record, and the session's event
-    /// stream to completion. A plain prompt folds through
-    /// `PromptContent`; an expanded command keeps its override text.
-    /// The `user_message` echo went out before this work, and it
-    /// always carries the original blocks verbatim.
+    /// Runs the prompt: the first-activity record, the open of the prompt in
+    /// the projector, and the mail of the prompt. A plain prompt folds
+    /// through `PromptContent`; an expanded command keeps its override text.
+    /// The `user_message` echo went out before this work, and it always
+    /// carries the original blocks verbatim.
     ///
-    /// - Parameter session: The Router session that generates the answer.
-    func run(session: any RoutedSession) async {
+    /// The prompt opens in the ``SessionProjector`` before its mail goes into
+    /// the session, so each event of the mail finds the prompt. The
+    /// projector sends `running` at the first submission of the mail, and it
+    /// ends the prompt at the terminal event of the mail: the stop reason,
+    /// the `idle`, and then `onEnd`. The call returns after the mail, not
+    /// at the end of the prompt.
+    ///
+    /// The mail is a stream message, so the answer streams its text. A
+    /// `mail(_:)` that throws, for example on a session that closed, ends the
+    /// prompt with the error (``SessionProjector/refuseMail(_:error:)``).
+    ///
+    /// - Parameters:
+    ///   - session: The Router session that generates the answer.
+    ///   - projector: The projector of the ACP session.
+    ///   - onEnd: The work to run after the `idle` of the prompt went out.
+    func run(
+        session: any RoutedSession, projector: SessionProjector,
+        onEnd: @escaping @Sendable (StopReason) async -> Void
+    ) async {
         await recordFirstActivity()
         let prompt: String
         if let modelPrompt {
@@ -252,265 +249,19 @@ struct PromptExecution: Sendable {
             prompt = await PromptContent.modelPrompt(
                 from: promptBlocks, resolver: contentResolver)
         }
-        // The prompt is open before Router can start a tool run of it, so a
-        // shell run of the prompt waits for the entry that the projection
-        // writes (task ^9xk3xf4). `drive` closes it.
-        runCallJoins.openPrompt()
-        // The subscription comes before the caller stream, so it holds each
-        // event of the prompt (task ^64pav2a).
-        let followUp = await SessionFollowUp.subscribing(to: session)
-        await drive(events: session.streamEvents(to: prompt, maxTokens: nil), followUp: followUp)
-    }
-
-    /// Drives one event stream to completion and closes the prompt: each
-    /// event is projected, the summed usage is reported one time, and
-    /// exactly one `idle` goes out — keyed on stream completion, never
-    /// on a `submissionEnded` count, because one prompt can make more than
-    /// one submission. A `CancellationError` is classified here; it never
-    /// escapes as a JSON-RPC error or as `refusal`.
-    ///
-    /// The loop also carries the stalled-generation guard of task
-    /// ^s0bw5cv. Leaving `events` cancels the Router stream, which is that
-    /// surface's own contract, so the guard needs no second call.
-    ///
-    /// The caller stream ends while a background run of its answer is open
-    /// (task ^64pav2a). So when it ends by itself, the prompt then reads
-    /// `followUp` until the session has no more work
-    /// (``followSession(_:after:awaitingIdle:projection:)``). The stop reason then comes
-    /// from the last answer of the session.
-    ///
-    /// A failed or a cancelled prompt closes each tool call that did not
-    /// finish (``closeUnfinishedToolCalls(of:after:)``) before the usage and
-    /// the `idle`, so each final update comes before the terminator.
-    ///
-    /// - Parameters:
-    ///   - events: The prompt's event stream.
-    ///   - followUp: The session-scoped events and the idle wait of the
-    ///     prompt, or `nil` for a drive that ends with `events`.
-    /// - Returns: The stop reason the idle update carried.
-    @discardableResult
-    func drive<Events: AsyncSequence>(
-        events: Events, followUp: SessionFollowUp? = nil
-    ) async -> StopReason where Events.Element == SessionEvent {
-        let toolCalls = PromptToolCalls()
-        var projection = EventProjection(
-            sessionId: sessionId,
-            promptState: promptState,
-            send: toolCalls.recording(into: send),
-            modelName: modelName,
-            shellSnapshot: shellSnapshot,
-            relayElicitation: relayElicitation,
-            runCallJoins: runCallJoins)
-        let sessionEvents = followUp.map { SessionEventBuffer.reading($0.events) }
-        let callerEnd = await driveCallerStream(events, projection: &projection)
-        var stop = callerEnd.stop
-        if let followUp, let sessionEvents, let answerEnd = callerEnd.answerEnd, stop == .completed {
-            stop = await followSession(
-                sessionEvents, after: answerEnd, awaitingIdle: followUp.awaitIdle, projection: &projection)
-        }
-        sessionEvents?.close()
-        // No projection writes a join after this point, so a terminal
-        // announce that still waits for a run of the prompt stops waiting,
-        // and a run that starts before the next prompt gets "no join" at
-        // once.
-        runCallJoins.closePrompt()
-        // A cancelled prompt does not always throw: model work that
-        // never checks for cancellation runs to completion. The recorded
-        // request still ends the prompt as cancelled.
-        if await promptState.cancelRequested {
-            stop = .cancelled
-        }
-        // A completed live prompt that streamed no output and whose usage
-        // report says zero generated tokens must not read as a normal
-        // `end_turn` (task ^pez780d): the intermittent live-model defect
-        // ends exactly this shape of prompt, and a bare `end_turn` would
-        // hide it. The honest `_no_output` extension value reports it.
-        if stop == .completed, projection.generatedNothing {
-            stop = .noOutput
-        }
-        // A completed prompt whose LAST submission did not end by itself is
-        // cut, not finished (tasks ^bw9qt1z, ^k51h6bb and ^7fsfw7y). A
-        // prompt of 8192 reasoning tokens and no answer ended as `end_turn`
-        // before Router gave the finish reason.
-        if stop == .completed, let cut = Self.cutStop(for: projection.lastFinishReason) {
-            stop = cut
-            report(cut: cut, metadata: projection.cutMetadata, changedFileCount: projection.changedFileCount)
-        }
-        await closeUnfinishedToolCalls(of: toolCalls, after: stop)
-        await projection.reportUsage()
-        return await promptState.promptDidEnd(stop: stop)
-    }
-
-    /// Sends the closing status of `stop` (``closingStatus(for:)``) for each
-    /// tool call of the prompt that did not finish. A stop with no closing
-    /// status sends nothing.
-    ///
-    /// - Parameters:
-    ///   - toolCalls: The tool calls that the prompt sent.
-    ///   - stop: Why the prompt stopped.
-    private func closeUnfinishedToolCalls(of toolCalls: PromptToolCalls, after stop: PromptStop) async {
-        guard let status = Self.closingStatus(for: stop) else {
-            return
-        }
-        for toolCallId in await toolCalls.unfinishedToolCallIds() {
-            await send(.toolCallUpdate(ToolCallUpdate(toolCallId: toolCallId, status: .value(status))))
-        }
-    }
-
-    // MARK: - The caller stream and the session follow-up (task ^64pav2a)
-
-    /// What the caller stream of a prompt ended with.
-    private struct CallerStreamEnd {
-        /// Why the caller stream stopped.
-        let stop: PromptStop
-
-        /// The `answered` or `answerFailed` event of the caller answer, or
-        /// `nil` when the stream gave none.
-        let answerEnd: SessionEvent?
-    }
-
-    /// Projects each event of the caller stream, and classifies its end.
-    ///
-    /// - Parameters:
-    ///   - events: The caller stream of the prompt.
-    ///   - projection: The projection of the prompt.
-    /// - Returns: The stop of the stream, and the end of the caller answer.
-    private func driveCallerStream<Events: AsyncSequence>(
-        _ events: Events, projection: inout EventProjection
-    ) async -> CallerStreamEnd where Events.Element == SessionEvent {
-        var answerEnd: SessionEvent?
+        let mail = Mail(
+            sender: .user,
+            body: .userMessage(prompt: prompt, options: UserMessageOptions(mode: .stream)))
+        projector.open(
+            SessionProjector.Prompt(
+                mailId: mail.id, sourceId: session.id,
+                awaitAnswer: { id in try await session.awaitAnswer(of: id) },
+                owner: promptState, modelName: modelName, onEnd: onEnd))
         do {
-            for try await event in events {
-                await projection.project(event)
-                if Self.endsAnswer(event) {
-                    answerEnd = event
-                }
-                guard case .generationStalled(let stall) = event,
-                    Self.endsPrompt(stall, sawOutput: projection.sawOutput)
-                else {
-                    continue
-                }
-                report(stall)
-                return CallerStreamEnd(stop: .stalled(stall), answerEnd: answerEnd)
-            }
+            _ = try session.mail(mail)
         } catch {
-            let stop = Self.classify(error)
-            if case .failed = stop {
-                report(failure: error)
-            }
-            return CallerStreamEnd(stop: stop, answerEnd: answerEnd)
+            projector.refuseMail(mail.id, error: error)
         }
-        return CallerStreamEnd(stop: .completed, answerEnd: answerEnd)
-    }
-
-    /// Projects the session events that come after the caller answer, until
-    /// the session has no more work, and gives the stop of the prompt.
-    ///
-    /// The session stream also carries each event of the caller answer, in
-    /// the same order, so the projection skips each event up to the end of
-    /// the caller answer. After that come the settlements of the background
-    /// runs, and the answers that their injected results start.
-    ///
-    /// The idle wait runs in its own task. When it returns, the session
-    /// stream holds each event of the work, so the task closes the copy
-    /// of the stream, and the projection ends after the last event. A
-    /// `session/cancel` cancels the wait at once, and the projection sends
-    /// nothing more.
-    ///
-    /// - Parameters:
-    ///   - sessionEvents: The copy of the session stream of the prompt.
-    ///   - callerEnd: The end of the caller answer.
-    ///   - awaitIdle: The wait for the end of the work of the session.
-    ///   - projection: The projection of the prompt.
-    /// - Returns: The stop of the last answer, or `cancelled` when the wait
-    ///   ended before the session was idle.
-    private func followSession(
-        _ sessionEvents: SessionEventBuffer,
-        after callerEnd: SessionEvent,
-        awaitingIdle awaitIdle: @escaping @Sendable () async -> Bool,
-        projection: inout EventProjection
-    ) async -> PromptStop {
-        let idleWait = Task {
-            let idle = await awaitIdle()
-            sessionEvents.close()
-            return idle
-        }
-        await promptState.onCancelRequest { idleWait.cancel() }
-        projection.projectsWholeReplies = true
-        let lastAnswerEnd = await withTaskCancellationHandler {
-            await projectSessionEvents(sessionEvents.events, after: callerEnd, projection: &projection)
-        } onCancel: {
-            idleWait.cancel()
-        }
-        guard await idleWait.value else {
-            return .cancelled
-        }
-        return stop(afterAnswerEnd: lastAnswerEnd)
-    }
-
-    /// Projects each session event after `callerEnd`, until the copy of the
-    /// session stream ends or `session/cancel` asks the prompt to stop.
-    ///
-    /// - Parameters:
-    ///   - events: The copy of the session stream of the prompt.
-    ///   - callerEnd: The end of the caller answer.
-    ///   - projection: The projection of the prompt.
-    /// - Returns: The end of the last answer after the caller answer, or
-    ///   `nil` when no answer ended after it.
-    private func projectSessionEvents(
-        _ events: AsyncStream<SessionEvent>, after callerEnd: SessionEvent, projection: inout EventProjection
-    ) async -> SessionEvent? {
-        var isPastCallerAnswer = false
-        var lastAnswerEnd: SessionEvent?
-        for await event in events {
-            guard isPastCallerAnswer else {
-                isPastCallerAnswer = event == callerEnd
-                continue
-            }
-            if await promptState.cancelRequested {
-                break
-            }
-            await projection.project(event)
-            if Self.endsAnswer(event) {
-                lastAnswerEnd = event
-            }
-        }
-        return lastAnswerEnd
-    }
-
-    /// The stop of a prompt whose last answer ended with `answerEnd`. A
-    /// failed answer stops the prompt with its failure. Else the prompt
-    /// is `completed`, and the finish reason of its last submission can
-    /// still cut it (``cutStop(for:)``).
-    ///
-    /// - Parameter answerEnd: The end of the last answer after the caller
-    ///   answer, or `nil` when no answer ended after it.
-    /// - Returns: The stop.
-    private func stop(afterAnswerEnd answerEnd: SessionEvent?) -> PromptStop {
-        guard case .answerFailed(let failure) = answerEnd else {
-            return .completed
-        }
-        switch failure.reason {
-        case .cancelled:
-            return .cancelled
-        case .error(let description):
-            report(failure: failure)
-            return .failed(message: description)
-        }
-    }
-
-    /// Whether `event` ends an answer: `answered` or `answerFailed`.
-    ///
-    /// - Parameter event: The session event.
-    /// - Returns: Whether the event ends an answer.
-    static func endsAnswer(_ event: SessionEvent) -> Bool {
-        if case .answered = event {
-            return true
-        }
-        if case .answerFailed = event {
-            return true
-        }
-        return false
     }
 
     // MARK: - The first activity
@@ -641,14 +392,13 @@ struct PromptExecution: Sendable {
     /// A wait for a place in the model queue never ends the prompt. The
     /// Router does not count the wait in `timeWithoutProgress` (Router
     /// task ^ake8sax), and it tells the wait with `submissionQueued`,
-    /// which ``EventProjection`` writes as a log line. This guard does
+    /// which ``ACPEventTranslator`` writes as a log line. This guard does
     /// not read ``GenerationStall/timeInFlight``, because that time
     /// includes the wait.
     ///
     /// A `wholeAnswer` visibility never ends the prompt. Such a call
     /// streams nothing by design, so a long one reads exactly like a
-    /// hung one, and the drive loop reads a fragment stream in any
-    /// case.
+    /// hung one.
     ///
     /// - Parameters:
     ///   - stall: The report Router made.
@@ -669,8 +419,11 @@ struct PromptExecution: Sendable {
     /// nothing else: a stall report has no wire message,
     /// and the terminator of the prompt is what a client reads.
     ///
-    /// - Parameter stall: The report the prompt stopped on.
-    private func report(_ stall: GenerationStall) {
+    /// - Parameters:
+    ///   - stall: The report the prompt stopped on.
+    ///   - sessionId: The ACP session of the prompt.
+    ///   - modelName: The model reference of the prompt.
+    static func report(_ stall: GenerationStall, sessionId: SessionId, modelName: String) {
         var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
         metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stall.description)"
         metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stalledStopReasonValue)"
@@ -690,10 +443,15 @@ struct PromptExecution: Sendable {
     ///
     /// - Parameters:
     ///   - cut: The stop ``cutStop(for:)`` gave.
-    ///   - cutMetadata: The metadata ``EventProjection/cutMetadata`` makes.
+    ///   - cutMetadata: The metadata ``PromptTally/cutMetadata`` makes.
     ///   - changedFileCount: The number of files that the files verbs of the
     ///     prompt changed.
-    private func report(cut: PromptStop, metadata cutMetadata: Logger.Metadata, changedFileCount: Int) {
+    ///   - sessionId: The ACP session of the prompt.
+    ///   - modelName: The model reference of the prompt.
+    static func report(
+        cut: PromptStop, metadata cutMetadata: Logger.Metadata, changedFileCount: Int, sessionId: SessionId,
+        modelName: String
+    ) {
         var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
             .merging(cutMetadata) { current, _ in current }
         metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stopReason(for: cut).wireValue)"
@@ -740,8 +498,11 @@ struct PromptExecution: Sendable {
     /// type of the error and not its message, because a message can hold
     /// content, and the log goes to the telemetry backend.
     ///
-    /// - Parameter error: The error the prompt's stream finished with.
-    private func report(failure error: any Error) {
+    /// - Parameters:
+    ///   - error: The error of the failed answer of the prompt.
+    ///   - sessionId: The ACP session of the prompt.
+    ///   - modelName: The model reference of the prompt.
+    static func report(failure error: any Error, sessionId: SessionId, modelName: String) {
         var metadata = ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId)
         metadata[ACPAgentTelemetry.LogMetadataKey.modelRef] = "\(modelName)"
         ACPAgentTelemetry.logger(.promptExecution).error("The prompt failed.", metadata: metadata)
@@ -960,9 +721,12 @@ extension RoutedACPAgent {
     ///
     /// The prompt registered its work with `afterRespondingToCurrentRequest`
     /// during the acceptance, and the connection runs the registered work in
-    /// order. Thus the work that this method registers runs after the
-    /// prompt ended, and it reads the stop reason from the prompt-state
-    /// owner. An accepted prompt always has an owner and a bound connection.
+    /// order. Thus the work that this method registers runs after the work
+    /// of the prompt. A model prompt ends later, in the ``SessionProjector``,
+    /// so the work waits for the `idle` of the prompt
+    /// (``PromptStateOwner/waitForPromptEnd()``), and then it reads the stop
+    /// reason from the prompt-state owner. An accepted prompt always has an
+    /// owner and a bound connection.
     ///
     /// - Parameters:
     ///   - span: The span of the prompt.
@@ -971,6 +735,7 @@ extension RoutedACPAgent {
     private func endTelemetryAfterPrompt(span: any Span, measurement: PromptMeasurement, sessionId: SessionId) {
         let owner = sessions[sessionId]?.activePrompt
         boundConnection?.afterRespondingToCurrentRequest {
+            await owner?.waitForPromptEnd()
             let stopReason = await owner?.stopReason
             RequestTracing.endPromptSpan(span, stopReason: stopReason)
             measurement.record(stopReason: stopReason)
@@ -1013,26 +778,30 @@ extension RoutedACPAgent {
                 command, params: params, entry: entry, connection: connection)
         }
 
-        let (owner, send) = beginPrompt(params: params, connection: connection)
+        let (owner, send) = beginPrompt(
+            params: params, send: historySink(for: params.sessionId, connection: connection))
         return scheduleModelPrompt(
             overridePrompt: nil,
             params: params, entry: entry, connection: connection, owner: owner, send: send)
     }
 
-    /// Marks the session busy for one prompt: builds the update sink over
-    /// `connection`, which also keeps each update in the retained history
-    /// (``historySink(for:connection:)``), and installs a fresh prompt-state
-    /// owner as the session's active prompt.
+    /// Marks the session busy for one prompt: installs a fresh prompt-state
+    /// owner over `send` as the session's active prompt.
+    ///
+    /// A model prompt gives the history sink
+    /// (``historySink(for:connection:)``): the ``SessionProjector`` sends its
+    /// state updates in order with its events. An `.action` command gives
+    /// the command sink of the projector (``SessionProjector/commandSink``),
+    /// so its updates keep their order with the events of the session.
     ///
     /// - Parameters:
     ///   - params: The prompt request.
-    ///   - connection: The bound connection the sink posts through.
+    ///   - send: The sink of the updates of the prompt.
     /// - Returns: The installed owner and the sink.
     func beginPrompt(
-        params: PromptRequest, connection: AgentSideConnection
+        params: PromptRequest, send: @escaping SessionUpdateSink
     ) -> (owner: PromptStateOwner, send: SessionUpdateSink) {
         let sessionId = params.sessionId
-        let send = historySink(for: sessionId, connection: connection)
         let owner = PromptStateOwner(send: send)
         sessions[sessionId]?.activePrompt = owner
         return (owner, send)
@@ -1052,7 +821,7 @@ extension RoutedACPAgent {
     ///   - params: The prompt request.
     ///   - entry: The session's table entry.
     ///   - connection: The bound connection the prompt registers with.
-    ///   - owner: The prompt-state owner ``beginPrompt(params:connection:)``
+    ///   - owner: The prompt-state owner ``beginPrompt(params:send:)``
     ///     installed.
     ///   - send: The sink every update of the prompt goes to.
     /// - Returns: The response that names the user message.
@@ -1066,21 +835,10 @@ extension RoutedACPAgent {
     ) -> PromptResponse {
         let sessionId = params.sessionId
         let messageId = insertUserMessage(params, through: connection)
-        // The reader of a settled run's stored output:
-        // the same host-owned stream the terminal projection consumes.
-        let shellOutput = entry.surface.shellOutput
+        // The session of the selected slot when the prompt is accepted: a
+        // later model slot switch does not move this prompt.
         let session = entry.session
-        // The elicitation relay of this prompt: it holds the
-        // capabilities `initialize` read, and `session/cancel` and
-        // `session/close` reach it through the session's table entry. A
-        // missing negotiation reads as "supports nothing", the same rule
-        // `initialize` applies to an unparsable capabilities object.
-        let relay = ElicitationRelay(
-            sessionId: sessionId,
-            capabilities: negotiatedClientCapabilities
-                ?? NegotiatedClientCapabilities(reading: ClientCapabilities()),
-            connection: connection)
-        sessions[sessionId]?.activeElicitationRelay = relay
+        let projector = entry.projector
         let execution = PromptExecution(
             sessionId: sessionId,
             promptBlocks: params.prompt,
@@ -1090,17 +848,13 @@ extension RoutedACPAgent {
             modelName: ConfigOptions.handle(for: entry.selectedSlot, of: residentProfile)
                 .chosen.stringValue,
             modelPrompt: overridePrompt,
-            shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
-            contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb),
-            relayElicitation: { event in
-                await relay.relay(event, on: session, promptState: owner)
-            },
-            runCallJoins: entry.surface.runCallJoins)
+            contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb))
         // The prompt span context goes with the work, so each Router
         // submission span of the prompt is a child of the prompt span.
         connection.afterRespondingInCurrentServiceContext {
-            await execution.run(session: session)
-            await self.promptFinished(sessionId: sessionId)
+            await execution.run(session: session, projector: projector) { _ in
+                await self.promptFinished(sessionId: sessionId)
+            }
         }
         return PromptResponse(messageId: messageId)
     }
@@ -1141,7 +895,7 @@ extension RoutedACPAgent {
             return
         }
         await promptState.noteCancelRequested()
-        await entry.activeElicitationRelay?.cancelPendingElicitations()
+        await entry.projector.relay?.cancelPendingElicitations()
         let signal = entry.session.cancelAll()
         var metadata = ACPAgentTelemetry.sessionMetadata(params.sessionId)
         metadata[ACPAgentTelemetry.LogMetadataKey.cancelSignalId] = "\(signal)"
@@ -1168,7 +922,9 @@ extension RoutedACPAgent {
 
     /// Clears the finished prompt, so the session accepts a new prompt.
     /// Runs after the prompt's `idle` went out, so a second prompt's
-    /// `running` can never pass the first prompt's terminator. It first
+    /// `running` can never pass the first prompt's terminator. The
+    /// ``SessionProjector`` runs it for a model prompt, and the command
+    /// dispatch runs it for an `.action` command. It first
     /// writes the retained history of the session (``writeHistory(of:)``),
     /// so a new process can resume the session with the messages of this
     /// prompt. It then reconciles the config-option state: a
@@ -1179,9 +935,6 @@ extension RoutedACPAgent {
     func promptFinished(sessionId: SessionId) async {
         writeHistory(of: sessionId)
         sessions[sessionId]?.activePrompt = nil
-        // The relay goes with the prompt: a pending round trip holds the
-        // drive loop, so a finished prompt has none left.
-        sessions[sessionId]?.activeElicitationRelay = nil
         await reconcileConfigOptions(for: sessionId)
     }
 

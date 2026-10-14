@@ -9,12 +9,13 @@ import Testing
 // Router with testing enabled, so the synthetic events reach it this way.
 @testable import FoundationModelsRouter
 
-/// The follow-up of a prompt (task ^64pav2a): when the stream of the caller
-/// answer ends while a background run of the session is open, the prompt
-/// does not end. It projects the session events, the settlement of the run
-/// and the answer that its mail starts, into the same ACP prompt, until the
-/// session has no more work. Then it sends the stop reason of the last
-/// answer.
+/// The work that comes after a prompt (elicitation-plan section 8; task
+/// ^9xs24pn, decision Q1). A prompt ends at the terminal event of its own
+/// mail. When its snippet goes to the background, the settlement of the run
+/// and the answer that the mail of the run starts go to the client after the
+/// `idle` of the prompt, with no prompt open and no state update. This
+/// reverses task ^64pav2a, where the prompt waited for the work of the
+/// session.
 @Suite struct PromptFollowUpTests {
     // MARK: - Constants
 
@@ -50,6 +51,13 @@ import Testing
 
     /// The text of the failure of a synthetic mail answer.
     private static let mailFailureText = "the mail answer failed"
+
+    /// The typed error of a failed synthetic answer, which
+    /// `awaitAnswer(of:)` gives.
+    private struct MailAnswerFailure: Error, CustomStringConvertible {
+        /// The text of the failure.
+        var description: String { PromptFollowUpTests.mailFailureText }
+    }
 
     // MARK: - The wire proofs
 
@@ -93,85 +101,51 @@ import Testing
         return fixture
     }
 
-    /// Whether `notification` comes from the terminal stream of the session
-    /// and not from the prompt. The terminal stream announces a shell run
-    /// and reports its output and its exit for the life of the session,
-    /// so its updates can come after the `idle` of a prompt.
-    ///
-    /// - Parameter notification: The collected notification.
-    /// - Returns: Whether the terminal stream sent it.
-    private static func isTerminalStreamUpdate(_ notification: UpdateSessionNotification) -> Bool {
-        switch notification.update {
-        case .terminalUpdate, .terminalOutputChunk:
-            return true
-        case .toolCallUpdate(let update):
-            return update.status == .value(.inProgress)
-        default:
-            return false
-        }
-    }
-
-    /// Asserts that `updates` holds one `idle`, and that no update of the
-    /// prompt comes after it.
-    ///
-    /// - Parameter updates: The collected notifications of the prompt.
-    /// - Returns: The index of the `idle`.
-    /// - Throws: When `updates` holds no `idle`.
-    private static func requireIdleLast(in updates: [UpdateSessionNotification]) throws -> Int {
-        let idle = try #require(updates.lastIndex { isIdleState($0.update) })
-        let after = updates[(idle + 1)...]
-        #expect(
-            after.allSatisfy(isTerminalStreamUpdate),
-            "expected no prompt update after the idle, got \(after.map(\.update.kind))")
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        return idle
-    }
-
-    /// A prompt whose snippet goes to the background gets the answer that the
-    /// mail of the settled run starts. The text of that answer arrives in the
-    /// same prompt, and the one `idle` with `end_turn` comes after it.
+    /// A prompt whose snippet goes to the background ends at the answer of
+    /// its own mail: one `idle` with `end_turn`, while the run still waits.
     @Test(.timeLimit(.minutes(1)))
-    func theMailAnswerOfABackgroundRunArrivesInTheSamePrompt() async throws {
-        let label = "PromptFollowUpTests-mail"
+    func aPromptEndsAtTheAnswerOfItsOwnMailWhileItsRunWaits() async throws {
+        let label = "PromptFollowUpTests-own-mail"
         let fixture = try await Self.startPromptWithABackgroundRun(label: label)
+
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        try await NamedPipe.write(
+            Self.releaseText, toPipeAt: fixture.cwd.appendingPathComponent(Self.releasePipeName))
+        _ = try await fixture.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: fixture.sessionId))
+        await fixture.close()
+
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
+        #expect(!ScriptedPromptFixture.agentChunkTexts(in: updates).contains(Self.mailReply))
+    }
+
+    /// The fixed order of task ^9xs24pn, decision Q1: the prompt ends, the
+    /// run settles after the `idle`, and the answer that the mail of the run
+    /// starts reaches the client. No second `idle` goes out, because no
+    /// prompt is open (decision Q2).
+    @Test(.timeLimit(.minutes(1)))
+    func aRunMailAnswerAfterTheIdleOfThePromptReachesTheClient() async throws {
+        let label = "PromptFollowUpTests-after-idle"
+        let fixture = try await Self.startPromptWithABackgroundRun(label: label)
+        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
 
         try await NamedPipe.write(
             Self.releaseText, toPipeAt: fixture.cwd.appendingPathComponent(Self.releasePipeName))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the mail reply"
+        ) { updates in
+            ScriptedPromptFixture.agentChunkTexts(in: updates).contains(Self.mailReply)
+        }
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
         await fixture.close()
 
-        let kinds = updates.map(\.update.kind)
+        let idle = try #require(updates.firstIndex { isIdleState($0.update) })
         let mailChunk = try #require(
-            updates.firstIndex { notification in
-                ScriptedPromptFixture.agentChunkTexts(in: [notification]) == [Self.mailReply]
-            },
-            "expected the mail reply in the prompt, got \(kinds)")
-        let idle = try Self.requireIdleLast(in: updates)
-        #expect(mailChunk < idle)
+            updates.firstIndex { ScriptedPromptFixture.agentChunkTexts(in: [$0]) == [Self.mailReply] })
+        #expect(idle < mailChunk)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-    }
-
-    /// A `session/cancel` while the prompt waits for its background run ends
-    /// the prompt with `cancelled` at once, and no update of the prompt
-    /// follows the `idle`: also not the settlement that the close of the
-    /// session makes.
-    @Test(.timeLimit(.minutes(1)))
-    func cancelDuringTheWaitForABackgroundRunEndsThePromptCancelled() async throws {
-        let label = "PromptFollowUpTests-cancel"
-        let fixture = try await Self.startPromptWithABackgroundRun(label: label)
-
-        try await fixture.harness.connection.sessionCancel(
-            CancelSessionNotification(sessionId: fixture.sessionId))
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        _ = try await fixture.harness.connection.closeSession(
-            CloseSessionRequest(sessionId: fixture.sessionId))
-        let updates = promptUpdates(in: await fixture.collector.updates)
-        await fixture.close()
-
-        _ = try Self.requireIdleLast(in: updates)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
     }
 
     /// A prompt that starts no background run ends as before: the echo, the
@@ -205,27 +179,32 @@ import Testing
             contextFill: syntheticContextFill, finishReason: finishReason)
     }
 
-    /// The final answer of one synthetic chain. The reply tells the caller
-    /// answer from the mail answer, because a synthetic stream has no
-    /// message ids: only the mailbox makes them.
+    /// The final answer of the mail `mailId`.
     ///
-    /// - Parameter reply: The final reply of the chain.
+    /// - Parameters:
+    ///   - reply: The final reply of the answer.
+    ///   - mailId: The mail that the answer answers.
     /// - Returns: The `answered` event.
-    private static func makeAnswered(reply: String) -> SessionEvent {
+    private static func makeAnswered(reply: String, mailId: MailID) -> SessionEvent {
         .answered(
             SessionAnswer(
-                reply: reply, mailIds: [], usage: makeUsage(), compactions: [], toolCalls: [],
+                reply: reply, mailIds: [mailId], usage: makeUsage(), compactions: [], toolCalls: [],
                 toolInvocations: []))
     }
 
     /// The caller answer of the synthetic proofs: one text delta, one
-    /// submission, and the final answer of the caller message.
-    private static let callerEvents: [SessionEvent] = [
-        makeSubmissionStarted(),
-        .textDelta(callerText),
-        makeSubmissionEnded(makeUsage()),
-        makeAnswered(reply: callerText),
-    ]
+    /// submission, and the final answer of the mail of the prompt.
+    ///
+    /// - Parameter mailId: The mail of the prompt.
+    /// - Returns: The events.
+    private static func callerEvents(of mailId: MailID) -> [SessionEvent] {
+        [
+            makeSubmissionStarted(),
+            .textDelta(callerText),
+            makeSubmissionEnded(makeUsage()),
+            makeAnswered(reply: callerText, mailId: mailId),
+        ]
+    }
 
     /// The settlement of the synthetic background run.
     private static let settledRun = SessionEvent.runSettled(
@@ -233,101 +212,165 @@ import Testing
             tool: "shell", op: "execute command", correlationID: runToken, kind: .completed, detail: "{}",
             outcome: .succeeded))
 
-    /// The events of one synthetic mail answer: a submission that `finishReason`
-    /// ends, and the whole reply.
+    /// The events of one synthetic answer that the mail `mailId` of the run
+    /// starts: a submission that `finishReason` ends, and the whole reply.
     ///
-    /// - Parameter finishReason: Why the submission of the mail answer stopped.
+    /// - Parameters:
+    ///   - mailId: The run mail.
+    ///   - finishReason: Why the submission of the mail answer stopped.
     /// - Returns: The events.
-    private static func makeMailAnswer(finishReason: FinishReason = .completed) -> [SessionEvent] {
+    private static func mailAnswer(of mailId: MailID, finishReason: FinishReason = .completed) -> [SessionEvent] {
         [
             makeSubmissionStarted(cause: .mail),
             makeSubmissionEnded(makeUsage(finishReason: finishReason)),
-            makeAnswered(reply: mailReply),
+            makeAnswered(reply: mailReply, mailId: mailId),
         ]
     }
 
-    /// A session-scoped event stream that holds `events` and never ends, as
-    /// the stream of a live session does.
-    ///
-    /// - Parameters:
-    ///   - events: The events of the session, in order.
-    ///   - idle: What the idle wait gives.
-    /// - Returns: The follow-up over the stream.
-    private static func makeFollowUp(_ events: [SessionEvent], idle: Bool = true) -> SessionFollowUp {
-        let (stream, continuation) = AsyncStream.makeStream(of: SessionOutput.self)
-        for event in events {
-            continuation.yield(SessionOutput(origin: .system, event: event))
+    /// One synthetic session: a projector over a recording sink, one source
+    /// of outputs, and one open prompt.
+    private struct SyntheticSession {
+        /// The projector.
+        let projector: SessionProjector
+
+        /// The recorder of each update that the projector sent.
+        let recorder: SinkRecorder
+
+        /// The input of the outputs of the source.
+        let outputs: AsyncStream<SessionOutput>.Continuation
+
+        /// The mail of the open prompt.
+        let promptMail = MailID()
+
+        /// The stop reasons of the prompt; the only one comes at its end.
+        let ends: AsyncStream<StopReason>
+
+        /// Makes the session and opens the prompt.
+        ///
+        /// - Parameter failure: The error that `awaitAnswer(of:)` throws
+        ///   for a failed answer, or `nil`.
+        /// - Returns: The session.
+        static func make(failure: (any Error)? = nil) async -> SyntheticSession {
+            let recorder = SinkRecorder()
+            let send: SessionUpdateSink = { update in await recorder.append(update) }
+            let projector = SessionProjector(
+                sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName,
+                send: send, relay: nil, runCallJoins: RunCallJoinTable())
+            let (stream, outputs) = AsyncStream.makeStream(of: SessionOutput.self)
+            let source = SessionProjector.Source(id: ULID.generate(), session: nil)
+            await projector.attach(stream, from: source)
+            let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
+            let session = SyntheticSession(projector: projector, recorder: recorder, outputs: outputs, ends: ends)
+            projector.open(
+                SessionProjector.Prompt(
+                    mailId: session.promptMail, sourceId: source.id,
+                    awaitAnswer: { _ in throw failure ?? CancellationError() },
+                    owner: PromptStateOwner(send: send), modelName: syntheticModelName,
+                    onEnd: { reason in
+                        end.yield(reason)
+                        end.finish()
+                    }))
+            return session
         }
-        return SessionFollowUp(events: stream) {
-            // The continuation stays alive until the wait ends, so the
-            // stream does not end before the drive reads it.
-            _ = continuation
-            return idle
+
+        /// Gives `events` to the projector, each with the origin of the mail
+        /// `mailId`.
+        ///
+        /// - Parameters:
+        ///   - events: The events, in order.
+        ///   - mailId: The mail that the events answer.
+        func send(_ events: [SessionEvent], answering mailId: MailID) {
+            for event in events {
+                outputs.yield(SessionOutput(origin: .mail([mailId]), event: event))
+            }
+        }
+
+        /// Ends the source, stops the projector after each event, and gives
+        /// the stop reason of the prompt and each sent update.
+        ///
+        /// - Returns: The stop reason, or `nil` when the prompt did not end,
+        ///   and the updates in send order.
+        func finish() async -> (reason: StopReason?, updates: [SessionUpdate]) {
+            outputs.finish()
+            await projector.stop()
+            var reason: StopReason?
+            for await ended in ends {
+                reason = ended
+            }
+            return (reason, await recorder.updates)
         }
     }
 
-    /// The session stream carries each event of the caller answer as well.
-    /// The follow-up projects only the events after the caller answer: the
-    /// caller text goes out one time, the settlement and the mail reply go
-    /// out, and the `idle` with `end_turn` comes last.
-    @Test func aFollowUpProjectsTheEventsAfterTheCallerAnswerOneTime() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let followUp = Self.makeFollowUp(Self.callerEvents + [Self.settledRun] + Self.makeMailAnswer())
-
-        let reason = await execution.drive(events: makeEventStream(Self.callerEvents), followUp: followUp)
-        let updates = await recorder.updates
+    /// The prompt ends at the answer of its own mail. The settlement of the
+    /// run and the reply of the run mail go out after its `idle`, and no
+    /// second `idle` goes out.
+    @Test func theWorkAfterThePromptGoesOutAfterItsIdle() async throws {
+        let session = await SyntheticSession.make()
+        let runMail = MailID()
+        session.send(Self.callerEvents(of: session.promptMail), answering: session.promptMail)
+        session.send([Self.settledRun] + Self.mailAnswer(of: runMail), answering: runMail)
+        let (reason, updates) = await session.finish()
 
         let chunks = updates.compactMap { agentMessageChunk(of: $0) }.map { chunk -> String? in
             guard case .text(let content) = chunk.content else { return nil }
             return content.text
         }
+        let idle = try #require(updates.firstIndex(where: isIdleState))
+        let settlement = try #require(updates.firstIndex { toolCallUpdates(in: [$0]).count == 1 })
         #expect(chunks == [Self.callerText, Self.mailReply])
-        #expect(toolCallUpdates(in: updates).map(\.toolCallId.rawValue) == [Self.runToken])
+        #expect(idle < settlement)
         #expect(reason == .endTurn)
-        #expect(idleState(of: updates.last)?.stopReason == .endTurn)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
     }
 
-    /// The stop reason of a prompt comes from its last answer: a mail answer
-    /// that stops at the output token ceiling ends the prompt with
-    /// `_truncated`, also when the caller answer ended by itself.
-    @Test func theStopReasonComesFromTheLastAnswer() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let followUp = Self.makeFollowUp(
-            Self.callerEvents + [Self.settledRun] + Self.makeMailAnswer(finishReason: .maxTokens))
+    /// The stop reason comes from the answer of the mail of the prompt: a run
+    /// mail answer that stops at the output token ceiling after the prompt
+    /// does not change it.
+    @Test func theStopReasonComesFromTheAnswerOfThePromptMail() async {
+        let session = await SyntheticSession.make()
+        let runMail = MailID()
+        session.send(Self.callerEvents(of: session.promptMail), answering: session.promptMail)
+        session.send([Self.settledRun] + Self.mailAnswer(of: runMail, finishReason: .maxTokens), answering: runMail)
+        let (reason, _) = await session.finish()
 
-        let reason = await execution.drive(events: makeEventStream(Self.callerEvents), followUp: followUp)
-        let updates = await recorder.updates
-
-        #expect(reason == .unknown(PromptExecution.truncatedStopReasonValue))
-        #expect(idleState(of: updates.last)?.stopReason == reason)
+        #expect(reason == .endTurn)
     }
 
-    /// A mail answer that fails ends the prompt with the `error` stop reason
-    /// of a failed prompt, and the `error` object of the idle holds the
-    /// failure text.
-    @Test func aFailedMailAnswerEndsThePromptWithTheErrorStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
+    /// An event of another mail while the prompt is open does not count for
+    /// the prompt: a run mail answer that stops at the output token ceiling
+    /// before the prompt ends does not cut the prompt.
+    @Test func anEventOfAnotherMailDoesNotCountForThePrompt() async {
+        let session = await SyntheticSession.make()
+        let runMail = MailID()
+        session.send(Self.mailAnswer(of: runMail, finishReason: .maxTokens), answering: runMail)
+        session.send(Self.callerEvents(of: session.promptMail), answering: session.promptMail)
+        let (reason, _) = await session.finish()
+
+        #expect(reason == .endTurn)
+    }
+
+    /// A failed answer of the mail of the prompt ends the prompt with the
+    /// `error` stop reason, and the `error` object of the idle holds the text
+    /// of the typed error that `awaitAnswer(of:)` gives.
+    @Test func aFailedAnswerOfThePromptMailEndsWithTheErrorStopReason() async throws {
+        let session = await SyntheticSession.make(failure: MailAnswerFailure())
         let failure = SessionEvent.answerFailed(
-            AnswerFailure(mailIds: [], reason: .error(Self.mailFailureText)))
-        let followUp = Self.makeFollowUp(
-            Self.callerEvents + [Self.settledRun, makeSubmissionStarted(cause: .mail), failure])
-
-        let reason = await execution.drive(events: makeEventStream(Self.callerEvents), followUp: followUp)
-        let idle = try #require(try (await recorder.updates).last.flatMap(wireObject(of:)))
+            AnswerFailure(mailIds: [session.promptMail], reason: .error(Self.mailFailureText)))
+        session.send([makeSubmissionStarted(), failure], answering: session.promptMail)
+        let (reason, updates) = await session.finish()
+        let idle = try #require(try updates.last.flatMap(wireObject(of:)))
 
         #expect(reason == .error)
         #expect(jsonString(of: idle["stopReason"]) == "error")
         #expect(jsonString(of: jsonObject(of: idle["error"])?["message"]) == Self.mailFailureText)
     }
 
-    /// A wait that ends with no idle session, because the session closed,
-    /// ends the prompt with `cancelled`: the prompt did not see the end of
-    /// the work of the session.
-    @Test func aWaitThatEndsWithNoIdleSessionEndsThePromptCancelled() async throws {
-        let (execution, _) = makeSinkedExecution()
-        let followUp = Self.makeFollowUp(Self.callerEvents, idle: false)
-
-        let reason = await execution.drive(events: makeEventStream(Self.callerEvents), followUp: followUp)
+    /// A Router session that closes while the prompt is open ends the prompt
+    /// with `cancelled`: the prompt did not see the terminal of its mail.
+    @Test func aSourceThatEndsWithThePromptOpenEndsThePromptCancelled() async {
+        let session = await SyntheticSession.make()
+        session.send([makeSubmissionStarted(), .textDelta(Self.callerText)], answering: session.promptMail)
+        let (reason, _) = await session.finish()
 
         #expect(reason == .cancelled)
     }

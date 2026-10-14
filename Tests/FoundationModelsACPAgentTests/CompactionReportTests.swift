@@ -200,14 +200,7 @@ struct CompactionReportTests {
     ///   - fixture: The wired fixture.
     private static func projectThroughHistory(_ events: [SessionEvent], of fixture: ScriptedPromptFixture) async {
         let send = fixture.harness.agent.boundHistorySink(for: fixture.sessionId)
-        let execution = PromptExecution(
-            sessionId: fixture.sessionId,
-            promptBlocks: [],
-            promptState: PromptStateOwner(send: send),
-            send: send,
-            firstActivity: nil,
-            modelName: syntheticModelName,
-            shellSnapshot: { _ in nil })
+        let execution = SyntheticExecution(send: send)
         _ = await execution.drive(events: makeEventStream(events))
     }
 
@@ -237,6 +230,37 @@ struct CompactionReportTests {
     }
 
     // MARK: - Automatic compaction (Router's compaction events)
+
+    /// The check of task ^9xs24pn: a compaction while no prompt is open
+    /// reaches the client. The projector reads the events of the session
+    /// for its whole life, so the compaction of a `compact` signal sends its
+    /// `in_progress` entry and its terminal entry under the `SignalID`, and
+    /// no state update goes out with no prompt open.
+    @Test(.timeLimit(.minutes(1)))
+    func aCompactionWithNoPromptOpenReachesTheClient() async throws {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.textDelta(Self.automaticSummary), .endPass], label: "CompactionReportTests-no-prompt")
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.earlierPrompt))
+        let promptUpdates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+
+        let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+        let signal = session.compact()
+        let updates = try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the terminal entry of the compaction"
+        ) { updates in
+            Self.compactionUpdates(in: updates.map(\.update)).contains { $0.status != .inProgress }
+        }
+        await fixture.close()
+
+        let afterPrompt = Array(updates.dropFirst(promptUpdates.count)).map(\.update)
+        let compactions = Self.compactionUpdates(in: afterPrompt)
+        #expect(compactions.first?.status == .inProgress)
+        #expect(compactions.count == 2)
+        #expect(compactions.allSatisfy { $0.compactionId.rawValue == signal.description })
+        #expect(!afterPrompt.contains { if case .stateUpdate = $0 { return true } else { return false } })
+    }
 
     /// An automatic compaction that applied a summary sends one completed
     /// `compaction_update` keyed by Router's compaction id, with the summary,

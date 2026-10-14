@@ -263,9 +263,9 @@ import Testing
 
     /// A `session/close` for a session whose mail-started answer waits for a
     /// place in the model queue answers while the other session still holds
-    /// the model. The prompt of that session waited for the mail answer, so
-    /// the close ends it with `cancelled`. After the release, the holding
-    /// session completes.
+    /// the model. The prompt of that session ended at the answer of its own
+    /// mail (task ^9xs24pn, decision Q1), so the close sends no second
+    /// `idle`. After the release, the holding session completes.
     @Test(.timeLimit(.minutes(1)))
     func closeEndsAMailStartedAnswerThatWaitsForTheModelQueue() async throws {
         let hold = ScriptedHold()
@@ -303,7 +303,7 @@ import Testing
         await fixture.close()
 
         #expect(ScriptedPromptFixture.idleCount(in: updatesOfB) == 1)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .cancelled)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
         #expect(ScriptedPromptFixture.idleCount(in: updatesOfAWhileHeld) == 0)
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }

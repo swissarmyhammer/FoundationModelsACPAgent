@@ -238,6 +238,10 @@ extension RoutedACPAgent {
                 compaction: entry.configuration.compaction,
                 repetition: entry.configuration.repetition,
                 inlineSettleGrace: entry.surface.inlineSettleGrace)
+        // The projector reads the replacement before any prompt can mail it.
+        // The reader of the replaced session stays until that session
+        // closes (task ^9xs24pn, decision Q3).
+        await entry.projector.attach(replacement)
         sessions[sessionId]?.session = replacement
         sessions[sessionId]?.selectedSlot = slot
         if entry.availability == .idle {

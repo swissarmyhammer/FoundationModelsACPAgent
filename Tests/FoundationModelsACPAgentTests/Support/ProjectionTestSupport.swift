@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
+import Synchronization
 
 @testable import FoundationModelsACPAgent
 // `SubmissionID` has an internal initializer only: the session mints the
@@ -63,10 +64,11 @@ extension SessionAnswer {
 
 // MARK: - The synthetic projection fixtures
 //
-// The projection tests drive `PromptExecution.drive(events:)` with a
-// synthetic event stream and record each update the prompt sends. No
-// session and no model is necessary for that. `PromptExecutionTests` and
-// `EventProjectionTests` share these fixtures.
+// The projection tests drive one synthetic prompt through a
+// `SessionProjector` (`SyntheticExecution.drive(events:)`) and record each
+// update the prompt sends. No session and no model is necessary for that.
+// `PromptExecutionTests` and `ACPEventTranslatorTests` share these
+// fixtures.
 
 /// A well-formed ULID that names no live session. The synthetic tests
 /// run a prompt without a session table, so the value never resolves.
@@ -120,7 +122,125 @@ actor SinkRecorder {
     }
 }
 
-/// Makes a prompt execution over a recording sink. The synthetic stream tests
+/// One synthetic prompt over a ``SessionProjector`` and a recording sink.
+/// The events of the prompt come from a test stream, not from a Router
+/// session, so no session and no model is necessary.
+struct SyntheticExecution: Sendable {
+    /// The sink every update of the prompt goes to.
+    let send: SessionUpdateSink
+
+    /// The prompt-state owner of the prompt. A test can record a cancel
+    /// request on it before the drive.
+    let promptState: PromptStateOwner
+
+    /// The reader of a settled run's stored output; the default finds no run.
+    var shellSnapshot: ShellSnapshotProvider = { _ in nil }
+
+    /// The join table that the translator writes. The projector opens it at
+    /// the start of the drive and closes it at the end, as a session does.
+    var runCallJoins = RunCallJoinTable()
+
+    /// Makes a synthetic prompt over `send`.
+    ///
+    /// - Parameters:
+    ///   - send: The sink every update goes to.
+    ///   - shellSnapshot: The reader of a settled run's stored output.
+    init(send: @escaping SessionUpdateSink, shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }) {
+        self.send = send
+        self.shellSnapshot = shellSnapshot
+        promptState = PromptStateOwner(send: send)
+    }
+
+    /// Drives `events` as the events of one prompt, and gives the stop reason
+    /// of its `idle`.
+    ///
+    /// Each event has the origin of the mail of the prompt. When the stream
+    /// ends by itself, the terminal `answered` of the mail follows. When the
+    /// stream throws, the terminal `answerFailed` of the mail follows, and
+    /// `awaitAnswer(of:)` throws the same error, as a Router session does.
+    /// The drive ends when the prompt ends, also when the stream never ends,
+    /// for example at the stall bound.
+    ///
+    /// - Parameter events: The events of the prompt, in order.
+    /// - Returns: The stop reason of the `idle`.
+    @discardableResult
+    func drive<Events: AsyncSequence & Sendable>(events: Events) async -> StopReason
+    where Events.Element == SessionEvent {
+        let projector = SessionProjector(
+            sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName, send: send,
+            shellSnapshot: shellSnapshot, relay: nil, runCallJoins: runCallJoins)
+        let (outputs, input) = AsyncStream.makeStream(of: SessionOutput.self)
+        let source = SessionProjector.Source(id: ULID.generate(), session: nil)
+        await projector.attach(outputs, from: source)
+        let failure = ErrorRecord()
+        let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
+        let mailId = MailID()
+        projector.open(
+            SessionProjector.Prompt(
+                mailId: mailId, sourceId: source.id,
+                awaitAnswer: { _ in throw failure.error ?? CancellationError() },
+                owner: promptState, modelName: syntheticModelName,
+                onEnd: { reason in
+                    end.yield(reason)
+                    end.finish()
+                }))
+        let origin = Origin.mail([mailId])
+        let forward = Task {
+            do {
+                for try await event in events {
+                    input.yield(SessionOutput(origin: origin, event: event))
+                }
+                input.yield(SessionOutput(origin: origin, event: .answered(.makeSynthetic(answering: mailId))))
+            } catch {
+                failure.record(error)
+                let reason: AnswerFailure.Reason =
+                    PromptExecution.isAbort(error) ? .cancelled : .error(String(describing: error))
+                input.yield(
+                    SessionOutput(origin: origin, event: .answerFailed(AnswerFailure(mailIds: [mailId], reason: reason))))
+            }
+        }
+        var reason = StopReason.endTurn
+        for await ended in ends {
+            reason = ended
+        }
+        forward.cancel()
+        input.finish()
+        await projector.stop()
+        return reason
+    }
+}
+
+/// The error that a synthetic stream threw, for the `awaitAnswer(of:)` of
+/// its prompt.
+private final class ErrorRecord: Sendable {
+    /// The error, or `nil` before the stream threw.
+    private let stored = Mutex<(any Error)?>(nil)
+
+    /// The recorded error, or `nil`.
+    var error: (any Error)? {
+        stored.withLock { $0 }
+    }
+
+    /// Records `error`.
+    ///
+    /// - Parameter error: The error the stream threw.
+    func record(_ error: any Error) {
+        stored.withLock { $0 = error }
+    }
+}
+
+extension SessionAnswer {
+    /// The terminal answer of the mail `mailId` of a synthetic prompt: no
+    /// reply, so it sends nothing to the wire.
+    ///
+    /// - Parameter mailId: The mail of the prompt.
+    /// - Returns: The answer.
+    static func makeSynthetic(answering mailId: MailID) -> SessionAnswer {
+        SessionAnswer(reply: "", mailIds: [mailId], usage: nil, compactions: [], toolCalls: [], toolInvocations: [])
+    }
+}
+
+/// Makes a synthetic prompt over a recording sink. The synthetic stream tests
 /// drive `drive(events:)` directly and never touch a session.
 ///
 /// - Parameter shellSnapshot: The reader of a settled run's stored
@@ -128,17 +248,10 @@ actor SinkRecorder {
 /// - Returns: The execution and the recorder of its updates.
 func makeSinkedExecution(
     shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil }
-) -> (execution: PromptExecution, recorder: SinkRecorder) {
+) -> (execution: SyntheticExecution, recorder: SinkRecorder) {
     let recorder = SinkRecorder()
-    let send: SessionUpdateSink = { update in await recorder.append(update) }
-    let execution = PromptExecution(
-        sessionId: SessionId(rawValue: syntheticSessionIdValue),
-        promptBlocks: [],
-        promptState: PromptStateOwner(send: send),
-        send: send,
-        firstActivity: nil,
-        modelName: syntheticModelName,
-        shellSnapshot: shellSnapshot)
+    let execution = SyntheticExecution(
+        send: { update in await recorder.append(update) }, shellSnapshot: shellSnapshot)
     return (execution, recorder)
 }
 
@@ -162,8 +275,7 @@ func makeEventStream(
 /// The one driver of a synthetic prompt. The projection suites use it to
 /// send a scripted event stream through a sinked prompt execution.
 enum SyntheticPrompt {
-    /// Drives one synthetic prompt of `events` through a sinked prompt
-    /// execution.
+    /// Drives one synthetic prompt of `events` through a sinked projector.
     ///
     /// - Parameters:
     ///   - events: The events of the prompt, in order.
@@ -257,7 +369,9 @@ enum RoutedPrompt {
     static let defaultPrompt = "Call the tool."
 
     /// Runs one prompt over a real routed session whose scripted model plays
-    /// `script`, and gives each update that the prompt sent.
+    /// `script`, and gives each update that the projector sent: the updates
+    /// of the prompt, and the updates of the work that comes after it until
+    /// the session is idle.
     ///
     /// - Parameters:
     ///   - prompt: The text of the prompt. A script can play a step only for
@@ -287,22 +401,36 @@ enum RoutedPrompt {
             compaction: CompactionConfiguration(),
             repetition: RepetitionConfiguration(),
             inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
-        let (sinkedExecution, recorder) = makeSinkedExecution()
-        var execution = sinkedExecution
+        let recorder = SinkRecorder()
+        let send: SessionUpdateSink = { update in await recorder.append(update) }
+        let projector = SessionProjector(
+            sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName, send: send,
+            relay: nil, runCallJoins: RunCallJoinTable())
+        await projector.attach(session)
+        let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
+        var execution = PromptExecution(
+            sessionId: SessionId(rawValue: syntheticSessionIdValue), promptBlocks: [],
+            promptState: PromptStateOwner(send: send), send: send, firstActivity: nil,
+            modelName: syntheticModelName)
         execution.modelPrompt = prompt
-        await execution.run(session: session)
+        await execution.run(session: session, projector: projector) { _ in end.finish() }
+        for await _ in ends {}
+        // The answer that the mail of a background run starts comes after
+        // the end of the prompt. The test reads the updates of all the work.
+        await session.awaitIdle()
         await session.close()
+        await projector.stop()
         return await recorder.updates
     }
 }
 
-/// The parts of one sinked session: a prompt execution and a terminal stream
+/// The parts of one sinked session: a synthetic prompt and a terminal stream
 /// that send through one recorder and share one ``RunCallJoinTable``, as in
-/// a session. The prompt is open when the value is made, as
-/// `PromptExecution.run` opens it before its events.
+/// a session. The projector of the prompt opens the table when the drive
+/// starts.
 struct SinkedShellSession {
-    /// The prompt execution over the join table.
-    let execution: PromptExecution
+    /// The synthetic prompt over the join table.
+    let execution: SyntheticExecution
 
     /// The recorder of each update that the prompt and the terminal stream
     /// send.
@@ -311,7 +439,8 @@ struct SinkedShellSession {
     /// The terminal stream over the join table.
     let terminal: TerminalStream
 
-    /// Makes the parts over `runCallJoins`, and opens the prompt.
+    /// Makes the parts over `runCallJoins`, and opens the table, as the
+    /// projector of a session does before its first event.
     ///
     /// - Parameters:
     ///   - runCallJoins: The join table of the session.
@@ -321,7 +450,7 @@ struct SinkedShellSession {
         let (sinkedExecution, recorder) = makeSinkedExecution()
         var execution = sinkedExecution
         execution.runCallJoins = runCallJoins
-        runCallJoins.openPrompt()
+        runCallJoins.openProjection()
         self.execution = execution
         self.recorder = recorder
         terminal = TerminalStream(snapshot: snapshot, runCallJoins: runCallJoins) { update in

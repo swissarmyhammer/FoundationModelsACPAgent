@@ -19,8 +19,11 @@ typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 /// the request arrives as `SessionEvent.elicitationRequested`. This actor
 /// changes that event into one `elicitation/create` on the wire, decodes the
 /// client's answer, and delivers it back through
-/// `RoutedSession.respond(elicitationId:response:)`. Each round trip runs
-/// inside ``PromptStateOwner/awaitingUser(_:)``, so the wire shows
+/// `RoutedSession.respond(elicitationId:response:)`. The relay lives as long
+/// as the session (elicitation-plan task 4), and the ``SessionProjector``
+/// runs each round trip in its own task, so a question does not stop the
+/// other output of the session (task 5). While a prompt is open, the round
+/// trip runs inside ``PromptStateOwner/awaitingUser(_:)``, so the wire shows
 /// `requires_action` before the question and `running` after the answer.
 ///
 /// The capability gate: the client said what it answers at
@@ -45,7 +48,12 @@ actor ElicitationRelay {
     private let capabilities: NegotiatedClientCapabilities
 
     /// The one connection the create, and a later completion, go through.
-    private let connection: AgentSideConnection
+    ///
+    /// The relay lives as long as the session, and the agent keeps the
+    /// session, so the relay keeps the connection weakly, as the history sink
+    /// does (task `^173qn8n`): the connection keeps the agent. When the
+    /// connection is gone, a round trip gets `cancel`.
+    private weak var connection: AgentSideConnection?
 
     /// The waiters of the round trips in flight, keyed by the elicitation
     /// id. ``cancelPendingElicitations()`` resumes each with `cancel`.
@@ -78,8 +86,9 @@ actor ElicitationRelay {
     // MARK: - The round trip
 
     /// Relays one elicitation event: the capability gate, the wire round
-    /// trip inside the prompt's `awaitingUser`, and the answer delivery
-    /// through `session.respond(elicitationId:response:)`.
+    /// trip, inside the `awaitingUser` of the open prompt when one is open,
+    /// and the answer delivery through
+    /// `session.respond(elicitationId:response:)`.
     ///
     /// The relay of a request runs in one elicitation span
     /// (``AgentTracing``). The span carries the mode and the outcome:
@@ -91,12 +100,13 @@ actor ElicitationRelay {
     /// - Parameters:
     ///   - event: The `.elicitation` operation event the session posted.
     ///   - session: The Router session the answer goes back to.
-    ///   - promptState: The prompt-state owner that pairs `requires_action`
-    ///     with `running` around the wait.
+    ///   - promptState: The prompt-state owner of the open prompt, which
+    ///     pairs `requires_action` with `running` around the wait, or `nil`
+    ///     while no prompt is open: then no state update goes out.
     func relay(
         _ event: OperationEvent,
         on session: any RoutedSession,
-        promptState: PromptStateOwner
+        promptState: PromptStateOwner?
     ) async {
         // The "elicitation is non-nil iff the kind is .elicitation" rule
         // is a doc comment upstream, not a type guarantee; read it
@@ -130,15 +140,15 @@ actor ElicitationRelay {
     ///   - request: The request the tool posted.
     ///   - toolCallId: The run's completion token.
     ///   - session: The Router session the answer goes back to.
-    ///   - promptState: The prompt-state owner that pairs `requires_action`
-    ///     with `running` around the wait.
+    ///   - promptState: The prompt-state owner of the open prompt, or `nil`
+    ///     while no prompt is open.
     /// - Returns: How the elicitation ended: the action of the answer that
     ///   went to Router.
     private func relayRequest(
         _ request: ElicitationRequest,
         toolCallId: String,
         on session: any RoutedSession,
-        promptState: PromptStateOwner
+        promptState: PromptStateOwner?
     ) async -> ElicitationResponse.Action {
         let elicitationId = request.elicitationId.ulidString
         guard supports(request.mode) else {
@@ -162,17 +172,23 @@ actor ElicitationRelay {
                 reason: .duplicateURLElicitationId)
             return .decline
         }
-        let outcome = await promptState.awaitingUser {
+        let roundTrip = { @Sendable in
             await self.deliverRoundTrip(
                 wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
+        }
+        let outcome = if let promptState {
+            await promptState.awaitingUser(roundTrip)
+        } else {
+            await roundTrip()
         }
         endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
         return outcome
     }
 
     /// Answers every round trip still in flight with `cancel`, so each
-    /// suspended tool resumes before the prompt's `idle` terminator.
-    /// `session/cancel` and `session/close` call it.
+    /// suspended tool resumes. The relay also stops the wire requests of
+    /// those round trips. `session/cancel`, which sends `cancelAll()`, and
+    /// `session/close` call it (task ^9xs24pn, decision G4).
     ///
     /// The tasks that still wait on the client are cancelled too. An
     /// answer that arrives after this call finds no waiter and is
@@ -249,6 +265,9 @@ actor ElicitationRelay {
             answerTasks[elicitationId] = Task {
                 let raw: CreateElicitationResponse?
                 do {
+                    guard let connection = self.connection else {
+                        throw CancellationError()
+                    }
                     raw = try await connection.createElicitation(wireRequest)
                 } catch {
                     ACPAgentTelemetry.logger(.elicitationRelay).warning(
@@ -289,6 +308,9 @@ actor ElicitationRelay {
     ///   - session: The Router session whose flow completes.
     private func completeURLFlow(elicitationId: String, on session: any RoutedSession) async {
         do {
+            guard let connection else {
+                throw CancellationError()
+            }
             try await connection.elicitationComplete(
                 CompleteElicitationNotification(
                     elicitationId: ElicitationId(rawValue: elicitationId)))

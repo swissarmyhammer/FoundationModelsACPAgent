@@ -271,7 +271,7 @@ import Testing
     //
     // The sinked-execution and event-stream fixtures live in
     // `Support/ProjectionTestSupport.swift`, shared with
-    // `EventProjectionTests`.
+    // `ACPEventTranslatorTests`.
 
     /// A retry makes two submissions in one prompt. The Router sends the
     /// events of both submissions, the usage of each generation call, and
@@ -993,6 +993,10 @@ import Testing
     /// Session A waits in an elicitation that the client does not answer.
     /// Session B prompts on the same model, and its prompt ends with
     /// `end_turn` while A still waits.
+    ///
+    /// The prompt of A ends at the answer of its own mail when its snippet
+    /// goes to the background (task ^9xs24pn, decision Q1), but the question
+    /// of A stays open. Thus A can send an `idle`, and only an `end_turn` one.
     @Test(.timeLimit(.minutes(1)))
     func aSessionInAnElicitationHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
@@ -1012,17 +1016,19 @@ import Testing
 
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
         #expect(pendingOfA.count == 1)
-        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
     }
 
     /// Session A waits in a tool body: a shell read of a named pipe that
     /// nothing writes. Session B prompts on the same model, and its prompt
     /// ends with `end_turn` while the tool body of A still waits.
     ///
-    /// The prompt of A waits for its background read (task ^64pav2a), so it
-    /// sends no `idle`. B starts no read, so its prompt ends after its own
-    /// answer. The close of each session at the end stops the read of A and
-    /// ends the prompt of A.
+    /// The prompt of A ends at the answer of its own mail when its read goes
+    /// to the background (task ^9xs24pn, decision Q1), while the read still
+    /// waits. Thus A can send an `idle`, and only an `end_turn` one. B starts
+    /// no read, so its prompt ends after its own answer. The close of each
+    /// session at the end stops the read of A.
     @Test(.timeLimit(.minutes(1)))
     func aSessionInAToolBodyHoldsNoModel() async throws {
         let fixture = try await QueuedScriptedFixture.make(
@@ -1046,7 +1052,8 @@ import Testing
         try await fixture.closeSessions()
 
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
-        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
+        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
     }
 
     // MARK: - The unknown-id policy

@@ -76,9 +76,9 @@ struct TerminalStream {
     let snapshot: ShellSnapshotProvider
 
     /// The join of each run of the session to its SDK tool call, which the
-    /// projection of each prompt writes. A table that no prompt opened gives
-    /// each run "no join" at once, so its announce goes on the completion
-    /// token.
+    /// translator of the session projector writes. A table that no projector
+    /// opened gives each run "no join" at once, so its announce goes on the
+    /// completion token.
     let runCallJoins: RunCallJoinTable
 
     /// The sink every update of this projection goes to.
@@ -117,7 +117,7 @@ struct TerminalStream {
     /// - Parameters:
     ///   - snapshot: The reader of a run's stored raw output.
     ///   - runCallJoins: The join table of the session. The default is a
-    ///     table that no prompt opens.
+    ///     table that no projector opens.
     ///   - send: The sink every update goes to.
     init(
         snapshot: @escaping ShellSnapshotProvider,
@@ -139,7 +139,7 @@ struct TerminalStream {
     ///   - stream: The host-owned stream to consume. Its
     ///     `snapshot(for:)` backs the gap and completion replacements.
     ///   - runCallJoins: The join table of the session. The default is a
-    ///     table that no prompt opens.
+    ///     table that no projector opens.
     ///   - send: The sink every update goes to.
     /// - Returns: The running consumer task.
     @discardableResult

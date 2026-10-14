@@ -221,6 +221,45 @@ import Testing
         await fixture.close()
     }
 
+    /// The fixed order of a model slot switch while a prompt is open (task
+    /// ^9xs24pn, decision Q3). The prompt on the standard slot holds; the
+    /// client switches to flash; the held prompt then ends on the replaced
+    /// session, at the terminal of its own mail, with its standard text. The
+    /// projector reads the replacement too, so the next prompt answers on
+    /// the flash slot, after the first `idle`.
+    @Test(.timeLimit(.minutes(1)))
+    func aSlotSwitchWhileAPromptIsOpenEndsThatPromptOnTheReplacedSession() async throws {
+        let hold = ScriptedHold()
+        var loader = StubModelLoader()
+        loader.makeLLMContainer = { slot in
+            slot == .flash
+                ? ScriptedLLMContainer(script: [.textDelta(Self.flashAnswer), .endPass])
+                : ScriptedLLMContainer(script: [.holdUntilReleased(hold), .textDelta(Self.standardAnswer), .endPass])
+        }
+        let fixture = try await ScriptedPromptFixture.make(loader: loader, label: "ConfigOptionsTests-switch-open")
+
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+        _ = try await fixture.harness.connection.setSessionConfigOption(
+            Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
+        hold.release()
+        let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
+        let bothPrompts = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        await fixture.close()
+
+        #expect(ScriptedPromptFixture.agentText(in: firstPrompt) == Self.standardAnswer)
+        #expect(ScriptedPromptFixture.idleStopReason(in: firstPrompt) == .endTurn)
+        let firstIdle = try #require(bothPrompts.firstIndex { isIdleState($0.update) })
+        let flashChunk = try #require(
+            bothPrompts.firstIndex { ScriptedPromptFixture.agentChunkTexts(in: [$0]) == [Self.flashAnswer] })
+        #expect(firstIdle < flashChunk)
+        #expect(ScriptedPromptFixture.idleCount(in: bothPrompts) == 2)
+    }
+
     /// An invalid set — an unknown option id, a value that is not a
     /// slot, or a value of the wrong type — answers invalid params, and
     /// the state does not change.

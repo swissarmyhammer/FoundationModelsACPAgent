@@ -98,7 +98,8 @@ enum CommandDispatch {
 
 /// The execution of one `.action` command prompt: the closure runs and its
 /// text streams as agent-message chunks. There is no model prompt, and
-/// there are no transcript entries beyond what the action records.
+/// there are no transcript entries beyond what the action records. Each
+/// update goes through the command sink of the ``SessionProjector``.
 struct ActionCommandExecution: Sendable {
     /// The prompt-state owner of the session.
     let promptState: PromptStateOwner
@@ -118,7 +119,7 @@ struct ActionCommandExecution: Sendable {
     /// is.
     func run() async {
         await promptState.promptDidStart()
-        let messageId = EventProjection.makeMessageId()
+        let messageId = ACPEventTranslator.makeMessageId()
         var stop = PromptStop.completed
         do {
             for try await text in action(invocation) {
@@ -303,7 +304,10 @@ extension RoutedACPAgent {
             guard command.attachments.isEmpty else {
                 throw RequestError.actionCommandAttachments(name: command.name)
             }
-            let (owner, send) = beginPrompt(params: params, connection: connection)
+            // The updates of an action go through the projector, so they keep
+            // their order with the events of the session (elicitation-plan
+            // task 1).
+            let (owner, send) = beginPrompt(params: params, send: entry.projector.commandSink)
             return .action(
                 ActionCommandExecution(
                     promptState: owner,
@@ -319,14 +323,16 @@ extension RoutedACPAgent {
             } catch {
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
-            let (owner, send) = beginPrompt(params: params, connection: connection)
+            let (owner, send) = beginPrompt(
+                params: params, send: historySink(for: params.sessionId, connection: connection))
             return .modelPrompt(
                 text: CommandDispatch.modelPrompt(expandedText: expandedText, attachments: command.attachments),
                 owner: owner, send: send)
         case .rendered(let render):
             // Mark the session busy before the async render, so a
             // concurrent prompt is refused instead of racing this one.
-            let (owner, send) = beginPrompt(params: params, connection: connection)
+            let (owner, send) = beginPrompt(
+                params: params, send: historySink(for: params.sessionId, connection: connection))
             let renderedText: String
             do {
                 renderedText = try await render(

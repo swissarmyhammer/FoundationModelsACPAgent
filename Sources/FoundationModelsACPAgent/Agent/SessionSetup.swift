@@ -85,11 +85,11 @@ struct ActiveSession: Sendable {
     /// this reference.
     var activePrompt: PromptStateOwner?
 
-    /// The running prompt's elicitation relay, or `nil` when no prompt is in
-    /// flight. `session/cancel` and `session/close` answer
-    /// every pending elicitation with `cancel` through this reference,
-    /// so the suspended tool resumes before the `idle` terminator.
-    var activeElicitationRelay: ElicitationRelay?
+    /// The one reader of the events of the session, from its open to its
+    /// close (``SessionProjector``). It holds the elicitation relay of the
+    /// session: `session/cancel` and `session/close` answer every pending
+    /// elicitation with `cancel` through it.
+    let projector: SessionProjector
 
     /// The session's descendants — its forks. `session/close`
     /// closes each one, so no orphan keeps a run or a submission in the model
@@ -660,6 +660,27 @@ extension RoutedACPAgent {
         let configOptions = ConfigOptions.options(
             profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
 
+        // The one reader of the events of the session starts before anything
+        // can mail the session, so it keeps each event (elicitation-plan
+        // task 1). A missing negotiation reads as "supports nothing", the
+        // same rule `initialize` applies to an unparsable capabilities
+        // object.
+        let shellOutput = composition.surface.shellOutput
+        let projector = SessionProjector(
+            sessionId: sessionId,
+            modelName: ConfigOptions.handle(for: ConfigOptions.defaultSlot, of: residentProfile).chosen.stringValue,
+            send: boundHistorySink(for: sessionId),
+            shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
+            relay: boundConnection.map { connection in
+                ElicitationRelay(
+                    sessionId: sessionId,
+                    capabilities: negotiatedClientCapabilities
+                        ?? NegotiatedClientCapabilities(reading: ClientCapabilities()),
+                    connection: connection)
+            },
+            runCallJoins: composition.surface.runCallJoins)
+        await projector.attach(session)
+
         sessions[sessionId] = ActiveSession(
             session: session,
             configuration: composition.configuration,
@@ -672,7 +693,7 @@ extension RoutedACPAgent {
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
             activePrompt: nil,
-            activeElicitationRelay: nil,
+            projector: projector,
             isReplayOnly: composition.isReplayOnly,
             indexRecorded: indexRecorded,
             retainedHistory: RetainedHistory(history))

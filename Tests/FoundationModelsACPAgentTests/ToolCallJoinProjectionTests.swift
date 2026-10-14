@@ -477,7 +477,7 @@ import Testing
     /// run still waits for its entry.
     @Test func onlyTheOpenRecordOfAnAgentRunWritesAnEntry() {
         let runCallJoins = RunCallJoinTable()
-        runCallJoins.openPrompt()
+        runCallJoins.openProjection()
 
         runCallJoins.recordAgentRunEvent(Self.closeRecord(Self.agentShellRunToken, toolCallID: nil))
         runCallJoins.recordAgentRunEvent(Self.progress(Self.agentShellRunToken))

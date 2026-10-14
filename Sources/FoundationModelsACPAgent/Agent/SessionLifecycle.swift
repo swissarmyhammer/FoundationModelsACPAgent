@@ -138,16 +138,16 @@ extension RoutedACPAgent {
         guard !entry.isClosed else {
             return
         }
+        // Every pending elicitation is answered with `cancel` first, also
+        // with no prompt open: the relay lives for the whole session, and
+        // the suspended tool must resume (task ^9xs24pn, decision G4).
+        await entry.projector.relay?.cancelPendingElicitations()
         // A close during an active prompt cancels it as `session/cancel` would,
         // and waits for the `idle(cancelled)` terminator to go out before the
         // close response, so a client with a spinner learns that the prompt
-        // ended. Every pending elicitation is
-        // answered with `cancel` first: the suspended tool must
-        // resume, or the prompt's drive loop never ends and this wait holds
-        // forever — Router's mailbox does not resume on task cancellation.
+        // ended.
         if let promptState = entry.activePrompt {
             await promptState.noteCancelRequested()
-            await entry.activeElicitationRelay?.cancelPendingElicitations()
             entry.session.cancelAll()
             await promptState.waitForPromptEnd()
         }
@@ -164,6 +164,9 @@ extension RoutedACPAgent {
         for descendant in entry.descendants {
             await descendant.close()
         }
+        // Each subscription of the projector ended with the close, so the
+        // projector sends each event that it holds, and then it stops.
+        await entry.projector.stop()
         // Mark closed and finish the host-owned shell stream, then shut the
         // MCP servers down — after the sweep, never before, so the settling
         // runs still have their transports. The pool

@@ -666,7 +666,7 @@ private final class SnapshotSequence: Sendable {
         let snapshot = ShellOutputSnapshot(
             stdout: Self.makeRawOutput(bytes: stored), stderr: Self.makeRawOutput(bytes: []))
         let table = RunCallJoinTable()
-        table.openPrompt()
+        table.openProjection()
         table.record(toolCallID: Self.joinedSdkCallId, for: Self.joinedRunToken)
         let recorder = SinkRecorder()
         let (events, input) = AsyncStream<ShellOutputEvent>.makeStream()
@@ -710,7 +710,7 @@ private final class SnapshotSequence: Sendable {
     func aChunkQueuedBehindAWaitingRunReleaseSendsNoByteAgain() async throws {
         let stored = Self.firstChunk + Self.secondChunk
         let table = RunCallJoinTable()
-        table.openPrompt()
+        table.openProjection()
         table.record(toolCallID: Self.joinedSdkCallId, for: Self.joinedRunToken)
         let recorder = SinkRecorder()
         let (events, input) = AsyncStream<ShellOutputEvent>.makeStream()

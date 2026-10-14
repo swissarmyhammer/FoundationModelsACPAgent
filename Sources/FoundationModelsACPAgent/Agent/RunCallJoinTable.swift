@@ -9,7 +9,7 @@ import Synchronization
 /// `toolInvocation(record, toolCallID:)` event of the open record. Two
 /// consumers send updates of one run, and both must use one wire id:
 ///
-/// - ``EventProjection`` reads the `SessionEvent` stream of the prompt. It
+/// - ``ACPEventTranslator`` reads the `SessionEvent` stream of the session. It
 ///   writes the join when it handles the open record, and it sends each run
 ///   update on the id that this table gives (``toolCallId(for:)``).
 /// - ``TerminalStream`` reads the host-owned shell output stream. It does not
@@ -26,7 +26,7 @@ import Synchronization
 /// The first write for a run is final. A later write for the same run changes
 /// nothing. Thus each consumer reads the same entry, and each run has one wire
 /// id. No time decides an entry. Each entry comes from an event of the run
-/// itself, or from the end of the prompt:
+/// itself, or from the stop of the projection:
 ///
 /// - the open record of a root run (``record(toolCallID:for:)``),
 /// - the settlement of a root run (``seal(_:)``),
@@ -37,12 +37,12 @@ import Synchronization
 ///   of the agent environment gives each of those events to this table. The
 ///   agent run sends no wire update of its tool runs, so "no join" is the
 ///   correct entry for them.
-/// - the end of the prompt (``closePrompt()``): each waiting run gets "no join".
-///   A run whose first event comes while no prompt is open gets "no join" at
-///   once. This rule stays: no projection writes an entry for a root run
-///   after its prompt ended, for example for a root run whose open record a
-///   cancelled prompt never handled. Without the rule, such a run would wait
-///   until the shell output stream ends.
+/// - the stop of the projection (``closeProjection()``): each waiting run
+///   gets "no join". A run whose first event comes while no projection is
+///   open gets "no join" at once. This rule stays: no translator writes an
+///   entry for a root run after the ``SessionProjector`` of the session
+///   stopped. Without the rule, such a run would wait until the shell output
+///   stream ends.
 ///
 /// The end of an agent run writes no entry. Thus a root run that starts just
 /// after an agent run ended keeps the SDK id of its own open record, also
@@ -51,11 +51,12 @@ import Synchronization
 ///
 /// The session surface owns one table (``SessionSurface/runCallJoins``),
 /// because the terminal stream and the agent environment live for the whole
-/// session and each prompt makes a new projection. An entry stays for the life
-/// of the session: a background run can settle in a later prompt. An entry is
+/// session, as the projector does. An entry stays for the life of the
+/// session: a background run can settle in a later prompt, or with no prompt
+/// open. An entry is
 /// one short string for each run.
 ///
-/// `EventProjection` reads the table from synchronous code, thus a `Mutex`
+/// `ACPEventTranslator` reads the table from synchronous code, thus a `Mutex`
 /// keeps the state, as ``RetainedHistory`` does.
 final class RunCallJoinTable: Sendable {
     /// Receives the completion token of each waiting run whose entry was
@@ -84,9 +85,9 @@ final class RunCallJoinTable: Sendable {
         /// written, or `nil` when no terminal stream reads the table.
         var joinObserver: JoinObserver?
 
-        /// Whether a root prompt is open, so that a projection can write an
-        /// entry.
-        var isPromptOpen = false
+        /// Whether the projector of the session reads its events, so that
+        /// its translator can write an entry.
+        var isProjectionOpen = false
     }
 
     /// The state of the table.
@@ -111,17 +112,18 @@ final class RunCallJoinTable: Sendable {
         store(.unjoined, for: token)
     }
 
-    /// Records that a root prompt is open. Call it before the prompt starts
-    /// its Router stream, so that a run of the prompt waits for the entry that
-    /// the projection writes.
-    func openPrompt() {
-        state.withLock { $0.isPromptOpen = true }
+    /// Records that the projector of the session reads its events. Call it
+    /// before the projector takes its first Router subscription, so that a
+    /// run waits for the entry that the translator writes.
+    func openProjection() {
+        state.withLock { $0.isProjectionOpen = true }
     }
 
-    /// Records that the root prompt ended, and writes "no join" for each
+    /// Records that the projector of the session stopped, and writes
+    /// "no join" for each
     /// waiting run: no projection writes an entry after this point.
-    func closePrompt() {
-        state.withLock { $0.isPromptOpen = false }
+    func closeProjection() {
+        state.withLock { $0.isProjectionOpen = false }
         sealWaitingRuns()
     }
 
@@ -166,7 +168,7 @@ final class RunCallJoinTable: Sendable {
     /// must wait for its entry.
     ///
     /// A run with an entry gets the id of the entry. A run with no entry while
-    /// no prompt is open gets "no join" at once. Else the run waits, and the
+    /// no projection is open gets "no join" at once. Else the run waits, and the
     /// observer (``observeJoins(_:)``) gets its token when its entry is
     /// written. The check and the wait are one locked operation, so a write
     /// between them cannot be lost.
@@ -178,7 +180,7 @@ final class RunCallJoinTable: Sendable {
             if let join = state.joins[token] {
                 return join
             }
-            guard state.isPromptOpen else {
+            guard state.isProjectionOpen else {
                 state.joins[token] = .unjoined
                 return .unjoined
             }

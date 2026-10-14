@@ -307,7 +307,7 @@ extension RoutedACPAgent {
     /// `session/close`. So a process that stopped during a prompt can leave a
     /// plan in the journal that the history file does not hold. The history
     /// merges each recorded plan in post order, as the live projection did
-    /// (``EventProjection/planUpdate(for:)``). Thus it holds the last plan of
+    /// (``ACPEventTranslator/planUpdate(for:)``). Thus it holds the last plan of
     /// each plan id, and a plan that the history holds already does not
     /// change.
     ///
@@ -322,7 +322,7 @@ extension RoutedACPAgent {
     ) -> SessionMergeEngine {
         var history = retainedHistory(kept: kept, directory: directory, sessionId: sessionId)
         for plan in recordedPlans(of: rootId, in: directory, sessionId: sessionId) {
-            history.apply(.planUpdate(EventProjection.planUpdate(for: plan)))
+            history.apply(.planUpdate(ACPEventTranslator.planUpdate(for: plan)))
         }
         return history
     }
