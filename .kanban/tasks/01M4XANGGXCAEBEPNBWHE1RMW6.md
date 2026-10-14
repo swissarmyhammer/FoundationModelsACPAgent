@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4xb6vqm686z1d5xbs02e7st
+  text: |-
+    Decisions from T0 (step lead).
+    G2: rule A. The headless CLI (RunPrompt, acp-print) waits for the first idle after the echo of its own messageId. An idle means that no work is left, so its own prompt ended too. No _meta extension.
+    G3: first make the error impossible. Check that the session is open before the session/prompt response is sent (a closed session gives an error before insertion; ACP permits this). A new MailID cannot be a duplicate. If mail(_:) still throws after the response (a close in the window), the projector sends the error text as an agent message, then idle with an error stop reason. Add a fixed-order test for that window.
+  timestamp: 2026-10-14T13:56:40.308965+00:00
 depends_on:
 - 01M4XANBPVKDGSA84BZ9XS24PN
 position_column: todo

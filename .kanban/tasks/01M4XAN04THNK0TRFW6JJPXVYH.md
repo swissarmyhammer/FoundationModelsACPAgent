@@ -37,8 +37,8 @@ comments:
     G5 (task 1): AnswerFailure on the stream has only cancelled | error(String). The typed error (refusal, context size) comes from awaitAnswer(of:). The projector can call awaitAnswer(of:) inline when it reads the terminal (it returns at once), so the order stays. No Router work.
     G6 (T4): session/cancel ends with idle + cancelled when the projector reads signalDone of the cancelAll SignalID. If a compaction runs, cancelAll runs after it (signals in order), so the idle comes late. This follows the plan; I note it only.
   timestamp: 2026-10-14T13:56:04.394100+00:00
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffca80
 title: 'T0: Check steps 2 and 3 (packages, build, API against mailbox.md)'
 ---
 Step 4 of the mail work, part T0.

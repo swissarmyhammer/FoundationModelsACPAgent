@@ -1,6 +1,15 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4xb6zxnes1gbc5bmqs1x18w
+  text: |-
+    Decisions from T0 (step lead).
+    G4: on cancelAll() and on close, the elicitation relay cancels its own open client requests. A cancel of one run is not covered (gap task on the board).
+    G5: the projector gets the typed error of a failed answer with awaitAnswer(of:) inline, when it reads answerFailed. The terminal is already in the ledger, so the call returns at once and the order stays.
+    G6 (T4): session/cancel ends with idle + cancelled when the projector reads signalDone of the cancelAll SignalID. If a compaction runs, this comes after the compaction ends.
+  timestamp: 2026-10-14T13:56:44.597708+00:00
 depends_on:
 - 01M4XAN69WXDPAEA2E6G7Y8KTF
 position_column: todo

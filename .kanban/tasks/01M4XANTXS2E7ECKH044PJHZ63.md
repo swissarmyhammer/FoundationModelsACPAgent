@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m4xb6xc86pb76pp3dg1ey44m
+  text: 'Decision from T0 (G1, step lead): T5 does no code. awaitIdle() is not in order with streamSessionEvents(), and a run that waits only for the user keeps the session busy. T5 records what Router must add (elicitation-plan tasks 9 and 10) and reports it.'
+  timestamp: 2026-10-14T13:56:41.992172+00:00
 depends_on:
 - 01M4XANNYAHB1NCACW4B6HR5R3
 position_column: todo
