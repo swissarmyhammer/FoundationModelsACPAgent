@@ -135,8 +135,8 @@ import Tracing
             await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
             try await fixture.harness.connection.sessionCancel(
                 CancelSessionNotification(sessionId: fixture.sessionId))
-            try await Poll.until("the prompt span and the cancel span ended") {
-                let names = Set(context.spans.map(\.operationName))
+            await context.wait { capture in
+                let names = Set(capture.spans.map(\.operationName))
                 return names.isSuperset(of: [ACPAgentTelemetry.SpanName.prompt, ACPAgentTelemetry.SpanName.cancel])
             }
             await fixture.close()
@@ -341,8 +341,8 @@ import Tracing
                         sessionId: SessionId(rawValue: Self.unrecordedSessionIdValue), meta: meta))
             }
             try await connection.sessionCancel(CancelSessionNotification(sessionId: fixture.sessionId, meta: meta))
-            try await Poll.until("the cancel span ended") {
-                context.spans.contains { $0.operationName == ACPAgentTelemetry.SpanName.cancel }
+            await context.wait { capture in
+                capture.spans.contains { $0.operationName == ACPAgentTelemetry.SpanName.cancel }
             }
             await fixture.close()
             return TracedRun(sessionId: fixture.sessionId.rawValue, context: context)

@@ -124,8 +124,8 @@ import Tracing
                 AgentClientHarness.makePromptRequest(
                     sessionId: fixture.sessionId, text: "/\(Self.helpCommandName) \(Self.commandArguments)"))
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            try await Poll.until("the prompt span ended") {
-                context.spans.contains { $0.operationName == ACPAgentTelemetry.SpanName.prompt }
+            await context.wait { capture in
+                capture.spans.contains { $0.operationName == ACPAgentTelemetry.SpanName.prompt }
             }
             await fixture.close()
             return TracedRun(sessionId: fixture.sessionId.rawValue, context: context)

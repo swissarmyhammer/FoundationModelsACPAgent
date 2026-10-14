@@ -109,8 +109,8 @@ import Testing
             _ = try await fixture.harness.connection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            try await Poll.until("the prompt duration was recorded") {
-                (try? context.metricsFactory.expectTimer(ACPAgentTelemetry.MetricName.promptDuration, dimensions))
+            await context.wait { capture in
+                (try? capture.metricsFactory.expectTimer(ACPAgentTelemetry.MetricName.promptDuration, dimensions))
                     != nil
             }
             await fixture.close()

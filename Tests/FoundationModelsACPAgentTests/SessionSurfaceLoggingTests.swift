@@ -67,8 +67,8 @@ import Testing
             try await ScriptedPromptFixture.waitForRunning(fixture.collector)
             try await fixture.harness.connection.sessionCancel(
                 CancelSessionNotification(sessionId: fixture.sessionId))
-            try await Poll.until("the cancel record is in the capture") {
-                context.logRecords.contains { $0.metadata[cancelSignalKey] != nil }
+            await context.wait { capture in
+                capture.logRecords.contains { $0.metadata[cancelSignalKey] != nil }
             }
             _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
             await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)

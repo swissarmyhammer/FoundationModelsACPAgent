@@ -197,8 +197,8 @@ import Testing
         try await runPrompt(on: fixture, text: "/\(helpCommandName) \(commandArguments)")
         try await runCancelledPrompt(on: fixture)
         await runFailingCommand(on: fixture)
-        try await Poll.until("each prompt span ended") {
-            context.spans.count { $0.operationName == ACPAgentTelemetry.SpanName.prompt } == promptCount
+        await context.wait { capture in
+            capture.spans.count { $0.operationName == ACPAgentTelemetry.SpanName.prompt } == promptCount
         }
         try await connectUnreachableServer(on: fixture)
         _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
