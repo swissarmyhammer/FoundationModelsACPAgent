@@ -6,16 +6,15 @@ import FoundationModelsRouter
 import FoundationModelsSkills
 import Logging
 
-/// Whether a session can accept a new prompt. `idle` means
-/// "ready for a new prompt"; a `session/prompt` that arrives while the
-/// session is `busy` is a client error, not a queue entry — the composer
-/// owns queueing, and Router's own prompt queue is never shown over ACP.
-/// A `closed` session is resumable, not promptable.
+/// Whether a session has a prompt in flight. A session accepts a new
+/// prompt in both `idle` and `busy`: each prompt is mail, and it waits in
+/// the mail queue of the session (elicitation-plan task 3). A `closed`
+/// session is resumable, not promptable.
 enum SessionAvailability: Equatable, Sendable {
-    /// The session is ready for a new prompt.
+    /// No prompt is in flight.
     case idle
 
-    /// A prompt is in flight.
+    /// At least one prompt is in flight.
     case busy
 
     /// `session/close` released the session. The transcript stays, so
@@ -80,10 +79,13 @@ struct ActiveSession: Sendable {
     /// truth against this baseline.
     var announcedConfigOptions: [SessionConfigOption]
 
-    /// The running prompt's state owner, or `nil` when no prompt is in
-    /// flight. `session/cancel` reaches the prompt through
-    /// this reference.
-    var activePrompt: PromptStateOwner?
+    /// The state owner of each prompt in flight, in the order of
+    /// acceptance. `session/cancel` and `session/close` reach the prompts
+    /// through it.
+    var openPrompts: [PromptStateOwner] = []
+
+    /// The `state_update` of the session over all its open prompts.
+    let stateLedger: SessionStateLedger
 
     /// The one reader of the events of the session, from its open to its
     /// close (``SessionProjector``). It holds the elicitation relay of the
@@ -125,13 +127,13 @@ struct ActiveSession: Sendable {
         retainedHistory.snapshot
     }
 
-    /// Whether the session can accept a new prompt. Derived, so the
-    /// stored prompt reference stays the one source of the busy state.
+    /// Whether the session has a prompt in flight. Derived, so the
+    /// stored prompt list stays the one source of the busy state.
     var availability: SessionAvailability {
         if isClosed {
             return .closed
         }
-        return activePrompt == nil ? .idle : .busy
+        return openPrompts.isEmpty ? .idle : .busy
     }
 
     /// Inserts the prompt of `request` as the user message of the session.
@@ -147,13 +149,15 @@ struct ActiveSession: Sendable {
     ///
     /// - Parameters:
     ///   - request: The prompt request.
+    ///   - messageId: The id of the user message: the description of the
+    ///     `MailID` of the prompt, or `nil` for a new id.
     ///   - connection: The connection that sends the echo.
     /// - Returns: The id of the user message, for the prompt response.
     func insertUserMessage(
-        _ request: PromptRequest, through connection: AgentSideConnection
+        _ request: PromptRequest, messageId: MessageId? = nil, through connection: AgentSideConnection
     ) -> MessageId {
         let history = retainedHistory
-        return connection.insertUserMessage(request) { update in history.apply(update) }
+        return connection.insertUserMessage(request, messageId: messageId) { update in history.apply(update) }
     }
 }
 
@@ -692,7 +696,7 @@ extension RoutedACPAgent {
             commands: commands,
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
-            activePrompt: nil,
+            stateLedger: SessionStateLedger(send: boundHistorySink(for: sessionId)),
             projector: projector,
             isReplayOnly: composition.isReplayOnly,
             indexRecorded: indexRecorded,

@@ -15,10 +15,10 @@ import Logging
 /// reaches the client too.
 ///
 /// A prompt is one record in the projector: its `MailID`, its prompt-state
-/// owner and the work to run at its end. The prompt opens before its mail
-/// goes into the session, so each event of the mail finds the record. An
-/// event counts for the prompt (``PromptTally``) only when its origin holds
-/// the `MailID` of the prompt. The prompt ends at the terminal event of its
+/// owner and the work to run at its end. More than one prompt can be open.
+/// The prompt opens before its mail goes into the session, so each event of
+/// the mail finds the record. An event counts for a prompt (``PromptTally``)
+/// only when its origin holds the `MailID` of that prompt. The prompt ends at the terminal event of its
 /// `MailID`: `answered`, `answerFailed`, `cancelled` or `lost`. Later work,
 /// for example the answer that the mail of a background run starts, goes to
 /// the client with no prompt open, and sends no state update.
@@ -76,8 +76,13 @@ actor SessionProjector {
         /// The mail of a prompt was refused, after the prompt opened.
         case mailRefused(MailID, message: String)
 
-        /// One update of a slash command, which sends no Router event.
-        case update(SessionUpdate)
+        /// The prompt of the mail was cancelled before its mail went into
+        /// the session.
+        case mailCancelled(MailID)
+
+        /// One update of a slash command, which sends no Router event, and
+        /// the wait of the sender for its send.
+        case update(SessionUpdate, sent: CheckedContinuation<Void, Never>?)
     }
 
     /// The id of the ACP session, for the logs.
@@ -137,7 +142,7 @@ actor SessionProjector {
             for await input in stream {
                 await state.handle(input)
             }
-            await state.endOpenPrompt(stop: .cancelled)
+            await state.endOpenPrompts(stop: .cancelled)
         }
     }
 
@@ -194,26 +199,53 @@ actor SessionProjector {
         inbox.yield(.mailRefused(mailId, message: String(describing: error)))
     }
 
+    /// Tells the projector that the prompt of the mail `mailId` was
+    /// cancelled before its mail went into the session. The prompt ends as
+    /// `cancelled`, and no mail goes in.
+    ///
+    /// - Parameter mailId: The id of the mail that the prompt did not send.
+    nonisolated func cancelUnsentMail(_ mailId: MailID) {
+        inbox.yield(.mailCancelled(mailId))
+    }
+
     /// The sink of a slash command: each update goes through the inbox, so it
-    /// keeps its order with the events of the session.
+    /// keeps its order with the events of the session. The sink returns when
+    /// the update went out, so the end of the command, which the state
+    /// ledger of the session sends, comes after each update of the command.
+    /// After ``stop()``, an update goes nowhere.
     nonisolated var commandSink: SessionUpdateSink {
         { [inbox] update in
-            inbox.yield(.update(update))
+            await withCheckedContinuation { sent in
+                if case .terminated = inbox.yield(.update(update, sent: sent)) {
+                    sent.resume()
+                }
+            }
         }
     }
 
-    /// Stops the projector after each item in the inbox. Call it after the
-    /// Router sessions closed, so each reader gave its last event. A prompt
-    /// that is still open ends as `cancelled`. Safe to call more than one
-    /// time.
-    func stop() async {
+    /// Stops the projector after each item in the inbox. A prompt that is
+    /// still open ends as `cancelled`. Safe to call more than one time.
+    ///
+    /// The reader of each source in `closed` reads to the natural end of its
+    /// outputs: the caller closed that Router session, and the close ends
+    /// the subscription after its last event. Thus the projector sends each
+    /// event of a closed session, and the stop does not depend on how a
+    /// cancelled stream treats the outputs that it still holds. The stop
+    /// cancels the reader of each other source, for example a replaced
+    /// session that a prompt kept busy at a model slot switch.
+    ///
+    /// - Parameter closed: The ids of the sources whose outputs ended or
+    ///   end without a cancel.
+    func stop(after closed: Set<ULID> = []) async {
         guard !isStopped else {
             await consumer.value
             return
         }
         isStopped = true
-        for reader in readers.values {
-            reader.cancel()
+        for (sourceId, reader) in readers {
+            if !closed.contains(sourceId) {
+                reader.cancel()
+            }
             await reader.value
         }
         inbox.finish()
@@ -225,9 +257,9 @@ actor SessionProjector {
 // MARK: - The state of the inbox reader
 
 /// The state that the inbox reader of a ``SessionProjector`` owns: the
-/// translator and the one open prompt.
+/// translator and the open prompts.
 private struct ProjectionState {
-    /// The open prompt and its counts.
+    /// One open prompt and its counts.
     struct OpenPrompt {
         /// The record of the prompt.
         let prompt: SessionProjector.Prompt
@@ -237,9 +269,10 @@ private struct ProjectionState {
 
         /// The tool calls that went to the client while the prompt was open,
         /// so the end of the prompt can close each one that did not finish.
-        /// A run of the prompt settles with the origin of its run mail, so
-        /// the record takes each tool-call update, not only the ones that
-        /// count for the prompt.
+        /// It takes the tool-call updates of the prompt, and the updates of
+        /// each other work, for example the settlement of a run of the
+        /// prompt, which has the origin of its run mail. It never takes an
+        /// update of another prompt.
         let toolCalls = PromptToolCalls()
     }
 
@@ -252,8 +285,10 @@ private struct ProjectionState {
     /// The relay of the elicitations of the session, or `nil`.
     let relay: ElicitationRelay?
 
-    /// The open prompt, or `nil` when no prompt is open.
-    var open: OpenPrompt?
+    /// The open prompts, in the order that they opened. A stream message
+    /// goes alone in its submission, so an event holds the `MailID` of at
+    /// most one prompt.
+    var open: [OpenPrompt] = []
 
     /// Handles one item of the inbox.
     ///
@@ -266,62 +301,65 @@ private struct ProjectionState {
             // A closed Router session sends no terminal for the mail of a
             // prompt that is still open on it. The end of the reader of a
             // replaced session does not stop the projector.
-            if let open, open.prompt.sourceId == sourceId {
-                await endOpenPrompt(stop: .cancelled)
+            for prompt in open.map(\.prompt) where prompt.sourceId == sourceId {
+                await endPrompt(prompt.mailId, stop: .cancelled)
             }
         case .openPrompt(let prompt):
-            await endOpenPrompt(stop: .cancelled)
-            open = OpenPrompt(prompt: prompt)
+            open.append(OpenPrompt(prompt: prompt))
             translator.modelName = prompt.modelName
         case .mailRefused(let mailId, let message):
-            guard open?.prompt.mailId == mailId else {
+            guard open.contains(where: { $0.prompt.mailId == mailId }) else {
                 return
             }
             await send(
                 .agentMessageChunk(
                     ContentChunk(
                         content: .text(TextContent(text: message)), messageId: ACPEventTranslator.makeMessageId())))
-            await endOpenPrompt(stop: .failed(message: message))
-        case .update(let update):
+            await endPrompt(mailId, stop: .failed(message: message))
+        case .mailCancelled(let mailId):
+            await endPrompt(mailId, stop: .cancelled)
+        case .update(let update, let sent):
             await send(update)
+            sent?.resume()
         }
     }
 
-    /// Translates one output, counts it for the open prompt when its origin
-    /// holds the mail of the prompt, and ends the prompt at the terminal
-    /// event of that mail or at the stall bound.
+    /// Translates one output, counts it for the open prompt whose mail its
+    /// origin holds, and ends a prompt at the terminal event of its mail or
+    /// at the stall bound.
     ///
     /// - Parameters:
     ///   - output: The output.
     ///   - source: The source that sent the output.
     private mutating func project(_ output: SessionOutput, from source: SessionProjector.Source) async {
         let event = output.event
-        let forPrompt = open.map { output.origin.contains($0.prompt.mailId) } ?? false
-        if forPrompt, case .submissionStarted = event, let owner = open?.prompt.owner {
-            await owner.promptDidStart()
+        let index = open.firstIndex { output.origin.contains($0.prompt.mailId) }
+        if let index, case .submissionStarted = event {
+            await open[index].prompt.owner.promptDidStart()
         }
-        translator.tally = forPrompt ? open?.tally ?? PromptTally() : PromptTally()
-        translator.send = open?.toolCalls.recording(into: send) ?? send
+        translator.tally = index.map { open[$0].tally } ?? PromptTally()
+        let recorders = index.map { [open[$0].toolCalls] } ?? open.map(\.toolCalls)
+        translator.send = recorders.reduce(send) { sink, toolCalls in toolCalls.recording(into: sink) }
         // A request of a run has the origin of its run mail, not the origin
-        // of the prompt. While a prompt is open, its round trip sends
+        // of a prompt. While a prompt is open, the round trip sends
         // `requires_action` (task ^9xs24pn, decision Q2).
-        translator.relayElicitation = relayHandler(for: source.session, owner: open?.prompt.owner)
+        translator.relayElicitation = relayHandler(for: source.session, owner: open.first?.prompt.owner)
         await translator.project(event)
-        guard let current = open else {
-            return
+        if let index {
+            open[index].tally = translator.tally
+            let current = open[index]
+            if case .generationStalled(let stall) = event,
+                PromptExecution.endsPrompt(stall, sawOutput: current.tally.sawOutput)
+            {
+                PromptExecution.report(stall, sessionId: translator.sessionId, modelName: current.prompt.modelName)
+                await endPrompt(current.prompt.mailId, stop: .stalled(stall))
+                return
+            }
         }
-        if forPrompt {
-            open?.tally = translator.tally
-        }
-        if forPrompt, case .generationStalled(let stall) = event,
-            PromptExecution.endsPrompt(stall, sawOutput: translator.tally.sawOutput)
-        {
-            PromptExecution.report(stall, sessionId: translator.sessionId, modelName: current.prompt.modelName)
-            await endOpenPrompt(stop: .stalled(stall))
-            return
-        }
-        if let stop = await Self.stop(of: event, ending: current.prompt, sessionId: translator.sessionId) {
-            await endOpenPrompt(stop: stop)
+        for prompt in open.map(\.prompt) {
+            if let stop = await Self.stop(of: event, ending: prompt, sessionId: translator.sessionId) {
+                await endPrompt(prompt.mailId, stop: stop)
+            }
         }
     }
 
@@ -331,7 +369,7 @@ private struct ProjectionState {
     ///
     /// - Parameters:
     ///   - session: The Router session that the answer goes back to.
-    ///   - owner: The owner of the open prompt, so the round trip sends
+    ///   - owner: The owner of an open prompt, so the round trip sends
     ///     `requires_action`; `nil` while no prompt is open.
     /// - Returns: The handler.
     private func relayHandler(
@@ -390,17 +428,29 @@ private struct ProjectionState {
         }
     }
 
-    /// Ends the open prompt with `stop`, or does nothing when no prompt is
-    /// open: the cut and the empty checks of a completed prompt, the close of
-    /// each tool call that did not finish, the one `usage_update`, the `idle`
-    /// with the stop reason, and the end work of the prompt.
+    /// Ends each open prompt with `stop`: the end of the inbox.
     ///
-    /// - Parameter stop: Why the prompt stopped.
-    mutating func endOpenPrompt(stop: PromptStop) async {
-        guard let ending = open else {
+    /// - Parameter stop: Why the prompts stopped.
+    mutating func endOpenPrompts(stop: PromptStop) async {
+        for prompt in open.map(\.prompt) {
+            await endPrompt(prompt.mailId, stop: stop)
+        }
+    }
+
+    /// Ends the open prompt of the mail `mailId` with `stop`, or does
+    /// nothing when no such prompt is open: the cut and the empty checks of
+    /// a completed prompt, the close of each tool call that did not finish,
+    /// the one `usage_update`, the end of the prompt in its owner (the
+    /// `idle` when no other prompt is open), and the end work of the prompt.
+    ///
+    /// - Parameters:
+    ///   - mailId: The mail of the prompt.
+    ///   - stop: Why the prompt stopped.
+    private mutating func endPrompt(_ mailId: MailID, stop: PromptStop) async {
+        guard let index = open.firstIndex(where: { $0.prompt.mailId == mailId }) else {
             return
         }
-        open = nil
+        let ending = open.remove(at: index)
         var stop = stop
         // A cancelled prompt does not always end with a cancelled terminal:
         // model work that never checks for cancellation runs to completion.

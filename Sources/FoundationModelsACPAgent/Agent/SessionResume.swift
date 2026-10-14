@@ -89,8 +89,8 @@ extension RoutedACPAgent {
     /// - Throws: The order rule's invalid-request error;
     ///   `RequestError.unknownSession` for an id no recording holds —
     ///   a deleted session included; the cwd-mismatch and
-    ///   unknown-cursor refusals; `RequestError.busySession` while a prompt
-    ///   runs; or whatever the composition or the restore throws.
+    ///   unknown-cursor refusals; or whatever the composition or the
+    ///   restore throws.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
         try await RequestTracing.withEnteredRequestSpan(
             ACPAgentTelemetry.SpanName.sessionResume, method: ACPMethod.sessionResume,
@@ -113,9 +113,6 @@ extension RoutedACPAgent {
         guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
             throw RequestError.unknownSession(id: params.sessionId)
         }
-        if sessions[params.sessionId]?.availability == .busy {
-            throw RequestError.busySession(id: params.sessionId)
-        }
         let replayCursor = try Self.replayCursor(of: params)
 
         let context = try loadSessionContext(workingDirectory: workingDirectory)
@@ -129,6 +126,15 @@ extension RoutedACPAgent {
         // means no additional roots. Former roots are never inherited.
         let additionalRoots = try SessionSetup.additionalRoots(
             fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
+
+        // A live entry gets the full teardown of `session/close` first: its
+        // open prompts end with `idle(cancelled)`, its Router session closes
+        // and its projector stops. Thus no update of the old session comes
+        // after the restore starts, and the session never has two
+        // projectors (elicitation-plan task 3; task ^he1rmw6, decision A).
+        if let live = sessions[params.sessionId], !live.isClosed {
+            await tearDownSession(params.sessionId, entry: live)
+        }
 
         // The replaced entry's surface is released before the new one is
         // composed, never after: its code context indexes the same working

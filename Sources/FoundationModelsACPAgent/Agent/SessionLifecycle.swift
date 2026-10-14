@@ -122,7 +122,7 @@ extension RoutedACPAgent {
 
     // MARK: - The teardown
 
-    /// Runs the full `session/close` teardown of one session: cancel the running prompt,
+    /// Runs the full `session/close` teardown of one session: cancel the open prompts,
     /// stop the agent runs, run the session sweep, close every descendant,
     /// finish the shell stream, shut the MCP servers down, and write the
     /// retained history to its file — in that order. The entry stays in the
@@ -134,7 +134,7 @@ extension RoutedACPAgent {
     /// - Parameters:
     ///   - sessionId: The session to tear down.
     ///   - entry: The session's table entry, captured before the teardown.
-    private func tearDownSession(_ sessionId: SessionId, entry: ActiveSession) async {
+    func tearDownSession(_ sessionId: SessionId, entry: ActiveSession) async {
         guard !entry.isClosed else {
             return
         }
@@ -142,14 +142,18 @@ extension RoutedACPAgent {
         // with no prompt open: the relay lives for the whole session, and
         // the suspended tool must resume (task ^9xs24pn, decision G4).
         await entry.projector.relay?.cancelPendingElicitations()
-        // A close during an active prompt cancels it as `session/cancel` would,
-        // and waits for the `idle(cancelled)` terminator to go out before the
-        // close response, so a client with a spinner learns that the prompt
-        // ended.
-        if let promptState = entry.activePrompt {
-            await promptState.noteCancelRequested()
+        // A close during open prompts cancels them as `session/cancel` would,
+        // and waits for the end of each prompt before the close response, so
+        // a client with a spinner learns that the prompts ended with the
+        // `idle(cancelled)` terminator.
+        if !entry.openPrompts.isEmpty {
+            for owner in entry.openPrompts {
+                await owner.noteCancelRequested()
+            }
             entry.session.cancelAll()
-            await promptState.waitForPromptEnd()
+            for owner in entry.openPrompts {
+                await owner.waitForPromptEnd()
+            }
         }
         // The agent runs stop first: the Router does not know the runs that
         // a `start agent` call started, thus the session sweep below cannot
@@ -164,9 +168,9 @@ extension RoutedACPAgent {
         for descendant in entry.descendants {
             await descendant.close()
         }
-        // Each subscription of the projector ended with the close, so the
-        // projector sends each event that it holds, and then it stops.
-        await entry.projector.stop()
+        // The subscription of the session ended with the close, so the
+        // projector sends each event of it, and then it stops.
+        await entry.projector.stop(after: [entry.session.id])
         // Mark closed and finish the host-owned shell stream, then shut the
         // MCP servers down — after the sweep, never before, so the settling
         // runs still have their transports. The pool

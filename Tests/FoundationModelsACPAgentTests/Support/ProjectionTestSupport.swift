@@ -205,7 +205,7 @@ struct SyntheticExecution: Sendable {
         }
         forward.cancel()
         input.finish()
-        await projector.stop()
+        await projector.stop(after: [source.id])
         return reason
     }
 }
@@ -416,10 +416,13 @@ enum RoutedPrompt {
         await execution.run(session: session, projector: projector) { _ in end.finish() }
         for await _ in ends {}
         // The answer that the mail of a background run starts comes after
-        // the end of the prompt. The test reads the updates of all the work.
+        // the end of the prompt. The test reads the updates of all the work:
+        // it waits until the session has no work, then closes it. The close
+        // ends the subscription after its last event, and the stop reads the
+        // subscription to that end, so no update of the work is missed.
         await session.awaitIdle()
         await session.close()
-        await projector.stop()
+        await projector.stop(after: [session.id])
         return await recorder.updates
     }
 }

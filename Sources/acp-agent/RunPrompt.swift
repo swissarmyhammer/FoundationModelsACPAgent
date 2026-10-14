@@ -173,10 +173,18 @@ enum RunPrompt {
     ) async throws -> RunPromptResult {
         let sessionId = try await open(session, over: connection)
         // Subscribe before the prompt, so the stream holds each update of
-        // the prompt in order.
+        // the prompt in order. The collector also learns the `messageId` of
+        // the prompt from the response, on the same input.
         let stream = connection.subscribe(to: sessionId).updates
+        let (inputs, input) = AsyncStream.makeStream(of: PromptCollectorInput.self)
+        let forwarder = Task {
+            for await case .update(let update) in stream {
+                input.yield(.update(update))
+            }
+            input.finish()
+        }
         let collector = Task {
-            try await collect(from: stream, into: writer, reporting: events)
+            try await collect(from: inputs, into: writer, reporting: events)
         }
         // The watch is armed here, with a session open and the collector
         // reading: a `session/cancel` that reached the agent before the
@@ -196,23 +204,25 @@ enum RunPrompt {
                     stoppingWith: { await cancel(sessionId, over: connection) }
                 ) {
                     try await awaitPrompt(
-                        prompt, in: sessionId, over: connection, collectedBy: collector)
+                        prompt, in: sessionId, over: connection, telling: input, collectedBy: collector)
                 })
         } catch {
             outcome = .failure(error)
         }
+        forwarder.cancel()
         watch.disarm()
         watching.cancel()
         return RunPromptResult(stopReason: try outcome.get())
     }
 
-    /// Sends the prompt request, and waits for the collector to read the
-    /// stop reason.
+    /// Sends the prompt request, gives the `messageId` of the response to the
+    /// collector, and waits for the collector to read the stop reason.
     ///
     /// - Parameters:
     ///   - prompt: The text of the one prompt.
     ///   - sessionId: The open session the prompt runs in.
     ///   - connection: The client end of the wire.
+    ///   - input: The input of the collector.
     ///   - collector: The task that reads the update stream of the session.
     /// - Returns: The stop reason, or `nil` when the update stream ended
     ///   before an idle update arrived.
@@ -222,11 +232,13 @@ enum RunPrompt {
         _ prompt: String,
         in sessionId: SessionId,
         over connection: ClientSideConnection,
+        telling input: AsyncStream<PromptCollectorInput>.Continuation,
         collectedBy collector: Task<StopReason?, any Error>
     ) async throws -> StopReason? {
         do {
-            _ = try await connection.prompt(
+            let response = try await connection.prompt(
                 PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: sessionId))
+            input.yield(.ownMessage(response.messageId))
             return try await collector.value
         } catch {
             collector.cancel()
@@ -336,7 +348,10 @@ enum RunPrompt {
 
     /// Consumes the session's update stream: writes the text of each
     /// agent message chunk as it arrives, and stops at the first idle
-    /// state update.
+    /// state update after the `user_message` echo of its own prompt
+    /// (elicitation-plan task 43, rule A). An idle means that the session
+    /// has no prompt open any more, so the own prompt ended too. An idle
+    /// before the own echo belongs to earlier work of the session.
     ///
     /// One stream feeds two writers. The answer text goes to `writer`, on
     /// stdout (§5.6), and the same update goes to `events`, which writes
@@ -344,33 +359,121 @@ enum RunPrompt {
     /// line goes out first, so the update that ends the prompt is reported
     /// before the loop leaves.
     ///
-    /// The stream also holds a marker for each request of the session that
-    /// finished. A marker is not a `session/update`, so the loop skips it.
+    /// The collector learns the `messageId` of its own prompt from the
+    /// response of the prompt, which can come before or after the echo
+    /// (``PromptEndTracker``).
     ///
     /// - Parameters:
-    ///   - stream: The session's update stream, subscribed before the
-    ///     prompt.
+    ///   - stream: The session's updates, subscribed before the prompt, and
+    ///     the `messageId` of the own prompt.
     ///   - writer: The writer each chunk goes to.
     ///   - events: The writer each session event goes to, one line each.
     /// - Returns: The stop reason, or `nil` when the stream ended before
     ///   an idle update arrived.
     /// - Throws: ``AnswerWriteError`` when a chunk cannot be written.
     private static func collect(
-        from stream: AsyncStream<SessionStreamEvent>,
+        from stream: AsyncStream<PromptCollectorInput>,
         into writer: AnswerWriter,
         reporting events: EventLineWriter
     ) async throws -> StopReason? {
         var events = events
-        for await case .update(let update) in stream {
-            events.receive(update)
-            switch update {
-            case .agentMessageChunk(let chunk):
-                guard case .text(let content) = chunk.content else { break }
-                try writer.receive(content.text)
-            case .stateUpdate(.idle(let idle)):
-                return idle.stopReason
-            default:
-                break
+        var tracker = PromptEndTracker()
+        for await input in stream {
+            switch input {
+            case .ownMessage(let messageId):
+                tracker.learn(ownMessage: messageId)
+            case .update(let update):
+                events.receive(update)
+                if case .agentMessageChunk(let chunk) = update, case .text(let content) = chunk.content {
+                    try writer.receive(content.text)
+                }
+                tracker.receive(update)
+            }
+            if tracker.ended {
+                return tracker.stopReason
+            }
+        }
+        return nil
+    }
+}
+
+/// One input of the collector of a headless prompt.
+enum PromptCollectorInput: Sendable {
+    /// One `session/update` of the session.
+    case update(SessionUpdate)
+
+    /// The `messageId` of the own prompt, from the `session/prompt` response.
+    case ownMessage(MessageId)
+}
+
+/// Finds the end of the own prompt of a headless run in the updates of its
+/// session (elicitation-plan task 43, rule A): the first `idle` after the
+/// `user_message` echo that has the `messageId` of the own prompt.
+///
+/// The response gives the `messageId`, and the echo comes after the
+/// response. The client can read the two in either order, so the tracker
+/// keeps the order of the echoes and the idles, and it decides when it has
+/// both facts.
+struct PromptEndTracker {
+    /// One fact of the update stream, in order.
+    private enum Mark {
+        /// A `user_message` echo with this id.
+        case echo(MessageId)
+
+        /// An `idle` with this stop reason.
+        case idle(StopReason?)
+    }
+
+    /// The echoes and the idles, in the order of the stream.
+    private var marks: [Mark] = []
+
+    /// The `messageId` of the own prompt, or `nil` before the response.
+    private var ownMessageId: MessageId?
+
+    /// Records the `messageId` of the own prompt.
+    ///
+    /// - Parameter messageId: The id that the prompt response gave.
+    mutating func learn(ownMessage messageId: MessageId) {
+        ownMessageId = messageId
+    }
+
+    /// Records one update. Only an echo and an idle change the result.
+    ///
+    /// - Parameter update: The update.
+    mutating func receive(_ update: SessionUpdate) {
+        switch update {
+        case .userMessage(let echo):
+            marks.append(.echo(echo.messageId))
+        case .stateUpdate(.idle(let idle)):
+            marks.append(.idle(idle.stopReason))
+        default:
+            break
+        }
+    }
+
+    /// Whether the own prompt ended.
+    var ended: Bool {
+        endingIdle != nil
+    }
+
+    /// The stop reason of the first idle after the own echo, or `nil` while
+    /// the own prompt did not end. An idle with no stop reason ends the
+    /// prompt too; ``ended`` tells it from a prompt that did not end.
+    var stopReason: StopReason? {
+        endingIdle ?? nil
+    }
+
+    /// The first idle after the own echo: `.some` with its stop reason when
+    /// the prompt ended, else `nil`.
+    private var endingIdle: StopReason?? {
+        guard let ownMessageId,
+            let echo = marks.firstIndex(where: { if case .echo(ownMessageId) = $0 { true } else { false } })
+        else {
+            return nil
+        }
+        for mark in marks[(echo + 1)...] {
+            if case .idle(let stopReason) = mark {
+                return .some(stopReason)
             }
         }
         return nil

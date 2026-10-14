@@ -236,7 +236,8 @@ extension RoutedACPAgent {
     ///   - params: The prompt request the command arrived in.
     ///   - entry: The session's table entry.
     ///   - connection: The bound connection to notify through.
-    /// - Returns: The response that names the user message.
+    /// - Returns: The response that names the user message, and the
+    ///   prompt-state owner of the command prompt.
     /// - Throws: `unknownCommand`, `actionCommandAttachments`, or
     ///   `commandExpansionFailed`.
     func dispatchCommand(
@@ -244,7 +245,7 @@ extension RoutedACPAgent {
         params: PromptRequest,
         entry: ActiveSession,
         connection: AgentSideConnection
-    ) async throws -> PromptResponse {
+    ) async throws -> (PromptResponse, PromptStateOwner) {
         let kind = await entry.commands.kind(ofCommandNamed: command.name)
         let work: CommandWork
         do {
@@ -268,21 +269,23 @@ extension RoutedACPAgent {
         case .action(let execution):
             let sessionId = params.sessionId
             let messageId = insertUserMessage(params, through: connection)
+            let owner = execution.promptState
             connection.afterRespondingInCurrentServiceContext {
                 await execution.run()
-                await self.promptFinished(sessionId: sessionId)
+                await self.promptFinished(owner, sessionId: sessionId)
             }
-            return PromptResponse(messageId: messageId)
+            return (PromptResponse(messageId: messageId), owner)
         case .modelPrompt(let text, let owner, let send):
-            return scheduleModelPrompt(
+            let response = scheduleModelPrompt(
                 overridePrompt: text,
                 params: params, entry: entry, connection: connection, owner: owner, send: send)
+            return (response, owner)
         }
     }
 
     /// Resolves one registered command into the work that runs after the
     /// response: the refusal checks, the template expansion or the
-    /// render, and the busy mark of the session.
+    /// render, and the record of the prompt in flight.
     ///
     /// - Parameters:
     ///   - registered: The registered command that the name selected.
@@ -307,11 +310,10 @@ extension RoutedACPAgent {
             // The updates of an action go through the projector, so they keep
             // their order with the events of the session (elicitation-plan
             // task 1).
-            let (owner, send) = beginPrompt(params: params, send: entry.projector.commandSink)
             return .action(
                 ActionCommandExecution(
-                    promptState: owner,
-                    send: send,
+                    promptState: beginPrompt(params: params),
+                    send: entry.projector.commandSink,
                     action: action,
                     invocation: SlashCommand.Invocation(
                         arguments: command.arguments,
@@ -323,16 +325,15 @@ extension RoutedACPAgent {
             } catch {
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
-            let (owner, send) = beginPrompt(
-                params: params, send: historySink(for: params.sessionId, connection: connection))
             return .modelPrompt(
                 text: CommandDispatch.modelPrompt(expandedText: expandedText, attachments: command.attachments),
-                owner: owner, send: send)
+                owner: beginPrompt(params: params),
+                send: historySink(for: params.sessionId, connection: connection))
         case .rendered(let render):
-            // Mark the session busy before the async render, so a
-            // concurrent prompt is refused instead of racing this one.
-            let (owner, send) = beginPrompt(
-                params: params, send: historySink(for: params.sessionId, connection: connection))
+            // Record the prompt in flight before the async render, so a
+            // cancel or a close during the render reaches it.
+            let owner = beginPrompt(params: params)
+            let send = historySink(for: params.sessionId, connection: connection)
             let renderedText: String
             do {
                 renderedText = try await render(
@@ -340,7 +341,7 @@ extension RoutedACPAgent {
                         arguments: command.arguments,
                         workingDirectory: entry.workingDirectory))
             } catch {
-                await promptFinished(sessionId: params.sessionId)
+                await promptFinished(owner, sessionId: params.sessionId)
                 throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
             }
             return .modelPrompt(
@@ -351,7 +352,7 @@ extension RoutedACPAgent {
 }
 
 /// The work of one resolved command prompt: what runs after the response.
-/// The session is already busy for it.
+/// The prompt is already in the list of open prompts of the session.
 private enum CommandWork: Sendable {
     /// An `.action` command: its closure streams the text, with no model
     /// call.
@@ -362,7 +363,7 @@ private enum CommandWork: Sendable {
     ///
     /// - Parameters:
     ///   - text: The model prompt.
-    ///   - owner: The prompt-state owner that marks the session busy.
+    ///   - owner: The prompt-state owner of the prompt in flight.
     ///   - send: The sink every update of the prompt goes to.
     case modelPrompt(text: String, owner: PromptStateOwner, send: SessionUpdateSink)
 }

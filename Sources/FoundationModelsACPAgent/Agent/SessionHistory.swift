@@ -231,10 +231,16 @@ extension RoutedACPAgent {
     ///
     /// - Parameters:
     ///   - params: The prompt request.
+    ///   - messageId: The id of the user message: the description of the
+    ///     `MailID` of a model prompt, or `nil` for a new id.
     ///   - connection: The bound connection that sends the echo.
     /// - Returns: The id of the user message, for the prompt response.
-    func insertUserMessage(_ params: PromptRequest, through connection: AgentSideConnection) -> MessageId {
-        if let messageId = sessions[params.sessionId]?.insertUserMessage(params, through: connection) {
+    func insertUserMessage(
+        _ params: PromptRequest, messageId: MessageId? = nil, through connection: AgentSideConnection
+    ) -> MessageId {
+        if let messageId = sessions[params.sessionId]?.insertUserMessage(
+            params, messageId: messageId, through: connection)
+        {
             return messageId
         }
         // A `session/delete` can remove the entry while a `.rendered`
@@ -242,7 +248,7 @@ extension RoutedACPAgent {
         ACPAgentTelemetry.logger(.promptExecution).notice(
             "The session left the table before its prompt was accepted. The user message has no retained history.",
             metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
-        return connection.insertUserMessage(params)
+        return connection.insertUserMessage(params, messageId: messageId)
     }
 
     /// Writes the retained history of a session to its file

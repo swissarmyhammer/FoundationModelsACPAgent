@@ -138,37 +138,119 @@ import Testing
         #expect(echoIds == [response.messageId])
     }
 
-    // MARK: - The busy refusal
+    // MARK: - More than one prompt (elicitation-plan task 3)
 
-    /// A second `session/prompt` during a running prompt answers a client
-    /// error and does not disturb the first prompt.
+    /// A second `session/prompt` during a running prompt is accepted: its
+    /// mail waits in the mail queue of the session, and the session stays
+    /// `running`. A `session/cancel` then ends both prompts, with one `idle`
+    /// and the `cancelled` stop reason.
     @Test(.timeLimit(.minutes(1)))
-    func aBusySessionRefusesASecondPromptAsAClientError() async throws {
+    func aSecondPromptDuringARunningPromptIsAcceptedAndWaits() async throws {
         let fixture = try await Self.makeFixture(script: [.hold])
-        let first = Task {
-            try await fixture.harness.connection.prompt(
-                Self.makePromptRequest(sessionId: fixture.sessionId))
-        }
+        let first = try await fixture.harness.connection.prompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId))
         try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
-        do {
-            _ = try await fixture.harness.connection.prompt(
-                Self.makePromptRequest(sessionId: fixture.sessionId))
-            Issue.record("expected the busy refusal")
-        } catch let error as RequestError {
-            #expect(error.code == .invalidRequest)
-            #expect(Self.dataField("sessionId", of: error) == fixture.sessionId.rawValue)
+        let second = try await fixture.harness.connection.prompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId))
+        _ = try await ScriptedPromptFixture.waitForUpdates(
+            of: fixture.collector, toReach: "the echo of the second prompt"
+        ) { updates in
+            updates.contains { userMessageEcho(of: $0.update)?.messageId == second.messageId }
         }
-
         try await fixture.harness.connection.sessionCancel(
             CancelSessionNotification(sessionId: fixture.sessionId))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        _ = try await first.value
+        try await ScriptedPromptFixture.waitForAvailability(fixture.harness.agent, fixture.sessionId)
         await fixture.close()
 
+        #expect(first.messageId != second.messageId)
+        #expect(updates.compactMap { userMessageEcho(of: $0.update)?.messageId } == [first.messageId, second.messageId])
+        #expect(updates.count { isRunningState($0.update) } == 1)
         #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
-        #expect(updates.count { $0.update.kind == .userMessage } == 1)
+    }
+
+    /// The fixed order of a `session/resume` while a prompt is open (task
+    /// ^he1rmw6, decision A). The resume first does the teardown of
+    /// `session/close`: the open prompt ends with one `idle` and the
+    /// `cancelled` stop reason before the resume response. No update of the
+    /// old session comes after it, and the new projector serves the session:
+    /// the next prompt answers, and it ends with the second `idle`.
+    @Test(.timeLimit(.minutes(1)))
+    func aResumeWhileAPromptIsOpenEndsThatPromptCancelledFirst() async throws {
+        let holdMarker = "HOLD-UNTIL-RESUME"
+        let fixture = try await Self.makeFixture(
+            script: [.onPrompt(containing: holdMarker, play: [.hold]), .textDelta("after the resume"), .endPass])
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: holdMarker))
+        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+
+        _ = try await fixture.harness.connection.resumeSession(
+            ResumeSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
+        let atResume = await fixture.collector.updates
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "the next prompt"))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        await fixture.close()
+
+        #expect(ScriptedPromptFixture.idleCount(in: atResume) == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: atResume) == .cancelled)
+        let afterResume = Array(updates.dropFirst(atResume.count))
+        #expect(ScriptedPromptFixture.agentText(in: afterResume) == "after the resume")
+        #expect(ScriptedPromptFixture.idleCount(in: afterResume) == 1)
+        #expect(idleState(of: afterResume.last(where: { isIdleState($0.update) })?.update)?.stopReason == .endTurn)
+    }
+
+    // MARK: - The fixed order of a prompt (elicitation-plan task 49)
+
+    /// The `messageId` of the response and of the echo is the `MailID` of
+    /// the prompt: the Router session gives the answer of a mail with that
+    /// id. The order is the response, the echo, `running`, then the output
+    /// of the mail.
+    @Test(.timeLimit(.minutes(1)))
+    func theMessageIdOfAPromptIsItsMailId() async throws {
+        let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
+        let response = try await fixture.harness.connection.prompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+        let mailId = MailID(try #require(ULID(ulidString: response.messageId.rawValue)))
+        let answer = try await session.awaitAnswer(of: mailId)
+        await fixture.close()
+
+        #expect(answer.mailIds.contains(mailId))
+        #expect(promptUpdates(in: updates).first.map(\.update.kind) == .userMessage)
+        #expect(userMessageEcho(of: promptUpdates(in: updates).first?.update)?.messageId == response.messageId)
+        let running = try #require(updates.firstIndex { isRunningState($0.update) })
+        let output = try #require(updates.firstIndex { agentMessageChunk(of: $0.update) != nil })
+        #expect(running < output)
+    }
+
+    // MARK: - A refused mail after the response (task ^he1rmw6, decision G3)
+
+    /// The fixed order of a mail that the session refuses after the response
+    /// went out: the Router session closed in that window. The prompt still
+    /// ends: the error text goes out as an agent message, and then the
+    /// `idle` with the `error` stop reason. ACP forbids an error response
+    /// after the insertion of the user message.
+    @Test(.timeLimit(.minutes(1)))
+    func aMailThatTheSessionRefusesAfterTheResponseEndsThePromptWithTheError() async throws {
+        let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
+        let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+        await session.close()
+
+        _ = try await fixture.harness.connection.prompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
+
+        let text = ScriptedPromptFixture.agentText(in: updates)
+        let idle = try #require(updates.lastIndex { isIdleState($0.update) })
+        let message = try #require(updates.lastIndex { agentMessageChunk(of: $0.update) != nil })
+        #expect(text == String(describing: MailRefusal.closed))
+        #expect(message < idle)
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .error)
     }
 
     // MARK: - The stop-reason matrix
@@ -932,17 +1014,19 @@ import Testing
     }
 
     /// `awaitingUser` sends `requires_action`, runs the body, and returns
-    /// to `running` with the body's value.
+    /// to `running` with the body's value, while the prompt is open.
     @Test(.timeLimit(.minutes(1)))
     func awaitingUserPairsRequiresActionWithRunning() async throws {
         let recorder = SinkRecorder()
         let owner = PromptStateOwner(send: { update in await recorder.append(update) })
+        await owner.promptDidStart()
 
         let answer = await owner.awaitingUser { "the answer" }
         let updates = await recorder.updates
 
         #expect(answer == "the answer")
-        Self.expectRequiresActionThenRunning(in: updates)
+        #expect(isRunningState(updates.first))
+        Self.expectRequiresActionThenRunning(in: Array(updates.dropFirst()))
     }
 
     /// A body that throws still returns the state to `running`.
@@ -950,6 +1034,7 @@ import Testing
     func awaitingUserReturnsToRunningWhenTheBodyThrows() async throws {
         let recorder = SinkRecorder()
         let owner = PromptStateOwner(send: { update in await recorder.append(update) })
+        await owner.promptDidStart()
 
         await #expect(throws: ScriptedModelError.self) {
             _ = try await owner.awaitingUser { () -> String in
@@ -958,7 +1043,44 @@ import Testing
         }
         let updates = await recorder.updates
 
-        Self.expectRequiresActionThenRunning(in: updates)
+        #expect(isRunningState(updates.first))
+        Self.expectRequiresActionThenRunning(in: Array(updates.dropFirst()))
+    }
+
+    /// While no prompt is open, a wait on the human sends no state update
+    /// (task ^9xs24pn, decision Q2).
+    @Test(.timeLimit(.minutes(1)))
+    func awaitingUserSendsNothingWhileNoPromptIsOpen() async throws {
+        let recorder = SinkRecorder()
+        let owner = PromptStateOwner(send: { update in await recorder.append(update) })
+
+        let answer = await owner.awaitingUser { "the answer" }
+
+        #expect(answer == "the answer")
+        #expect(await recorder.updates.isEmpty)
+    }
+
+    /// Two prompts share the state of one session: `running` goes out when
+    /// the first prompt starts, and the one `idle` goes out when the last
+    /// open prompt ends, with the stop reason of that prompt.
+    @Test(.timeLimit(.minutes(1)))
+    func theSessionGoesIdleWhenTheLastOpenPromptEnds() async throws {
+        let recorder = SinkRecorder()
+        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+        let first = PromptStateOwner(ledger: ledger)
+        let second = PromptStateOwner(ledger: ledger)
+
+        await first.promptDidStart()
+        await second.promptDidStart()
+        await first.promptDidEnd(stop: .completed)
+        let whileSecondRuns = await recorder.updates
+        await second.promptDidEnd(stop: .cancelled)
+        let updates = await recorder.updates
+
+        #expect(whileSecondRuns.count == 1)
+        #expect(isRunningState(whileSecondRuns.first))
+        #expect(updates.count == 2)
+        #expect(idleState(of: updates.last)?.stopReason == .cancelled)
     }
 
     // MARK: - A waiting session holds no model (Router generation-queue.md 5.5)

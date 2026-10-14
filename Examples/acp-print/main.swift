@@ -45,37 +45,64 @@ func logToStandardError(_ message: String) {
 
 // MARK: - The answer stream
 
-/// Consumes the session's update stream: writes each agent message
-/// chunk's text to stdout as it arrives, and returns the stop reason of
-/// the first idle state update.
+/// One input of the answer stream: an update of the session, or the
+/// `messageId` of the own prompt from the `session/prompt` response.
+enum AnswerInput: Sendable {
+    /// One `session/update` of the session.
+    case update(SessionUpdate)
+
+    /// The `messageId` of the own prompt.
+    case ownMessage(MessageId)
+}
+
+/// Consumes the session's updates: writes each agent message chunk's text
+/// to stdout as it arrives, and returns the stop reason of the first idle
+/// state update after the `user_message` echo of the own prompt. An idle
+/// means that the session has no prompt open any more, so the own prompt
+/// ended too.
+///
+/// The response gives the `messageId` of the own prompt, and the echo
+/// comes after the response, but the two can arrive here in either order.
+/// Thus the loop keeps the ids of the echoes and the idles that follow
+/// them, and it decides when it has both facts.
 ///
 /// A completing newline follows the answer when the last chunk does not
 /// end with one, so a shell prompt does not glue onto the answer.
 ///
-/// The stream also holds a marker for each request of the session that
-/// finished. A marker is not a `session/update`, so the loop skips it.
-///
-/// - Parameter stream: The session's update stream, subscribed before
-///   the prompt.
+/// - Parameter inputs: The session's updates, subscribed before the
+///   prompt, and the `messageId` of the own prompt.
 /// - Returns: The stop reason, or `nil` when the stream ended with no
-///   idle update — the connection died before the turn ended.
-func streamAnswer(from stream: AsyncStream<SessionStreamEvent>) async -> StopReason? {
+///   idle update after the own echo — the connection died before the
+///   prompt ended.
+func streamAnswer(from inputs: AsyncStream<AnswerInput>) async -> StopReason? {
     var wroteText = false
     var endedWithNewline = false
-    for await case .update(let update) in stream {
-        switch update {
-        case .agentMessageChunk(let chunk):
+    var ownMessageId: MessageId?
+    var echoes: [MessageId] = []
+    var idlesAfterEcho: [MessageId: StopReason?] = [:]
+    for await input in inputs {
+        switch input {
+        case .ownMessage(let messageId):
+            ownMessageId = messageId
+        case .update(.agentMessageChunk(let chunk)):
             guard case .text(let content) = chunk.content else { break }
             FileHandle.standardOutput.write(Data(content.text.utf8))
             wroteText = true
             endedWithNewline = content.text.hasSuffix("\n")
-        case .stateUpdate(.idle(let idle)):
+        case .update(.userMessage(let echo)):
+            echoes.append(echo.messageId)
+        case .update(.stateUpdate(.idle(let idle))):
+            for messageId in echoes where idlesAfterEcho[messageId] == nil {
+                idlesAfterEcho[messageId] = .some(idle.stopReason)
+            }
+        case .update:
+            break
+        }
+        if let ownMessageId, let stopReason = idlesAfterEcho[ownMessageId] {
             if wroteText && !endedWithNewline {
                 FileHandle.standardOutput.write(Data("\n".utf8))
             }
-            return idle.stopReason
-        default:
-            break
+            return stopReason
         }
     }
     return nil
@@ -121,11 +148,20 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
         // Subscribe before the prompt, so the stream holds each update of
         // the prompt in order.
         let updates = connection.subscribe(to: session.sessionId).updates
-        let answer = Task { await streamAnswer(from: updates) }
+        let (inputs, input) = AsyncStream.makeStream(of: AnswerInput.self)
+        let forwarder = Task {
+            for await case .update(let update) in updates {
+                input.yield(.update(update))
+            }
+            input.finish()
+        }
+        defer { forwarder.cancel() }
+        let answer = Task { await streamAnswer(from: inputs) }
         do {
-            _ = try await connection.prompt(
+            let response = try await connection.prompt(
                 PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: session.sessionId)
             )
+            input.yield(.ownMessage(response.messageId))
         } catch {
             answer.cancel()
             _ = await answer.value

@@ -216,32 +216,35 @@ struct PromptExecution: Sendable {
     /// the scheduling wiring supplies the session surface's verb.
     var contentResolver = ResourceLinkResolver(readVerb: nil)
 
-    /// Runs the prompt: the first-activity record, the open of the prompt in
-    /// the projector, and the mail of the prompt. A plain prompt folds
-    /// through `PromptContent`; an expanded command keeps its override text.
-    /// The `user_message` echo went out before this work, and it always
-    /// carries the original blocks verbatim.
+    /// Runs the prompt: the first-activity record, `running`, the open of
+    /// the prompt in the projector, and the mail of the prompt, in this
+    /// order (elicitation-plan task 49). A plain prompt folds through
+    /// `PromptContent`; an expanded command keeps its override text. The
+    /// `user_message` echo went out before this work, and it always carries
+    /// the original blocks verbatim.
     ///
     /// The prompt opens in the ``SessionProjector`` before its mail goes into
     /// the session, so each event of the mail finds the prompt. The
-    /// projector sends `running` at the first submission of the mail, and it
-    /// ends the prompt at the terminal event of the mail: the stop reason,
-    /// the `idle`, and then `onEnd`. The call returns after the mail, not
-    /// at the end of the prompt.
+    /// projector ends the prompt at the terminal event of the mail: the stop
+    /// reason, the `idle`, and then `onEnd`. The call returns after the
+    /// mail, not at the end of the prompt.
     ///
     /// The mail is a stream message, so the answer streams its text. A
     /// `mail(_:)` that throws, for example on a session that closed, ends the
     /// prompt with the error (``SessionProjector/refuseMail(_:error:)``).
     ///
     /// - Parameters:
+    ///   - mailId: The id of the mail of the prompt, which is also the
+    ///     `messageId` of the user message.
     ///   - session: The Router session that generates the answer.
     ///   - projector: The projector of the ACP session.
-    ///   - onEnd: The work to run after the `idle` of the prompt went out.
+    ///   - onEnd: The work to run after the end of the prompt.
     func run(
-        session: any RoutedSession, projector: SessionProjector,
+        mailId: MailID = MailID(), session: any RoutedSession, projector: SessionProjector,
         onEnd: @escaping @Sendable (StopReason) async -> Void
     ) async {
         await recordFirstActivity()
+        await promptState.promptDidStart()
         let prompt: String
         if let modelPrompt {
             prompt = modelPrompt
@@ -250,13 +253,19 @@ struct PromptExecution: Sendable {
                 from: promptBlocks, resolver: contentResolver)
         }
         let mail = Mail(
-            sender: .user,
+            id: mailId, sender: .user,
             body: .userMessage(prompt: prompt, options: UserMessageOptions(mode: .stream)))
         projector.open(
             SessionProjector.Prompt(
                 mailId: mail.id, sourceId: session.id,
                 awaitAnswer: { id in try await session.awaitAnswer(of: id) },
                 owner: promptState, modelName: modelName, onEnd: onEnd))
+        // A `session/cancel` or a close before this point already sent
+        // `cancelAll()`, which cannot reach a mail that is not queued yet.
+        guard await !promptState.cancelRequested else {
+            projector.cancelUnsentMail(mail.id)
+            return
+        }
         do {
             _ = try session.mail(mail)
         } catch {
@@ -606,10 +615,6 @@ extension RequestError {
     /// closed session is resumable, not promptable.
     private static let closedSessionReason = "closed; resume it first"
 
-    /// The reason a busy session's refusal reports: the agent runs one
-    /// prompt for each session at a time.
-    private static let busySessionReason = "a prompt is in flight; one prompt for each session at a time"
-
     /// The reason a replay-only session's refusal reports: the agent never
     /// makes a session directory, so the session cannot run a prompt.
     private static let missingWorkingDirectoryReason = "the working directory of this session does not exist"
@@ -656,31 +661,19 @@ extension RequestError {
                 "reason": .string(missingWorkingDirectoryReason),
             ]))
     }
-
-    /// The busy-session refusal: a prompt during a
-    /// running prompt is a client error, not a queue entry. The client
-    /// composer owns queueing.
-    ///
-    /// - Parameter id: The busy session's id.
-    /// - Returns: The typed invalid-request error.
-    static func busySession(id: SessionId) -> RequestError {
-        RequestError(
-            code: .invalidRequest,
-            message: RequestError.invalidRequest.message,
-            data: .object([
-                "sessionId": .string(id.rawValue),
-                "reason": .string(busySessionReason),
-            ]))
-    }
 }
 
 extension RoutedACPAgent {
-    /// Accepts one prompt: validates the session,
-    /// marks it busy, inserts the user message, defers the prompt to run
-    /// after the response through `afterRespondingToCurrentRequest`, and
-    /// returns at once a response that names the user message (ACP
-    /// schema-v2.0.0-alpha.7). Never a detached task that races the
-    /// response.
+    /// Accepts one prompt: validates the session, inserts the user message,
+    /// defers the prompt to run after the response through
+    /// `afterRespondingToCurrentRequest`, and returns at once a response
+    /// that names the user message (ACP schema-v2.0.0-alpha.7). Never a
+    /// detached task that races the response.
+    ///
+    /// A prompt is mail to the Router session (elicitation-plan task 3). A
+    /// prompt that arrives while another prompt is in flight is accepted:
+    /// its mail waits in the mail queue of the session. The `messageId` of
+    /// a model prompt is its `MailID`.
     ///
     /// The prompt runs in one server span, from the request in to the stop
     /// reason out, and it writes one "enter" record when it starts
@@ -696,18 +689,18 @@ extension RoutedACPAgent {
     /// - Parameter params: The prompt request.
     /// - Returns: The response that names the user message.
     /// - Throws: The order rule's error, `unknownSession`,
-    ///   `closedSession`, `busySession`, `missingSessionWorkingDirectory`
-    ///   for a replay-only session, or a command refusal.
+    ///   `closedSession`, `missingSessionWorkingDirectory` for a replay-only
+    ///   session, or a command refusal.
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
         let measurement = PromptMeasurement()
         let span = RequestTracing.startRequestSpan(
             ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
             sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.promptExecution))
         do {
-            let response = try await ServiceContext.withValue(span.context) {
+            let (response, owner) = try await ServiceContext.withValue(span.context) {
                 try await acceptPrompt(params)
             }
-            endTelemetryAfterPrompt(span: span, measurement: measurement, sessionId: params.sessionId)
+            endTelemetryAfterPrompt(span: span, measurement: measurement, owner: owner)
             return response
         } catch {
             RequestTracing.endRequestSpan(span, throwing: error)
@@ -723,20 +716,19 @@ extension RoutedACPAgent {
     /// during the acceptance, and the connection runs the registered work in
     /// order. Thus the work that this method registers runs after the work
     /// of the prompt. A model prompt ends later, in the ``SessionProjector``,
-    /// so the work waits for the `idle` of the prompt
+    /// so the work waits for the end of the prompt
     /// (``PromptStateOwner/waitForPromptEnd()``), and then it reads the stop
-    /// reason from the prompt-state owner. An accepted prompt always has an
-    /// owner and a bound connection.
+    /// reason from the prompt-state owner. An accepted prompt always has a
+    /// bound connection.
     ///
     /// - Parameters:
     ///   - span: The span of the prompt.
     ///   - measurement: The measurement of the prompt.
-    ///   - sessionId: The session of the prompt.
-    private func endTelemetryAfterPrompt(span: any Span, measurement: PromptMeasurement, sessionId: SessionId) {
-        let owner = sessions[sessionId]?.activePrompt
+    ///   - owner: The prompt-state owner of the prompt.
+    private func endTelemetryAfterPrompt(span: any Span, measurement: PromptMeasurement, owner: PromptStateOwner) {
         boundConnection?.afterRespondingToCurrentRequest {
-            await owner?.waitForPromptEnd()
-            let stopReason = await owner?.stopReason
+            await owner.waitForPromptEnd()
+            let stopReason = await owner.stopReason
             RequestTracing.endPromptSpan(span, stopReason: stopReason)
             measurement.record(stopReason: stopReason)
         }
@@ -744,21 +736,21 @@ extension RoutedACPAgent {
 
     /// Accepts one prompt: the work of ``prompt(_:)`` before the response.
     ///
+    /// The checks that can refuse the prompt run before the response: a
+    /// closed session gives an error before the insertion of the user
+    /// message, which ACP permits (task ^he1rmw6, decision G3).
+    ///
     /// - Parameter params: The prompt request.
-    /// - Returns: The response that names the user message.
+    /// - Returns: The response that names the user message, and the
+    ///   prompt-state owner of the prompt.
     /// - Throws: The errors that ``prompt(_:)`` names.
-    private func acceptPrompt(_ params: PromptRequest) async throws -> PromptResponse {
+    private func acceptPrompt(_ params: PromptRequest) async throws -> (PromptResponse, PromptStateOwner) {
         try requireInitialized(before: ACPMethod.sessionPrompt)
         guard let entry = sessions[params.sessionId] else {
             throw RequestError.unknownSession(id: params.sessionId)
         }
-        switch entry.availability {
-        case .closed:
+        guard entry.availability != .closed else {
             throw RequestError.closedSession(id: params.sessionId)
-        case .busy:
-            throw RequestError.busySession(id: params.sessionId)
-        case .idle:
-            break
         }
         // A replay-only session has no tool surface, because its working
         // directory does not exist, so no prompt and no command runs in it.
@@ -778,41 +770,43 @@ extension RoutedACPAgent {
                 command, params: params, entry: entry, connection: connection)
         }
 
-        let (owner, send) = beginPrompt(
-            params: params, send: historySink(for: params.sessionId, connection: connection))
-        return scheduleModelPrompt(
+        let owner = beginPrompt(params: params)
+        let response = scheduleModelPrompt(
             overridePrompt: nil,
-            params: params, entry: entry, connection: connection, owner: owner, send: send)
+            params: params, entry: entry, connection: connection, owner: owner,
+            send: historySink(for: params.sessionId, connection: connection))
+        return (response, owner)
     }
 
-    /// Marks the session busy for one prompt: installs a fresh prompt-state
-    /// owner over `send` as the session's active prompt.
+    /// Registers one prompt in flight: installs a fresh prompt-state owner
+    /// over the state ledger of the session in the list of open prompts.
     ///
-    /// A model prompt gives the history sink
-    /// (``historySink(for:connection:)``): the ``SessionProjector`` sends its
-    /// state updates in order with its events. An `.action` command gives
-    /// the command sink of the projector (``SessionProjector/commandSink``),
-    /// so its updates keep their order with the events of the session.
-    ///
-    /// - Parameters:
-    ///   - params: The prompt request.
-    ///   - send: The sink of the updates of the prompt.
-    /// - Returns: The installed owner and the sink.
-    func beginPrompt(
-        params: PromptRequest, send: @escaping SessionUpdateSink
-    ) -> (owner: PromptStateOwner, send: SessionUpdateSink) {
+    /// - Parameter params: The prompt request.
+    /// - Returns: The installed owner.
+    func beginPrompt(params: PromptRequest) -> PromptStateOwner {
         let sessionId = params.sessionId
-        let owner = PromptStateOwner(send: send)
-        sessions[sessionId]?.activePrompt = owner
-        return (owner, send)
+        guard let ledger = sessions[sessionId]?.stateLedger else {
+            // A `session/delete` can remove the entry while a `.rendered`
+            // command renders. The prompt still gets an owner, over a
+            // ledger of its own.
+            return PromptStateOwner(send: boundHistorySink(for: sessionId))
+        }
+        let owner = PromptStateOwner(ledger: ledger)
+        sessions[sessionId]?.openPrompts.append(owner)
+        return owner
     }
 
     /// Inserts the user message of one model prompt, defers the prompt to
     /// run after the response through `afterRespondingToCurrentRequest`, and
     /// returns at once a response that names the user message. Never a
-    /// detached task that races the response. The echo of the
-    /// user message is deferred first, so it goes out before the prompt
-    /// work.
+    /// detached task that races the response.
+    ///
+    /// The prompt keeps the fixed order of elicitation-plan task 49, all in
+    /// the hooks that run after the response: (1) the `session/prompt`
+    /// response, (2) the `user_message` echo, (3) `running`, (4) the mail of
+    /// the prompt. The `messageId` of the response and of the echo is the
+    /// `MailID` of the mail, so the headless CLI finds the `idle` of its own
+    /// prompt (task 43).
     ///
     /// - Parameters:
     ///   - overridePrompt: The expanded command text that replaces the
@@ -821,9 +815,8 @@ extension RoutedACPAgent {
     ///   - params: The prompt request.
     ///   - entry: The session's table entry.
     ///   - connection: The bound connection the prompt registers with.
-    ///   - owner: The prompt-state owner ``beginPrompt(params:send:)``
-    ///     installed.
-    ///   - send: The sink every update of the prompt goes to.
+    ///   - owner: The prompt-state owner ``beginPrompt(params:)`` installed.
+    ///   - send: The sink of the first-activity update of the prompt.
     /// - Returns: The response that names the user message.
     func scheduleModelPrompt(
         overridePrompt: String?,
@@ -834,7 +827,9 @@ extension RoutedACPAgent {
         send: @escaping SessionUpdateSink
     ) -> PromptResponse {
         let sessionId = params.sessionId
-        let messageId = insertUserMessage(params, through: connection)
+        let mailId = MailID()
+        let messageId = insertUserMessage(
+            params, messageId: MessageId(rawValue: mailId.description), through: connection)
         // The session of the selected slot when the prompt is accepted: a
         // later model slot switch does not move this prompt.
         let session = entry.session
@@ -852,24 +847,23 @@ extension RoutedACPAgent {
         // The prompt span context goes with the work, so each Router
         // submission span of the prompt is a child of the prompt span.
         connection.afterRespondingInCurrentServiceContext {
-            await execution.run(session: session, projector: projector) { _ in
-                await self.promptFinished(sessionId: sessionId)
+            await execution.run(mailId: mailId, session: session, projector: projector) { _ in
+                await self.promptFinished(owner, sessionId: sessionId)
             }
         }
         return PromptResponse(messageId: messageId)
     }
 
-    /// Stops the session's running prompt: records the
-    /// request on the prompt owner, answers every pending elicitation with
-    /// `cancel` — the suspended tool must resume before the `idle`
-    /// terminator, and Router's mailbox does not resume on task
-    /// cancellation — then cancels the work of the Router session: the
-    /// model work in flight and a caller message that waits. A submission
-    /// that waits for a place in the model queue is in flight too, and
-    /// the cancel reaches it: the Router removes it from the queue at
-    /// once, so the `idle(cancelled)` terminator does not wait for the
-    /// submission of another session. A notification has no response, so
-    /// an unknown id or an idle session is logged and ignored.
+    /// Stops the work of one session: records the request on each open
+    /// prompt, answers every pending elicitation with `cancel` — the
+    /// suspended tool must resume — then cancels the work of the Router
+    /// session with `cancelAll()`: the queued mail, the model work in
+    /// flight, and the background runs. A submission that waits for a place
+    /// in the model queue is in flight too, and the cancel reaches it: the
+    /// Router removes it from the queue at once, so the `idle(cancelled)`
+    /// terminator does not wait for the submission of another session. A
+    /// notification has no response, so an unknown id or an idle session is
+    /// logged and ignored.
     ///
     /// The notification runs in one server span (``RequestTracing``).
     ///
@@ -883,18 +877,20 @@ extension RoutedACPAgent {
         }
     }
 
-    /// Cancels the running prompt of one session: the work of
+    /// Cancels the open prompts of one session: the work of
     /// ``sessionCancel(_:)``.
     ///
     /// - Parameter params: The cancellation notification.
     private func cancelRunningPrompt(_ params: CancelSessionNotification) async {
-        guard let entry = sessions[params.sessionId], let promptState = entry.activePrompt else {
+        guard let entry = sessions[params.sessionId], !entry.openPrompts.isEmpty else {
             ACPAgentTelemetry.logger(.promptExecution).notice(
                 "A session/cancel found no running prompt. The agent ignores it.",
                 metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
             return
         }
-        await promptState.noteCancelRequested()
+        for owner in entry.openPrompts {
+            await owner.noteCancelRequested()
+        }
         await entry.projector.relay?.cancelPendingElicitations()
         let signal = entry.session.cancelAll()
         var metadata = ACPAgentTelemetry.sessionMetadata(params.sessionId)
@@ -920,21 +916,25 @@ extension RoutedACPAgent {
         recordActiveSessions()
     }
 
-    /// Clears the finished prompt, so the session accepts a new prompt.
-    /// Runs after the prompt's `idle` went out, so a second prompt's
-    /// `running` can never pass the first prompt's terminator. The
-    /// ``SessionProjector`` runs it for a model prompt, and the command
-    /// dispatch runs it for an `.action` command. It first
-    /// writes the retained history of the session (``writeHistory(of:)``),
-    /// so a new process can resume the session with the messages of this
-    /// prompt. It then reconciles the config-option state: a
-    /// prompt that ran on a model the announced options do not show pushes
-    /// one `config_option_update`, after the prompt's terminator.
+    /// Clears one finished prompt from the list of open prompts. Runs after
+    /// the prompt ended. The ``SessionProjector`` runs it for a model
+    /// prompt, and the command dispatch runs it for an `.action` command.
+    /// It first writes the retained history of the session
+    /// (``writeHistory(of:)``), so a new process can resume the session with
+    /// the messages of this prompt. When no prompt is open any more, it then
+    /// reconciles the config-option state: a prompt that ran on a model the
+    /// announced options do not show pushes one `config_option_update`,
+    /// after the terminator.
     ///
-    /// - Parameter sessionId: The session whose prompt finished.
-    func promptFinished(sessionId: SessionId) async {
+    /// - Parameters:
+    ///   - owner: The prompt-state owner of the finished prompt.
+    ///   - sessionId: The session whose prompt finished.
+    func promptFinished(_ owner: PromptStateOwner, sessionId: SessionId) async {
         writeHistory(of: sessionId)
-        sessions[sessionId]?.activePrompt = nil
+        sessions[sessionId]?.openPrompts.removeAll { $0 === owner }
+        guard sessions[sessionId]?.openPrompts.isEmpty ?? false else {
+            return
+        }
         await reconcileConfigOptions(for: sessionId)
     }
 

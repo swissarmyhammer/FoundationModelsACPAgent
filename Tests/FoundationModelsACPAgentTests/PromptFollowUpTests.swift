@@ -239,6 +239,9 @@ import Testing
         /// The input of the outputs of the source.
         let outputs: AsyncStream<SessionOutput>.Continuation
 
+        /// The id of the source.
+        let sourceId: ULID
+
         /// The mail of the open prompt.
         let promptMail = MailID()
 
@@ -260,7 +263,8 @@ import Testing
             let source = SessionProjector.Source(id: ULID.generate(), session: nil)
             await projector.attach(stream, from: source)
             let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
-            let session = SyntheticSession(projector: projector, recorder: recorder, outputs: outputs, ends: ends)
+            let session = SyntheticSession(
+                projector: projector, recorder: recorder, outputs: outputs, sourceId: source.id, ends: ends)
             projector.open(
                 SessionProjector.Prompt(
                     mailId: session.promptMail, sourceId: source.id,
@@ -292,7 +296,7 @@ import Testing
         ///   and the updates in send order.
         func finish() async -> (reason: StopReason?, updates: [SessionUpdate]) {
             outputs.finish()
-            await projector.stop()
+            await projector.stop(after: [sourceId])
             var reason: StopReason?
             for await ended in ends {
                 reason = ended
