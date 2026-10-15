@@ -118,6 +118,13 @@ struct ACPEventTranslator {
     /// the run (gap ^crjmk34).
     var endElicitation: ElicitationEndHandler?
 
+    /// The handler of the completion of an accepted URL-mode flow, or `nil`
+    /// when no relay is wired. The ``SessionProjector`` supplies
+    /// ``ElicitationRelay/complete(_:)``. The translator waits for it, so
+    /// `elicitation/complete` goes out before the events of the resumed run
+    /// (task ^az53ay4).
+    var completeElicitation: ElicitationCompletionHandler?
+
     /// The SDK tool-call id of each run that Router joined, keyed by the
     /// completion token of the run (tasks ^e1yq4gh and ^9xk3xf4). The session
     /// owns the table, and its ``TerminalStream`` reads the same table, so the
@@ -399,6 +406,15 @@ struct ACPEventTranslator {
                 return
             }
             await endElicitation(end)
+        case .elicitationCompleted(let completion):
+            // The out-of-band flow of an accepted URL-mode question
+            // completed: the relay sends `elicitation/complete` (task
+            // ^az53ay4).
+            guard let completeElicitation else {
+                reportUnsentEvent(event)
+                return
+            }
+            await completeElicitation(completion)
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a

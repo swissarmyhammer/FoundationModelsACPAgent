@@ -15,6 +15,11 @@ typealias ElicitationEventHandler = @Sendable (OperationEvent) async -> Void
 /// synthetic projection test wires none.
 typealias ElicitationEndHandler = @Sendable (ElicitationEnd) async -> Void
 
+/// The consumer of the completion of one accepted URL-mode flow. The
+/// production handler is ``ElicitationRelay/complete(_:)``; a synthetic
+/// projection test wires none.
+typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async -> Void
+
 /// The relay of a tool's elicitation to the ACP client. This package owns
 /// elicitation, because it is the only layer with a live two-way channel
 /// to a user. An elicitation asks a question that a tool needs answered.
@@ -37,6 +42,14 @@ typealias ElicitationEndHandler = @Sendable (ElicitationEnd) async -> Void
 /// sends `SessionEvent.elicitationEnded`, and ``end(_:)`` ends the client
 /// request: the relay cancels the task of the `elicitation/create`, and the
 /// connection sends `$/cancel_request` for it (gap ^crjmk34).
+///
+/// A URL-mode accept does not end the flow: the run waits until the
+/// out-of-band flow of the URL completes. The relay keeps the id as
+/// awaiting completion, and sends `elicitation/complete` only when the flow
+/// ended (task ^az53ay4): at `SessionEvent.elicitationCompleted`
+/// (``complete(_:)``), from the client or from the tool, or at
+/// `SessionEvent.elicitationEnded` (``end(_:)``), so the client leaves its
+/// waiting state.
 ///
 /// The capability gate: the client said what it answers at
 /// `initialize`. An absent capability, or an absent mode object, means
@@ -95,8 +108,19 @@ actor ElicitationRelay {
     private var earlyEnds: [String: ElicitationEnd] = [:]
 
     /// The ids of the outstanding URL-mode elicitations, for the
-    /// uniqueness duty.
+    /// uniqueness duty. An accepted flow stays outstanding until it ended.
     private var outstandingURLElicitationIds: Set<String> = []
+
+    /// The ids of the accepted URL-mode flows that wait for their end. The
+    /// relay sends `elicitation/complete` for each one time, at
+    /// ``complete(_:)`` or at ``end(_:)``.
+    private var awaitingCompletion: Set<String> = []
+
+    /// The ids of the URL-mode flows that completed before their round trip
+    /// knew of the accept. Router can send the completion while the relay
+    /// waits for `respond`, so the round trip reads this set when the accept
+    /// is recorded.
+    private var earlyCompletions: Set<String> = []
 
     /// Creates a relay for one session over one bound connection.
     ///
@@ -201,7 +225,9 @@ actor ElicitationRelay {
         }
         let outcome = await deliverRoundTrip(
             wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
-        endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
+        if !awaitingCompletion.contains(elicitationId) {
+            endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
+        }
         earlyEnds.removeValue(forKey: elicitationId)
         return outcome
     }
@@ -216,9 +242,19 @@ actor ElicitationRelay {
     /// the log record and to the elicitation span. An end whose round trip
     /// does not wait yet is kept, and that round trip sends no create.
     ///
+    /// The end of an accepted URL-mode flow that waits for its completion
+    /// sends `elicitation/complete`, so the client leaves its waiting state.
+    ///
     /// - Parameter end: The end that Router sent.
-    func end(_ end: ElicitationEnd) {
+    func end(_ end: ElicitationEnd) async {
         let elicitationId = end.elicitationId.ulidString
+        if awaitingCompletion.contains(elicitationId) {
+            ACPAgentTelemetry.logger(.elicitationRelay).notice(
+                "Router ended an accepted URL flow. The relay sends elicitation/complete.",
+                metadata: endMetadata(end))
+            await finishURLFlow(elicitationId: elicitationId)
+            return
+        }
         guard let continuation = pendingAnswers.removeValue(forKey: elicitationId) else {
             earlyEnds[elicitationId] = end
             ACPAgentTelemetry.logger(.elicitationRelay).debug(
@@ -244,11 +280,24 @@ actor ElicitationRelay {
     /// so a suspended tool resumes. An answer that arrives after this call
     /// finds no waiter and is dropped. The outstanding URL-mode ids are
     /// cleared with the other per-round-trip state.
+    ///
+    /// Router also sends `elicitationCompleted` or `elicitationEnded` for
+    /// each accepted URL-mode flow before the feed ends. Thus a flow that
+    /// still waits for its completion here is a defect too: the relay
+    /// releases its id and writes a warning, and sends no
+    /// `elicitation/complete`.
     func drainOpenRoundTrips() {
         for task in answerTasks.values {
             task.cancel()
         }
         answerTasks = [:]
+        for elicitationId in awaitingCompletion {
+            ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                "An accepted URL flow had no end at the end of the feed. The relay releases it.",
+                metadata: elicitationMetadata(elicitationId))
+        }
+        awaitingCompletion = []
+        earlyCompletions = []
         outstandingURLElicitationIds = []
         earlyEnds = [:]
         let waiting = pendingAnswers
@@ -263,7 +312,8 @@ actor ElicitationRelay {
 
     /// Runs one wire round trip and delivers the answer to Router: the
     /// create, the decode, the `respond`, and — for an accepted URL-mode
-    /// flow — the completion.
+    /// flow — the record of the flow as awaiting completion. The relay
+    /// does not complete the flow: the flow completes out of band.
     ///
     /// - Parameters:
     ///   - wireRequest: The mapped `elicitation/create` request.
@@ -290,7 +340,7 @@ actor ElicitationRelay {
         case .delivered:
             break
         case .acceptedAwaitingCompletion:
-            await completeURLFlow(elicitationId: elicitationId, on: session)
+            await awaitURLFlowEnd(elicitationId: elicitationId)
         case .noPendingElicitation:
             ACPAgentTelemetry.logger(.elicitationRelay).warning(
                 "Router has no pending elicitation for the answer. The relay dropped the answer.",
@@ -367,15 +417,70 @@ actor ElicitationRelay {
         continuation.resume(returning: .answered(answer))
     }
 
-    /// Ends an accepted URL-mode flow: the `elicitation/complete`
-    /// notification goes to the one client that received the create —
-    /// this relay holds exactly that connection — and only then
-    /// `session.complete(elicitationId:)` resumes the tool.
+    // MARK: - The end of a URL flow
+
+    /// Sends `elicitation/complete` for an accepted URL-mode flow whose
+    /// out-of-band flow completed: Router sent
+    /// `SessionEvent.elicitationCompleted`, after a completion from the
+    /// client or from the tool. The run already resumed, so the relay does
+    /// not call `session.complete(elicitationId:)`.
     ///
-    /// - Parameters:
-    ///   - elicitationId: The accepted elicitation's id.
-    ///   - session: The Router session whose flow completes.
-    private func completeURLFlow(elicitationId: String, on session: any RoutedSession) async {
+    /// A completion that comes while the round trip waits for `respond` is
+    /// kept, and the round trip sends `elicitation/complete` when Router
+    /// records the accept. A second completion, and the completion of a
+    /// flow that this relay does not know, send nothing.
+    ///
+    /// - Parameter completion: The completion that Router sent.
+    func complete(_ completion: ElicitationCompletion) async {
+        let elicitationId = completion.elicitationId.ulidString
+        guard awaitingCompletion.contains(elicitationId) else {
+            if outstandingURLElicitationIds.contains(elicitationId) {
+                earlyCompletions.insert(elicitationId)
+                ACPAgentTelemetry.logger(.elicitationRelay).debug(
+                    "A URL flow completed before the relay knew of the accept. The relay keeps the completion.",
+                    metadata: elicitationMetadata(elicitationId))
+            } else {
+                ACPAgentTelemetry.logger(.elicitationRelay).debug(
+                    "A URL flow completed that does not wait for its completion. The relay sends nothing.",
+                    metadata: elicitationMetadata(elicitationId))
+            }
+            return
+        }
+        ACPAgentTelemetry.logger(.elicitationRelay).notice(
+            "A URL flow completed. The relay sends elicitation/complete.",
+            metadata: elicitationMetadata(elicitationId))
+        await finishURLFlow(elicitationId: elicitationId)
+    }
+
+    /// Keeps an accepted URL-mode flow as awaiting completion, after Router
+    /// recorded the accept (`acceptedAwaitingCompletion`). A completion or
+    /// an end that came while the relay waited for `respond` ends the flow
+    /// at once.
+    ///
+    /// - Parameter elicitationId: The accepted elicitation's id.
+    private func awaitURLFlowEnd(elicitationId: String) async {
+        awaitingCompletion.insert(elicitationId)
+        let completedEarly = earlyCompletions.remove(elicitationId) != nil
+        let endedEarly = earlyEnds.removeValue(forKey: elicitationId) != nil
+        guard completedEarly || endedEarly else {
+            return
+        }
+        ACPAgentTelemetry.logger(.elicitationRelay).notice(
+            "A URL flow ended before Router recorded the accept. The relay sends elicitation/complete.",
+            metadata: elicitationMetadata(elicitationId))
+        await finishURLFlow(elicitationId: elicitationId)
+    }
+
+    /// Ends an awaiting URL-mode flow: the relay releases its id, and the
+    /// `elicitation/complete` notification goes to the one client that
+    /// received the create — this relay holds exactly that connection.
+    ///
+    /// - Parameter elicitationId: The accepted elicitation's id.
+    private func finishURLFlow(elicitationId: String) async {
+        guard awaitingCompletion.remove(elicitationId) != nil else {
+            return
+        }
+        outstandingURLElicitationIds.remove(elicitationId)
         do {
             guard let connection else {
                 throw CancellationError()
@@ -388,7 +493,6 @@ actor ElicitationRelay {
                 "The elicitation/complete notification failed.",
                 metadata: elicitationMetadata(elicitationId, error: error))
         }
-        await session.complete(elicitationId: elicitationId)
     }
 
     // MARK: - The log metadata

@@ -149,6 +149,10 @@ actor SessionProjector {
             if let relay {
                 let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
                 state.translator.endElicitation = endElicitation
+                let completeElicitation: ElicitationCompletionHandler = { completion in
+                    await relay.complete(completion)
+                }
+                state.translator.completeElicitation = completeElicitation
             }
             for await input in stream {
                 await state.handle(input)

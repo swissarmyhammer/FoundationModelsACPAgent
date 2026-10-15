@@ -507,31 +507,127 @@ struct ElicitationRelayTests {
 
     // MARK: - The URL round trip
 
-    /// URL mode: create, accept, then `elicitation/complete` reaches the
+    /// Waits until the elicitation span of the relay ended. The span ends
+    /// after Router recorded the answer of the client, and after the relay
+    /// keeps an accepted URL flow as awaiting completion. Thus a test that
+    /// accepts a URL question uses this end as its fixed point after the
+    /// accept.
+    ///
+    /// - Parameter context: The telemetry capture of the test.
+    private static func waitForTheEndOfTheElicitationSpan(in context: TelemetryCapture.Context) async {
+        await context.wait { captured in
+            captured.spans.contains { $0.operationName == ACPAgentTelemetry.SpanName.elicitation }
+        }
+    }
+
+    /// The elicitation ids of the `elicitation/complete` notifications that
+    /// reached the client of the fixture.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The ids, in arrival order.
+    /// - Throws: When the fixture has no elicitation recorder.
+    private static func recordedCompletions(of fixture: ScriptedPromptFixture) async throws -> [ElicitationId] {
+        await (try #require(fixture.harness.elicitations)).completions.map(\.elicitationId)
+    }
+
+    /// The completion token of the run that asked the URL-mode question
+    /// `pending`: the tool call id of its session scope.
+    ///
+    /// - Parameter pending: The pending URL-mode question at the client.
+    /// - Returns: The completion token.
+    /// - Throws: When the question is not a URL-mode question scoped to a
+    ///   tool call.
+    private static func runToken(ofURLQuestion pending: PendingElicitation) throws -> String {
+        guard case .url(let urlMode) = pending.request.mode, case .session(let scope) = urlMode.scope,
+            let toolCallId = scope.toolCallId
+        else {
+            throw URLQuestionNotScoped(mode: "\(pending.request.mode)")
+        }
+        return toolCallId.rawValue
+    }
+
+    /// A URL-mode question at the client that is not scoped to a tool call.
+    private struct URLQuestionNotScoped: Error {
+        /// The mode of the question, for the failure message.
+        let mode: String
+    }
+
+    /// URL mode: an accept does not end the flow (task ^az53ay4). After the
+    /// accept no `elicitation/complete` goes out. The out-of-band flow then
+    /// completes on the run plane, and Router sends
+    /// `elicitationCompleted`: then one `elicitation/complete` reaches the
     /// client, and the tool resumes with the accept.
     @Test
-    func aURLElicitationCompletesAfterAcceptAndTheCompletionReachesTheClient() async throws {
-        let fixture = try await Self.makeLoopbackFixture(
-            code: Self.urlSnippet, label: "ElicitationRelayTests-url-accept")
-        try await Self.prompt(fixture)
+    func aURLElicitationCompletesOnlyWhenItsFlowCompletesAndNotAtTheAccept() async throws {
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.urlSnippet, label: "ElicitationRelayTests-url-accept")
+            try await Self.prompt(fixture)
 
-        let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
-        #expect(pending.request.message == ScriptedServer.elicitURLMessage)
-        #expect(pending.url?.absoluteString == ScriptedServer.elicitURLLink)
-        let elicitationId = try #require(pending.elicitationId)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+            #expect(pending.request.message == ScriptedServer.elicitURLMessage)
+            #expect(pending.url?.absoluteString == ScriptedServer.elicitURLLink)
+            let elicitationId = try #require(pending.elicitationId)
 
-        await MainActor.run {
-            fixture.session.acceptElicitation(pending.id)
+            await MainActor.run {
+                fixture.session.acceptElicitation(pending.id)
+            }
+            await Self.waitForTheEndOfTheElicitationSpan(in: context)
+            let completionsAtAccept = try await Self.recordedCompletions(of: fixture)
+
+            let actor = try await Self.sessionActor(of: fixture)
+            let questionId = try #require(ULID(ulidString: elicitationId.rawValue))
+            let delivery = await actor.runPlane.complete(elicitationId: questionId)
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            let completions = try await Self.recordedCompletions(of: fixture)
+            await fixture.close()
+            return (
+                elicitationId: elicitationId, completionsAtAccept: completionsAtAccept, delivery: delivery,
+                completions: completions, updates: updates)
         }
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        let recorder = try #require(fixture.harness.elicitations)
-        let completions = await recorder.completions
-        await fixture.close()
 
-        #expect(completions.map(\.elicitationId) == [elicitationId])
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        #expect(Self.stateMarkers(in: updates) == ["running", "idle"])
-        #expect(try encodedWireText(of: updates).contains(Self.acceptedResultText))
+        #expect(captured.completionsAtAccept.isEmpty)
+        #expect(captured.delivery == .completed)
+        #expect(captured.completions == [captured.elicitationId])
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
+        #expect(Self.stateMarkers(in: captured.updates) == ["running", "idle"])
+        #expect(try encodedWireText(of: captured.updates).contains(Self.acceptedResultText))
+    }
+
+    /// URL mode: a cancel of the run after the accept ends the flow. Router
+    /// sends `elicitationEnded` for the accepted question, and the relay
+    /// sends one `elicitation/complete`, so the client leaves its waiting
+    /// state. No `elicitation/complete` goes out at the accept.
+    @Test
+    func aRunCancelAfterAURLAcceptSendsOneCompletion() async throws {
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.urlSnippet, label: "ElicitationRelayTests-url-accept-run-cancel")
+            try await Self.prompt(fixture)
+
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+            let elicitationId = try #require(pending.elicitationId)
+            let runToken = try Self.runToken(ofURLQuestion: pending)
+
+            await MainActor.run {
+                fixture.session.acceptElicitation(pending.id)
+            }
+            await Self.waitForTheEndOfTheElicitationSpan(in: context)
+            let completionsAtAccept = try await Self.recordedCompletions(of: fixture)
+
+            let actor = try await Self.sessionActor(of: fixture)
+            _ = await actor.runPlane.cancel(completionToken: runToken)
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            let completions = try await Self.recordedCompletions(of: fixture)
+            await fixture.close()
+            return (
+                elicitationId: elicitationId, completionsAtAccept: completionsAtAccept,
+                completions: completions, updates: updates)
+        }
+
+        #expect(captured.completionsAtAccept.isEmpty)
+        #expect(captured.completions == [captured.elicitationId])
+        #expect(!Self.stateMarkers(in: captured.updates).contains("requires_action"))
     }
 
     // MARK: - Cancellation
