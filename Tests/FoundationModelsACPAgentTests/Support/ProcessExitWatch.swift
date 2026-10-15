@@ -14,6 +14,11 @@ enum ProcessExitWatch {
     /// answers `kill(pid, 0)`, so the caller gives that read, for example
     /// ``hasExited(_:)``.
     ///
+    /// The end of the wait is the result. Do not read the state of `pid`
+    /// again after the wait: the kernel sends the exit event before it makes
+    /// the process a zombie, and after the reap the system can give the pid
+    /// to a new process.
+    ///
     /// - Parameters:
     ///   - pid: The process to watch.
     ///   - isGone: Tells if the process is gone. It is read one time, after
@@ -39,26 +44,31 @@ enum ProcessExitWatch {
 }
 
 extension ProcessExitWatch {
-    /// The `pbi_status` of a zombie: a process that exited and that its
-    /// parent did not reap yet (`SZOMB` of `sys/proc.h`).
-    private static let zombieStatus: UInt32 = 5
-
-    /// Tells if the process `pid` no longer runs: it is gone, or it is a
-    /// zombie that exited and waits for its parent to reap it. `pgrep` can
-    /// still list a zombie, so a check that a process ended reads this.
+    /// Tells if the process `pid` no longer runs: it is gone, it is in its
+    /// exit (`P_WEXIT`), or it is a zombie (`SZOMB`) that waits for its
+    /// parent to reap it. A process in its exit can already have sent its
+    /// exit event, before the kernel makes it a zombie.
+    ///
+    /// Read this only before a wait, as the `isGone` read of
+    /// ``waitForExit(of:isGone:)``.
     ///
     /// - Parameter pid: The process to read.
-    /// - Returns: `true` when the process exited.
+    /// - Returns: `true` when the process exited or is in its exit.
     static func hasExited(_ pid: pid_t) -> Bool {
         if kill(pid, 0) != 0, errno == ESRCH {
             return true
         }
-        var info = proc_bsdinfo()
-        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else {
-            // The parent reaped the process between the two reads.
-            return errno == ESRCH
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&name, u_int(name.count), &info, &size, nil, 0) == 0 else {
+            // No answer: the exit event ends the wait.
+            return false
         }
-        return info.pbi_status == zombieStatus
+        guard size > 0 else {
+            // The parent reaped the process between the two reads.
+            return true
+        }
+        return Int32(info.kp_proc.p_stat) == SZOMB || info.kp_proc.p_flag & P_WEXIT != 0
     }
 }

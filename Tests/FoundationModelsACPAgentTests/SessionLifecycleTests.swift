@@ -170,13 +170,13 @@ struct SessionLifecycleTests {
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
 
+        // The end of each wait is the result: each server process exited. A
+        // server that does not exit holds the test, and a hang is the failure.
+        // No read follows the waits, because after the exit event the process
+        // can be not yet a zombie, or its pid can belong to a new process.
         for pid in serverProcesses {
             await ProcessExitWatch.waitForExit(of: pid) { ProcessExitWatch.hasExited(pid) }
         }
-        // No server process runs any more. `pgrep` can still list a server
-        // that exited and that its parent did not reap yet, a zombie, so the
-        // check reads the state of each listed process.
-        #expect(try Self.serverProcessIDs(matching: serverPath).allSatisfy(ProcessExitWatch.hasExited))
         await fixture.close()
     }
 
