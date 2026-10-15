@@ -2,7 +2,8 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
-import FoundationModelsMultitool
+@testable import FoundationModelsMultitool
+import FoundationModelsRouter
 import Logging
 import MCPTestServer
 import Synchronization
@@ -111,6 +112,7 @@ import Testing
     ///   throws.
     private static func makeContext(
         clientServers: [FoundationModelsACP.MCPServer] = [],
+        userPresence: UserPresence = .interactive,
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
@@ -121,7 +123,8 @@ import Testing
             configuration: configuration,
             profile: try await makeStubProfile(
                 cacheDirectory: try makeTemporaryDirectory(label: "cache")),
-            clientMCPServers: clientServers)
+            clientMCPServers: clientServers,
+            userPresence: userPresence)
     }
 
     /// A config-derived stdio entry that spawns the `mcp-test-server`
@@ -513,6 +516,37 @@ import Testing
     /// category of the MCP composition.
     @Test func mcpCompositionLoggerHasTheModuleLabel() {
         #expect(ACPAgentTelemetry.logger(.mcpComposition).label == Self.mcpCompositionLoggerLabel)
+    }
+
+    // MARK: - The user presence of the servers
+
+    /// Each MCP server of a surface gets the user presence of its catalog
+    /// context, the same value as the Router session. A headless server
+    /// advertises no elicitation capability at `initialize`, so the server
+    /// does not ask; an interactive one advertises `form` and `url`.
+    @Test(arguments: [UserPresence.headless, .interactive])
+    func theMCPServersOfASurfaceGetTheUserPresenceOfTheContext(_ presence: UserPresence) async throws {
+        let command = try BuiltProductLocator.mcpTestServerURL().path
+        let context = try await Self.makeContext(userPresence: presence) { configuration in
+            configuration.tools.mcp = .enabled(servers: [
+                Self.configServer(named: Self.alphaName, command: command, mode: Self.echoMode)
+            ])
+        }
+
+        let built = try await ToolCatalog.makeRegistry(context: context)
+        let server = try #require(built.mcpServers.first)
+        let serverPresence = await server.userPresence
+        await built.pool.shutdownAll()
+        let advertised = FoundationModelsMultitool.MCPServer.clientCapabilities(for: serverPresence)
+
+        #expect(serverPresence == presence)
+        switch presence {
+        case .headless:
+            #expect(advertised.elicitation == nil)
+        case .interactive:
+            #expect(advertised.elicitation?.form != nil)
+            #expect(advertised.elicitation?.url != nil)
+        }
     }
 
     // MARK: - The mounted surface

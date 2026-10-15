@@ -432,7 +432,8 @@ public enum ToolCatalog {
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,
-            clientServers: context.clientMCPServers)
+            clientServers: context.clientMCPServers,
+            userPresence: context.userPresence)
         if !composed.servers.isEmpty {
             try await builder.withMCP(servers: composed.servers)
         }

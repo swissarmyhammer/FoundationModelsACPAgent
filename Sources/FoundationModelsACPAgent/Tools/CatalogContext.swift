@@ -73,6 +73,14 @@ public struct CatalogContext: Sendable {
     /// `RoutedLLM.makeBudgetedSession(...inlineSettleGrace:)`.
     public let inlineSettleGrace: TimeInterval
 
+    /// Whether a user can answer the questions of the sessions of this
+    /// surface: the same value as the Router session
+    /// (``RoutedACPAgent/userPresence``). Each MCP server of the surface
+    /// gets it (``MCPComposition``): a headless server advertises no
+    /// elicitation capability and cancels each `elicitation/create` with the
+    /// reason "no user is present".
+    public let userPresence: UserPresence
+
     /// Makes a catalog context.
     ///
     /// - Parameters:
@@ -88,6 +96,8 @@ public struct CatalogContext: Sendable {
     ///     process, for a caller that composes a catalog with no host.
     ///   - inlineSettleGrace: The settle period of the sessions of the
     ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
+    ///   - userPresence: Whether a user can answer the questions of the
+    ///     sessions (``userPresence``). Defaults to `.interactive`.
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
@@ -95,7 +105,8 @@ public struct CatalogContext: Sendable {
         profile: LanguageModelProfile,
         clientMCPServers: [FoundationModelsACP.MCPServer] = [],
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
+        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+        userPresence: UserPresence = .interactive
     ) {
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
@@ -104,5 +115,6 @@ public struct CatalogContext: Sendable {
         self.clientMCPServers = clientMCPServers
         self.environment = environment
         self.inlineSettleGrace = inlineSettleGrace
+        self.userPresence = userPresence
     }
 }

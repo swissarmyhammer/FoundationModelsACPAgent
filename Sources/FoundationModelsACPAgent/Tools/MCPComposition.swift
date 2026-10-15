@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsMultitool
+import enum FoundationModelsExtras.UserPresence
 import Logging
 import MCP
 import Tracing
@@ -527,6 +528,10 @@ enum MCPComposition {
     /// - Parameters:
     ///   - section: The decoded `mcp:` section.
     ///   - clientServers: The client-supplied per-session servers.
+    ///   - userPresence: Whether a user can answer the questions of the
+    ///     servers. Each server gets it: a headless server advertises no
+    ///     elicitation capability. The session surface and the `doctor`
+    ///     probe give it; the default is Multitool's default.
     /// - Returns: The connected composition.
     /// - Throws: For a config-derived entry:
     ///   `StdioServerProcess.StdioServerProcessError` for a command that is
@@ -534,7 +539,8 @@ enum MCPComposition {
     ///   not parse, and whatever a connect throws.
     static func connectServers(
         section: MCPToolSection,
-        clientServers: [FoundationModelsACP.MCPServer]
+        clientServers: [FoundationModelsACP.MCPServer],
+        userPresence: UserPresence = .interactive
     ) async throws -> ConnectedServers {
         let roster = composeRoster(section: section, clientServers: clientServers)
         for refusal in roster.refusals {
@@ -545,7 +551,8 @@ enum MCPComposition {
         var processes: [StdioServerProcess] = []
         var outcomes: [ServerOutcome] = []
         for entry in roster.entries {
-            let result = try await connect(entry: entry, servers: &servers, processes: &processes)
+            let result = try await connect(
+                entry: entry, userPresence: userPresence, servers: &servers, processes: &processes)
             outcomes.append(
                 ServerOutcome(
                     name: entry.configuration.name,
@@ -585,6 +592,7 @@ enum MCPComposition {
     ///
     /// - Parameters:
     ///   - entry: The entry to connect.
+    ///   - userPresence: The user presence that the server gets.
     ///   - servers: The servers connected so far; a connected server is
     ///     appended.
     ///   - processes: The subprocesses spawned so far; the subprocess of a
@@ -594,10 +602,12 @@ enum MCPComposition {
     /// - Throws: What the connect of a config-derived entry throws.
     private static func connect(
         entry: Roster.Entry,
+        userPresence: UserPresence,
         servers: inout [FoundationModelsMultitool.MCPServer],
         processes: inout [StdioServerProcess]
     ) async throws -> ServerOutcome.Result {
-        let server = FoundationModelsMultitool.MCPServer(name: entry.configuration.name)
+        let server = FoundationModelsMultitool.MCPServer(
+            name: entry.configuration.name, userPresence: userPresence)
         var spawned: [StdioServerProcess] = []
         do {
             try await connect(entry: entry.configuration, server: server, spawnedProcesses: &spawned)

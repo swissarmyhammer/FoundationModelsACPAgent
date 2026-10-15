@@ -879,7 +879,8 @@ extension RoutedACPAgent {
             profile: residentProfile,
             clientMCPServers: clientMCPServers,
             environment: environment,
-            inlineSettleGrace: inlineSettleGrace)
+            inlineSettleGrace: inlineSettleGrace,
+            userPresence: userPresence)
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs

@@ -78,17 +78,18 @@ public struct SystemToolsProber: ToolsProber {
 
     /// Connects `entry` and disconnects it again.
     ///
-    /// The connect is ``MCPComposition/connectServers(section:clientServers:)``
+    /// The connect is ``MCPComposition/connectServers(section:clientServers:userPresence:)``
     /// over a roster of this one entry, so the probe proves exactly what
     /// `session/new` does: a stdio entry spawns its command and reaches
-    /// `.ready`, and an http entry answers at its URL.
+    /// `.ready`, and an http entry answers at its URL. The probe is
+    /// headless: no user is there to answer a question of the server.
     ///
     /// - Parameter entry: The server entry to reach.
     /// - Returns: What the connect gave.
     public func startMCPServer(_ entry: MCPServerConfiguration) async -> ProbeOutcome {
         do {
             let connected = try await MCPComposition.connectServers(
-                section: .enabled(servers: [entry]), clientServers: [])
+                section: .enabled(servers: [entry]), clientServers: [], userPresence: .headless)
             await MCPComposition.shutDown(
                 servers: connected.servers, processes: connected.processes)
             return .answered
