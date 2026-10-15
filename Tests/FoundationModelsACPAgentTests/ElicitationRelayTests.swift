@@ -395,6 +395,96 @@ struct ElicitationRelayTests {
             record.metadata[ACPAgentTelemetry.LogMetadataKey.sessionId] == .string(captured.sessionId))
     }
 
+    /// Each decline of the relay goes to Router as `decline` with the raw
+    /// value of its reason, so the tool and the model see why.
+    @Test(arguments: [
+        ElicitationRelay.DeclineReason.unsupportedMode,
+        .missingPayload,
+        .duplicateURLElicitationId,
+    ])
+    func eachDeclineOfTheRelayCarriesItsReason(_ reason: ElicitationRelay.DeclineReason) {
+        let response = ElicitationRelay.declineResponse(for: reason)
+
+        #expect(response == .decline(reason: reason.rawValue))
+        #expect(response.action == .decline)
+    }
+
+    /// Relays `request` straight to the relay of the fixture's session, over
+    /// a double of the Router session that records each answer.
+    ///
+    /// - Parameters:
+    ///   - request: The request to relay.
+    ///   - fixture: The wired fixture.
+    ///   - session: The double that records the answers.
+    /// - Throws: When the session or its relay is missing.
+    private static func relayDirectly(
+        _ request: ElicitationRequest, in fixture: ScriptedPromptFixture, over session: CloseCountingRoutedSession
+    ) async throws {
+        let relay = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.projector.relay)
+        let event = OperationEvent(
+            tool: serverName, op: "elicit", correlationID: "relay-direct", kind: .elicitation, detail: "",
+            elicitation: request)
+        await relay.relay(event, on: session, promptState: nil)
+    }
+
+    /// The double of the fixture's Router session that records each answer.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The double.
+    /// - Throws: When the session is missing.
+    private static func recordingSession(of fixture: ScriptedPromptFixture) async throws -> CloseCountingRoutedSession {
+        CloseCountingRoutedSession(
+            wrapping: try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session))
+    }
+
+    /// A URL-mode request to a client with `form` only reaches Router as
+    /// `decline` with the reason `unsupportedMode`.
+    @Test
+    func anUnsupportedModeDeclineReachesRouterWithItsReason() async throws {
+        let fixture = try await Self.makeLoopbackFixture(
+            code: Self.formSnippet,
+            capabilities: Self.formOnlyCapabilities,
+            label: "ElicitationRelayTests-decline-unsupported")
+        let session = try await Self.recordingSession(of: fixture)
+
+        try await Self.relayDirectly(try Self.makeURLRequest(), in: fixture, over: session)
+        let responses = await session.responses.map(\.response)
+        await fixture.close()
+
+        #expect(responses == [.decline(reason: ElicitationRelay.DeclineReason.unsupportedMode.rawValue)])
+    }
+
+    /// A second URL-mode request with the id of an outstanding URL
+    /// elicitation reaches Router as `decline` with the reason
+    /// `duplicateURLElicitationId`, and sends no second create.
+    @Test
+    func aDuplicateURLElicitationIdDeclineReachesRouterWithItsReason() async throws {
+        let fixture = try await Self.makeLoopbackFixture(
+            code: Self.formSnippet, label: "ElicitationRelayTests-decline-duplicate")
+        let session = try await Self.recordingSession(of: fixture)
+        let elicitationId = ULID()
+        let first = Task {
+            try await Self.relayDirectly(
+                try Self.makeURLRequest(elicitationId: elicitationId), in: fixture, over: session)
+        }
+        let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+
+        try await Self.relayDirectly(
+            try Self.makeURLRequest(elicitationId: elicitationId), in: fixture, over: session)
+        let responsesAtDuplicate = await session.responses.map(\.response)
+        await MainActor.run {
+            fixture.session.cancelElicitation(pending.id)
+        }
+        try await first.value
+        let creates = await Self.recordedCreates(of: fixture).count
+        await fixture.close()
+
+        #expect(
+            responsesAtDuplicate
+                == [.decline(reason: ElicitationRelay.DeclineReason.duplicateURLElicitationId.rawValue)])
+        #expect(creates == 1)
+    }
+
     /// The logger of the elicitation relay has the module label and the
     /// category of the elicitation relay.
     @Test func elicitationRelayLoggerHasTheModuleLabel() {

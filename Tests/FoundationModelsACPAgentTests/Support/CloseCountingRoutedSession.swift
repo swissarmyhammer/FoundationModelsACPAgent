@@ -33,6 +33,10 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// Each double that ``fork(workingDirectory:)`` made, in fork order.
     private(set) var forks: [CloseCountingRoutedSession] = []
 
+    /// Each elicitation answer that went through ``respond(elicitationId:response:)``,
+    /// in call order.
+    private(set) var responses: [(elicitationId: String, response: ElicitationResponse)] = []
+
     /// Wraps `wrapped`.
     ///
     /// - Parameter wrapped: The real session that each call goes to.
@@ -222,7 +226,8 @@ actor CloseCountingRoutedSession: RoutedSession {
     ///   - response: The answer of the user.
     /// - Returns: The result of the real session.
     func respond(elicitationId: String, response: ElicitationResponse) async -> ElicitationAnswerDelivery {
-        await wrapped.respond(elicitationId: elicitationId, response: response)
+        responses.append((elicitationId: elicitationId, response: response))
+        return await wrapped.respond(elicitationId: elicitationId, response: response)
     }
 
     /// Sends the call to the real session.

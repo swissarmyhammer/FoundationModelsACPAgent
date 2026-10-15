@@ -41,8 +41,8 @@ typealias ElicitationEndHandler = @Sendable (ElicitationEnd) async -> Void
 /// `initialize`. An absent capability, or an absent mode object, means
 /// unsupported. A request in an unsupported mode gets `decline` at Router,
 /// and no `elicitation/create` goes out. The relay never falls back from
-/// `url` mode to `form` mode. Extras' `ElicitationResponse` carries no
-/// reason field, so the reason for a decline goes to the log only.
+/// `url` mode to `form` mode. A decline of the relay carries its reason
+/// (``DeclineReason``), so the tool and the model see why.
 ///
 /// The ACP security duties: a URL-mode accept never carries
 /// content back over ACP — the flow returns its data out of band. The
@@ -482,9 +482,10 @@ actor ElicitationRelay {
         }
     }
 
-    /// Why the relay declines an elicitation. The raw value goes into the
-    /// log record of the decline.
-    private enum DeclineReason: String {
+    /// Why the relay declines an elicitation. The raw value is the reason
+    /// of the decline that goes to Router, and it goes into the log record
+    /// of the decline.
+    enum DeclineReason: String {
         /// The client does not advertise the capability of the mode.
         case unsupportedMode
 
@@ -496,9 +497,9 @@ actor ElicitationRelay {
         case duplicateURLElicitationId
     }
 
-    /// Answers Router with `decline`. Extras' response carries no reason
-    /// field, so `reason` goes to the log only; the tool sees the bare
-    /// decline. No `elicitation/create` goes out on this path.
+    /// Answers Router with a `decline` that carries `reason`
+    /// (``declineResponse(for:)``), and writes the reason to the log. No
+    /// `elicitation/create` goes out on this path.
     ///
     /// - Parameters:
     ///   - elicitationId: The pending elicitation's id.
@@ -514,7 +515,16 @@ actor ElicitationRelay {
         metadata[ACPAgentTelemetry.LogMetadataKey.elicitationDeclineReason] = "\(reason.rawValue)"
         ACPAgentTelemetry.logger(.elicitationRelay).notice(
             "The relay declined an elicitation.", metadata: metadata)
-        await session.respond(elicitationId: elicitationId, response: .decline)
+        await session.respond(elicitationId: elicitationId, response: Self.declineResponse(for: reason))
+    }
+
+    /// The response of a decline of the relay: `decline` with the raw value
+    /// of `reason` as its reason.
+    ///
+    /// - Parameter reason: Why the relay declined.
+    /// - Returns: The response that goes to Router.
+    static func declineResponse(for reason: DeclineReason) -> ElicitationResponse {
+        .decline(reason: reason.rawValue)
     }
 
     // MARK: - The URL-mode uniqueness duty
