@@ -46,6 +46,11 @@ public struct SessionSurface: Sendable {
     /// status report of the session reads it.
     let mcpServerOutcomes: [MCPComposition.ServerOutcome]
 
+    /// The connected MCP servers of the session, in mount order. Only a
+    /// read needs them, for example the check of their user presence; the
+    /// ``serverPool`` owns their shutdown.
+    let mcpServers: [FoundationModelsMultitool.MCPServer]
+
     /// The settle period of the root session of this surface, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` that the surface also gave
     /// the agent environment. The session lifecycle gives it to
@@ -107,6 +112,8 @@ public struct SessionSurface: Sendable {
     ///     `nil` when the code context section is off.
     ///   - mcpServerOutcomes: The outcome of each MCP server, in mount
     ///     order.
+    ///   - mcpServers: The connected MCP servers, in mount order. Empty by
+    ///     default.
     ///   - inlineSettleGrace: The settle period of the root session.
     ///   - agents: The mounted `agents` tool, or `nil` when the `agents:`
     ///     section is off.
@@ -119,6 +126,7 @@ public struct SessionSurface: Sendable {
         shellOutput: ShellOutputChunkStream?,
         codeContextStop: (@Sendable () async -> Void)?,
         mcpServerOutcomes: [MCPComposition.ServerOutcome],
+        mcpServers: [FoundationModelsMultitool.MCPServer] = [],
         inlineSettleGrace: TimeInterval,
         agents: AgentsMount?,
         runCallJoins: RunCallJoinTable
@@ -129,6 +137,7 @@ public struct SessionSurface: Sendable {
         self.shellOutput = shellOutput
         self.codeContextStop = codeContextStop
         self.mcpServerOutcomes = mcpServerOutcomes
+        self.mcpServers = mcpServers
         self.inlineSettleGrace = inlineSettleGrace
         self.agents = agents
         self.runCallJoins = runCallJoins
@@ -149,6 +158,7 @@ public struct SessionSurface: Sendable {
             shellOutput: shellOutput,
             codeContextStop: codeContextStop,
             mcpServerOutcomes: mcpServerOutcomes,
+            mcpServers: mcpServers,
             inlineSettleGrace: inlineSettleGrace,
             agents: agents,
             runCallJoins: runCallJoins)
@@ -329,6 +339,7 @@ public enum ToolCatalog {
             shellOutput: built.shellOutput,
             codeContextStop: built.codeContextStop,
             mcpServerOutcomes: built.mcpServerOutcomes,
+            mcpServers: built.mcpServers,
             inlineSettleGrace: context.inlineSettleGrace,
             agents: agents,
             runCallJoins: runCallJoins)

@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
+@testable import FoundationModelsMultitool
 import FoundationModelsRouter
 import Testing
 
@@ -127,5 +128,82 @@ struct UserPresenceTests {
 
         #expect(presences.recorded == .headless)
         #expect(presences.resumed == .interactive)
+    }
+
+    // MARK: - The MCP servers of a session
+
+    /// The project `config.yaml` that mounts one stdio MCP server, the
+    /// `mcp-test-server` in echo mode. A project config, so a resumed
+    /// session over the same directory mounts it too.
+    ///
+    /// - Returns: The YAML document.
+    /// - Throws: The locator error.
+    private static func mcpConfigYAML() throws -> String {
+        let command = try BuiltProductLocator.mcpTestServerURL().path
+        return """
+            tools:
+              mcp:
+                - name: presence
+                  command: \(command)
+                  args:
+                    - --mode
+                    - echo
+            """
+    }
+
+    /// The user presence of each MCP server of the session `sessionId`.
+    ///
+    /// - Parameters:
+    ///   - agent: The agent that holds the session.
+    ///   - sessionId: The session.
+    /// - Returns: The presence of each server, in mount order.
+    /// - Throws: When the session is missing.
+    private static func mcpPresences(
+        of agent: RoutedACPAgent, sessionId: SessionId
+    ) async throws -> [UserPresence] {
+        let servers = try #require(await agent.sessions[sessionId]?.surface.mcpServers)
+        var presences: [UserPresence] = []
+        for server in servers {
+            presences.append(await server.userPresence)
+        }
+        return presences
+    }
+
+    /// The MCP servers of a session get the presence of the session: a
+    /// client with no elicitation capability gives headless servers, and an
+    /// interactive client gives interactive servers. A resume by the other
+    /// kind of client gives the presence of that client.
+    @Test(arguments: [
+        (ClientCapabilities(), ACPClient.advertisedCapabilities, UserPresence.headless, UserPresence.interactive),
+        (ACPClient.advertisedCapabilities, ClientCapabilities(), UserPresence.interactive, UserPresence.headless),
+    ])
+    func theMCPServersOfASessionGetItsPresenceAlsoAfterResume(
+        recordedWith: ClientCapabilities, resumedWith: ClientCapabilities,
+        recordedPresence: UserPresence, resumedPresence: UserPresence
+    ) async throws {
+        let label = "UserPresenceTests-mcp-\(recordedPresence)"
+        let first = try await ScriptedPromptFixture.make(
+            script: [.textDelta("recorded"), .endPass], label: label, capabilities: recordedWith,
+            projectConfigYAML: try Self.mcpConfigYAML())
+        _ = try await first.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: first.sessionId, text: "record this session"))
+        _ = try await ScriptedPromptFixture.waitForIdle(first.collector)
+        await ScriptedPromptFixture.waitForPromptsFinished(first.harness.agent, first.sessionId)
+        let recorded = try await Self.mcpPresences(of: first.harness.agent, sessionId: first.sessionId)
+        _ = try await first.harness.connection.closeSession(CloseSessionRequest(sessionId: first.sessionId))
+        await first.close()
+
+        let second = try await ScriptedPromptFixture.make(
+            script: [.endPass], label: "\(label)-second", capabilities: resumedWith,
+            workingDirectory: first.cwd)
+        _ = try await second.harness.connection.resumeSession(
+            ResumeSessionRequest(
+                cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
+                replayFrom: .start(ReplayFromStart())))
+        let resumed = try await Self.mcpPresences(of: second.harness.agent, sessionId: first.sessionId)
+        await second.close()
+
+        #expect(recorded == [recordedPresence])
+        #expect(resumed == [resumedPresence])
     }
 }
