@@ -142,10 +142,18 @@ actor SessionProjector {
                     runCallJoins: runCallJoins),
                 send: send,
                 relay: relay)
+            if let relay {
+                let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
+                state.translator.endElicitation = endElicitation
+            }
             for await input in stream {
                 await state.handle(input)
             }
             await state.endOpenPrompts(stop: .cancelled)
+            // Router ended each open question before the end of the feed.
+            // A round trip that is still in flight is a defect: the relay
+            // ends it with a warning, so its tool resumes.
+            await relay?.drainOpenRoundTrips()
         }
     }
 

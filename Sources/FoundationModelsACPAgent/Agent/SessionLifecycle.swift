@@ -138,10 +138,6 @@ extension RoutedACPAgent {
         guard !entry.isClosed else {
             return
         }
-        // Every pending elicitation is answered with `cancel` first, also
-        // with no prompt open: the relay lives for the whole session, and
-        // the suspended tool must resume (task ^9xs24pn, decision G4).
-        await entry.projector.relay?.cancelPendingElicitations()
         // A close during open prompts cancels them as `session/cancel` would,
         // and waits for the end of each prompt before the close response, so
         // a client with a spinner learns that the prompts ended with the

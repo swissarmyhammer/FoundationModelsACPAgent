@@ -110,6 +110,14 @@ struct ACPEventTranslator {
     /// wait for the user (elicitation-plan task 5).
     var relayElicitation: ElicitationEventHandler?
 
+    /// The handler of the end of a question that Router ended with no answer
+    /// of the client, or `nil` when no relay is wired. The
+    /// ``SessionProjector`` supplies ``ElicitationRelay/end(_:)``. The
+    /// translator waits for it, so the relay ends the client request before
+    /// the translator reads the next event, for example the `runSettled` of
+    /// the run (gap ^crjmk34).
+    var endElicitation: ElicitationEndHandler?
+
     /// The SDK tool-call id of each run that Router joined, keyed by the
     /// completion token of the run (tasks ^e1yq4gh and ^9xk3xf4). The session
     /// owns the table, and its ``TerminalStream`` reads the same table, so the
@@ -383,11 +391,14 @@ struct ACPEventTranslator {
             // The work state of the session. It sends nothing to the
             // client yet: running and idle come from it in a later task.
             reportUnsentEvent(event)
-        case .elicitationEnded:
-            // A question that ended with no answer from the client. It
-            // sends nothing to the client yet: the close of the client
-            // request comes in a later task (^crjmk34).
-            reportUnsentEvent(event)
+        case .elicitationEnded(let end):
+            // A question that Router ended with no answer of the client: the
+            // relay ends the client request (gap ^crjmk34).
+            guard let endElicitation else {
+                reportUnsentEvent(event)
+                return
+            }
+            await endElicitation(end)
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a

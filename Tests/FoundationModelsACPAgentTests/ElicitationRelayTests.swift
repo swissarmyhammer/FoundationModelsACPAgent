@@ -2,8 +2,8 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
-import FoundationModelsExtras
-import FoundationModelsRouter
+@testable import FoundationModelsExtras
+@testable import FoundationModelsRouter
 import Logging
 import MCPTestServer
 import TelemetryTestSupport
@@ -435,27 +435,122 @@ struct ElicitationRelayTests {
 
     // MARK: - Cancellation
 
-    /// `session/cancel` during a pending elicitation delivers `cancel` to
-    /// the tool before `idle(cancelled)`: the round trip resolves — the
-    /// post-answer `running` goes out — and only then the idle terminator.
-    /// The URL-mode tool is used here, so the cancel also releases an
-    /// outstanding URL elicitation id.
+    /// `session/cancel` during a pending elicitation ends the prompt with
+    /// `idle(cancelled)` and ends the question. The `cancelAll()` signal of
+    /// Router first sends the terminal event of the prompt's mail, and then
+    /// ends the question with `cancel` and the reason "run cancelled". Thus
+    /// `idle` follows `requires_action` with no `running` between them, and
+    /// the relay then ends the client request. The URL-mode tool is used
+    /// here, so the cancel also releases an outstanding URL elicitation id.
     @Test
     func sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle() async throws {
-        let fixture = try await Self.makeLoopbackFixture(
-            code: Self.urlSnippet, label: "ElicitationRelayTests-cancel")
-        try await Self.prompt(fixture)
-        _ = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.urlSnippet, label: "ElicitationRelayTests-cancel")
+            try await Self.prompt(fixture)
+            _ = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
 
-        try await fixture.harness.connection.sessionCancel(
-            CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
+            try await fixture.harness.connection.sessionCancel(
+                CancelSessionNotification(sessionId: fixture.sessionId))
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await fixture.close()
+            return (updates: updates, records: context.logRecords)
+        }
 
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
-        expectOrderedSubsequence(
-            ["requires_action", "running", "idle"],
-            in: Self.stateMarkers(in: updates))
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .cancelled)
+        #expect(Self.stateMarkers(in: captured.updates).suffix(2) == ["requires_action", "idle"])
+        let ends = Self.endRecords(in: captured.records)
+        #expect(ends.count == 1)
+        #expect(
+            ends.first?.metadata[ACPAgentTelemetry.LogMetadataKey.elicitationEndReason]
+                == .string(RunPlane.runCancelledReason))
+    }
+
+    /// The records of the relay for a question that Router ended: the
+    /// records whose metadata has the end reason.
+    ///
+    /// - Parameter records: The captured log records.
+    /// - Returns: The end records, in order.
+    private static func endRecords(in records: [TelemetryCapture.LogRecord]) -> [TelemetryCapture.LogRecord] {
+        records.filter { $0.metadata[ACPAgentTelemetry.LogMetadataKey.elicitationEndReason] != nil }
+    }
+
+    /// The Router session actor of the fixture's one session, so a test can
+    /// cancel one run on its run plane.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The session actor.
+    /// - Throws: When the session is missing or is not the Router actor.
+    private static func sessionActor(of fixture: ScriptedPromptFixture) async throws -> RoutedSessionActor {
+        let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+        return try #require(session as? RoutedSessionActor)
+    }
+
+    /// A cancel of the run of a question while the client request is open
+    /// ends that client request (gap ^crjmk34). Router ends the question
+    /// with `cancel` and the reason "run cancelled", before the run
+    /// settles. The relay ends the client request before the projector reads
+    /// the settlement, thus its record is there when the prompt is idle. Then
+    /// the client request ends at the client: `$/cancel_request` goes out
+    /// on its own task, so the test waits for that end.
+    @Test
+    func aCancelOfTheRunEndsTheOpenClientRequestWithTheRunCancelledReason() async throws {
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.formSnippet, label: "ElicitationRelayTests-run-cancel")
+            try await Self.prompt(fixture)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+            guard case .form(let form) = pending.request.mode, case .session(let scope) = form.scope,
+                let toolCallId = scope.toolCallId
+            else {
+                Issue.record("expected a form request scoped to a tool call, got \(pending.request.mode)")
+                await fixture.close()
+                return (records: context.logRecords, creates: 0)
+            }
+
+            let actor = try await Self.sessionActor(of: fixture)
+            _ = await actor.runPlane.cancel(completionToken: toolCallId.rawValue)
+            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            let endsAtIdle = Self.endRecords(in: context.logRecords)
+            try #require(endsAtIdle.count == 1, "the relay did not end the client request: \(endsAtIdle)")
+            try await ElicitationWait.waitUntilNoPendingElicitation(in: fixture.session)
+            let creates = await Self.recordedCreates(of: fixture).count
+            await fixture.close()
+            return (records: context.logRecords, creates: creates)
+        }
+
+        #expect(captured.creates == 1)
+        let record = try #require(Self.endRecords(in: captured.records).first)
+        #expect(record.level == .notice)
+        #expect(
+            record.metadata[ACPAgentTelemetry.LogMetadataKey.elicitationEndReason]
+                == .string(RunPlane.runCancelledReason))
+        #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.elicitationOutcome] == .string("cancel"))
+    }
+
+    /// A question that the client answered gets no end: Router sends
+    /// `elicitationEnded` only for a question that ended with no answer of
+    /// the client, so the relay writes no end record.
+    @Test
+    func anAnsweredQuestionGetsNoEnd() async throws {
+        let records = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.formSnippet, label: "ElicitationRelayTests-answered-no-end")
+            try await Self.prompt(fixture)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+            await MainActor.run {
+                fixture.session.acceptElicitation(
+                    pending.id,
+                    content: .object([
+                        ScriptedServer.elicitEchoAnswerField: .string(Self.acceptedAnswer)
+                    ]))
+            }
+            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await fixture.close()
+            return context.logRecords
+        }
+
+        #expect(Self.endRecords(in: records).isEmpty)
     }
 
     /// The recorded `elicitation/create` requests of the fixture.

@@ -21,6 +21,20 @@ enum ElicitationWait {
         await session.pendingElicitations
     }
 
+    /// Waits until `session` holds no pending elicitation: each client
+    /// request ended, with an answer or with a cancel of the agent.
+    ///
+    /// - Parameter session: The session model that received the
+    ///   elicitations.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
+    static func waitUntilNoPendingElicitation(in session: SessionModel) async throws {
+        let sessionId = session.sessionId
+        try await ObservedValue.wait(for: "each elicitation of \(sessionId.rawValue) ends at the client") {
+            session.pendingElicitations.isEmpty
+        }
+    }
+
     /// Waits until `session` holds a pending elicitation, and gives the
     /// first one.
     ///

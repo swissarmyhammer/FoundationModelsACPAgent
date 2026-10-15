@@ -103,6 +103,10 @@ enum ACPAgentTelemetry {
         /// How the elicitation ended: accept, decline or cancel.
         static let elicitationOutcome = "elicitation.outcome"
 
+        /// Why Router ended an elicitation with no answer of the client: the
+        /// reason of the response, for example "run cancelled".
+        static let elicitationEndReason = "elicitation.end_reason"
+
         /// The configured name of the MCP server.
         static let mcpServerName = "mcp.server.name"
 
@@ -318,6 +322,12 @@ enum ACPAgentTelemetry {
         /// Why the relay declined an elicitation: the name of the decline
         /// reason.
         static let elicitationDeclineReason = "elicitation.decline_reason"
+
+        /// How an elicitation ended: accept, decline or cancel.
+        static let elicitationOutcome = AttributeKey.elicitationOutcome
+
+        /// Why Router ended an elicitation with no answer of the client.
+        static let elicitationEndReason = AttributeKey.elicitationEndReason
 
         /// The name of a `config.yaml` section, as a dotted key path. Never
         /// a value of the section, because a value can be a secret.

@@ -893,10 +893,11 @@ extension RoutedACPAgent {
         for owner in entry.openPrompts {
             await owner.noteCancelRequested()
         }
-        await entry.projector.relay?.cancelPendingElicitations()
         // `cancelAll()` stops all the work of the session, also with no
         // prompt open: queued mail, the answer in flight, and the background
-        // runs (elicitation-plan task 3). With no prompt open, no state
+        // runs (elicitation-plan task 3). Router ends each open question
+        // with `elicitationEnded`, and the relay ends its client request
+        // (gap ^crjmk34). With no prompt open, no state
         // update goes out (task ^9xs24pn, decisions Q2 and G6).
         let signal = entry.session.cancelAll()
         if !entry.openPrompts.isEmpty {
