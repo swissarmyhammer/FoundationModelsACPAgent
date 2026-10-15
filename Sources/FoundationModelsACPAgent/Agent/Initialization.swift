@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsRouter
 import Logging
 
 /// The client's capabilities as `initialize` read them, with
@@ -24,6 +25,35 @@ public struct NegotiatedClientCapabilities: Hashable, Sendable {
     public init(reading capabilities: ClientCapabilities) {
         supportsFormElicitation = capabilities.elicitation?.form != nil
         supportsURLElicitation = capabilities.elicitation?.url != nil
+    }
+
+    /// Whether the client answers an elicitation in some mode: form or URL.
+    public var supportsElicitation: Bool {
+        supportsFormElicitation || supportsURLElicitation
+    }
+}
+
+extension RoutedACPAgent {
+    /// The user presence of a session that this agent opens now
+    /// (elicitation-plan tasks 6 and 7). Router gives it to the run plane of
+    /// the session (`SessionConfiguration.userPresence`).
+    ///
+    /// - `.headless` when no ACP client connection is bound: no relay is
+    ///   wired, so no user can answer, for example an in-process composition
+    ///   with no connection.
+    /// - `.headless` when the client answers no elicitation: no
+    ///   `elicitation` capability, or neither `form` nor `url`. No
+    ///   `initialize` yet reads as "supports nothing".
+    /// - `.interactive` otherwise.
+    ///
+    /// In a headless session, Extras answers each question at once with
+    /// cancel and the reason `RunPlane.noUserPresentReason`, so a question
+    /// never waits for a user who is not there.
+    var userPresence: UserPresence {
+        guard boundConnection != nil, negotiatedClientCapabilities?.supportsElicitation == true else {
+            return .headless
+        }
+        return .interactive
     }
 }
 

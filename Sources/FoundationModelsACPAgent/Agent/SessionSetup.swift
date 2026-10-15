@@ -79,6 +79,12 @@ struct ActiveSession: Sendable {
     /// truth against this baseline.
     var announcedConfigOptions: [SessionConfigOption]
 
+    /// The user presence that the session got when the agent opened it
+    /// (``RoutedACPAgent/userPresence``). A model slot switch gives it to
+    /// the replacement session, so the presence of the session does not
+    /// change.
+    let userPresence: UserPresence
+
     /// The state owner of each prompt in flight, in the order of
     /// acceptance. `session/cancel` and `session/close` reach the prompts
     /// through it.
@@ -570,7 +576,8 @@ extension RoutedACPAgent {
             tools: composition.surface.tools,
             compaction: composition.configuration.compaction,
             repetition: composition.configuration.repetition,
-            inlineSettleGrace: composition.surface.inlineSettleGrace)
+            inlineSettleGrace: composition.surface.inlineSettleGrace,
+            userPresence: userPresence)
 
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt task appends it at the first recorded activity,
@@ -697,6 +704,7 @@ extension RoutedACPAgent {
             commands: commands,
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
+            userPresence: userPresence,
             stateLedger: stateLedger,
             projector: projector,
             isReplayOnly: composition.isReplayOnly,
@@ -993,6 +1001,9 @@ extension RoutedLLM {
     ///   - inlineSettleGrace: The settle period of the session, in seconds:
     ///     the ``SessionSurface/inlineSettleGrace`` of the mounted surface,
     ///     thus the same period that each agent run of the surface gets.
+    ///   - userPresence: Whether a user can answer the questions of the
+    ///     session (``RoutedACPAgent/userPresence``). `session/new` and the
+    ///     model-slot switch give it; the default is Router's default.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``). While an
@@ -1005,7 +1016,8 @@ extension RoutedLLM {
         tools: [any FoundationModels.Tool],
         compaction: CompactionConfiguration,
         repetition: RepetitionConfiguration,
-        inlineSettleGrace: TimeInterval
+        inlineSettleGrace: TimeInterval,
+        userPresence: UserPresence = .interactive
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
@@ -1036,7 +1048,8 @@ extension RoutedLLM {
                     budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
                 repetitionDetection: repetition.detection,
                 inlineSettleGrace: inlineSettleGrace,
-                isNoOpToolCall: NoOpToolCall.check))
+                isNoOpToolCall: NoOpToolCall.check,
+                userPresence: userPresence))
     }
 
     /// Restores one recorded session with the host rules that

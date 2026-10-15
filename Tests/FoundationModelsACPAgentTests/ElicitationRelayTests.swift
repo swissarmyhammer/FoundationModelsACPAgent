@@ -186,6 +186,9 @@ struct ElicitationRelayTests {
     /// The text the eliciting loopback tools reflect for a decline.
     private static let declinedResultText = "elicitation decline"
 
+    /// The text the eliciting loopback tools reflect for a cancel.
+    private static let cancelledResultText = "elicitation cancel"
+
     /// The snippet that runs the form-mode eliciting loopback tool.
     private static let formSnippet =
         "return await tools.\(serverName).\(ScriptedServer.elicitEchoToolName)({});"
@@ -321,24 +324,34 @@ struct ElicitationRelayTests {
 
     // MARK: - The capability gate
 
-    /// A client with no `elicitation` capability makes the tool receive
-    /// `decline`, and no `elicitation/create` is sent.
+    /// A client with no `elicitation` capability gets a headless session
+    /// (elicitation-plan task 7): Extras answers the question at once with
+    /// cancel and the reason "no user is present", so no
+    /// `elicitation/create` is sent, the relay does not decline, and the
+    /// tool receives `cancel`.
     @Test
-    func aClientWithoutTheCapabilityMakesTheToolReceiveDeclineAndNothingIsSent() async throws {
-        let fixture = try await Self.makeLoopbackFixture(
-            code: Self.formSnippet,
-            capabilities: ClientCapabilities(),
-            label: "ElicitationRelayTests-no-capability")
-        try await Self.prompt(fixture)
+    func aClientWithoutTheCapabilityIsHeadlessAndTheToolGetsCancel() async throws {
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.formSnippet,
+                capabilities: ClientCapabilities(),
+                label: "ElicitationRelayTests-no-capability")
+            try await Self.prompt(fixture)
 
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        let creates = await Self.recordedCreates(of: fixture)
-        await fixture.close()
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            let creates = await Self.recordedCreates(of: fixture)
+            await fixture.close()
+            return (updates: updates, creates: creates, records: context.logRecords)
+        }
 
-        #expect(creates.isEmpty)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        #expect(!Self.stateMarkers(in: updates).contains("requires_action"))
-        #expect(try encodedWireText(of: updates).contains(Self.declinedResultText))
+        #expect(captured.creates.isEmpty)
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
+        #expect(!Self.stateMarkers(in: captured.updates).contains("requires_action"))
+        #expect(try encodedWireText(of: captured.updates).contains(Self.cancelledResultText))
+        #expect(
+            !captured.records.contains {
+                $0.metadata[ACPAgentTelemetry.LogMetadataKey.elicitationDeclineReason] != nil
+            })
     }
 
     /// A client with `form` only, asked in `url` mode, receives nothing —

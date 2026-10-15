@@ -221,6 +221,24 @@ import Testing
         await fixture.close()
     }
 
+    /// A model slot switch keeps the user presence of the session: the
+    /// replacement session of a headless session is headless too
+    /// (elicitation-plan task 7).
+    @Test
+    func aSlotSwitchKeepsTheUserPresenceOfTheSession() async throws {
+        let fixture = try await ScriptedPromptFixture.make(
+            loader: Self.makeSlotLoader(), label: "ConfigOptionsTests-presence", capabilities: ClientCapabilities())
+
+        _ = try await fixture.harness.connection.setSessionConfigOption(
+            Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
+        let replacement = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+        let presence = runPlanePresence(of: replacement)
+        await fixture.close()
+
+        #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.selectedSlot == .flash)
+        #expect(presence == .headless)
+    }
+
     /// The fixed order of a model slot switch while a prompt is open (task
     /// ^9xs24pn, decision Q3). The prompt on the standard slot holds; the
     /// client switches to flash; the held prompt then ends on the replaced

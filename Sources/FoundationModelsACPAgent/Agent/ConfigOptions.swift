@@ -228,7 +228,7 @@ extension RoutedACPAgent {
         // `compaction:` section the session was composed from, against the
         // selected slot's resolved context (the context size comes from the
         // model, never from configuration), and the same
-        // `repetition:` section.
+        // `repetition:` section, and the same user presence.
         let replacement = ConfigOptions.handle(for: slot, of: residentProfile)
             .makeBudgetedSession(
                 instructions: entry.instructions,
@@ -237,7 +237,8 @@ extension RoutedACPAgent {
                 tools: entry.surface.tools,
                 compaction: entry.configuration.compaction,
                 repetition: entry.configuration.repetition,
-                inlineSettleGrace: entry.surface.inlineSettleGrace)
+                inlineSettleGrace: entry.surface.inlineSettleGrace,
+                userPresence: entry.userPresence)
         // The projector reads the replacement before any prompt can mail it.
         // The reader of the replaced session stays until that session
         // closes (task ^9xs24pn, decision Q3).
