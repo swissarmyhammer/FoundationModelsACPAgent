@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffdd80
 title: 'Elicitation task 7: the user presence of a session comes from the client capabilities'
 ---
 Step lead request, elicitation phase 2 (elicitation-plan.md sections 0, 2, 7, 9). Send the design to the step lead first. Needs Extras dbd91de (UserPresence) and Router fa9bf088 (SessionConfiguration.userPresence).

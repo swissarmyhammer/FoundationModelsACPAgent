@@ -1063,6 +1063,12 @@ extension RoutedLLM {
     ///   - instructions: The freshly assembled instructions, or `nil` to keep
     ///     the recorded instructions.
     ///   - tools: The tools the model can call.
+    ///   - userPresence: The user presence of the client that resumes the
+    ///     session now (``RoutedACPAgent/userPresence``). It is required,
+    ///     never `nil`: a restore records no sidecar, so with `nil` Router
+    ///     would apply the presence recorded when the session was created,
+    ///     which belongs to the client of that time. The value covers the
+    ///     restored root and each restored child.
     /// - Returns: The restored session and its reports, with the host rules of
     ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
     /// - Throws: Whatever Router's restore throws.
@@ -1070,7 +1076,8 @@ extension RoutedLLM {
         id: ULID,
         recordingRoot: URL,
         instructions: String?,
-        tools: [any FoundationModels.Tool]
+        tools: [any FoundationModels.Tool],
+        userPresence: UserPresence
     ) async throws -> RestoredSession {
         try await restoreSession(
             id: id,
@@ -1078,6 +1085,7 @@ extension RoutedLLM {
             instructions: instructions,
             tools: tools,
             toolOutputProtection: SkillOutputProtection.rule,
-            isNoOpToolCall: NoOpToolCall.check)
+            isNoOpToolCall: NoOpToolCall.check,
+            userPresence: userPresence)
     }
 }

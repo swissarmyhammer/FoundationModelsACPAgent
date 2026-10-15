@@ -125,7 +125,7 @@ import Testing
 
         let restored = try await fixture.profile.standard.restoreSessionWithHostChecks(
             id: recorded.id, recordingRoot: fixture.recordingRoot, instructions: NoOpSessionFixture.instructions,
-            tools: fixture.tools)
+            tools: fixture.tools, userPresence: .interactive)
         _ = try await restored.session.respond(to: Self.callerPrompt)
         await restored.session.close()
 
