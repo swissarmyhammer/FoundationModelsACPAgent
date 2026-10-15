@@ -379,6 +379,15 @@ struct ACPEventTranslator {
         case .submissionStarted, .mailDelivered, .cancelled, .signalDone, .lost:
             // Mail and signal bookkeeping with no ACP counterpart.
             reportUnsentEvent(event)
+        case .workStarted, .workEnded:
+            // The work state of the session. It sends nothing to the
+            // client yet: running and idle come from it in a later task.
+            reportUnsentEvent(event)
+        case .elicitationEnded:
+            // A question that ended with no answer from the client. It
+            // sends nothing to the client yet: the close of the client
+            // request comes in a later task (^crjmk34).
+            reportUnsentEvent(event)
         @unknown default:
             // `SessionEvent` requires a default arm by its own
             // contract: a new case degrades to a log line, never to a

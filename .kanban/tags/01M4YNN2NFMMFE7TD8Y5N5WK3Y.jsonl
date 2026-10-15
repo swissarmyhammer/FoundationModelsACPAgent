@@ -1,0 +1,1 @@
+{"id":"01M4YNN2NW6XT6PF2AYAC07GY3","timestamp":"2026-10-15T02:18:26.364338Z","op":"create","item_id":"01M4YNN2NFMMFE7TD8Y5N5WK3Y","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 0075ca\n+tag_name: mail-new-events\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 0075ca\n-tag_name: mail-new-events\n","transaction_id":null}
