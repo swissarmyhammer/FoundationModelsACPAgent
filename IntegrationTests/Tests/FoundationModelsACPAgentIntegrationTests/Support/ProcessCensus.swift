@@ -12,7 +12,8 @@
 // neighbour's healthy child as this run's leak.
 //
 // - The children OF ONE PARENT answer which agent one live run started.
-// - The process GROUP of one child answers whether that child is gone.
+// - The process GROUP of one live child names the processes whose exit
+//   events a test arms (`ArmedProcessExit`) before the run ends.
 // - The ORPHANS answer the leak question for a run whose child was never
 //   seen. An agent that outlived the run that started it has lost its
 //   parent, so the system has given it to `launchd` — process 1. An agent
@@ -24,8 +25,7 @@ import Foundation
 import FoundationModelsACPAgentTestSupport
 import Testing
 
-/// The live processes of this machine, read through `pgrep(1)` and
-/// `killpg(2)`.
+/// The live processes of this machine, read through `pgrep(1)`.
 enum ProcessCensus {
     /// The absolute path of `pgrep(1)`.
     private static let pgrepPath = "/usr/bin/pgrep"
@@ -35,10 +35,6 @@ enum ProcessCensus {
 
     /// The identifier of `launchd`, which the system gives every orphan to.
     private static let orphanParentIdentifier: pid_t = 1
-
-    /// The signal number that sends no signal and only asks whether the
-    /// addressee is there, as `kill(2)` defines it.
-    private static let existenceProbeSignal: Int32 = 0
 
     /// The identifiers of the processes that match every one of
     /// `arguments`.
@@ -155,18 +151,5 @@ enum ProcessCensus {
             orphans.isEmpty,
             "an agent outlived the run that started it: \(orphans)",
             sourceLocation: sourceLocation)
-    }
-
-    /// Whether any process of the process group `leader` leads is alive.
-    ///
-    /// A group this process may not signal answers `true`, because the
-    /// refusal proves the group is there. No caller here meets that answer:
-    /// each group asked about is the group of a child this machine's own
-    /// test run spawned.
-    ///
-    /// - Parameter leader: The identifier of the process that led the group.
-    /// - Returns: `true` while a process of the group is alive.
-    static func isProcessGroupAlive(leader: pid_t) -> Bool {
-        killpg(leader, existenceProbeSignal) == 0 || errno == EPERM
     }
 }

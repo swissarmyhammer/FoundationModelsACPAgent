@@ -34,16 +34,42 @@ private final class ObservedAgents: Sendable {
     /// probe's writes.
     private let guardedIdentifiers = Mutex([pid_t]())
 
-    /// Records what one reading of the live process table saw.
+    /// The exit events of the processes of each recorded child's group,
+    /// armed while the child was alive.
+    private let guardedGroupExits = Mutex([ArmedProcessExit]())
+
+    /// Records what one reading of the live process table saw, and arms the
+    /// exit event of each process of each child's group. The probe runs
+    /// while the gate holds the prompt, so each child is alive.
     ///
     /// - Parameter identifiers: The identifiers of that reading.
-    func record(_ identifiers: [pid_t]) {
+    /// - Throws: The spawn or read error of `pgrep`.
+    func record(_ identifiers: [pid_t]) throws {
+        var exits: [ArmedProcessExit] = []
+        for child in identifiers {
+            let members = try ProcessCensus.identifiers(selectedBy: ["-g", String(child)])
+            for member in Set(members + [child]) {
+                exits.append(ArmedProcessExit(pid: member))
+            }
+        }
         guardedIdentifiers.withLock { $0.append(contentsOf: identifiers) }
+        guardedGroupExits.withLock { $0.append(contentsOf: exits) }
     }
 
     /// The identifiers recorded so far.
     var snapshot: [pid_t] {
         guardedIdentifiers.withLock { $0 }
+    }
+
+    /// Waits until each process of each recorded child's group exited. The
+    /// end of the waits is the result. A process that does not exit holds
+    /// the test, and a hang is the failure.
+    ///
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled first.
+    func waitForEachGroupProcessExit() async throws {
+        for exit in guardedGroupExits.withLock({ $0 }) {
+            try await exit.wait()
+        }
     }
 }
 
@@ -131,7 +157,7 @@ struct OutOfProcessTests {
             configHome: makeResolvedDirectory(label: "\(label)-config"),
             environment: gated.environment,
             atFirstOutput: { runIdentifier in
-                observed.record(try ProcessCensus.agentsServingACP(startedBy: runIdentifier))
+                try observed.record(ProcessCensus.agentsServingACP(startedBy: runIdentifier))
             },
             signalCount: signalCount,
             chunkGate: gated.gate)
@@ -168,8 +194,9 @@ struct OutOfProcessTests {
     /// success, failure and interrupt.
     ///
     /// The success row reads the run's own child while the prompt streams,
-    /// which is the one moment that child can be named, and then asks
-    /// whether its whole process group is still alive. The other two rows
+    /// which is the one moment that child can be named. Then it arms the
+    /// exit event of each process of the child's group, and after the run it
+    /// waits for each of those events. The other two rows
     /// never see the child, so each asks whether any agent has outlived the
     /// run that started it — an orphan, which is what a leak is.
     @Test
@@ -181,12 +208,13 @@ struct OutOfProcessTests {
         #expect(
             observed.snapshot.count == Self.expectedChildCount,
             "one run started \(observed.snapshot.count) agents: \(observed.snapshot)")
-        let child = try #require(
+        _ = try #require(
             observed.snapshot.first,
             "no `acp-agent acp` child was alive while the run streamed its answer")
-        #expect(
-            !ProcessCensus.isProcessGroupAlive(leader: child),
-            "a process of the child's group outlived the successful run")
+        // Each process of the child's group sent its exit event. No read of
+        // the pids follows the run: after the reap, the system can give a
+        // pid to a new process.
+        try await observed.waitForEachGroupProcessExit()
 
         // The failing row. `--resume` names a session no listing carries, so
         // the prompt fails after the child has started, and the reap of the
