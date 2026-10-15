@@ -126,8 +126,16 @@ enum RunPrompt {
         return try outcome.get()
     }
 
+    /// The client capabilities that the CLI gives at `initialize`: no
+    /// elicitation. The CLI has no UI that can answer a question, so the
+    /// agent opens headless sessions, and a tool that asks gets cancel at
+    /// once with the reason "no user is present" (elicitation-plan task 6).
+    /// ACPClient task 28 makes this an explicit setting of the client later;
+    /// until then the CLI does not use `ACPClient.advertisedCapabilities`.
+    static let headlessCapabilities = ClientCapabilities()
+
     /// Sends `initialize` over `connection`, which is the first step of
-    /// every drive.
+    /// every drive. It gives ``headlessCapabilities``.
     ///
     /// Out of process this call is also the wait for the agent's own
     /// construction: the spawned binary resolves its profile before it
@@ -142,7 +150,7 @@ enum RunPrompt {
             InitializeRequest(
                 info: Implementation(name: clientName, version: AgentComposition.version),
                 protocolVersion: ACPClient.supportedProtocolVersion,
-                capabilities: ACPClient.advertisedCapabilities))
+                capabilities: headlessCapabilities))
     }
 
     /// Sends the prompt over an already handshaken `connection`: the

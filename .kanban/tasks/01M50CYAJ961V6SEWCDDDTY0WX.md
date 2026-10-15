@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffdc80
 title: 'Elicitation task 6: acp-agent run and acp-print sessions are headless'
 ---
 Step lead request, elicitation phase 2 (elicitation-plan.md sections 0, 2, 7, 9). Send the design to the step lead first.

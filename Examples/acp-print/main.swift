@@ -34,6 +34,13 @@ let clientName = "acp-print"
 /// The client version `initialize` reports to the agent.
 let clientVersion = "1.0.0"
 
+/// The client capabilities `initialize` reports to the agent: no
+/// elicitation. This example has no UI that can answer a question, so the
+/// agent opens a headless session, and a tool that asks gets cancel at once
+/// (elicitation-plan task 6). ACPClient task 28 makes this an explicit
+/// setting of the client later.
+let clientCapabilities = ClientCapabilities()
+
 // MARK: - stderr, and only stderr, for diagnostics
 
 /// Writes one log line to stderr. stdout is for the answer text only.
@@ -136,7 +143,7 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
             InitializeRequest(
                 info: Implementation(name: clientName, version: clientVersion),
                 protocolVersion: ACPClient.supportedProtocolVersion,
-                capabilities: ACPClient.advertisedCapabilities))
+                capabilities: clientCapabilities))
 
         // The process working directory is always absolute, and the wire
         // type carries the string as sent, so there is nothing to refuse
