@@ -255,8 +255,9 @@ struct CompactionReportTests {
     /// The check of task ^9xs24pn: a compaction while no prompt is open
     /// reaches the client. The projector reads the events of the session
     /// for its whole life, so the compaction of a `compact` signal sends its
-    /// `in_progress` entry and its terminal entry under the `SignalID`, and
-    /// no state update goes out with no prompt open.
+    /// `in_progress` entry and its terminal entry under the `SignalID`. The
+    /// compaction is Router work, so the session goes `running` before the
+    /// compaction, also with no prompt open (elicitation-plan task 2).
     @Test
     func aCompactionWithNoPromptOpenReachesTheClient() async throws {
         let fixture = try await ScriptedPromptFixture.make(
@@ -280,7 +281,7 @@ struct CompactionReportTests {
         #expect(compactions.first?.status == .inProgress)
         #expect(compactions.count == 2)
         #expect(compactions.allSatisfy { $0.compactionId.rawValue == signal.description })
-        #expect(!afterPrompt.contains { if case .stateUpdate = $0 { return true } else { return false } })
+        #expect(isRunningState(afterPrompt.first { if case .stateUpdate = $0 { true } else { false } }))
     }
 
     /// An automatic compaction that applied a summary sends one completed
@@ -444,11 +445,18 @@ struct CompactionReportTests {
     /// A compaction that a cancellation stopped is a cancelled entry: the
     /// `cancelled` update under the id of its `in_progress` update, with no
     /// error and no `usage_update`.
+    ///
+    /// The compaction is Router work, so the `idle` of the `/compact` prompt
+    /// comes only when the compaction ends (elicitation-plan task 2). The
+    /// gate holds the compaction, thus the test waits for the end of the
+    /// prompt, not for an `idle`.
     @Test
     func aCancelledCompactionSendsCancelled() async throws {
         let gate = SummarizerGate()
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-cancelled", gate: gate)
-        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/compact"))
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         await gate.waitForArrival()
 
         // Only `close` stops a running compaction (`mailbox.md`, section 5).

@@ -388,8 +388,8 @@ struct ACPEventTranslator {
             // Mail and signal bookkeeping with no ACP counterpart.
             reportUnsentEvent(event)
         case .workStarted, .workEnded:
-            // The work state of the session. It sends nothing to the
-            // client yet: running and idle come from it in a later task.
+            // The work state of the session: the projector gives it to the
+            // state ledger, which sends `running` and `idle`.
             reportUnsentEvent(event)
         case .elicitationEnded(let end):
             // A question that Router ended with no answer of the client: the

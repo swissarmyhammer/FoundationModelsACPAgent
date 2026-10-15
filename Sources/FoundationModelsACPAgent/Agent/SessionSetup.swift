@@ -669,6 +669,7 @@ extension RoutedACPAgent {
         // same rule `initialize` applies to an unparsable capabilities
         // object.
         let shellOutput = composition.surface.shellOutput
+        let stateLedger = SessionStateLedger(send: boundHistorySink(for: sessionId))
         let projector = SessionProjector(
             sessionId: sessionId,
             modelName: ConfigOptions.handle(for: ConfigOptions.defaultSlot, of: residentProfile).chosen.stringValue,
@@ -681,7 +682,8 @@ extension RoutedACPAgent {
                         ?? NegotiatedClientCapabilities(reading: ClientCapabilities()),
                     connection: connection)
             },
-            runCallJoins: composition.surface.runCallJoins)
+            runCallJoins: composition.surface.runCallJoins,
+            stateLedger: stateLedger)
         await projector.attach(session)
 
         sessions[sessionId] = ActiveSession(
@@ -695,7 +697,7 @@ extension RoutedACPAgent {
             commands: commands,
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
-            stateLedger: SessionStateLedger(send: boundHistorySink(for: sessionId)),
+            stateLedger: stateLedger,
             projector: projector,
             isReplayOnly: composition.isReplayOnly,
             indexRecorded: indexRecorded,

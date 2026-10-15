@@ -300,9 +300,11 @@ struct BuiltinCommandsTests {
     }
 
     /// The check of row 4 of `mailbox.md`, section 8: `/compact` returns at
-    /// once. The command ends with its `idle` while the summarizer of its
-    /// compaction still waits at the gate, and the report of the
-    /// compaction comes after the gate opens, from the compaction events.
+    /// once. The prompt of the command ends while the summarizer of its
+    /// compaction still waits at the gate, and no compaction entry is
+    /// terminal then. The compaction is Router work, so the session stays
+    /// `running` until it ends: after the gate opens, the completed entry
+    /// comes, and then the one `idle` (elicitation-plan task 2).
     @Test
     func compactReturnsBeforeItsCompactionEnds() async throws {
         let gate = SummarizerGate()
@@ -311,25 +313,24 @@ struct BuiltinCommandsTests {
             loader: CompactionStubBackend.makeLoader(shouldFail: false, gate: gate))
         defer { Task { await fixture.close() } }
 
-        let result = try await fixture.runCommand("/compact")
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/compact"))
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         await gate.waitForArrival()
-        let whileHeld = Self.compactionUpdates(in: await fixture.collector.updates)
+        let whileHeld = await fixture.collector.updates
         gate.open()
-        let updates = try await ScriptedPromptFixture.waitForUpdates(
-            of: fixture.collector, toReach: "the completed compaction entry"
-        ) { updates in
-            Self.compactionUpdates(in: updates).contains { $0.status == .completed }
-        }
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
 
-        #expect(ScriptedPromptFixture.idleCount(in: result.updates) == 1)
-        #expect(!whileHeld.contains { $0.status != .inProgress })
+        #expect(!Self.compactionUpdates(in: whileHeld).contains { $0.status != .inProgress })
+        #expect(ScriptedPromptFixture.idleCount(in: whileHeld) == 0)
+        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         let idle = try #require(updates.firstIndex { isIdleState($0.update) })
         let completed = try #require(
             updates.firstIndex { notification in
                 if case .compactionUpdate(let update) = notification.update { return update.status == .completed }
                 return false
             })
-        #expect(idle < completed)
+        #expect(completed < idle)
     }
 
     // MARK: - /config

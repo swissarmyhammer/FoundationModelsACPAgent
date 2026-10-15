@@ -28,20 +28,39 @@ extension AgentSideConnection {
     }
 }
 
-/// The `state_update` of one ACP session, over all its open prompts.
+/// The `state_update` of one ACP session: `running` while the session is
+/// busy, and `idle` when it is not busy any more (elicitation-plan task 2).
 ///
-/// More than one prompt can be open at the same time (no busy gate;
-/// elicitation-plan task 3). The session sends `running` when the first
-/// prompt starts, and `idle` with the stop reason of the prompt that ends
-/// last, when no prompt is open any more. While no prompt is open, the
-/// session sends no state update (task ^9xs24pn, decision Q2). Running and
-/// idle from Router work are elicitation-plan tasks 2 and 10.
+/// The session is busy while Router works (``workStarted(on:)`` and
+/// ``workEnded(on:)``) or a prompt is open. Router work is an open
+/// background run, an answer that runs, or queued run mail. A run that waits
+/// only for the user is no work, so an open question does not keep the
+/// session busy. A prompt counts too, because some prompts make no Router
+/// work: a slash command with no model pass, a refused mail, and a prompt
+/// cancelled before its mail went in. More than one Router session can feed
+/// the session (the replacement session of a model slot switch), so the
+/// ledger keeps the set of the sessions that work.
+///
+/// An `idle` carries the stop reason and the error of the last prompt that
+/// ended since the last `running`. When only background work ran since the
+/// last `running`, the `idle` has no stop reason. A prompt that ends while
+/// Router still works sends no `idle`: the `idle` comes when the work ends.
 actor SessionStateLedger {
     /// The sink every state update goes to.
     private let send: SessionUpdateSink
 
     /// The number of prompts that started and did not end.
     private var openCount = 0
+
+    /// The ids of the Router sessions that work now.
+    private var workingSources: Set<ULID> = []
+
+    /// Whether the last state update was `running`.
+    private var sentRunning = false
+
+    /// The `idle` of the last prompt that ended since the last `running`,
+    /// or `nil` when no prompt ended since then.
+    private var lastPromptEnd: IdleStateUpdate?
 
     /// Creates the ledger over `send`.
     ///
@@ -55,53 +74,82 @@ actor SessionStateLedger {
         openCount > 0
     }
 
-    /// Counts one more open prompt, and sends `running` when it is the only
-    /// open prompt.
-    func promptStarted() async {
-        openCount += 1
-        if openCount == 1 {
-            await send(.stateUpdate(.running(RunningStateUpdate())))
-        }
+    /// Whether the session is busy: Router works, or a prompt is open.
+    private var isBusy: Bool {
+        openCount > 0 || !workingSources.isEmpty
     }
 
-    /// Counts one prompt less, and sends `idle` when no prompt is open any
-    /// more.
+    /// Counts one more open prompt, and sends `running` when the session
+    /// was not busy.
+    func promptStarted() async {
+        openCount += 1
+        await sendChange()
+    }
+
+    /// Counts one prompt less, and keeps its `idle` for the next `idle` of
+    /// the session. Sends that `idle` when the session is not busy any more.
     ///
     /// - Parameters:
     ///   - idle: The `idle` of the prompt that ends.
     ///   - started: Whether the prompt started (``promptStarted()``). A
     ///     prompt that ends before its start counts nothing, but it still
-    ///     sends its `idle` when no other prompt is open.
+    ///     sends its `idle` when the session is not busy.
     func promptEnded(_ idle: IdleStateUpdate, started: Bool) async {
         if started {
             openCount -= 1
         }
-        if openCount == 0 {
+        lastPromptEnd = idle
+        if !started, !isBusy, !sentRunning {
+            lastPromptEnd = nil
+            await send(.stateUpdate(.idle(idle)))
+            return
+        }
+        await sendChange()
+    }
+
+    /// Records that the Router session `source` has work now
+    /// (`SessionEvent.workStarted`).
+    ///
+    /// - Parameter source: The id of the Router session.
+    func workStarted(on source: ULID) async {
+        workingSources.insert(source)
+        await sendChange()
+    }
+
+    /// Records that the Router session `source` has no work now
+    /// (`SessionEvent.workEnded`), or that its feed ended: Router sends no
+    /// work event after `close()` starts.
+    ///
+    /// - Parameter source: The id of the Router session.
+    func workEnded(on source: ULID) async {
+        workingSources.remove(source)
+        await sendChange()
+    }
+
+    /// Sends `running` when the session became busy, and `idle` when it is
+    /// not busy any more.
+    private func sendChange() async {
+        if isBusy, !sentRunning {
+            sentRunning = true
+            lastPromptEnd = nil
+            await send(.stateUpdate(.running(RunningStateUpdate())))
+        } else if !isBusy, sentRunning {
+            sentRunning = false
+            let idle = lastPromptEnd ?? IdleStateUpdate()
+            lastPromptEnd = nil
             await send(.stateUpdate(.idle(idle)))
         }
-    }
-
-    /// Sends `requires_action` for a wait on the human, while a prompt is
-    /// open.
-    func awaitingUser() async {
-        guard openCount > 0 else { return }
-        await send(.stateUpdate(.requiresAction(RequiresActionStateUpdate())))
-    }
-
-    /// Sends `running` after a wait on the human, while a prompt is open.
-    func userAnswered() async {
-        guard openCount > 0 else { return }
-        await send(.stateUpdate(.running(RunningStateUpdate())))
     }
 }
 
 /// The prompt-state owner of one prompt.
 ///
 /// It gives the transitions of its prompt to the ``SessionStateLedger`` of
-/// the session: the start, a wait on the human (`requires_action`, then
-/// `running` at the answer), and the end with a stop reason. The ledger
+/// the session: the start and the end with a stop reason. The ledger
 /// decides which state update goes out, because more than one prompt can be
-/// open.
+/// open and Router work keeps the session busy too. The agent never sends
+/// `requires_action`: a run that waits only for the user is no work
+/// (elicitation-plan section 8).
 /// It also records a `session/cancel` request, so the prompt ends as
 /// `cancelled` even when the cancelled model work runs to completion:
 /// model work that never checks for cancellation returns its response,
@@ -160,41 +208,10 @@ actor PromptStateOwner {
         await ledger.promptStarted()
     }
 
-    /// Runs `body` as a wait on the human, for example an elicitation
-    /// round trip. A prompt that stays `running` while it waits on a
-    /// person shows as a stopped agent. Thus this call sends
-    /// `requires_action`, runs the body, and returns to `running` when the
-    /// body ends — with a value or with an error.
-    ///
-    /// The wait is an ACP state only. Router has no call for it: its
-    /// generation queue gives a wait for a person no release of the model.
-    ///
-    /// The round trip runs in its own task, so the prompt can end before the
-    /// body ends, for example at a cancel. After the `idle` of the prompt,
-    /// no state update of the wait goes out.
-    ///
-    /// - Parameter body: The wait on the human.
-    /// - Returns: The body's value.
-    /// - Throws: The body's error, after the state returns to `running`.
-    func awaitingUser<T: Sendable>(
-        _ body: @Sendable () async throws -> T
-    ) async rethrows -> T {
-        if stopReason == nil {
-            await ledger.awaitingUser()
-        }
-        do {
-            let value = try await body()
-            await sendRunning()
-            return value
-        } catch {
-            await sendRunning()
-            throw error
-        }
-    }
-
-    /// Ends the prompt with `stop`: the ledger sends the `idle` with the
+    /// Ends the prompt with `stop`: the ledger keeps the `idle` with the
     /// stop reason, and with the `error` object of a failed prompt
-    /// (``PromptExecution/idleState(for:)``), when no other prompt is open.
+    /// (``PromptExecution/idleState(for:)``), and sends it when the session
+    /// is not busy any more (``SessionStateLedger``).
     /// The end of the prompt calls it, never a `submissionEnded` event,
     /// because one prompt can make more than one submission. A second call
     /// changes nothing.
@@ -258,14 +275,5 @@ actor PromptStateOwner {
             return
         }
         cancelHandlers.append(handler)
-    }
-
-    /// Sends `state_update: running` after a wait on the human, but not
-    /// after the end of the prompt.
-    private func sendRunning() async {
-        guard stopReason == nil else {
-            return
-        }
-        await ledger.userAnswered()
     }
 }

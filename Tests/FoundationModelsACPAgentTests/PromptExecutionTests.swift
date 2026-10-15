@@ -1044,67 +1044,81 @@ import Testing
         #expect(reason == .endTurn)
     }
 
-    // MARK: - The requires_action pairing
+    // MARK: - Running and idle from Router work (elicitation-plan task 2)
 
-    /// Checks that the owner sent two updates: `requires_action` first,
-    /// and then `running`.
+    /// The stop reason of an `idle` update, or `nil` when the update is not
+    /// an `idle` or the `idle` has none.
     ///
-    /// - Parameter updates: The updates the owner sent, in send order.
-    private static func expectRequiresActionThenRunning(in updates: [SessionUpdate]) {
-        #expect(updates.count == 2, "expected requires_action then running, got \(updates)")
-        #expect(
-            isRequiresActionState(updates.first),
-            "expected requires_action then running, got \(updates)")
-        #expect(
-            isRunningState(updates.dropFirst().first),
-            "expected requires_action then running, got \(updates)")
+    /// - Parameter update: The update.
+    /// - Returns: The stop reason.
+    private static func idleStopReason(of update: SessionUpdate?) -> StopReason? {
+        guard case .stateUpdate(.idle(let idle)) = update else { return nil }
+        return idle.stopReason
     }
 
-    /// `awaitingUser` sends `requires_action`, runs the body, and returns
-    /// to `running` with the body's value, while the prompt is open.
+    /// With no prompt open, the work of a Router session gives `running` at
+    /// `workStarted` and `idle` at `workEnded`. No prompt ended, so the
+    /// `idle` has no stop reason.
     @Test
-    func awaitingUserPairsRequiresActionWithRunning() async throws {
+    func routerWorkWithNoPromptOpenGivesRunningThenIdleWithNoStopReason() async throws {
         let recorder = SinkRecorder()
-        let owner = PromptStateOwner(send: { update in await recorder.append(update) })
-        await owner.promptDidStart()
+        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+        let source = ULID()
 
-        let answer = await owner.awaitingUser { "the answer" }
+        await ledger.workStarted(on: source)
+        await ledger.workEnded(on: source)
         let updates = await recorder.updates
 
-        #expect(answer == "the answer")
+        #expect(updates.count == 2, "expected running then idle, got \(updates)")
         #expect(isRunningState(updates.first))
-        Self.expectRequiresActionThenRunning(in: Array(updates.dropFirst()))
+        #expect(isIdleState(updates.last))
+        #expect(Self.idleStopReason(of: updates.last) == nil)
     }
 
-    /// A body that throws still returns the state to `running`.
+    /// A prompt that ends while Router still works sends no `idle`: the
+    /// `idle` comes at `workEnded`, with the stop reason of that prompt.
     @Test
-    func awaitingUserReturnsToRunningWhenTheBodyThrows() async throws {
+    func aPromptThatEndsWhileRouterWorksGetsItsIdleAtWorkEnded() async throws {
         let recorder = SinkRecorder()
-        let owner = PromptStateOwner(send: { update in await recorder.append(update) })
-        await owner.promptDidStart()
+        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+        let owner = PromptStateOwner(ledger: ledger)
+        let source = ULID()
 
-        await #expect(throws: ScriptedModelError.self) {
-            _ = try await owner.awaitingUser { () -> String in
-                throw ScriptedModelError.unknownTool("x")
-            }
-        }
+        await owner.promptDidStart()
+        await ledger.workStarted(on: source)
+        await owner.promptDidEnd(stop: .completed)
+        let atPromptEnd = await recorder.updates
+        await ledger.workEnded(on: source)
         let updates = await recorder.updates
 
-        #expect(isRunningState(updates.first))
-        Self.expectRequiresActionThenRunning(in: Array(updates.dropFirst()))
+        #expect(atPromptEnd.count == 1)
+        #expect(isRunningState(atPromptEnd.first))
+        #expect(updates.count == 2)
+        #expect(Self.idleStopReason(of: updates.last) == .endTurn)
     }
 
-    /// While no prompt is open, a wait on the human sends no state update
-    /// (task ^9xs24pn, decision Q2).
+    /// The session is busy while any of its Router sessions works: the end
+    /// of the work of one session keeps it `running`, and the `idle` comes
+    /// when the last one ends. The end of the feed of a session ends its
+    /// work too.
     @Test
-    func awaitingUserSendsNothingWhileNoPromptIsOpen() async throws {
+    func theSessionStaysRunningUntilEachRouterSessionEndsItsWork() async throws {
         let recorder = SinkRecorder()
-        let owner = PromptStateOwner(send: { update in await recorder.append(update) })
+        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+        let replaced = ULID()
+        let replacement = ULID()
 
-        let answer = await owner.awaitingUser { "the answer" }
+        await ledger.workStarted(on: replaced)
+        await ledger.workStarted(on: replacement)
+        await ledger.workEnded(on: replacement)
+        let whileOneWorks = await recorder.updates
+        await ledger.workEnded(on: replaced)
+        let updates = await recorder.updates
 
-        #expect(answer == "the answer")
-        #expect(await recorder.updates.isEmpty)
+        #expect(whileOneWorks.count == 1)
+        #expect(isRunningState(whileOneWorks.first))
+        #expect(updates.count == 2)
+        #expect(isIdleState(updates.last))
     }
 
     /// Two prompts share the state of one session: `running` goes out when

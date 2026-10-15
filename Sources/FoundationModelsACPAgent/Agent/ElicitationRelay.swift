@@ -27,9 +27,10 @@ typealias ElicitationEndHandler = @Sendable (ElicitationEnd) async -> Void
 /// `RoutedSession.respond(elicitationId:response:)`. The relay lives as long
 /// as the session (elicitation-plan task 4), and the ``SessionProjector``
 /// runs each round trip in its own task, so a question does not stop the
-/// other output of the session (task 5). While a prompt is open, the round
-/// trip runs inside ``PromptStateOwner/awaitingUser(_:)``, so the wire shows
-/// `requires_action` before the question and `running` after the answer.
+/// other output of the session (task 5). The relay sends no state update:
+/// a foreground question keeps its answer as Router work, so the session
+/// stays `running`, and a background question is no work (elicitation-plan
+/// section 8). The agent never sends `requires_action`.
 ///
 /// Router ends a question with no answer of the client when it stops the run
 /// of the question: a cancel of the run, `cancelAll()` and `close()`. It then
@@ -93,11 +94,6 @@ actor ElicitationRelay {
     /// round trip. Such a round trip sends no create.
     private var earlyEnds: [String: ElicitationEnd] = [:]
 
-    /// The waits of ``end(_:)`` for the finish of the round trips that it
-    /// ended, keyed by the elicitation id. A round trip resumes them at its
-    /// finish, after the `running` of the open prompt went out.
-    private var finishWaits: [String: [CheckedContinuation<Void, Never>]] = [:]
-
     /// The ids of the outstanding URL-mode elicitations, for the
     /// uniqueness duty.
     private var outstandingURLElicitationIds: Set<String> = []
@@ -121,7 +117,7 @@ actor ElicitationRelay {
     // MARK: - The round trip
 
     /// Relays one elicitation event: the capability gate, the wire round
-    /// trip, inside the `awaitingUser` of the open prompt when one is open,
+    /// trip,
     /// and the answer delivery through
     /// `session.respond(elicitationId:response:)`.
     ///
@@ -135,13 +131,9 @@ actor ElicitationRelay {
     /// - Parameters:
     ///   - event: The `.elicitation` operation event the session posted.
     ///   - session: The Router session the answer goes back to.
-    ///   - promptState: The prompt-state owner of the open prompt, which
-    ///     pairs `requires_action` with `running` around the wait, or `nil`
-    ///     while no prompt is open: then no state update goes out.
     func relay(
         _ event: OperationEvent,
-        on session: any RoutedSession,
-        promptState: PromptStateOwner?
+        on session: any RoutedSession
     ) async {
         // The "elicitation is non-nil iff the kind is .elicitation" rule
         // is a doc comment upstream, not a type guarantee; read it
@@ -163,7 +155,7 @@ actor ElicitationRelay {
             metadata: elicitationMetadata(request.elicitationId.ulidString)
         ) { span in
             let outcome = await relayRequest(
-                request, toolCallId: event.correlationID, on: session, promptState: promptState)
+                request, toolCallId: event.correlationID, on: session)
             span.attributes[ACPAgentTelemetry.AttributeKey.elicitationOutcome] = outcome.action.rawValue
             if let reason = outcome.reason {
                 span.attributes[ACPAgentTelemetry.AttributeKey.elicitationEndReason] = reason
@@ -172,21 +164,18 @@ actor ElicitationRelay {
     }
 
     /// Relays one elicitation request: the work of
-    /// ``relay(_:on:promptState:)`` in the elicitation span.
+    /// ``relay(_:on:)`` in the elicitation span.
     ///
     /// - Parameters:
     ///   - request: The request the tool posted.
     ///   - toolCallId: The run's completion token.
     ///   - session: The Router session the answer goes back to.
-    ///   - promptState: The prompt-state owner of the open prompt, or `nil`
-    ///     while no prompt is open.
     /// - Returns: How the elicitation ended: the answer that went to Router,
     ///   or the response of the end that Router sent.
     private func relayRequest(
         _ request: ElicitationRequest,
         toolCallId: String,
-        on session: any RoutedSession,
-        promptState: PromptStateOwner?
+        on session: any RoutedSession
     ) async -> ElicitationResponse {
         let elicitationId = request.elicitationId.ulidString
         guard supports(request.mode) else {
@@ -210,20 +199,10 @@ actor ElicitationRelay {
                 reason: .duplicateURLElicitationId)
             return .decline
         }
-        let roundTrip = { @Sendable in
-            await self.deliverRoundTrip(
-                wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
-        }
-        let outcome = if let promptState {
-            await promptState.awaitingUser(roundTrip)
-        } else {
-            await roundTrip()
-        }
+        let outcome = await deliverRoundTrip(
+            wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
         endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
         earlyEnds.removeValue(forKey: elicitationId)
-        for wait in finishWaits.removeValue(forKey: elicitationId) ?? [] {
-            wait.resume()
-        }
         return outcome
     }
 
@@ -233,17 +212,12 @@ actor ElicitationRelay {
     /// the round trip ends with the response of `end`. The round trip does
     /// not respond to Router: Router already gave the run that response.
     ///
-    /// The call returns when the round trip finished: the state update of
-    /// the open prompt after the wait went out. Thus the projector, which
-    /// waits for this call, sends the next event of the session after that
-    /// update, for example the `idle` of a cancelled prompt.
-    ///
     /// The wire request has no field for the reason, so the reason goes to
     /// the log record and to the elicitation span. An end whose round trip
     /// does not wait yet is kept, and that round trip sends no create.
     ///
     /// - Parameter end: The end that Router sent.
-    func end(_ end: ElicitationEnd) async {
+    func end(_ end: ElicitationEnd) {
         let elicitationId = end.elicitationId.ulidString
         guard let continuation = pendingAnswers.removeValue(forKey: elicitationId) else {
             earlyEnds[elicitationId] = end
@@ -256,10 +230,7 @@ actor ElicitationRelay {
         ACPAgentTelemetry.logger(.elicitationRelay).notice(
             "Router ended a question with no answer of the client. The relay ended the client request.",
             metadata: endMetadata(end))
-        await withCheckedContinuation { finished in
-            finishWaits[elicitationId, default: []].append(finished)
-            continuation.resume(returning: .ended(end))
-        }
+        continuation.resume(returning: .ended(end))
     }
 
     /// Ends each round trip that is still in flight when the feed of the

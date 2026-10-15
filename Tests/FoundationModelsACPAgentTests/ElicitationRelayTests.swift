@@ -202,7 +202,8 @@ struct ElicitationRelayTests {
     ///
     /// - Parameter updates: The collected notifications.
     /// - Returns: The markers of the running, requires-action, and idle
-    ///   state updates.
+    ///   state updates. The agent sends no requires-action; the marker
+    ///   shows a defect.
     private static func stateMarkers(in updates: [UpdateSessionNotification]) -> [String] {
         updates.compactMap { notification in
             switch notification.update {
@@ -253,8 +254,9 @@ struct ElicitationRelayTests {
     // MARK: - The form round trip
 
     /// A tool that elicits in form mode produces one `elicitation/create`
-    /// at the client, `requires_action` before it and `running` after the
-    /// answer, and the tool receives the accepted content.
+    /// at the client, and the tool receives the accepted content. The answer
+    /// of the prompt is Router work while its tool waits, so the session
+    /// stays `running`: no `requires_action` goes out.
     @Test
     func aFormElicitationRoundTripsTheAcceptedContentToTheTool() async throws {
         let fixture = try await Self.makeLoopbackFixture(
@@ -275,7 +277,7 @@ struct ElicitationRelayTests {
             Issue.record("expected a form mode, got \(pending.request.mode)")
         }
         let markersAtPending = Self.stateMarkers(in: await fixture.collector.updates)
-        #expect(markersAtPending.last == "requires_action")
+        #expect(markersAtPending == ["running"])
 
         await MainActor.run {
             fixture.session.acceptElicitation(
@@ -290,9 +292,7 @@ struct ElicitationRelayTests {
 
         #expect(creates.count == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        expectOrderedSubsequence(
-            ["running", "requires_action", "running", "idle"],
-            in: Self.stateMarkers(in: updates))
+        #expect(Self.stateMarkers(in: updates) == ["running", "idle"])
         let wireText = try encodedWireText(of: updates)
         #expect(wireText.contains(Self.acceptedAnswer))
         #expect(wireText.contains(Self.acceptedResultText))
@@ -424,7 +424,7 @@ struct ElicitationRelayTests {
         let event = OperationEvent(
             tool: serverName, op: "elicit", correlationID: "relay-direct", kind: .elicitation, detail: "",
             elicitation: request)
-        await relay.relay(event, on: session, promptState: nil)
+        await relay.relay(event, on: session)
     }
 
     /// The double of the fixture's Router session that records each answer.
@@ -517,9 +517,7 @@ struct ElicitationRelayTests {
 
         #expect(completions.map(\.elicitationId) == [elicitationId])
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        expectOrderedSubsequence(
-            ["running", "requires_action", "running", "idle"],
-            in: Self.stateMarkers(in: updates))
+        #expect(Self.stateMarkers(in: updates) == ["running", "idle"])
         #expect(try encodedWireText(of: updates).contains(Self.acceptedResultText))
     }
 
@@ -528,10 +526,10 @@ struct ElicitationRelayTests {
     /// `session/cancel` during a pending elicitation ends the prompt with
     /// `idle(cancelled)` and ends the question. The `cancelAll()` signal of
     /// Router first sends the terminal event of the prompt's mail, and then
-    /// ends the question with `cancel` and the reason "run cancelled". Thus
-    /// `idle` follows `requires_action` with no `running` between them, and
-    /// the relay then ends the client request. The URL-mode tool is used
-    /// here, so the cancel also releases an outstanding URL elicitation id.
+    /// ends the question with `cancel` and the reason "run cancelled", and
+    /// the relay ends the client request. The states are `running` and one
+    /// `idle`, with no `requires_action`. The URL-mode tool is used here, so
+    /// the cancel also releases an outstanding URL elicitation id.
     @Test
     func sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle() async throws {
         let captured = try await TelemetryCapture.run(forbidding: []) { context in
@@ -548,7 +546,7 @@ struct ElicitationRelayTests {
         }
 
         #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .cancelled)
-        #expect(Self.stateMarkers(in: captured.updates).suffix(2) == ["requires_action", "idle"])
+        #expect(Self.stateMarkers(in: captured.updates) == ["running", "idle"])
         let ends = Self.endRecords(in: captured.records)
         #expect(ends.count == 1)
         #expect(

@@ -11,11 +11,12 @@ import Testing
 
 /// The work that comes after a prompt (elicitation-plan section 8; task
 /// ^9xs24pn, decision Q1). A prompt ends at the terminal event of its own
-/// mail. When its snippet goes to the background, the settlement of the run
-/// and the answer that the mail of the run starts go to the client after the
-/// `idle` of the prompt, with no prompt open and no state update. This
-/// reverses task ^64pav2a, where the prompt waited for the work of the
-/// session.
+/// mail. When its snippet goes to the background, the run is Router work, so
+/// the session stays `running`: the settlement of the run and the answer
+/// that the mail of the run starts come before the one `idle` of the
+/// session (elicitation-plan task 2). A run that waits only for the user is
+/// no work, so a question of a background run does not keep the session
+/// `running`.
 @Suite struct PromptFollowUpTests {
     // MARK: - Constants
 
@@ -102,40 +103,41 @@ import Testing
     }
 
     /// A prompt whose snippet goes to the background ends at the answer of
-    /// its own mail: one `idle` with `end_turn`, while the run still waits.
+    /// its own mail, while the run still waits. The run is Router work, so
+    /// no `idle` goes out at the end of the prompt: the session stays
+    /// `running` until the run ends.
     @Test
     func aPromptEndsAtTheAnswerOfItsOwnMailWhileItsRunWaits() async throws {
         let label = "PromptFollowUpTests-own-mail"
         let fixture = try await Self.startPromptWithABackgroundRun(label: label)
 
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        let atPromptEnd = await fixture.collector.updates
         try await NamedPipe.write(
             Self.releaseText, toPipeAt: fixture.cwd.appendingPathComponent(Self.releasePipeName))
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
         await fixture.close()
 
+        #expect(ScriptedPromptFixture.idleCount(in: atPromptEnd) == 0)
+        #expect(!ScriptedPromptFixture.agentChunkTexts(in: atPromptEnd).contains(Self.mailReply))
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        #expect(!ScriptedPromptFixture.agentChunkTexts(in: updates).contains(Self.mailReply))
     }
 
-    /// The fixed order of task ^9xs24pn, decision Q1: the prompt ends, the
-    /// run settles after the `idle`, and the answer that the mail of the run
-    /// starts reaches the client. No second `idle` goes out, because no
-    /// prompt is open (decision Q2).
+    /// The fixed order of task ^9xs24pn, decision Q1, with the work state of
+    /// elicitation-plan task 2: the prompt ends, the run settles, the answer
+    /// that the mail of the run starts reaches the client, and then the one
+    /// `idle` of the session goes out, with the stop reason of the prompt.
     @Test
-    func aRunMailAnswerAfterTheIdleOfThePromptReachesTheClient() async throws {
+    func aRunMailAnswerComesBeforeTheOneIdleOfTheSession() async throws {
         let label = "PromptFollowUpTests-after-idle"
         let fixture = try await Self.startPromptWithABackgroundRun(label: label)
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
 
         try await NamedPipe.write(
             Self.releaseText, toPipeAt: fixture.cwd.appendingPathComponent(Self.releasePipeName))
-        let updates = try await ScriptedPromptFixture.waitForUpdates(
-            of: fixture.collector, toReach: "the mail reply"
-        ) { updates in
-            ScriptedPromptFixture.agentChunkTexts(in: updates).contains(Self.mailReply)
-        }
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
         await fixture.close()
@@ -143,9 +145,100 @@ import Testing
         let idle = try #require(updates.firstIndex { isIdleState($0.update) })
         let mailChunk = try #require(
             updates.firstIndex { ScriptedPromptFixture.agentChunkTexts(in: [$0]) == [Self.mailReply] })
-        #expect(idle < mailChunk)
+        #expect(mailChunk < idle)
         #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
+    }
+
+    // MARK: - The work state with no prompt open (elicitation-plan task 2)
+
+    /// The marker of the prompt that starts the asking background run.
+    private static let askMarker = "Ask in the background"
+
+    /// The snippet that asks the person one question. The question sends
+    /// the run to the background.
+    private static let askingSnippet = #"return await elicit("Which colour do you want?");"#
+
+    /// Opens one session whose prompt starts a background run that asks one
+    /// question, and waits until the question reaches the client and the
+    /// session sent its first `idle`.
+    ///
+    /// - Parameter label: The directory label of the proof.
+    /// - Returns: The fixture, the pending question, and the updates at that
+    ///   `idle`.
+    /// - Throws: Whatever the construction, the wire or the waits throw.
+    private static func askInTheBackground(
+        label: String
+    ) async throws -> (fixture: ScriptedPromptFixture, question: PendingElicitation, updates: [UpdateSessionNotification]) {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [
+                .onPrompt(
+                    containing: askMarker,
+                    play: try ScriptedPromptFixture.makeToolPromptScript(code: askingSnippet)),
+                .textDelta(mailReply),
+                .endPass,
+            ],
+            label: label)
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: askMarker))
+        let question = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        return (fixture, question, updates)
+    }
+
+    /// An open question does not keep the session `running`: a background
+    /// run that waits only for the user is no Router work, so the session
+    /// goes `idle` while its question is still open at the client. No
+    /// `requires_action` goes out.
+    @Test
+    func anOpenQuestionDoesNotKeepTheSessionRunning() async throws {
+        let asked = try await Self.askInTheBackground(label: "PromptFollowUpTests-open-question")
+        let pendingAtIdle = await ElicitationWait.pendingElicitations(in: asked.fixture.session)
+        _ = try await asked.fixture.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: asked.fixture.sessionId))
+        await asked.fixture.close()
+
+        #expect(pendingAtIdle.map(\.id) == [asked.question.id])
+        #expect(ScriptedPromptFixture.idleStopReason(in: asked.updates) == .endTurn)
+        #expect(!asked.updates.contains { isRequiresActionState($0.update) })
+    }
+
+    /// Background work with no prompt open gives `running` and then `idle`.
+    /// The answer to the question resumes the background run: Router work
+    /// starts with no prompt open, the run settles, its mail starts an
+    /// answer, and the work ends. No prompt ended since that `running`, so
+    /// the `idle` has no stop reason.
+    @Test
+    func backgroundWorkWithNoPromptOpenGivesRunningThenIdle() async throws {
+        let asked = try await Self.askInTheBackground(label: "PromptFollowUpTests-background-work")
+
+        await MainActor.run { asked.fixture.session.acceptElicitation(asked.question.id) }
+        _ = try await ScriptedPromptFixture.waitForUpdates(
+            of: asked.fixture.collector, toReach: "the mail reply"
+        ) { updates in
+            ScriptedPromptFixture.agentChunkTexts(in: updates).contains(Self.mailReply)
+        }
+        // The fixed point: Router has no work, and the close sends each
+        // event of the session before its response.
+        let session = try #require(
+            await asked.fixture.harness.agent.sessions[asked.fixture.sessionId]?.session)
+        _ = await session.awaitIdle()
+        _ = try await asked.fixture.harness.connection.closeSession(
+            CloseSessionRequest(sessionId: asked.fixture.sessionId))
+        let updates = await asked.fixture.collector.updates
+        await asked.fixture.close()
+
+        let afterFirstIdle = Array(updates[asked.updates.count...])
+        let states = afterFirstIdle.filter {
+            if case .stateUpdate = $0.update { true } else { false }
+        }
+        #expect(states.count == 2, "expected running then idle, got \(states)")
+        #expect(isRunningState(states.first?.update))
+        #expect(isIdleState(states.last?.update))
+        if case .stateUpdate(.idle(let idle)) = states.last?.update {
+            #expect(idle.stopReason == nil)
+        }
+        #expect(ScriptedPromptFixture.agentChunkTexts(in: afterFirstIdle).contains(Self.mailReply))
     }
 
     /// A prompt that starts no background run ends as before: the echo, the

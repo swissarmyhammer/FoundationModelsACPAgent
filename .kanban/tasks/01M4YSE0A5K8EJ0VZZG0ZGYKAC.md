@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 8a80
+position_column: done
+position_ordinal: ffdb80
 title: 'E2: Running and idle from Router work (elicitation-plan task 2)'
 ---
 Step lead plan, part 2 of the new events. Do after E1. Send a short design to the step lead first, and write no code before the answer.

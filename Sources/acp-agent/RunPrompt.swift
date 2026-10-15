@@ -350,8 +350,10 @@ enum RunPrompt {
     /// agent message chunk as it arrives, and stops at the first idle
     /// state update after the `user_message` echo of its own prompt
     /// (elicitation-plan task 43, rule A). An idle means that the session
-    /// has no prompt open any more, so the own prompt ended too. An idle
-    /// before the own echo belongs to earlier work of the session.
+    /// is not busy any more: no prompt is open and Router has no work. Thus
+    /// the own prompt ended, and the CLI also waits for the background runs
+    /// that the prompt started. An idle before the own echo belongs to
+    /// earlier work of the session.
     ///
     /// One stream feeds two writers. The answer text goes to `writer`, on
     /// stdout (§5.6), and the same update goes to `events`, which writes

@@ -316,12 +316,26 @@ code gives the local detail.
   `MailID` of the prompt. A prompt that comes while another one is open is
   accepted too. The prompt ends at the terminal event of its own mail, so a
   client waits for the first `idle` after the echo of its own `messageId`.
-  `running` goes out when the first open prompt starts, and `idle` when the
-  last open prompt ends, never at the end of one Router submission. No state
-  update goes out while no prompt is open.
+- **`running` and `idle` follow the work of the session.** The session is
+  busy while Router works (an answer that runs, an open background run, or
+  queued run mail) or a prompt is open. `running` goes out when the session
+  becomes busy, also with no prompt open, and `idle` when it is not busy any
+  more. The `idle` carries the stop reason of the last prompt that ended
+  since the last `running`; after only background work it has no stop
+  reason. A run that waits only for the user is no work, so an open question
+  does not keep the session `running`. The agent never sends
+  `requires_action`.
 - **`session/cancel` is a signal.** It sends `cancelAll()` to the Router
-  session. Each open prompt ends `cancelled`, no later than the end of the
-  signal. With no prompt open, it sends the signal and no state update.
+  session. Each open prompt ends `cancelled` at once, and its response says
+  so. The `idle` comes when the work of the session ends. You can only stop
+  what you stop: model work that ignores cancellation runs to its end, so
+  that `idle` can come later than the response, and the client can send
+  input before it. With no prompt open and no work, it sends the signal and
+  no state update.
+- **`acp-agent run` waits for its `idle`.** The headless CLI stops at the
+  first `idle` after the echo of its own prompt. That `idle` comes when the
+  session has no work, so the CLI also waits for the background runs that its
+  prompt started.
 - **`/compact` is a signal.** It starts the compaction and returns at once with
   "Compaction started." and the `SignalID`. The compaction entry of the
   session gives the result: the summary, the tokens before and after and the

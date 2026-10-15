@@ -879,8 +879,12 @@ extension RoutedACPAgent {
 
     /// Cancels the work of one session and its open prompts: the work of
     /// ``sessionCancel(_:)``. Each open prompt ends with the `cancelled` stop
-    /// reason no later than the `signalDone` of the `cancelAll()` signal, so
-    /// the cancel ends with `idle` and `cancelled` (an ACP rule).
+    /// reason no later than the `signalDone` of the `cancelAll()` signal, and
+    /// its response says `cancelled` at once. The `idle` with `cancelled`
+    /// comes at the `workEnded` of Router (``SessionStateLedger``). You can
+    /// only stop what you stop: model work that ignores cancellation runs to
+    /// its end, so that `idle` can come later than the response, and the
+    /// client can send input before that `idle`.
     ///
     /// - Parameter params: The cancellation notification.
     private func cancelRunningPrompt(_ params: CancelSessionNotification) async {

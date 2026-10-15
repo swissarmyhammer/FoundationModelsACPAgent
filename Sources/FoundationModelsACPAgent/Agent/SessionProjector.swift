@@ -121,13 +121,16 @@ actor SessionProjector {
     ///   - shellSnapshot: The reader of the stored output of a settled run.
     ///   - relay: The elicitation relay, or `nil` for none.
     ///   - runCallJoins: The join table of the session.
+    ///   - stateLedger: The state ledger of the session, which takes the
+    ///     work events of each Router session, or `nil` for none.
     init(
         sessionId: SessionId,
         modelName: String,
         send: @escaping SessionUpdateSink,
         shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil },
         relay: ElicitationRelay?,
-        runCallJoins: RunCallJoinTable
+        runCallJoins: RunCallJoinTable,
+        stateLedger: SessionStateLedger? = nil
     ) {
         self.sessionId = sessionId
         self.relay = relay
@@ -141,7 +144,8 @@ actor SessionProjector {
                     sessionId: sessionId, send: send, modelName: modelName, shellSnapshot: shellSnapshot,
                     runCallJoins: runCallJoins),
                 send: send,
-                relay: relay)
+                relay: relay,
+                stateLedger: stateLedger)
             if let relay {
                 let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
                 state.translator.endElicitation = endElicitation
@@ -307,6 +311,10 @@ private struct ProjectionState {
     /// The relay of the elicitations of the session, or `nil`.
     let relay: ElicitationRelay?
 
+    /// The state ledger of the session, or `nil` for a synthetic test that
+    /// reads no work state.
+    let stateLedger: SessionStateLedger?
+
     /// The open prompts, in the order that they opened. A stream message
     /// goes alone in its submission, so an event holds the `MailID` of at
     /// most one prompt.
@@ -338,6 +346,9 @@ private struct ProjectionState {
             for prompt in open.map(\.prompt) where prompt.sourceId == sourceId {
                 await endPrompt(prompt.mailId, stop: .cancelled)
             }
+            // Router sends no work event after `close()` starts, so the end
+            // of the feed ends the work of that session.
+            await stateLedger?.workEnded(on: sourceId)
         case .openPrompt(let prompt):
             open.append(OpenPrompt(prompt: prompt))
             translator.modelName = prompt.modelName
@@ -380,11 +391,19 @@ private struct ProjectionState {
         translator.tally = index.map { open[$0].tally } ?? PromptTally()
         let recorders = index.map { [open[$0].toolCalls] } ?? open.map(\.toolCalls)
         translator.send = recorders.reduce(send) { sink, toolCalls in toolCalls.recording(into: sink) }
-        // A request of a run has the origin of its run mail, not the origin
-        // of a prompt. While a prompt is open, the round trip sends
-        // `requires_action` (task ^9xs24pn, decision Q2).
-        translator.relayElicitation = relayHandler(for: source.session, owner: open.first?.prompt.owner)
+        translator.relayElicitation = relayHandler(for: source.session)
         await translator.project(event)
+        // The work state of the session (elicitation-plan task 2): the ledger
+        // sends `running` and `idle` from it. A prompt that ended at an
+        // earlier event already gave the ledger its stop reason.
+        switch event {
+        case .workStarted:
+            await stateLedger?.workStarted(on: source.id)
+        case .workEnded:
+            await stateLedger?.workEnded(on: source.id)
+        default:
+            break
+        }
         if let index {
             open[index].tally = translator.tally
             let current = open[index]
@@ -437,20 +456,17 @@ private struct ProjectionState {
     /// so the translation does not wait for the user (elicitation-plan task
     /// 5), or `nil` when no relay is wired or the source has no session.
     ///
-    /// - Parameters:
-    ///   - session: The Router session that the answer goes back to.
-    ///   - owner: The owner of an open prompt, so the round trip sends
-    ///     `requires_action`; `nil` while no prompt is open.
+    /// - Parameter session: The Router session that the answer goes back to.
     /// - Returns: The handler.
     private func relayHandler(
-        for session: (any RoutedSession)?, owner: PromptStateOwner?
+        for session: (any RoutedSession)?
     ) -> ElicitationEventHandler? {
         guard let relay, let session else {
             return nil
         }
         return { event in
             Task {
-                await relay.relay(event, on: session, promptState: owner)
+                await relay.relay(event, on: session)
             }
         }
     }
