@@ -134,6 +134,26 @@ public struct SessionSurface: Sendable {
         self.runCallJoins = runCallJoins
     }
 
+    /// This surface with `hostTools` after its own tools
+    /// (``RoutedACPAgent/registerHostTools(_:)``). Each other part does not
+    /// change.
+    ///
+    /// - Parameter hostTools: The tools of the host, in order.
+    /// - Returns: The surface with the host tools.
+    func appending(hostTools: [any FoundationModels.Tool]) -> SessionSurface {
+        guard !hostTools.isEmpty else { return self }
+        return SessionSurface(
+            tools: tools + hostTools,
+            serverPool: serverPool,
+            filesReadVerb: filesReadVerb,
+            shellOutput: shellOutput,
+            codeContextStop: codeContextStop,
+            mcpServerOutcomes: mcpServerOutcomes,
+            inlineSettleGrace: inlineSettleGrace,
+            agents: agents,
+            runCallJoins: runCallJoins)
+    }
+
     /// Makes a surface that mounts nothing: no tool, no MCP server, no
     /// shell and no code context. A replay-only session gets it, because
     /// its working directory does not exist and each mount can make it.

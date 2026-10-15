@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
@@ -121,6 +122,21 @@ public actor RoutedACPAgent: Agent {
     /// - Parameter providers: The conformers to append, in order.
     func registerCommandProviders(_ providers: [any SlashCommandProviding]) {
         commandProviders.append(contentsOf: providers)
+    }
+
+    /// The host tools that ``registerHostTools(_:)`` registered. The surface
+    /// of each later session mounts them after its own tools.
+    var hostTools: [any FoundationModels.Tool] = []
+
+    /// Registers tools of the host for the sessions that this agent opens
+    /// or resumes after this call. It exists for the tests and for an
+    /// in-process host that adds its own tools; the production composition
+    /// does not call it. Each tool comes after the tools of the catalog, in
+    /// the order of the calls.
+    ///
+    /// - Parameter tools: The tools to append, in order.
+    func registerHostTools(_ tools: [any FoundationModels.Tool]) {
+        hostTools.append(contentsOf: tools)
     }
 
     /// A weak reference to the bound wire connection.

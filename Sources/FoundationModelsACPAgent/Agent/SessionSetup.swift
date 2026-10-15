@@ -892,6 +892,7 @@ extension RoutedACPAgent {
         ).assemble(skills: skills?.registry)
 
         let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
+            .appending(hostTools: hostTools)
 
         return SessionComposition(
             configuration: context.loaded.configuration,
