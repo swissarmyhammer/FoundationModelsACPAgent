@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -155,13 +156,25 @@ import Testing
     /// The marker of the prompt that starts the asking background run.
     private static let askMarker = "Ask in the background"
 
-    /// The snippet that asks the person one question. The question sends
-    /// the run to the background.
+    /// The waits that sleep on the run clock while the snippet waits for its
+    /// answer inside the settle period of the call: the settle period of the
+    /// call, and the stall watch of the generation pass that waits for the
+    /// call. The tool has no timeout, so no timeout window sleeps.
+    private static let sleepersInTheSettlePeriod = 2
+
+    /// The snippet that asks the person one question. The run goes to the
+    /// background when the settle period of the call ends.
     private static let askingSnippet = #"return await elicit("Which colour do you want?");"#
 
     /// Opens one session whose prompt starts a background run that asks one
     /// question, and waits until the question reaches the client and the
     /// session sent its first `idle`.
+    ///
+    /// The run clock of the session is a `ManualRunClock`. The snippet waits
+    /// for the answer inside the settle period of the call, so the test
+    /// waits until that period sleeps on the clock, and then moves the clock
+    /// past it. Thus the run goes to the background at a fixed point, with
+    /// no real timer.
     ///
     /// - Parameter label: The directory label of the proof.
     /// - Returns: The fixture, the pending question, and the updates at that
@@ -170,6 +183,7 @@ import Testing
     private static func askInTheBackground(
         label: String
     ) async throws -> (fixture: ScriptedPromptFixture, question: PendingElicitation, updates: [UpdateSessionNotification]) {
+        let clock = ManualRunClock()
         let fixture = try await ScriptedPromptFixture.make(
             script: [
                 .onPrompt(
@@ -178,10 +192,13 @@ import Testing
                 .textDelta(mailReply),
                 .endPass,
             ],
-            label: label)
+            label: label,
+            runClock: clock)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: askMarker))
         let question = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+        await clock.waitForSleepers(atLeast: Self.sleepersInTheSettlePeriod)
+        clock.advance(by: .seconds(CatalogContext.defaultInlineSettleGrace))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
         return (fixture, question, updates)
     }

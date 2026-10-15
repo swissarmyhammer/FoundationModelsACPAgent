@@ -49,6 +49,9 @@ import Tracing
 ///   - environment: The host environment of the agent, below the key of
 ///     the defaults layer. Empty by default. A suite that proves that the
 ///     host environment reaches the session tools gives keys here.
+///   - prepareRouter: The work on the router before the agent resolves its
+///     profile. A suite that drives the timers of its runs gives the router
+///     a `ManualRunClock` here. It does nothing by default.
 /// - Returns: The constructed agent.
 /// - Throws: `DotfolderNameError` when `name` is refused,
 ///   `ProfileResolutionError` when the stub resolution fails, or the
@@ -61,13 +64,15 @@ public func makeStubAgent(
     loader: any ModelLoader = StubModelLoader(),
     tracer: (any Tracer)? = nil,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
-    environment: [String: String] = [:]
+    environment: [String: String] = [:],
+    prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
     let router = EchoModel.makeRouter(
         cacheDirectory: cacheDirectory,
         recordingsDirectory: recordingsDirectory,
         loader: loader,
         tracer: tracer)
+    await prepareRouter(router)
     return try await RoutedACPAgent(
         name: DotfolderName(name),
         router: router,

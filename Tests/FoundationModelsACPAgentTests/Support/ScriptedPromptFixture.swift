@@ -3,7 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
-import FoundationModelsRouter
+@testable import FoundationModelsRouter
 import Testing
 import Tracing
 
@@ -86,6 +86,9 @@ struct ScriptedPromptFixture {
     ///     captures the Router spans gives the tracer of its capture.
     ///   - commandProviders: The command providers that the agent gets
     ///     before `session/new`, so the session has their commands.
+    ///   - runClock: The clock of the runs of the session, or `nil` for the
+    ///     real clock. A test that drives the run grace gives a
+    ///     `ManualRunClock`.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -98,7 +101,8 @@ struct ScriptedPromptFixture {
         additionalDirectories: [AbsolutePath]? = nil,
         tapsAgentWire: Bool = false,
         tracer: (any Tracer)? = nil,
-        commandProviders: [any SlashCommandProviding] = []
+        commandProviders: [any SlashCommandProviding] = [],
+        runClock: (any RunClock)? = nil
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
@@ -110,7 +114,8 @@ struct ScriptedPromptFixture {
             additionalDirectories: additionalDirectories,
             tapsAgentWire: tapsAgentWire,
             tracer: tracer,
-            commandProviders: commandProviders)
+            commandProviders: commandProviders,
+            runClock: runClock)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -144,6 +149,9 @@ struct ScriptedPromptFixture {
     ///     `InstrumentationSystem.tracer` at call time.
     ///   - commandProviders: The command providers that the agent gets
     ///     before `session/new`, so the session has their commands.
+    ///   - runClock: The clock of the runs of the session, or `nil` for the
+    ///     real clock. A test that drives the run grace gives a
+    ///     `ManualRunClock`.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -157,7 +165,8 @@ struct ScriptedPromptFixture {
         tapsWire: Bool = false,
         tapsAgentWire: Bool = false,
         tracer: (any Tracer)? = nil,
-        commandProviders: [any SlashCommandProviding] = []
+        commandProviders: [any SlashCommandProviding] = [],
+        runClock: (any RunClock)? = nil
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -170,7 +179,12 @@ struct ScriptedPromptFixture {
             recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
             userDirectory: userDirectory,
             loader: loader,
-            tracer: tracer)
+            tracer: tracer
+        ) { router in
+            if let runClock {
+                await router.useRunClock(runClock)
+            }
+        }
         await agent.registerCommandProviders(commandProviders)
         let harness = await AgentClientHarness.makeRecording(
             agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
