@@ -99,6 +99,9 @@ struct ScriptedPromptFixture {
     ///   - runClock: The clock of the runs of the session, or `nil` for the
     ///     real clock. A test that drives the run grace gives a
     ///     `ManualRunClock`.
+    ///   - mailOnlyAnswerLimit: The `mailOnlyAnswerLimit` of each session of
+    ///     the agent, or `nil` for the Router default. A test of the pause of
+    ///     the mail delivery gives `0` (task ^t03jd5h).
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -112,7 +115,8 @@ struct ScriptedPromptFixture {
         tapsAgentWire: Bool = false,
         tracer: (any Tracer)? = nil,
         commandProviders: [any SlashCommandProviding] = [],
-        runClock: (any RunClock)? = nil
+        runClock: (any RunClock)? = nil,
+        mailOnlyAnswerLimit: Int? = nil
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script),
@@ -125,7 +129,8 @@ struct ScriptedPromptFixture {
             tapsAgentWire: tapsAgentWire,
             tracer: tracer,
             commandProviders: commandProviders,
-            runClock: runClock)
+            runClock: runClock,
+            mailOnlyAnswerLimit: mailOnlyAnswerLimit)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -162,6 +167,8 @@ struct ScriptedPromptFixture {
     ///   - runClock: The clock of the runs of the session, or `nil` for the
     ///     real clock. A test that drives the run grace gives a
     ///     `ManualRunClock`.
+    ///   - mailOnlyAnswerLimit: The `mailOnlyAnswerLimit` of each session of
+    ///     the agent, or `nil` for the Router default.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -176,7 +183,8 @@ struct ScriptedPromptFixture {
         tapsAgentWire: Bool = false,
         tracer: (any Tracer)? = nil,
         commandProviders: [any SlashCommandProviding] = [],
-        runClock: (any RunClock)? = nil
+        runClock: (any RunClock)? = nil,
+        mailOnlyAnswerLimit: Int? = nil
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -196,6 +204,9 @@ struct ScriptedPromptFixture {
             }
         }
         await agent.registerCommandProviders(commandProviders)
+        if let mailOnlyAnswerLimit {
+            await agent.useMailOnlyAnswerLimit(mailOnlyAnswerLimit)
+        }
         let harness = await AgentClientHarness.makeRecording(
             agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
         // The model must send `initialize` itself: it keeps the agent

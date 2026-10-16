@@ -15,6 +15,7 @@ import FoundationModelsExtras
 /// | 3 | `refusal` |
 /// | 4 | `cancelled` |
 /// | 5 | `doctor` found warnings, and no error |
+/// | 6 | `run`: the session paused its mail delivery and holds run results that the run cannot get |
 ///
 /// **There is no 124 row.** cli-plan.md §5.8 lists that `timeout(1)`
 /// code for both binaries, but §5.4 gives `run` no `--timeout`, so no
@@ -47,6 +48,14 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
     /// because the Rust doctor's 2 for errors would collide with the
     /// usage error above; see `doctor-plan.md` §5.
     case doctorWarnings = 5
+
+    /// The session of a `run` paused its mail delivery before the own
+    /// prompt went idle (task ^t03jd5h). Router holds run results, and only
+    /// a next caller message carries them, which a headless run never sends.
+    /// So the run did not finish its work, and a script must not read it as
+    /// done. The run writes the reason on stderr
+    /// (``HeldMailNotice/standardErrorLine``).
+    case mailDeliveryPaused = 6
 
     /// The error a subcommand throws so the process ends with this code.
     ///
@@ -113,8 +122,16 @@ enum AgentExitCode: Int32, CaseIterable, Sendable {
     /// an idle update arrived, so the prompt has no outcome to report, and
     /// a script must not read that as a finished answer.
     ///
+    /// A pause of the mail delivery wins over the stop reason
+    /// (``mailDeliveryPaused``): the own prompt can end `end_turn` while
+    /// Router still holds results of its runs.
+    ///
     /// - Parameter result: The finished prompt.
     init(prompt result: RunPromptResult) {
+        if result.mailPause != nil {
+            self = .mailDeliveryPaused
+            return
+        }
         guard let stopReason = result.stopReason else {
             self = .error
             return

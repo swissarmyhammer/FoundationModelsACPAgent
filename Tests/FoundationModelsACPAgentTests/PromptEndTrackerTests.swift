@@ -67,4 +67,57 @@ import Testing
 
         #expect(!tracker.ended)
     }
+
+    // MARK: - The pause of the mail delivery (task ^t03jd5h)
+
+    /// A `_mail_delivery_paused` update that holds `heldCount` results at
+    /// the limit `limit`.
+    ///
+    /// - Parameters:
+    ///   - heldCount: How many results the session held.
+    ///   - limit: The limit in force.
+    /// - Returns: The update.
+    private static func pause(heldCount: Int, limit: Int) -> SessionUpdate {
+        .unknown(
+            HeldMailNotice.updateKind,
+            .object(["limit": .number(Double(limit)), "heldCount": .number(Double(heldCount))]))
+    }
+
+    /// A pause between the own echo and the ending idle is the pause of the
+    /// run, also when the idle says `end_turn`.
+    @Test func aPauseBetweenTheOwnEchoAndTheEndingIdleIsThePauseOfTheRun() {
+        var tracker = PromptEndTracker()
+        tracker.learn(ownMessage: Self.ownId)
+        tracker.receive(Self.echo(Self.ownId))
+        tracker.receive(Self.pause(heldCount: 2, limit: 0))
+        tracker.receive(Self.idle(.endTurn))
+
+        #expect(tracker.ended)
+        #expect(tracker.stopReason == .endTurn)
+        #expect(tracker.mailPause == HeldMailNotice(heldCount: 2, limit: 0))
+    }
+
+    /// A pause before the own echo belongs to earlier work of the session.
+    @Test func aPauseBeforeTheOwnEchoIsNotThePauseOfTheRun() {
+        var tracker = PromptEndTracker()
+        tracker.learn(ownMessage: Self.ownId)
+        tracker.receive(Self.pause(heldCount: 1, limit: 0))
+        tracker.receive(Self.echo(Self.ownId))
+        tracker.receive(Self.idle(.endTurn))
+
+        #expect(tracker.ended)
+        #expect(tracker.mailPause == nil)
+    }
+
+    /// A pause after the ending idle comes after the end of the run, so it
+    /// does not change the result.
+    @Test func aPauseAfterTheEndingIdleIsNotThePauseOfTheRun() {
+        var tracker = PromptEndTracker()
+        tracker.learn(ownMessage: Self.ownId)
+        tracker.receive(Self.echo(Self.ownId))
+        tracker.receive(Self.idle(.endTurn))
+        tracker.receive(Self.pause(heldCount: 1, limit: 0))
+
+        #expect(tracker.mailPause == nil)
+    }
 }

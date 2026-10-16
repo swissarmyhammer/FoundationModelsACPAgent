@@ -386,7 +386,14 @@ struct ACPEventTranslator {
                 stop, message: "Router stopped a pass, because the pass reasoned and did not act.")
         case .answered(let answer):
             await projectReply(of: answer)
-        case .answerFailed, .mailDeliveryPaused:
+        case .mailDeliveryPaused(let pause):
+            // Router holds run mail and starts no answer for it. The client
+            // sees the pause, and its next message lifts it (task ^t03jd5h).
+            ACPAgentTelemetry.logger(.promptExecution).notice(
+                "Router paused the mail delivery. The client gets the pause.",
+                metadata: eventMetadata(event))
+            await send(MailDeliveryPauseReport.update(for: pause))
+        case .answerFailed:
             // Router bookkeeping with no ACP counterpart: the projector
             // reads the end of an answer for the stop reason.
             streamedTextInAnswer = false

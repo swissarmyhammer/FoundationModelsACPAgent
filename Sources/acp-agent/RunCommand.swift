@@ -116,10 +116,23 @@ extension AcpAgentCommand {
                 drawing: progressReporter,
                 interruptedBy: InterruptHandler.onSIGINT,
                 terminatedBy: TerminationHandler.onSIGTERM)
+            for line in Self.standardErrorLines(for: result) {
+                FileHandle.standardError.write(Data((line + "\n").utf8))
+            }
             let code = AgentExitCode(prompt: result)
             guard code == .success else {
                 throw code.parserError
             }
+        }
+
+        /// The lines that the end of a `run` writes on stderr, with no line
+        /// ends: the reason of a pause of the mail delivery (task
+        /// ^t03jd5h), or none.
+        ///
+        /// - Parameter result: The finished prompt.
+        /// - Returns: The lines, in order.
+        static func standardErrorLines(for result: RunPromptResult) -> [String] {
+            result.mailPause.map { [$0.standardErrorLine] } ?? []
         }
 
         /// Runs the one prompt: the text by the §5.5 table, and the

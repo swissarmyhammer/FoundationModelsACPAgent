@@ -577,7 +577,8 @@ extension RoutedACPAgent {
             compaction: composition.configuration.compaction,
             repetition: composition.configuration.repetition,
             inlineSettleGrace: composition.surface.inlineSettleGrace,
-            userPresence: userPresence)
+            userPresence: userPresence,
+            mailOnlyAnswerLimit: mailOnlyAnswerLimit)
 
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt task appends it at the first recorded activity,
@@ -1006,6 +1007,9 @@ extension RoutedLLM {
     ///   - userPresence: Whether a user can answer the questions of the
     ///     session (``RoutedACPAgent/userPresence``). `session/new` and the
     ///     model-slot switch give it; the default is Router's default.
+    ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
+    ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
+    ///     is Router's default.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``). While an
@@ -1019,7 +1023,8 @@ extension RoutedLLM {
         compaction: CompactionConfiguration,
         repetition: RepetitionConfiguration,
         inlineSettleGrace: TimeInterval,
-        userPresence: UserPresence = .interactive
+        userPresence: UserPresence = .interactive,
+        mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
@@ -1049,6 +1054,7 @@ extension RoutedLLM {
                 compaction: CompactionSettings(
                     budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
                 repetitionDetection: repetition.detection,
+                mailOnlyAnswerLimit: mailOnlyAnswerLimit,
                 inlineSettleGrace: inlineSettleGrace,
                 isNoOpToolCall: NoOpToolCall.check,
                 userPresence: userPresence))

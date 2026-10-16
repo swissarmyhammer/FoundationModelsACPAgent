@@ -139,6 +139,21 @@ public actor RoutedACPAgent: Agent {
         hostTools.append(contentsOf: tools)
     }
 
+    /// The most answers in a row that run mail alone starts in each session
+    /// that this agent opens later (`SessionConfiguration.mailOnlyAnswerLimit`).
+    /// Production keeps the Router default. A test sets a small value with
+    /// ``useMailOnlyAnswerLimit(_:)``, so the session pauses the delivery of
+    /// its mail at once (task ^t03jd5h).
+    var mailOnlyAnswerLimit = SessionConfiguration.defaultMailOnlyAnswerLimit
+
+    /// Sets ``mailOnlyAnswerLimit`` for the sessions that this agent opens
+    /// after this call. Only a test calls it.
+    ///
+    /// - Parameter limit: The limit.
+    func useMailOnlyAnswerLimit(_ limit: Int) {
+        mailOnlyAnswerLimit = limit
+    }
+
     /// A weak reference to the bound wire connection.
     ///
     /// The connection keeps this agent strongly: its factory built the

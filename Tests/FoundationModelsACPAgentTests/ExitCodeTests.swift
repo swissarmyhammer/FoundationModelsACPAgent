@@ -50,7 +50,7 @@ struct ExitCodeTests {
     private static let timeoutExitCode: Int32 = 124
 
     /// The number of rows the table states.
-    private static let tableRowCount = 6
+    private static let tableRowCount = 7
 
     /// The code of a prompt that ended on `end_turn`, and of a report that
     /// ran.
@@ -70,6 +70,10 @@ struct ExitCodeTests {
 
     /// The code of a `doctor` run that found warnings and no error.
     private static let doctorWarningsCode: Int32 = 5
+
+    /// The code of a `run` whose session paused its mail delivery (task
+    /// ^t03jd5h).
+    private static let mailDeliveryPausedCode: Int32 = 6
 
     /// The directory that holds the CLI's source files, under the
     /// repository root.
@@ -151,7 +155,7 @@ struct ExitCodeTests {
 
     // MARK: - The table (cli-plan.md §5.8)
 
-    /// One code for each row of the six-row table, and no seventh row.
+    /// One code for each row of the seven-row table, and no eighth row.
     @Test func theTableStatesOneCodeForEachRow() {
         #expect(AgentExitCode.success.rawValue == Self.successCode)
         #expect(AgentExitCode.error.rawValue == Self.errorCode)
@@ -159,6 +163,7 @@ struct ExitCodeTests {
         #expect(AgentExitCode.refusal.rawValue == Self.refusalCode)
         #expect(AgentExitCode.cancelled.rawValue == Self.cancelledCode)
         #expect(AgentExitCode.doctorWarnings.rawValue == Self.doctorWarningsCode)
+        #expect(AgentExitCode.mailDeliveryPaused.rawValue == Self.mailDeliveryPausedCode)
         #expect(AgentExitCode.allCases.count == Self.tableRowCount)
     }
 

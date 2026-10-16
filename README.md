@@ -336,6 +336,16 @@ code gives the local detail.
   first `idle` after the echo of its own prompt. That `idle` comes when the
   session has no work, so the CLI also waits for the background runs that its
   prompt started.
+- **A pause of the mail delivery is a session update.** Router holds new run
+  results when 100 answers in a row had no caller message, and it starts no
+  answer for them. The agent then sends one `_mail_delivery_paused` update
+  before the `idle`. Its payload is `limit` (the limit in force), `heldCount`,
+  `heldMail` (one `{tool, op, completionToken}` object for each held result,
+  in queue order) and `message` (one line for a person). The history keeps
+  the update, so a resume sends it again. The next `session/prompt` carries
+  the held results into its answer and lifts the pause; no update tells of
+  the lift. A headless `acp-agent run` cannot send a next prompt, so it
+  writes the reason on stderr and exits 6.
 - **`/compact` is a signal.** It starts the compaction and returns at once with
   "Compaction started." and the `SignalID`. The compaction entry of the
   session gives the result: the summary, the tokens before and after and the

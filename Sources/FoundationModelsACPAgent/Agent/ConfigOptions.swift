@@ -238,7 +238,8 @@ extension RoutedACPAgent {
                 compaction: entry.configuration.compaction,
                 repetition: entry.configuration.repetition,
                 inlineSettleGrace: entry.surface.inlineSettleGrace,
-                userPresence: entry.userPresence)
+                userPresence: entry.userPresence,
+                mailOnlyAnswerLimit: mailOnlyAnswerLimit)
         // The projector reads the replacement before any prompt can mail it.
         // The reader of the replaced session stays until that session
         // closes (task ^9xs24pn, decision Q3).

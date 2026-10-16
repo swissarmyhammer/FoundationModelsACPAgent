@@ -23,6 +23,78 @@ struct RunPromptResult {
     /// The stop reason the prompt ended on, or `nil` when the wire ended
     /// before an idle update arrived.
     let stopReason: StopReason?
+
+    /// The pause of the mail delivery that came after the own prompt and
+    /// before its ending idle, or `nil` when none came (task ^t03jd5h).
+    var mailPause: HeldMailNotice? = nil
+}
+
+/// A `_mail_delivery_paused` update that a headless run read (task
+/// ^t03jd5h).
+///
+/// Router held run results of the session and started no answer for them,
+/// because too many answers in a row had no caller message. The next caller
+/// message would carry them, but a headless run sends no next message, so the
+/// results are lost. The run reports it on stderr and exits
+/// ``AgentExitCode/mailDeliveryPaused``.
+struct HeldMailNotice: Equatable, Sendable {
+    /// The `sessionUpdate` value of the update. It is the same text as
+    /// `MailDeliveryPauseReport.updateKind` of the agent; `ExitCodeTests`
+    /// holds the two side by side.
+    static let updateKind = "_mail_delivery_paused"
+
+    /// How many run results the session held.
+    let heldCount: Int
+
+    /// The limit in force: the most answers in a row that run mail alone
+    /// starts.
+    let limit: Int
+
+    /// Reads the notice of one update.
+    ///
+    /// - Parameter update: The update.
+    /// - Returns: The notice, or `nil` when `update` is no
+    ///   `_mail_delivery_paused` update, or its payload has no counts.
+    init?(_ update: SessionUpdate) {
+        guard case .unknown(let kind, .object(let members)) = update, kind == Self.updateKind,
+            case .number(let heldCount) = members["heldCount"],
+            case .number(let limit) = members["limit"]
+        else {
+            return nil
+        }
+        self.heldCount = Int(heldCount)
+        self.limit = Int(limit)
+    }
+
+    /// Creates a notice.
+    ///
+    /// - Parameters:
+    ///   - heldCount: How many run results the session held.
+    ///   - limit: The limit in force.
+    init(heldCount: Int, limit: Int) {
+        self.heldCount = heldCount
+        self.limit = limit
+    }
+
+    /// The line that the run writes on stderr, with no line end.
+    var standardErrorLine: String {
+        """
+        acp-agent: the session held \(heldCount) run results and gave no answer for them: \
+        \(limit) answers in a row had no caller message. A headless run cannot send the next \
+        message, so these results are lost.
+        """
+    }
+}
+
+/// How the collector of a headless prompt ended.
+struct CollectedPromptEnd: Sendable {
+    /// The stop reason of the ending idle, or `nil` when the update stream
+    /// ended before an idle update arrived.
+    let stopReason: StopReason?
+
+    /// The pause that came after the own prompt and before its ending idle,
+    /// or `nil`.
+    let mailPause: HeldMailNotice?
 }
 
 /// The refusal of a `--resume` whose id no listed session carries.
@@ -201,7 +273,7 @@ enum RunPrompt {
         let watching = Task {
             await react(to: watch.arrivals, cancelling: sessionId, over: connection)
         }
-        let outcome: Result<StopReason?, any Error>
+        let outcome: Result<CollectedPromptEnd, any Error>
         do {
             // The `SIGTERM` watch stands for the same span as the `Ctrl-C`
             // watch, for the same reason, and its first arrival sends the
@@ -220,7 +292,8 @@ enum RunPrompt {
         forwarder.cancel()
         watch.disarm()
         watching.cancel()
-        return RunPromptResult(stopReason: try outcome.get())
+        let end = try outcome.get()
+        return RunPromptResult(stopReason: end.stopReason, mailPause: end.mailPause)
     }
 
     /// Sends the prompt request, gives the `messageId` of the response to the
@@ -232,8 +305,9 @@ enum RunPrompt {
     ///   - connection: The client end of the wire.
     ///   - input: The input of the collector.
     ///   - collector: The task that reads the update stream of the session.
-    /// - Returns: The stop reason, or `nil` when the update stream ended
-    ///   before an idle update arrived.
+    /// - Returns: How the collector ended: the stop reason, or `nil` when the
+    ///   update stream ended before an idle update arrived, and the pause of
+    ///   the mail delivery, if one came.
     /// - Throws: Whatever the prompt or the collector throws. A prompt
     ///   failure goes out in place of a write failure of the collector.
     private static func awaitPrompt(
@@ -241,8 +315,8 @@ enum RunPrompt {
         in sessionId: SessionId,
         over connection: ClientSideConnection,
         telling input: AsyncStream<PromptCollectorInput>.Continuation,
-        collectedBy collector: Task<StopReason?, any Error>
-    ) async throws -> StopReason? {
+        collectedBy collector: Task<CollectedPromptEnd, any Error>
+    ) async throws -> CollectedPromptEnd {
         do {
             let response = try await connection.prompt(
                 PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: sessionId))
@@ -373,19 +447,24 @@ enum RunPrompt {
     /// response of the prompt, which can come before or after the echo
     /// (``PromptEndTracker``).
     ///
+    /// A `_mail_delivery_paused` update between the own echo and the ending
+    /// idle is a pause of the run (task ^t03jd5h): Router holds run results
+    /// that no later message of this run carries.
+    ///
     /// - Parameters:
     ///   - stream: The session's updates, subscribed before the prompt, and
     ///     the `messageId` of the own prompt.
     ///   - writer: The writer each chunk goes to.
     ///   - events: The writer each session event goes to, one line each.
-    /// - Returns: The stop reason, or `nil` when the stream ended before
-    ///   an idle update arrived.
+    /// - Returns: How the collector ended: the stop reason, or `nil` when the
+    ///   stream ended before an idle update arrived, and the pause, if one
+    ///   came.
     /// - Throws: ``AnswerWriteError`` when a chunk cannot be written.
     private static func collect(
         from stream: AsyncStream<PromptCollectorInput>,
         into writer: AnswerWriter,
         reporting events: EventLineWriter
-    ) async throws -> StopReason? {
+    ) async throws -> CollectedPromptEnd {
         var events = events
         var tracker = PromptEndTracker()
         for await input in stream {
@@ -400,10 +479,10 @@ enum RunPrompt {
                 tracker.receive(update)
             }
             if tracker.ended {
-                return tracker.stopReason
+                return CollectedPromptEnd(stopReason: tracker.stopReason, mailPause: tracker.mailPause)
             }
         }
-        return nil
+        return CollectedPromptEnd(stopReason: nil, mailPause: nil)
     }
 }
 
@@ -432,9 +511,12 @@ struct PromptEndTracker {
 
         /// An `idle` with this stop reason.
         case idle(StopReason?)
+
+        /// A `_mail_delivery_paused` update (task ^t03jd5h).
+        case pause(HeldMailNotice)
     }
 
-    /// The echoes and the idles, in the order of the stream.
+    /// The echoes, the idles and the pauses, in the order of the stream.
     private var marks: [Mark] = []
 
     /// The `messageId` of the own prompt, or `nil` before the response.
@@ -447,7 +529,8 @@ struct PromptEndTracker {
         ownMessageId = messageId
     }
 
-    /// Records one update. Only an echo and an idle change the result.
+    /// Records one update. Only an echo, an idle and a pause change the
+    /// result.
     ///
     /// - Parameter update: The update.
     mutating func receive(_ update: SessionUpdate) {
@@ -457,8 +540,33 @@ struct PromptEndTracker {
         case .stateUpdate(.idle(let idle)):
             marks.append(.idle(idle.stopReason))
         default:
-            break
+            if let pause = HeldMailNotice(update) {
+                marks.append(.pause(pause))
+            }
         }
+    }
+
+    /// The last pause between the own echo and the ending idle, or `nil`
+    /// when none came or the own prompt did not end. A pause before the own
+    /// echo belongs to earlier work of the session.
+    var mailPause: HeldMailNotice? {
+        guard let ownMessageId,
+            let echo = marks.firstIndex(where: { if case .echo(ownMessageId) = $0 { true } else { false } })
+        else {
+            return nil
+        }
+        var pause: HeldMailNotice?
+        for mark in marks[(echo + 1)...] {
+            switch mark {
+            case .idle:
+                return pause
+            case .pause(let notice):
+                pause = notice
+            case .echo:
+                break
+            }
+        }
+        return nil
     }
 
     /// Whether the own prompt ended.
