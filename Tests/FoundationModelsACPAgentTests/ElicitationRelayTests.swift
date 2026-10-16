@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
@@ -546,6 +547,17 @@ struct ElicitationRelayTests {
         return toolCallId.rawValue
     }
 
+    /// The tool result that the model reads for the `runCode` run
+    /// `runToken` when a cancel of only that run ended it (Extras
+    /// ^jbj5vzp). The answer of the model goes on, and the prompt ends
+    /// `end_turn` (defect ^x1s9yqv).
+    ///
+    /// - Parameter runToken: The completion token of the run.
+    /// - Returns: The text.
+    private static func cancelledRunText(of runToken: String) -> String {
+        BackgroundToolRunner<GeneratedContent>.cancelledRunText(completionToken: runToken, tool: "runCode")
+    }
+
     /// A URL-mode question at the client that is not scoped to a tool call.
     private struct URLQuestionNotScoped: Error {
         /// The mode of the question, for the failure message.
@@ -621,12 +633,14 @@ struct ElicitationRelayTests {
             let completions = try await Self.recordedCompletions(of: fixture)
             await fixture.close()
             return (
-                elicitationId: elicitationId, completionsAtAccept: completionsAtAccept,
+                elicitationId: elicitationId, runToken: runToken, completionsAtAccept: completionsAtAccept,
                 completions: completions, updates: updates)
         }
 
         #expect(captured.completionsAtAccept.isEmpty)
         #expect(captured.completions == [captured.elicitationId])
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
+        #expect(try encodedWireText(of: captured.updates).contains(Self.cancelledRunText(of: captured.runToken)))
         #expect(!Self.stateMarkers(in: captured.updates).contains("requires_action"))
     }
 
@@ -772,13 +786,17 @@ struct ElicitationRelayTests {
             await Self.waitForTheEndOfTheElicitationSpan(in: context)
             try await Self.sendMarkerAndWait(through: fixture)
             let completions = try await Self.recordedCompletions(of: fixture)
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
             await fixture.close()
-            return (elicitationId: elicitationId, completionsInHold: completionsInHold, completions: completions)
+            return (
+                elicitationId: elicitationId, runToken: runToken, completionsInHold: completionsInHold,
+                completions: completions, updates: updates)
         }
 
         #expect(captured.completionsInHold.isEmpty)
         #expect(captured.completions == [captured.elicitationId])
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
+        #expect(try encodedWireText(of: captured.updates).contains(Self.cancelledRunText(of: captured.runToken)))
     }
 
     // MARK: - Cancellation
@@ -853,21 +871,23 @@ struct ElicitationRelayTests {
             else {
                 Issue.record("expected a form request scoped to a tool call, got \(pending.request.mode)")
                 await fixture.close()
-                return (records: context.logRecords, creates: 0)
+                return (records: context.logRecords, creates: 0, runToken: "", updates: [UpdateSessionNotification]())
             }
 
             let actor = try await Self.sessionActor(of: fixture)
             _ = await actor.runPlane.cancel(completionToken: toolCallId.rawValue)
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
             let endsAtIdle = Self.endRecords(in: context.logRecords)
             try #require(endsAtIdle.count == 1, "the relay did not end the client request: \(endsAtIdle)")
             try await ElicitationWait.waitUntilNoPendingElicitation(in: fixture.session)
             let creates = await Self.recordedCreates(of: fixture).count
             await fixture.close()
-            return (records: context.logRecords, creates: creates)
+            return (records: context.logRecords, creates: creates, runToken: toolCallId.rawValue, updates: updates)
         }
 
         #expect(captured.creates == 1)
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
+        #expect(try encodedWireText(of: captured.updates).contains(Self.cancelledRunText(of: captured.runToken)))
         let record = try #require(Self.endRecords(in: captured.records).first)
         #expect(record.level == .notice)
         #expect(
