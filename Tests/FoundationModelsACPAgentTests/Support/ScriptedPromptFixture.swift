@@ -52,9 +52,19 @@ struct ScriptedPromptFixture {
     /// `SurfaceRefresher`. It stays because it is harmless, and because it
     /// ends each session on the request path that a client uses.
     /// `ConnectionCloseTests` proves the close with no `session/close`.
+    ///
+    /// The `session/close` of a session returns after the projector of the
+    /// session sent each event, so a test can read what the session wrote
+    /// after this call (task ^3546eff). Thus a failed `session/close` fails
+    /// the test: without it, the session closes on the task of the
+    /// connection close, and a read after this call is not a fixed point.
     func close() async {
         for sessionId in await harness.agent.sessions.keys {
-            _ = try? await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))
+            do {
+                _ = try await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))
+            } catch {
+                Issue.record("session/close of \(sessionId.rawValue) failed: \(error)")
+            }
         }
         await harness.close()
     }

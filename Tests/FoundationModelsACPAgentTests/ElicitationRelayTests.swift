@@ -808,6 +808,11 @@ struct ElicitationRelayTests {
     /// the relay ends the client request. The states are `running` and one
     /// `idle`, with no `requires_action`. The URL-mode tool is used here, so
     /// the cancel also releases an outstanding URL elicitation id.
+    ///
+    /// The run waits only for the user, so the idle can go out before the
+    /// end of the question. The test reads the records after
+    /// `fixture.close()`: a `session/close` that succeeded returns after the
+    /// projector sent each event of the session (task ^3546eff).
     @Test
     func sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle() async throws {
         let captured = try await TelemetryCapture.run(forbidding: []) { context in

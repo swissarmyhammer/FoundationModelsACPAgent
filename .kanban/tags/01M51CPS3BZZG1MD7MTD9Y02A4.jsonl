@@ -1,0 +1,1 @@
+{"id":"01M51CPS3B4QPJ6CNW5EJQD3SJ","timestamp":"2026-10-16T03:39:48.203926Z","op":"create","item_id":"01M51CPS3BZZG1MD7MTD9Y02A4","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: '008672'\n+tag_name: bad-test\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: '008672'\n-tag_name: bad-test\n","transaction_id":null}
