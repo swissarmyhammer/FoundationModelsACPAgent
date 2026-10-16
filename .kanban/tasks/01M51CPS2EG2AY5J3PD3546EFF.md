@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffe380
 title: 'Bad test: sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle has no fixed point for the end record'
 ---
 CI 38843303710 (8412749, Extras 6cfd13c) failed in `ElicitationRelayTests.sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle`: `ends.count == 1` gave 0, and the end reason was nil. The test passed in the local full run on the same commit, and in CI 38831958055 (4359b57, Extras e65287a).
@@ -28,3 +28,10 @@ Proposed fix of the test: wait for the end record as a fixed point (`context.wai
   - `ScriptedPromptFixture.close()` records an issue when `session/close` fails, and does not swallow the error. A `session/close` that succeeded returns after the projector sent each event, so a read after `close()` is a fixed point.
   - The test reads the records after `fixture.close()`. Its doc says why. I did not add a wait for the end record: on Router 2f78fda that wait would hang, and a fail is better than a hang.
 - This test stays red until the Router fix lands. No other test had a failed `session/close` in the full run.
+
+## Result (2026-10-16)
+
+- Router 1159ebd (^vkkecjt, by foundationmodelsrouter-fa) sends `elicitationEnded(.cancel(reason: "run cancelled"))` on `cancelAll()` before `signalDone`.
+- On Router 1159ebd and Extras 6cfd13c, one full local run was green: 966 tests in 106 suites, and this test passed.
+- The test change is in c97e269. It was pushed with d30f8cd.
+- CI 38851327308 (d30f8cd) waited in the queue for the shared runner. The user cancelled it, so this card has no CI proof.
