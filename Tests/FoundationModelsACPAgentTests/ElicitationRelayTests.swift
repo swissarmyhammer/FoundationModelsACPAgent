@@ -160,19 +160,53 @@ struct ElicitationRelayTests {
     }
 
     /// An answer this relay cannot read delivers `cancel`, never a guess:
-    /// a missing answer, an unknown action, and undecodable content.
-    @Test func anUnreadableAnswerBecomesCancel() {
-        #expect(ElicitationRelay.answer(from: nil, mode: .form) == .cancel)
+    /// a missing answer, an unknown action, and undecodable content. Each
+    /// such cancel carries the reason of the relay (rule R4): a failed
+    /// request, or an answer that is not valid.
+    @Test func anUnreadableAnswerBecomesCancelWithAReason() {
+        let requestFailed = ElicitationResponse.cancel(reason: "the elicitation/create request failed")
+        let notValid = ElicitationResponse.cancel(reason: "the answer of the client is not valid")
+
+        #expect(ElicitationRelay.answer(from: nil, mode: .form) == requestFailed)
         #expect(
             ElicitationRelay.answer(from: .object(["action": .string("later")]), mode: .form)
-                == .cancel)
+                == notValid)
         #expect(
             ElicitationRelay.answer(
                 from: .object([
                     "action": .string("accept"),
                     "content": .object([Self.answerField: .object([:])]),
                 ]),
-                mode: .form) == .cancel)
+                mode: .form) == notValid)
+    }
+
+    /// The `_meta.reason` of a client decline or cancel goes to Router in
+    /// the reason of the response (rule R4). An accept carries no reason,
+    /// and a reason that is not a string is ignored.
+    @Test func theReasonOfAClientDeclineOrCancelGoesToRouter() {
+        let meta = FoundationModelsACP.JSONValue.object([
+            CancelRequestNotification.reasonMetaKey: .string("not now")
+        ])
+
+        #expect(
+            ElicitationRelay.answer(
+                from: .object(["action": .string("decline"), "_meta": meta]), mode: .form)
+                == .decline(reason: "not now"))
+        #expect(
+            ElicitationRelay.answer(
+                from: .object(["action": .string("cancel"), "_meta": meta]), mode: .url)
+                == .cancel(reason: "not now"))
+        #expect(
+            ElicitationRelay.answer(
+                from: .object(["action": .string("accept"), "_meta": meta]), mode: .form)
+                == .accept(content: nil))
+        #expect(
+            ElicitationRelay.answer(
+                from: .object([
+                    "action": .string("decline"),
+                    "_meta": .object([CancelRequestNotification.reasonMetaKey: .number(1)]),
+                ]),
+                mode: .form) == .decline)
     }
 
     // MARK: - The harness wiring

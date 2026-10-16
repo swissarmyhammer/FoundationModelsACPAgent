@@ -154,4 +154,30 @@ import Testing
         #expect(creates.isEmpty)
         #expect(responses == [.cancel(reason: ElicitationRelay.feedEndedCancelReason)])
     }
+
+    /// A round trip that is still in flight at the drain gives Router
+    /// `cancel` with the same reason that its `$/cancel_request` carries
+    /// (rule R4). The fixed point is the open question at the client: the
+    /// wait also ends when the round trip returns before it.
+    @Test func theDrainGivesRouterTheReasonOfTheFeedEnd() async throws {
+        let responses = try await Self.withParts(label: "ElicitationRelayOrderTests-drain-reason") { parts in
+            let event = OperationEvent(
+                tool: Self.askingTool, op: "elicit", correlationID: "relay-drain", kind: .elicitation, detail: "",
+                elicitation: Self.makeFormRequest(elicitationId: ULID()))
+            let relayReturn = await RelayReturn()
+            let roundTrip = Task {
+                await parts.relay.relay(event, on: parts.session)
+                await MainActor.run { relayReturn.returned = true }
+            }
+            let clientSession = parts.fixture.session
+            try await ObservedValue.wait(for: "the question reaches the client, or the round trip returns") {
+                relayReturn.returned || !clientSession.pendingElicitations.isEmpty
+            }
+            await parts.relay.drainOpenRoundTrips()
+            await roundTrip.value
+            return await parts.session.responses.map(\.response)
+        }
+
+        #expect(responses == [.cancel(reason: ElicitationRelay.feedEndedCancelReason)])
+    }
 }

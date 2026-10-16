@@ -347,7 +347,7 @@ actor ElicitationRelay {
             ACPAgentTelemetry.logger(.elicitationRelay).warning(
                 "A client request was still in flight at the end of the feed. The relay delivers cancel.",
                 metadata: elicitationMetadata(elicitationId))
-            continuation.resume(returning: .answered(.cancel))
+            continuation.resume(returning: .answered(.cancel(reason: Self.feedEndedCancelReason)))
         }
     }
 
@@ -436,11 +436,15 @@ actor ElicitationRelay {
             let cancellation = OutboundCancellation()
             cancellations[elicitationId] = cancellation
             answerTasks[elicitationId] = Task {
+                guard let connection = self.connection else {
+                    ACPAgentTelemetry.logger(.elicitationRelay).warning(
+                        "The connection to the client is gone. The relay delivers cancel.",
+                        metadata: self.elicitationMetadata(elicitationId))
+                    self.deliver(.cancel(reason: CancelReason.noConnection.rawValue), toPending: elicitationId)
+                    return
+                }
                 let raw: CreateElicitationResponse?
                 do {
-                    guard let connection = self.connection else {
-                        throw CancellationError()
-                    }
                     raw = try await connection.createElicitation(wireRequest, cancellation: cancellation)
                 } catch {
                     ACPAgentTelemetry.logger(.elicitationRelay).warning(
@@ -774,34 +778,82 @@ actor ElicitationRelay {
     static func answer(
         from raw: CreateElicitationResponse?, mode: ElicitationMode
     ) -> ElicitationResponse {
-        guard let raw,
-            let encoded = try? JSONEncoder().encode(raw),
+        guard let raw else {
+            return .cancel(reason: CancelReason.requestFailed.rawValue)
+        }
+        guard let encoded = try? JSONEncoder().encode(raw),
             let decoded = try? JSONDecoder().decode(WireAnswer.self, from: encoded)
         else {
             ACPAgentTelemetry.logger(.elicitationRelay).warning(
                 "An elicitation answer did not decode. The relay delivers cancel.",
                 metadata: [ACPAgentTelemetry.LogMetadataKey.elicitationMode: "\(mode.rawValue)"])
-            return .cancel
+            return .cancel(reason: CancelReason.answerNotValid.rawValue)
         }
         switch decoded.action {
         case .accept:
             return .accept(content: mode == .form ? decoded.content : nil)
         case .decline:
-            return .decline
+            return decoded.reason.map { .decline(reason: $0) } ?? .decline
         case .cancel:
-            return .cancel
+            return decoded.reason.map { .cancel(reason: $0) } ?? .cancel
         }
+    }
+
+    /// Why the relay gives Router `cancel` for a question that the client
+    /// did not answer in a form that the relay can read (rule R4). The raw
+    /// value is the reason of the cancel.
+    enum CancelReason: String {
+        /// The connection to the client is gone, so no request went out.
+        case noConnection = "the client connection is gone"
+
+        /// The `elicitation/create` request failed.
+        case requestFailed = "the elicitation/create request failed"
+
+        /// The answer of the client did not decode.
+        case answerNotValid = "the answer of the client is not valid"
     }
 
     /// The wire shape of the client's answer. Extras' own decoders read
     /// the action and the content values, so an unknown action or an
-    /// undecodable content value fails the decode as a whole.
+    /// undecodable content value fails the decode as a whole. The
+    /// `_meta.reason` of a decline or a cancel is the reason of the client
+    /// (rule R4). A `_meta` that does not decode gives no reason, and does
+    /// not fail the decode.
     private struct WireAnswer: Decodable {
         /// How the user answered.
         let action: ElicitationResponse.Action
 
         /// The filled form values, or `nil`.
         let content: [String: ElicitationValue]?
+
+        /// The reason of the client, or `nil`. An empty reason is `nil`.
+        let reason: String?
+
+        /// The keys of the answer.
+        private enum CodingKeys: String, CodingKey {
+            case action
+            case content
+            case meta = "_meta"
+        }
+
+        /// The `_meta` object of the answer: only its reason.
+        private struct Meta: Decodable {
+            /// The reason, under ``CancelRequestNotification/reasonMetaKey``.
+            let reason: String?
+
+            /// The key of the reason.
+            private enum CodingKeys: String, CodingKey {
+                case reason = "reason"
+            }
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            action = try container.decode(ElicitationResponse.Action.self, forKey: .action)
+            content = try container.decodeIfPresent(Dictionary<String, ElicitationValue>.self, forKey: .content)
+            let meta = try? container.decodeIfPresent(Meta.self, forKey: .meta)
+            reason = meta?.reason.flatMap { $0.isEmpty ? nil : $0 }
+        }
     }
 
     /// Bridges Extras' restricted schema to the wire schema: Extras
