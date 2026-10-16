@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffe480
 title: 'Design: send agentPath and source of an elicitation to the client in the _meta of elicitation/create'
 ---
 Design only. Do not write code before the step lead accepts this design. For AgentViewKit task 39: each card header shows who asks (agent path and source).
@@ -53,3 +53,4 @@ A wire test with a real child agent is for the Agents integration tier, not for 
 - [x] Tests: `ElicitationAskerMetaTests` (root question in form and URL mode; one level; two levels; the request source wins; no path and no source gives no `_meta`; the encoded members; the wire line of a `runCode` question). With the `_meta` removed, six of the seven tests fail. `aQuestionWithNoPathAndNoSourceHasNoMeta` also passes on the old code, because it holds the "no key, no `_meta`" rule.
 - Not pushed: the step lead batches this with the ACP cancel-reason part. One full run before the push.
 - [x] Same push window (step lead): the cancel reason. Each `elicitation/create` gets its own `OutboundCancellation` (FoundationModelsACP 97a9d5e). `end(_:)` sets `_meta.reason` to the reason of the end (else its action), and `drainOpenRoundTrips()` sets "the session ended", before the cancel. Test `ElicitationCancelReasonTests` fails with the `setMeta` removed. One full run: 974 tests in 108 suites, green.
+- [x] Pushed 9e97ea1 + 1e0acee in one push. CI 38907725986 and Bench 38907725980 green on 1e0acee.
