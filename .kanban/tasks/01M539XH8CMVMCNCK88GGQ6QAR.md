@@ -1,0 +1,17 @@
+---
+assignees:
+- claude-code
+comments:
+- actor: claude-code
+  id: 01m53f1k9v440tk1gn4q7xf7wr
+  text: 'Done. (1) ClosesHarnessesTrait (`@Suite(.closesHarnesses)`, 44 suites): each harness of a test closes when the body throws; AgentClientHarness.close() is idempotent. The trait does not close after a body that returns (tests keep runs open on purpose), and it lets go of each harness at close and at test end, because agent tasks inherit the task local and a kept agent holds models of the process pool (that hung the first runs). AgentReleaseTests and ConnectionCloseTests have no trait: they wait for the agent release. ClosesHarnessesTraitTests proves both paths. (2) ElicitationWait.firstPendingElicitation ends also at session close or run settle; waitUntilNoPendingElicitation and waitForSessionModelIdle end also at session close (WaitEndedOnFailure). (3) waitForUpdatesBeforeSettle: 6 collector call sites plus waitForRunning end at the run settle; 8 sites stay (update after idle, or no run). (4) BuiltinCommandsTests.waitForArrival ends at the run settle; WatchedValue.waitUntilKept handles cancel; QueuedScriptedFixture and three for-await waits fail at stream end. (5) 18 unawaited `defer { Task { close } }` became awaited closes. Full run: 983 tests in 111 suites, green.'
+  timestamp: 2026-10-16T22:59:08.731810+00:00
+position_column: done
+position_ordinal: ffe880
+title: 'T1: no test wait can wait forever'
+---
+Test rule T1. Each wait in a test must also end on the failure event (stream end, connection close, run settle), or the test must fail before it waits. Each fixture closes also when the test body throws.
+
+Known: ElicitationCancelReasonTests. ObservedValue.wait (about line 54 and 66) has no end. If the #require at about 63-64 fails, the fixture does not close.
+
+Search the whole test target for other waits that can wait forever and fix them. No .timeLimit, sleep, poll or retry. One full run. #elicitation #tests
