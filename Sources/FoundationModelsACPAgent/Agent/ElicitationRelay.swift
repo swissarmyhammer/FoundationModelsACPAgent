@@ -196,7 +196,7 @@ actor ElicitationRelay {
             metadata: elicitationMetadata(request.elicitationId.ulidString)
         ) { span in
             let outcome = await relayRequest(
-                request, toolCallId: event.correlationID, on: session)
+                request, toolCallId: event.correlationID, tool: event.tool, on: session)
             span.attributes[ACPAgentTelemetry.AttributeKey.elicitationOutcome] = outcome.action.rawValue
             if let reason = outcome.reason {
                 span.attributes[ACPAgentTelemetry.AttributeKey.elicitationEndReason] = reason
@@ -210,12 +210,14 @@ actor ElicitationRelay {
     /// - Parameters:
     ///   - request: The request the tool posted.
     ///   - toolCallId: The run's completion token.
+    ///   - tool: The tool of the run that posted the question.
     ///   - session: The Router session the answer goes back to.
     /// - Returns: How the elicitation ended: the answer that went to Router,
     ///   or the response of the end that Router sent.
     private func relayRequest(
         _ request: ElicitationRequest,
         toolCallId: String,
+        tool: String,
         on session: any RoutedSession
     ) async -> ElicitationResponse {
         let elicitationId = request.elicitationId.ulidString
@@ -227,7 +229,7 @@ actor ElicitationRelay {
         }
         guard
             let wireRequest = Self.wireRequest(
-                for: request, sessionId: sessionId, toolCallId: toolCallId)
+                for: request, sessionId: sessionId, toolCallId: toolCallId, tool: tool)
         else {
             await decline(
                 elicitationId: elicitationId, mode: request.mode, on: session,
@@ -658,19 +660,23 @@ actor ElicitationRelay {
 
     /// Maps Extras' request to the wire request, scoped by the session and
     /// the run's tool call (the run's `completionToken` is its
-    /// `toolCallId`).
+    /// `toolCallId`). The `_meta` of the wire request tells the client who
+    /// asks (``ElicitationAskerMeta``).
     ///
     /// - Parameters:
     ///   - request: The request the tool posted.
     ///   - sessionId: The session the elicitation belongs to.
     ///   - toolCallId: The run's completion token.
+    ///   - tool: The tool of the run that posted the question. It is the
+    ///     source when the request has none.
     /// - Returns: The wire request, or `nil` when the request does not
     ///   carry its mode's payload.
     static func wireRequest(
-        for request: ElicitationRequest, sessionId: SessionId, toolCallId: String
+        for request: ElicitationRequest, sessionId: SessionId, toolCallId: String, tool: String
     ) -> CreateElicitationRequest? {
         let scope = ElicitationSessionScope(
             sessionId: sessionId, toolCallId: ToolCallId(rawValue: toolCallId))
+        let meta = ElicitationAskerMeta.meta(for: request, tool: tool)
         switch request.mode {
         case .form:
             guard let requestedSchema = request.requestedSchema,
@@ -680,7 +686,8 @@ actor ElicitationRelay {
             }
             return CreateElicitationRequest(
                 message: request.message,
-                mode: .form(ElicitationFormMode(requestedSchema: wireSchema, scope: .session(scope))))
+                mode: .form(ElicitationFormMode(requestedSchema: wireSchema, scope: .session(scope))),
+                meta: meta)
         case .url:
             guard let url = request.url else {
                 return nil
@@ -691,7 +698,8 @@ actor ElicitationRelay {
                     ElicitationUrlMode(
                         elicitationId: ElicitationId(rawValue: request.elicitationId.ulidString),
                         url: url.absoluteString,
-                        scope: .session(scope))))
+                        scope: .session(scope))),
+                meta: meta)
         }
     }
 

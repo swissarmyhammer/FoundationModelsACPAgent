@@ -33,6 +33,9 @@ struct ElicitationRelayTests {
     /// A well-formed session id for the mapping tests.
     private static let mappedSessionId = SessionId(rawValue: syntheticSessionIdValue)
 
+    /// The tool of the run that posts the requests of the mapping tests.
+    private static let askingTool = "runCode"
+
     // MARK: - Mapping builders
 
     /// A form-mode Extras request with one required string field.
@@ -69,7 +72,8 @@ struct ElicitationRelayTests {
 
         let wire = try #require(
             ElicitationRelay.wireRequest(
-                for: request, sessionId: Self.mappedSessionId, toolCallId: Self.scopedToolCallId))
+                for: request, sessionId: Self.mappedSessionId, toolCallId: Self.scopedToolCallId,
+                tool: Self.askingTool))
 
         #expect(wire.message == Self.requestMessage)
         if case .form(let form) = wire.mode {
@@ -98,7 +102,8 @@ struct ElicitationRelayTests {
 
         let wire = try #require(
             ElicitationRelay.wireRequest(
-                for: request, sessionId: Self.mappedSessionId, toolCallId: Self.scopedToolCallId))
+                for: request, sessionId: Self.mappedSessionId, toolCallId: Self.scopedToolCallId,
+                tool: Self.askingTool))
 
         #expect(wire.message == Self.requestMessage)
         if case .url(let urlMode) = wire.mode {
