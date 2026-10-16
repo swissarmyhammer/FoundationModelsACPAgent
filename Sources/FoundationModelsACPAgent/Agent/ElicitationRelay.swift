@@ -101,6 +101,16 @@ actor ElicitationRelay {
     /// them.
     private var answerTasks: [String: Task<Void, Never>] = [:]
 
+    /// The cancellation boxes of the wire requests in flight, keyed by the
+    /// elicitation id. ``end(_:)`` and ``drainOpenRoundTrips()`` set the
+    /// reason on the box before they cancel the task, so the
+    /// `$/cancel_request` of the request carries `_meta.reason`.
+    private var cancellations: [String: OutboundCancellation] = [:]
+
+    /// The reason of the `$/cancel_request` of a wire request that is still
+    /// in flight when the feed of the session ended.
+    static let feedEndedCancelReason = "the session ended"
+
     /// The ends of questions whose round trip did not wait yet, keyed by
     /// the elicitation id. The projector starts each round trip in its own
     /// task, so the end of a question can come to the relay before the
@@ -257,9 +267,10 @@ actor ElicitationRelay {
     /// the round trip ends with the response of `end`. The round trip does
     /// not respond to Router: Router already gave the run that response.
     ///
-    /// The wire request has no field for the reason, so the reason goes to
-    /// the log record and to the elicitation span. An end whose round trip
-    /// does not wait yet is kept, and that round trip sends no create.
+    /// The reason of the end goes in the `_meta.reason` of the
+    /// `$/cancel_request` (``cancelReason(of:)``), and to the log record and
+    /// the elicitation span. An end whose round trip does not wait yet is
+    /// kept, and that round trip sends no create.
     ///
     /// The end of an accepted URL-mode flow that waits for its completion
     /// sends `elicitation/complete`, so the client leaves its waiting state.
@@ -281,7 +292,7 @@ actor ElicitationRelay {
                 metadata: endMetadata(end))
             return
         }
-        answerTasks.removeValue(forKey: elicitationId)?.cancel()
+        cancelWireRequest(elicitationId, reason: Self.cancelReason(of: end))
         ACPAgentTelemetry.logger(.elicitationRelay).notice(
             "Router ended a question with no answer of the client. The relay ended the client request.",
             metadata: endMetadata(end))
@@ -306,10 +317,9 @@ actor ElicitationRelay {
     /// releases its id and writes a warning, and sends no
     /// `elicitation/complete`.
     func drainOpenRoundTrips() {
-        for task in answerTasks.values {
-            task.cancel()
+        for elicitationId in Array(answerTasks.keys) {
+            cancelWireRequest(elicitationId, reason: Self.feedEndedCancelReason)
         }
-        answerTasks = [:]
         for elicitationId in awaitingCompletion {
             ACPAgentTelemetry.logger(.elicitationRelay).warning(
                 "An accepted URL flow had no end at the end of the feed. The relay releases it.",
@@ -403,13 +413,15 @@ actor ElicitationRelay {
                 return
             }
             pendingAnswers[elicitationId] = continuation
+            let cancellation = OutboundCancellation()
+            cancellations[elicitationId] = cancellation
             answerTasks[elicitationId] = Task {
                 let raw: CreateElicitationResponse?
                 do {
                     guard let connection = self.connection else {
                         throw CancellationError()
                     }
-                    raw = try await connection.createElicitation(wireRequest)
+                    raw = try await connection.createElicitation(wireRequest, cancellation: cancellation)
                 } catch {
                     ACPAgentTelemetry.logger(.elicitationRelay).warning(
                         "The elicitation/create request failed. The relay delivers cancel.",
@@ -430,6 +442,7 @@ actor ElicitationRelay {
     ///   - elicitationId: The pending elicitation's id.
     private func deliver(_ answer: ElicitationResponse, toPending elicitationId: String) {
         answerTasks.removeValue(forKey: elicitationId)
+        cancellations.removeValue(forKey: elicitationId)
         guard let continuation = pendingAnswers.removeValue(forKey: elicitationId) else {
             ACPAgentTelemetry.logger(.elicitationRelay).debug(
                 "An answer arrived after its wait ended. The relay dropped the answer.",
@@ -437,6 +450,29 @@ actor ElicitationRelay {
             return
         }
         continuation.resume(returning: .answered(answer))
+    }
+
+    /// Stops the wire request of `elicitationId`: sets `reason` on its
+    /// cancellation box, and then cancels its task, so the connection sends
+    /// `$/cancel_request` with `_meta.reason`. The box holds the reason
+    /// before the cancel, as the contract of `OutboundCancellation` requires.
+    ///
+    /// - Parameters:
+    ///   - elicitationId: The pending elicitation's id.
+    ///   - reason: Why the relay stops the request.
+    private func cancelWireRequest(_ elicitationId: String, reason: String) {
+        cancellations.removeValue(forKey: elicitationId)?.setMeta(
+            .object([CancelRequestNotification.reasonMetaKey: .string(reason)]))
+        answerTasks.removeValue(forKey: elicitationId)?.cancel()
+    }
+
+    /// The reason of the `$/cancel_request` for a question that Router
+    /// ended: the reason of the response of the end, or else its action.
+    ///
+    /// - Parameter end: The end that Router sent.
+    /// - Returns: The reason.
+    static func cancelReason(of end: ElicitationEnd) -> String {
+        end.response.reason ?? end.response.action.rawValue
     }
 
     // MARK: - The end of a URL flow
