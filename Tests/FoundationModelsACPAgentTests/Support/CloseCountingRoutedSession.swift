@@ -238,6 +238,13 @@ actor CloseCountingRoutedSession: RoutedSession {
         await wrapped.complete(elicitationId: elicitationId)
     }
 
+    /// Sends the call to the real session.
+    ///
+    /// - Returns: The ids of the open elicitations of the real session.
+    func openElicitationIds() async -> [String] {
+        await wrapped.openElicitationIds()
+    }
+
     // MARK: The synchronous calls, which the code under test does not use
 
     /// Stops the test: this double cannot send a synchronous call to the

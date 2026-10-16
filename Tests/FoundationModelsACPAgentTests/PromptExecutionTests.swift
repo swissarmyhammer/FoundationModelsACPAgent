@@ -1157,6 +1157,14 @@ import Testing
     /// The snippet of the elicitation proof: one question to the person.
     private static let elicitingSnippet = #"return await elicit("Which colour do you want?");"#
 
+    /// The content of the accept: `elicit("question")` asks for one string
+    /// field, `answer`.
+    private static let acceptedContent: FoundationModelsACP.JSONValue = .object(["answer": .string("blue")])
+
+    /// The text that a run result holds, with no white space, when the run
+    /// got the `accept` action.
+    private static let acceptedActionText = #""action":"accept""#
+
     /// The name of the named pipe that the shell command of the tool-body
     /// proof reads. Nothing writes the pipe, thus the read waits until the
     /// session close stops it.
@@ -1191,13 +1199,19 @@ import Testing
 
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
         let questionOfB = try await ElicitationWait.firstPendingElicitation(in: fixture.secondSession)
-        await MainActor.run { fixture.secondSession.acceptElicitation(questionOfB.id) }
+        await MainActor.run {
+            fixture.secondSession.acceptElicitation(questionOfB.id, content: Self.acceptedContent)
+        }
         let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
         let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSession)
         let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
         try await fixture.closeSessions()
 
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
+        #expect(
+            SkillsLibraryTests.toolCallText(in: updatesOfB)
+                .filter { !$0.isWhitespace }
+                .contains(Self.acceptedActionText))
         #expect(pendingOfA.count == 1)
         #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)

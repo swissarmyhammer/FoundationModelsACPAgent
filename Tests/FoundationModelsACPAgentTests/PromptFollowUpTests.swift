@@ -166,6 +166,29 @@ import Testing
     /// background when the settle period of the call ends.
     private static let askingSnippet = #"return await elicit("Which colour do you want?");"#
 
+    /// The content of the accept: `elicit("question")` asks for one string
+    /// field, `answer`.
+    private static let acceptedContent: FoundationModelsACP.JSONValue = .object(["answer": .string("blue")])
+
+    /// The text that a run result holds, with no white space, when the run
+    /// got the `accept` action.
+    private static let acceptedActionText = #""action":"accept""#
+
+    /// Whether a prompt that the model got holds a run result that got the
+    /// `accept` action.
+    ///
+    /// The settlement of a background run sends only its status to the
+    /// client. The result of the run goes to the model in the run message,
+    /// so the test reads the prompts of the model.
+    ///
+    /// - Parameter recorder: The recorder of the prompts of the model.
+    /// - Returns: `true` when a prompt holds the `accept` action.
+    private static func aRunGotAccept(in recorder: PromptRecorder) async -> Bool {
+        await recorder.prompts.contains { prompt in
+            prompt.filter { !$0.isWhitespace }.contains(acceptedActionText)
+        }
+    }
+
     /// Opens one session whose prompt starts a background run that asks one
     /// question, and waits until the question reaches the client and the
     /// session sent its first `idle`.
@@ -176,12 +199,15 @@ import Testing
     /// past it. Thus the run goes to the background at a fixed point, with
     /// no real timer.
     ///
-    /// - Parameter label: The directory label of the proof.
+    /// - Parameters:
+    ///   - label: The directory label of the proof.
+    ///   - recorder: Records each prompt that the model gets, or `nil` for
+    ///     no record.
     /// - Returns: The fixture, the pending question, and the updates at that
     ///   `idle`.
     /// - Throws: Whatever the construction, the wire or the waits throw.
     private static func askInTheBackground(
-        label: String
+        label: String, recorder: PromptRecorder? = nil
     ) async throws -> (fixture: ScriptedPromptFixture, question: PendingElicitation, updates: [UpdateSessionNotification]) {
         let clock = ManualRunClock()
         let fixture = try await ScriptedPromptFixture.make(
@@ -193,7 +219,8 @@ import Testing
                 .endPass,
             ],
             label: label,
-            runClock: clock)
+            runClock: clock,
+            recorder: recorder)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: askMarker))
         let question = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
@@ -227,9 +254,13 @@ import Testing
     /// the `idle` has no stop reason.
     @Test
     func backgroundWorkWithNoPromptOpenGivesRunningThenIdle() async throws {
-        let asked = try await Self.askInTheBackground(label: "PromptFollowUpTests-background-work")
+        let recorder = PromptRecorder()
+        let asked = try await Self.askInTheBackground(
+            label: "PromptFollowUpTests-background-work", recorder: recorder)
 
-        await MainActor.run { asked.fixture.session.acceptElicitation(asked.question.id) }
+        await MainActor.run {
+            asked.fixture.session.acceptElicitation(asked.question.id, content: Self.acceptedContent)
+        }
         _ = try await ScriptedPromptFixture.waitForUpdates(
             of: asked.fixture.collector, toReach: "the mail reply"
         ) { updates in
@@ -256,6 +287,7 @@ import Testing
             #expect(idle.stopReason == nil)
         }
         #expect(ScriptedPromptFixture.agentChunkTexts(in: afterFirstIdle).contains(Self.mailReply))
+        #expect(await Self.aRunGotAccept(in: recorder))
     }
 
     /// A prompt that starts no background run ends as before: the echo, the

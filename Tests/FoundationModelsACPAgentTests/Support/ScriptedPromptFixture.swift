@@ -102,6 +102,9 @@ struct ScriptedPromptFixture {
     ///   - mailOnlyAnswerLimit: The `mailOnlyAnswerLimit` of each session of
     ///     the agent, or `nil` for the Router default. A test of the pause of
     ///     the mail delivery gives `0` (task ^t03jd5h).
+    ///   - recorder: Records each prompt that the scripted model gets, or
+    ///     `nil` for no record. A test that must read what a background run
+    ///     gave the model reads the prompt of the run message here.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -116,10 +119,11 @@ struct ScriptedPromptFixture {
         tracer: (any Tracer)? = nil,
         commandProviders: [any SlashCommandProviding] = [],
         runClock: (any RunClock)? = nil,
-        mailOnlyAnswerLimit: Int? = nil
+        mailOnlyAnswerLimit: Int? = nil,
+        recorder: PromptRecorder? = nil
     ) async throws -> ScriptedPromptFixture {
         try await make(
-            loader: makeScriptedModelLoader(script: script),
+            loader: makeScriptedModelLoader(script: script, recorder: recorder),
             label: label,
             capabilities: capabilities,
             workingDirectory: workingDirectory,
