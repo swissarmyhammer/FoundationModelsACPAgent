@@ -122,6 +122,23 @@ actor ElicitationRelay {
     /// is recorded.
     private var earlyCompletions: Set<String> = []
 
+    /// A hold of a test after `session.respond` returned and before the
+    /// round trip reads the delivery, or `nil` in production (task
+    /// ^t2sen06). While a hold waits, the relay is free, so a test can bring
+    /// a completion or an end to the relay before the round trip knows of
+    /// the accept.
+    typealias RespondHold = @Sendable (_ elicitationId: String) async -> Void
+
+    /// The hold after `session.respond`, or `nil`.
+    private var respondHold: RespondHold?
+
+    /// Sets the hold after `session.respond`. Only a test sets it.
+    ///
+    /// - Parameter hold: The hold, or `nil` for none.
+    func holdAfterRespond(_ hold: RespondHold?) {
+        respondHold = hold
+    }
+
     /// Creates a relay for one session over one bound connection.
     ///
     /// - Parameters:
@@ -336,6 +353,9 @@ actor ElicitationRelay {
             return end.response
         }
         let delivery = await session.respond(elicitationId: elicitationId, response: answer)
+        if let respondHold {
+            await respondHold(elicitationId)
+        }
         switch delivery {
         case .delivered:
             break

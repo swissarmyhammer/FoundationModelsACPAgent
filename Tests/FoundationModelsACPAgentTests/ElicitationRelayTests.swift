@@ -630,6 +630,157 @@ struct ElicitationRelayTests {
         #expect(!Self.stateMarkers(in: captured.updates).contains("requires_action"))
     }
 
+    // MARK: - A URL flow that ends while the relay waits for respond
+
+    /// The two gates of a hold of the relay after `session.respond`: the
+    /// hold opens `reached` when it starts, and waits until the test opens
+    /// `release`.
+    private struct RespondHold {
+        /// Open when the relay holds after `session.respond`.
+        let reached = LateAnswerGate()
+
+        /// The test opens it to end the hold.
+        let release = LateAnswerGate()
+    }
+
+    /// Holds the relay of the fixture's session after each
+    /// `session.respond` (task ^t2sen06).
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The gates of the hold.
+    /// - Throws: When the session or its relay is missing.
+    private static func holdRelayAfterRespond(of fixture: ScriptedPromptFixture) async throws -> RespondHold {
+        let relay = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.projector.relay)
+        let hold = RespondHold()
+        await relay.holdAfterRespond { _ in
+            await hold.reached.open()
+            await hold.release.wait()
+        }
+        return hold
+    }
+
+    /// Waits until the relay wrote a log record with `message`.
+    ///
+    /// - Parameters:
+    ///   - message: The message of the record.
+    ///   - context: The telemetry capture of the test.
+    private static func waitForRecord(_ message: String, in context: TelemetryCapture.Context) async {
+        await context.wait { captured in
+            captured.logRecords.contains { $0.message.description == message }
+        }
+    }
+
+    /// Sends one marker update through the inbox of the fixture's session,
+    /// and waits until the client has it. The client reads notifications
+    /// one at a time, in arrival order. Thus when the marker is there, each
+    /// notification that the agent sent before it is there too.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Throws: When the session is missing, or the test is cancelled.
+    private static func sendMarkerAndWait(through fixture: ScriptedPromptFixture) async throws {
+        let marker = "relay-order-marker"
+        let projector = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.projector)
+        await projector.commandSink(.sessionInfoUpdate(SessionInfoUpdate(title: .value(marker))))
+        _ = try await ScriptedPromptFixture.waitForUpdates(of: fixture.collector, toReach: "the marker update") {
+            updates in
+            updates.contains { notification in
+                if case .sessionInfoUpdate(let info) = notification.update, info.title == .value(marker) {
+                    return true
+                }
+                return false
+            }
+        }
+    }
+
+    /// The record of the relay for a completion that comes before the
+    /// round trip knows of the accept.
+    private static let earlyCompletionRecord =
+        "A URL flow completed before the relay knew of the accept. The relay keeps the completion."
+
+    /// The record of the relay for an end that comes when no client request
+    /// is in flight.
+    private static let earlyEndRecord =
+        "Router ended a question that has no client request in flight. The relay keeps the end."
+
+    /// URL mode: the flow completes while the relay waits for `respond`
+    /// (task ^t2sen06). The relay keeps the completion, and sends no
+    /// `elicitation/complete` yet. When the round trip reads the accept,
+    /// the relay sends one `elicitation/complete`.
+    @Test
+    func aURLCompletionWhileTheRelayWaitsForRespondSendsOneCompletionAfterTheAccept() async throws {
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.urlSnippet, label: "ElicitationRelayTests-url-early-completion")
+            let hold = try await Self.holdRelayAfterRespond(of: fixture)
+            try await Self.prompt(fixture)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+            let elicitationId = try #require(pending.elicitationId)
+
+            await MainActor.run {
+                fixture.session.acceptElicitation(pending.id)
+            }
+            await hold.reached.wait()
+            let actor = try await Self.sessionActor(of: fixture)
+            let questionId = try #require(ULID(ulidString: elicitationId.rawValue))
+            let delivery = await actor.runPlane.complete(elicitationId: questionId)
+            await Self.waitForRecord(Self.earlyCompletionRecord, in: context)
+            let completionsInHold = try await Self.recordedCompletions(of: fixture)
+
+            await hold.release.open()
+            await Self.waitForTheEndOfTheElicitationSpan(in: context)
+            try await Self.sendMarkerAndWait(through: fixture)
+            let completions = try await Self.recordedCompletions(of: fixture)
+            let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await fixture.close()
+            return (
+                elicitationId: elicitationId, delivery: delivery, completionsInHold: completionsInHold,
+                completions: completions, updates: updates)
+        }
+
+        #expect(captured.delivery == .completed)
+        #expect(captured.completionsInHold.isEmpty)
+        #expect(captured.completions == [captured.elicitationId])
+        #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
+    }
+
+    /// URL mode: a cancel of the run ends the accepted flow while the relay
+    /// waits for `respond` (task ^t2sen06). The relay keeps the end, and
+    /// sends no `elicitation/complete` yet. When the round trip reads the
+    /// accept, the relay sends one `elicitation/complete`, so the client
+    /// leaves its waiting state.
+    @Test
+    func aRunCancelWhileTheRelayWaitsForRespondSendsOneCompletionAfterTheAccept() async throws {
+        let captured = try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await Self.makeLoopbackFixture(
+                code: Self.urlSnippet, label: "ElicitationRelayTests-url-early-end")
+            let hold = try await Self.holdRelayAfterRespond(of: fixture)
+            try await Self.prompt(fixture)
+            let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
+            let elicitationId = try #require(pending.elicitationId)
+            let runToken = try Self.runToken(ofURLQuestion: pending)
+
+            await MainActor.run {
+                fixture.session.acceptElicitation(pending.id)
+            }
+            await hold.reached.wait()
+            let actor = try await Self.sessionActor(of: fixture)
+            _ = await actor.runPlane.cancel(completionToken: runToken)
+            await Self.waitForRecord(Self.earlyEndRecord, in: context)
+            let completionsInHold = try await Self.recordedCompletions(of: fixture)
+
+            await hold.release.open()
+            await Self.waitForTheEndOfTheElicitationSpan(in: context)
+            try await Self.sendMarkerAndWait(through: fixture)
+            let completions = try await Self.recordedCompletions(of: fixture)
+            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await fixture.close()
+            return (elicitationId: elicitationId, completionsInHold: completionsInHold, completions: completions)
+        }
+
+        #expect(captured.completionsInHold.isEmpty)
+        #expect(captured.completions == [captured.elicitationId])
+    }
+
     // MARK: - Cancellation
 
     /// `session/cancel` during a pending elicitation ends the prompt with
