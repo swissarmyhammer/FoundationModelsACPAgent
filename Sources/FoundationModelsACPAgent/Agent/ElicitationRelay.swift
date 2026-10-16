@@ -114,8 +114,14 @@ actor ElicitationRelay {
     /// The ends of questions whose round trip did not wait yet, keyed by
     /// the elicitation id. The projector starts each round trip in its own
     /// task, so the end of a question can come to the relay before the
-    /// round trip. Such a round trip sends no create.
+    /// round trip. Such a round trip sends no create (rule R2). The drain
+    /// keeps these ends, because a round trip can start after the drain.
     private var earlyEnds: [String: ElicitationEnd] = [:]
+
+    /// Whether the feed of the session ended (``drainOpenRoundTrips()``).
+    /// A round trip that starts after the drain sends no create, and gives
+    /// Router `cancel` with ``feedEndedCancelReason`` (rule R2).
+    private var feedEnded = false
 
     /// The ids of the outstanding URL-mode elicitations, for the
     /// uniqueness duty. An accepted flow stays outstanding until it ended.
@@ -311,12 +317,19 @@ actor ElicitationRelay {
     /// finds no waiter and is dropped. The outstanding URL-mode ids are
     /// cleared with the other per-round-trip state.
     ///
+    /// The projector starts each round trip in its own task, so a round
+    /// trip can start after this call (rule R2). The early ends stay, so
+    /// such a round trip of an ended question sends no create. Each other
+    /// round trip that starts after this call sends no create either, and
+    /// gives Router `cancel` with ``feedEndedCancelReason``.
+    ///
     /// Router also sends `elicitationCompleted` or `elicitationEnded` for
     /// each accepted URL-mode flow before the feed ends. Thus a flow that
     /// still waits for its completion here is a defect too: the relay
     /// releases its id and writes a warning, and sends no
     /// `elicitation/complete`.
     func drainOpenRoundTrips() {
+        feedEnded = true
         for elicitationId in Array(answerTasks.keys) {
             cancelWireRequest(elicitationId, reason: Self.feedEndedCancelReason)
         }
@@ -328,7 +341,6 @@ actor ElicitationRelay {
         awaitingCompletion = []
         earlyCompletions = []
         outstandingURLElicitationIds = []
-        earlyEnds = [:]
         let waiting = pendingAnswers
         pendingAnswers = [:]
         for (elicitationId, continuation) in waiting {
@@ -388,7 +400,8 @@ actor ElicitationRelay {
     /// Sends the create and suspends until the client answers, ``end(_:)``
     /// ends the question, or ``drainOpenRoundTrips()`` resolves the wait with
     /// `cancel`. A question that Router ended before this call sends no
-    /// create.
+    /// create. A call after the drain sends no create either, and gives
+    /// `cancel` with ``feedEndedCancelReason`` (rule R2).
     ///
     /// The wire request runs on its own task, so the relay can stop it: a
     /// cancel of that task makes the connection send `$/cancel_request`.
@@ -410,6 +423,13 @@ actor ElicitationRelay {
                     "Router ended a question before its client request. The relay sends no request.",
                     metadata: endMetadata(end))
                 continuation.resume(returning: .ended(end))
+                return
+            }
+            guard !feedEnded else {
+                ACPAgentTelemetry.logger(.elicitationRelay).notice(
+                    "A question came after the end of the feed. The relay sends no request and delivers cancel.",
+                    metadata: elicitationMetadata(elicitationId))
+                continuation.resume(returning: .answered(.cancel(reason: Self.feedEndedCancelReason)))
                 return
             }
             pendingAnswers[elicitationId] = continuation
