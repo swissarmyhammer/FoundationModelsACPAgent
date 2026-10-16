@@ -44,7 +44,7 @@ import Testing
 /// their work runs in a detached task. For the same reason, the log records
 /// and the metrics that Router and Extras write in that task do not come to
 /// the capture. The content-safety tests of those packages prove them.
-@Suite struct TelemetryContentSafetyTests {
+@Suite(.closesHarnesses) struct TelemetryContentSafetyTests {
     /// The label of the scripted fixture of this suite.
     private static let fixtureLabel = "TelemetryContentSafetyTests"
 
@@ -270,7 +270,7 @@ import Testing
     private static func runCancelledPrompt(on fixture: ScriptedPromptFixture) async throws {
         let runningBefore = runningCount(in: await fixture.collector.updates)
         try await runPrompt(on: fixture, text: cancelledPromptText) {
-            _ = try await ScriptedPromptFixture.waitForUpdates(
+            _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
                 of: fixture.collector, toReach: "the cancelled prompt runs"
             ) { updates in
                 runningCount(in: updates) > runningBefore

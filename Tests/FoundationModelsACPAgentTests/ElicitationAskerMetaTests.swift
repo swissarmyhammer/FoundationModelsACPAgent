@@ -12,7 +12,7 @@ import Testing
 /// `_meta` of `elicitation/create` carries `agentPath` and `source`, each
 /// only when it is not empty. AgentViewKit shows them in the header of the
 /// question card.
-@Suite struct ElicitationAskerMetaTests {
+@Suite(.closesHarnesses) struct ElicitationAskerMetaTests {
     // MARK: - Constants
 
     /// The message of each request.

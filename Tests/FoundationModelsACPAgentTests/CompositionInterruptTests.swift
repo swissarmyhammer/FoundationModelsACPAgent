@@ -146,10 +146,15 @@ struct CompositionInterruptTests {
     /// Returns once the transfer has written its part file and stopped.
     ///
     /// - Parameter parked: The stream the loader reports the stop on.
-    private static func awaitParkedDownload(_ parked: AsyncStream<Void>) async {
+    /// - Throws: `CancellationError` when the task of the wait is cancelled
+    ///   first, and ``WaitEndedOnFailure`` when the stream ends with no stop.
+    private static func awaitParkedDownload(_ parked: AsyncStream<Void>) async throws {
         for await _ in parked {
             return
         }
+        // The end of the stream before the stop is a failure. A cancel of the task is not that failure.
+        try Task.checkCancellation()
+        throw WaitEndedOnFailure(condition: "the download stops in the transfer", event: "the stream ended")
     }
 
     // MARK: - The download (cli-plan.md §5.9)
@@ -297,7 +302,7 @@ struct CompositionInterruptTests {
     private static func armed(after parked: AsyncStream<Void>) -> InterruptHandler.Installer {
         {
             let arrival = ScriptedArrival.after(
-                { await Self.awaitParkedDownload(parked) }, giving: InterruptHandler.firstArrival)
+                { try await Self.awaitParkedDownload(parked) }, giving: InterruptHandler.firstArrival)
             return InterruptWatch(arrivals: arrival.arrivals, disarm: arrival.disarm)
         }
     }
@@ -309,6 +314,6 @@ struct CompositionInterruptTests {
     /// - Parameter parked: The stream the loader reports the stop on.
     /// - Returns: The installer of that watch.
     private static func terminated(after parked: AsyncStream<Void>) -> TerminationHandler.Installer {
-        ScriptedTerminationWatch.armed(after: { await Self.awaitParkedDownload(parked) })
+        ScriptedTerminationWatch.armed(after: { try await Self.awaitParkedDownload(parked) })
     }
 }

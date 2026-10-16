@@ -11,7 +11,7 @@ import Testing
 /// The prompt-content policy: the honest capability
 /// advertisement, the resource-link resolution through the files verb,
 /// the embedded-context fold, and the MCP content passthrough map.
-@Suite struct PromptContentTests {
+@Suite(.closesHarnesses) struct PromptContentTests {
     // MARK: - Constants
 
     /// The text of the file inside the session root.

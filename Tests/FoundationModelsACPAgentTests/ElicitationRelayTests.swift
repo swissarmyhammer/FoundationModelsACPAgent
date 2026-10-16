@@ -15,7 +15,7 @@ import Testing
 /// The elicitation relay: the wire mapping, the capability
 /// gate, and the round trip from `ToolContext.elicit` to the client and
 /// back through `RoutedSession.respond`.
-struct ElicitationRelayTests {
+@Suite(.closesHarnesses) struct ElicitationRelayTests {
     // MARK: - Constants
 
     /// The message of the mapped test requests.

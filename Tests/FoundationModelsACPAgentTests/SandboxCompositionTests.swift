@@ -15,7 +15,7 @@ import Testing
 /// preflight refuses the command before anything spawns. The empty-root-set
 /// case and the `/private` symlink case are regression tests against the
 /// two silent widenings the upstream types permit.
-@Suite struct SandboxCompositionTests {
+@Suite(.closesHarnesses) struct SandboxCompositionTests {
     /// The marker a scripted preflight failure carries, so an assertion
     /// can find the reason in the tool answer.
     private static let preflightFailureMarker = "injected preflight failure"

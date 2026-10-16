@@ -20,7 +20,7 @@ import Testing
 ///
 /// One more proof is about the stub environment that the suites compose
 /// over: a session of it starts no code context.
-struct AcpCommandTests {
+@Suite(.closesHarnesses) struct AcpCommandTests {
     // MARK: - Constants
 
     /// The prompt of the same-answer comparison. The echo model answers

@@ -13,7 +13,7 @@ import Testing
 /// does, and drives it from the client end of the harness. A value that
 /// is not `nil` must reach each session request, because each request
 /// loads the configuration again from the files.
-struct TranscriptLocationOverrideTests {
+@Suite(.closesHarnesses) struct TranscriptLocationOverrideTests {
     /// The dotfolder name of the host in this suite.
     private static let dotfolderName = "transcript-override-host"
 

@@ -13,7 +13,7 @@ import Testing
 /// relay sets the reason of the end on the cancellation box of the
 /// `elicitation/create` before it cancels the request. Thus the
 /// `$/cancel_request` frame carries `_meta.reason`.
-@Suite struct ElicitationCancelReasonTests {
+@Suite(.closesHarnesses) struct ElicitationCancelReasonTests {
     /// The marker of the prompt whose snippet asks.
     private static let askMarker = "Ask and wait"
 

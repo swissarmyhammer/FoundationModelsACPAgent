@@ -15,7 +15,7 @@ import Tracing
 /// capture binds its tracer with `withTracer`, thus the agent opens its spans
 /// through the tracer of the capture. The Router sessions get the same tracer
 /// explicitly, and the capture keeps each span that ends.
-@Suite struct RequestTracingTests {
+@Suite(.closesHarnesses) struct RequestTracingTests {
     /// The label of the scripted fixture of this suite.
     private static let fixtureLabel = "RequestTracingTests"
 

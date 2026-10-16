@@ -8,7 +8,7 @@ import Testing
 /// The retained history of a session (ACP schema-v2.0.0-alpha.7): the file
 /// that keeps it beside the transcript, the replay that `session/resume`
 /// sends from it, and the write at the end of each prompt.
-@Suite struct SessionHistoryTests {
+@Suite(.closesHarnesses) struct SessionHistoryTests {
     // MARK: - Constants
 
     /// The id of the user message in the sample history.

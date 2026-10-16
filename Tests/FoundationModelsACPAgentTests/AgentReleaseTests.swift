@@ -22,6 +22,10 @@ import Testing
 /// The agent and the Router session are actors, which have no deinit event
 /// that a test can see. The tests wait for proxies whose release follows the
 /// release of each one (`Support/ReleaseWatch.swift`), with no clock.
+///
+/// This suite has no `.closesHarnesses` trait: the registry of the trait
+/// keeps each harness until its close, and the tests wait for the release
+/// of the agent.
 @Suite struct AgentReleaseTests {
     /// The text of the prompt.
     private static let promptText = "Say hello."

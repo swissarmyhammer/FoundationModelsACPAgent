@@ -22,7 +22,7 @@ import Testing
 /// `<cwd>/.skills/`, which is the layer a real project uses. Nothing here
 /// measures whether a model CHOOSES to load a skill; that question needs a
 /// live model.
-@Suite struct SkillsLibraryTests {
+@Suite(.closesHarnesses) struct SkillsLibraryTests {
     // MARK: - The library
 
     /// The id of the visible fixture skill whose body names the code context

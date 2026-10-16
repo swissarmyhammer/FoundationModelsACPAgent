@@ -99,11 +99,16 @@ struct QueuedScriptedFixture {
     /// The watch reads the event stream of the session, so it uses no clock
     /// and no poll.
     ///
+    /// The end of the event stream before a queued submission is the failure
+    /// event of the watch (test rule T1): the session closed, so no queued
+    /// submission can come. Then the task throws.
+    ///
     /// - Parameter sessionId: The session to watch.
     /// - Returns: The task of the watch. It ends at the first queued
-    ///   submission, or when the session closes.
+    ///   submission. It throws ``WaitEndedOnFailure`` when the event stream
+    ///   ends first, and `CancellationError` when a cancel ends it first.
     /// - Throws: When the agent has no session `sessionId`.
-    func watchForQueuedSubmission(of sessionId: SessionId) async throws -> Task<Void, Never> {
+    func watchForQueuedSubmission(of sessionId: SessionId) async throws -> Task<Void, any Error> {
         let session = try #require(await base.harness.agent.sessions[sessionId]?.session)
         let outputs = await session.streamSessionEvents()
         return Task {
@@ -112,6 +117,9 @@ struct QueuedScriptedFixture {
                     return
                 }
             }
+            try Task.checkCancellation()
+            throw WaitEndedOnFailure(
+                condition: "a queued submission of \(sessionId.rawValue)", event: "the stream ended")
         }
     }
 
@@ -120,15 +128,21 @@ struct QueuedScriptedFixture {
     /// watch stays after the wait.
     ///
     /// - Parameter watches: The watches of ``watchForQueuedSubmission(of:)``.
-    static func waitForFirst(of watches: [Task<Void, Never>]) async {
-        await withTaskGroup(of: Void.self) { group in
+    /// - Throws: The error of the first watch that ended, when it ended on
+    ///   its failure event.
+    static func waitForFirst(of watches: [Task<Void, any Error>]) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
             for watch in watches {
-                group.addTask { await watch.value }
+                group.addTask { try await watch.value }
             }
-            await group.next()
-            for watch in watches {
-                watch.cancel()
+            defer {
+                for watch in watches {
+                    watch.cancel()
+                }
             }
+            // Only the first watch that ended counts. The cancel of the other
+            // watches ends them, and the group drops their errors.
+            try await group.next()
         }
     }
 

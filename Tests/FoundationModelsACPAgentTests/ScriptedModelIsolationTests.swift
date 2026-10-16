@@ -14,7 +14,7 @@ import Testing
 /// the first script loaded would answer every later agent, and each later
 /// agent would report a prompt it did not script. Each agent therefore makes
 /// its own pool, and this suite proves it.
-@Suite struct ScriptedModelIsolationTests {
+@Suite(.closesHarnesses) struct ScriptedModelIsolationTests {
     /// The directory label of this suite, so a leftover directory says
     /// where it came from.
     private static let label = "ScriptedModelIsolationTests"

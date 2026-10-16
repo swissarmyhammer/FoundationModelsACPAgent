@@ -18,7 +18,7 @@ import Testing
 /// ``ResumeStubBackend`` and resumes over the same wire the client
 /// drives, so the proofs read behavior — the recorded events, the raw
 /// notification sequence, and what the restored backend received.
-struct SessionResumeTests {
+@Suite(.closesHarnesses) struct SessionResumeTests {
     // MARK: - Readers
     //
     // The readers of the replayed messages are in

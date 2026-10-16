@@ -12,7 +12,7 @@ import Testing
 /// `available_commands_update` publication. A leading `/name` goes
 /// through the registry before anything touches the session, so a slash
 /// command never reaches the model as a prompt.
-struct CommandDispatchTests {
+@Suite(.closesHarnesses) struct CommandDispatchTests {
     /// One wired dispatch fixture: an echo-model agent with stub
     /// command providers, a recording harness, an initialized wire, and
     /// one new session in `cwd`.
@@ -117,7 +117,6 @@ struct CommandDispatchTests {
             providers: [
                 StubCommandProvider(commandSet: [makeRenderedCommand(name: "deploy", prefix: "D ")])
             ])
-        defer { Task { await fixture.close() } }
 
         do {
             _ = try await fixture.harness.agent.prompt(
@@ -137,6 +136,7 @@ struct CommandDispatchTests {
         // No model pass ran: no state update, no echo, no message.
         #expect(!Self.holdsAPromptUpdate(in: await fixture.collector.updates))
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
+        await fixture.close()
     }
 
     // MARK: - The .rendered body
@@ -153,11 +153,11 @@ struct CommandDispatchTests {
                     makeRenderedCommand(name: "render", prefix: "RENDERED ")
                 ])
             ])
-        defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/render alpha"))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
         let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains { $0.contains("RENDERED alpha") })
     }
@@ -174,12 +174,12 @@ struct CommandDispatchTests {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-skill",
             skillFiles: ["greet": greetSkillMarkdown])
-        defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(
                 sessionId: fixture.sessionId, text: "/greet alpha beta"))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
         let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains { $0.contains("Hello beta.") })
     }
@@ -197,7 +197,6 @@ struct CommandDispatchTests {
                     makeActionCommand(name: "act", output: "ACTION OUTPUT")
                 ])
             ])
-        defer { Task { await fixture.close() } }
 
         let blocks: [ContentBlock] = [
             .text(TextContent(text: "/act")),
@@ -218,6 +217,7 @@ struct CommandDispatchTests {
 
         #expect(!Self.holdsAPromptUpdate(in: await fixture.collector.updates))
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .idle)
+        await fixture.close()
     }
 
     /// An `.action` command streams its text with no model pass, and
@@ -231,11 +231,11 @@ struct CommandDispatchTests {
                     makeActionCommand(name: "act", output: "ACTION OUTPUT")
                 ])
             ])
-        defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
 
         let texts = ScriptedPromptFixture.agentChunkTexts(in: updates)
         #expect(texts.contains("ACTION OUTPUT"))
@@ -257,11 +257,11 @@ struct CommandDispatchTests {
                     makeActionCommand(name: "act", output: "ACTION OUTPUT")
                 ])
             ])
-        defer { Task { await fixture.close() } }
 
         let response = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/act"))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
 
         let echoIds = updates.compactMap { userMessageEcho(of: $0.update)?.messageId }
         #expect(echoIds == [response.messageId])
@@ -277,7 +277,6 @@ struct CommandDispatchTests {
         let fixture = try await Fixture.make(
             label: "CommandDispatchTests-publish",
             skillFiles: ["greet": greetSkillMarkdown])
-        defer { Task { await fixture.close() } }
 
         #expect(fixture.announcedCommandNames.contains("greet"))
 
@@ -297,6 +296,7 @@ struct CommandDispatchTests {
         ) { updates in
             updates.contains { Self.commandNames(in: $0)?.contains("farewell") == true }
         }
+        await fixture.close()
         // The first publication is the new list: none repeated the list of
         // the response.
         let publications = updates.compactMap(Self.commandNames(in:))

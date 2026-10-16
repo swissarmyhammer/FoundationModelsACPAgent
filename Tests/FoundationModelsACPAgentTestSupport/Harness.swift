@@ -127,6 +127,21 @@ public struct AgentClientHarness: Sendable {
     /// ends it after both connections are down.
     public let wire: HarnessWire
 
+    /// The close state that the copies of this harness share, so
+    /// ``close()`` runs one time (test rule T1, ``ClosesHarnessesTrait``).
+    public let lifetime = HarnessLifetime()
+
+    /// Gives `harness` to the ``HarnessRegistry`` of the test that runs
+    /// now, so the ``ClosesHarnessesTrait`` closes it also when the test
+    /// throws.
+    ///
+    /// - Parameter harness: The harness that a factory made.
+    /// - Returns: `harness`.
+    private static func registered(_ harness: AgentClientHarness) -> AgentClientHarness {
+        HarnessRegistry.current?.add(harness)
+        return harness
+    }
+
     /// Makes an agent for ``dotfolderName`` through the shared
     /// `makeStubAgent` factory, so the construction-time profile
     /// resolution downloads nothing.
@@ -184,16 +199,17 @@ public struct AgentClientHarness: Sendable {
         let parts = await makeParts(
             agent: try await makeAgent(), agentEnd: wire.agentEnd)
         let connection = await parts.client.connect(over: wire.clientEnd)
-        return AgentClientHarness(
-            agent: parts.agent,
-            client: parts.client,
-            connection: connection,
-            agentConnection: parts.agentConnection,
-            collector: nil,
-            elicitations: nil,
-            wireTap: nil,
-            agentWireTap: nil,
-            wire: wire)
+        return registered(
+            AgentClientHarness(
+                agent: parts.agent,
+                client: parts.client,
+                connection: connection,
+                agentConnection: parts.agentConnection,
+                collector: nil,
+                elicitations: nil,
+                wireTap: nil,
+                agentWireTap: nil,
+                wire: wire))
     }
 
     /// Wires a fresh agent and client with a ``RecordingClient`` in
@@ -248,16 +264,17 @@ public struct AgentClientHarness: Sendable {
         let connection = await parts.client.connect(over: clientEnd) { router in
             RecordingClient(forwardingTo: router, collector: collector, elicitations: elicitations)
         }
-        return AgentClientHarness(
-            agent: parts.agent,
-            client: parts.client,
-            connection: connection,
-            agentConnection: parts.agentConnection,
-            collector: collector,
-            elicitations: elicitations,
-            wireTap: wireTap,
-            agentWireTap: agentWireTap,
-            wire: wire)
+        return registered(
+            AgentClientHarness(
+                agent: parts.agent,
+                client: parts.client,
+                connection: connection,
+                agentConnection: parts.agentConnection,
+                collector: collector,
+                elicitations: elicitations,
+                wireTap: wireTap,
+                agentWireTap: agentWireTap,
+                wire: wire))
     }
 
     /// Flushes the coalescing buffer of each open session model, so a
@@ -276,7 +293,14 @@ public struct AgentClientHarness: Sendable {
     /// Then it waits until the agent closed each session that is still
     /// open. Thus that teardown ends inside the test that
     /// made the sessions, and does not run beside a later test.
+    ///
+    /// The first call closes. Each later call, on this harness or on a
+    /// copy of it, does nothing (test rule T1).
     public func close() async {
+        guard lifetime.markClosed() else {
+            return
+        }
+        HarnessRegistry.current?.remove(lifetime)
         await connection.close()
         await agentConnection.close()
         wireTap?.stop()

@@ -88,7 +88,13 @@ import Testing
         let wait = Task {
             try await recorder.updates(until: condition, isComplete)
         }
-        await recorder.waitUntilKept(atLeast: 1)
+        do {
+            try await recorder.waitUntilKept(atLeast: 1)
+        } catch {
+            // The wait for the kept wait ended first, so stop the kept wait.
+            wait.cancel()
+            throw error
+        }
         return wait
     }
 }

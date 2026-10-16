@@ -13,7 +13,7 @@ import Testing
 /// each logger that the agent makes writes to the capture of the case. The
 /// capture does not keep the logger label, thus the label case reads the label
 /// of the logger that the agent makes.
-@Suite struct SessionSurfaceLoggingTests {
+@Suite(.closesHarnesses) struct SessionSurfaceLoggingTests {
     /// A session id that no `session/new` gave.
     private static let unknownSessionIdValue = "session-surface-logging-unknown"
 

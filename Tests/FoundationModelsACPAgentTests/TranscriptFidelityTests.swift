@@ -27,7 +27,7 @@ import Testing
 ///
 /// The model is the scripted backend, so the suite loads no weights and
 /// touches no network.
-struct TranscriptFidelityTests {
+@Suite(.closesHarnesses) struct TranscriptFidelityTests {
     /// The text the scripted model streams before it calls its tool. A
     /// pass with text gives the `response` entry a non-empty segment.
     private static let replyText = "the snippet ran"

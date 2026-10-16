@@ -14,7 +14,7 @@ import Testing
 /// `initialize` and from the bound connection, and gives it to Router. In a
 /// headless session, a question ends at once with cancel, so it never waits
 /// for a user who is not there.
-struct UserPresenceTests {
+@Suite(.closesHarnesses) struct UserPresenceTests {
     /// The presence of the Router session of the fixture's one session.
     ///
     /// - Parameter fixture: The wired fixture.

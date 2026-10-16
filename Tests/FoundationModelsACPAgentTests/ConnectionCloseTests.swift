@@ -22,6 +22,10 @@ import Testing
 ///
 /// No case here sends `session/close`. Each case drops the client end of the
 /// wire, so the agent end reads the end of its input.
+///
+/// This suite has no `.closesHarnesses` trait: the registry of the trait
+/// keeps each harness until its close, and the tests wait for the release
+/// of the agent with no close.
 @Suite struct ConnectionCloseTests {
     /// The directory label of the fixture of the mounted session.
     private static let fixtureLabel = "ConnectionCloseTests-mounted"

@@ -52,8 +52,8 @@ public final class WatchedValue<Value: Sendable>: Sendable {
         var nextToken = 0
 
         /// The tests that wait until a count of waits is kept, with that
-        /// count.
-        var keptWatchers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+        /// count. The key of a watcher is its token.
+        var keptWatchers: [Int: (count: Int, continuation: CheckedContinuation<Void, any Error>)] = [:]
     }
 
     /// The state, under a lock because a change, a wait and a cancellation
@@ -84,17 +84,37 @@ public final class WatchedValue<Value: Sendable>: Sendable {
     /// condition, found it false, and is suspended. Each kept wait checks
     /// the count again, so this wait uses no clock and no poll.
     ///
+    /// A cancel of the task of this wait ends the wait. The cancel removes
+    /// the watcher under the lock, so one resume only comes.
+    ///
     /// - Parameter count: The number of kept waits to wait for.
-    public func waitUntilKept(atLeast count: Int) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let reached = state.withLock { state -> Bool in
-                guard state.waits.count < count else { return true }
-                state.keptWatchers.append((count, continuation))
-                return false
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+    ///   cancelled before the count is kept.
+    public func waitUntilKept(atLeast count: Int) async throws {
+        let condition = "\(count) kept wait(s)"
+        let token = state.withLock { state in
+            defer { state.nextToken += 1 }
+            return state.nextToken
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let outcome = state.withLock { state -> Result<Void, any Error>? in
+                    if state.waits.count >= count {
+                        return .success(())
+                    }
+                    if Task.isCancelled {
+                        return .failure(ConditionWaitCancelled(condition: condition))
+                    }
+                    state.keptWatchers[token] = (count, continuation)
+                    return nil
+                }
+                if let outcome {
+                    continuation.resume(with: outcome)
+                }
             }
-            if reached {
-                continuation.resume()
-            }
+        } onCancel: {
+            let watcher = state.withLock { $0.keptWatchers.removeValue(forKey: token) }
+            watcher?.continuation.resume(throwing: ConditionWaitCancelled(condition: condition))
         }
     }
 
@@ -166,11 +186,10 @@ public final class WatchedValue<Value: Sendable>: Sendable {
             wait.continuation.resume(with: outcome)
             return
         }
-        let reached = state.withLock { state -> [CheckedContinuation<Void, Never>] in
+        let reached = state.withLock { state -> [CheckedContinuation<Void, any Error>] in
             let kept = state.waits.count
-            let reached = state.keptWatchers.filter { $0.count <= kept }.map(\.continuation)
-            state.keptWatchers.removeAll { $0.count <= kept }
-            return reached
+            let reachedTokens = state.keptWatchers.filter { $0.value.count <= kept }.map(\.key)
+            return reachedTokens.compactMap { state.keptWatchers.removeValue(forKey: $0)?.continuation }
         }
         for watcher in reached {
             watcher.resume()

@@ -15,7 +15,7 @@ import Testing
 /// the agent makes goes to the `TestMetrics` factory of the capture. The case
 /// reads each value by the metric name and its dimensions. The Router sessions
 /// get the tracer of the capture explicitly, as ``AgentSpanTests`` does.
-@Suite struct AgentMetricsTests {
+@Suite(.closesHarnesses) struct AgentMetricsTests {
     /// The label of the scripted fixtures of this suite.
     private static let fixtureLabel = "AgentMetricsTests"
 

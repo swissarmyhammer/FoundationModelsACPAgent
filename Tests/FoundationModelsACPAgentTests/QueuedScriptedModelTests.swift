@@ -7,7 +7,7 @@ import Testing
 /// The queued scripted model of the test support: its passes go through the
 /// Router generation queue of one pool entry, its hold step ends on
 /// `release()` and on cancel, and its pass counter shows what ran.
-@Suite struct QueuedScriptedModelTests {
+@Suite(.closesHarnesses) struct QueuedScriptedModelTests {
     /// The directory label of this suite.
     private static let label = "QueuedScriptedModelTests"
 
@@ -55,7 +55,7 @@ import Testing
         // Both prompts reach the model: one pass runs and holds, and the
         // submission of the other session waits for a queue place.
         try await counter.wait(for: "one pass is held") { $0.running == 1 }
-        await QueuedScriptedFixture.waitForFirst(of: queuedWatches)
+        try await QueuedScriptedFixture.waitForFirst(of: queuedWatches)
 
         hold.release()
         try await fixture.waitForIdleOfBothSessions()
@@ -103,7 +103,7 @@ import Testing
         let queued = try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId)
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
         // The prompt of session B waits for a queue place.
-        await queued.value
+        try await queued.value
         let startedWhileHeld = counter.startedCount
 
         hold.release()

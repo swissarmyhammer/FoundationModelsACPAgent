@@ -42,7 +42,7 @@ final class PathRecordingTool: Tool, Sendable {
 /// The shared in-process harness: construction, the `initialize`
 /// round trip from the client end, the session of the stub agent, the
 /// coalescing flush, the scripted backend, and the assertion helpers.
-@Suite struct HarnessSmokeTests {
+@Suite(.closesHarnesses) struct HarnessSmokeTests {
     /// The deltas the scripted pass streams, in order.
     static let scriptedDeltas = ["Let me look. ", "Reading the file now."]
 
@@ -140,8 +140,15 @@ final class PathRecordingTool: Tool, Sendable {
                 sessionId: session.sessionId,
                 update: .agentMessageChunk(
                     ContentChunk(content: .text(TextContent(text: chunkText)), messageId: messageId))))
+        var chunkArrived = false
         for await case .agentMessageChunk in arrivals {
+            chunkArrived = true
             break
+        }
+        // The end of the tap stream before the chunk is a failure. A cancel of the test is not that failure.
+        guard chunkArrived else {
+            try Task.checkCancellation()
+            throw WaitEndedOnFailure(condition: "the chunk reaches the session model", event: "the stream ended")
         }
 
         let textBeforeFlush = await MainActor.run {

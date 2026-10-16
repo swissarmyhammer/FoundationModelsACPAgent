@@ -8,7 +8,7 @@ import Testing
 /// The `initialize` handshake of `RoutedACPAgent`:
 /// version negotiation, the advertised capabilities, the order rule, and
 /// the refused authentication methods.
-@Suite struct InitializationTests {
+@Suite(.closesHarnesses) struct InitializationTests {
     /// The protocol version a client older than v2 sends.
     static let protocolVersion1 = ProtocolVersion(rawValue: 1)
 

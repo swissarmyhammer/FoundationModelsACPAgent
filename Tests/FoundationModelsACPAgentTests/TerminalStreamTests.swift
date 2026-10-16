@@ -98,7 +98,7 @@ private final class SnapshotSequence: Sendable {
 /// `TerminalUpdate.output` replacement built from `snapshot(for:)`, and
 /// the completion marker reports the exit through
 /// `TerminalUpdate.exitStatus`.
-@Suite struct TerminalStreamTests {
+@Suite(.closesHarnesses) struct TerminalStreamTests {
     // MARK: - Constants
 
     /// The completion token of the scripted run. It is the run's

@@ -15,7 +15,7 @@ import Testing
 /// work that does not check for cancellation runs to completion. The
 /// prompt owner handles both endings. Each update goes before the
 /// `idle(cancelled)` update, and no update goes after it.
-@Suite struct CancellationTests {
+@Suite(.closesHarnesses) struct CancellationTests {
     // MARK: - Constants
 
     /// The prompt text of the wire tests.
@@ -155,7 +155,7 @@ import Testing
         let queued = try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId)
         try await fixture.prompt(fixture.secondSessionId, text: promptText)
         // The prompt of session B waits for a queue place.
-        await queued.value
+        try await queued.value
         return fixture
     }
 
@@ -279,7 +279,9 @@ import Testing
         let counter = fixture.passCounter
 
         try await fixture.prompt(sessionB, text: Self.startRunMarker)
-        _ = try await fixture.base.collector.wait(for: "the runCode call of session B gave its pending answer") { updates in
+        _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
+            of: fixture.base.collector, toReach: "the runCode call of session B gave its pending answer"
+        ) { updates in
             updates.contains { notification in
                 guard notification.sessionId == sessionB,
                     case .toolCallUpdate(let update) = notification.update
@@ -295,7 +297,7 @@ import Testing
         try await NamedPipe.write(
             Self.releaseText, toPipeAt: directory.appendingPathComponent(Self.releasePipeName))
         // The mail-started answer of session B waits for a queue place.
-        await queued.value
+        try await queued.value
 
         _ = try await fixture.base.harness.connection.closeSession(
             CloseSessionRequest(sessionId: sessionB))

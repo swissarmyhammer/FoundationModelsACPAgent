@@ -23,7 +23,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 /// Each test writes local agent folders `agents/<name>/AGENT.md` in the
 /// project layer of a temporary working directory. No test reads a
 /// marketplace agent.
-@Suite struct AgentsToolTests {
+@Suite(.closesHarnesses) struct AgentsToolTests {
     // MARK: - Constants
 
     /// The name of the `agents` tool.

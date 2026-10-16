@@ -203,7 +203,10 @@ import Testing
         }
 
         try await reporter.report(on: progress) {
-            for await _ in readStarts { break }
+            for await _ in readStarts { return }
+            // The end of the stream before a read starts is a failure. A cancel of the task is not that failure.
+            try Task.checkCancellation()
+            throw WaitEndedOnFailure(condition: "a read of the progress starts", event: "the stream ended")
         }
         steps.update { $0.append(.returned) }
         // A reporter that did not wait for its poll gets its read back only

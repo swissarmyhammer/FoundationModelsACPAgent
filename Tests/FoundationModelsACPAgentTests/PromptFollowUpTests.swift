@@ -18,7 +18,7 @@ import Testing
 /// session (elicitation-plan task 2). A run that waits only for the user is
 /// no work, so a question of a background run does not keep the session
 /// `running`.
-@Suite struct PromptFollowUpTests {
+@Suite(.closesHarnesses) struct PromptFollowUpTests {
     // MARK: - Constants
 
     /// The marker of the prompt that starts the background run.
@@ -92,7 +92,7 @@ import Testing
             script: try makeScript(), label: label, workingDirectory: directory)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: startRunMarker))
-        _ = try await ScriptedPromptFixture.waitForUpdates(
+        _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
             of: fixture.collector, toReach: "the completed runCode call"
         ) { updates in
             updates.contains { notification in
@@ -261,7 +261,7 @@ import Testing
         await MainActor.run {
             asked.fixture.session.acceptElicitation(asked.question.id, content: Self.acceptedContent)
         }
-        _ = try await ScriptedPromptFixture.waitForUpdates(
+        _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
             of: asked.fixture.collector, toReach: "the mail reply"
         ) { updates in
             ScriptedPromptFixture.agentChunkTexts(in: updates).contains(Self.mailReply)

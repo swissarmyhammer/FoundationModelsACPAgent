@@ -312,6 +312,41 @@ struct ScriptedPromptFixture {
         try await collector.wait(for: label, until: condition)
     }
 
+    /// Waits until `condition` accepts the collected sequence, for an update
+    /// that comes before the run settles, then returns that sequence.
+    ///
+    /// The wait also ends on the failure event of test rule T1: the run
+    /// settled. The wait counts the idle state updates at its start. A new
+    /// idle state update is the settle of the run. When the run settled
+    /// and `condition` does not accept the sequence, the wait throws.
+    ///
+    /// Use this wait only for an update that the run sends before its idle
+    /// state update. Some updates come after the idle, for example a config
+    /// option update or the retained history. For those, use
+    /// ``waitForUpdates(of:toReach:_:)``.
+    ///
+    /// - Parameters:
+    ///   - collector: The collector to watch.
+    ///   - label: What the wait is for, named in the error of the wait.
+    ///   - condition: The acceptance test over the collected sequence.
+    /// - Returns: The first accepted sequence.
+    /// - Throws: ``WaitEndedOnFailure`` when the run settled first, and
+    ///   ``ConditionWaitCancelled`` when the test is cancelled first.
+    static func waitForUpdatesBeforeSettle(
+        of collector: UpdateCollector,
+        toReach label: String,
+        _ condition: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
+    ) async throws -> [UpdateSessionNotification] {
+        let baseline = idleCount(in: await collector.updates)
+        let updates = try await collector.wait(for: label) { updates in
+            condition(updates) || idleCount(in: updates) > baseline
+        }
+        guard condition(updates) else {
+            throw WaitEndedOnFailure(condition: label, event: "the run settled")
+        }
+        return updates
+    }
+
     /// Waits until the collector holds `count` idle state updates.
     ///
     /// - Parameters:
@@ -330,11 +365,14 @@ struct ScriptedPromptFixture {
 
     /// Waits for the running state update that starts a prompt.
     ///
+    /// The running update always comes before the idle update of its run,
+    /// so the wait also ends when the run settles (test rule T1).
+    ///
     /// - Parameter collector: The collector to watch.
-    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-    ///   first.
+    /// - Throws: ``WaitEndedOnFailure`` when the run settled first, and
+    ///   ``ConditionWaitCancelled`` when the test is cancelled first.
     static func waitForRunning(_ collector: UpdateCollector) async throws {
-        _ = try await waitForUpdates(of: collector, toReach: "a running update") { updates in
+        _ = try await waitForUpdatesBeforeSettle(of: collector, toReach: "a running update") { updates in
             updates.contains { notification in
                 if case .stateUpdate(.running) = notification.update { return true }
                 return false
@@ -370,13 +408,29 @@ struct ScriptedPromptFixture {
     /// ``session`` waits here first. Each change of the model ends one
     /// observation, so the wait uses no clock and no poll.
     ///
-    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-    ///   first.
+    /// The wait also ends when the session closes (test rule T1). When the
+    /// session closed and the model does not show the idle state, the wait
+    /// throws.
+    ///
+    /// - Throws: ``WaitEndedOnFailure`` when the session closed first, and
+    ///   ``ConditionWaitCancelled`` when the test is cancelled first.
     func waitForSessionModelIdle() async throws {
-        try await ObservedValue.wait(for: "the session model applied the idle state update") { [session] in
-            guard case .idle = session.agentState else { return false }
-            return true
+        let condition = "the session model applied the idle state update"
+        try await ObservedValue.wait(for: condition) { [session] in
+            Self.isIdle(session.agentState) || session.isClosed
         }
+        if await !Self.isIdle(session.agentState) {
+            throw WaitEndedOnFailure(condition: condition, event: "the session closed")
+        }
+    }
+
+    /// Whether `state` is the idle state.
+    ///
+    /// - Parameter state: The state of the agent that a session model shows.
+    /// - Returns: `true` for the idle state.
+    private static func isIdle(_ state: StateUpdate?) -> Bool {
+        guard case .idle = state else { return false }
+        return true
     }
 
     // MARK: - Readers

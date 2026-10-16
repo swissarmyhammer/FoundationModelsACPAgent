@@ -9,7 +9,7 @@ import Testing
 /// The `_mcp_server_status` session update (task ^cbqsngc): the encode of
 /// one MCP server outcome, and the report that the agent sends after the
 /// response of `session/new` and of `session/resume`.
-@Suite struct MCPServerStatusReportTests {
+@Suite(.closesHarnesses) struct MCPServerStatusReportTests {
     // MARK: - The encode of one outcome
 
     /// The session id of the JSON examples of the task.

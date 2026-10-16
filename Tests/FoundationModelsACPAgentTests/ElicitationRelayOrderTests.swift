@@ -19,7 +19,7 @@ import Testing
 /// `relay(_:on:)`: it returns, or its question reaches the client. A test
 /// that sees the question at the client cancels it there, so the round trip
 /// of the old code ends too.
-@Suite struct ElicitationRelayOrderTests {
+@Suite(.closesHarnesses) struct ElicitationRelayOrderTests {
     /// The name of the tool that posts the questions of the tests.
     private static let askingTool = "elicitor"
 
@@ -64,7 +64,7 @@ import Testing
         let fixture = try await ScriptedPromptFixture.make(script: [], label: label)
         do {
             let entry = await fixture.harness.agent.sessions[fixture.sessionId]
-            guard let relay = await entry?.projector.relay, let session = entry?.session else {
+            guard let relay = entry?.projector.relay, let session = entry?.session else {
                 throw MissingRelay()
             }
             let result = try await body(

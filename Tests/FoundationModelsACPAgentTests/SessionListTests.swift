@@ -10,7 +10,7 @@ import Testing
 /// end of the harness: the `SessionInfo` join, the `cwd` filter, the
 /// opaque cursor walk, the invalid-cursor refusal, and the listability
 /// rules as a client observes them.
-struct SessionListTests {
+@Suite(.closesHarnesses) struct SessionListTests {
     /// The instant the dated index records count from.
     private static let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
 

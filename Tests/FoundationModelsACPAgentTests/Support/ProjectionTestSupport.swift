@@ -103,8 +103,10 @@ actor SinkRecorder {
     /// kept wait checks the count again, so this wait uses no clock.
     ///
     /// - Parameter count: The number of kept waits to wait for.
-    nonisolated func waitUntilKept(atLeast count: Int) async {
-        await log.waitUntilKept(atLeast: count)
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
+    nonisolated func waitUntilKept(atLeast count: Int) async throws {
+        try await log.waitUntilKept(atLeast: count)
     }
 
     /// Appends one update, and resumes each reader whose updates are now

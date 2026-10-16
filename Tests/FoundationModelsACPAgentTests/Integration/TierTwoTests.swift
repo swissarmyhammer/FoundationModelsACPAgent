@@ -29,7 +29,7 @@ import Testing
 /// The discipline: check the filesystem, never the
 /// transcript. A "file written" claim is proven by reading the file
 /// from disk.
-@Suite struct TierTwoTests {
+@Suite(.closesHarnesses) struct TierTwoTests {
     // MARK: - Constants
 
     /// The prompt text of every scripted tool prompt.

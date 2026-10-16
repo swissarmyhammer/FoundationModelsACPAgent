@@ -21,7 +21,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 ///   layer, and a session of it makes no marketplace store;
 /// - the marketplace proof uses a local git repository on its `main` branch,
 ///   through a `file://` URL, and a cache folder of the test.
-@Suite struct SkillsMarketplaceTests {
+@Suite(.closesHarnesses) struct SkillsMarketplaceTests {
     // MARK: - Constants
 
     /// The branch of the local marketplace repository: the branch of the

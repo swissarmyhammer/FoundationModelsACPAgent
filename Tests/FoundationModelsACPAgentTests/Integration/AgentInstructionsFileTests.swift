@@ -15,7 +15,7 @@ import Testing
 /// whole path over the ACP wire: `session/new` in a repository that has the
 /// files, one prompt, and then the leading `.instructions` entry of the
 /// Router session transcript, which is the text the model gets.
-@Suite struct AgentInstructionsFileTests {
+@Suite(.closesHarnesses) struct AgentInstructionsFileTests {
     // MARK: - Constants
 
     /// The alias file name of the agents.md specification.

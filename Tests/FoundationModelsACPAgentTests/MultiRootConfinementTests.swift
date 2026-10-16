@@ -20,7 +20,7 @@ import Testing
 
 /// The client-end proofs of multi-root confinement: the additional roots extend
 /// confinement, and nothing else about the session moves.
-struct MultiRootConfinementTests {
+@Suite(.closesHarnesses) struct MultiRootConfinementTests {
     /// The content the read tests write under the additional root.
     private static let insideContent = "inside the additional root"
 

@@ -39,7 +39,7 @@ import Testing
 /// The model is the scripted backend, so the suite loads no weights and
 /// touches no network. The snippets themselves run in the real code-mode
 /// sandbox, so proof 2 reads a real failure and not a scripted string.
-struct RunCodeSourceTests {
+@Suite(.closesHarnesses) struct RunCodeSourceTests {
     /// The text of the one driven prompt.
     private static let promptText = "run the snippet"
 

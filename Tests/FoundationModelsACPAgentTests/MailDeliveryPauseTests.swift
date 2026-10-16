@@ -18,7 +18,7 @@ import Testing
 /// The prompt starts a shell read of a named pipe, which goes to the
 /// background at once. The test writes the pipe only after the prompt
 /// ended, so the run mail comes when no answer runs.
-@Suite struct MailDeliveryPauseTests {
+@Suite(.closesHarnesses) struct MailDeliveryPauseTests {
     // MARK: - Constants
 
     /// The marker of the prompt that starts the background run.

@@ -18,7 +18,7 @@ import Testing
 ///   its text, on the tool call of the run.
 /// - `session/resume` with `replayFrom: start` replays the last plan of each
 ///   plan id that the session recorded, and no plan of another session.
-@Suite struct RunProgressTests {
+@Suite(.closesHarnesses) struct RunProgressTests {
     // MARK: - Constants
 
     /// The text line of the plan progress, which the model also gets.

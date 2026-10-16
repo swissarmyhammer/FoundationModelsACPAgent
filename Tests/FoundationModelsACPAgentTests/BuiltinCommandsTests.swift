@@ -13,7 +13,7 @@ import Testing
 /// `/context`, `/memory`, `/status`, `/config` and `/help`. Each streams its
 /// text as an `.action` prompt, with no model pass. The suite drives them over
 /// the harness and asserts the streamed text and the filesystem effects.
-struct BuiltinCommandsTests {
+@Suite(.closesHarnesses) struct BuiltinCommandsTests {
     /// The bare names of the six builtins, in registration order.
     private static let builtinNames = ["compact", "context", "memory", "status", "config", "help"]
 
@@ -119,9 +119,9 @@ struct BuiltinCommandsTests {
     @Test
     func helpListsAllSixBuiltins() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-help")
-        defer { Task { await fixture.close() } }
 
         let result = try await fixture.runCommand("/help")
+        await fixture.close()
 
         for name in Self.builtinNames {
             #expect(result.text.contains("/\(name)"))
@@ -135,7 +135,6 @@ struct BuiltinCommandsTests {
     @Test
     func statusNamesSessionCwdModelAndTranscript() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-status")
-        defer { Task { await fixture.close() } }
 
         let result = try await fixture.runCommand("/status")
 
@@ -143,6 +142,7 @@ struct BuiltinCommandsTests {
         #expect(result.text.contains(fixture.cwd.path))
         #expect(result.text.contains(Self.defaultStandardModel))
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+        await fixture.close()
         #expect(result.text.contains(entry.transcriptDirectory.path))
     }
 
@@ -169,9 +169,9 @@ struct BuiltinCommandsTests {
     @Test
     func contextBeforeAnyPromptNeverPrintsNaN() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-context")
-        defer { Task { await fixture.close() } }
 
         let result = try await fixture.runCommand("/context")
+        await fixture.close()
 
         #expect(result.text.lowercased().contains("context"))
         #expect(!result.text.lowercased().contains("nan"))
@@ -186,11 +186,11 @@ struct BuiltinCommandsTests {
         let agentsBody = "Follow the house rules."
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-memory", agentsMarkdown: agentsBody)
-        defer { Task { await fixture.close() } }
 
         let agentsPath = fixture.cwd
             .appendingPathComponent(InstructionsAssembler.agentsFileName).path
         let result = try await fixture.runCommand("/memory")
+        await fixture.close()
 
         #expect(result.text.contains(agentsPath))
         #expect(result.text.contains(agentsBody))
@@ -248,9 +248,9 @@ struct BuiltinCommandsTests {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-compact",
             loader: CompactionStubBackend.makeLoader(shouldFail: false))
-        defer { Task { await fixture.close() } }
 
         let (text, entry) = try await Self.compactAndReadTheEntry(on: fixture)
+        await fixture.close()
         let report = Self.summaryText(of: entry.last)
 
         #expect(text.contains("Compaction started."))
@@ -267,9 +267,9 @@ struct BuiltinCommandsTests {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-compact-fail",
             loader: CompactionStubBackend.makeLoader(shouldFail: true))
-        defer { Task { await fixture.close() } }
 
         let (_, entry) = try await Self.compactAndReadTheEntry(on: fixture)
+        await fixture.close()
         let error = try #require(entry.last.flatMap { patchValue($0.error) })
 
         #expect(entry.last?.status == .failed)
@@ -287,9 +287,9 @@ struct BuiltinCommandsTests {
             label: "BuiltinCommandsTests-compact-shortfall",
             loader: CompactionStubBackend.makeLoader(
                 shouldFail: false, phraseRepeat: CompactionStubBackend.oversizedPhraseRepeat))
-        defer { Task { await fixture.close() } }
 
         let (_, entry) = try await Self.compactAndReadTheEntry(on: fixture)
+        await fixture.close()
         let error = try #require(entry.last.flatMap { patchValue($0.error) })
 
         #expect(entry.last?.status == .failed)
@@ -311,15 +311,15 @@ struct BuiltinCommandsTests {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-compact-at-once",
             loader: CompactionStubBackend.makeLoader(shouldFail: false, gate: gate))
-        defer { Task { await fixture.close() } }
 
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/compact"))
         await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
-        await gate.waitForArrival()
+        try await gate.waitForArrival(beforeSettleOf: fixture.collector)
         let whileHeld = await fixture.collector.updates
         gate.open()
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        await fixture.close()
 
         #expect(!Self.compactionUpdates(in: whileHeld).contains { $0.status != .inProgress })
         #expect(ScriptedPromptFixture.idleCount(in: whileHeld) == 0)
@@ -340,9 +340,9 @@ struct BuiltinCommandsTests {
     @Test
     func configPrintsYAMLWithSectionsAndComments() async throws {
         let fixture = try await Fixture.make(label: "BuiltinCommandsTests-config")
-        defer { Task { await fixture.close() } }
 
         let result = try await fixture.runCommand("/config")
+        await fixture.close()
 
         #expect(result.text.contains("profile:"))
         #expect(result.text.contains("tools:"))
@@ -358,7 +358,6 @@ struct BuiltinCommandsTests {
         let seededConfig = "recording:\n  level: off\n"
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-export", projectConfigYAML: seededConfig)
-        defer { Task { await fixture.close() } }
 
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
         let result = try await fixture.runCommand("/config export project")
@@ -375,6 +374,7 @@ struct BuiltinCommandsTests {
             userDirectory: fixture.userDirectory,
             environment: [:]
         ).load()
+        await fixture.close()
         #expect(reloaded.configuration == entry.configuration)
         #expect(reloaded.configuration.recording.level == .off)
     }
@@ -388,13 +388,13 @@ struct BuiltinCommandsTests {
         let fixture = try await Fixture.make(
             label: "BuiltinCommandsTests-export-key",
             projectConfigYAML: "tools:\n  web:\n    apiKeys:\n      kagi: \(keyValue)\n")
-        defer { Task { await fixture.close() } }
 
         let result = try await fixture.runCommand("/config export project")
 
         let configFile = fixture.cwd
             .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
             .appendingPathComponent(ConfigurationLoader.configFileName)
+        await fixture.close()
         let written = try String(contentsOf: configFile, encoding: .utf8)
         #expect(!written.contains(keyValue))
         #expect(written.contains("apiKeys: {}"))
@@ -665,7 +665,7 @@ struct CompactionStubContainer: LoadedLLMContainer {
 /// A gate that the summarizer call of a ``CompactionStubBackend`` waits at,
 /// so a test keeps a compaction running in a fixed order, with no clock.
 ///
-/// The test waits until a summarizer call arrived (``waitForArrival()``),
+/// The test waits until a summarizer call arrived (``waitForArrival(beforeSettleOf:)``),
 /// does its work, and then opens the gate (``open()``). A cancel of the
 /// summarizer call, for example by `close()`, ends its wait with
 /// `CancellationError`.
@@ -684,8 +684,8 @@ final class SummarizerGate: Sendable {
         /// The number of summarizer calls that arrived.
         var arrivals = 0
 
-        /// The tests that wait for an arrival.
-        var arrivalWaiters: [CheckedContinuation<Void, Never>] = []
+        /// The tests that wait for an arrival, keyed by a token.
+        var arrivalWaiters: [Int: CheckedContinuation<Void, any Error>] = [:]
     }
 
     /// The state, under one lock.
@@ -702,10 +702,11 @@ final class SummarizerGate: Sendable {
         }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                let (resumeNow, arrivalWaiters) = state.withLock { state -> (Bool, [CheckedContinuation<Void, Never>]) in
+                let (resumeNow, arrivalWaiters) = state.withLock {
+                    state -> (Bool, [CheckedContinuation<Void, any Error>]) in
                     state.arrivals += 1
-                    let waiters = state.arrivalWaiters
-                    state.arrivalWaiters = []
+                    let waiters = Array(state.arrivalWaiters.values)
+                    state.arrivalWaiters = [:]
                     if state.isOpen || Task.isCancelled {
                         return (true, waiters)
                     }
@@ -730,18 +731,71 @@ final class SummarizerGate: Sendable {
     }
 
     /// Waits until at least one summarizer call arrived at the gate.
-    func waitForArrival() async {
-        await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
-            let arrived = state.withLock { state -> Bool in
-                if state.arrivals > 0 {
-                    return true
+    ///
+    /// The compaction keeps the session `running`, so the run cannot settle
+    /// before a summarizer call arrives. Thus the settle of the run is the
+    /// failure event of this wait (test rule T1): a new idle state update in
+    /// `collector` ends the wait, and the wait throws.
+    ///
+    /// - Parameter collector: The collector of the updates of the session
+    ///   that runs the compaction.
+    /// - Throws: ``WaitEndedOnFailure`` when the run settled first, and
+    ///   ``ConditionWaitCancelled`` when the test is cancelled first.
+    func waitForArrival(beforeSettleOf collector: UpdateCollector) async throws {
+        let condition = "a summarizer call arrives at the gate"
+        let baseline = ScriptedPromptFixture.idleCount(in: await collector.updates)
+        let arrived = try await withThrowingTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                try await self.waitForAnyArrival(condition: condition)
+                return true
+            }
+            group.addTask {
+                _ = try await collector.wait(for: "the run settles") { updates in
+                    ScriptedPromptFixture.idleCount(in: updates) > baseline
                 }
-                state.arrivalWaiters.append(waiter)
                 return false
             }
-            if arrived {
-                waiter.resume()
+            // The first wait that ends decides. The cancel ends the other
+            // wait, and the group drops its error.
+            defer { group.cancelAll() }
+            return try await group.next() ?? false
+        }
+        guard arrived else {
+            throw WaitEndedOnFailure(condition: condition, event: "the run settled")
+        }
+    }
+
+    /// Waits until at least one summarizer call arrived at the gate, or
+    /// until the task of the wait is cancelled.
+    ///
+    /// - Parameter condition: The name of the condition, for the error of a
+    ///   cancelled wait.
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+    ///   cancelled first.
+    private func waitForAnyArrival(condition: String) async throws {
+        let token = state.withLock { state -> Int in
+            state.nextToken += 1
+            return state.nextToken
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (waiter: CheckedContinuation<Void, any Error>) in
+                let outcome = state.withLock { state -> Result<Void, any Error>? in
+                    if state.arrivals > 0 {
+                        return .success(())
+                    }
+                    if Task.isCancelled {
+                        return .failure(ConditionWaitCancelled(condition: condition))
+                    }
+                    state.arrivalWaiters[token] = waiter
+                    return nil
+                }
+                if let outcome {
+                    waiter.resume(with: outcome)
+                }
             }
+        } onCancel: {
+            let waiter = state.withLock { $0.arrivalWaiters.removeValue(forKey: token) }
+            waiter?.resume(throwing: ConditionWaitCancelled(condition: condition))
         }
     }
 

@@ -12,7 +12,7 @@ import Testing
 /// `session/new` response, applied by `session/set_config_option` with
 /// complete-state semantics, and kept true by the `config_option_update`
 /// push when resolution diverges from the announced state.
-@Suite struct ConfigOptionsTests {
+@Suite(.closesHarnesses) struct ConfigOptionsTests {
     /// The text the standard slot's scripted model answers, so a prompt's
     /// output names the slot that generated it.
     private static let standardAnswer = "standard-answer"

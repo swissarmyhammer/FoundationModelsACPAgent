@@ -16,7 +16,7 @@ import Testing
 /// `compactionStarted`, then `compaction` or `compactionFailed` with the same
 /// id (task ^fhwk6sn). The manual proofs drive `/compact` over the wire against
 /// the seeded ``CompactionStubBackend``, so Router runs a real fold.
-struct CompactionReportTests {
+@Suite(.closesHarnesses) struct CompactionReportTests {
     // MARK: - The scripted values
 
     /// The id of the synthetic automatic compaction.
@@ -269,7 +269,7 @@ struct CompactionReportTests {
 
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let signal = session.compact()
-        let updates = try await ScriptedPromptFixture.waitForUpdates(
+        let updates = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
             of: fixture.collector, toReach: "the terminal entry of the compaction"
         ) { updates in
             Self.compactionUpdates(in: updates.map(\.update)).contains { $0.status != .inProgress }
@@ -457,7 +457,7 @@ struct CompactionReportTests {
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/compact"))
         await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
-        await gate.waitForArrival()
+        try await gate.waitForArrival(beforeSettleOf: fixture.collector)
 
         // Only `close` stops a running compaction (`mailbox.md`, section 5).
         _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))

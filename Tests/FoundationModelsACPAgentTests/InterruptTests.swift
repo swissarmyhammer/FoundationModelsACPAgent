@@ -20,7 +20,7 @@ import Testing
 /// The scope of this suite is the prompt, and only the prompt. The other
 /// window of §5.9 — a `Ctrl-C` during a model download, before the wire
 /// opens — is ``CompositionInterruptTests``.
-struct InterruptTests {
+@Suite(.closesHarnesses) struct InterruptTests {
     // MARK: - Constants
 
     /// The text the scripted model streams before it holds, so a

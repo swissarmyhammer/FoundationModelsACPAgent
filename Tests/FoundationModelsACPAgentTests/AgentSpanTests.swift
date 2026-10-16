@@ -15,7 +15,7 @@ import Tracing
 /// Each case makes the agent and the harness inside a `TelemetryCapture`, as
 /// ``RequestTracingTests`` does. The Router sessions get the tracer of the
 /// capture explicitly, because their work runs in a detached task.
-@Suite struct AgentSpanTests {
+@Suite(.closesHarnesses) struct AgentSpanTests {
     /// The label of the scripted fixtures of this suite.
     private static let fixtureLabel = "AgentSpanTests"
 

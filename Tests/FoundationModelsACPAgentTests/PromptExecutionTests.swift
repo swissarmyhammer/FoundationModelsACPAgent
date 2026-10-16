@@ -11,7 +11,7 @@ import Testing
 /// The prompt execution: the acknowledge-then-notify
 /// order, the `user_message` echo, the prompt-state machine, the stop-reason
 /// mapping, and the first-activity index record.
-@Suite struct PromptExecutionTests {
+@Suite(.closesHarnesses) struct PromptExecutionTests {
     // MARK: - Constants
 
     /// The first prompt line. It becomes the session title.
@@ -153,7 +153,7 @@ import Testing
 
         let second = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
-        _ = try await ScriptedPromptFixture.waitForUpdates(
+        _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
             of: fixture.collector, toReach: "the echo of the second prompt"
         ) { updates in
             updates.contains { userMessageEcho(of: $0.update)?.messageId == second.messageId }
