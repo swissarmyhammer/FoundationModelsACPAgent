@@ -589,7 +589,7 @@ import Testing
         let scripted = ScriptedServer(name: Self.boundaryName)
         await scripted.addEchoTool()
         let factory: TransportFactory = { try await scripted.startOnInMemoryPair() }
-        let server = FoundationModelsMultitool.MCPServer(name: Self.boundaryName)
+        let server = FoundationModelsMultitool.MCPServer(name: Self.boundaryName, userPresence: .interactive)
         try await server.connect(via: factory)
         try await server.waitUntilReady()
 
@@ -656,7 +656,7 @@ import Testing
             served.withLock { $0.append(scripted) }
             return try await scripted.startOnInMemoryPair()
         }
-        let server = FoundationModelsMultitool.MCPServer(name: Self.reconnectName)
+        let server = FoundationModelsMultitool.MCPServer(name: Self.reconnectName, userPresence: .interactive)
         try await server.connect(via: factory)
         try await server.waitUntilReady()
 
