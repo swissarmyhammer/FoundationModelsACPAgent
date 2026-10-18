@@ -125,20 +125,21 @@ def a_chunk(session_id, text):
     )
 
 
-def an_idle(session_id, stop_reason):
+def an_idle(session_id, stop_reason, no_work=True):
     """The frame of the idle state update that ends a turn.
 
     - session_id: the session the update is about.
     - stop_reason: why the work of the agent stopped.
+    - no_work: the `_meta.noWork` mark of the idle; None gives no mark.
     """
-    return an_update(
-        session_id,
-        {
-            "sessionUpdate": "state_update",
-            "state": "idle",
-            "stopReason": stop_reason,
-        },
-    )
+    update = {
+        "sessionUpdate": "state_update",
+        "state": "idle",
+        "stopReason": stop_reason,
+    }
+    if no_work is not None:
+        update["_meta"] = {"noWork": no_work}
+    return an_update(session_id, update)
 
 
 def a_request_of_the_agent(method):
@@ -437,6 +438,41 @@ class TurnTests(unittest.TestCase):
             return a_working_agent()(message)
 
         _, report = self.a_turn(two_sessions)
+
+        self.assertEqual(report.stop_reason, END_TURN)
+
+    def test_an_idle_that_says_the_session_has_work_does_not_end_the_instance(self):
+        """The agent marks each idle with `_meta.noWork`. An idle whose mark
+        is false says that the session still has work, for example a
+        background run, so the instance goes on. The idle that says noWork
+        ends it."""
+
+        def work_left_then_none(message):
+            if message.get("method") == "session/prompt":
+                return [
+                    an_answer(message.get("id"), {}),
+                    an_idle(A_SESSION, REFUSAL, no_work=False),
+                    an_idle(A_SESSION, END_TURN, no_work=True),
+                ]
+            return a_working_agent()(message)
+
+        _, report = self.a_turn(work_left_then_none)
+
+        self.assertEqual(report.stop_reason, END_TURN)
+
+    def test_an_idle_with_no_mark_ends_the_instance(self):
+        """An agent from before the noWork mark sends a plain idle. The
+        harness ends the instance on it, as before."""
+
+        def no_mark(message):
+            if message.get("method") == "session/prompt":
+                return [
+                    an_answer(message.get("id"), {}),
+                    an_idle(A_SESSION, END_TURN, no_work=None),
+                ]
+            return a_working_agent()(message)
+
+        _, report = self.a_turn(no_mark)
 
         self.assertEqual(report.stop_reason, END_TURN)
 

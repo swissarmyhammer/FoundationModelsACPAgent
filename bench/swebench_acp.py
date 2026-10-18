@@ -120,6 +120,9 @@ UPDATE_FIELD = "update"
 UPDATE_KIND_FIELD = "sessionUpdate"
 STATE_FIELD = "state"
 STOP_REASON_FIELD = "stopReason"
+# The mark of the agent on an idle: the session has no work at all.
+META_FIELD = "_meta"
+NO_WORK_FIELD = "noWork"
 CWD_FIELD = "cwd"
 # The update that says the foreground work of a session changed, and the
 # state of it that says the turn ended.
@@ -209,21 +212,30 @@ class TurnReport:
 
 
 def is_idle(params, session_id):
-    """True when one `session/update` says the turn of a session ended.
+    """True when one `session/update` says the session has no work left.
 
     - params: the parameters of the notification.
-    - session_id: the session of the turn the caller waits for.
+    - session_id: the session the caller waits for.
 
     One process serves many sessions, so the session is part of the
     question. An idle update of ANOTHER session belongs to another instance.
+
+    The agent marks each idle with `_meta.noWork`. A mark of false says that
+    the session still has work, for example a background run, so that idle
+    does not end the instance. An idle with no mark comes from an agent from
+    before the mark, and it ends the instance as before.
     """
     if params.get(SESSION_ID_FIELD) != session_id:
         return False
     update = params.get(UPDATE_FIELD) or {}
-    return (
-        update.get(UPDATE_KIND_FIELD) == STATE_UPDATE
-        and update.get(STATE_FIELD) == IDLE_STATE
-    )
+    if update.get(UPDATE_KIND_FIELD) != STATE_UPDATE:
+        return False
+    if update.get(STATE_FIELD) != IDLE_STATE:
+        return False
+    meta = update.get(META_FIELD)
+    if not isinstance(meta, dict) or NO_WORK_FIELD not in meta:
+        return True
+    return meta.get(NO_WORK_FIELD) is True
 
 
 def is_chunk(update):
