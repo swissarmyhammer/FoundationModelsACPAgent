@@ -101,7 +101,7 @@ actor SessionStateLedger {
         lastPromptEnd = idle
         if !started, !isBusy, !sentRunning {
             lastPromptEnd = nil
-            await send(.stateUpdate(.idle(idle)))
+            await send(.stateUpdate(.idle(idle.sayingNoWork())))
             return
         }
         await sendChange()
@@ -137,7 +137,7 @@ actor SessionStateLedger {
             sentRunning = false
             let idle = lastPromptEnd ?? IdleStateUpdate()
             lastPromptEnd = nil
-            await send(.stateUpdate(.idle(idle)))
+            await send(.stateUpdate(.idle(idle.sayingNoWork())))
         }
     }
 }

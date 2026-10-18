@@ -1056,6 +1056,28 @@ import Testing
         return idle.stopReason
     }
 
+    /// The ledger sends `idle` only when the session has no work, so each
+    /// `idle` says so in `_meta.noWork`: the `idle` at the end of Router
+    /// work, and the `idle` of a prompt that ended before it started. A
+    /// headless client ends on that `idle`, and a GUI can ignore the mark.
+    @Test
+    func eachIdleOfTheLedgerSaysThatTheSessionHasNoWork() async throws {
+        let recorder = SinkRecorder()
+        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+        let source = ULID()
+
+        await ledger.workStarted(on: source)
+        await ledger.workEnded(on: source)
+        await PromptStateOwner(ledger: ledger).promptDidEnd(stop: .cancelled)
+        let idles = await recorder.updates.compactMap { update -> IdleStateUpdate? in
+            guard case .stateUpdate(.idle(let idle)) = update else { return nil }
+            return idle
+        }
+
+        #expect(idles.count == 2, "expected the idle of the work and the idle of the prompt, got \(idles)")
+        #expect(idles.allSatisfy { $0.saysNoWork })
+    }
+
     /// With no prompt open, the work of a Router session gives `running` at
     /// `workStarted` and `idle` at `workEnded`. No prompt ended, so the
     /// `idle` has no stop reason.

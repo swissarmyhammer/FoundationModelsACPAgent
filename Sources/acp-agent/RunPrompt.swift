@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgent
 import FoundationModelsACPClient
 
 /// Which session one `run` prompt speaks to (cli-plan.md §5.4).
@@ -430,9 +431,11 @@ enum RunPrompt {
 
     /// Consumes the session's update stream: writes the text of each
     /// agent message chunk as it arrives, and stops at the first idle
-    /// state update after the `user_message` echo of its own prompt
-    /// (elicitation-plan task 43, rule A). An idle means that the session
-    /// is not busy any more: no prompt is open and Router has no work. Thus
+    /// state update that says `_meta.noWork`
+    /// (``FoundationModelsACPAgent/FoundationModelsACP/IdleStateUpdate/saysNoWork``)
+    /// after the `user_message` echo of its own prompt (elicitation-plan
+    /// task 43, rule A). That idle means that the session has no work: no
+    /// prompt is open and Router has no work. Thus
     /// the own prompt ended, and the CLI also waits for the background runs
     /// that the prompt started. An idle before the own echo belongs to
     /// earlier work of the session.
@@ -496,8 +499,10 @@ enum PromptCollectorInput: Sendable {
 }
 
 /// Finds the end of the own prompt of a headless run in the updates of its
-/// session (elicitation-plan task 43, rule A): the first `idle` after the
-/// `user_message` echo that has the `messageId` of the own prompt.
+/// session (elicitation-plan task 43, rule A): the first `idle` that says
+/// `_meta.noWork`, after the `user_message` echo that has the `messageId` of
+/// the own prompt. An `idle` with no such mark does not end the run, because
+/// the session can still have work.
 ///
 /// The response gives the `messageId`, and the echo comes after the
 /// response. The client can read the two in either order, so the tracker
@@ -537,7 +542,7 @@ struct PromptEndTracker {
         switch update {
         case .userMessage(let echo):
             marks.append(.echo(echo.messageId))
-        case .stateUpdate(.idle(let idle)):
+        case .stateUpdate(.idle(let idle)) where idle.saysNoWork:
             marks.append(.idle(idle.stopReason))
         default:
             if let pause = HeldMailNotice(update) {

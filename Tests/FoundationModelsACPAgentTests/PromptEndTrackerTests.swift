@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsACPAgent
 import Testing
 
 @testable import acp_agent
@@ -26,7 +27,23 @@ import Testing
     /// - Parameter stopReason: The stop reason.
     /// - Returns: The update.
     private static func idle(_ stopReason: StopReason) -> SessionUpdate {
-        .stateUpdate(.idle(IdleStateUpdate(stopReason: stopReason)))
+        .stateUpdate(.idle(IdleStateUpdate(stopReason: stopReason).sayingNoWork()))
+    }
+
+    /// An `idle` that does not say that the session has no work does not end
+    /// the run: the session can still have work. The `idle` that says
+    /// `_meta.noWork` ends it.
+    @Test func onlyAnIdleThatSaysNoWorkEndsThePrompt() {
+        var tracker = PromptEndTracker()
+        tracker.learn(ownMessage: Self.ownId)
+        tracker.receive(Self.echo(Self.ownId))
+        tracker.receive(.stateUpdate(.idle(IdleStateUpdate(stopReason: .endTurn))))
+        #expect(!tracker.ended)
+
+        tracker.receive(Self.idle(.endTurn))
+
+        #expect(tracker.ended)
+        #expect(tracker.stopReason == .endTurn)
     }
 
     /// The idle of earlier work, before the own echo, does not end the own
