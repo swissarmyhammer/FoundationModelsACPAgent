@@ -208,6 +208,13 @@ extension RoutedACPAgent {
     /// (``CompactionReporter``). An update that goes out while no connection
     /// is bound goes nowhere: no client is there to see it.
     ///
+    /// The sink sends through the connection that it read, and not through
+    /// a ``historySink(for:connection:)`` closure that it makes for each
+    /// update. That closure keeps the connection weakly, and in a release
+    /// build its weak reference read `nil` when the sink called it at once.
+    /// Each `running`, chunk and `idle` of a session then went nowhere, with
+    /// no log line.
+    ///
     /// - Parameter sessionId: The session the updates belong to.
     /// - Returns: The sink.
     nonisolated func boundHistorySink(for sessionId: SessionId) -> SessionUpdateSink {
@@ -215,7 +222,8 @@ extension RoutedACPAgent {
             guard let self, let connection = boundConnection else {
                 return
             }
-            await historySink(for: sessionId, connection: connection)(update)
+            await recordInHistory(update, of: sessionId)
+            await connection.post(update, in: sessionId)
         }
     }
 
