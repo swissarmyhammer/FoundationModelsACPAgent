@@ -280,8 +280,9 @@ import Testing
         }
     }
 
-    /// Sends one prompt, runs `whileRunning`, and waits until the prompt ends
-    /// and the session takes a new prompt.
+    /// Sends one more prompt with
+    /// ``ScriptedPromptFixture/runPrompt(on:text:count:whileRunning:)``. The
+    /// count of the wait is one more than the idle updates before the prompt.
     ///
     /// - Parameters:
     ///   - fixture: The fixture of the run.
@@ -292,11 +293,8 @@ import Testing
         on fixture: ScriptedPromptFixture, text: String, whileRunning: () async throws -> Void = {}
     ) async throws {
         let idleBefore = ScriptedPromptFixture.idleCount(in: await fixture.collector.updates)
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
-        try await whileRunning()
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: idleBefore + 1)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedPromptFixture.runPrompt(
+            on: fixture, text: text, count: idleBefore + 1, whileRunning: whileRunning)
     }
 
     /// The number of running state updates in the sequence.

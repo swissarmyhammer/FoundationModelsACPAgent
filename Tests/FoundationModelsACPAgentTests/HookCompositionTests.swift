@@ -130,10 +130,7 @@ import Testing
             loader: HookLayeredLLMContainer.makeLoader(
                 script: try ScriptedPromptFixture.makeToolPromptScript(code: Self.writeCode)),
             label: "HookCompositionTests-events", hookVisitors: [recorder])
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.writePromptText))
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.writePromptText, count: 1)
         await fixture.close()
         await fixture.harness.agent.hooks.dispatcher.drain()
 
@@ -229,9 +226,10 @@ import Testing
         } + [.endPass]
     }
 
-    /// Runs one prompt of the snapshot proof, waits until the prompt and its
-    /// end work are done, and drains the dispatcher, so the snapshot of the
-    /// tool call of the prompt is complete.
+    /// Runs one prompt of the snapshot proof with
+    /// ``ScriptedPromptFixture/runPrompt(on:text:count:whileRunning:)``, so
+    /// the snapshot of the tool call of the prompt is complete, and reads
+    /// the tool call text of this prompt.
     ///
     /// - Parameters:
     ///   - text: The prompt text, which holds the marker of one snippet.
@@ -244,11 +242,7 @@ import Testing
         _ text: String, in fixture: ScriptedPromptFixture, count: Int
     ) async throws -> String {
         let countBefore = await fixture.collector.updates.count
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: count)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
-        await fixture.harness.agent.hooks.dispatcher.drain()
+        let updates = try await ScriptedPromptFixture.runPrompt(on: fixture, text: text, count: count)
         return SkillsLibraryTests.toolCallText(in: Array(updates.dropFirst(countBefore)))
     }
 

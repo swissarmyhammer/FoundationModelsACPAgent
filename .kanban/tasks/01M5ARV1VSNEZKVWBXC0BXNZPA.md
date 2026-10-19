@@ -50,6 +50,42 @@ comments:
   id: 01m5b5bb2vhdd9e7x2b3hfpsfh
   text: 'Decision of the user (2026-10-19): keep the private HookLayeredLLMContainer and the @testable reach of Tool.sessionChecked in HookCompositionTests for now, so that this card can finish. Follow-up: Router card 01M5B5B3BVXQHZP8C14FK069KG adds a public scripted container with the tool hook layer to FoundationModelsRouterTestSupport, and ACP card 01M5B5B3QTYY3PVBQGXXVJMA9M then removes the private copy. A review finding about this reach is covered by those two cards.'
   timestamp: 2026-10-19T22:43:37.691563+00:00
+- actor: claude-code
+  id: 01m5b5j72x3yrhca4jrktk9byh
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 47e8ba7). 1 finding, 1 confirmed, 0 refuted. Finding: Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:243 `reuse/reuse` (the private `runPrompt` helper repeats the sequence of `CompactionReportTests.runPrompt` and `TelemetryContentSafetyTests.runPrompt`; move it into `ScriptedPromptFixture`).
+    - card check: each item of Work is in the commit (Hooks dependency, `AgentHooks` with one dispatcher, one store and `SnapshotHook`, `Router(hooks:)`, `registerHookVisitors`, `SnapshotsCapability` in `ToolCatalog.makeRegistry`, `.replacement(in: sessionId)` in `applyModelSlot`, `hooks.dispatcher.drain()` after the teardown in `closeOpenSessions`). `HookCompositionTests` has one test for each acceptance criterion. `ScriptedPromptFixture.make(hookVisitors:)` calls `registerHookVisitors`. The changes past the card (the `AgentHooks` type, the data path from the dotfolder name, the required `hooks` parameter of `RoutedACPAgent.init` at all three construction sites, the `launchableAgents` test changes, the README `snapshots` row) gave no finding. The `HookLayeredLLMContainer` reach is covered by the user decision and the cards 01M5B5B3BVXQHZP8C14FK069KG and 01M5B5B3QTYY3PVBQGXXVJMA9M. The hook toolCallID is not changed in this package; Router owns it.
+    - next: /implement the open finding, then review again.
+  timestamp: 2026-10-19T22:47:22.973351+00:00
+- actor: wballard
+  id: 01m5b5jx57v87azy6j3x0pxmp5
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 19 files
+    - test: green — swift test, 995 passed, 0 failed (run by implement after the Router f6af807 pin)
+    - commit: 47e8ba7
+    - review: findings — Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:243
+  timestamp: 2026-10-19T22:47:45.575242+00:00
+- actor: claude-code
+  id: 01m5b5t30m31zzegfy1v29fq9z
+  text: |-
+    Finding `reuse/reuse` (HookCompositionTests runPrompt) is fixed. Not committed.
+    - New `ScriptedPromptFixture.runPrompt(on:text:count:whileRunning:)` (Support/ScriptedPromptFixture.swift, beside `waitForPromptsFinished`). It sends the prompt, runs `whileRunning` (default: no work), waits for `count` idle updates, waits for `awaitPromptsFinished`, drains `agent.hooks.dispatcher`, and returns the collected updates (`@discardableResult`).
+    - HookCompositionTests: the private `runPrompt` keeps only the update count before the prompt and `SkillsLibraryTests.toolCallText`, and calls the shared helper. The events test used the same send/wait sequence inline; it calls the shared helper now too.
+    - CompactionReportTests: the private `runPrompt` is gone. No caller used its `(response, updates)` result. Each call site, and the inline send/wait sequence of `aCompactionWithNoPromptOpenReachesTheClient`, calls the shared helper.
+    - TelemetryContentSafetyTests: the private `runPrompt` keeps only the count (`idleBefore + 1`) and passes `whileRunning` through as a closure.
+    - The drain also runs for the compaction and telemetry suites. Each agent registers `SnapshotHook`, so the drain waits for snapshot work that is in progress. It does not change the result of those suites.
+    - Tool note: `files edit file` with `replace_all: true` changed only one occurrence on each call here. Each call site needed its own edit.
+    - Subtask boxes: all 5 acceptance criteria and the 2 test items are `[x]`. The review comment of commit 47e8ba7 found one HookCompositionTests test for each criterion, and `swift test` passes.
+  timestamp: 2026-10-19T22:51:40.948017+00:00
+- actor: claude-code
+  id: 01m5b5tcr5p0fhc7ps96b4yrq8
+  text: |-
+    ### implement — changed
+    - evidence: `swift test`: 995 tests in 112 suites passed, 1 known issue (the existing withKnownIssue of HarnessSmokeTests), 0 compiler warnings. 4 files: Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift, Tests/FoundationModelsACPAgentTests/CompactionReportTests.swift, Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift. Card: 8 of 8 boxes `[x]`, 0 open findings.
+    - next: /review
+  timestamp: 2026-10-19T22:51:50.917559+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Wire hooks and snapshots into the composition: dispatcher, SnapshotStore, SnapshotHook, snapshots capability'
@@ -73,17 +109,29 @@ Work:
 - Shutdown: `RoutedACPAgent.closeOpenSessions` (`Agent/SessionLifecycle.swift`) runs when the connection ends, for `acp-agent acp` and for `acp-agent run`. After the sessions close, await `dispatcher.drain()`, so that the last snapshots are complete before the process exits.
 
 ## Acceptance Criteria
-- [ ] A new session, one prompt with a tool call that writes a file, then a close: a recording visitor added with `registerHookVisitors` gets `SessionStart`, `PrePrompt`, `PreToolUse`, `PreToolResult`, `PostToolUse`, `PostPrompt` and `SessionEnd`, all with the ACP session id as `sessionKey`.
-- [ ] After a model-slot switch, the replacement session has the same `sessionKey`, and `origin: .replacement`.
-- [ ] A resumed session gets `SessionStart(.resumed)` with the ACP session id as `sessionKey`.
-- [ ] In a temporary git work tree, a tool call that writes a file, then `dispatcher.drain()`, then `list snapshots` through the session's Multitool: one checkpoint. Then `undo snapshot` restores the file.
-- [ ] When the connection ends, `closeOpenSessions` returns only after the dispatcher drained.
+- [x] A new session, one prompt with a tool call that writes a file, then a close: a recording visitor added with `registerHookVisitors` gets `SessionStart`, `PrePrompt`, `PreToolUse`, `PreToolResult`, `PostToolUse`, `PostPrompt` and `SessionEnd`, all with the ACP session id as `sessionKey`.
+- [x] After a model-slot switch, the replacement session has the same `sessionKey`, and `origin: .replacement`.
+- [x] A resumed session gets `SessionStart(.resumed)` with the ACP session id as `sessionKey`.
+- [x] In a temporary git work tree, a tool call that writes a file, then `dispatcher.drain()`, then `list snapshots` through the session's Multitool: one checkpoint. Then `undo snapshot` restores the file.
+- [x] When the connection ends, `closeOpenSessions` returns only after the dispatcher drained.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift` (Swift Testing, `@Suite(.closesHarnesses)`): each criterion above, with `AgentClientHarness` and `ScriptedModel` from `FoundationModelsACPAgentTestSupport`. Call `dispatcher.drain()` before each assertion on post events or on snapshots, because they are async.
-- [ ] Run `swift test`. All tests pass.
+- [x] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift` (Swift Testing, `@Suite(.closesHarnesses)`): each criterion above, with `AgentClientHarness` and `ScriptedModel` from `FoundationModelsACPAgentTestSupport`. Call `dispatcher.drain()` before each assertion on post events or on snapshots, because they are async.
+- [x] Run `swift test`. All tests pass.
 
 ## Workflow
 - Use `/tdd`. Write the failing tests first, then implement.
 
 #hooks
+
+## Review Findings (2026-10-19 17:44)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 18 file(s) reviewed, 7 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:243` `reuse/reuse` — The new private static runPrompt helper repeats the send, wait, drain, and text-extraction sequence that CompactionReportTests.runPrompt and TelemetryContentSafetyTests.runPrompt already implement. The shared shape belongs in ScriptedPromptFixture, beside waitForIdle and waitForPromptsFinished, so one canonical version serves all suites. Move the shared sequence into ScriptedPromptFixture as a static helper that takes the fixture, the text, and the count, and returns the updates. Have HookCompositionTests, CompactionReportTests, and TelemetryContentSafetyTests call it. Keep each suite's extraction of its own text (toolCallText) in that suite, or pass it as a closure.

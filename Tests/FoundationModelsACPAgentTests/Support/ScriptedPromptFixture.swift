@@ -405,6 +405,34 @@ struct ScriptedPromptFixture {
         await agent.awaitPromptsFinished(of: sessionId)
     }
 
+    /// Sends one prompt over the wire and waits until the prompt and its end
+    /// work are done. Then it drains the hook dispatcher of the agent, so
+    /// each post event and each snapshot of the prompt is complete.
+    ///
+    /// A suite reads its own text from the returned updates.
+    ///
+    /// - Parameters:
+    ///   - fixture: The wired fixture.
+    ///   - text: The prompt text.
+    ///   - count: The number of prompts that the session has ended after
+    ///     this prompt.
+    ///   - whileRunning: The work of the client while the prompt runs.
+    /// - Returns: The collected sequence, from the start of the session.
+    /// - Throws: Whatever the prompt, `whileRunning` or a wait throws.
+    @discardableResult
+    static func runPrompt(
+        on fixture: ScriptedPromptFixture, text: String, count: Int,
+        whileRunning: () async throws -> Void = {}
+    ) async throws -> [UpdateSessionNotification] {
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
+        try await whileRunning()
+        let updates = try await waitForIdle(fixture.collector, count: count)
+        await waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        await fixture.harness.agent.hooks.dispatcher.drain()
+        return updates
+    }
+
     /// Waits until the session model applied the idle state update that
     /// ends a prompt.
     ///
