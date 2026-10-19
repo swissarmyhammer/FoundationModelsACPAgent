@@ -40,6 +40,38 @@ comments:
     - evidence: `swift test` exit 0, 987 tests in 111 suites passed, 0 failed, 0 skipped. 1 known issue: the intended `withKnownIssue` in HarnessSmokeTests (orderedSubsequenceAssertionChecksOrderWithGaps). No Swift compiler warning. One SwiftPM build-system line, "warning: missing creator for mutated node" for mlx-swift_Cmlx.bundle, is not from this change.
     - next: /review
   timestamp: 2026-10-19T20:36:30.067230+00:00
+- actor: claude-code
+  id: 01m5ay9ns94908evgptka7aenj
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (769a6a4); 1 finding (1 confirmed, 4 refuted) — Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:401 `completeness/inverse-operation-coverage`.
+    - card check: the diff agrees with each item of the card. The README and builtin.config.yaml have no validator; a manual check of their diffs found no text that says skills or agents can be off. No reference to makeSkillsRegistry, makeSkillsTool or AgentsToolOptions stays in Sources or Tests.
+    - next: add the read-back test of the `config init` document (write, load, compare `tools` with the builtin `tools`, and check that the other tool sections are present). Then do a new review.
+  timestamp: 2026-10-19T20:40:23.081179+00:00
+- actor: wballard
+  id: 01m5ayad3dx0mkcew85ae38grq
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 22 files
+    - test: green — swift test, 987 passed, 0 failed
+    - commit: 769a6a4
+    - review: findings — Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:401
+  timestamp: 2026-10-19T20:40:46.957399+00:00
+- actor: claude-code
+  id: 01m5ayfyp91ttgz4nyz35rsfnw
+  text: |-
+    Finding fixed. `theConfigInitDocumentHasNoAgentsSection` is now `theConfigInitDocumentHasNoAgentsSectionAndReadsBack`. The test writes the builtin document with `ConfigurationYAML.documentText`, loads it with `fixture.loadProjectConfig(text)`, and asserts that the loaded `tools` equals the builtin `tools`. It also asserts that the document has a `\n  <key>:` section for each `ToolsConfiguration.CodingKeys` case, so the absence check cannot pass on an empty document.
+    - TDD note: the change adds coverage of behavior that exists. Thus the new assertions passed on the first run, and there was no RED step.
+    - Discovery: `ToolsConfiguration.agentsKey` is internal, and this test file uses a plain `import` (not `@testable`). Thus the test uses the literal `agents`.
+    - The subtask boxes are now checked. Each item has a test or a source change in 769a6a4: ConfigurationLoaderTests `alwaysOnOffEntries` (three `cannotDisable` warnings), ToolCatalogTests `aConfigThatTurnsTheSkillsToolOffStillMountsTheSkillsTool`, AgentsToolTests `aConfigThatTurnsTheAgentsToolOffStillMountsTheAgentsTool`, RuntimeDoctorTests `eachRowIsALayerRowAndNoRowSaysDisabled`, builtin.config.yaml with no `agents` section.
+  timestamp: 2026-10-19T20:43:48.809447+00:00
+- actor: claude-code
+  id: 01m5ayg0x7am4n4rg0915ed892
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift. `swift test` exit 0: 987 tests in 111 suites passed, 0 failed, and 1 intended known issue in HarnessSmokeTests. No Swift compiler warning. The SwiftPM line "warning: missing creator for mutated node" for mlx-swift_Cmlx.bundle comes from the build system and is not from this change.
+    - next: /review
+  timestamp: 2026-10-19T20:43:51.079456+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Skills and agents are always on: the config cannot turn them off'
@@ -59,19 +91,32 @@ The config can now turn off the skills tool (`tools.skills: false`) and the `age
 - Tests that set `configuration.tools.skills = .disabled` only to stay hermetic (`ToolCatalogTests`, `AgentsToolTests`, `Integration/SkillsLibraryTests`): use `SkillsToolOptions(marketplaces: [])`, as `Tests/FoundationModelsACPAgentTestSupport/AgentConfigurationWithoutMarketplaces.swift` does. Remove the tests that check the disabled state.
 
 ## Acceptance Criteria
-- [ ] `ToolsConfiguration` has no way to turn off skills or agents: the types have no disabled state.
-- [ ] A config with `tools.skills: false` loads, gives one `cannotDisable` warning for `tools.skills`, and the session has the skills tool.
-- [ ] A config with `tools.agents: false`, and one with `tools.agents.enabled: false`, each load, give one `cannotDisable` warning for `tools.agents`, and the session has the `agents` tool.
-- [ ] `tools.skills.marketplaces: []` gives no warning and no remote marketplace.
-- [ ] The builtin config has no `tools.agents` section, and the builtin key tests pass.
-- [ ] `acp-agent doctor` shows no "disabled" row for skills or agents.
+- [x] `ToolsConfiguration` has no way to turn off skills or agents: the types have no disabled state.
+- [x] A config with `tools.skills: false` loads, gives one `cannotDisable` warning for `tools.skills`, and the session has the skills tool.
+- [x] A config with `tools.agents: false`, and one with `tools.agents.enabled: false`, each load, give one `cannotDisable` warning for `tools.agents`, and the session has the `agents` tool.
+- [x] `tools.skills.marketplaces: []` gives no warning and no remote marketplace.
+- [x] The builtin config has no `tools.agents` section, and the builtin key tests pass.
+- [x] `acp-agent doctor` shows no "disabled" row for skills or agents.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift`: the decode of each scalar and mapping form of `tools.skills`, and of `tools.agents`.
-- [ ] `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift` (or the suite that tests `schemaWarnings` now): the three `cannotDisable` warnings.
-- [ ] `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift` and `ToolCatalogTests.swift`: a config that tries to turn off agents or skills still mounts the tool.
-- [ ] `Tests/FoundationModelsACPAgentTests/Doctor/RuntimeDoctorTests.swift`: remove the disabled-row tests, and keep the layer rows.
-- [ ] Run `swift test`. All tests pass with no warnings.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift`: the decode of each scalar and mapping form of `tools.skills`, and of `tools.agents`.
+- [x] `Tests/FoundationModelsACPAgentTests/ConfigurationLoaderTests.swift` (or the suite that tests `schemaWarnings` now): the three `cannotDisable` warnings.
+- [x] `Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift` and `ToolCatalogTests.swift`: a config that tries to turn off agents or skills still mounts the tool.
+- [x] `Tests/FoundationModelsACPAgentTests/Doctor/RuntimeDoctorTests.swift`: remove the disabled-row tests, and keep the layer rows.
+- [x] Run `swift test`. All tests pass with no warnings.
 
 ## Workflow
 - Use `/tdd`. Write the failing tests first, then implement. #config
+
+## Review Findings (2026-10-19 15:37)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 19 file(s) reviewed, 10 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift:401` `completeness/inverse-operation-coverage` — The change makes `config init` omit `tools.agents` (the write side), but the new test only checks that the written text lacks an agents section. No test reads the written document back through the loader to confirm it still loads to the builtin configuration with the agents tool on. The deleted test `eachOffShapeOfTheAgentsSectionReadsBackTheSame` covered that read-back, and the replacement does not. The sibling test `theConfigInitDocumentReadsBackWithTheSectionOn` covers only the switch-only sections, not agents. Add a read-back check: write the builtin document with `ConfigurationYAML.documentText`, load it with `fixture.loadProjectConfig(text)`, and assert the loaded `tools` equals the builtin `tools`. Also assert the document contains the other tool sections, so the absence check cannot pass on an empty document.

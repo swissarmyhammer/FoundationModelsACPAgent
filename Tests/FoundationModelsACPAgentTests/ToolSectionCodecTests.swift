@@ -397,13 +397,21 @@ import Testing
     }
 
     /// The document that `config init` writes has no `tools.agents`
-    /// section, because the section has no value to set.
-    @Test func theConfigInitDocumentHasNoAgentsSection() throws {
-        let builtin = try ConfigurationLoaderTests.Fixture().makeLoader().builtinConfiguration
+    /// section, because the section has no value to set. The document has
+    /// each other tool section, and it reads back to the builtin tools, with
+    /// the agents tool on.
+    @Test func theConfigInitDocumentHasNoAgentsSectionAndReadsBack() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+        let builtin = try fixture.makeLoader().builtinConfiguration
 
         let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
+        let loaded = try fixture.loadProjectConfig(text)
 
         #expect(!text.contains("\n  agents:"))
+        for tool in ToolsConfiguration.CodingKeys.allCases {
+            #expect(text.contains("\n  \(tool.stringValue):"), "no tools.\(tool.stringValue) section")
+        }
+        #expect(loaded.configuration.tools == builtin.tools)
     }
 
     // MARK: - The mcp tri-state
