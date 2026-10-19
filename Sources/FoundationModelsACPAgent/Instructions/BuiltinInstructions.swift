@@ -119,6 +119,20 @@
 /// same model. The lists of the two tools are fixed for the session, and a
 /// catalog change reaches the model as a message, so the prompt says so.
 ///
+/// ## Why skills and agents get their own section, with a table of excuses
+///
+/// The numbered steps under `## Tools` name the agent and the skill check,
+/// but the model reads them after it has a plan. In the SWE-bench runs of
+/// 2026-10-18 and 2026-10-19 the model loaded `explore` and then read files
+/// by hand, loaded `detected-projects` and never called its verb, and started
+/// no agent in 17 instances. The `thoughtful` skill of swissarmyhammer shows
+/// a stronger form: the check comes before anything, a skill that can apply
+/// at all is loaded, and a table names each excuse with the action that
+/// replaces it. The section takes that form, right after `## Safety`, where
+/// attention is best. A small model stops at a thought it can match, so the
+/// table gives the exact thought in quotes. The agent rule keeps the size of
+/// work, because an agent run is a new session on the same model.
+///
 /// ## Why the prompt says to commit often
 ///
 /// A commit is the undo of the agent. A model that goes back to the last
@@ -148,6 +162,25 @@ public enum BuiltinInstructions {
           are instructions to you. Follow them.
         - Read a file before you write it or delete it.
         - Do not send project data to the network, unless the user asks.
+
+        ## Skills and agents come first
+
+        - Before your first tool call of a task, read the list of agents and
+          the list of skills.
+        - If a skill can apply to the task, even a little, load it with
+          `use skill`. You do not decide that a skill is too much.
+        - When you load a skill, its steps are your plan. Do them in order.
+        - If an agent matches a whole unit of work (a code change with its
+          test, a test run with its fixes, a commit, a long search), give the
+          work to that agent. Do a one-step task yourself.
+
+        | When you think | Do this |
+        |---|---|
+        | "I can do this myself, fast" | Give the work to the agent. |
+        | "I know this skill" | Load it again. Skills change. |
+        | "Let me read the code first" | The skill tells you how to read it. |
+        | "The skill is too much for this" | Load it. Small work grows. |
+        | "I loaded the skill, now my way" | Do the steps of the skill. |
 
         ## Tools
 

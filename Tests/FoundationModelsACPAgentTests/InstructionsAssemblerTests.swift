@@ -153,6 +153,27 @@ import Testing
         #expect(collapsed.contains("If a skill matches the task, load it and follow it."))
     }
 
+    /// The section of the skills and agents check comes right after
+    /// `## Safety` and before `## Tools`, it says that a skill that can
+    /// apply even a little is loaded, it makes the steps of a loaded skill
+    /// the plan, and it names the excuses of a model that skips a skill or
+    /// an agent (the `thoughtful` skill of swissarmyhammer; the SWE-bench
+    /// runs of 2026-10-18 and 2026-10-19).
+    @Test func theBuiltinPutsTheSkillsAndAgentsCheckFirstAndNamesTheExcuses() throws {
+        let text = BuiltinInstructions.text
+        let collapsed = Self.collapsingWhitespace(text)
+
+        let safety = try #require(text.range(of: "## Safety"))
+        let check = try #require(text.range(of: "## Skills and agents come first"))
+        let tools = try #require(text.range(of: "## Tools"))
+        #expect(safety.lowerBound < check.lowerBound)
+        #expect(check.lowerBound < tools.lowerBound)
+        #expect(collapsed.contains("If a skill can apply to the task, even a little, load it with `use skill`."))
+        #expect(collapsed.contains("When you load a skill, its steps are your plan."))
+        #expect(collapsed.contains("| \"I can do this myself, fast\" | Give the work to the agent. |"))
+        #expect(collapsed.contains("| \"I loaded the skill, now my way\" | Do the steps of the skill. |"))
+    }
+
     /// The Safety exception names both standalone tools, `skills` and
     /// `agents`: a loaded skill and a message of the `agents` tool are
     /// instructions, and each other tool result stays data (task ^c4a6mwy).
