@@ -5,7 +5,7 @@ import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsACPAgent
-@testable import FoundationModelsRouter
+import FoundationModelsRouter
 
 /// The no-op check of a tool call (task ^ys32tj4): the check marks a
 /// `runCode` call whose snippet calls no `tools.*` verb, and each session
@@ -152,9 +152,10 @@ struct NoOpSessionFixture {
     ///
     /// The live backend of Router gives the model each tool in Router's
     /// `SessionCheckedTool`, which asks the check of the session before the
-    /// tool body runs. The scripted backend calls the tools it gets as they
-    /// are, so the fixture gives it the `runCode` stub in that decorator.
-    var tools: [any FoundationModels.Tool] { [PendingJobTool(), runCode.sessionChecked] }
+    /// tool body runs. The loader of the fixture
+    /// (``makeHookLayeredModelLoader(script:)``) puts the same layers on the
+    /// tools of the scripted backend, thus the tools are the plain tools.
+    var tools: [any FoundationModels.Tool] { [PendingJobTool(), runCode] }
 
     /// The recording root of each session, and of the router.
     var recordingRoot: URL { Self.recordingRoot(in: directory) }
@@ -179,7 +180,7 @@ struct NoOpSessionFixture {
         let profile = try await makeStubProfile(
             cacheDirectory: directory.appendingPathComponent("cache", isDirectory: true),
             recordingsDirectory: recordingRoot(in: directory),
-            loader: makeScriptedModelLoader(script: NoOpToolCallTests.script))
+            loader: makeHookLayeredModelLoader(script: NoOpToolCallTests.script))
         return NoOpSessionFixture(directory: directory, profile: profile, runCode: CountingRunCodeTool())
     }
 

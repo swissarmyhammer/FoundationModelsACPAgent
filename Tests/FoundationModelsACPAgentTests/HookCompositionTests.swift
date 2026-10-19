@@ -4,7 +4,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsHooks
-@testable import FoundationModelsRouter
+import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -127,7 +127,7 @@ import Testing
     func aNewSessionSendsEachHookEventWithTheACPSessionIdAsItsKey() async throws {
         let recorder = RecordingHookVisitor()
         let fixture = try await ScriptedPromptFixture.make(
-            loader: HookLayeredLLMContainer.makeLoader(
+            loader: makeHookLayeredModelLoader(
                 script: try ScriptedPromptFixture.makeToolPromptScript(code: Self.writeCode)),
             label: "HookCompositionTests-events", hookVisitors: [recorder])
         try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.writePromptText, count: 1)
@@ -200,7 +200,7 @@ import Testing
         try GitVerbSupport.commitFile(
             named: Self.noteFileName, text: Self.committedNoteContent, message: "add the note", in: cwd)
         let fixture = try await ScriptedPromptFixture.make(
-            loader: HookLayeredLLMContainer.makeLoader(script: try Self.makeSnapshotScript()),
+            loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
             label: "HookCompositionTests-snapshots", workingDirectory: cwd)
         let note = cwd.appendingPathComponent(Self.noteFileName, isDirectory: false)
 
@@ -275,70 +275,6 @@ import Testing
         // No `fixture.close()`: the client end is gone, so a `session/close`
         // cannot go out. The suite trait closes the harness.
         #expect(milestones.value == [.sessionEndEntered, .sessionEndDelivered, .teardownReturned])
-    }
-}
-
-// MARK: - The hook layer of the scripted model
-
-/// A scripted container whose sessions get their tools with the hook layer
-/// of Router, as the live model loader gives them (`Tool.sessionChecked`).
-///
-/// Router puts the tool hook layer on the tools of a session in
-/// `LiveModelLoader` only. The scripted backend calls its tools directly,
-/// thus with no wrapper a scripted tool call sends no `PreToolUse`,
-/// `PreToolResult` and `PostToolUse`.
-struct HookLayeredLLMContainer: LoadedLLMContainer {
-    /// The scripted container that makes the backends.
-    let wrapped: ScriptedLLMContainer
-
-    /// The counter of the wrapped container.
-    var tokenCounter: any TokenCounter { wrapped.tokenCounter }
-
-    /// A backend with no tools.
-    ///
-    /// - Parameter instructions: The session instructions, or `nil`.
-    /// - Returns: The backend of the wrapped container.
-    func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        wrapped.makeSession(instructions: instructions)
-    }
-
-    /// A backend whose tools have the hook layer.
-    ///
-    /// - Parameters:
-    ///   - instructions: The session instructions, or `nil`.
-    ///   - tools: The tools of the session.
-    /// - Returns: The backend of the wrapped container.
-    func makeSession(instructions: String?, tools: [any Tool]) -> any LanguageModelSessionBackend {
-        wrapped.makeSession(instructions: instructions, tools: tools.map(\.sessionChecked))
-    }
-
-    /// A restored backend with no tools.
-    ///
-    /// - Parameter transcript: The transcript of the restored session.
-    /// - Returns: The backend of the wrapped container.
-    func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        wrapped.makeSession(transcript: transcript)
-    }
-
-    /// A restored backend whose tools have the hook layer.
-    ///
-    /// - Parameters:
-    ///   - transcript: The transcript of the restored session.
-    ///   - tools: The tools of the session.
-    /// - Returns: The backend of the wrapped container.
-    func makeSession(transcript: Transcript, tools: [any Tool]) -> any LanguageModelSessionBackend {
-        wrapped.makeSession(transcript: transcript, tools: tools.map(\.sessionChecked))
-    }
-
-    /// A loader whose containers play `script` with the hook layer on the
-    /// tools of each session.
-    ///
-    /// - Parameter script: The steps every session plays.
-    /// - Returns: The loader to inject.
-    static func makeLoader(script: [ScriptedPassStep]) -> StubModelLoader {
-        var loader = StubModelLoader()
-        loader.makeLLMContainer = { _ in HookLayeredLLMContainer(wrapped: ScriptedLLMContainer(script: script)) }
-        return loader
     }
 }
 

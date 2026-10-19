@@ -124,8 +124,24 @@ comments:
     - evidence: `swift test`: 995 tests in 112 suites passed, 1 known issue (the existing withKnownIssue of HarnessSmokeTests), 0 compiler warnings. 15 test files: Support/ScriptedPromptFixture.swift, Support/ResumeSessionFixture.swift, HookCompositionTests.swift, CompactionReportTests.swift, PromptExecutionTests.swift, ConfigOptionsTests.swift, UserPresenceTests.swift, SessionHistoryTests.swift, ConnectionCloseTests.swift, AgentReleaseTests.swift, RequestTracingTests.swift, TranscriptLocationOverrideTests.swift, TranscriptFidelityTests.swift, SessionSurfaceLoggingTests.swift, CancellationTests.swift. Card: 9 of 9 boxes `[x]`, 0 open findings.
     - next: /review
   timestamp: 2026-10-19T23:00:41.266649+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5b6evd2vgv8b39m2mkfq64y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c01606f). 15 files reviewed, 21 attempts, 0 findings, 0 confirmed, 0 refuted, 0 failed. The prior finding Support/ScriptedPromptFixture.swift:423 reuse/reuse is fixed: ResumeSessionFixture.runPrompt calls ScriptedPromptFixture.runPrompt. All prior items are checked.
+    - next: none. The card moved to done.
+  timestamp: 2026-10-19T23:03:01.282006+00:00
+- actor: wballard
+  id: 01m5b6fm9e9h02wvxfb6vxsyz9
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 15 test files (one runPrompt helper for each copy of the sequence)
+    - test: green — swift test, 995 passed, 0 failed
+    - commit: c01606f
+    - review: clean — 0 findings; prior ScriptedPromptFixture.swift:423 checked
+  timestamp: 2026-10-19T23:03:26.766732+00:00
+position_column: done
+position_ordinal: ffea80
 title: 'Wire hooks and snapshots into the composition: dispatcher, SnapshotStore, SnapshotHook, snapshots capability'
 ---
 Precondition (other boards): the FoundationModelsRouter cards 01M5ARTSQ3ZSQMRH1Z5QSTWWJ1, 01M5AS7RT8YA6KWDKXHQHWVD8S, 01M5AS7SMW3YPN03DPRNE3MRVH and 01M5ARTTKAX3YESYT2N8D73HCT, the FoundationModelsMultitool card 01M5ARZYZEH6R4XB6SX5WCD6B3, and the FoundationModelsHooks cards 01M5ARTJJ62RQX50B47G76HHYR and 01M5ARZY6273C826RVHA8RM5M1 are done and pushed. Until then, this card is blocked.
