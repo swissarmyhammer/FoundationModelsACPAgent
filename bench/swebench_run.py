@@ -766,9 +766,9 @@ with outpath.open("w" if args.force else "a") as out, \
                     log("transcripts", **about, path=kept)
                     # The agent runs write their transcripts into the
                     # recordings root of the Router, not into the clone.
-                    runs = keep_agent_run_transcripts(kept)
-                    if runs:
-                        log("agent run transcripts", **about, runs=len(runs), path=kept / AGENT_RUNS_DIR)
+                    agent_runs = keep_agent_run_transcripts(kept)
+                    if agent_runs:
+                        log("agent run transcripts", **about, runs=len(agent_runs), path=kept / AGENT_RUNS_DIR)
             except OSError as exc:
                 log("[yellow]transcripts not kept[/]", **about, error=exc)
             # The git reads of the agent that reached past the base commit.
