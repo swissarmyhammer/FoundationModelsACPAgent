@@ -102,23 +102,8 @@ public struct ConfigurationDoctor: Doctorable {
         .warning(
             name: sectionCheckName,
             message: warning.description,
-            fix: "remove \"\(key(of: warning))\" from \(ConfigurationLoader.configFileName)",
+            fix: "remove \"\(warning.sectionKeyPath)\" from \(ConfigurationLoader.configFileName)",
             category: category)
-    }
-
-    /// The dotted key path one warning names: the section, or the tool key
-    /// under `tools:`.
-    ///
-    /// - Parameter warning: The warning the loader returned.
-    /// - Returns: The key path a person edits to answer the warning.
-    private static func key(of warning: ConfigurationWarning) -> String {
-        switch warning {
-        case .unknownSection(let name):
-            return name
-        case .unknownToolSection(let name):
-            return AgentConfiguration.CodingKeys.tools.stringValue
-                + LoadedConfiguration.keyPathSeparator + name
-        }
     }
 
     // MARK: - The layer paths

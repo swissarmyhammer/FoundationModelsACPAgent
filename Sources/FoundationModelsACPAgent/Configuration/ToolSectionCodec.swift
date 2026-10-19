@@ -68,6 +68,26 @@ public enum ToolSection<Options: ToolSectionOptions>: Codable, Equatable, Sendab
     }
 }
 
+/// The decode of one `tools:` entry for a tool that is always on, such as
+/// the skills tool. The config cannot turn the tool off (the user decided
+/// this on 2026-10-19): each scalar boolean, `{}` and null give the option
+/// defaults, and a mapping body gives the decoded options. The loader gives
+/// a ``ConfigurationWarning/cannotDisable(section:)`` for a scalar `false`.
+struct AlwaysOnToolSection<Options: ToolSectionOptions>: Decodable {
+    /// The options of the tool.
+    let options: Options
+
+    /// Decodes the scalar boolean first, then the mapping body.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        guard container.scalarBooleanFlag == nil else {
+            options = Options()
+            return
+        }
+        options = try container.decode(Options.self)
+    }
+}
+
 // MARK: - The option bodies
 
 /// The `tools.files:` body — the three flags and the exclude list of
@@ -202,6 +222,9 @@ public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
 /// branch ``defaultMarketplaceRef``. The agent registry reads the same list,
 /// thus this marketplace also gives the marketplace agents. An empty list
 /// turns the marketplaces off.
+///
+/// The skills tool is always on. The scalar `skills: false` does not turn
+/// it off: the loader gives a warning, and the options are the defaults.
 ///
 /// ```yaml
 /// tools:
@@ -460,9 +483,8 @@ extension ToolSection where Options: SwitchableToolOptions {
 
 /// The body of a tool section whose only key is `enabled`: whether the
 /// capability mounts. The capability is on by default, and the scalar
-/// `<name>: false` of the shared codec turns it off too. ``GitToolOptions``,
-/// ``EnvironmentToolOptions`` and ``AgentsToolOptions`` are names of this
-/// type.
+/// `<name>: false` of the shared codec turns it off too. ``GitToolOptions``
+/// and ``EnvironmentToolOptions`` are names of this type.
 public struct SwitchOnlyToolOptions: SwitchableToolOptions, KeyCheckedSection {
     /// Whether the capability mounts.
     public var enabled: Bool
@@ -521,22 +543,6 @@ public typealias GitToolOptions = SwitchOnlyToolOptions
 /// the agent process, secrets too: set `enabled: false` to keep them out of
 /// the model context. The section has no variable filter.
 public typealias EnvironmentToolOptions = SwitchOnlyToolOptions
-
-/// The `tools.agents:` body: whether the standalone `agents` tool mounts.
-///
-/// ```yaml
-/// tools:
-///   agents:
-///     enabled: true
-/// ```
-///
-/// The `agents` tool of FoundationModelsAgents starts an agent, an
-/// `agents/<name>/AGENT.md` folder, in its own session, and the tool is on
-/// by default. The section has no `marketplaces` key: the agent registry
-/// reads the marketplaces of `tools.skills` through the one marketplace
-/// store of the session. The settle period of a `start agent` call is the
-/// settle period of the session, so the section has no settle key either.
-public typealias AgentsToolOptions = SwitchOnlyToolOptions
 
 // MARK: - The mcp entry
 
@@ -678,6 +684,13 @@ public enum MCPToolSection: Codable, Equatable, Sendable {
 /// a user with no config gets every capability with its defaults — and
 /// disabling is per tool: there is no `tools: false` switch and no `only:`
 /// allowlist.
+///
+/// The skills tool and the standalone `agents` tool are always on (the user
+/// decided this on 2026-10-19). The skills entry has no off state, and the
+/// roster has no agents entry, because the agents section has no option
+/// other than `enabled`. A config that tries to turn one of them off still
+/// loads: the loader gives a ``ConfigurationWarning/cannotDisable(section:)``
+/// warning, and the tool stays on.
 public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// The files capability's entry.
     public var files = ToolSection<FilesToolOptions>.enabled(FilesToolOptions())
@@ -685,11 +698,8 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
     /// The shell capability's entry.
     public var shell = ToolSection<ShellToolOptions>.enabled(ShellToolOptions())
 
-    /// The skills tool's entry.
-    public var skills = ToolSection<SkillsToolOptions>.enabled(SkillsToolOptions())
-
-    /// The standalone `agents` tool's entry.
-    public var agents = ToolSection<AgentsToolOptions>.enabled(AgentsToolOptions())
+    /// The options of the skills tool, which is always on.
+    public var skills = SkillsToolOptions()
 
     /// The code context capability's entry.
     public var codeContext = ToolSection<CodeContextToolOptions>.enabled(CodeContextToolOptions())
@@ -711,15 +721,25 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
 
     /// The YAML spelling of each tool key.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case files, shell, skills, agents, codeContext, web, git, environment, mcp
+        case files, shell, skills, codeContext, web, git, environment, mcp
     }
+
+    /// The key of the standalone `agents` tool under `tools:`. The tool is
+    /// always on, thus the roster has no property and no coding key for it.
+    /// The key stays known, so that the loader gives no unknown-tool-section
+    /// warning for it.
+    static let agentsKey = "agents"
+
+    /// The body keys of the `agents` section. `enabled` is the one key: the
+    /// value `true` changes nothing, and the value `false` gives a warning.
+    static let agentsBodyKeys: Set<String> = [SwitchOnlyToolOptions.CodingKeys.enabled.stringValue]
 
     /// The default roster: every built-in on, with its defaults.
     public init() {}
 
     /// Decodes each named tool and keeps the enabled default for each
-    /// absent or null one. A key that names no tool is not read here: the
-    /// loader reports it as a warning before the decode.
+    /// absent or null one. A key that names no tool, and the `agents` key,
+    /// are not read here: the loader checks them before the decode.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         files =
@@ -729,11 +749,9 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
             try container.decodeIfPresent(ToolSection<ShellToolOptions>.self, forKey: .shell)
             ?? shell
         skills =
-            try container.decodeIfPresent(ToolSection<SkillsToolOptions>.self, forKey: .skills)
+            try container.decodeIfPresent(
+                AlwaysOnToolSection<SkillsToolOptions>.self, forKey: .skills)?.options
             ?? skills
-        agents =
-            try container.decodeIfPresent(ToolSection<AgentsToolOptions>.self, forKey: .agents)
-            ?? agents
         codeContext =
             try container.decodeIfPresent(
                 ToolSection<CodeContextToolOptions>.self, forKey: .codeContext)
@@ -749,16 +767,17 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
 }
 
 extension ToolsConfiguration {
-    /// The known body keys of each mapping-bodied tool, by the tool's YAML
-    /// spelling. `mcp` is not here: its body is a list of server entries,
-    /// each checked against `MCPServerConfiguration.knownKeys`. The tests of
+    /// The known body keys of each mapping-bodied tool of the roster, by the
+    /// tool's YAML spelling. `mcp` is not here: its body is a list of server
+    /// entries, each checked against `MCPServerConfiguration.knownKeys`. The
+    /// `agents` section is not here either, because the roster has no agents
+    /// entry: ``agentsBodyKeys`` holds its keys. The tests of
     /// ``BuiltinConfigurationFile`` read it to make sure that the builtin
     /// file names each key.
     static let optionKeys: [String: Set<String>] = [
         CodingKeys.files.stringValue: FilesToolOptions.knownKeys,
         CodingKeys.shell.stringValue: ShellToolOptions.knownKeys,
         CodingKeys.skills.stringValue: SkillsToolOptions.knownKeys,
-        CodingKeys.agents.stringValue: AgentsToolOptions.knownKeys,
         CodingKeys.codeContext.stringValue: CodeContextToolOptions.knownKeys,
         CodingKeys.web.stringValue: WebToolOptions.knownKeys,
         CodingKeys.git.stringValue: GitToolOptions.knownKeys,
@@ -768,7 +787,8 @@ extension ToolsConfiguration {
     /// The key checks of the `tools:` body, run by the
     /// loader before the decode.
     ///
-    /// - Returns: One warning per unknown tool key, in key order — an
+    /// - Returns: One warning per unknown tool key and one per entry that
+    ///   tries to turn off a tool that is always on, in key order. An
     ///   unknown tool section is a warning only, unlike an unknown key in
     ///   a checked section.
     /// - Throws: `ConfigurationError.unknownKey` for a key a known tool
@@ -785,8 +805,10 @@ extension ToolsConfiguration {
 
     /// The warning one tool entry gives, after its body keys pass.
     ///
-    /// - Returns: The unknown-tool-section warning when no roster entry has
-    ///   this name; `nil` when the tool is known and its body keys pass.
+    /// - Returns: The unknown-tool-section warning when no tool has this
+    ///   name; the cannot-disable warning when the entry tries to turn off
+    ///   a tool that is always on; `nil` when the tool is known and its body
+    ///   keys pass.
     /// - Throws: `ConfigurationError.unknownKey` for the first key, in key
     ///   order, that the tool's body does not decode.
     private static func schemaWarning(forTool name: String, body: YAMLValue) throws
@@ -796,7 +818,7 @@ extension ToolsConfiguration {
             try checkServerEntryKeys(inBody: body)
             return nil
         }
-        guard let bodyKeys = optionKeys[name] else {
+        guard let bodyKeys = bodyKeys(ofTool: name) else {
             return .unknownToolSection(name: name)
         }
         try ConfigurationError.checkKeys(
@@ -804,7 +826,34 @@ extension ToolsConfiguration {
         if name == CodingKeys.web.stringValue {
             try checkAPIKeyNames(inBody: body)
         }
-        return nil
+        return turnsOffAnAlwaysOnTool(name, body: body) ? .cannotDisable(section: name) : nil
+    }
+
+    /// The known body keys of one tool.
+    ///
+    /// - Parameter name: The key of the tool under `tools:`.
+    /// - Returns: The body keys, or `nil` when no tool has this name.
+    private static func bodyKeys(ofTool name: String) -> Set<String>? {
+        name == agentsKey ? agentsBodyKeys : optionKeys[name]
+    }
+
+    /// Whether one entry tries to turn off a tool that is always on: the
+    /// scalar `skills: false`, the scalar `agents: false`, or the body
+    /// `agents: {enabled: false}`.
+    ///
+    /// - Parameters:
+    ///   - name: The key of the tool under `tools:`.
+    ///   - body: The body of the entry.
+    /// - Returns: `true` when the entry asks for the tool to be off.
+    private static func turnsOffAnAlwaysOnTool(_ name: String, body: YAMLValue) -> Bool {
+        switch (name, body) {
+        case (CodingKeys.skills.stringValue, .bool(false)), (agentsKey, .bool(false)):
+            return true
+        case (agentsKey, .dictionary(let keys)):
+            return keys[SwitchOnlyToolOptions.CodingKeys.enabled.stringValue] == .bool(false)
+        default:
+            return false
+        }
     }
 
     /// Checks each key of the `apiKeys` map of a `web:` body against the

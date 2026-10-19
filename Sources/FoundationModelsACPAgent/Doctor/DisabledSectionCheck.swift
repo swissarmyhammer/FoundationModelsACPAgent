@@ -4,10 +4,10 @@ import FoundationModelsExtras
 /// The finding of one tool section the configuration turned off
 /// (cli-plan.md §5.12).
 ///
-/// Two components report such a row: ``ToolsDoctor`` for the shell and the
-/// MCP servers, and ``RuntimeDoctor`` for the skills. The row says the same
-/// thing in each case — the section is off, so the tool is not mounted and
-/// nothing behind it is checked — so the sentence is written one time here.
+/// ``ToolsDoctor`` reports such a row for each tool section that is off. The
+/// row says the same thing in each case — the section is off, so the tool is
+/// not mounted and nothing behind it is checked — so the sentence is written
+/// one time here.
 ///
 /// The row passes. A tool a person turned off on purpose is not a fault.
 enum DisabledSectionCheck {

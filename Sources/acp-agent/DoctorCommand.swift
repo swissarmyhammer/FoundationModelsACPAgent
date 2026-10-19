@@ -139,9 +139,7 @@ extension AcpAgentCommand {
                 ToolsDoctor(
                     configuration: outcome.configuration, workingDirectory: workingDirectory,
                     prober: prober, environment: environment),
-                RuntimeDoctor(
-                    configuration: outcome.configuration, workingDirectory: workingDirectory,
-                    environment: environment),
+                RuntimeDoctor(workingDirectory: workingDirectory, environment: environment),
             ]
         }
 

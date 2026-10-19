@@ -891,7 +891,7 @@ extension RoutedACPAgent {
         let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
         let instructions = try await InstructionsAssembler(
             stack: context.loader.stack, workingDirectory: workingDirectory
-        ).assemble(skills: skills?.registry)
+        ).assemble(skills: skills.registry)
 
         let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
             .appending(hostTools: hostTools)
@@ -900,7 +900,7 @@ extension RoutedACPAgent {
             configuration: context.loaded.configuration,
             instructions: instructions.text,
             surface: surface,
-            commandProviders: makeCommandProviders(surface: surface, skills: skills?.registry),
+            commandProviders: makeCommandProviders(surface: surface, skills: skills.registry),
             userLayerRoot: context.userLayerRoot,
             transcriptRoot: context.transcriptRoot,
             isReplayOnly: false)
@@ -913,18 +913,13 @@ extension RoutedACPAgent {
     ///
     /// - Parameters:
     ///   - surface: The mounted tool surface whose conformers join.
-    ///   - skills: The session's skills registry, or `nil` when the
-    ///     `skills:` section is off.
+    ///   - skills: The session's skills registry.
     /// - Returns: The providers, in precedence order.
     private func makeCommandProviders(
-        surface: SessionSurface, skills: SkillsRegistry?
+        surface: SessionSurface, skills: SkillsRegistry
     ) -> [any SlashCommandProviding] {
-        var providers = surface.tools.compactMap { $0 as? any SlashCommandProviding }
-        providers.append(contentsOf: commandProviders)
-        if let skills {
-            providers.append(SkillCommandSource(registry: skills))
-        }
-        return providers
+        surface.tools.compactMap { $0 as? any SlashCommandProviding } + commandProviders
+            + [SkillCommandSource(registry: skills)]
     }
 
     /// Publishes each change of the session's command set:

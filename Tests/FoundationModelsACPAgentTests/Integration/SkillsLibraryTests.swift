@@ -134,14 +134,6 @@ import Testing
         #expect(!schema.contains(Self.hiddenID))
     }
 
-    @Test func aDisabledSkillsSectionMountsNoSkillsTool() async throws {
-        let surface = try await Self.makeSurface(label: "disabled") { configuration in
-            configuration.tools.skills = .disabled
-        }
-
-        #expect(!surface.tools.contains { $0.name == "skills" })
-    }
-
     // MARK: - A prompt that loads a skill
 
     /// The text of every `tool_call_update` content block of the collected

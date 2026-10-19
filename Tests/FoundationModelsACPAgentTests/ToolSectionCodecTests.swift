@@ -27,7 +27,7 @@ import Testing
         let tools = loaded.configuration.tools
         #expect(tools.files == .enabled(Self.loadedFilesDefaults))
         #expect(tools.shell == .enabled(ShellToolOptions()))
-        #expect(tools.skills == .enabled(SkillsToolOptions()))
+        #expect(tools.skills == SkillsToolOptions())
         #expect(tools.codeContext == .enabled(CodeContextToolOptions()))
         #expect(tools.mcp == .enabled(servers: []))
     }
@@ -43,7 +43,7 @@ import Testing
             """)
 
         #expect(loaded.configuration.tools.shell == .enabled(ShellToolOptions()))
-        #expect(loaded.configuration.tools.skills == .enabled(SkillsToolOptions()))
+        #expect(loaded.configuration.tools.skills == SkillsToolOptions())
     }
 
     /// Shape 3: `{}`, null and `true` each give on with defaults —
@@ -79,7 +79,7 @@ import Testing
 
         #expect(loaded.configuration.tools.shell == .disabled)
         #expect(loaded.configuration.tools.files == .enabled(Self.loadedFilesDefaults))
-        #expect(loaded.configuration.tools.skills == .enabled(SkillsToolOptions()))
+        #expect(loaded.configuration.tools.skills == SkillsToolOptions())
         #expect(loaded.configuration.tools.mcp == .enabled(servers: []))
     }
 
@@ -179,7 +179,7 @@ import Testing
         let expected = SkillsToolOptions(marketplaces: [
             MarketplaceSource("https://github.com/swissarmyhammer/skills.git", ref: "code-context")
         ])
-        #expect(loaded.configuration.tools.skills == .enabled(expected))
+        #expect(loaded.configuration.tools.skills == expected)
     }
 
     // MARK: - The default skills marketplace
@@ -196,7 +196,7 @@ import Testing
         let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
             "recording:\n  level: full\n")
 
-        #expect(loaded.configuration.tools.skills == .enabled(Self.defaultSkillsOptions))
+        #expect(loaded.configuration.tools.skills == Self.defaultSkillsOptions)
     }
 
     /// The scalar `skills: true` gives the default marketplace too, because
@@ -205,7 +205,18 @@ import Testing
         let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
             "tools:\n  skills: true\n")
 
-        #expect(loaded.configuration.tools.skills == .enabled(Self.defaultSkillsOptions))
+        #expect(loaded.configuration.tools.skills == Self.defaultSkillsOptions)
+    }
+
+    /// The config cannot turn the skills tool off. Each scalar shape and the
+    /// empty shapes of `tools.skills` give the default options, thus the
+    /// default marketplace too.
+    @Test(arguments: ["skills: false", "skills: true", "skills: {}", "skills:"])
+    func eachScalarAndEmptySkillsShapeGivesTheDefaultOptions(entry: String) throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  \(entry)\n")
+
+        #expect(loaded.configuration.tools.skills == Self.defaultSkillsOptions)
     }
 
     /// A user layer that sets `marketplaces: []` gives no marketplace: the
@@ -216,7 +227,7 @@ import Testing
 
         let loaded = try fixture.makeLoader().load()
 
-        #expect(loaded.configuration.tools.skills == .enabled(SkillsToolOptions(marketplaces: [])))
+        #expect(loaded.configuration.tools.skills == SkillsToolOptions(marketplaces: []))
     }
 
     /// The code context body decodes its two policies, and a scalar
@@ -253,9 +264,8 @@ import Testing
     // MARK: - The switch-only sections
 
     /// One tool section whose body has the `enabled` key only: the git
-    /// tools, the environment tools, and the `agents` tool. Each check below
-    /// runs over each section, thus the checks of the sections cannot drift
-    /// apart.
+    /// tools and the environment tools. Each check below runs over each
+    /// section, thus the checks of the sections cannot drift apart.
     struct SwitchOnlySection: Sendable, CustomTestStringConvertible {
         /// The key of the section under `tools:`.
         let key: String
@@ -304,12 +314,6 @@ import Testing
             key: "environment", unknownKey: "exclude",
             configInitFragment: "  environment:\n    enabled: true\n",
             section: { $0.environment }),
-        // The agent registry reads the skills marketplaces, thus
-        // `marketplaces` is not a key of the agents body.
-        SwitchOnlySection(
-            key: "agents", unknownKey: "marketplaces",
-            configInitFragment: "  agents:\n    enabled: true\n",
-            section: { $0.agents }),
     ]
 
     /// With no key for the section, the section is on, with the defaults.
@@ -366,24 +370,40 @@ import Testing
 
     // MARK: - The agents section
 
-    /// Each off shape of the agents section, the scalar `agents: false` and
-    /// the body `enabled: false`, encodes to a document that reads back to
-    /// the same section, with the `agents` tool off.
+    /// The config cannot turn the `agents` tool off, thus the roster has no
+    /// agents entry. Each scalar shape and each mapping shape of
+    /// `tools.agents` loads, and the roster is the builtin roster.
     @Test(arguments: [
-        ToolSection<AgentsToolOptions>.disabled, .enabled(AgentsToolOptions(enabled: false)),
+        "agents: false", "agents: true", "agents: {}", "agents:",
+        "agents:\n    enabled: false", "agents:\n    enabled: true",
     ])
-    func eachOffShapeOfTheAgentsSectionReadsBackTheSame(
-        section: ToolSection<AgentsToolOptions>
-    ) throws {
+    func eachShapeOfTheAgentsSectionGivesTheBuiltinRoster(entry: String) throws {
         let fixture = ConfigurationLoaderTests.Fixture()
-        var configuration = try fixture.makeLoader().builtinConfiguration
-        configuration.tools.agents = section
 
-        let text = try ConfigurationYAML.documentText(for: configuration, secrets: .omitted)
-        let loaded = try fixture.loadProjectConfig(text)
+        let loaded = try fixture.loadProjectConfig("tools:\n  \(entry)\n")
 
-        #expect(loaded.configuration.tools.agents == section)
-        #expect(loaded.configuration.tools.agents.mountedOptions == nil)
+        #expect(loaded.configuration.tools == (try fixture.makeLoader().builtinConfiguration.tools))
+    }
+
+    /// The agents body has the `enabled` key only. The agent registry reads
+    /// the skills marketplaces, thus `marketplaces` in the agents body is an
+    /// unknown key that names `tools.agents`.
+    @Test func anUnknownKeyInTheAgentsBodyIsAnError() throws {
+        let fixture = ConfigurationLoaderTests.Fixture()
+
+        #expect(throws: ConfigurationError.unknownKey(section: "tools.agents", key: "marketplaces")) {
+            try fixture.loadProjectConfig("tools:\n  agents:\n    marketplaces: []\n")
+        }
+    }
+
+    /// The document that `config init` writes has no `tools.agents`
+    /// section, because the section has no value to set.
+    @Test func theConfigInitDocumentHasNoAgentsSection() throws {
+        let builtin = try ConfigurationLoaderTests.Fixture().makeLoader().builtinConfiguration
+
+        let text = try ConfigurationYAML.documentText(for: builtin, secrets: .omitted)
+
+        #expect(!text.contains("\n  agents:"))
     }
 
     // MARK: - The mcp tri-state
