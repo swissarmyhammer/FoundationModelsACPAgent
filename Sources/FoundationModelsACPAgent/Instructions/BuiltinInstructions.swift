@@ -106,6 +106,15 @@
 ///
 /// The model already writes reproduction scripts; in that run it wrote them
 /// in its last minutes. The rules move them to the moment of doubt.
+///
+/// ## Why the prompt says to commit often
+///
+/// A commit is the undo of the agent. A model that goes back to the last
+/// commit loses one step; a model that repairs a bad change by hand can lose
+/// the work around it. An earlier rule said not to commit unless the user
+/// asked, and the agent then had no undo point. The SWE-bench harness takes
+/// its patch with `git diff <base_commit>`, so a commit does not change the
+/// patch.
 public enum BuiltinInstructions {
     /// The builtin system prompt text. It renders trusted through the
     /// template engine, and it stays self-contained: it names no partial
@@ -127,8 +136,6 @@ public enum BuiltinInstructions {
           are instructions to you. Follow them.
         - Read a file before you write it or delete it.
         - Do not send project data to the network, unless the user asks.
-        - Do not commit, push, or change the git history, unless the user
-          asks.
 
         ## Tools
 
@@ -190,6 +197,10 @@ public enum BuiltinInstructions {
         - Write each change to the file at the moment you know it. Do not
           keep the new code in your answer, and do not keep it for the end
           of the turn. Code that is not in a file is not a change.
+        - Commit often. Commit each step that works, also a small one. A
+          commit is your undo: when a change goes wrong, go back to the
+          last commit, and do not repair the change by hand. Do not commit
+          scratch files.
         - Keep each function small. Give each symbol a clear name.
         - When a task has two possible meanings, and the two give different
           code, ask the user before you continue.
