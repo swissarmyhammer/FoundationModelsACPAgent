@@ -86,6 +86,44 @@ comments:
     - evidence: `swift test`: 995 tests in 112 suites passed, 1 known issue (the existing withKnownIssue of HarnessSmokeTests), 0 compiler warnings. 4 files: Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift, Tests/FoundationModelsACPAgentTests/CompactionReportTests.swift, Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift. Card: 8 of 8 boxes `[x]`, 0 open findings.
     - next: /review
   timestamp: 2026-10-19T22:51:50.917559+00:00
+- actor: claude-code
+  id: 01m5b5ytymw48p224hbtxcaga8
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (a904427). 1 finding (1 confirmed, 1 refuted). Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift:423 reuse/reuse. The prior finding HookCompositionTests.swift:243 reuse/reuse is checked.
+    - next: Make ResumeSessionFixture.runPrompt call ScriptedPromptFixture.runPrompt, or extend the shared helper so the resume fixture can use it. If the return types cannot agree, write a doc comment that tells why the resume path keeps its own copy.
+  timestamp: 2026-10-19T22:54:16.532901+00:00
+- actor: wballard
+  id: 01m5b5zgcysam9ejhsb1da6gp8
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 4 files (shared ScriptedPromptFixture.runPrompt)
+    - test: green — swift test, 995 passed, 0 failed
+    - commit: a904427
+    - review: findings — Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift:423 (prior HookCompositionTests.swift:243 checked)
+  timestamp: 2026-10-19T22:54:38.494831+00:00
+- actor: claude-code
+  id: 01m5b639npchcs6rwpe640t7k4
+  text: 'Research for the finding ScriptedPromptFixture.swift:423 `reuse/reuse`. The send / idle-wait / prompts-finished sequence has more copies than `ResumeSessionFixture.runPrompt`. Copies found: ResumeSessionFixture.runPrompt, PromptExecutionTests (3 sites), ConfigOptionsTests (3 sites), UserPresenceTests (2), TranscriptLocationOverrideTests, TranscriptFidelityTests.drivePrompt, SessionHistoryTests, ConnectionCloseTests, SessionSurfaceLoggingTests, AgentReleaseTests, RequestTracingTests, CancellationTests. Three of them need what the shared helper does not give now: the PromptResponse (ResumeSessionFixture, SessionHistoryTests), a request that the test builds (RequestTracingTests `_meta`, the private makePromptRequest of PromptExecutionTests and CancellationTests), and a harness with no fixture or a second session (TranscriptLocationOverrideTests, TranscriptFidelityTests). Plan: the shared helper takes a PromptRequest and a harness and returns a `PromptRun` (response + updates). A text overload on the fixture calls it. Not copies (no idle wait, or the idle is of a later mail): MailDeliveryPauseTests, PromptFollowUpTests, BuiltinCommandsTests and CompactionReportTests `/compact` gate sites, CancellationTests multi-session site.'
+  timestamp: 2026-10-19T22:56:42.678765+00:00
+- actor: claude-code
+  id: 01m5b6adgabxr011ee63wvnyzv
+  text: |-
+    Finding ScriptedPromptFixture.swift:423 `reuse/reuse` is fixed. Not committed.
+    - The shared helper is now one sequence: `ScriptedPromptFixture.runPrompt(_ request:through harness:count:whileRunning:)`. It sends the request, runs `whileRunning`, waits for `count` idle updates, waits for prompts-finished of `request.sessionId`, drains the hook dispatcher, and returns `PromptRun` (`response` + `updates`). `runPrompt(on:text:count:whileRunning:)` builds the request and calls it. `count` has the default 1.
+    - The return types agree: `PromptRun` carries the PromptResponse, so no doc-comment exception was necessary. `ResumeSessionFixture.runPrompt` now calls the shared helper and returns `.response`.
+    - Other copies of the send / idle-wait / prompts-finished sequence now call the helper: PromptExecutionTests (3 sites; the two-prompt cancel proof uses `whileRunning`; the repetition proof waits for the journal after the helper), ConfigOptionsTests (3), UserPresenceTests (2), SessionHistoryTests (uses `.response`), ConnectionCloseTests, AgentReleaseTests, RequestTracingTests (request with `_meta`), TranscriptLocationOverrideTests (harness with no fixture), TranscriptFidelityTests.drivePrompt (second session; waitForRecordedResponses after the helper), SessionSurfaceLoggingTests and CancellationTests (cancel in `whileRunning`). The callers of the old return type (HookCompositionTests, CompactionReportTests) read `.updates`.
+    - Not copies, so not changed: MailDeliveryPauseTests, PromptFollowUpTests, BuiltinCommandsTests and CompactionReportTests `/compact` gate sites (no idle wait), CancellationTests multi-session proof (the idle is of the other session).
+    - The drain now also runs for these suites. It only waits for hook work in progress; the full suite stays green.
+    - Tool note: `kanban move task` / `update task` / `add comment` return the full board (more than 70k characters) here.
+  timestamp: 2026-10-19T23:00:35.978648+00:00
+- actor: claude-code
+  id: 01m5b6ajnjke22vcknda74pb73
+  text: |-
+    ### implement — changed
+    - evidence: `swift test`: 995 tests in 112 suites passed, 1 known issue (the existing withKnownIssue of HarnessSmokeTests), 0 compiler warnings. 15 test files: Support/ScriptedPromptFixture.swift, Support/ResumeSessionFixture.swift, HookCompositionTests.swift, CompactionReportTests.swift, PromptExecutionTests.swift, ConfigOptionsTests.swift, UserPresenceTests.swift, SessionHistoryTests.swift, ConnectionCloseTests.swift, AgentReleaseTests.swift, RequestTracingTests.swift, TranscriptLocationOverrideTests.swift, TranscriptFidelityTests.swift, SessionSurfaceLoggingTests.swift, CancellationTests.swift. Card: 9 of 9 boxes `[x]`, 0 open findings.
+    - next: /review
+  timestamp: 2026-10-19T23:00:41.266649+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Wire hooks and snapshots into the composition: dispatcher, SnapshotStore, SnapshotHook, snapshots capability'
@@ -135,3 +173,12 @@ Work:
 > - `README.md` — no validator matches this file
 
 - [x] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:243` `reuse/reuse` — The new private static runPrompt helper repeats the send, wait, drain, and text-extraction sequence that CompactionReportTests.runPrompt and TelemetryContentSafetyTests.runPrompt already implement. The shared shape belongs in ScriptedPromptFixture, beside waitForIdle and waitForPromptsFinished, so one canonical version serves all suites. Move the shared sequence into ScriptedPromptFixture as a static helper that takes the fixture, the text, and the count, and returns the updates. Have HookCompositionTests, CompactionReportTests, and TelemetryContentSafetyTests call it. Keep each suite's extraction of its own text (toolCallText) in that suite, or pass it as a closure.
+
+## Review Findings (2026-10-19 17:52)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift:423` `reuse/reuse` — The new shared `ScriptedPromptFixture.runPrompt` repeats the prompt, idle-wait and prompts-finished sequence of `ResumeSessionFixture.runPrompt`, which already exists. The change adds a parallel copy instead of extending or routing through the existing helper, so two prompt-run paths now have to be kept in step. Make `ResumeSessionFixture.runPrompt` call `ScriptedPromptFixture.runPrompt`, or extend the shared helper so the resume fixture can use it. If the return types cannot be reconciled, state in a doc comment why the resume path keeps its own copy. This is a judgment call: the drain step may be the deliberate difference.

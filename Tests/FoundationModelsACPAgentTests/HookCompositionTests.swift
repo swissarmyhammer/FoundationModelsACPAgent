@@ -242,8 +242,8 @@ import Testing
         _ text: String, in fixture: ScriptedPromptFixture, count: Int
     ) async throws -> String {
         let countBefore = await fixture.collector.updates.count
-        let updates = try await ScriptedPromptFixture.runPrompt(on: fixture, text: text, count: count)
-        return SkillsLibraryTests.toolCallText(in: Array(updates.dropFirst(countBefore)))
+        let run = try await ScriptedPromptFixture.runPrompt(on: fixture, text: text, count: count)
+        return SkillsLibraryTests.toolCallText(in: Array(run.updates.dropFirst(countBefore)))
     }
 
     // MARK: - The end of the connection

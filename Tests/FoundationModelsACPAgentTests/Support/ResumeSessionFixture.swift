@@ -275,22 +275,19 @@ struct ResumeSessionFixture {
             of: cwd, dotfolderName: AgentClientHarness.dotfolderName)
     }
 
-    /// Drives one prompt over the wire and waits until the session
-    /// accepts the next prompt.
+    /// Drives one prompt over the wire with
+    /// ``ScriptedPromptFixture/runPrompt(on:text:count:whileRunning:)``, and
+    /// waits until the session accepts the next prompt.
     ///
     /// - Parameter text: The prompt text.
     /// - Returns: The prompt response, which names the user message.
     /// - Throws: Whatever the wire call or the waits throw.
     @discardableResult
     mutating func runPrompt(_ text: String) async throws -> PromptResponse {
-        let response = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
         completedPromptCount += 1
-        _ = try await ScriptedPromptFixture.waitForIdle(
-            fixture.collector, count: completedPromptCount)
-        await ScriptedPromptFixture.waitForPromptsFinished(
-            fixture.harness.agent, fixture.sessionId)
-        return response
+        return try await ScriptedPromptFixture.runPrompt(
+            on: fixture, text: text, count: completedPromptCount
+        ).response
     }
 
     /// Records one root session through the resident profile of the agent,

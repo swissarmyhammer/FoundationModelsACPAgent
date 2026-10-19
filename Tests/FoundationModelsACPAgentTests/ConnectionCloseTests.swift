@@ -67,10 +67,7 @@ import Testing
             let agent = fixture.harness.agent
             let entry = try #require(await agent.sessions[fixture.sessionId])
             transcriptDirectory = entry.transcriptDirectory
-            _ = try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            await ScriptedPromptFixture.waitForPromptsFinished(agent, fixture.sessionId)
+            try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.promptText)
             // The end of the prompt wrote the history. The case removes the
             // file, so only the close path of the dropped wire can write it
             // again.

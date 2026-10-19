@@ -113,10 +113,7 @@ import Testing
     func theEndOfAPromptWritesTheHistoryWithTheUserMessageOfTheResponse() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta("Hello."), .endPass], label: "SessionHistoryTests-prompt-end")
-        let response = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "Say hello"))
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        let response = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "Say hello").response
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
         await fixture.close()
 

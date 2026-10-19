@@ -405,32 +405,66 @@ struct ScriptedPromptFixture {
         await agent.awaitPromptsFinished(of: sessionId)
     }
 
-    /// Sends one prompt over the wire and waits until the prompt and its end
-    /// work are done. Then it drains the hook dispatcher of the agent, so
-    /// each post event and each snapshot of the prompt is complete.
-    ///
-    /// A suite reads its own text from the returned updates.
+    /// One prompt that ran to its end with
+    /// ``runPrompt(_:through:count:whileRunning:)``.
+    struct PromptRun {
+        /// The prompt response, which names the user message.
+        let response: PromptResponse
+
+        /// The collected sequence at the idle wait, from the start of the
+        /// connection.
+        let updates: [UpdateSessionNotification]
+    }
+
+    /// Sends one prompt in the session of `fixture` over the wire, and waits
+    /// until the prompt and its end work are done.
     ///
     /// - Parameters:
     ///   - fixture: The wired fixture.
     ///   - text: The prompt text.
-    ///   - count: The number of prompts that the session has ended after
+    ///   - count: The number of idle updates that the collector holds after
     ///     this prompt.
     ///   - whileRunning: The work of the client while the prompt runs.
-    /// - Returns: The collected sequence, from the start of the session.
+    /// - Returns: The response and the collected sequence.
     /// - Throws: Whatever the prompt, `whileRunning` or a wait throws.
     @discardableResult
     static func runPrompt(
-        on fixture: ScriptedPromptFixture, text: String, count: Int,
+        on fixture: ScriptedPromptFixture, text: String, count: Int = 1,
         whileRunning: () async throws -> Void = {}
-    ) async throws -> [UpdateSessionNotification] {
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
+    ) async throws -> PromptRun {
+        try await runPrompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text),
+            through: fixture.harness, count: count, whileRunning: whileRunning)
+    }
+
+    /// Sends `request` over the wire and waits until the prompt and its end
+    /// work are done. Then it drains the hook dispatcher of the agent, so
+    /// each post event and each snapshot of the prompt is complete.
+    ///
+    /// This is the one send, idle-wait and prompts-finished sequence of the
+    /// suites. A suite reads its own text from the returned updates.
+    ///
+    /// - Parameters:
+    ///   - request: The prompt request. Its session is the session to watch.
+    ///   - harness: The recording harness of the agent.
+    ///   - count: The number of idle updates that the collector holds after
+    ///     this prompt. The collector counts each session on the wire.
+    ///   - whileRunning: The work of the client while the prompt runs.
+    /// - Returns: The response and the collected sequence.
+    /// - Throws: Whatever the prompt, `whileRunning` or a wait throws, or a
+    ///   failed requirement when the harness records no updates.
+    @discardableResult
+    static func runPrompt(
+        _ request: PromptRequest, through harness: AgentClientHarness, count: Int = 1,
+        whileRunning: () async throws -> Void = {}
+    ) async throws -> PromptRun {
+        let collector = try #require(harness.collector)
+        let response = try await harness.connection.prompt(request)
         try await whileRunning()
-        let updates = try await waitForIdle(fixture.collector, count: count)
-        await waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
-        await fixture.harness.agent.hooks.dispatcher.drain()
-        return updates
+        let updates = try await waitForIdle(collector, count: count)
+        await waitForPromptsFinished(harness.agent, request.sessionId)
+        await harness.agent.hooks.dispatcher.drain()
+        return PromptRun(response: response, updates: updates)
     }
 
     /// Waits until the session model applied the idle state update that

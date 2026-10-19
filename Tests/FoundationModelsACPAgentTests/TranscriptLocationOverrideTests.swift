@@ -62,10 +62,8 @@ import Testing
             let session = try await harness.client.newSession(
                 NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
             let sessionId = await MainActor.run { session.sessionId }
-            _ = try await harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText))
-            _ = try await ScriptedPromptFixture.waitForIdle(try #require(harness.collector))
-            await ScriptedPromptFixture.waitForPromptsFinished(harness.agent, sessionId)
+            try await ScriptedPromptFixture.runPrompt(
+                AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText), through: harness)
             try await ResumeSessionFixture.waitForJournal(of: sessionId, in: harness.agent)
             #expect(try !ResumeSessionFixture.recordedEvents(under: root, sessionId: sessionId).isEmpty)
             return sessionId

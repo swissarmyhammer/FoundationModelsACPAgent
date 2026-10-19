@@ -244,7 +244,8 @@ import Testing
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.automaticSummary), .endPass], label: "CompactionReportTests-no-prompt")
         let promptUpdates = try await ScriptedPromptFixture.runPrompt(
-            on: fixture, text: Self.earlierPrompt, count: 1)
+            on: fixture, text: Self.earlierPrompt, count: 1
+        ).updates
 
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let signal = session.compact()

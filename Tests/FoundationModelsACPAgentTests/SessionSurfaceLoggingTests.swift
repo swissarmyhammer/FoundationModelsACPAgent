@@ -62,16 +62,14 @@ import Testing
         let records = try await TelemetryCapture.run(forbidding: []) { context in
             let fixture = try await ScriptedPromptFixture.make(
                 script: [.textDelta("working"), .hold], label: Self.fixtureLabel)
-            _ = try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
-            try await ScriptedPromptFixture.waitForRunning(fixture.collector)
-            try await fixture.harness.connection.sessionCancel(
-                CancelSessionNotification(sessionId: fixture.sessionId))
-            await context.wait { capture in
-                capture.logRecords.contains { $0.metadata[cancelSignalKey] != nil }
+            try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.promptText) {
+                try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+                try await fixture.harness.connection.sessionCancel(
+                    CancelSessionNotification(sessionId: fixture.sessionId))
+                await context.wait { capture in
+                    capture.logRecords.contains { $0.metadata[cancelSignalKey] != nil }
+                }
             }
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
             await fixture.close()
             return (sessionId: fixture.sessionId.rawValue, records: context.logRecords)
         }
