@@ -177,6 +177,7 @@ from datasets import load_dataset
 from rich.table import Table
 
 from swebench_acp import AgentServer, is_chunk
+from swebench_agent_runs import AGENT_RUNS_DIR, keep_agent_run_transcripts
 from swebench_clone import exclude_agent_folder
 from swebench_common import console, log
 from swebench_env import environment_fields
@@ -763,6 +764,11 @@ with outpath.open("w" if args.force else "a") as out, \
                 kept = keep_transcripts(repo, outpath, instance_id)
                 if kept is not None:
                     log("transcripts", **about, path=kept)
+                    # The agent runs write their transcripts into the
+                    # recordings root of the Router, not into the clone.
+                    runs = keep_agent_run_transcripts(kept)
+                    if runs:
+                        log("agent run transcripts", **about, runs=len(runs), path=kept / AGENT_RUNS_DIR)
             except OSError as exc:
                 log("[yellow]transcripts not kept[/]", **about, error=exc)
             # The git reads of the agent that reached past the base commit.
