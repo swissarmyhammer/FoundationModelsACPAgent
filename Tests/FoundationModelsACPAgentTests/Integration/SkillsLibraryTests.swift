@@ -124,13 +124,17 @@ import Testing
         #expect(tool.description.contains(#"{"op": "use skill", "id": "<id>"}"#))
     }
 
-    @Test func theIdParameterIsTheEnumOfTheVisibleSkills() async throws {
-        let surface = try await Self.makeSurface(label: "enum")
+    /// The `id` parameter is a plain string, and not an enum of the skills of
+    /// the session start: a skill that a reload adds can be loaded in the
+    /// same session, and `use skill` checks the id against the live catalog
+    /// (FoundationModelsSkills 9ce4e2a). The skill list is in the description.
+    @Test func theIdParameterIsAPlainStringThatNamesNoSkill() async throws {
+        let surface = try await Self.makeSurface(label: "plain-id")
 
         let schema = try Self.parametersJSON(of: try Self.skillsTool(in: surface))
 
-        #expect(schema.contains("\"\(Self.exploreID)\""))
-        #expect(schema.contains("\"\(Self.releaseNotesID)\""))
+        #expect(!schema.contains("\"\(Self.exploreID)\""))
+        #expect(!schema.contains("\"\(Self.releaseNotesID)\""))
         #expect(!schema.contains(Self.hiddenID))
     }
 
