@@ -214,8 +214,8 @@ def execute_code(command, returned="r"):
 
 def inline_report(lines, exit_code=0):
     """Give the report of a shell command that ended inline, with its output lines."""
-    return json.dumps({"commandID": ulid(99), "durationMs": 400, "exitCode": exit_code, "lines": len(lines),
-                       "output": numbered_lines(lines), "status": "completed"})
+    return json.dumps({"commandID": ulid(99), "durationMs": 400, "exitCode": exit_code, "lineCount": len(lines),
+                       "lines": numbered_lines(lines), "output": numbered_lines(lines), "status": "completed"})
 
 
 def awaited_report(lines, exit_code=0):
