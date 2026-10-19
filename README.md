@@ -120,6 +120,7 @@ is on by default. Set its config section to `false` to set it off.
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
 | `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
+| `snapshots` | The `tools.snapshots.*` verbs — `list`, `take`, `undo` and `redo` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. The snapshots are in `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot` for the CLI). Always on | none |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list. Always on | `tools.skills` |
 | `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `agents/<name>/AGENT.md` of the `agents` dotfolder stack. Always on | none |
 

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsHooks
 import FoundationModelsRouter
 
 /// The composed agent of a host: the configuration stack of a dotfolder
@@ -88,16 +89,22 @@ public struct ComposedAgent: Sendable {
     /// layer the in-code default applies. Each session later loads its own
     /// stack again, keyed by the session's `cwd`.
     ///
+    /// The composition also makes the ``AgentHooks`` of the agent, in the
+    /// data directory ``AgentHooks/dataDirectory(name:environment:)``, and
+    /// gives its dispatcher to the router and to the agent.
+    ///
     /// Call this one time, before the first connection. Then give each
     /// connection the agent with ``agent(boundTo:)``.
     ///
     /// - Parameters:
     ///   - name: The dotfolder name the host chose. It
-    ///     roots the configuration stack and the transcript directory.
+    ///     roots the configuration stack, the transcript directory and the
+    ///     hook data directory.
     ///   - workingDirectory: The directory whose dotfolder stack the
     ///     start-up configuration loads from.
     ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
-    ///     from. The process environment by default.
+    ///     from, and the hooks read `XDG_DATA_HOME` from. The process
+    ///     environment by default.
     ///   - modelSource: The model path to build the router over.
     ///     ``ModelSource/live`` by default.
     ///   - stubChunkGate: The path of a named pipe that a stub answer reads
@@ -138,12 +145,15 @@ public struct ComposedAgent: Sendable {
             name: name, workingDirectory: workingDirectory, environment: environment,
             transcriptLocation: transcriptLocation
         ).load().configuration
+        let hooks = AgentHooks(dataDirectory: AgentHooks.dataDirectory(name: name, environment: environment))
         let agent = try await RoutedACPAgent(
             name: name,
             router: try makeRouter(
                 for: modelSource,
                 gatedBy: stubChunkGate,
-                recordingInto: try makeRecordingsDirectory()),
+                recordingInto: try makeRecordingsDirectory(),
+                hooks: hooks.dispatcher),
+            hooks: hooks,
             configuration: configuration,
             reporting: progress,
             environment: environment,
@@ -220,6 +230,8 @@ public struct ComposedAgent: Sendable {
     ///     it.
     ///   - recordingsDirectory: The router's own recordings root — see
     ///     ``makeRecordingsDirectory()``.
+    ///   - hooks: The dispatcher that each session of the router sends its
+    ///     hook events to: the ``AgentHooks/dispatcher`` of the agent.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
@@ -227,16 +239,18 @@ public struct ComposedAgent: Sendable {
     private static func makeRouter(
         for modelSource: ModelSource,
         gatedBy chunkGate: String?,
-        recordingInto recordingsDirectory: URL
+        recordingInto recordingsDirectory: URL,
+        hooks: HookDispatcher
     ) throws -> Router {
         switch modelSource {
         case .live:
-            Router(recordingsDir: recordingsDirectory, loader: LiveModelLoader())
+            Router(recordingsDir: recordingsDirectory, loader: LiveModelLoader(), hooks: hooks)
         case .stub:
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
                 recordingsDirectory: recordingsDirectory,
-                loader: makeStubLoader(gatedBy: chunkGate))
+                loader: makeStubLoader(gatedBy: chunkGate),
+                hooks: hooks)
         }
     }
 

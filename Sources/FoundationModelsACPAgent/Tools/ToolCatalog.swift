@@ -378,6 +378,9 @@ public enum ToolCatalog {
     /// starts one `CodeContext` over the session working directory, with the
     /// profile's embedding slot as its embedder, and mounts the operations
     /// of its three tools as the verbs of the `tools.code_context` group.
+    /// With a ``CatalogContext/snapshotStore``, `snapshots` mounts the
+    /// `tools.snapshots` verbs (`list`, `take`, `undo` and `redo`) over the
+    /// snapshot store of the agent. It has no config section.
     ///
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
@@ -425,6 +428,11 @@ public enum ToolCatalog {
             // way to give the capability an environment
             // (`EnvironmentContext.init` is internal).
             builder.withEnvironment()
+        }
+        // The `snapshots` capability reads the session key from
+        // `HookSession.current` at call time, so it needs no key here.
+        if let snapshotStore = context.snapshotStore {
+            builder.withCapability(SnapshotsCapability(store: snapshotStore))
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,

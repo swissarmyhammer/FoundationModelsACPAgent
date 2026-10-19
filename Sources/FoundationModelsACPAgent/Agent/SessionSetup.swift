@@ -881,7 +881,8 @@ extension RoutedACPAgent {
             clientMCPServers: clientMCPServers,
             environment: environment,
             inlineSettleGrace: inlineSettleGrace,
-            userPresence: userPresence)
+            userPresence: userPresence,
+            snapshotStore: hooks.snapshotStore)
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs
@@ -1005,6 +1006,11 @@ extension RoutedLLM {
     ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
     ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
     ///     is Router's default.
+    ///   - hookLineage: The hook lineage that the host gives the session, or
+    ///     `nil` (the default) to let Router give it. A new session of
+    ///     `session/new` gives `nil`: Router then gives the session its own
+    ///     id as its key, and that id is the ACP session id. The model-slot
+    ///     switch gives the lineage of the session that it replaces.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``). While an
@@ -1019,7 +1025,8 @@ extension RoutedLLM {
         repetition: RepetitionConfiguration,
         inlineSettleGrace: TimeInterval,
         userPresence: UserPresence = .interactive,
-        mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit
+        mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
+        hookLineage: HookLineage? = nil
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
@@ -1052,7 +1059,9 @@ extension RoutedLLM {
                 mailOnlyAnswerLimit: mailOnlyAnswerLimit,
                 inlineSettleGrace: inlineSettleGrace,
                 isNoOpToolCall: NoOpToolCall.check,
-                userPresence: userPresence))
+                userPresence: userPresence,
+                hookSessionKey: hookLineage?.sessionKey,
+                hookOrigin: hookLineage?.origin))
     }
 
     /// Restores one recorded session with the host rules that

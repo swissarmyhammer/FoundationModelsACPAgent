@@ -1,7 +1,56 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+comments:
+- actor: wballard
+  id: 01m5b39x1a463vd1ntcgj3bc64
+  text: 'Preconditions met (checked with git ls-remote on 2026-10-19): Hooks origin/main 2e29e38 (all 7 cards done, with SnapshotStore.undoneCheckpoints), Router origin/main 1407ac3 (all 4 #hooks cards done), Multitool origin/main 7d63a26 (snapshots capability done). Facts from the Router session: (1) Router origin/main needs FoundationModelsExtras a63ddda or later, so update all four family pins in Package.resolved together. (2) The tool hook layer sits in Tool.sessionChecked between the tool and a new failure delivery; the no-op and repetition checks stay outermost. (3) The hook toolCallID equals the id of the toolCall session event. It is NOT the correlationID of toolCallReport, which is the run completion token by contract.'
+  timestamp: 2026-10-19T22:07:53.386465+00:00
+- actor: claude-code
+  id: 01m5b3new9b7q0624804w9kpzq
+  text: |-
+    Research done (implement step). Facts that the card text does not have:
+    - `Router.hooks` is internal. The agent cannot read the dispatcher from the router. Thus the composition makes one `AgentHooks` value (dispatcher + store, `SnapshotHook` registered) and gives the same value to `Router.init(hooks:)` and to `RoutedACPAgent.init(hooks:)`.
+    - `RoutedACPAgent` has three construction sites: `ComposedAgent.compose`, `makeStubAgent` (test support) and `LiveAgent` (IntegrationTests). `EchoModel.makeRouter` gets a `hooks:` parameter.
+    - The Multitool registry of a session is built in `ToolCatalog.makeRegistry(context:)`, which `sessionSurface` calls. The store goes through `CatalogContext`.
+    - The model-slot switch vends through `RoutedLLM.makeBudgetedSession` (SessionSetup.swift). It gets `hookSessionKey` and `hookOrigin` parameters.
+    - `SnapshotHook` uses the git ignore rules: ignored files are not in a tree. The session transcripts go to `<cwd>/.coding/transcripts`, so the snapshot test commits a `.gitignore` for `.coding/`.
+    - A visitor registered after `session/new` does not get the `SessionStart` of that session (the dispatcher copies the visitors at post time). `ScriptedPromptFixture.make` gets a `hookVisitors:` parameter, in the pattern of `commandProviders:`.
+    - The data directory uses the dotfolder name of the composition: `$XDG_DATA_HOME/<name>/hooks`. For the `acp-agent` CLI the name is `acp-agent`, thus the path is the path on the card.
+  timestamp: 2026-10-19T22:14:12.105591+00:00
+- actor: claude-code
+  id: 01m5b4nncxmgfpssk6kg0k7bx0
+  text: |-
+    Implementation landed (not committed).
+
+    Pins (Package.resolved is gitignored, the local file is updated): Hooks 2e29e38, Router f6af807 (coordinator request), Extras a63ddda, Multitool 7d63a26. FoundationModelsAgents also moved, f39d6a9 -> e059a9b: Agents f39d6a9 does not compile against Extras a63ddda (`switch must be exhaustive` on the new `MailSender.catalog`). Agents e059a9b removed `AgentsTool.agentNames`; three existing tests now read `launchableAgents().map(\.name)` (AgentEnvironmentTests, AgentsToolTests, SkillsMarketplaceTests).
+
+    Production changes:
+    - Package.swift: `FoundationModelsHooks` family dependency on main.
+    - New `Agent/AgentHooks.swift`: `AgentHooks(dataDirectory:)` makes one `HookDispatcher`, one `SnapshotStore(<data>/snapshot)` and registers `SnapshotHook`. `AgentHooks.dataDirectory(name:environment:)` = `$XDG_DATA_HOME/<name>/hooks`, default `~/.local/share/<name>/hooks` (`acp-agent` for the CLI). `HookLineage.replacement(in:)`.
+    - `RoutedACPAgent.init(... hooks: AgentHooks ...)` (required), `registerHookVisitors(_:)`.
+    - `ComposedAgent.compose` makes the hooks and gives the dispatcher to `Router(hooks:)` / `EchoModel.makeRouter(hooks:)` and to the agent. `makeStubAgent` and IntegrationTests `LiveAgent` do the same (IntegrationTests not built here).
+    - `CatalogContext.snapshotStore`; `ToolCatalog.makeRegistry` mounts `SnapshotsCapability(store:)`.
+    - `makeBudgetedSession(hookLineage:)`; `applyModelSlot` gives `.replacement(in: sessionId)`.
+    - `closeOpenSessions` awaits `hooks.dispatcher.drain()` after the teardown.
+    - README Tools table: `snapshots` row.
+
+    DECISION FOR THE REVIEWER: Router puts the tool hook layer (`Tool.sessionChecked`, internal) on the tools only in `LiveModelLoader`. The scripted backend calls its tools directly, so with `ScriptedModel` no `PreToolUse`/`PreToolResult`/`PostToolUse` fires and `SnapshotHook` takes no checkpoint (both tests failed for this reason, verified). The test target already uses `@testable import FoundationModelsRouter`; `HookCompositionTests` adds `HookLayeredLLMContainer`, which wraps the scripted tools with `sessionChecked` as `LiveModelLoader` does. If this use of an internal Router symbol is not acceptable, a Router card for a public seam is necessary (for example, Router puts the hook layer on the tools for each container, or a public `sessionChecked`).
+
+    Tests: `swift test` 995 tests in 112 suites passed, 1 known issue (the existing withKnownIssue of HarnessSmokeTests), after the Router f6af807 update.
+  timestamp: 2026-10-19T22:31:47.357292+00:00
+- actor: claude-code
+  id: 01m5b4nsdqjp4gb9qssbtftyka
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` 995 tests / 112 suites passed, 1 known issue (existing). New: Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift. Changed: Package.swift, RoutedACPAgent.swift, ComposedAgent.swift, Configuration/EchoModel.swift, Tools/CatalogContext.swift, Tools/ToolCatalog.swift, Agent/SessionSetup.swift, Agent/ConfigOptions.swift, Agent/SessionLifecycle.swift, README.md, Tests/FoundationModelsACPAgentTestSupport/StubProfileFixtures.swift, Tests/.../Support/ScriptedPromptFixture.swift, ConnectionCloseTests.swift, AgentEnvironmentTests.swift, AgentsToolTests.swift, SkillsMarketplaceTests.swift, IntegrationTests/.../Support/LiveAgent.swift
+    - next: /review; the reviewer decides on the HookLayeredLLMContainer test seam (internal `sessionChecked`).
+  timestamp: 2026-10-19T22:31:51.479078+00:00
+- actor: wballard
+  id: 01m5b5bb2vhdd9e7x2b3hfpsfh
+  text: 'Decision of the user (2026-10-19): keep the private HookLayeredLLMContainer and the @testable reach of Tool.sessionChecked in HookCompositionTests for now, so that this card can finish. Follow-up: Router card 01M5B5B3BVXQHZP8C14FK069KG adds a public scripted container with the tool hook layer to FoundationModelsRouterTestSupport, and ACP card 01M5B5B3QTYY3PVBQGXXVJMA9M then removes the private copy. A review finding about this reach is covered by those two cards.'
+  timestamp: 2026-10-19T22:43:37.691563+00:00
+position_column: doing
 position_ordinal: '80'
 title: 'Wire hooks and snapshots into the composition: dispatcher, SnapshotStore, SnapshotHook, snapshots capability'
 ---
@@ -37,4 +86,4 @@ Work:
 ## Workflow
 - Use `/tdd`. Write the failing tests first, then implement.
 
-#hooks #blocked-external
+#hooks

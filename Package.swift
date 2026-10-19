@@ -64,6 +64,12 @@ private let extrasDependencyName = "FoundationModelsExtras"
 /// and MCP packages dissolved into it, so none of the three is declared here.
 private let multitoolDependencyName = "FoundationModelsMultitool"
 
+/// The hook vocabulary of the family: the hook events, the `HookDispatcher`
+/// that Router sends them to, and the workspace snapshots (`SnapshotStore`,
+/// `SnapshotHook`). The composition makes one dispatcher and one store, and
+/// gives the store to the Multitool `snapshots` capability too.
+private let hooksDependencyName = "FoundationModelsHooks"
+
 /// The stand-alone skills package. It gives a plain
 /// `FoundationModels.Tool`. It is NOT a Multitool capability, so a skill loads
 /// in one request/response and not through the async code-mode lane.
@@ -267,6 +273,7 @@ private let familyDependencyNames = [
     routerDependencyName,
     extrasDependencyName,
     multitoolDependencyName,
+    hooksDependencyName,
     skillsDependencyName,
     agentsDependencyName,
     codeContextDependencyName,

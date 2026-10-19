@@ -136,8 +136,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// - Parameter entry: The table entry of the session.
     /// - Returns: The agent names, or an empty list when the surface mounts
     ///   no `agents` tool.
-    static func agentNames(of entry: ActiveSession) -> [String] {
-        entry.surface.agents?.tool.agentNames ?? []
+    static func agentNames(of entry: ActiveSession) async -> [String] {
+        await entry.surface.agents?.tool.launchableAgents().map(\.name) ?? []
     }
 
     /// Writes `yaml` as the project layer configuration of the session
@@ -222,7 +222,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let session = try await Self.openAndSwitchSession(
             label: "agents", environment: [Self.agentsDefaultsKey: defaults.path])
 
-        #expect(Self.agentNames(of: session.first).contains(Self.hostAgentName))
-        #expect(Self.agentNames(of: session.switched).contains(Self.hostAgentName))
+        #expect(await Self.agentNames(of: session.first).contains(Self.hostAgentName))
+        #expect(await Self.agentNames(of: session.switched).contains(Self.hostAgentName))
     }
 }

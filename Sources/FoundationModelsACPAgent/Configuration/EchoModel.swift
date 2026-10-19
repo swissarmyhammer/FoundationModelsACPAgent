@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsHooks
 import FoundationModelsRouter
 import Tracing
 
@@ -352,12 +353,16 @@ public enum EchoModel {
     ///     session runs in a detached task, which does not get a task-local
     ///     tracer, so a test that captures the Router spans gives its tracer
     ///     here.
+    ///   - hooks: The dispatcher that each session of the router sends its
+    ///     hook events to, or `nil` (the default) for no hooks. An agent
+    ///     gives the ``AgentHooks/dispatcher`` of its ``AgentHooks``.
     /// - Returns: The router to resolve against.
     public static func makeRouter(
         cacheDirectory: URL,
         recordingsDirectory: URL? = nil,
         loader: any ModelLoader = StubModelLoader(),
-        tracer: (any Tracer)? = nil
+        tracer: (any Tracer)? = nil,
+        hooks: HookDispatcher? = nil
     ) -> Router {
         Router(
             cacheDir: cacheDirectory,
@@ -366,7 +371,8 @@ public enum EchoModel {
             probe: StubMachine(),
             metadataSource: StubMetadata(),
             loader: loader,
-            pool: ModelPool()
+            pool: ModelPool(),
+            hooks: hooks
         )
     }
 }

@@ -72,8 +72,24 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift. `swift test` exit 0: 987 tests in 111 suites passed, 0 failed, and 1 intended known issue in HarnessSmokeTests. No Swift compiler warning. The SwiftPM line "warning: missing creator for mutated node" for mlx-swift_Cmlx.bundle comes from the build system and is not from this change.
     - next: /review
   timestamp: 2026-10-19T20:43:51.079456+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5ayk0s859hcs1bvjy5gd4zz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (273974f). 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 1 file reviewed (Tests/FoundationModelsACPAgentTests/ToolSectionCodecTests.swift). The prior finding (ToolSectionCodecTests.swift:401, completeness/inverse-operation-coverage) is checked.
+    - next: none. The card is in done.
+  timestamp: 2026-10-19T20:45:29.256408+00:00
+- actor: wballard
+  id: 01m5aykgtfqats1kbhrr6a7z8z
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (ToolSectionCodecTests.swift)
+    - test: green — swift test, 987 passed, 0 failed
+    - commit: 273974f
+    - review: clean — 0 findings; prior item ToolSectionCodecTests.swift:401 checked
+  timestamp: 2026-10-19T20:45:45.679370+00:00
+position_column: done
+position_ordinal: ffe980
 title: 'Skills and agents are always on: the config cannot turn them off'
 ---
 ## What

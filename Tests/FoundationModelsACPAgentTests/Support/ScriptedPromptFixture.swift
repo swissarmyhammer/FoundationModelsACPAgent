@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
+import FoundationModelsHooks
 @testable import FoundationModelsRouter
 import Testing
 import Tracing
@@ -105,6 +106,8 @@ struct ScriptedPromptFixture {
     ///   - recorder: Records each prompt that the scripted model gets, or
     ///     `nil` for no record. A test that must read what a background run
     ///     gave the model reads the prompt of the run message here.
+    ///   - hookVisitors: The hook visitors that the agent gets before
+    ///     `session/new`, so they get the `SessionStart` of the session.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -120,7 +123,8 @@ struct ScriptedPromptFixture {
         commandProviders: [any SlashCommandProviding] = [],
         runClock: (any RunClock)? = nil,
         mailOnlyAnswerLimit: Int? = nil,
-        recorder: PromptRecorder? = nil
+        recorder: PromptRecorder? = nil,
+        hookVisitors: [any HookVisitor] = []
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script, recorder: recorder),
@@ -134,7 +138,8 @@ struct ScriptedPromptFixture {
             tracer: tracer,
             commandProviders: commandProviders,
             runClock: runClock,
-            mailOnlyAnswerLimit: mailOnlyAnswerLimit)
+            mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+            hookVisitors: hookVisitors)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -173,6 +178,8 @@ struct ScriptedPromptFixture {
     ///     `ManualRunClock`.
     ///   - mailOnlyAnswerLimit: The `mailOnlyAnswerLimit` of each session of
     ///     the agent, or `nil` for the Router default.
+    ///   - hookVisitors: The hook visitors that the agent gets before
+    ///     `session/new`, so they get the `SessionStart` of the session.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -188,7 +195,8 @@ struct ScriptedPromptFixture {
         tracer: (any Tracer)? = nil,
         commandProviders: [any SlashCommandProviding] = [],
         runClock: (any RunClock)? = nil,
-        mailOnlyAnswerLimit: Int? = nil
+        mailOnlyAnswerLimit: Int? = nil,
+        hookVisitors: [any HookVisitor] = []
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -208,6 +216,7 @@ struct ScriptedPromptFixture {
             }
         }
         await agent.registerCommandProviders(commandProviders)
+        await agent.registerHookVisitors(hookVisitors)
         if let mailOnlyAnswerLimit {
             await agent.useMailOnlyAnswerLimit(mailOnlyAnswerLimit)
         }

@@ -138,9 +138,10 @@ import Testing
     /// Drops the client end of the wire with no `session/close`: the client
     /// connection closes, and the wire closes, so the agent end reads the end
     /// of its input. The agent connection is not closed here.
+    /// `HookCompositionTests` drops the client end the same way.
     ///
     /// - Parameter harness: The harness whose client goes away.
-    private static func dropClientEnd(of harness: AgentClientHarness) async {
+    static func dropClientEnd(of harness: AgentClientHarness) async {
         await harness.connection.close()
         harness.wire.close()
     }

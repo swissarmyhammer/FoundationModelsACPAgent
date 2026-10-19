@@ -41,13 +41,16 @@ enum LiveAgent {
             userDirectory: userDirectory,
             environment: [:]
         ).load().configuration
+        let hooks = AgentHooks(dataDirectory: makeResolvedDirectory(label: "\(label)-hooks"))
         let router = Router(
             recordingsDir: makeResolvedDirectory(label: "\(label)-recordings"),
             loader: LiveModelLoader(),
-            samplingMode: .greedy)
+            samplingMode: .greedy,
+            hooks: hooks.dispatcher)
         let agent = try await RoutedACPAgent(
             name: DotfolderName(AgentClientHarness.dotfolderName),
             router: router,
+            hooks: hooks,
             configuration: configuration,
             userDirectory: userDirectory,
             environment: [:])
