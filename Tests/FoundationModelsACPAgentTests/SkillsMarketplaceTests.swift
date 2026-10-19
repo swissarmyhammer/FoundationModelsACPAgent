@@ -141,7 +141,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
         #expect(skills.marketplaces != nil)
         #expect(skills.registry.metadata().map(\.id).contains(Self.skillName))
-        #expect(agents.agentNames.contains(Self.agentName))
+        // The agent list of the tool description names each startable agent
+        // as `- name` or `- name: description`.
+        #expect(agents.description.contains("- \(Self.agentName)"))
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: cache.path)).isEmpty)
         await surface.shutdown()
     }

@@ -130,14 +130,17 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         entry.surface.agents?.environment.skills.metadata().map(\.id) ?? []
     }
 
-    /// The names of the agents that the `agents` tool of a session surface
-    /// can start.
+    /// Whether the `agents` tool of a session surface can start the agent
+    /// `name`: the agent list of the tool description names each startable
+    /// agent as `- name` or `- name: description`.
     ///
-    /// - Parameter entry: The table entry of the session.
-    /// - Returns: The agent names, or an empty list when the surface mounts
-    ///   no `agents` tool.
-    static func agentNames(of entry: ActiveSession) -> [String] {
-        entry.surface.agents?.tool.agentNames ?? []
+    /// - Parameters:
+    ///   - entry: The table entry of the session.
+    ///   - name: The name of the agent.
+    /// - Returns: `true` when the description lists the agent, `false` when
+    ///   it does not or the surface mounts no `agents` tool.
+    static func lists(_ entry: ActiveSession, agent name: String) -> Bool {
+        entry.surface.agents?.tool.description.contains("- \(name)") ?? false
     }
 
     /// Writes `yaml` as the project layer configuration of the session
@@ -222,7 +225,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let session = try await Self.openAndSwitchSession(
             label: "agents", environment: [Self.agentsDefaultsKey: defaults.path])
 
-        #expect(Self.agentNames(of: session.first).contains(Self.hostAgentName))
-        #expect(Self.agentNames(of: session.switched).contains(Self.hostAgentName))
+        #expect(Self.lists(session.first, agent: Self.hostAgentName))
+        #expect(Self.lists(session.switched, agent: Self.hostAgentName))
     }
 }

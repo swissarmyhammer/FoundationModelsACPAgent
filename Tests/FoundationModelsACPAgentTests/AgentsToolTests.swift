@@ -242,8 +242,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
         #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(Self.agentsToolName) })
         let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
-        #expect(agents.agentNames.contains(Self.quickAgent))
-        #expect(agents.agentNames.contains(Self.slowAgent))
+        // The agent list of the tool description names each startable agent.
+        #expect(agents.description.contains("- \(Self.quickAgent)"))
+        #expect(agents.description.contains("- \(Self.slowAgent)"))
         await surface.shutdown()
     }
 
