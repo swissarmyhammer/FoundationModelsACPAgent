@@ -180,6 +180,11 @@ import Testing
         #expect(collapsed.contains("A one-step task is one read or one command."))
         #expect(collapsed.contains("| \"The fix is small, I will do it myself\" | Give it to the agent. A small fix is a whole unit of work. |"))
         #expect(!collapsed.contains("Do a one-step task yourself."))
+        // The probe of 2026-10-19 delegated after the analysis, so the work
+        // was done twice: the first action names the call.
+        #expect(collapsed.contains("When the session has an agent for it, your FIRST tool call is `start agent` with the full text of the task."))
+        #expect(collapsed.contains("Do not read a file first."))
+        #expect(collapsed.contains("| \"It is a one-line fix in a known place\" | Start the agent. You do not know the place before you read the code. |"))
     }
 
     /// The Safety exception names both standalone tools, `skills` and

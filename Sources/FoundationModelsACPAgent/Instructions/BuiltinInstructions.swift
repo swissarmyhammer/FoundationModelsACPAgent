@@ -142,6 +142,14 @@
 /// the agent before the model reads the code, and the table names that
 /// excuse.
 ///
+/// With that rule the probe of 2026-10-19 started `coder` in 2 of 3
+/// instances, but late: the root read and analyzed the code first, and the
+/// agent, with an empty context, did it all again (django__django-14608:
+/// root 1300 s, agent 923 s, against 303 s with no agent). The third
+/// instance kept the work: "a one-line fix in a known location". So the
+/// rule names the first call, `start agent`, and the table names both
+/// excuses.
+///
 /// ## Why the prompt says to commit often
 ///
 /// A commit is the undo of the agent. A model that goes back to the last
@@ -185,6 +193,9 @@ public enum BuiltinInstructions {
         - A bug fix or a feature, with its test, is a whole unit of work.
           Give it to the agent at the start, before you read the code. The
           agent reads the code. Put the full task in its prompt.
+        - When the session has an agent for it, your FIRST tool call is
+          `start agent` with the full text of the task. Do not read a file
+          first. Do not analyze the code first. The agent does both.
         - A one-step task is one read or one command. Do only a one-step
           task yourself.
 
@@ -192,6 +203,8 @@ public enum BuiltinInstructions {
         |---|---|
         | "I can do this myself, fast" | Give the work to the agent. |
         | "The fix is small, I will do it myself" | Give it to the agent. A small fix is a whole unit of work. |
+        | "It is a one-line fix in a known place" | Start the agent. You do not know the place before you read the code. |
+        | "I will analyze first, then delegate" | Start the agent now. Work you do first is done two times. |
         | "I know this skill" | Load it again. Skills change. |
         | "Let me read the code first" | The skill tells you how to read it. |
         | "The skill is too much for this" | Load it. Small work grows. |
