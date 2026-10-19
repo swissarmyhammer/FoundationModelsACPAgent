@@ -133,6 +133,15 @@
 /// table gives the exact thought in quotes. The agent rule keeps the size of
 /// work, because an agent run is a new session on the same model.
 ///
+/// The size of work is a fact, not a judgment: a one-step task is one read
+/// or one command, and a bug fix with its test is a whole unit. In the run of
+/// 2026-10-19 on django__django-13964 the model listed the agents, said that
+/// `coder` matched, and then did the work itself: "let me first explore the
+/// code myself" and "the fix is small". The old words "do a one-step task
+/// yourself" let it call a small fix one step. So the rule gives the work to
+/// the agent before the model reads the code, and the table names that
+/// excuse.
+///
 /// ## Why the prompt says to commit often
 ///
 /// A commit is the undo of the agent. A model that goes back to the last
@@ -172,11 +181,17 @@ public enum BuiltinInstructions {
         - When you load a skill, its steps are your plan. Do them in order.
         - If an agent matches a whole unit of work (a code change with its
           test, a test run with its fixes, a commit, a long search), give the
-          work to that agent. Do a one-step task yourself.
+          work to that agent.
+        - A bug fix or a feature, with its test, is a whole unit of work.
+          Give it to the agent at the start, before you read the code. The
+          agent reads the code. Put the full task in its prompt.
+        - A one-step task is one read or one command. Do only a one-step
+          task yourself.
 
         | When you think | Do this |
         |---|---|
         | "I can do this myself, fast" | Give the work to the agent. |
+        | "The fix is small, I will do it myself" | Give it to the agent. A small fix is a whole unit of work. |
         | "I know this skill" | Load it again. Skills change. |
         | "Let me read the code first" | The skill tells you how to read it. |
         | "The skill is too much for this" | Load it. Small work grows. |
@@ -198,7 +213,7 @@ public enum BuiltinInstructions {
              agents. If an agent matches the task, give the task to that
              agent. Give an agent a whole unit of work: a code change with
              its test, a test run with its fixes, a commit, or a long
-             search. Do a one-step task yourself.
+             search. A one-step task is one read or one command.
           2. When the session has a `skills` tool, find the skill for the
              task. If a skill matches the task, load it with `use skill`
              and follow it. The skill tells you how to do the work and

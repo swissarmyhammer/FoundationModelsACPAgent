@@ -172,6 +172,14 @@ import Testing
         #expect(collapsed.contains("When you load a skill, its steps are your plan."))
         #expect(collapsed.contains("| \"I can do this myself, fast\" | Give the work to the agent. |"))
         #expect(collapsed.contains("| \"I loaded the skill, now my way\" | Do the steps of the skill. |"))
+        // A bug fix is never a one-step task, and the agent reads the code: in
+        // the SWE-bench run of 2026-10-19 the model saw that `coder` matched,
+        // then read the code itself because "the fix is small".
+        #expect(collapsed.contains("A bug fix or a feature, with its test, is a whole unit of work."))
+        #expect(collapsed.contains("Give it to the agent at the start, before you read the code."))
+        #expect(collapsed.contains("A one-step task is one read or one command."))
+        #expect(collapsed.contains("| \"The fix is small, I will do it myself\" | Give it to the agent. A small fix is a whole unit of work. |"))
+        #expect(!collapsed.contains("Do a one-step task yourself."))
     }
 
     /// The Safety exception names both standalone tools, `skills` and
