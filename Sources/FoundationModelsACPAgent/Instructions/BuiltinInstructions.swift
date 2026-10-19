@@ -56,7 +56,8 @@
 /// numbered search-read-run steps, because the skill rule was one soft
 /// sentence at the end of the section. The model never got the procedure,
 /// so it never learned the code context tools that the procedure names.
-/// The skill check is therefore the first numbered step. Its wording is
+/// The skill check therefore comes before the search, after only the agent
+/// check (see below). Its wording is
 /// conditional, so the text stays the same for a session with no `skills`
 /// tool, and it repeats under `## Reminders`.
 ///
@@ -107,6 +108,17 @@
 /// The model already writes reproduction scripts; in that run it wrote them
 /// in its last minutes. The rules move them to the moment of doubt.
 ///
+/// ## Why an agent comes before the skill
+///
+/// In the SWE-bench run of 2026-10-18 the `agents` tool listed three agents
+/// with their descriptions, and the model started none in 16 instances: the
+/// numbered steps named skills and `searchTools`, and no step named agents.
+/// An agent does a whole unit of work in its own context, so the agent check
+/// is the first step, with the size of work that an agent takes. A one-step
+/// task stays with the model, because an agent run is a new session on the
+/// same model. The lists of the two tools are fixed for the session, and a
+/// catalog change reaches the model as a message, so the prompt says so.
+///
 /// ## Why the prompt says to commit often
 ///
 /// A commit is the undo of the agent. A model that goes back to the last
@@ -149,14 +161,21 @@ public enum BuiltinInstructions {
         - The tools change with the session. You cannot know them from
           memory. `searchTools` is how you find them.
         - Every task uses the same steps, in this order:
-          1. When the session has a `skills` tool, find the skill for the
+          1. When the session has an `agents` tool, read its list of
+             agents. If an agent matches the task, give the task to that
+             agent. Give an agent a whole unit of work: a code change with
+             its test, a test run with its fixes, a commit, or a long
+             search. Do a one-step task yourself.
+          2. When the session has a `skills` tool, find the skill for the
              task. If a skill matches the task, load it with `use skill`
              and follow it. The skill tells you how to do the work and
              which tools to use.
-          2. Call `searchTools`. Give it the task in plain words.
-          3. Read the answer. It gives the exact path of each tool, the
+          3. Call `searchTools`. Give it the task in plain words.
+          4. Read the answer. It gives the exact path of each tool, the
              arguments of that tool, and an example that runs.
-          4. Call `runCode` with that exact path.
+          5. Call `runCode` with that exact path.
+        - The lists of agents and skills can change. A message that says
+          the agents or the skills changed gives the new list.
         - TO CHANGE A FILE, SEARCH FIRST. Search for `edit a file`, or
           `write a file`, or `apply a patch`. There is a tool for each one.
           Use the tool that the answer gives you.
@@ -224,7 +243,8 @@ public enum BuiltinInstructions {
 
         - Call a tool first. Read the code, do not remember it.
         - Run the code to learn what it does. Do not trace it in your head.
-        - If a skill matches the task, load it and follow it.
+        - If an agent matches the task, give the task to it. If a skill
+          matches the task, load it and follow it.
         - Read before you write. Test before you report success.
         - To change a file, search for the tool first. Never write a file
           with the shell.
