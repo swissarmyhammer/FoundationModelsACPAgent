@@ -130,10 +130,26 @@ comments:
     - read-only tests: SnapshotInventoryTests and SnapshotsCommandTests set 0o500 on the snapshot directory and restore the owner-only permissions in a defer, so the temporary folders can be removed. They pass as a normal user.
     - next: review
   timestamp: 2026-10-20T20:22:51.478294+00:00
+- actor: claude-code
+  id: 01m5dfx5whc0m0446hhpj7yb0b
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 6aebc75). 0 findings, 0 confirmed, 3 refuted, 14 attempted, 0 failed. 11 files reviewed. README.md has no validator. Two .kanban files are excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T20:26:36.817590+00:00
+- actor: wballard
+  id: 01m5dfxgjjzbeb0bb9jzbwc3a0
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 12 files (after HOOKS-5; a second pass makes an unknown key an error)
+    - test: green — swift test 1112 passed; IntegrationTests builds
+    - commit: 6aebc75
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T20:26:47.762487+00:00
 depends_on:
 - 01M5DCV6DGXMS6FGXQ6AEFMPDZ
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: fff680
 title: 'acp-agent snapshots: an explicit command that lists and removes snapshot folders'
 ---
 ## What
