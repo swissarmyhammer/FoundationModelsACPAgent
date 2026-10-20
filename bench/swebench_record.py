@@ -102,6 +102,26 @@ def runs_path(outpath):
     return outpath.parent / f"{outpath.stem}{RUNS_SUFFIX}"
 
 
+# The name of the telemetry file of the agent, below the stem of the
+# predictions file: `preds.jsonl` -> `preds.telemetry.jsonl`. The
+# `preds*.jsonl` line of the `.gitignore` of the bench directory keeps it out
+# of git.
+TELEMETRY_SUFFIX = ".telemetry.jsonl"
+
+
+def telemetry_path(outpath):
+    """The file that `acp-agent acp --telemetry-file` writes for a run.
+
+    - outpath: the predictions file of the run.
+
+    It stands beside the predictions file, with the same stem, as the record
+    does. The path is absolute: the agent stands in the working root of the
+    run, which the run removes at its end, so a relative path would resolve
+    there and the file would be lost.
+    """
+    return (outpath.parent / f"{outpath.stem}{TELEMETRY_SUFFIX}").resolve()
+
+
 def patch_file_count(patch):
     """The count of files in a unified diff.
 

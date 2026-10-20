@@ -399,10 +399,21 @@ class ProcessWire:
             pass
 
 
-def start_agent(command, working_directory, environment):
+def agent_command_line(command, arguments):
+    """The command line of the agent in `acp` mode.
+
+    - command: the path of the `acp-agent` binary.
+    - arguments: the options of `acp`, for example `--telemetry-file PATH`.
+      They are options of the subcommand, so they follow it.
+    """
+    return [str(command), ACP_SUBCOMMAND, *arguments]
+
+
+def start_agent(command, working_directory, environment, arguments=()):
     """Start the agent in `acp` mode, and give the wire to it.
 
     - command: the path of the `acp-agent` binary.
+    - arguments: the options of `acp` (``agent_command_line``).
     - working_directory: the directory the process stands in. The agent
       resolves its profile from the configuration of THIS directory, and it
       writes its shell output store below it, so it must be a directory the
@@ -416,7 +427,7 @@ def start_agent(command, working_directory, environment):
     the console of the run, where a reader of a long run wants it.
     """
     process = subprocess.Popen(
-        [str(command), ACP_SUBCOMMAND],
+        agent_command_line(command, arguments),
         cwd=str(working_directory),
         env=environment,
         stdin=subprocess.PIPE,
@@ -741,6 +752,7 @@ class AgentServer:
         working_directory,
         environment,
         *,
+        arguments=(),
         start=start_agent,
         on_update=None,
     ):
@@ -749,6 +761,8 @@ class AgentServer:
         - command: the path of the `acp-agent` binary.
         - working_directory: the directory the process stands in.
         - environment: the environment the process gets.
+        - arguments: the options of `acp`. Each start of the process gets
+          them, so a process that is started again writes to the same files.
         - start: what makes the wire, with the shape of ``start_agent``. A
           test gives a stand-in here.
         - on_update: what to give each `session/update` body to, or None.
@@ -756,6 +770,7 @@ class AgentServer:
         self._command = command
         self._working_directory = working_directory
         self._environment = environment
+        self._arguments = tuple(arguments)
         self._start = start
         self._on_update = on_update
         self._connection = None
@@ -801,7 +816,10 @@ class AgentServer:
             return self._connection
         self.stop()
         wire = self._start(
-            self._command, self._working_directory, self._environment
+            self._command,
+            self._working_directory,
+            self._environment,
+            self._arguments,
         )
         self._connection = Connection(wire, on_update=self._on_update)
         started = time.monotonic()

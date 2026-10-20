@@ -184,7 +184,13 @@ from swebench_env import environment_fields
 from swebench_history import upstream_reads
 from swebench_prediction import prediction_row
 from swebench_prompt import instance_prompt, prompt_name
-from swebench_record import append_row, patch_file_count, run_record, runs_path
+from swebench_record import (
+    append_row,
+    patch_file_count,
+    run_record,
+    runs_path,
+    telemetry_path,
+)
 from swebench_select import DEFAULT_SEED, choose_instances, reason_counts
 from swebench_venv import (
     BUILT,
@@ -315,6 +321,12 @@ parser.add_argument(
     default=None,
     help="a config.yaml of the agent; the run writes it into the project layer "
     "of each clone, for example bench/code-context.config.yaml",
+)
+parser.add_argument(
+    "--no-telemetry", action="store_true",
+    help="do not give `--telemetry-file` to the agent. By default the agent "
+    "writes its logs, spans and metrics to <preds stem>.telemetry.jsonl. "
+    "Use this for an agent binary from before that option",
 )
 args = parser.parse_args()
 outpath = args.outpath
@@ -560,10 +572,16 @@ log("the environment of the agent", **environment_fields(environment))
 # The agent process stands IN the working root, and not in the package: it
 # resolves its profile from the configuration of its own directory, and it
 # writes its shell output store below that directory. Both belong to the run.
+agent_arguments = ()
+if not args.no_telemetry:
+    telemetry = telemetry_path(outpath)
+    agent_arguments = ("--telemetry-file", str(telemetry))
+    log("the telemetry of the agent", path=telemetry)
 server = AgentServer(
     str(AGENT),
     work_root,
     environment,
+    arguments=agent_arguments,
     on_update=report_update if args.verbose else None,
 )
 

@@ -35,6 +35,7 @@ from swebench_acp import (
     Connection,
     METHOD_NOT_FOUND,
     PROTOCOL_VERSION,
+    agent_command_line,
     is_chunk,
 )
 
@@ -585,16 +586,49 @@ class AgentServerTests(unittest.TestCase):
 
         Returns the pair of the server and the list of the starts.
         """
+        return self.a_server_with_arguments(wires, ())
+
+    def a_server_with_arguments(self, wires, arguments):
+        """A server with the given options of `acp`, that takes the given
+        stand-in wires, in order.
+
+        Returns the pair of the server and the list of the starts.
+        """
         starts = []
 
-        def start(command, working_directory, environment):
-            starts.append((command, working_directory, environment))
+        def start(command, working_directory, environment, arguments=()):
+            starts.append((command, working_directory, environment, arguments))
             return wires[len(starts) - 1]
 
         server = AgentServer(
-            AN_AGENT, A_WORKING_ROOT, AN_ENVIRONMENT, start=start
+            AN_AGENT, A_WORKING_ROOT, AN_ENVIRONMENT,
+            arguments=arguments, start=start,
         )
         return server, starts
+
+    def test_the_options_of_acp_reach_each_start_of_the_process(self):
+        """The run gives `--telemetry-file PATH` to the agent. A process that
+        stopped is started again, and the new process must write to the same
+        file."""
+        arguments = ("--telemetry-file", "/a/b/preds.telemetry.jsonl")
+        ended = AnEndedWire(a_working_agent())
+        working = AWire(a_working_agent())
+        server, starts = self.a_server_with_arguments([ended, working], arguments)
+
+        with self.assertRaises(AgentGoneError):
+            server.connection()
+        server.connection()
+
+        self.assertEqual([s[3] for s in starts], [arguments, arguments])
+
+    def test_the_command_line_puts_the_options_after_the_subcommand(self):
+        """`--telemetry-file` is an option of `acp`, so it must follow the
+        subcommand. No option gives the plain `acp-agent acp` of before."""
+        self.assertEqual(
+            agent_command_line(AN_AGENT, ("--telemetry-file", "/a/t.jsonl")),
+            [AN_AGENT, "acp", "--telemetry-file", "/a/t.jsonl"],
+        )
+        self.assertEqual(agent_command_line(AN_AGENT, ()), [AN_AGENT, "acp"])
 
     def test_one_process_serves_every_instance_of_the_run(self):
         """This is the whole point of the card. The agent loads its models
@@ -607,7 +641,7 @@ class AgentServerTests(unittest.TestCase):
             server.turn(A_CLONE, A_PROBLEM, A_LIMIT)
 
         self.assertEqual(len(starts), 1)
-        self.assertEqual(starts[0], (AN_AGENT, A_WORKING_ROOT, AN_ENVIRONMENT))
+        self.assertEqual(starts[0], (AN_AGENT, A_WORKING_ROOT, AN_ENVIRONMENT, ()))
         self.assertEqual(wire.methods().count("initialize"), 1)
         self.assertEqual(wire.methods().count("session/new"), 3)
 

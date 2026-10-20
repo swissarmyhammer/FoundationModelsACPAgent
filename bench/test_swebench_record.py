@@ -26,7 +26,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swebench_record import append_row, patch_file_count, run_record, runs_path
+from swebench_record import (
+    append_row,
+    patch_file_count,
+    run_record,
+    runs_path,
+    telemetry_path,
+)
 
 # The names below are the names of a test. The instance is the one that went
 # past the time limit in the run of 2026-09-11.
@@ -143,6 +149,24 @@ class TheRunsFile(unittest.TestCase):
         self.assertEqual(
             runs_path(Path("/a/b/run7.jsonl")), Path("/a/b/run7.runs.jsonl")
         )
+
+
+class TheTelemetryFile(unittest.TestCase):
+    """Where the telemetry of the agent of a run goes."""
+
+    def test_it_stands_beside_the_predictions_with_the_same_stem(self):
+        """One rule finds every result of a run, and the `preds*.jsonl` line
+        of the `.gitignore` of `bench/` keeps it out of git."""
+        self.assertEqual(
+            telemetry_path(Path("/a/b/preds.run7.jsonl")),
+            Path("/a/b/preds.run7.telemetry.jsonl"),
+        )
+
+    def test_it_is_an_absolute_path(self):
+        """The agent stands in the working root of the run, and not in the
+        package, so a relative path would land in a directory that the run
+        removes at its end."""
+        self.assertTrue(telemetry_path(Path("bench/preds.x.jsonl")).is_absolute())
 
 
 class TheRecordOfAnInstance(unittest.TestCase):
