@@ -55,9 +55,10 @@ public struct CatalogContext: Sendable {
     ///
     /// The web capability reads its API keys from it (task ^ba231ka). The
     /// keys of `tools.web.apiKeys` are put in over it, so a configured key
-    /// wins. The skills marketplace store reads its cache folder and its
-    /// seed folder from it. The `skills` and `agents` dotfolder stacks read
-    /// the environment of ``settingsFolders``.
+    /// wins. The skills marketplace store reads its seed folder from it, and
+    /// its cache folder when ``skillsMarketplaceCacheDirectory`` is `nil`.
+    /// The `skills` and `agents` dotfolder stacks read the environment of
+    /// ``settingsFolders``.
     ///
     /// Three session tools read the process environment and not this one,
     /// because Multitool takes no environment for them: the
@@ -65,6 +66,17 @@ public struct CatalogContext: Sendable {
     /// server (``ToolCatalog/makeRegistry(context:)``,
     /// ``MCPComposition``).
     public let environment: [String: String]
+
+    /// The cache folder of the skills marketplace store that the host gave
+    /// (``RoutedACPAgent/skillsMarketplaceCacheDirectory``), or `nil` when
+    /// the host gave none.
+    ///
+    /// A folder here wins over `SKILLS_MARKETPLACE_CACHE` of
+    /// ``environment``. With `nil`, the store reads its cache folder from
+    /// ``environment`` (``ToolCatalog/makeSkillsSource(context:)``). The
+    /// agent registry reads the marketplace layers of the same store, thus
+    /// the marketplace agents use the same folder.
+    public let skillsMarketplaceCacheDirectory: URL?
 
     /// The settle period of each session that this agent makes: the
     /// settle period of the Router session, `ToolMount.defaultInlineSettleGrace`.
@@ -117,6 +129,9 @@ public struct CatalogContext: Sendable {
     ///   - environment: The environment of the host, which the session tools
     ///     read (``environment``). Defaults to the environment of the
     ///     process, for a caller that composes a catalog with no host.
+    ///   - skillsMarketplaceCacheDirectory: The cache folder of the skills
+    ///     marketplace store, or `nil` (the default) to read it from
+    ///     `environment` (``skillsMarketplaceCacheDirectory``).
     ///   - inlineSettleGrace: The settle period of the sessions of the
     ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
     ///   - userPresence: Whether a user can answer the questions of the
@@ -133,11 +148,13 @@ public struct CatalogContext: Sendable {
         clientMCPServers: [FoundationModelsACP.MCPServer] = [],
         settingsFolders: SettingsFolders,
         environment: [String: String] = ProcessInfo.processInfo.environment,
+        skillsMarketplaceCacheDirectory: URL? = nil,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         userPresence: UserPresence = .interactive,
         snapshotStore: SnapshotStore? = nil,
         settingsStore: SettingsStore? = nil
     ) {
+        self.skillsMarketplaceCacheDirectory = skillsMarketplaceCacheDirectory
         self.snapshotStore = snapshotStore
         self.settingsStore = settingsStore
         self.workingDirectory = workingDirectory

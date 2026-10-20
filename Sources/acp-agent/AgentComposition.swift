@@ -96,7 +96,7 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide. The
     /// CLI gives no `rootSettingsFolder`: its stacks keep the XDG user
     /// layers.
@@ -111,6 +111,11 @@ enum AgentComposition {
     ///
     /// The CLI gives no `hooksDataDirectory`. Thus the hooks keep their data,
     /// and the snapshot timeline, in the XDG data home (ACPA-15, D96).
+    ///
+    /// The CLI gives no `skillsMarketplaceCacheDirectory`. Thus the skills
+    /// marketplace store reads its cache folder from
+    /// `SKILLS_MARKETPLACE_CACHE` of `environment`, or uses the default
+    /// folder under the home folder.
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory whose dotfolder stack the

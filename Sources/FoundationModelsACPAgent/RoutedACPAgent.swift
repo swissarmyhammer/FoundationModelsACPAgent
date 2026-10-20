@@ -65,6 +65,13 @@ public actor RoutedACPAgent: Agent {
     /// host gave (``CatalogContext/environment``).
     nonisolated let environment: [String: String]
 
+    /// The cache folder of the skills marketplace store that the host gave,
+    /// or `nil` when the host gave none. Each session composition gives it
+    /// to its ``CatalogContext``. A folder here wins over
+    /// `SKILLS_MARKETPLACE_CACHE` of ``environment``
+    /// (``CatalogContext/skillsMarketplaceCacheDirectory``).
+    public nonisolated let skillsMarketplaceCacheDirectory: URL?
+
     /// The transcript location that the host gave in code, or `nil` when
     /// the config files decide.
     ///
@@ -307,6 +314,10 @@ public actor RoutedACPAgent: Agent {
     ///   - secretStore: The store that gives the value of each secret
     ///     reference, or `nil` (the default) for the login Keychain under
     ///     the service `name` — see ``secretStore``.
+    ///   - skillsMarketplaceCacheDirectory: The cache folder of the skills
+    ///     marketplace store, or `nil` (the default) to read it from
+    ///     `SKILLS_MARKETPLACE_CACHE` of `environment` — see
+    ///     ``skillsMarketplaceCacheDirectory``.
     /// - Throws: `ProfileResolutionError` when the profile does not
     ///   resolve.
     public init(
@@ -319,13 +330,15 @@ public actor RoutedACPAgent: Agent {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         transcriptLocation: TranscriptLocation? = nil,
-        secretStore: (any SecretStore)? = nil
+        secretStore: (any SecretStore)? = nil,
+        skillsMarketplaceCacheDirectory: URL? = nil
     ) async throws {
         self.name = name
         self.hooks = hooks
         self.settingsFolders = SettingsFolders(
             name: name, rootSettingsFolder: rootSettingsFolder, environment: environment)
         self.environment = environment
+        self.skillsMarketplaceCacheDirectory = skillsMarketplaceCacheDirectory
         self.inlineSettleGrace = inlineSettleGrace
         self.transcriptLocation = transcriptLocation
         self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)

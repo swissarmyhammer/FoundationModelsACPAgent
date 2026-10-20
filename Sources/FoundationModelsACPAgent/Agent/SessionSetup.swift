@@ -872,7 +872,9 @@ extension RoutedACPAgent {
     ///
     /// The catalog context gets ``environment``, the environment of the
     /// host, so each session tool that reads an environment value reads the
-    /// value the host gave (task ^b2kb6j1). `session/new` and
+    /// value the host gave (task ^b2kb6j1). It also gets
+    /// ``skillsMarketplaceCacheDirectory``, the marketplace cache folder of
+    /// the host. `session/new` and
     /// `session/resume` compose through this function. A model-slot switch
     /// composes nothing: the replacement session gets the tools of this
     /// composition.
@@ -901,6 +903,7 @@ extension RoutedACPAgent {
             clientMCPServers: clientMCPServers,
             settingsFolders: settingsFolders,
             environment: environment,
+            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
             inlineSettleGrace: inlineSettleGrace,
             userPresence: userPresence,
             snapshotStore: hooks.snapshotStore,

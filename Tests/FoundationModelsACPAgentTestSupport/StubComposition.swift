@@ -36,6 +36,12 @@ private let dataHomeVariable = "XDG_DATA_HOME"
 ///   - configHome: The `XDG_CONFIG_HOME` of the composition, or `nil` (the
 ///     default) for a new throwaway directory. A caller that writes a file
 ///     into the XDG user layer gives it here.
+///   - skillsMarketplaceCacheDirectory: The skills marketplace cache folder
+///     to give to the composition, or `nil` (the default) to let the
+///     composition read the environment.
+///   - environment: The extra environment pairs of the composition, on top
+///     of the configuration home, the data home and the defaults layer.
+///     Empty by default.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -47,19 +53,23 @@ public func composeStubAgent(
     hooksDataDirectory: URL? = nil,
     dataHome: URL? = nil,
     rootSettingsFolder: URL? = nil,
-    configHome: URL? = nil
+    configHome: URL? = nil,
+    skillsMarketplaceCacheDirectory: URL? = nil,
+    environment: [String: String] = [:]
 ) async throws -> ComposedAgent {
     let configHome = configHome ?? makeResolvedDirectory(label: "\(label)-config")
     let dataHome = dataHome ?? makeResolvedDirectory(label: "\(label)-data")
     let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
-    let environment = try StubAgentDefaultsLayer.makeEnvironment(
-        name: name, base: [configHomeVariable: configHome.path, dataHomeVariable: dataHome.path])
+    let base = environment.merging(
+        [configHomeVariable: configHome.path, dataHomeVariable: dataHome.path]
+    ) { _, home in home }
     return try await ComposedAgent.compose(
         name: DotfolderName(name),
         workingDirectory: workspace,
         rootSettingsFolder: rootSettingsFolder,
-        environment: environment,
+        environment: try StubAgentDefaultsLayer.makeEnvironment(name: name, base: base),
         modelSource: .stub,
         secretStore: secretStore,
-        hooksDataDirectory: hooksDataDirectory)
+        hooksDataDirectory: hooksDataDirectory,
+        skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory)
 }

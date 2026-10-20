@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsSkills
 import Testing
 
 /// `ComposedAgent`, the public composition of the library: a host composes the
@@ -183,6 +184,31 @@ struct ComposedAgentTests {
         let defaultHooks = dataHome.appendingPathComponent(Self.dotfolderName, isDirectory: true)
             .appendingPathComponent(Self.hooksFolderName, isDirectory: true)
         #expect(!FileManager.default.fileExists(atPath: defaultHooks.path))
+    }
+
+    /// A host that gives `skillsMarketplaceCacheDirectory` gets the skills
+    /// marketplace cache in that folder, also when `SKILLS_MARKETPLACE_CACHE`
+    /// of the environment names an other folder: one turn in a workspace
+    /// whose project layer names a local marketplace fills the folder of the
+    /// host, and the folder of the environment stays empty.
+    @Test
+    func theSkillsMarketplaceCacheOfAGivenFolderWinsOverTheEnvironment() async throws {
+        let repository = try SkillsMarketplaceTests.makeMarketplaceRepository()
+        let workspace = makeResolvedDirectory(label: "ComposedAgentTests-marketplace-repo")
+        try ConfigFileFixture.write(
+            SkillsMarketplaceTests.marketplaceConfiguration(repository: repository),
+            in: workspace.appendingPathComponent(".\(Self.dotfolderName)", isDirectory: true))
+        let hostCache = makeResolvedDirectory(label: "ComposedAgentTests-marketplace-host-cache")
+        let environmentCache = makeResolvedDirectory(label: "ComposedAgentTests-marketplace-environment-cache")
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-marketplace", workspace: workspace,
+            skillsMarketplaceCacheDirectory: hostCache,
+            environment: [MarketplaceStore.cacheDirectoryVariable: environmentCache.path])
+
+        _ = try await Self.runOneTurn(of: composed, in: workspace)
+
+        #expect(!(try FileManager.default.contentsOfDirectory(atPath: hostCache.path)).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: environmentCache.path).isEmpty)
     }
 
     /// Tells if a directory is at `url`.

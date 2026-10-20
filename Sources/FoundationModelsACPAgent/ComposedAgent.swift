@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)``
+/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -145,6 +145,15 @@ public struct ComposedAgent: Sendable {
     ///     `<Application Support>/<bundle id>/hooks`. Never give a folder in
     ///     Caches or in a temporary folder, because macOS can delete those.
     ///     The `acp-agent` CLI gives no value.
+    ///   - skillsMarketplaceCacheDirectory: The cache folder of the skills
+    ///     marketplace store of each session, or `nil` (the default) for the
+    ///     folder that `SKILLS_MARKETPLACE_CACHE` of `environment` names, or
+    ///     the default folder under the home folder when that variable is
+    ///     not set. A folder here wins over `SKILLS_MARKETPLACE_CACHE`. The
+    ///     marketplace agents come from the same store, thus they use the
+    ///     same folder. An app gives a folder in Application Support, for
+    ///     example `<Application Support>/<bundle id>/skills-marketplace`.
+    ///     The `acp-agent` CLI gives no value.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -167,6 +176,7 @@ public struct ComposedAgent: Sendable {
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
         hooksDataDirectory: URL? = nil,
+        skillsMarketplaceCacheDirectory: URL? = nil,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
@@ -190,7 +200,8 @@ public struct ComposedAgent: Sendable {
             rootSettingsFolder: rootSettingsFolder,
             environment: environment,
             transcriptLocation: transcriptLocation,
-            secretStore: secretStore)
+            secretStore: secretStore,
+            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory)
         return ComposedAgent(
             agent: agent, modelSource: modelSource, configuration: configuration)
     }

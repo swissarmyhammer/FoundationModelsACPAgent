@@ -169,14 +169,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
             environment: [MarketplaceStore.cacheDirectoryVariable: cache.path]
         ) { cwd in
             try Self.writeProjectConfiguration(
-                """
-                tools:
-                  skills:
-                    marketplaces:
-                      - url: \(SkillsMarketplaceTests.fileURLPrefix + repository.path)
-                        ref: \(SkillsMarketplaceTests.marketplaceBranch)
-                """,
-                in: cwd)
+                SkillsMarketplaceTests.marketplaceConfiguration(repository: repository), in: cwd)
         }
 
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: cache.path)).isEmpty)

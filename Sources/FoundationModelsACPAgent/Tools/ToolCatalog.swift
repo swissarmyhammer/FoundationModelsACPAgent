@@ -553,10 +553,15 @@ public enum ToolCatalog {
     /// (``AgentsComposition``), thus a marketplace is fetched one time for
     /// the skills and the agents of a session.
     ///
-    /// The store reads its cache folder and its read-only seed folder from
-    /// ``CatalogContext/environment``: `SKILLS_MARKETPLACE_CACHE` and
-    /// `SKILLS_MARKETPLACE_SEED`. With neither variable, the cache is the
-    /// default folder under the home folder, and there is no seed. The
+    /// The cache folder of the store is
+    /// ``CatalogContext/skillsMarketplaceCacheDirectory`` when the host gave
+    /// one. That folder wins over `SKILLS_MARKETPLACE_CACHE`. With no folder
+    /// from the host, the store reads its cache folder from
+    /// ``CatalogContext/environment``: `SKILLS_MARKETPLACE_CACHE`, or the
+    /// default folder under the home folder when that variable is not set.
+    /// The store always reads its read-only seed folder from
+    /// `SKILLS_MARKETPLACE_SEED` of the environment, and with no such
+    /// variable there is no seed. The
     /// dotfolder stack is the ``SettingsFolders/Kind/skills`` stack of
     /// ``CatalogContext/settingsFolders``: with a root settings folder its
     /// user layer is `<root>/_skills/`, and with no root it is the XDG user
@@ -574,7 +579,8 @@ public enum ToolCatalog {
         }
         let store = MarketplaceStore(
             sources: options.marketplaces, layout: SkillMarketplaceLayout.skills,
-            cacheDirectory: MarketplaceStore.cacheDirectory(environment: context.environment),
+            cacheDirectory: context.skillsMarketplaceCacheDirectory
+                ?? MarketplaceStore.cacheDirectory(environment: context.environment),
             policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: context.environment)
         await store.start()
         return SkillsSource(
