@@ -159,10 +159,12 @@ enum BuiltinCommands {
     private static let configUsage = "Usage: /config export home|project"
 
     /// The note that each export confirmation carries: the export writes no
-    /// API key value, so that no key goes into a file that can be committed.
-    /// A `keychain:` reference holds no key, thus the export keeps it.
+    /// API key value and no literal MCP header value, so that no key goes
+    /// into a file that can be committed. A `keychain:` reference holds no
+    /// key, thus the export keeps it.
     private static let omittedKeysNote =
-        " The file holds no tools.web.apiKeys value, only the keychain: references."
+        " The file holds no tools.web.apiKeys value and no literal tools.mcp headers value,"
+        + " only the keychain: references."
         + " Keep each key in the layer that sets it, in the environment, or in the Keychain."
 
     /// The multiplier that changes a `0...1` fill fraction into a percent.
@@ -356,10 +358,12 @@ enum BuiltinCommands {
     }
 
     /// Renders the configuration as YAML, or the reason it could not render.
+    /// Each secret shows as its `keychain:` reference or as the redacted
+    /// form, such as a literal MCP header value.
     ///
     /// - Parameter configuration: The configuration to render.
     /// - Returns: The YAML, or the failure message.
-    private static func renderConfiguration(_ configuration: AgentConfiguration) -> String {
+    static func renderConfiguration(_ configuration: AgentConfiguration) -> String {
         do {
             return try ConfigurationYAML.documentText(for: configuration)
         } catch {

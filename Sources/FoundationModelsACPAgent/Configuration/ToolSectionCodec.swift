@@ -436,7 +436,7 @@ public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(enabled, forKey: .enabled)
-        let written = encoder.omitsConfiguredSecrets ? apiKeys.filter { $0.value.reference != nil } : apiKeys
+        let written = encoder.writtenSecrets(apiKeys)
         try container.encode(
             Dictionary(uniqueKeysWithValues: written.map { ($0.key.rawValue, $0.value) }),
             forKey: .apiKeys)
@@ -482,47 +482,10 @@ public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
     ) -> WebToolOptions {
         var resolved = self
         for name in WebAPIKeyName.allCases {
-            guard let reference = apiKeys[name]?.reference else {
-                continue
-            }
-            let value = Self.value(
-                of: reference, keyPath: Self.keyPath(of: name), from: store, warnings: &warnings)
-            resolved.apiKeys[name] = value.map { ConfiguredSecret(reference: reference, value: $0) }
+            resolved.apiKeys[name] = apiKeys[name]?.resolved(
+                through: store, keyPath: Self.keyPath(of: name), warnings: &warnings)
         }
         return resolved
-    }
-
-    /// The value of one secret reference from `store`.
-    ///
-    /// A `nil` result of the store adds one
-    /// ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)``. An
-    /// error of the store adds one
-    /// ``ConfigurationWarning/unreadableSecret(keyPath:reference:)``. The
-    /// warning does not hold the error: the warning names only the
-    /// reference, and it never holds a value.
-    ///
-    /// - Parameters:
-    ///   - reference: The reference name.
-    ///   - keyPath: The dotted key path of the secret.
-    ///   - store: The store that gives the value.
-    ///   - warnings: The warnings of the load.
-    /// - Returns: The value, or `nil` when the store has no item or the
-    ///   lookup failed.
-    private static func value(
-        of reference: String, keyPath: String, from store: any SecretStore,
-        warnings: inout [ConfigurationWarning]
-    ) -> String? {
-        let value: String?
-        do {
-            value = try store.value(forReference: reference)
-        } catch {
-            warnings.append(.unreadableSecret(keyPath: keyPath, reference: reference))
-            return nil
-        }
-        if value == nil {
-            warnings.append(.unresolvedSecret(keyPath: keyPath, reference: reference))
-        }
-        return value
     }
 
     /// The dotted key path of one key of the `apiKeys` map, such as
@@ -624,6 +587,15 @@ public typealias EnvironmentToolOptions = SwitchOnlyToolOptions
 /// One config-derived MCP server entry: a name and
 /// exactly one transport. `env` and `headers` are YAML mappings here; the
 /// MCP composition changes them into the wire's `{name, value}` pairs.
+///
+/// Each `env` and `headers` value is a ``ConfiguredSecret`` (ACPA-18,
+/// D98(d)): a literal, or a `keychain:<name>` reference whose value
+/// ``ConfigurationLoader`` gets from its ``SecretStore``. Each document
+/// shows a reference as `keychain:<name>`. A literal header shows as
+/// ``ConfiguredSecret/redactedForm``, because a header carries a token, and
+/// a document for a layer file writes no literal header. A literal env value
+/// shows as it is, because an env value is often not a secret, for example
+/// `PATH`.
 public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// How a server is reached. There are two transports:
     /// stdio and http. v2 removed `sse`, and the ACP tunnel is
@@ -632,11 +604,11 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
         /// A spawned subprocess speaking stdio. The command must be an
         /// absolute path; the MCP composition enforces that at spawn, and
         /// `env` layers onto the inherited environment.
-        case stdio(command: String, args: [String], env: [String: String])
+        case stdio(command: String, args: [String], env: [String: ConfiguredSecret])
 
         /// A remote endpoint speaking http, with the headers carrying any
         /// authorization.
-        case http(url: String, headers: [String: String])
+        case http(url: String, headers: [String: ConfiguredSecret])
     }
 
     /// The server's name — the noun its tools mount under, as
@@ -670,13 +642,13 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
             transport = .stdio(
                 command: command,
                 args: try container.decodeIfPresent([String].self, forKey: .args) ?? [],
-                env: try container.decodeIfPresent([String: String].self, forKey: .env) ?? [:])
+                env: try container.decodeIfPresent([String: ConfiguredSecret].self, forKey: .env) ?? [:])
         case (nil, let url?):
             try Self.check(container, excludes: .args, forTransport: "url")
             try Self.check(container, excludes: .env, forTransport: "url")
             transport = .http(
                 url: url,
-                headers: try container.decodeIfPresent([String: String].self, forKey: .headers)
+                headers: try container.decodeIfPresent([String: ConfiguredSecret].self, forKey: .headers)
                     ?? [:])
         case (nil, nil), (.some, .some):
             throw DecodingError.dataCorruptedError(
@@ -686,7 +658,11 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
         }
     }
 
-    /// Encodes the same keys `init(from:)` reads.
+    /// Encodes the same keys `init(from:)` reads. A reference encodes as
+    /// `keychain:<name>`, and never as its value. A literal env value
+    /// encodes as it is. A literal header encodes as the redacted form, and
+    /// with ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` set, the
+    /// `headers` map holds the references only.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(name, forKey: .name)
@@ -694,11 +670,52 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
         case .stdio(let command, let args, let env):
             try container.encode(command, forKey: .command)
             try container.encode(args, forKey: .args)
-            try container.encode(env, forKey: .env)
+            try container.encode(env.mapValues(\.plainForm), forKey: .env)
         case .http(let url, let headers):
             try container.encode(url, forKey: .url)
-            try container.encode(headers, forKey: .headers)
+            try container.encode(encoder.writtenSecrets(headers), forKey: .headers)
         }
+    }
+
+    /// This entry with the value of each `keychain:<name>` reference of its
+    /// `env` or `headers` map from `store`. A literal does not change.
+    ///
+    /// A reference with no value leaves out only its variable or header,
+    /// and the server stays. It adds one warning, whose key path names the
+    /// server and the key, such as `tools.mcp.github.headers.Authorization`.
+    ///
+    /// - Parameters:
+    ///   - store: The store that gives the value of each reference.
+    ///   - warnings: The warnings of the load.
+    /// - Returns: The entry with each reference resolved.
+    func resolvingSecrets(
+        through store: any SecretStore, warnings: inout [ConfigurationWarning]
+    ) -> MCPServerConfiguration {
+        var resolved = self
+        switch transport {
+        case .stdio(let command, let args, let env):
+            resolved.transport = .stdio(
+                command: command, args: args,
+                env: env.resolvingSecrets(
+                    through: store, section: keyPath(of: .env), warnings: &warnings))
+        case .http(let url, let headers):
+            resolved.transport = .http(
+                url: url,
+                headers: headers.resolvingSecrets(
+                    through: store, section: keyPath(of: .headers), warnings: &warnings))
+        }
+        return resolved
+    }
+
+    /// The dotted key path of one map of this entry, such as
+    /// `tools.mcp.github.env`. The server name stands in place of the list
+    /// index, so that a warning names the server.
+    ///
+    /// - Parameter key: The key of the map.
+    /// - Returns: The key path.
+    private func keyPath(of key: CodingKeys) -> String {
+        [ToolsConfiguration.dottedSection(ToolsConfiguration.CodingKeys.mcp.stringValue), name, key.stringValue]
+            .joined(separator: LoadedConfiguration.keyPathSeparator)
     }
 
     /// Throws when `key` is present although it belongs to the other
@@ -748,6 +765,25 @@ public enum MCPToolSection: Codable, Equatable, Sendable {
             try container.encode(false)
         case .enabled(let servers):
             try container.encode(servers)
+        }
+    }
+
+    /// This section with the value of each `keychain:<name>` reference of
+    /// each server from `store`. A section that is off holds no server.
+    ///
+    /// - Parameters:
+    ///   - store: The store that gives the value of each reference.
+    ///   - warnings: The warnings of the load. The warnings come in the
+    ///     order of the servers.
+    /// - Returns: The section with each reference resolved.
+    func resolvingSecrets(
+        through store: any SecretStore, warnings: inout [ConfigurationWarning]
+    ) -> MCPToolSection {
+        switch self {
+        case .disabled:
+            .disabled
+        case .enabled(let servers):
+            .enabled(servers: servers.map { $0.resolvingSecrets(through: store, warnings: &warnings) })
         }
     }
 }

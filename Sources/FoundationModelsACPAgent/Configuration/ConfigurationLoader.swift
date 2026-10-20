@@ -61,7 +61,8 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
 
     /// A secret reference `keychain:<name>` whose store has no item for the
     /// name (ACPA-18, D101). The key acts as not set. `keyPath` is the
-    /// dotted key path of the secret, such as `tools.web.apiKeys.tavily`, and
+    /// dotted key path of the secret, such as `tools.web.apiKeys.tavily`, or
+    /// `tools.mcp.<server>.headers.<header>` for an MCP server, and
     /// `reference` is the name. The warning never holds a value.
     case unresolvedSecret(keyPath: String, reference: String)
 
@@ -328,8 +329,11 @@ public struct ConfigurationLoader: Sendable {
     }
 
     /// `configuration` with the value of each secret reference from
-    /// ``secretStore``. The web API keys are the secrets of the schema. A
-    /// web section that is off by the scalar `web: false` holds no key.
+    /// ``secretStore``. The secrets of the schema are the web API keys, and
+    /// the `env` and `headers` values of each `mcp` server. A web section
+    /// that is off by the scalar `web: false` holds no key, and the scalar
+    /// `mcp: false` holds no server. The web warnings come first, then the
+    /// mcp warnings.
     ///
     /// - Parameters:
     ///   - configuration: The decoded configuration.
@@ -343,11 +347,11 @@ public struct ConfigurationLoader: Sendable {
     private func resolvingSecrets(
         of configuration: AgentConfiguration, warnings: inout [ConfigurationWarning]
     ) -> AgentConfiguration {
-        guard case .enabled(let options) = configuration.tools.web else {
-            return configuration
-        }
         var resolved = configuration
-        resolved.tools.web = .enabled(options.resolvingSecrets(through: secretStore, warnings: &warnings))
+        if case .enabled(let options) = configuration.tools.web {
+            resolved.tools.web = .enabled(options.resolvingSecrets(through: secretStore, warnings: &warnings))
+        }
+        resolved.tools.mcp = configuration.tools.mcp.resolvingSecrets(through: secretStore, warnings: &warnings)
         return resolved
     }
 

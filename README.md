@@ -387,6 +387,16 @@ code gives the local detail.
   only. Their headers can hold tokens, and the session metadata is committed.
   A client server whose name is the name of an accepted server is refused.
   `tools.mcp: false` refuses the client servers too.
+- **Configured MCP tokens can stay in the Keychain.** An `env` value or a
+  `headers` value of a `tools.mcp` server can be `keychain:<name>`, for
+  example `Authorization: keychain:github-mcp-token`. The agent gets the value
+  from the Keychain item, as for `tools.web.apiKeys`. A reference with no item
+  gives one warning that names the server, the key and the reference, and only
+  that variable or header is not set. `config show` and `/config` show each
+  reference, and show a literal header value as `<redacted>`. A literal `env`
+  value shows as it is. `/config export` writes the references and no literal
+  header value. A value of a client server of `session/new` is always a
+  literal.
 - **A capability is on until the configuration sets it off.** Set
   `tools.<name>: false` to set one capability off. There is no switch that
   sets all tools off.

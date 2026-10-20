@@ -439,7 +439,9 @@ enum MCPComposition {
     /// Normalizes one client-supplied server into the config entry shape.
     ///
     /// The wire's `env` and `headers` are `{name, value}` pair lists; a
-    /// repeated name keeps the later value.
+    /// repeated name keeps the later value. Each value is a literal
+    /// ``ConfiguredSecret``: a client value that starts with `keychain:` is
+    /// not a reference, and no secret store reads it.
     ///
     /// - Parameter clientServer: The wire value to normalize.
     /// - Returns: The normalized entry, or the unknown-transport marker.
@@ -448,9 +450,9 @@ enum MCPComposition {
     ) -> NormalizedClientServer {
         switch clientServer {
         case .stdio(let stdio):
-            var env: [String: String] = [:]
+            var env: [String: ConfiguredSecret] = [:]
             for variable in stdio.env ?? [] {
-                env[variable.name] = variable.value
+                env[variable.name] = ConfiguredSecret(variable.value)
             }
             return .entry(
                 MCPServerConfiguration(
@@ -458,9 +460,9 @@ enum MCPComposition {
                     transport: .stdio(
                         command: stdio.command.rawValue, args: stdio.args ?? [], env: env)))
         case .http(let http):
-            var headers: [String: String] = [:]
+            var headers: [String: ConfiguredSecret] = [:]
             for header in http.headers ?? [] {
-                headers[header.name] = header.value
+                headers[header.name] = ConfiguredSecret(header.value)
             }
             return .entry(
                 MCPServerConfiguration(
@@ -727,6 +729,10 @@ enum MCPComposition {
     /// name order so a spawn is deterministic. The pairs layer onto the
     /// inherited environment; they never replace it.
     ///
+    /// Each pair holds the value of its ``ConfiguredSecret``: the literal,
+    /// or the value that the loader got for a `keychain:` reference. A
+    /// reference with no value gives no pair, and never an empty one.
+    ///
     /// The inherited environment is the environment of the process, not
     /// ``CatalogContext/environment``: `StdioServerProcess` of Multitool
     /// builds the environment of the child from `environ`, and it takes no
@@ -734,8 +740,8 @@ enum MCPComposition {
     ///
     /// - Parameter env: The env mapping of one entry.
     /// - Returns: The ordered pairs.
-    private static func envVariables(_ env: [String: String]) -> [StdioServerProcess.EnvVariable] {
-        env.sorted { $0.key < $1.key }
+    static func envVariables(_ env: [String: ConfiguredSecret]) -> [StdioServerProcess.EnvVariable] {
+        env.resolvedValues.sorted { $0.key < $1.key }
             .map { StdioServerProcess.EnvVariable(name: $0.key, value: $0.value) }
     }
 
@@ -748,15 +754,30 @@ enum MCPComposition {
     ///     server. Authorization stays the job of the host.
     /// - Returns: The factory a server connects and reconnects through.
     private static func httpTransportFactory(
-        endpoint: URL, headers: [String: String]
+        endpoint: URL, headers: [String: ConfiguredSecret]
     ) -> TransportFactory {
         {
-            let configuration = URLSessionConfiguration.ephemeral
-            if !headers.isEmpty {
-                configuration.httpAdditionalHeaders = headers
-            }
-            return HTTPClientTransport(endpoint: endpoint, configuration: configuration)
+            HTTPClientTransport(endpoint: endpoint, configuration: sessionConfiguration(headers: headers))
         }
+    }
+
+    /// The session configuration of one connect attempt to an http server:
+    /// an ephemeral session with each header of the entry in
+    /// `httpAdditionalHeaders`.
+    ///
+    /// Each header holds the value of its ``ConfiguredSecret``: the literal,
+    /// or the value that the loader got for a `keychain:` reference. A
+    /// reference with no value gives no header, and never an empty one.
+    ///
+    /// - Parameter headers: The headers of the entry.
+    /// - Returns: The session configuration.
+    static func sessionConfiguration(headers: [String: ConfiguredSecret]) -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        let values = headers.resolvedValues
+        if !values.isEmpty {
+            configuration.httpAdditionalHeaders = values
+        }
+        return configuration
     }
 
     /// Disconnects each server and shuts each subprocess down — the cleanup

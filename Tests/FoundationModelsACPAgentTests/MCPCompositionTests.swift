@@ -367,7 +367,7 @@ import Testing
                 MCPServerConfiguration(
                     name: Self.gammaName,
                     transport: .stdio(
-                        command: Self.unusedCommand, args: ["--flag"], env: ["TOKEN": "second"]))
+                        command: Self.unusedCommand, args: ["--flag"], env: ["TOKEN": ConfiguredSecret("second")]))
             ])
     }
 
@@ -390,7 +390,7 @@ import Testing
                     name: Self.remoteName,
                     transport: .http(
                         url: Self.remoteURL,
-                        headers: ["Authorization": "second"]))
+                        headers: ["Authorization": ConfiguredSecret("second")]))
             ])
     }
 

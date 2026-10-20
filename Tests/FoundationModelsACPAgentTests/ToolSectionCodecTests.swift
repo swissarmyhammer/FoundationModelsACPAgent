@@ -450,12 +450,12 @@ import Testing
                 transport: .stdio(
                     command: "/usr/local/bin/github-mcp",
                     args: ["--verbose"],
-                    env: ["TOKEN": "hunter2"])),
+                    env: ["TOKEN": ConfiguredSecret("hunter2")])),
             MCPServerConfiguration(
                 name: "docs",
                 transport: .http(
                     url: "https://example.com/mcp",
-                    headers: ["Authorization": "Bearer sesame"])),
+                    headers: ["Authorization": ConfiguredSecret("Bearer sesame")])),
         ])
         #expect(loaded.configuration.tools.mcp == expected)
     }

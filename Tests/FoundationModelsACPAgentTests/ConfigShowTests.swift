@@ -58,6 +58,27 @@ struct ConfigShowTests {
     private static let webReferenceYAML =
         "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(webReferenceName)\n"
 
+    /// The reference name of the MCP header token.
+    private static let mcpReferenceName = "show-mcp-token"
+
+    /// The value that the store gives for ``mcpReferenceName``.
+    private static let mcpReferenceValue = "show-mcp-secret-value-6a20f9"
+
+    /// A literal MCP header value.
+    private static let mcpLiteralHeaderValue = "show-mcp-literal-header-4b71c3"
+
+    /// A project `config.yaml` with one http MCP server: one header is a
+    /// `keychain:` reference and one header is a literal.
+    private static let mcpSecretsYAML = """
+        tools:
+          mcp:
+            - name: remote
+              url: https://example.test/mcp
+              headers:
+                Authorization: keychain:\(mcpReferenceName)
+                X-Api-Key: \(mcpLiteralHeaderValue)
+        """
+
     /// The document `--json --source` writes.
     private struct AnnotatedDocument: Decodable {
         let configuration: AgentConfiguration
@@ -390,6 +411,27 @@ struct ConfigShowTests {
 
         #expect(report.standardOutput.contains("keychain:\(Self.webReferenceName)"))
         #expect(!report.standardOutput.contains(Self.webKeyValue))
+        #expect(report.standardErrorLines.isEmpty)
+    }
+
+    // MARK: - The mcp secrets
+
+    /// An MCP header reference shows as its reference, and a literal header
+    /// is redacted, in the YAML, the JSON and the annotated report. No value
+    /// shows.
+    @Test(arguments: [[], ["--json"], ["--source"]])
+    func anMCPHeaderShowsAsItsReferenceOrRedacted(arguments: [String]) throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-mcp-secrets")
+        try fixture.writeProjectConfig(Self.mcpSecretsYAML)
+
+        let report = try Self.report(
+            arguments, in: fixture,
+            secretStore: InMemorySecretStore([Self.mcpReferenceName: Self.mcpReferenceValue]))
+
+        #expect(report.standardOutput.contains("keychain:\(Self.mcpReferenceName)"))
+        #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
+        #expect(!report.standardOutput.contains(Self.mcpReferenceValue))
+        #expect(!report.standardOutput.contains(Self.mcpLiteralHeaderValue))
         #expect(report.standardErrorLines.isEmpty)
     }
 

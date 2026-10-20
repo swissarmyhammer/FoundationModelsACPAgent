@@ -4,6 +4,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
+import MCPTestServer
 import Synchronization
 import Testing
 
@@ -451,6 +452,94 @@ import Testing
         #expect(!result.text.contains(Self.referenceValue))
     }
 
+    /// A literal MCP header value of the `keychain:` cases.
+    private static let literalHeaderValue = "builtin-literal-header-2c58d1"
+
+    /// A literal MCP env value of the `keychain:` cases, which is not a
+    /// secret.
+    private static let literalEnvValue = "builtin-literal-env-value"
+
+    /// A project `config.yaml` with one stdio MCP server, the echo mode of
+    /// `mcp-test-server`: the `TOKEN` variable is a `keychain:` reference,
+    /// and the `MODE` variable is a literal.
+    ///
+    /// - Returns: The YAML document.
+    /// - Throws: When the built `mcp-test-server` product is not found.
+    private static func makeMCPEnvYAML() throws -> String {
+        """
+        tools:
+          mcp:
+            - name: echoer
+              command: \(try BuiltProductLocator.mcpTestServerURL().path)
+              args: ["\(ServerMode.flagName)", "\(ServerMode.echo.rawValue)"]
+              env:
+                TOKEN: keychain:\(referenceName)
+                MODE: \(literalEnvValue)
+        """
+    }
+
+    /// `/config` shows an MCP env reference as its reference and a literal
+    /// env value as it is. The value of the store never shows.
+    @Test
+    func configShowsAnMCPEnvReferenceAndNeverItsValue() async throws {
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-config-mcp-env", projectConfigYAML: try Self.makeMCPEnvYAML(),
+            secretStore: InMemorySecretStore([Self.referenceName: Self.referenceValue]))
+
+        let result = try await fixture.runCommand("/config")
+        await fixture.close()
+
+        #expect(result.text.contains("TOKEN: \"keychain:\(Self.referenceName)\""))
+        #expect(result.text.contains("MODE: \"\(Self.literalEnvValue)\""))
+        #expect(!result.text.contains(Self.referenceValue))
+    }
+
+    /// The `/config` text shows an MCP header reference as its reference and
+    /// redacts a literal header value. No value shows.
+    @Test func theConfigTextRedactsALiteralMCPHeader() throws {
+        let configuration = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            """
+            tools:
+              mcp:
+                - name: remote
+                  url: https://example.test/mcp
+                  headers:
+                    Authorization: keychain:\(Self.referenceName)
+                    X-Api-Key: \(Self.literalHeaderValue)
+            """,
+            secretStore: InMemorySecretStore([Self.referenceName: Self.referenceValue])
+        ).configuration
+
+        let text = BuiltinCommands.renderConfiguration(configuration)
+
+        #expect(text.contains("Authorization: \"keychain:\(Self.referenceName)\""))
+        #expect(text.contains("X-Api-Key: \"\(ConfiguredSecret.redactedForm)\""))
+        #expect(!text.contains(Self.referenceValue))
+        #expect(!text.contains(Self.literalHeaderValue))
+    }
+
+    /// `/config export project` keeps an MCP env reference in the file and
+    /// never writes the value. The confirmation says that the file holds no
+    /// literal MCP header value.
+    @Test
+    func configExportKeepsAnMCPEnvReferenceAndNamesTheHeaders() async throws {
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-export-mcp-env", projectConfigYAML: try Self.makeMCPEnvYAML(),
+            secretStore: InMemorySecretStore([Self.referenceName: Self.referenceValue]))
+
+        let result = try await fixture.runCommand("/config export project")
+
+        let configFile = fixture.cwd
+            .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+            .appendingPathComponent(ConfigurationLoader.configFileName)
+        await fixture.close()
+        let written = try String(contentsOf: configFile, encoding: .utf8)
+        #expect(written.contains("TOKEN: \"keychain:\(Self.referenceName)\""))
+        #expect(!written.contains(Self.referenceValue))
+        #expect(!result.text.contains(Self.referenceValue))
+        #expect(result.text.contains("tools.mcp headers"))
+    }
+
     /// The emitted YAML round-trips a non-default configuration — a read-only
     /// files body with an exclude list, an stdio `mcp` server with args and
     /// env, extra sandbox write paths and a changed compaction trigger — back
@@ -465,7 +554,8 @@ import Testing
         configuration.tools.mcp = .enabled(servers: [
             MCPServerConfiguration(
                 name: "svc",
-                transport: .stdio(command: "/bin/echo", args: ["--flag"], env: ["KEY": "VALUE"]))
+                transport: .stdio(
+                    command: "/bin/echo", args: ["--flag"], env: ["KEY": ConfiguredSecret("VALUE")]))
         ])
         configuration.sandbox.extraWritePaths = ["/private/tmp/extra"]
         configuration.compaction.trigger = changedTrigger

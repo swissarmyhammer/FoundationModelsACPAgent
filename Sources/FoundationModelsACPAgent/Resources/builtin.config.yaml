@@ -88,5 +88,7 @@ tools:
     enabled: true
 
   # The MCP servers. Each item has a "name" key and a "command" key or a
-  # "url" key. An empty list connects only the servers of the client.
+  # "url" key. An empty list connects only the servers of the client. A
+  # value of "env" or "headers" keychain:<name> gets the value from the
+  # Keychain item <name>.
   mcp: []

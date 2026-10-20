@@ -57,7 +57,10 @@ public enum ConfigurationYAML {
         /// into a layer file: `/config export` and `config init`. An empty
         /// map in a higher layer keeps the keys of the lower layers,
         /// because the layers merge by key, thus the export does not change
-        /// the effective configuration.
+        /// the effective web keys. The `mcp` server list replaces the lists
+        /// of the lower layers, thus a literal header of an MCP server is
+        /// not in force after an export: give the header as a
+        /// `keychain:<name>` reference to keep it.
         case omitted
     }
 

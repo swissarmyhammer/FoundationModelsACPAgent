@@ -130,6 +130,11 @@ import Testing
     /// The value that the store gives for ``secretReferenceName``.
     private static let secretValue = "tcs-secret-value-3b8e51"
 
+    /// The `env` variable of the MCP server whose value is the `keychain:`
+    /// reference ``secretReferenceName``. The child process gets
+    /// ``secretValue``, and no record holds it.
+    private static let secretEnvName = "TCS_SECRET_TOKEN"
+
     /// The `keychain:` reference of the Exa key, which no store holds. Its
     /// warning writes a log record.
     private static let missingReferenceName = "tcs-missing-reference"
@@ -350,8 +355,9 @@ import Testing
     }
 
     /// The project `config.yaml`: the loopback MCP server with an `env`
-    /// value, a `keychain:` reference that the store holds, a `keychain:`
-    /// reference that no store holds, and an unknown section with a value.
+    /// value and an `env` value that is a `keychain:` reference, a
+    /// `keychain:` reference that the store holds, a `keychain:` reference
+    /// that no store holds, and an unknown section with a value.
     ///
     /// - Returns: The YAML document.
     /// - Throws: When the built `mcp-test-server` product is not found.
@@ -368,6 +374,7 @@ import Testing
               args: ["\(ServerMode.flagName)", "\(ServerMode.loopback.rawValue)"]
               env:
                 \(envName): \(envValue)
+                \(secretEnvName): keychain:\(secretReferenceName)
         \(unknownSectionName):
           secret: \(configValue)
         """

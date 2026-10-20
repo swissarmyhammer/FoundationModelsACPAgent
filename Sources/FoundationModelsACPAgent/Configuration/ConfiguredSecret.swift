@@ -96,6 +96,54 @@ public struct ConfiguredSecret: Codable, Hashable, Sendable {
         reference.map { Self.referencePrefix + $0 } ?? Self.redactedForm
     }
 
+    /// The text of a value that is not always a secret, such as an `env`
+    /// value of an MCP server: `keychain:<name>` for a reference, and the
+    /// value for a literal. It never holds the value of a reference.
+    var plainForm: String {
+        switch source {
+        case .literal(let value):
+            value
+        case .reference(let name, _):
+            Self.referencePrefix + name
+        }
+    }
+
+    /// This secret with the value of its reference from `store`. A literal
+    /// does not change.
+    ///
+    /// A reference with no item adds one
+    /// ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)`` to
+    /// `warnings`. A reference whose lookup throws adds one
+    /// ``ConfigurationWarning/unreadableSecret(keyPath:reference:)``. The
+    /// warning does not hold the error: it names only the key path and the
+    /// reference, and it never holds a value.
+    ///
+    /// - Parameters:
+    ///   - store: The store that gives the value of the reference.
+    ///   - keyPath: The dotted key path of the secret, for the warning.
+    ///   - warnings: The warnings of the load.
+    /// - Returns: The secret with its value, or `nil` when the store has no
+    ///   item or the lookup failed.
+    func resolved(
+        through store: any SecretStore, keyPath: String, warnings: inout [ConfigurationWarning]
+    ) -> ConfiguredSecret? {
+        guard let name = reference else {
+            return self
+        }
+        let value: String?
+        do {
+            value = try store.value(forReference: name)
+        } catch {
+            warnings.append(.unreadableSecret(keyPath: keyPath, reference: name))
+            return nil
+        }
+        guard let value else {
+            warnings.append(.unresolvedSecret(keyPath: keyPath, reference: name))
+            return nil
+        }
+        return ConfiguredSecret(reference: name, value: value)
+    }
+
     /// Decodes a string scalar: `keychain:<name>` is a reference with no
     /// value, and each other string is a literal value.
     public init(from decoder: any Decoder) throws {
@@ -149,5 +197,51 @@ extension Encoder {
     /// section must encode no literal ``ConfiguredSecret``.
     var omitsConfiguredSecrets: Bool {
         userInfo[.omitsConfiguredSecrets] as? Bool == true
+    }
+
+    /// The secrets of `secrets` that this encoder writes: each secret, or
+    /// only the references when ``omitsConfiguredSecrets`` is set.
+    ///
+    /// - Parameter secrets: The secrets of a map, such as the `apiKeys` map
+    ///   of the web tool or the `headers` map of an MCP server.
+    /// - Returns: The secrets to encode.
+    func writtenSecrets<Key>(_ secrets: [Key: ConfiguredSecret]) -> [Key: ConfiguredSecret] {
+        omitsConfiguredSecrets ? secrets.filter { $0.value.reference != nil } : secrets
+    }
+}
+
+extension Dictionary where Value == ConfiguredSecret {
+    /// The value of each secret that has one. A reference with no value
+    /// gives no entry, thus it never gives an empty value.
+    var resolvedValues: [Key: String] {
+        compactMapValues(\.value)
+    }
+}
+
+extension Dictionary where Key == String, Value == ConfiguredSecret {
+    /// This map with the value of each `keychain:<name>` reference from
+    /// `store`. A literal does not change. A reference with no value is
+    /// left out, and it adds one warning: see
+    /// ``ConfiguredSecret/resolved(through:keyPath:warnings:)``. The
+    /// warnings come in the sorted order of the keys.
+    ///
+    /// - Parameters:
+    ///   - store: The store that gives the value of each reference.
+    ///   - section: The dotted key path of the map. The key path of one
+    ///     secret is the section, a dot, and the key.
+    ///   - warnings: The warnings of the load.
+    /// - Returns: The map with each reference resolved.
+    func resolvingSecrets(
+        through store: any SecretStore, section: String, warnings: inout [ConfigurationWarning]
+    ) -> [String: ConfiguredSecret] {
+        Dictionary(
+            uniqueKeysWithValues: keys.sorted().compactMap { key in
+                self[key]?
+                    .resolved(
+                        through: store, keyPath: section + LoadedConfiguration.keyPathSeparator + key,
+                        warnings: &warnings
+                    )
+                    .map { (key, $0) }
+            })
     }
 }

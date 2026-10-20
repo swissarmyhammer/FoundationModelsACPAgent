@@ -104,10 +104,26 @@ comments:
     - warnings: only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx.bundle. No compiler warning in the changed files.
     - next: review
   timestamp: 2026-10-20T16:31:34.865498+00:00
+- actor: claude-code
+  id: 01m5d2hsc7g2caxbtc69r21jgc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 65116be): 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. All prior findings are checked.
+    - next: The task is in done.
+  timestamp: 2026-10-20T16:33:12.071112+00:00
+- actor: wballard
+  id: 01m5d2j1ebh6hxeqh9daybjz26
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 files
+    - test: green — swift test 1020 passed; IntegrationTests builds
+    - commit: 65116be
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T16:33:20.331275+00:00
 depends_on:
 - 01M5CZ1HFBGK6JN6N4MY5ZY1HZ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffed80
 title: 'ACPA-18: keychain: references in config.yaml load as ConfiguredSecret'
 ---
 ## What
