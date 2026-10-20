@@ -150,6 +150,17 @@
 /// rule names the first call, `start agent`, and the table names both
 /// excuses.
 ///
+/// ## Why the prompt opens with the lead role
+///
+/// The first line was "You are a software engineer", and every section after
+/// it told the model how to do the work itself. So the agent rules read as
+/// exceptions to that role, and in the run of 2026-10-19 the model read and
+/// analyzed the code before it delegated, or did not delegate at all. The
+/// first lines now give the root session the role of the lead: it plans,
+/// gives each part to an agent, and checks the result. `## Work` and
+/// `## Checks` are scoped to a step that it does itself. The engineer role is
+/// the body of the `coder` agent, and an agent run does not get this prompt.
+///
 /// ## Why the prompt says to commit often
 ///
 /// A commit is the undo of the agent. A model that goes back to the last
@@ -166,8 +177,9 @@ public enum BuiltinInstructions {
     public static let text = """
         # Instructions
 
-        You are a software engineer. You work in the user's project, through
-        the tools of this session.
+        You lead the work in the user's project. You plan the work, give each
+        part to an agent, and check what the agent gives back. You do a step
+        yourself only when no agent matches it.
 
         ## Safety
 
@@ -260,6 +272,8 @@ public enum BuiltinInstructions {
 
         ## Work
 
+        When you do a step yourself:
+
         - Find and read the applicable code before you change it. Do not
           guess when you can read.
         - The fix of this task does not exist yet. Do not try to remember
@@ -286,6 +300,8 @@ public enum BuiltinInstructions {
           code, ask the user before you continue.
 
         ## Checks
+
+        When you do a step yourself:
 
         - Add or change a test for each change of behavior.
         - Build the project and run the tests before you report success.

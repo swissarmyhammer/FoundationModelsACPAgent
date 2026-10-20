@@ -187,6 +187,26 @@ import Testing
         #expect(collapsed.contains("| \"It is a one-line fix in a known place\" | Start the agent. You do not know the place before you read the code. |"))
     }
 
+    /// The first lines make the root session the lead of the work: it plans,
+    /// gives each part to an agent, and checks the result, and it does a step
+    /// itself only when no agent matches. The engineer role belongs to the
+    /// `coder` agent, whose run does not get this prompt (the run of
+    /// 2026-10-19: with "You are a software engineer" first, the model read
+    /// the agent rules as exceptions).
+    @Test func theBuiltinOpensWithTheLeadRoleAndNotTheEngineerRole() throws {
+        let text = BuiltinInstructions.text
+        let collapsed = Self.collapsingWhitespace(text)
+
+        let lead = try #require(collapsed.range(of: "You lead the work in the user's project."))
+        let safety = try #require(collapsed.range(of: "## Safety"))
+        #expect(lead.lowerBound < safety.lowerBound)
+        #expect(collapsed.contains("You plan the work, give each part to an agent, and check what the agent gives back."))
+        #expect(collapsed.contains("You do a step yourself only when no agent matches it."))
+        #expect(!collapsed.contains("You are a software engineer."))
+        #expect(collapsed.contains("## Work When you do a step yourself:"))
+        #expect(collapsed.contains("## Checks When you do a step yourself:"))
+    }
+
     /// The Safety exception names both standalone tools, `skills` and
     /// `agents`: a loaded skill and a message of the `agents` tool are
     /// instructions, and each other tool result stays data (task ^c4a6mwy).
