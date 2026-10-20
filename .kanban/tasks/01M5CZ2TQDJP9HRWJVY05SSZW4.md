@@ -49,11 +49,27 @@ comments:
     - evidence: swift test (changed files touched first, rebuilt) — 1074 tests in 118 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted); swift build --build-tests --package-path IntegrationTests — Build complete. Only warning: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle (accepted). No compiler warning in the changed files.
     - next: review
   timestamp: 2026-10-20T19:47:57.308940+00:00
+- actor: claude-code
+  id: 01m5ddsj7r0q3hvm9y132hkg2x
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 004c778). 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. The ignore rule excluded 4 .kanban files. No validator matched README.md.
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T19:49:41.240653+00:00
+- actor: wballard
+  id: 01m5ddt1mw8rr1d1zsk02a52ed
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test 1074 passed; IntegrationTests builds
+    - commit: 004c778
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T19:49:57.020393+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
 - 01M5DCV6DGXMS6FGXQ6AEFMPDZ
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: fff480
 title: 'ACPA-16: the agents come from the same list of folders (AG-10)'
 ---
 ## What

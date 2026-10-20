@@ -6,6 +6,7 @@ import FoundationModelsACPClient
 import FoundationModelsHooks
 import FoundationModelsRouter
 import Logging
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -220,12 +221,12 @@ import Testing
             script: try Self.makeSnapshotScript(), label: "HookCompositionTests-snapshots")
         let note = fixture.cwd.appendingPathComponent(Self.noteFileName, isDirectory: false)
 
-        _ = try await Self.runPrompt(Self.writePromptText, in: fixture, count: 1)
+        _ = try await Self.runTurn(Self.writePromptText, in: fixture)
         #expect(try String(contentsOf: note, encoding: .utf8) == Self.writtenNoteContent)
-        let listed = try await Self.runPrompt(Self.listPromptText, in: fixture, count: 2)
-        #expect(listed.contains("\(Self.checkpointCountLabel)1"))
-        let rolledBack = try await Self.runPrompt(Self.rollbackPromptText, in: fixture, count: 3)
-        #expect(rolledBack.contains(Self.rolledBackAnswer))
+        let listed = try await Self.runTurn(Self.listPromptText, in: fixture)
+        #expect(listed.toolCallText.contains("\(Self.checkpointCountLabel)1"))
+        let rolledBack = try await Self.runTurn(Self.rollbackPromptText, in: fixture)
+        #expect(rolledBack.toolCallText.contains(Self.rolledBackAnswer))
         #expect(try String(contentsOf: note, encoding: .utf8) == Self.committedNoteContent)
         await fixture.close()
     }
@@ -242,24 +243,35 @@ import Testing
         } + [.endPass]
     }
 
-    /// Runs one prompt of the snapshot proof with
+    /// One turn of a snapshot proof: what the client got for one prompt.
+    private struct SnapshotTurn {
+        /// The stop reason of the idle update of the turn, or `nil` when the
+        /// turn sent no idle update.
+        let stopReason: StopReason?
+
+        /// The text of the tool call updates of the turn.
+        let toolCallText: String
+    }
+
+    /// Runs one prompt of a snapshot proof with
     /// ``ScriptedPromptFixture/runPrompt(on:text:count:whileRunning:)``, so
     /// the snapshot of the tool call of the prompt is complete, and reads
-    /// the tool call text of this prompt.
+    /// the updates of this prompt. The prompt ends when the collector holds
+    /// one more idle update than before the prompt.
     ///
     /// - Parameters:
     ///   - text: The prompt text, which holds the marker of one snippet.
     ///   - fixture: The wired fixture.
-    ///   - count: The number of prompts that the session has ended after
-    ///     this prompt.
-    /// - Returns: The text of the tool call updates of this prompt.
+    /// - Returns: The stop reason and the tool call text of this prompt.
     /// - Throws: Whatever the wire call or the waits throw.
-    private static func runPrompt(
-        _ text: String, in fixture: ScriptedPromptFixture, count: Int
-    ) async throws -> String {
-        let countBefore = await fixture.collector.updates.count
-        let run = try await ScriptedPromptFixture.runPrompt(on: fixture, text: text, count: count)
-        return SkillsLibraryTests.toolCallText(in: Array(run.updates.dropFirst(countBefore)))
+    private static func runTurn(_ text: String, in fixture: ScriptedPromptFixture) async throws -> SnapshotTurn {
+        let updatesBefore = await fixture.collector.updates
+        let run = try await ScriptedPromptFixture.runPrompt(
+            on: fixture, text: text, count: ScriptedPromptFixture.idleCount(in: updatesBefore) + 1)
+        let turnUpdates = Array(run.updates.dropFirst(updatesBefore.count))
+        return SnapshotTurn(
+            stopReason: ScriptedPromptFixture.idleStopReason(in: turnUpdates),
+            toolCallText: SkillsLibraryTests.toolCallText(in: turnUpdates))
     }
 
     /// Makes the git work tree of a snapshot proof: a repository on
@@ -390,6 +402,151 @@ import Testing
             expected[ACPAgentTelemetry.LogMetadataKey.errorCase] = "\(expectedCase)"
         }
         #expect(metadata == expected)
+    }
+
+    // MARK: - A session with no snapshots
+
+    /// The file that ``secondOwner`` writes before its checkpoint.
+    private static let secondNoteFileName = "second-note.txt"
+
+    /// The content that ``secondOwner`` writes into ``secondNoteFileName``.
+    /// No log record and no span may hold it.
+    private static let secondNoteContent = "the note of the second owner"
+
+    /// The text before the cause in the Multitool correction of
+    /// `tools.snapshots` for a session with no snapshots.
+    private static let notAvailablePrefix = "Snapshots are not available for this session: "
+
+    /// The text after the cause in the Multitool correction of
+    /// `tools.snapshots` for a session with no snapshots.
+    private static let stopCallingSnapshotsText = "Do not call tools.snapshots again in this session."
+
+    /// The metadata key of the session key in a log record of `SnapshotHook`.
+    private static let hookSessionKeyMetadataKey = "sessionKey"
+
+    /// A resume in a work tree that is not the work tree of the timeline of
+    /// the session key. The open of the `SessionStart` gets
+    /// `workingDirectoryMismatch`. The turn ends normally, and
+    /// `tools.snapshots.list` gives the correction with that cause, not a
+    /// thrown error and not the checkpoint of the second owner of the key.
+    @Test
+    func aSessionWithAWorkingDirectoryMismatchEndsItsTurnWithNoSnapshots() async throws {
+        try await TelemetryCapture.run(forbidding: [Self.secondNoteContent]) { context in
+            let fixture = try await Self.makeSnapshotFixture(
+                script: try Self.makeSnapshotScript(), label: "HookCompositionTests-mismatch")
+            let store = fixture.harness.agent.hooks.snapshotStore
+            let sessionKey = fixture.sessionId.rawValue
+            _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
+            await fixture.harness.agent.hooks.dispatcher.drain()
+            try await store.remove(sessionKey: sessionKey)
+            let otherWorkTree = try Self.makeSnapshotWorkTree(label: "HookCompositionTests-mismatch-other-repo")
+            try await Self.takeSecondOwnerCheckpoint(in: store, sessionKey: sessionKey, workTree: otherWorkTree)
+
+            _ = try await fixture.harness.connection.resumeSession(
+                ResumeSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
+            let listed = try await Self.runTurn(Self.listPromptText, in: fixture)
+
+            Self.expectNoSnapshots(in: listed, cause: .workingDirectoryMismatch)
+            try Self.expectOneFailureRecord(
+                in: context.logRecords, sessionKey: sessionKey, error: .workingDirectoryMismatch,
+                workTrees: [fixture.cwd, otherWorkTree])
+            await store.release(sessionKey: sessionKey, owner: Self.secondOwner)
+            await fixture.close()
+        }
+    }
+
+    /// A second `SnapshotStore` on the same snapshot folder moves the
+    /// timeline ref of the session key after the `SessionStart` of the
+    /// session. The next snapshot of the session gets `timelineConflict`.
+    /// The turn of that snapshot ends normally, the next turn ends normally
+    /// too, and `tools.snapshots.list` gives the correction with that cause,
+    /// not a thrown error and not the checkpoints of the second store.
+    @Test
+    func aSessionWithATimelineConflictEndsItsTurnWithNoSnapshots() async throws {
+        try await TelemetryCapture.run(forbidding: [Self.secondNoteContent]) { context in
+            let fixture = try await Self.makeSnapshotFixture(
+                script: try Self.makeSnapshotScript(), label: "HookCompositionTests-conflict")
+            let sessionKey = fixture.sessionId.rawValue
+            await fixture.harness.agent.hooks.dispatcher.drain()
+            let secondStore = SnapshotStore(
+                directory: AgentHooks.snapshotDirectory(in: fixture.harness.agent.hooks.dispatcher.dataDirectory))
+            try await Self.takeSecondOwnerCheckpoint(in: secondStore, sessionKey: sessionKey, workTree: fixture.cwd)
+
+            let written = try await Self.runTurn(Self.writePromptText, in: fixture)
+            let listed = try await Self.runTurn(Self.listPromptText, in: fixture)
+
+            #expect(written.stopReason == .endTurn)
+            Self.expectNoSnapshots(in: listed, cause: .timelineConflict)
+            try Self.expectOneFailureRecord(
+                in: context.logRecords, sessionKey: sessionKey, error: .timelineConflict, workTrees: [fixture.cwd])
+            await secondStore.release(sessionKey: sessionKey, owner: Self.secondOwner)
+            await fixture.close()
+        }
+    }
+
+    /// Opens `sessionKey` in `store` for ``secondOwner`` in `workTree`,
+    /// writes ``secondNoteFileName`` there, and takes a checkpoint. Thus the
+    /// key has a checkpoint that is not a checkpoint of the session.
+    ///
+    /// - Parameters:
+    ///   - store: The store that opens the key.
+    ///   - sessionKey: The session key.
+    ///   - workTree: The git work tree of the second owner.
+    /// - Throws: The error of the open, of the write or of the take, or a
+    ///   failed requirement when the take makes no checkpoint.
+    private static func takeSecondOwnerCheckpoint(
+        in store: SnapshotStore, sessionKey: String, workTree: URL
+    ) async throws {
+        try await store.open(sessionKey: sessionKey, owner: secondOwner, workingDirectory: workTree)
+        try secondNoteContent.write(
+            to: workTree.appendingPathComponent(secondNoteFileName, isDirectory: false), atomically: true,
+            encoding: .utf8)
+        let checkpoint = try await store.take(sessionKey: sessionKey, owner: secondOwner, trigger: .manual(label: nil))
+        _ = try #require(checkpoint)
+    }
+
+    /// Expects that `turn` ended normally, and that its `tools.snapshots.list`
+    /// call gave the Multitool correction with `cause` and no checkpoint
+    /// count.
+    ///
+    /// - Parameters:
+    ///   - turn: The turn that listed the snapshots.
+    ///   - cause: The cause that the correction names.
+    ///   - sourceLocation: The source location that each issue names.
+    private static func expectNoSnapshots(
+        in turn: SnapshotTurn, cause: SnapshotUnavailableCause, sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        #expect(turn.stopReason == .endTurn, sourceLocation: sourceLocation)
+        let correction = "\(notAvailablePrefix)\(cause.rawValue). \(stopCallingSnapshotsText)"
+        #expect(turn.toolCallText.contains(correction), sourceLocation: sourceLocation)
+        #expect(!turn.toolCallText.contains(checkpointCountLabel), sourceLocation: sourceLocation)
+    }
+
+    /// Expects one error record of `SnapshotHook` for `sessionKey`. Its
+    /// message ends with the case name of `error`, and its message and its
+    /// metadata hold no path of `workTrees`.
+    ///
+    /// - Parameters:
+    ///   - records: The log records of the capture.
+    ///   - sessionKey: The session key that the record names.
+    ///   - error: The error whose case the record names.
+    ///   - workTrees: The work trees whose paths the record must not hold.
+    ///   - sourceLocation: The source location that each issue names.
+    /// - Throws: A failed requirement when the records hold no such record.
+    private static func expectOneFailureRecord(
+        in records: [TelemetryCapture.LogRecord], sessionKey: String, error: SnapshotError, workTrees: [URL],
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) throws {
+        let failures = records.filter { record in
+            record.level == .error && record.metadata[hookSessionKeyMetadataKey] == .string(sessionKey)
+        }
+        #expect(failures.count == 1, sourceLocation: sourceLocation)
+        let failure = try #require(failures.first, sourceLocation: sourceLocation)
+        let message = failure.message.description
+        #expect(message.hasSuffix(": \(ACPAgentTelemetry.errorCaseName(of: error))"), sourceLocation: sourceLocation)
+        let texts = [message] + failure.metadata.values.map(\.description)
+        let paths = workTrees.map(\.path)
+        #expect(!texts.contains { text in paths.contains { text.contains($0) } }, sourceLocation: sourceLocation)
     }
 
     // MARK: - The end of the connection
