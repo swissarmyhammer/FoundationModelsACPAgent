@@ -182,8 +182,10 @@ private let inMemoryTracingProduct = Target.Dependency.product(
 /// until it does so each API is a no-op.
 ///
 /// No target of this package links an exporter at this time. The `acp-agent`
-/// executable bootstraps only a stderr log handler, so tracing and metrics
-/// stay no-op. `swift-otel` was removed because of a SwiftPM 6.4 defect,
+/// executable bootstraps a stderr log handler, and with
+/// `acp --telemetry-file` it also bootstraps its own JSON lines handler,
+/// tracer and metrics factory over one file. Without that flag tracing and
+/// metrics stay no-op. `swift-otel` was removed because of a SwiftPM 6.4 defect,
 /// swiftlang/swift-package-manager#10397: `swift package update` loses the
 /// traits that the root manifest sets on a dependency. When the toolchain is
 /// 6.4.1 or later, the `acp-agent` executable can declare `swift-otel` with
@@ -362,20 +364,22 @@ let package = Package(
         // path `ACP_AGENT_STUB_MODEL=1` selects is the library's own
         // `EchoModel`, never the test support: that target links the
         // `Testing` framework, and a product that carried it would not
-        // start outside a test host. It bootstraps the stderr log handler
-        // in `AcpAgentCommand.main()`, and links no telemetry exporter — see
-        // `telemetryAPIProducts`.
+        // start outside a test host. It bootstraps the telemetry backend
+        // in `AcpAgentCommand.main()`, so it links all three telemetry APIs,
+        // and links no telemetry exporter — see `telemetryAPIProducts`. It
+        // links Extras for `SpanIdentity`, the W3C `traceparent` format the
+        // tracer of `acp --telemetry-file` injects and extracts.
         .executableTarget(
             name: agentExecutableName,
             dependencies: [
                 .target(name: packageName),
                 makeFamilyProduct(name: wireDependencyName),
                 makeFamilyProduct(name: routerDependencyName),
+                makeFamilyProduct(name: extrasDependencyName),
                 makeFamilyProduct(name: clientDependencyName),
                 argumentParserProduct,
                 nooraProduct,
-                loggingProduct,
-            ],
+            ] + telemetryAPIProducts,
             path: "Sources/\(agentExecutableName)"
         ),
         // The one-shot client CLI. It links ONLY the client package and

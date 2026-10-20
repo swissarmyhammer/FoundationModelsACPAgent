@@ -85,14 +85,18 @@ struct AcpAgentCommand: AsyncParsableCommand {
     /// `fullMessage(for:)`, and only the stream and the code are this
     /// type's.
     ///
-    /// The first step bootstraps the telemetry backend
-    /// (``TelemetryBootstrap/bootstrap()``), before the process can write a
-    /// log record. This is the only call site: the unit test target links
-    /// this target, and a test process must not bootstrap logging.
+    /// The step after the parse bootstraps the telemetry backend
+    /// (``TelemetryBootstrap/bootstrap(telemetryFile:)``), before the process
+    /// can write a log record: the parse writes none, and the `acp`
+    /// `--telemetry-file` option must be known before the bootstrap. A parse
+    /// failure, `--help` and `--version` exit with no bootstrap, because
+    /// they write no log record. This is the only call site: the unit test
+    /// target links this target, and a test process must not bootstrap
+    /// logging.
     static func main() async {
-        TelemetryBootstrap.bootstrap()
         do {
             var command = try parseAsRoot()
+            try TelemetryBootstrap.bootstrap(telemetryFile: (command as? Acp)?.telemetryFile)
             if var asyncCommand = command as? any AsyncParsableCommand {
                 try await asyncCommand.run()
             } else {

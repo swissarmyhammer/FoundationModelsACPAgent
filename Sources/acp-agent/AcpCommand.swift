@@ -26,6 +26,20 @@ extension AcpAgentCommand {
         static let configuration = CommandConfiguration(
             commandName: "acp", abstract: "Serve ACP on stdin and stdout.")
 
+        /// The `--telemetry-file` option: a file that gets each log record
+        /// at `debug` and up, each span when it ends, and each metric
+        /// recording, as JSON lines. stderr keeps its `warning` records.
+        ///
+        /// ``AcpAgentCommand/main()`` reads it after the parse and before
+        /// ``run()``, because the telemetry bootstrap must come before the
+        /// first log record — see ``TelemetryBootstrap/bootstrap(telemetryFile:)``.
+        @Option(
+            name: .customLong("telemetry-file"),
+            help: ArgumentHelp(
+                "Append each log record (debug and up), each span and each metric to this file as JSON lines.",
+                valueName: "path"))
+        var telemetryFile: String?
+
         mutating func run() async throws {
             // Construction resolves the configured profile to a resident
             // profile, which the agent holds for the life of the process.

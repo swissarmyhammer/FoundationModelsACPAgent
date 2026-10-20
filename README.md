@@ -423,8 +423,13 @@ line. `swift test` runs the hermetic suites;
 binary or load a real model.
 
 The agent uses the telemetry APIs only: swift-log, swift-distributed-tracing
-and swift-metrics. It exports no telemetry. Log records go to stderr, and
-tracing and metrics stay no-op. The log record of `session/cancel` carries
+and swift-metrics. By default it exports no telemetry: log records at
+`warning` and up go to stderr, and tracing and metrics stay no-op.
+`acp-agent acp --telemetry-file PATH` also appends each log record at `debug`
+and up, each span when it ends, and each metric recording to `PATH`, one JSON
+object for each line with a `type` of `log`, `span` or `metric`; stderr keeps
+its `warning` records. The file holds no error description and no span status
+message, only the type name of an error. The log record of `session/cancel` carries
 `cancel.signal_id`, the `SignalID` of its `cancelAll()` signal. That key
 replaces `cancel.result`, which an earlier version wrote. The OTLP exporter (`swift-otel`) is not a
 dependency until SwiftPM 6.4.1, because SwiftPM 6.4 `update` loses the traits
