@@ -83,8 +83,8 @@ import Testing
     // MARK: - Fixture
 
     /// A store over a temporary root settings folder, and two temporary
-    /// working directories.
-    private struct Fixture {
+    /// working directories. ``SettingsStoreSecretFlushTests`` uses it too.
+    struct Fixture {
         /// The settings folders of the store.
         let settingsFolders: SettingsFolders
 
