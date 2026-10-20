@@ -21,7 +21,7 @@ import Testing
     // MARK: - Constants
 
     /// The file that the scripted tool call writes. The snapshot proof
-    /// commits it first, so an undo has content to put back.
+    /// commits it first, so a rollback has content to put back.
     private static let noteFileName = "note.txt"
 
     /// The content of the note in the commit of the snapshot proof.
@@ -44,14 +44,19 @@ import Testing
     /// The marker of the prompt that lists the snapshots.
     private static let listPromptText = "list the snapshots now"
 
-    /// The marker of the prompt that undoes the last snapshot.
-    private static let undoPromptText = "undo the last snapshot now"
+    /// The marker of the prompt that rolls back to the baseline.
+    private static let rollbackPromptText = "roll back to the baseline now"
 
     /// The label of the checkpoint count that the list snippet answers.
     private static let checkpointCountLabel = "checkpoints="
 
-    /// The answer of the undo snippet when the undo restored the files.
-    private static let undoneAnswer = "the undo restored the files"
+    /// The answer of the rollback snippet when the rollback restored the
+    /// files.
+    private static let rolledBackAnswer = "the rollback restored the files"
+
+    /// The checkpoint index of the baseline: the work tree before the first
+    /// checkpoint.
+    private static let baselineIndex = 0
 
     /// The snippet that writes the note through the files capability.
     private static var writeCode: String {
@@ -69,11 +74,11 @@ import Testing
         """
     }
 
-    /// The snippet that undoes the last snapshot.
-    private static var undoCode: String {
+    /// The snippet that rolls back to the baseline.
+    private static var rollbackCode: String {
         """
-        const undone = await tools.snapshots.undo({});
-        return undone.correction ? undone.correction : "\(undoneAnswer)";
+        const rolledBack = await tools.snapshots.rollback({ index: \(baselineIndex) });
+        return rolledBack.correction ? rolledBack.correction : "\(rolledBackAnswer)";
         """
     }
 
@@ -190,9 +195,10 @@ import Testing
 
     /// In a git work tree, a tool call that writes a file makes one
     /// checkpoint, which `tools.snapshots.list` of the session gives, and
-    /// `tools.snapshots.undo` puts the committed content of the file back.
+    /// `tools.snapshots.rollback` to the baseline puts the committed content
+    /// of the file back.
     @Test
-    func aToolCallThatWritesAFileMakesOneCheckpointThatAnUndoRestores() async throws {
+    func aToolCallThatWritesAFileMakesOneCheckpointThatARollbackRestores() async throws {
         let cwd = makeResolvedDirectory(label: "HookCompositionTests-snapshots-repo")
         try GitVerbSupport.makeRepository(in: cwd, branch: Self.branchName)
         try GitVerbSupport.commitFile(
@@ -208,8 +214,8 @@ import Testing
         #expect(try String(contentsOf: note, encoding: .utf8) == Self.writtenNoteContent)
         let listed = try await Self.runPrompt(Self.listPromptText, in: fixture, count: 2)
         #expect(listed.contains("\(Self.checkpointCountLabel)1"))
-        let undone = try await Self.runPrompt(Self.undoPromptText, in: fixture, count: 3)
-        #expect(undone.contains(Self.undoneAnswer))
+        let rolledBack = try await Self.runPrompt(Self.rollbackPromptText, in: fixture, count: 3)
+        #expect(rolledBack.contains(Self.rolledBackAnswer))
         #expect(try String(contentsOf: note, encoding: .utf8) == Self.committedNoteContent)
         await fixture.close()
     }
@@ -220,7 +226,7 @@ import Testing
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
     private static func makeSnapshotScript() throws -> [ScriptedPassStep] {
-        let plays = [(writePromptText, writeCode), (listPromptText, listCode), (undoPromptText, undoCode)]
+        let plays = [(writePromptText, writeCode), (listPromptText, listCode), (rollbackPromptText, rollbackCode)]
         return try plays.map { marker, code in
             .onPrompt(containing: marker, play: try ScriptedPromptFixture.makeToolPromptScript(code: code))
         } + [.endPass]

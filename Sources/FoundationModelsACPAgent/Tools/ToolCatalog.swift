@@ -379,7 +379,7 @@ public enum ToolCatalog {
     /// profile's embedding slot as its embedder, and mounts the operations
     /// of its three tools as the verbs of the `tools.code_context` group.
     /// With a ``CatalogContext/snapshotStore``, `snapshots` mounts the
-    /// `tools.snapshots` verbs (`list`, `take`, `undo` and `redo`) over the
+    /// `tools.snapshots` verbs (`list`, `take` and `rollback`) over the
     /// snapshot store of the agent. It has no config section.
     ///
     /// - Parameter context: What the builder calls need.
