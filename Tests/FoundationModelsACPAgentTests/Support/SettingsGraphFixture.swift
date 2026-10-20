@@ -10,32 +10,34 @@ import Testing
 /// the suites of the endpoint, its subscription and ``SettingsTool``.
 ///
 /// The store reads a temporary root settings folder from
-/// ``SettingsFoldersFixture`` and an ``InMemorySecretStore``. Thus no test
-/// reads the real home directory or the real Keychain.
+/// ``SettingsFoldersFixture`` and an ``InMemorySecretStore``, or a different
+/// test secret store that the test gives. Thus no test reads the real home
+/// directory or the real Keychain.
 struct SettingsGraphFixture {
     // MARK: - Documents
 
-    /// A query of one setting: its key path, its value, its level and its
-    /// secrets.
+    /// The fields of a `Setting` that each document of the fixture selects:
+    /// the key path, the value, the level and the secrets.
+    static let settingFields = "{ keyPath value level secrets { keyPath reference hasValue } }"
+
+    /// A query of one setting.
     static let settingQuery = """
         query($keyPath: [String!]!, $cwd: String!) {
-          setting(keyPath: $keyPath, cwd: $cwd) {
-            keyPath value level secrets { keyPath reference hasValue }
-          }
+          setting(keyPath: $keyPath, cwd: $cwd) \(settingFields)
         }
         """
 
-    /// A `set` mutation that gives the value and the level of the result.
+    /// A `set` mutation that gives the setting after the change.
     static let setMutation = """
         mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!, $cwd: String!) {
-          set(keyPath: $keyPath, value: $value, level: $level, cwd: $cwd) { value level }
+          set(keyPath: $keyPath, value: $value, level: $level, cwd: $cwd) \(settingFields)
         }
         """
 
-    /// A `clear` mutation that gives the value and the level of the result.
+    /// A `clear` mutation that gives the setting after the change.
     static let clearMutation = """
         mutation($keyPath: [String!]!, $level: SettingLevel!, $cwd: String!) {
-          clear(keyPath: $keyPath, level: $level, cwd: $cwd) { value level }
+          clear(keyPath: $keyPath, level: $level, cwd: $cwd) \(settingFields)
         }
         """
 
@@ -95,8 +97,21 @@ struct SettingsGraphFixture {
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused, or
     ///   the error of the schema build.
     init(label: String, secrets: [String: String] = [:]) throws {
+        try self.init(label: label, secretStore: InMemorySecretStore(secrets))
+    }
+
+    /// Makes the folders, the store over a given secret store, and the
+    /// endpoint.
+    ///
+    /// - Parameters:
+    ///   - label: The prefix that names the test.
+    ///   - secretStore: The secret store of the settings store, for example a
+    ///     ``FailingSecretStore``.
+    /// - Throws: `DotfolderNameError` when the dotfolder name is refused, or
+    ///   the error of the schema build.
+    init(label: String, secretStore: any SecretStore) throws {
         settingsFolders = try SettingsFoldersFixture.make(label: "SettingsGraph-\(label)")
-        store = SettingsStore(settingsFolders: settingsFolders, secretStore: InMemorySecretStore(secrets))
+        store = SettingsStore(settingsFolders: settingsFolders, secretStore: secretStore)
         graph = try SettingsGraph(store: store)
         firstDirectory = makeResolvedDirectory(label: "SettingsGraph-\(label)-first")
         secondDirectory = makeResolvedDirectory(label: "SettingsGraph-\(label)-second")
@@ -215,6 +230,9 @@ struct GraphQLReply {
     /// The `message` of each error, in order.
     let messages: [String]
 
+    /// The `code` of each item of `extensions.warnings`, in order.
+    let warningCodes: [String]
+
     /// Reads a response.
     ///
     /// - Parameter text: The JSON text.
@@ -226,6 +244,8 @@ struct GraphQLReply {
         let errors = object["errors"] as? [[String: Any]] ?? []
         codes = errors.compactMap { error in (error["extensions"] as? [String: Any])?["code"] as? String }
         messages = errors.compactMap { error in error["message"] as? String }
+        let warnings = (object["extensions"] as? [String: Any])?["warnings"] as? [[String: Any]] ?? []
+        warningCodes = warnings.compactMap { warning in warning["code"] as? String }
     }
 
     /// The object of one field of `data`.

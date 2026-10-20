@@ -14,8 +14,11 @@ struct SettingsReading: Equatable, Sendable {
         let reference: String?
 
         /// `true` when the secret store has an item for ``reference``.
-        /// Always `false` for a literal.
-        let hasValue: Bool
+        /// Always `false` for a literal. `nil` only in a reading after a
+        /// change (``SettingsEngine/settingAfterChange(at:cwd:)``) when the
+        /// secret store cannot tell if it has the item: the value is then
+        /// unknown.
+        let hasValue: Bool?
     }
 
     /// The key path of the setting.
@@ -30,6 +33,12 @@ struct SettingsReading: Equatable, Sendable {
 
     /// Each secret key inside the value.
     let secrets: [Secret]
+
+    /// `true` when the reading knows each part: each secret has a known
+    /// ``Secret/hasValue``.
+    var isComplete: Bool {
+        !secrets.contains { secret in secret.hasValue == nil }
+    }
 }
 
 /// The one engine of the agent settings under the `settings` GraphQL
@@ -63,9 +72,66 @@ struct SettingsEngine: Sendable {
     ///   - cwd: The absolute path of the working directory of the session.
     /// - Returns: The reading, or `nil` when no layer and no builtin default
     ///   has the key.
+    /// - Throws: ``SettingsGraphError`` for a call that the engine refuses,
+    ///   or for a secret that the secret store cannot read; what the store
+    ///   throws for a file that it cannot read.
+    func setting(at keyPath: [String], cwd: String) async throws -> SettingsReading? {
+        try await reading(at: keyPath, cwd: cwd, secretOf: secret(of:))
+    }
+
+    /// Reads the merged value of one key after a change that the store saved,
+    /// for the result of a mutation.
+    ///
+    /// The change is saved before this read, thus a secret that the secret
+    /// store cannot read does not make the read fail: its
+    /// ``SettingsReading/Secret/hasValue`` is `nil` (unknown), and the engine
+    /// writes a log record with the key path and the case of the error. A
+    /// failure of the read of a level file still throws, because then no part
+    /// of the reading is known.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path. Its first key is a section.
+    ///   - cwd: The absolute path of the working directory of the session.
+    /// - Returns: The reading, or `nil` when no layer and no builtin default
+    ///   has the key.
     /// - Throws: ``SettingsGraphError`` for a call that the engine refuses;
     ///   what the store throws for a file that it cannot read.
-    func setting(at keyPath: [String], cwd: String) async throws -> SettingsReading? {
+    func settingAfterChange(at keyPath: [String], cwd: String) async throws -> SettingsReading? {
+        try await reading(at: keyPath, cwd: cwd, secretOf: secretAfterChange(of:))
+    }
+
+    /// Writes the log record of a read after a saved change that did not
+    /// complete. The record holds the dotted key path and the case of the
+    /// error, never a value, because a value can be a secret.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The dotted key path that the read could not read.
+    ///   - error: The error of the read.
+    static func logIncompleteReadAfterChange(of keyPath: String, error: any Error) {
+        var metadata = ACPAgentTelemetry.errorMetadata(error)
+        metadata[ACPAgentTelemetry.LogMetadataKey.configSection] = "\(keyPath)"
+        metadata[ACPAgentTelemetry.LogMetadataKey.errorCase] = "\(ACPAgentTelemetry.errorCaseName(of: error))"
+        ACPAgentTelemetry.logger(.configuration).warning(
+            "A settings change is saved, but the read of the setting after the change did not complete.",
+            metadata: metadata)
+    }
+
+    /// Reads the merged value of one key, and gives each secret key inside
+    /// it through `secretOf`.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path. Its first key is a section.
+    ///   - cwd: The absolute path of the working directory of the session.
+    ///   - secretOf: Gives the secret of one secret key.
+    /// - Returns: The reading, or `nil` when no layer and no builtin default
+    ///   has the key.
+    /// - Throws: ``SettingsGraphError`` for a call that the engine refuses;
+    ///   what `secretOf` throws; what the store throws for a file that it
+    ///   cannot read.
+    private func reading(
+        at keyPath: [String], cwd: String,
+        secretOf: (SettingsSecretKeys.Slot) throws -> SettingsReading.Secret
+    ) async throws -> SettingsReading? {
         let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
         let merged = try await SettingsGraphError.withCodedErrors {
             try await store.value(at: keyPath, cwd: directory)
@@ -77,7 +143,7 @@ struct SettingsEngine: Sendable {
             keyPath: keyPath,
             value: SettingsSecretKeys.redacted(merged.value, at: keyPath),
             level: merged.level,
-            secrets: try SettingsSecretKeys.slots(in: merged.value, at: keyPath).map(secret(of:)))
+            secrets: try SettingsSecretKeys.slots(in: merged.value, at: keyPath).map(secretOf))
     }
 
     /// Gives the secret of one secret key, with no value.
@@ -97,6 +163,22 @@ struct SettingsEngine: Sendable {
             throw SettingsGraphError.unreadableSecret(reference: reference)
         }
         return SettingsReading.Secret(keyPath: slot.keyPath, reference: reference, hasValue: item != nil)
+    }
+
+    /// Gives the secret of one secret key in a read after a saved change.
+    ///
+    /// - Parameter slot: The secret key.
+    /// - Returns: The secret, as ``secret(of:)`` gives it. When the secret
+    ///   store cannot read the item, the secret has its reference and a `nil`
+    ///   ``SettingsReading/Secret/hasValue``, and the engine writes a log
+    ///   record.
+    private func secretAfterChange(of slot: SettingsSecretKeys.Slot) -> SettingsReading.Secret {
+        do {
+            return try secret(of: slot)
+        } catch {
+            Self.logIncompleteReadAfterChange(of: slot.keyPath, error: error)
+            return SettingsReading.Secret(keyPath: slot.keyPath, reference: slot.referenceName, hasValue: nil)
+        }
     }
 
     // MARK: - Writes

@@ -92,8 +92,10 @@ struct SettingsGraphSecret: Codable, Sendable {
     /// show.
     let reference: String?
 
-    /// `true` when the secret store has an item for the reference.
-    let hasValue: Bool
+    /// `true` when the secret store has an item for the reference, or `nil`
+    /// when the result of a mutation does not know it (the secret store
+    /// could not read the item after the change).
+    let hasValue: Bool?
 }
 
 /// The `Setting` object: the merged value of one key and its layer.
@@ -207,6 +209,10 @@ struct SettingsGraphContext: GraphQLRunContext {
 
 /// The root resolver of the `settings` endpoint over the engine.
 struct SettingsGraphResolver: Sendable {
+    /// The code of the warning in `extensions.warnings` that tells that a
+    /// mutation is saved, but its read after the change did not complete.
+    static let readBackWarningCode = "READ_AFTER_CHANGE_INCOMPLETE"
+
     /// The engine of the settings.
     let engine: SettingsEngine
 
@@ -230,35 +236,50 @@ struct SettingsGraphResolver: Sendable {
 
     /// Resolves `Mutation.set`.
     ///
-    /// - Parameter arguments: The key path, the value, the level and the
-    ///   working directory.
-    /// - Returns: The merged setting after the change.
-    /// - Throws: What ``SettingsEngine/set(_:at:level:cwd:)`` throws.
+    /// A failure of the read after the change does not fail the mutation,
+    /// because the change is saved before that read. Then the result has an
+    /// unknown part, as ``settingAfterChange(at:cwd:context:)`` tells.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call, which gets the warning of a read
+    ///     after the change that did not complete.
+    ///   - arguments: The key path, the value, the level and the working
+    ///     directory.
+    /// - Returns: The merged setting after the change, or `nil` when no layer
+    ///   has the key or when the read after the change failed as a whole.
+    /// - Throws: What ``SettingsEngine/set(_:at:level:cwd:)`` throws. The
+    ///   change is then not saved.
     func set(
-        context _: SettingsGraphContext, arguments: SettingsGraphSetArguments
+        context: SettingsGraphContext, arguments: SettingsGraphSetArguments
     ) async throws -> SettingsGraphSetting? {
         try await engine.set(
             YAMLValue(graphQLMap: arguments.value), at: arguments.keyPath, level: arguments.level,
             cwd: arguments.cwd)
-        return try await mergedSetting(at: arguments.keyPath, cwd: arguments.cwd)
+        return await settingAfterChange(at: arguments.keyPath, cwd: arguments.cwd, context: context)
     }
 
     /// Resolves `Mutation.clear`.
     ///
-    /// - Parameter arguments: The key path, the level and the working
-    ///   directory.
+    /// A failure of the read after the change does not fail the mutation,
+    /// because the change is saved before that read. Then the result has an
+    /// unknown part, as ``settingAfterChange(at:cwd:context:)`` tells.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call, which gets the warning of a read
+    ///     after the change that did not complete.
+    ///   - arguments: The key path, the level and the working directory.
     /// - Returns: The merged setting after the change, or `nil` when no layer
-    ///   has the key.
-    /// - Throws: What ``SettingsEngine/clear(at:level:cwd:)`` throws.
+    ///   has the key or when the read after the change failed as a whole.
+    /// - Throws: What ``SettingsEngine/clear(at:level:cwd:)`` throws. The
+    ///   change is then not saved.
     func clear(
-        context _: SettingsGraphContext, arguments: SettingsGraphClearArguments
+        context: SettingsGraphContext, arguments: SettingsGraphClearArguments
     ) async throws -> SettingsGraphSetting? {
         try await engine.clear(at: arguments.keyPath, level: arguments.level, cwd: arguments.cwd)
-        return try await mergedSetting(at: arguments.keyPath, cwd: arguments.cwd)
+        return await settingAfterChange(at: arguments.keyPath, cwd: arguments.cwd, context: context)
     }
 
-    /// Reads the merged setting of one key, for the query and for the result
-    /// of each mutation.
+    /// Reads the merged setting of one key for the query.
     ///
     /// - Parameters:
     ///   - keyPath: The key path.
@@ -267,6 +288,56 @@ struct SettingsGraphResolver: Sendable {
     /// - Throws: What ``SettingsEngine/setting(at:cwd:)`` throws.
     private func mergedSetting(at keyPath: [String], cwd: String) async throws -> SettingsGraphSetting? {
         try await engine.setting(at: keyPath, cwd: cwd).map(SettingsGraphSetting.init)
+    }
+
+    /// Reads the merged setting of one key after a mutation that the store
+    /// saved, for the result of the mutation.
+    ///
+    /// This read never fails the mutation, because the change is already
+    /// saved, and a client that gets an error can make the same change again.
+    /// A part that the read cannot get is unknown in the result:
+    ///
+    /// - A secret that the secret store cannot read has `hasValue: null`.
+    /// - A read that fails as a whole, for example for a level file that the
+    ///   store cannot read, gives a `null` result.
+    ///
+    /// In both cases the read adds a warning with the code
+    /// ``readBackWarningCode`` to `extensions.warnings`, and writes a log
+    /// record with the key path and the case of the error, never a value.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path.
+    ///   - cwd: The absolute path of the working directory of the session.
+    ///   - context: The context of the call, which gets the warning.
+    /// - Returns: The setting, or `nil` when no layer has the key or when the
+    ///   read failed as a whole.
+    private func settingAfterChange(
+        at keyPath: [String], cwd: String, context: SettingsGraphContext
+    ) async -> SettingsGraphSetting? {
+        do {
+            let reading = try await engine.settingAfterChange(at: keyPath, cwd: cwd)
+            if let reading, !reading.isComplete {
+                await Self.warnOfIncompleteRead(of: keyPath, in: context)
+            }
+            return reading.map(SettingsGraphSetting.init)
+        } catch {
+            SettingsEngine.logIncompleteReadAfterChange(of: keyPath.joined(separator: "."), error: error)
+            await Self.warnOfIncompleteRead(of: keyPath, in: context)
+            return nil
+        }
+    }
+
+    /// Adds the warning of a read after a saved change that did not complete.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path of the change.
+    ///   - context: The context of the call.
+    private static func warnOfIncompleteRead(of keyPath: [String], in context: SettingsGraphContext) async {
+        await context.warnings.add(
+            "The change of \(keyPath.joined(separator: ".")) is saved, but the read of the setting after the change "
+                + "did not complete. A null result or a null hasValue is unknown. Do not make the change again. "
+                + "Read the setting with the setting query.",
+            code: readBackWarningCode)
     }
 
     /// Resolves the source of `Subscription.changes`.
@@ -297,7 +368,11 @@ struct SettingsGraphAPI: API {
     private static let levelDescription = "The level that the mutation changes."
 
     /// The text of the description of the setting that a mutation gives.
-    private static let resultDescription = "The merged setting after the change, or null when no layer has the key."
+    private static let resultDescription =
+        "The merged setting after the change, or null when no layer has the key. The change is saved before the "
+        + "read of this result. When that read does not complete, the mutation does not fail: a part that the read "
+        + "could not get is null, and extensions.warnings has the code "
+        + "\(SettingsGraphResolver.readBackWarningCode)."
 
     /// The root resolver.
     let resolver: SettingsGraphResolver
@@ -332,7 +407,9 @@ struct SettingsGraphAPI: API {
                     Field("reference", at: \.reference)
                         .description("The name of the keychain: reference, or null for a literal that is not shown.")
                     Field("hasValue", at: \.hasValue)
-                        .description("True when the secret store has an item for the reference.")
+                        .description(
+                            "True when the secret store has an item for the reference. Null in the result of a "
+                                + "mutation when the secret store could not read the item: the value is unknown.")
                 }
                 .description("One secret key inside a setting. The endpoint never gives a secret value.")
                 Type(SettingsGraphSetting.self, as: "Setting") {

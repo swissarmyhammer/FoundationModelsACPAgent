@@ -45,8 +45,10 @@ type Secret {
   """
   reference: String
 
-  """True when the secret store has an item for the reference."""
-  hasValue: Boolean!
+  """
+  True when the secret store has an item for the reference. Null in the result of a mutation when the secret store could not read the item: the value is unknown.
+  """
+  hasValue: Boolean
 }
 
 """The merged value of one key for a session, and the layer that set it."""
@@ -100,7 +102,7 @@ type Query {
 
 type Mutation {
   """
-  Sets the value of one key on one level. The merged setting after the change, or null when no layer has the key.
+  Sets the value of one key on one level. The merged setting after the change, or null when no layer has the key. The change is saved before the read of this result. When that read does not complete, the mutation does not fail: a part that the read could not get is null, and extensions.warnings has the code READ_AFTER_CHANGE_INCOMPLETE.
   """
   set(
     """
@@ -121,7 +123,7 @@ type Mutation {
   ): Setting
 
   """
-  Removes one key from one level. The value of a lower level applies again. The merged setting after the change, or null when no layer has the key.
+  Removes one key from one level. The value of a lower level applies again. The merged setting after the change, or null when no layer has the key. The change is saved before the read of this result. When that read does not complete, the mutation does not fail: a part that the read could not get is null, and extensions.warnings has the code READ_AFTER_CHANGE_INCOMPLETE.
   """
   clear(
     """

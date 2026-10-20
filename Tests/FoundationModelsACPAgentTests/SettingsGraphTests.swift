@@ -11,7 +11,8 @@ import Testing
 /// each level, and the rules of a secret key.
 ///
 /// Each test uses ``SettingsGraphFixture``: temporary folders and an
-/// ``InMemorySecretStore``.
+/// ``InMemorySecretStore``. The tests of the read after a change use a
+/// ``FailingSecretStore``.
 @Suite struct SettingsGraphTests {
     // MARK: - Constants
 
@@ -26,6 +27,13 @@ import Testing
 
     /// The reference of the Tavily key, as the file holds it.
     private static let reference = "keychain:\(referenceName)"
+
+    /// A second reference of the Tavily key, which a session level holds.
+    private static let sessionReference = "keychain:session-tavily-api-key"
+
+    /// A session `config.yaml` that is not valid YAML, thus the store cannot
+    /// read the level.
+    private static let brokenYAML = "compaction: [unclosed\n"
 
     /// The value that the secret store holds for ``referenceName``.
     private static let secretValue = "settings-graph-secret-7c41aa"
@@ -383,5 +391,88 @@ import Testing
         #expect(secrets.first?["keyPath"] as? String == SettingsGraphFixture.tavilyDottedKeyPath)
         #expect(secrets.first?["reference"] is NSNull)
         #expect(secrets.first?["hasValue"] as? Bool == false)
+    }
+
+    // MARK: - The read after a change
+
+    /// A `set` whose read after the change cannot read the secret store
+    /// succeeds: the file holds the new reference, the result gives the
+    /// reference with an unknown `hasValue` (`null`), and a warning tells
+    /// that the read after the change was partial.
+    @Test func aSetSucceedsWhenTheReadAfterTheChangeCannotReadASecret() async throws {
+        let fixture = try SettingsGraphFixture(label: "read-back-set", secretStore: FailingSecretStore())
+
+        let reply = try await fixture.set(
+            .string(Self.reference), at: SettingsGraphFixture.tavilyKeyPath,
+            level: SettingsGraphFixture.userLevel, cwd: fixture.firstDirectory)
+
+        #expect(reply.codes.isEmpty)
+        #expect(reply.warningCodes == [SettingsGraphResolver.readBackWarningCode])
+        #expect(try textOnDisk(at: ConfigCommandFixture.configURL(in: try fixture.userRoot)).contains(Self.reference))
+        let result = try reply.object("set")
+        #expect(result["value"] as? String == Self.reference)
+        let secrets = try #require(result["secrets"] as? [[String: Any]])
+        #expect(secrets.first?["reference"] as? String == Self.referenceName)
+        #expect(secrets.first?["hasValue"] is NSNull)
+    }
+
+    /// A `clear` whose read after the change cannot read the secret store
+    /// succeeds: the session file loses the key, the result gives the user
+    /// reference with an unknown `hasValue` (`null`), and a warning tells
+    /// that the read after the change was partial.
+    @Test func aClearSucceedsWhenTheReadAfterTheChangeCannotReadASecret() async throws {
+        let fixture = try SettingsGraphFixture(label: "read-back-clear", secretStore: FailingSecretStore())
+        try await fixture.store.set(.string(Self.reference), at: SettingsGraphFixture.tavilyKeyPath, level: .user)
+        try await fixture.store.set(
+            .string(Self.sessionReference), at: SettingsGraphFixture.tavilyKeyPath,
+            level: .session(fixture.firstDirectory))
+
+        let reply = try await fixture.clear(
+            SettingsGraphFixture.tavilyKeyPath, level: SettingsGraphFixture.sessionLevel,
+            cwd: fixture.firstDirectory)
+
+        #expect(reply.codes.isEmpty)
+        #expect(reply.warningCodes == [SettingsGraphResolver.readBackWarningCode])
+        let sessionFile = ConfigCommandFixture.configURL(in: try fixture.sessionRoot(of: fixture.firstDirectory))
+        #expect(try !textOnDisk(at: sessionFile).contains(Self.sessionReference))
+        let result = try reply.object("clear")
+        #expect(result["level"] as? String == SettingsGraphFixture.userLevel)
+        let secrets = try #require(result["secrets"] as? [[String: Any]])
+        #expect(secrets.first?["reference"] as? String == Self.referenceName)
+        #expect(secrets.first?["hasValue"] is NSNull)
+    }
+
+    /// A `set` whose read after the change cannot read a level file
+    /// succeeds: the file holds the new value, the result is `null` because
+    /// each part of it is unknown, and a warning tells that the read after
+    /// the change failed.
+    @Test func aSetSucceedsWhenTheReadAfterTheChangeCannotReadALevel() async throws {
+        let fixture = try SettingsGraphFixture(label: "read-back-level")
+        try ConfigFileFixture.write(Self.brokenYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+        let reply = try await fixture.set(
+            .number(Number(Self.userTrigger)), at: SettingsGraphFixture.triggerKeyPath,
+            level: SettingsGraphFixture.userLevel, cwd: fixture.firstDirectory)
+
+        #expect(reply.codes.isEmpty)
+        #expect(reply.warningCodes == [SettingsGraphResolver.readBackWarningCode])
+        #expect(reply.data?["set"] is NSNull)
+        let userFile = ConfigCommandFixture.configURL(in: try fixture.userRoot)
+        #expect(try textOnDisk(at: userFile).contains("\(Self.userTrigger)"))
+        let stored = try await fixture.store.value(
+            at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.secondDirectory)
+        #expect(stored == SettingsValue(value: .double(Self.userTrigger), level: .user))
+    }
+
+    /// The `setting` query keeps its rule: a secret that the secret store
+    /// cannot read is an error.
+    @Test func aQueryFailsWhenItCannotReadASecret() async throws {
+        let fixture = try SettingsGraphFixture(label: "read-query", secretStore: FailingSecretStore())
+        try await fixture.store.set(.string(Self.reference), at: SettingsGraphFixture.tavilyKeyPath, level: .user)
+
+        let reply = try await fixture.setting(SettingsGraphFixture.tavilyKeyPath, cwd: fixture.firstDirectory)
+
+        #expect(reply.codes == [SettingsGraphError.unreadableSecret(reference: "").code])
+        #expect(reply.warningCodes.isEmpty)
     }
 }

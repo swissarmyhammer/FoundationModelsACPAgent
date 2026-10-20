@@ -94,6 +94,48 @@ comments:
     - warnings: only the accepted "missing creator for mutated node" on mlx-swift_Cmlx bundle. No compiler warning in the changed files.
     - next: review/commit
   timestamp: 2026-10-20T21:08:33.171318+00:00
+- actor: claude-code
+  id: 01m5djefvkn3zh7bxv8032s5kh
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 6d7a700). 2 findings, 2 confirmed, 0 refuted. Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:243, Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:257
+    - next: Fix the two open items in the section "Review Findings (2026-10-20 16:09)". The task stays in `review`.
+  timestamp: 2026-10-20T21:11:01.235057+00:00
+- actor: wballard
+  id: 01m5djf0bfr9nevtawqj7a900c
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 7 files
+    - test: green — swift test 1143 passed; settings suites x3 green; IntegrationTests builds
+    - commit: 6d7a700
+    - review: findings — SettingsGraphSchema.swift:243, SettingsGraphSchema.swift:257
+    - planner decision for the findings: a read-back failure must NOT fail a committed mutation.
+  timestamp: 2026-10-20T21:11:18.127+00:00
+- actor: claude-code
+  id: 01m5djwysq437ny102n16kpbk3
+  text: |-
+    Review findings (2026-10-20 16:09) worked. The rule is the planner decision: a failure of the read after a saved change does not fail the mutation.
+    - SettingsEngine: new `settingAfterChange(at:cwd:)` beside `setting(at:cwd:)`. Both use one private `reading(at:cwd:secretOf:)`. In the read after a change, a secret that the secret store cannot read gives `hasValue: nil` (unknown) and a log record. `SettingsReading.Secret.hasValue` is now `Bool?`, and `SettingsReading.isComplete` tells if a part is unknown. `setting(at:cwd:)` (the query) did not change: a secret read error is still SECRET_UNREADABLE.
+    - New `SettingsEngine.logIncompleteReadAfterChange(of:error:)`: one `warning` record on the Configuration logger with `config.section` (the dotted key path), `error.case` and `error.type`. No value goes into the record. It uses the existing keys and helpers (`errorMetadata`, `errorCaseName`), so TelemetryContentSafetyTests did not change.
+    - SettingsGraphResolver: `set` and `clear` call the new private `settingAfterChange(at:cwd:context:)`. It does not throw. A partial reading gives `hasValue: null`. A read that fails as a whole (for example a session config.yaml that is not valid YAML) gives a `null` result. Both cases add the warning `READ_AFTER_CHANGE_INCOMPLETE` (`SettingsGraphResolver.readBackWarningCode`) to `extensions.warnings`. This is the existing ResponseWarnings channel of the toolkit, so the schema has no new field. The doc comments of `set` and `clear` state the rule.
+    - Schema: `Secret.hasValue` is now `Boolean` (it can be null). The descriptions of `hasValue`, `set` and `clear` tell the rule. The golden file Tests/Fixtures/settings.graphql is updated.
+    - Tests (SettingsGraphTests): `aSetSucceedsWhenTheReadAfterTheChangeCannotReadASecret` and `aClearSucceedsWhenTheReadAfterTheChangeCannotReadASecret` use `FailingSecretStore`. They check that the mutation has no error, the file holds the change, `hasValue` is null and the warning code is present. `aSetSucceedsWhenTheReadAfterTheChangeCannotReadALevel` uses a broken session file: the result is null, the warning is present, and the user file holds the value. `aQueryFailsWhenItCannotReadASecret` is a guard test: the query keeps SECRET_UNREADABLE. RED: the mutations gave SECRET_UNREADABLE and INTERNAL. GREEN after the change.
+    - SettingsGraphFixture: new `init(label:secretStore:)`. `GraphQLReply.warningCodes` reads `extensions.warnings[].code`. The set and clear documents now select the full Setting fields (`settingFields`).
+  timestamp: 2026-10-20T21:18:55.287795+00:00
+- actor: claude-code
+  id: 01m5djx2g8avavpze3z4wkh19g
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Settings/SettingsEngine.swift; Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift; Tests/Fixtures/settings.graphql; Tests/FoundationModelsACPAgentTests/SettingsGraphTests.swift; Tests/FoundationModelsACPAgentTests/Support/SettingsGraphFixture.swift (and the card file). `swift test`: 1147 tests in 124 suites passed, with 1 known issue (the accepted withKnownIssue of HarnessSmokeTests) and 0 failures. The only warning is the accepted SwiftPM "missing creator" of the mlx-swift_Cmlx bundle. The settings suites (Graph, Store, Subscription, Tool, Folders): 63 tests in 6 suites passed in each of 3 runs. 2 of 2 findings in "Review Findings (2026-10-20 16:09)" are flipped to [x]. Not committed.
+    - next: review
+  timestamp: 2026-10-20T21:18:59.080354+00:00
+- actor: claude-code
+  id: 01m5dk1n4b91qpxf8azrzpgr3m
+  text: |-
+    ### test — green
+    - evidence: touched 4 Swift files, then `swift test` — 1147 tests in 124 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests), 0 failures, 0 skipped; build output had no compiler warning (only the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle). `swift build --build-tests --package-path IntegrationTests` — Build complete, no compiler warning. `swift test --skip-build --filter Settings` run 3 times — 63 tests in 6 suites passed each time.
+    - next: review
+  timestamp: 2026-10-20T21:21:29.227101+00:00
 depends_on:
 - 01M5CZ35E8P2EZTW5GW3YTW5VX
 - 01M5DCV6DGXMS6FGXQ6AEFMPDZ
@@ -147,3 +189,13 @@ Do this after EXTRAS-6 and EXTRAS-7:
 - [x] `Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:257` `duplication/duplication` — The read-back line in the clear resolver is a copy of the line in the set resolver at line 243. Use the same shared read-back helper that is proposed for line 243, and call it here.
 - [x] `Sources/FoundationModelsACPAgent/Settings/SettingsSecretKeys.swift:110` `completeness/invariant-propagation` — The write check refuses a null value for a secret key, but the read check accepts it. requireReferences tests only referenceName == nil, so a null is refused as a literal. redacted (line 96) explicitly keeps a null. A client cannot clear a secret key with set(value: null), though a read treats null as valid. Exempt .null in requireReferences, the same as redacted does, so a null value is accepted as a clear-like value. Or, if a null must be refused on write, change the redacted doc and the read path to match. Add one test that sets a secret key to null and asserts the chosen result.
 - [x] `Sources/FoundationModelsACPAgent/Settings/SettingsSecretKeys.swift:241` `code-hygiene/idioms-swift` — UseShorthandTypeNames: use shorthand syntax for this 'Dictionary' type.
+
+## Review Findings (2026-10-20 16:09)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:243` `completeness/public-output-contract` — The `set` resolver now reads the merged setting again after the write, and returns it. If this read fails, the call throws an error, but the write is already committed. For example, the read fails when the secret store cannot read a reference item. A client that gets the error can try the write again, but the write was already successful. The change does not say that this result is intended. Thus a success path can now fail. Decide if a read-back failure after a committed write must fail the mutation. If it must not, catch the read-back error in `set`. Then return the committed state without `secrets[].hasValue`, or log a warning. If the failure is intended, write this in the `set` doc comment. Add a test for a write that is followed by a secret that the store cannot read. The test must assert the expected result.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:257` `completeness/public-output-contract` — The `clear` resolver has the same problem. It removes the key first, and then reads the merged setting again. If the secret read fails after a successful clear, a committed change becomes an error response. Use the same rule as for `set` at line 243. Keep the committed-success result when only the read-back fails. Or write the error result in the `clear` doc comment, and add a test for it.
