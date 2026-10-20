@@ -1,10 +1,65 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5dafndnpj84zg3r2nwdh6y0
+  text: |-
+    Research done. Findings:
+    - `LayeredYAMLDocument` has only `load(_:from:engine:context:)`; its init and merge are private. Thus the store reads each level with a one-layer `DotfolderStack` (render and parse as the loader does), and merges the levels in memory with its own merge that records the source of each key the same way.
+    - `ConfigurationLoader.load()` will split: the stack read, then one shared step over a dotfolder root and its sources (builtin under it, schemaWarnings, decode, secret resolve, defaults, code override). `SettingsStore.merged(for:)` calls that shared step. A second shared step checks a root (schemaWarnings and decode, no log, no Keychain) for `set` and `clear`.
+    - `ConfigurationYAML` emits from a JSON tree. The flush adds a `YAMLValue` entry point over the same private line emitter. A double-quoted scalar must escape a newline, or the round trip of a flush changes the value.
+    - The level files hold the rendered tree: the flush writes the rendered values, thus comments and template tags of the file may go. A `keychain:` reference is text in the tree, thus the flush keeps it.
+    - `DotfolderWatcher(roots:)` accepts a file URL as a root (a missing file arms its nearest ancestor). The store uses one watcher for each `config.yaml` that it read.
+    - `loadSessionContext` becomes async (the store is an actor). Callers: `composeSession`, `restoreSession`, `candidateTranscriptRoots`.
+  timestamp: 2026-10-20T18:51:51.093539+00:00
+- actor: claude-code
+  id: 01m5db4zq7br96whs0trmt2sta
+  text: |-
+    Implementation landed (TDD: SettingsStoreTests and SessionSettingsStoreTests failed first, then passed).
+    - `Configuration/SettingsStore.swift`: actor `SettingsStore`, with `SettingsLevel` (`.user`, `.session(URL)`), `SettingsChange` (level and key path, no value), `SettingsValue` (value and `ConfigurationLayerName`), `SettingsStoreError.noLayer`. API: `merged(for:)`, `value(at:cwd:)`, `set(_:at:level:)`, `clear(at:level:)`, `changes()`.
+    - `merged(for:)` gives `LoadedConfiguration` (configuration, warnings, sources). It is the existing type for "(AgentConfiguration, sources)", and the session paths need its warnings too.
+    - `Configuration/SettingsTree.swift`: key path set and remove on `YAMLValue`, and `MergedSettings`, a merge with the source of each key path by the rule of `LayeredYAMLDocument` (its merge is private in Extras).
+    - `ConfigurationLoader`: `load()` now calls the shared `loadedConfiguration(dotfolderRoot:sources:)`; new `check(dotfolderRoot:)` (schema check and decode, no log, no Keychain) for set and clear.
+    - `ConfigurationYAML.levelText(of:)`: emits a level tree with the private line emitter. `quoted` now escapes a line break, a carriage return and a tab, because YAML folds a line break in a double-quoted scalar.
+    - `RoutedACPAgent.settingsStore`; `makeConfigurationLoader` comes from the store; `loadSessionContext` is async and reads `settingsStore.merged(for:)`. Callers: `composeSession`, `restoreSession`, `candidateTranscriptRoots` (now async; its two `try?` became do/catch with a warning record).
+    Known limits (documented in code): the flush writes the rendered tree, thus comments and template tags of a level file go. A `{% include %}` of a level file finds a partial only in its own level folder. The defaults layer (`<NAME>_DEFAULTS_DIR`) is not a level; each merge reads it from disk. An empty `config.yaml` sets no key in the store (the loader merges it as null).
+  timestamp: 2026-10-20T19:03:29.767326+00:00
+- actor: claude-code
+  id: 01m5db5362ez3zcedatfzfy0wm
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` 1064 tests in 118 suites passed, 0 failures, 0 warnings (1 known issue is the existing `withKnownIssue` in HarnessSmokeTests). New: SettingsStoreTests (10), SessionSettingsStoreTests (1). Files: Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift, Configuration/SettingsTree.swift, Configuration/ConfigurationLoader.swift, Configuration/ConfigurationYAML.swift, RoutedACPAgent.swift, Agent/SessionSetup.swift, Agent/SessionResume.swift, Agent/SessionLifecycle.swift, Tests/FoundationModelsACPAgentTestSupport/SettingsFoldersFixture.swift, Tests/FoundationModelsACPAgentTests/SettingsStoreTests.swift, Tests/FoundationModelsACPAgentTests/SessionSettingsStoreTests.swift
+    - next: /review
+  timestamp: 2026-10-20T19:03:33.314174+00:00
+- actor: claude-code
+  id: 01m5dbhcckheq9k80fhcen61p3
+  text: |-
+    Coordinator fix (D101): the flush no longer writes rendered template values.
+    - The store keeps the source text of each level (before the render) and its rendered tree. It renders only to merge, check and decode (`renderedTree(of:layer:)`, same trust rule and error types as `LayeredYAMLDocument`).
+    - New `Configuration/SettingsSourceText.swift`: the source tree of a level text. Each `{{ ... }}` expression becomes a token; the write emits the tree and puts the original expression text back. `set` and `clear` change this source tree; the flush writes it.
+    - New `SettingsTemplateError.unkeptTemplate(keyPath:)`: a change is refused, and the file does not change, when the level file holds a block tag `{% %}` or a comment tag `{# #}`, when a templated key is on the way to the key, when the path goes below a templated value, or when an embedded expression holds a quote or a backslash that the double-quoted emitter cannot keep.
+    - Note: a file with a block tag refuses each change of its level (also a key outside the block), because a write regenerates the whole file and cannot keep the block.
+    - Tests: `aFlushKeepsEachTemplateExpression` (`{{ HOME }}` on another key stays, the HOME value is not in the file) and `aChangeUnderABlockTagIsRefused` (error names `compaction.trigger`, file unchanged). Both failed first.
+  timestamp: 2026-10-20T19:10:15.955378+00:00
+- actor: claude-code
+  id: 01m5dbhfb2ebehyr2j10n6qgx5
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` 1066 tests in 118 suites passed, 0 failures, 0 warnings (1 known issue is the existing `withKnownIssue` in HarnessSmokeTests). SettingsStoreTests now 12, SessionSettingsStoreTests 1. Files: Configuration/SettingsStore.swift, Configuration/SettingsSourceText.swift (new), Configuration/SettingsTree.swift, Configuration/ConfigurationLoader.swift, Configuration/ConfigurationYAML.swift, RoutedACPAgent.swift, Agent/SessionSetup.swift, Agent/SessionResume.swift, Agent/SessionLifecycle.swift, TestSupport/SettingsFoldersFixture.swift, Tests/SettingsStoreTests.swift, Tests/SessionSettingsStoreTests.swift
+    - next: /review
+  timestamp: 2026-10-20T19:10:18.978466+00:00
+- actor: claude-code
+  id: 01m5dbnnc3jqzy064ph2b473f6
+  text: |-
+    ### test — green
+    - evidence: `swift test`: 1066 tests in 118 suites passed, 1 known issue (the accepted withKnownIssue test). `swift build --build-tests --package-path IntegrationTests`: build complete. After touching the 12 changed files, `swift build --build-tests`: build complete, no compiler warning. The only warning is the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx. `SettingsStoreTests` and `SessionSettingsStoreTests` run three times: 13 tests in 2 suites passed each time.
+    - next: review
+  timestamp: 2026-10-20T19:12:36.227525+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
-position_column: todo
-position_ordinal: '8880'
+position_column: doing
+position_ordinal: '8280'
 title: 'ACPA-17: a settings object in memory for each level, flushed to config.yaml and reloaded on outside change'
 ---
 ## What
@@ -21,16 +76,16 @@ Do this:
 - The secret rule of ACPA-18 for the flush is a separate card. This card must keep each `ConfiguredSecret` as it is in the file.
 
 ## Acceptance Criteria
-- [ ] A `set` on the user level changes the merged value for all cwds that do not set the key, and writes `<user>/config.yaml`.
-- [ ] A `set` on a session level wins over the user level for that cwd only, and writes `<cwd>/.acp-agent/config.yaml` (or the folder that `SettingsFolders` gives).
-- [ ] A `clear` on the session level makes the user value apply again.
-- [ ] An outside write to a `config.yaml` updates the merged value and sends one change.
-- [ ] A change that does not decode is refused, and the file does not change.
+- [x] A `set` on the user level changes the merged value for all cwds that do not set the key, and writes `<user>/config.yaml`.
+- [x] A `set` on a session level wins over the user level for that cwd only, and writes `<cwd>/.acp-agent/config.yaml` (or the folder that `SettingsFolders` gives).
+- [x] A `clear` on the session level makes the user value apply again.
+- [x] An outside write to a `config.yaml` updates the merged value and sends one change.
+- [x] A change that does not decode is refused, and the file does not change.
 
 ## Tests
-- [ ] Unit tests of `SettingsStore` with temporary folders for each criterion.
-- [ ] A watcher test that writes the file from outside and waits for the change (with a timeout, no sleep loop).
-- [ ] `swift test` passes with zero failures and zero warnings.
+- [x] Unit tests of `SettingsStore` with temporary folders for each criterion.
+- [x] A watcher test that writes the file from outside and waits for the change (with a timeout, no sleep loop).
+- [x] `swift test` passes with zero failures and zero warnings.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-17

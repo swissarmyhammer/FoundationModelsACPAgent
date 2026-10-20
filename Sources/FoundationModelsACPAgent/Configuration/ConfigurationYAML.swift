@@ -79,6 +79,9 @@ public enum ConfigurationYAML {
     /// The number of spaces one indentation level adds.
     private static let indentWidth = 2
 
+    /// The inline text of an empty mapping.
+    private static let emptyMappingText = "{}"
+
     /// The text between a key line and its layer annotation.
     private static let annotationPrefix = "  # "
 
@@ -136,6 +139,32 @@ public enum ConfigurationYAML {
     /// - Throws: What ``documentText(for:annotation:)`` throws.
     public static func keyPaths(of configuration: AgentConfiguration) throws -> [String] {
         try lines(of: configuration, secrets: .redacted).compactMap(\.keyPath)
+    }
+
+    /// Renders the tree of one settings level as block YAML: the text that
+    /// ``SettingsStore`` writes to the `config.yaml` of the level.
+    ///
+    /// The text holds the keys of the tree only, in key order, with no
+    /// comment. A string scalar is double-quoted, thus a `keychain:<name>`
+    /// reference stays the same text. The text parses back to the same
+    /// tree.
+    ///
+    /// - Parameter root: The tree of the level: a mapping, or `.null` for a
+    ///   level that sets no key.
+    /// - Returns: The YAML document, newline-terminated. A level that sets no
+    ///   key gives the empty mapping `{}`.
+    /// - Throws: ``EmitError/notAMapping`` when `root` is a scalar or a list.
+    static func levelText(of root: YAMLValue) throws -> String {
+        let mapping = root == .null ? YAMLValue.dictionary([:]) : root
+        guard case .dictionary(let sections) = mapping else {
+            throw EmitError.notAMapping
+        }
+        guard !sections.isEmpty else {
+            return emptyMappingText + "\n"
+        }
+        return childLines(of: mapping.serializationValue, keyPath: [], indent: 0)
+            .map(\.text)
+            .joined(separator: "\n") + "\n"
     }
 
     /// The text of `line` with `annotation` applied: the layer comment
@@ -288,7 +317,7 @@ public enum ConfigurationYAML {
             return "null"
         }
         if let mapping = value as? [String: Any] {
-            return mapping.isEmpty ? "{}" : nil
+            return mapping.isEmpty ? emptyMappingText : nil
         }
         if let sequence = value as? [Any] {
             return sequence.isEmpty ? "[]" : nil
@@ -313,7 +342,9 @@ public enum ConfigurationYAML {
     }
 
     /// A double-quoted, escaped scalar, so a value that carries a colon, a
-    /// hash or a backslash stays one YAML scalar.
+    /// hash or a backslash stays one YAML scalar. A line break, a carriage
+    /// return and a tab are escapes too, because YAML folds a line break in
+    /// a double-quoted scalar into a space, and the value would change.
     ///
     /// - Parameter value: The string to quote.
     /// - Returns: The quoted scalar.
@@ -321,6 +352,9 @@ public enum ConfigurationYAML {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
         return "\"\(escaped)\""
     }
 

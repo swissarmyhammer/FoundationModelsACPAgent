@@ -783,33 +783,36 @@ extension RoutedACPAgent {
     /// Makes the configuration loader of one working directory: the one
     /// place where this agent makes a `ConfigurationLoader`.
     ///
-    /// Each request path that loads the configuration of a `cwd` calls it,
-    /// so each load gets the same ``settingsFolders`` and
+    /// Each request path that reads the configuration of a `cwd` calls it,
+    /// so each read gets the same ``settingsFolders`` and
     /// ``transcriptLocation``. A new path that calls it cannot miss the code
-    /// override or the root settings folder of the host.
+    /// override or the root settings folder of the host. The loader comes
+    /// from ``settingsStore``, thus the store and the loader read the same
+    /// folders.
     ///
     /// - Parameter workingDirectory: The working directory whose project
     ///   layer the loader reads.
     /// - Returns: The loader.
     nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
-        ConfigurationLoader(
-            settingsFolders: settingsFolders,
-            workingDirectory: workingDirectory,
-            transcriptLocation: transcriptLocation,
-            secretStore: secretStore)
+        settingsStore.makeConfigurationLoader(workingDirectory: workingDirectory)
     }
 
     /// Resolves the per-cwd configuration one session request starts from:
     /// the config layer, the user layer root, and
     /// the recording root.
     ///
+    /// The configuration comes from the settings in memory
+    /// (``SettingsStore/merged(for:)``), and not from a fresh load of the
+    /// files. The store reads a level file the first time that a request
+    /// needs it, and reads it again when it changes from outside.
+    ///
     /// - Parameter workingDirectory: The validated session working
     ///   directory.
     /// - Returns: The resolved context.
-    /// - Throws: Whatever the config load throws.
-    func loadSessionContext(workingDirectory: URL) throws -> LoadedSessionContext {
+    /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
+    func loadSessionContext(workingDirectory: URL) async throws -> LoadedSessionContext {
         let loader = makeConfigurationLoader(workingDirectory: workingDirectory)
-        let loaded = try loader.load()
+        let loaded = try await settingsStore.merged(for: workingDirectory)
         let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
         return LoadedSessionContext(
             loader: loader,

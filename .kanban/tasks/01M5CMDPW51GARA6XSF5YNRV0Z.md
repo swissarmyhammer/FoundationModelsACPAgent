@@ -61,6 +61,14 @@ comments:
   id: 01m5d95p7p77xzbjenyaft2nsd
   text: 'HOOKS-5 API, agreed with the Hooks session (2026-10-20); the sha follows after the push: `SnapshotStore.timelineSummary(sessionKey:) async throws -> SnapshotTimelineSummary` with `sessionKey`, `workingDirectory: URL?`, `checkpointCount` (no baseline) and `lastCheckpointDate: Date?`. It reads only and works for an open key and a closed key. It throws `.noTimeline`, `.invalidSessionKey` or `.unreadableTimeline`. Show `workingDirectory` only in the local CLI output, never in a log.'
   timestamp: 2026-10-20T18:28:55.670998+00:00
+- actor: wballard
+  id: 01m5da34m5kjn8mcvevzfjb84w
+  text: 'HOOKS-5 is pushed: FoundationModelsHooks main c66f336d6866407154444167a8a0cc4bf450865c. Note from the Hooks session: timelineSummary throws noTimeline also for a directory that is not a git repository or that has no timeline ref, and it does not delete that directory. Wait for the MT-14 push (Multitool card ^ttsj5w6) too: the old take/checkpoints/rollback calls are gone, so Multitool main does not compile against this Hooks sha until MT-14 is pushed. Then update both dependencies together.'
+  timestamp: 2026-10-20T18:45:00.677634+00:00
+- actor: wballard
+  id: 01m5davps32ha42z895tbarbg2
+  text: 'MT-14 is pushed: FoundationModelsMultitool main d618aa8f91b79f4cdf1399d2590b079132f9ff4e (fix 66268e4). It builds against Hooks c66f336. The blockers are gone. Run `swift package update FoundationModelsHooks FoundationModelsMultitool` (and the same in IntegrationTests/), then /implement. The notAvailable text is "Snapshots are not available for this session: <cause>. Do not call tools.snapshots again in this session." with the cause workingDirectoryMismatch, timelineConflict or openFailed, and no path.'
+  timestamp: 2026-10-20T18:58:25.699456+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'acp-agent snapshots: an explicit command that lists and removes snapshot folders'

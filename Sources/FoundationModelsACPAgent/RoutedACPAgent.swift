@@ -68,13 +68,14 @@ public actor RoutedACPAgent: Agent {
     /// The transcript location that the host gave in code, or `nil` when
     /// the config files decide.
     ///
-    /// Each session request loads the configuration of its `cwd` again, and
-    /// each of those loads goes through ``makeConfigurationLoader(workingDirectory:)``,
-    /// which gives this value to the loader. Thus `session/new`,
-    /// `session/resume`, `session/list` (with a `cwd` filter and across the
-    /// project registry) and `session/delete` all record or read under this
-    /// location, and it wins over the `transcripts.location` of every config
-    /// layer.
+    /// `session/new`, `session/resume` and `session/delete` read the
+    /// configuration of their `cwd` from ``settingsStore``, and
+    /// `session/list` loads it through
+    /// ``makeConfigurationLoader(workingDirectory:)``. The store and each
+    /// loader get this value. Thus `session/new`, `session/resume`,
+    /// `session/list` (with a `cwd` filter and across the project registry)
+    /// and `session/delete` all record or read under this location, and it
+    /// wins over the `transcripts.location` of every config layer.
     public nonisolated let transcriptLocation: TranscriptLocation?
 
     /// The store that gives the value of each secret reference
@@ -84,6 +85,13 @@ public actor RoutedACPAgent: Agent {
     /// the service ``name``. The configuration load reads the references
     /// through it.
     nonisolated let secretStore: any SecretStore
+
+    /// The settings of the agent in memory (ACPA-17, D100(f)): one settings
+    /// object for each level, over ``settingsFolders``,
+    /// ``transcriptLocation`` and ``secretStore``. The session start paths
+    /// read the merged settings of their `cwd` from it, and not from a fresh
+    /// load of the files.
+    nonisolated let settingsStore: SettingsStore
 
     /// The settle period of each session that this agent makes, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
@@ -321,6 +329,9 @@ public actor RoutedACPAgent: Agent {
         self.inlineSettleGrace = inlineSettleGrace
         self.transcriptLocation = transcriptLocation
         self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)
+        self.settingsStore = SettingsStore(
+            settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
+            secretStore: self.secretStore)
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

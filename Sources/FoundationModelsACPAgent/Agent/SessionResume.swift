@@ -115,7 +115,7 @@ extension RoutedACPAgent {
         }
         let replayCursor = try Self.replayCursor(of: params)
 
-        let context = try loadSessionContext(workingDirectory: workingDirectory)
+        let context = try await loadSessionContext(workingDirectory: workingDirectory)
         try requireRecordedWorkingDirectory(
             of: rootId,
             sessionId: params.sessionId,

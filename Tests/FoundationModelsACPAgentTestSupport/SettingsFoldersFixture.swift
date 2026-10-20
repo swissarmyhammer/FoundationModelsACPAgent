@@ -1,13 +1,15 @@
 import Foundation
 import FoundationModelsACPAgent
 
-/// The one maker of the ``SettingsFolders`` of a catalog context in a test.
-/// Each suite that makes a `CatalogContext` itself calls it, so no such
-/// context reads a folder in the real home directory.
+/// The one maker of the ``SettingsFolders`` of a test over a throwaway root
+/// settings folder. Each suite that makes a `CatalogContext` or a
+/// `SettingsStore` itself calls it, so no such object reads a folder in the
+/// real home directory.
 public enum SettingsFoldersFixture {
     /// The dotfolder name of the configuration of the settings folders. A
     /// catalog context reads only the skills and agents stacks, which do not
-    /// read this name.
+    /// read this name. A settings store reads the session level of a working
+    /// directory in `<cwd>/.<this name>/`.
     static let dotfolderName = "catalog-test"
 
     /// Makes settings folders over a new throwaway root settings folder.

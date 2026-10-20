@@ -40,8 +40,24 @@ comments:
     - evidence: touched all changed Swift files, then `swift test` — 1053 tests in 116 suites passed, 0 failed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps, accepted); no compiler warning in the rebuilt targets; `swift build` complete; `swift build --build-tests --package-path IntegrationTests` complete with no compiler warning. Only warning: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx (accepted).
     - next: review
   timestamp: 2026-10-20T18:43:38.005089+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m5da6xqedqg33dwqve40h32z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit ab83a4d). 0 findings, 0 confirmed, 1 refuted, 21 attempted, 0 failed. 27 files reviewed. 8 .kanban files were not reviewed because of .reviewignore. README.md was not reviewed because no validator matches it.
+    - next: The task is in done. The tasks 01M5CZ2TQDJP9HRWJVY05SSZW4 (^05sszw4, AG-10) and 01M5CZ35E8P2EZTW5GW3YTW5VX are not blocked by this task now.
+  timestamp: 2026-10-20T18:47:04.686597+00:00
+- actor: wballard
+  id: 01m5da7hww7wjsjeeycah8fe4x
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 28 files
+    - test: green — swift test 1053 passed; IntegrationTests builds
+    - commit: ab83a4d
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T18:47:25.340712+00:00
+position_column: done
+position_ordinal: fff180
 title: 'ACPA-16: one list of folders from the host for config, Instructions.md and skills'
 ---
 ## What

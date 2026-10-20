@@ -16,6 +16,10 @@ comments:
   id: 01m5d9vzchhxa2gkd10x8nd04m
   text: 'From ^zt60yv4: `AgentsComposition.makeAgentRegistry` already uses `context.settingsFolders.stack(for: .agents, workingDirectory:)` (the card ACPA-16 needs that no stack holds a folder in `~` or XDG when a root is set). With a root, the user layer of the agents stack is `<root>/`, and the project layer is `<cwd>/.agents/`. With the current Agents dependency an agent in the root is `<root>/agents/<id>/AGENT.md`. This card keeps: the AG-10 dependency update, the `<root>/<id>/` layout and the `_` rule, the removal of `agentFolders`, the launcher start, and its tests. The README section "Settings folders" says that `<root>/<id>/` comes with AG-10; update it when this card lands.'
   timestamp: 2026-10-20T18:41:05.937740+00:00
+- actor: wballard
+  id: 01m5dawj75kznez2c90jv3jrnp
+  text: 'AG-10 is pushed: FoundationModelsAgents main eea0d2b. The blocker is gone. AgentRegistry has no agentFolders; the inits are init(stack:variables:watch:), init(layers:variables:watch:), init(marketplaces:stack:variables:watch:). Each local layer reads agents/<id>/AGENT.md and <id>/AGENT.md (the root AGENT.md is the default agent). Note from the Agents session: an old Package.resolved with old Extras, Router and Skills pins does not compile against eea0d2b, so run `swift package update` for those too (and in IntegrationTests/).'
+  timestamp: 2026-10-20T18:58:53.797912+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
 position_column: todo

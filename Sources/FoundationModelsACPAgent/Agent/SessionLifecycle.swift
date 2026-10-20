@@ -53,7 +53,7 @@ extension RoutedACPAgent {
             // delete of nothing is silent success.
             return DeleteSessionResponse()
         }
-        var roots = candidateTranscriptRoots()
+        var roots = await candidateTranscriptRoots()
         if let entry = sessions[params.sessionId] {
             roots.append(entry.transcriptDirectory.deletingLastPathComponent())
             await tearDownSession(params.sessionId, entry: entry)
@@ -194,23 +194,52 @@ extension RoutedACPAgent {
     // MARK: - The disk removal
 
     /// The recording roots of every project in the user-layer project
-    /// registry,
-    /// resolved through each project's own dotfolder stack — the same
-    /// resolution `session/list` reads. A delete of a session no longer in
-    /// the table searches these for the session's directory.
+    /// registry, resolved through the settings of each project
+    /// (``loadSessionContext(workingDirectory:)``). A delete of a session no
+    /// longer in the table searches these for the session's directory.
     ///
-    /// - Returns: The resolved recording roots, one per registered project;
-    ///   the empty array when the registry cannot be read.
-    private func candidateTranscriptRoots() -> [URL] {
-        guard let projects = try? ProjectRegistry(directory: registryUserLayerRoot()).projects()
-        else {
+    /// A registry that cannot be read, or a project whose settings cannot be
+    /// read, gives no root and one `warning` record with the type of the
+    /// error. The delete then searches the other roots.
+    ///
+    /// - Returns: The resolved recording roots, one per registered project
+    ///   whose settings can be read.
+    private func candidateTranscriptRoots() async -> [URL] {
+        let projects: [ProjectRegistryRecord]
+        do {
+            projects = try ProjectRegistry(directory: registryUserLayerRoot()).projects()
+        } catch {
+            Self.logCandidateRootFailure(
+                "The project registry cannot be read. The delete searches no registered project.", error: error)
             return []
         }
-        return projects.compactMap { project in
-            try? loadSessionContext(
-                workingDirectory: URL(fileURLWithPath: project.path, isDirectory: true)
-            ).transcriptRoot
+        var roots: [URL] = []
+        for project in projects {
+            do {
+                roots.append(
+                    try await loadSessionContext(
+                        workingDirectory: URL(fileURLWithPath: project.path, isDirectory: true)
+                    ).transcriptRoot)
+            } catch {
+                Self.logCandidateRootFailure(
+                    "The settings of a registered project cannot be read. The delete does not search that project.",
+                    error: error)
+            }
         }
+        return roots
+    }
+
+    /// Writes one `warning` record about a recording root that a delete
+    /// cannot search. The record holds the type of the error, and no path,
+    /// because a path can hold content.
+    ///
+    /// - Parameters:
+    ///   - message: The fixed message of the record.
+    ///   - error: The error of the read.
+    private static func logCandidateRootFailure(_ message: Logger.Message, error: any Error) {
+        ACPAgentTelemetry.logger(.sessionLifecycle).warning(
+            message,
+            metadata: [ACPAgentTelemetry.LogMetadataKey.errorType: "\(ACPAgentTelemetry.errorTypeName(of: error))"])
     }
 
     /// Removes the session's transcript directory and its index line under

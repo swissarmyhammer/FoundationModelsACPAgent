@@ -368,7 +368,28 @@ public struct ConfigurationLoader: Sendable {
             from: stack,
             engine: TemplateEngine(partials: stack),
             context: TemplateContext())
-        let root = try layeredRoot(over: document)
+        return try loadedConfiguration(
+            dotfolderRoot: document.root,
+            sources: Self.sources(in: document.root, sourceOf: document.source(of:)))
+    }
+
+    /// Checks, decodes and resolves a merged dotfolder tree: the steps of
+    /// ``load()`` after the read of the stack.
+    ///
+    /// ``load()`` gives the tree that it reads from the stack.
+    /// ``SettingsStore`` gives the tree that it merges from its levels in
+    /// memory, thus the two run the same steps after the merge.
+    ///
+    /// - Parameters:
+    ///   - dotfolderRoot: The merged tree of the dotfolder layers, or `.null`
+    ///     when no layer holds a file.
+    ///   - sources: The layer that set each key, by dotted key path.
+    /// - Returns: The decoded configuration, the warnings, and `sources`.
+    /// - Throws: What ``load()`` throws after the read of the stack.
+    func loadedConfiguration(
+        dotfolderRoot: YAMLValue, sources: [String: DotfolderStack.Source]
+    ) throws -> LoadedConfiguration {
+        let root = try layeredRoot(over: dotfolderRoot)
         let schemaWarnings = try Self.schemaWarnings(in: root)
         Self.log(schemaWarnings)
         var secretWarnings: [ConfigurationWarning] = []
@@ -377,7 +398,22 @@ public struct ConfigurationLoader: Sendable {
         return LoadedConfiguration(
             configuration: resolvingCodeOverride(of: resolvingDotfolderDefaults(of: decoded)),
             warnings: schemaWarnings + secretWarnings,
-            sources: Self.sources(in: document))
+            sources: sources)
+    }
+
+    /// Checks that a merged dotfolder tree passes the schema and decodes, as
+    /// ``load()`` checks it. The check writes no log record and reads no
+    /// secret, because a secret reference stays a reference in the tree.
+    ///
+    /// ``SettingsStore`` calls it before it writes a change to a file.
+    ///
+    /// - Parameter dotfolderRoot: The merged tree of the dotfolder layers.
+    /// - Throws: `ConfigurationError` for a schema failure, or
+    ///   `YAMLValueDecodingError` for a value that does not decode.
+    func check(dotfolderRoot: YAMLValue) throws {
+        let root = try layeredRoot(over: dotfolderRoot)
+        _ = try Self.schemaWarnings(in: root)
+        _ = try Self.configuration(from: root)
     }
 
     /// Writes one log record for each warning, in the order of `warnings`.
@@ -432,16 +468,16 @@ public struct ConfigurationLoader: Sendable {
 
     /// The tree of layer 1 with the merged dotfolder tree over it.
     ///
-    /// - Parameter document: The merged dotfolder layers.
+    /// - Parameter dotfolderRoot: The merged tree of the dotfolder layers.
     /// - Returns: The tree of layer 1 alone when no dotfolder layer holds a
     ///   file, and the merged tree of all the layers otherwise.
     /// - Throws: What the layer 1 source throws.
-    private func layeredRoot(over document: LayeredYAMLDocument) throws -> YAMLValue {
+    func layeredRoot(over dotfolderRoot: YAMLValue) throws -> YAMLValue {
         let builtinRoot = try builtinLayer()
-        guard document.root != .null else {
+        guard dotfolderRoot != .null else {
             return builtinRoot
         }
-        return builtinRoot.layered(under: document.root)
+        return builtinRoot.layered(under: dotfolderRoot)
     }
 
     /// `configuration` with each default that the dotfolder name of this
@@ -457,17 +493,21 @@ public struct ConfigurationLoader: Sendable {
         return resolved
     }
 
-    /// The layer that set each key of `document`'s merged tree, by dotted
-    /// key path — the per-key provenance the document holds, copied out
-    /// before the document goes out of scope.
+    /// The layer that set each key of a merged tree, by dotted key path —
+    /// the per-key provenance of the merge, copied out as a map.
     ///
-    /// - Parameter document: The merged document.
-    /// - Returns: One entry per key path the document has a source for. A
-    ///   key that holds the separator itself is not told apart from a
-    ///   nested path; the first entry wins.
-    private static func sources(in document: LayeredYAMLDocument) -> [String: DotfolderStack.Source] {
-        let entries = keyPaths(in: document.root, under: []).compactMap { keyPath in
-            document.source(of: keyPath).map {
+    /// - Parameters:
+    ///   - root: The merged tree.
+    ///   - sourceOf: Gives the layer that set a key path of `root`, or `nil`
+    ///     when no layer set it.
+    /// - Returns: One entry per key path that has a source. A key that holds
+    ///   the separator itself is not told apart from a nested path; the
+    ///   first entry wins.
+    static func sources(
+        in root: YAMLValue, sourceOf: ([String]) -> DotfolderStack.Source?
+    ) -> [String: DotfolderStack.Source] {
+        let entries = keyPaths(in: root, under: []).compactMap { keyPath in
+            sourceOf(keyPath).map {
                 (keyPath.joined(separator: LoadedConfiguration.keyPathSeparator), $0)
             }
         }
