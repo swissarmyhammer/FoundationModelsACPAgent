@@ -122,7 +122,7 @@ is on by default. Set its config section to `false` to set it off.
 | `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
 | `snapshots` | The `tools.snapshots.*` verbs — `list`, `take` and `rollback` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. A rollback returns the work tree to a checkpoint and adds a new checkpoint, so the history is append only. The snapshots are in `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot` for the CLI). Always on | none |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list. Always on | `tools.skills` |
-| `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `agents/<name>/AGENT.md` of the `agents` dotfolder stack. Always on | none |
+| `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `<id>/AGENT.md` and `agents/<id>/AGENT.md` of the `agents` dotfolder stack. Always on | none |
 
 The `skills` tool and the `agents` tool are always on. A config that sets
 `tools.skills: false`, `tools.agents: false` or `tools.agents.enabled: false`
@@ -269,9 +269,12 @@ then has no marketplace skill.
 
 The `agents` tool has no option, thus the config has no `tools.agents`
 section. The tool starts an agent in its own session: an agent is a folder
-`agents/<name>/AGENT.md` in a layer of the `agents` dotfolder stack
-(`<cwd>/.agents/` and `~/.config/agents/`), or in a marketplace of
-`tools.skills.marketplaces`; the agent registry reads the same marketplace
+`<id>/AGENT.md` or `agents/<id>/AGENT.md` in a layer of the `agents` dotfolder
+stack (`<cwd>/.agents/`, and the user level of
+[Settings folders](#settings-folders)), or a folder `agents/<id>/AGENT.md` in a
+marketplace of `tools.skills.marketplaces`. In one layer, `<id>/AGENT.md` wins
+over `agents/<id>/AGENT.md`, and the root `AGENT.md` of a layer is the default
+agent. The agent registry reads the same marketplace
 store as the skills. A `start agent` call waits for its run for the settle
 period of the session. A run that ends in that time gives its final message
 as the output of the call; a longer run goes to the background, and its final
@@ -308,9 +311,11 @@ levels over the built-in level. The session level wins over the user level.
 
 With a root settings folder, no stack holds a folder in the home directory or in
 `XDG_CONFIG_HOME`. The agents layer of the root is the root itself, so an agent
-is `<root>/agents/<id>/AGENT.md` today; the layout `<root>/<id>/` comes with
-AG-10 of `FoundationModelsAgents`. A folder in the root whose name starts with
-`_` holds settings, and it is never a valid agent id. The built-in level is the defaults folder
+is `<root>/<id>/AGENT.md` (or `<root>/agents/<id>/AGENT.md`), and the session
+level is `<cwd>/.agents/`, never the working directory itself. A folder in the
+root whose name starts with `_` holds settings: it is never a valid agent id,
+so `<root>/_skills/` and `<root>/_rules/` are not agents and give no
+diagnostic. The built-in level is the defaults folder
 that `<NAME>_DEFAULTS_DIR` names, for example `SKILLS_DEFAULTS_DIR`, and the
 compiled-in `builtin.config.yaml`. `acp-agent doctor` and `acp-agent config
 path` show the layers of these folders.

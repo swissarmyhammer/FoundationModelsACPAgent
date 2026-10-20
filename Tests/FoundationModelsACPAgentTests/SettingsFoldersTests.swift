@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsAgents
 import FoundationModelsExtras
 import Testing
 
@@ -14,6 +15,11 @@ import Testing
 /// Each test uses temporary folders only. A test gives an `XDG_CONFIG_HOME`
 /// in a temporary folder, so no test reads the real home directory.
 struct SettingsFoldersTests {
+    /// The tool catalog of this package. FoundationModelsAgents also has a
+    /// type named `ToolCatalog`, thus this alias names the type of this
+    /// package in the suite.
+    private typealias ToolCatalog = FoundationModelsACPAgent.ToolCatalog
+
     // MARK: - Constants
 
     /// The dotfolder name of the configuration in these tests.
@@ -52,6 +58,18 @@ struct SettingsFoldersTests {
 
     /// The text of the project `Instructions.md`.
     private static let projectInstructions = "The instructions of the project."
+
+    /// The document of an agent folder.
+    private static let agentDocumentName = "AGENT.md"
+
+    /// The id of the agent that only the root settings folder holds.
+    private static let rootAgentID = "planner"
+
+    /// The id of the agent that two layers hold.
+    private static let sharedAgentID = "reviewer"
+
+    /// The id of the agent that only the XDG config home holds.
+    private static let configHomeAgentID = "helper"
 
     // MARK: - Fixture
 
@@ -339,17 +357,150 @@ struct SettingsFoldersTests {
             id: Self.sharedSkillID,
             markdown: Self.sharedSkillMarkdown(description: Self.projectSkillDescription),
             under: fixture.projectLayer(of: ToolCatalog.skillsDotfolderName))
-        let context = CatalogContext(
-            workingDirectory: fixture.workingDirectory,
-            configuration: AgentConfiguration.withoutMarketplaces,
-            profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(label: "SettingsFoldersTests-skills-cache")),
-            settingsFolders: try fixture.settingsFolders(hasRoot: true),
-            environment: fixture.environment)
+        let context = try await Self.catalogContext(of: fixture, hasRoot: true)
 
         let skills = await ToolCatalog.makeSkillsSource(context: context).registry.metadata()
 
         let skill = try #require(skills.first { $0.id == Self.sharedSkillID })
         #expect(skill.description == Self.projectSkillDescription)
+    }
+
+    /// Makes a catalog context over the folders of `fixture`, with no
+    /// marketplace, so that it needs no network.
+    ///
+    /// - Parameters:
+    ///   - fixture: The folders of the test.
+    ///   - hasRoot: `true` gives the root settings folder of the fixture;
+    ///     `false` gives no root.
+    /// - Returns: The context.
+    /// - Throws: Whatever the stub profile resolve throws, or
+    ///   `DotfolderNameError` when the dotfolder name is refused.
+    private static func catalogContext(of fixture: Fixture, hasRoot: Bool) async throws -> CatalogContext {
+        CatalogContext(
+            workingDirectory: fixture.workingDirectory,
+            configuration: AgentConfiguration.withoutMarketplaces,
+            profile: try await makeStubProfile(
+                cacheDirectory: makeResolvedDirectory(label: "SettingsFoldersTests-cache")),
+            settingsFolders: try fixture.settingsFolders(hasRoot: hasRoot),
+            environment: fixture.environment)
+    }
+
+    // MARK: - Agents
+
+    /// Writes the agent folder `<layer>/<id>/AGENT.md`.
+    ///
+    /// - Parameters:
+    ///   - id: The id of the agent, which is also the folder name.
+    ///   - layer: The folder that holds the agent folder.
+    /// - Throws: The directory-creation or write error.
+    private static func writeAgent(id: String, under layer: URL) throws {
+        let folder = layer.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try SkillsMarketplaceTests.document(named: id).write(
+            to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
+            atomically: true, encoding: .utf8)
+    }
+
+    /// The agent catalog that the session composition loads over the folders
+    /// of `fixture`.
+    ///
+    /// - Parameters:
+    ///   - fixture: The folders of the test.
+    ///   - hasRoot: `true` gives the root settings folder of the fixture;
+    ///     `false` gives no root.
+    /// - Returns: The loaded catalog.
+    /// - Throws: Whatever the context or the load of the registry throws.
+    private static func composedAgentCatalog(of fixture: Fixture, hasRoot: Bool) async throws -> AgentCatalog {
+        let context = try await catalogContext(of: fixture, hasRoot: hasRoot)
+        let registry = AgentsComposition.makeAgentRegistry(context: context, marketplaces: nil)
+        try await registry.load()
+        return registry.catalog()
+    }
+
+    /// The id and the document path of each agent of `catalog`, in catalog
+    /// order.
+    ///
+    /// - Parameter catalog: The catalog.
+    /// - Returns: One `<id>:<path>` entry for each agent.
+    private static func agentList(of catalog: AgentCatalog) -> [String] {
+        catalog.definitions.map { "\($0.id):\($0.url.standardizedFileURL.path)" }
+    }
+
+    /// With a root, an agent in `<root>/<id>/AGENT.md` is in the catalog,
+    /// and an agent with the same id in the project dotfolder of the working
+    /// directory wins.
+    @Test func withARootTheRootAgentIsInTheCatalogAndTheProjectAgentWins() async throws {
+        let fixture = Fixture(label: "agents")
+        let projectLayer = fixture.projectLayer(of: ToolCatalog.agentsDotfolderName)
+        try Self.writeAgent(id: Self.rootAgentID, under: fixture.root)
+        try Self.writeAgent(id: Self.sharedAgentID, under: fixture.root)
+        try Self.writeAgent(id: Self.sharedAgentID, under: projectLayer)
+
+        let catalog = try await Self.composedAgentCatalog(of: fixture, hasRoot: true)
+
+        let rootAgent = try #require(catalog.definition(named: Self.rootAgentID))
+        #expect(rootAgent.folderURL.standardizedFileURL.path.hasPrefix(fixture.root.standardizedFileURL.path))
+        let sharedAgent = try #require(catalog.definition(named: Self.sharedAgentID))
+        #expect(
+            sharedAgent.folderURL.standardizedFileURL.path
+                == projectLayer.appendingPathComponent(Self.sharedAgentID, isDirectory: true)
+                .standardizedFileURL.path)
+    }
+
+    /// With a root, the settings folders `<root>/_skills/` and
+    /// `<root>/_rules/` are not agents, also when each holds an `AGENT.md`,
+    /// and they give no diagnostic.
+    @Test func withARootTheSettingsFoldersOfTheRootAreNotAgents() async throws {
+        let fixture = Fixture(label: "agents-settings")
+        try Self.writeAgent(id: SettingsFolders.skillsFolderName, under: fixture.root)
+        try Self.writeAgent(id: SettingsFolders.rulesFolderName, under: fixture.root)
+        try writeSkillFixture(
+            id: Self.sharedSkillID,
+            markdown: Self.sharedSkillMarkdown(description: Self.rootSkillDescription),
+            under: fixture.root.appendingPathComponent(SettingsFolders.skillsFolderName, isDirectory: true))
+
+        let catalog = try await Self.composedAgentCatalog(of: fixture, hasRoot: true)
+
+        #expect(catalog.definition(named: SettingsFolders.skillsFolderName) == nil)
+        #expect(catalog.definition(named: SettingsFolders.rulesFolderName) == nil)
+        #expect(catalog.definition(named: Self.sharedSkillID) == nil)
+        #expect(catalog.diagnostics.isEmpty)
+    }
+
+    /// With a root, no agent comes from the XDG config home: neither the
+    /// agent folder form nor the `agents/` form of `<XDG_CONFIG_HOME>/agents/`.
+    @Test func withARootNoAgentComesFromTheConfigHome() async throws {
+        let fixture = Fixture(label: "agents-config-home")
+        let configHomeLayer = fixture.configHomeLayer(of: ToolCatalog.agentsDotfolderName)
+        try Self.writeAgent(id: Self.configHomeAgentID, under: configHomeLayer)
+        try Self.writeAgent(
+            id: Self.configHomeAgentID,
+            under: configHomeLayer.appendingPathComponent(ToolCatalog.agentsDotfolderName, isDirectory: true))
+
+        let catalog = try await Self.composedAgentCatalog(of: fixture, hasRoot: true)
+
+        #expect(catalog.definition(named: Self.configHomeAgentID) == nil)
+    }
+
+    /// With no root, the catalog is the catalog of the old stack
+    /// `DotfolderStack(name: "agents", ...)`, and it holds the agents of the
+    /// XDG config home.
+    @Test func withNoRootTheCatalogIsTheCatalogOfTheOldStack() async throws {
+        let fixture = Fixture(label: "agents-no-root")
+        let configHomeLayer = fixture.configHomeLayer(of: ToolCatalog.agentsDotfolderName)
+        try Self.writeAgent(id: Self.configHomeAgentID, under: configHomeLayer)
+        try Self.writeAgent(id: Self.sharedAgentID, under: configHomeLayer)
+        try Self.writeAgent(
+            id: Self.sharedAgentID, under: fixture.projectLayer(of: ToolCatalog.agentsDotfolderName))
+        let old = AgentRegistry(
+            stack: DotfolderStack(
+                name: ToolCatalog.agentsDotfolderName, workingDirectory: fixture.workingDirectory,
+                environment: fixture.environment))
+        try await old.load()
+
+        let catalog = try await Self.composedAgentCatalog(of: fixture, hasRoot: false)
+
+        #expect(catalog.definition(named: Self.configHomeAgentID) != nil)
+        #expect(Self.agentList(of: catalog) == Self.agentList(of: old.catalog()))
     }
 }

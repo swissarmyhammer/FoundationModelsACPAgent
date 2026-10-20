@@ -222,7 +222,8 @@ public enum ToolCatalog {
     /// `<workingDirectory>/.agents` for the project layer, and with no root
     /// settings folder `~/.config/agents` for the user layer
     /// (``SettingsFolders``). Each layer holds the agent folders
-    /// `agents/<name>/AGENT.md`.
+    /// `<id>/AGENT.md` and `agents/<id>/AGENT.md`, and its root `AGENT.md`
+    /// is the default agent.
     static let agentsDotfolderName = "agents"
 
     /// The surface path of the files read verb, the door the prompt's

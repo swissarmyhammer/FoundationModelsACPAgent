@@ -20,11 +20,40 @@ comments:
   id: 01m5dawj75kznez2c90jv3jrnp
   text: 'AG-10 is pushed: FoundationModelsAgents main eea0d2b. The blocker is gone. AgentRegistry has no agentFolders; the inits are init(stack:variables:watch:), init(layers:variables:watch:), init(marketplaces:stack:variables:watch:). Each local layer reads agents/<id>/AGENT.md and <id>/AGENT.md (the root AGENT.md is the default agent). Note from the Agents session: an old Package.resolved with old Extras, Router and Skills pins does not compile against eea0d2b, so run `swift package update` for those too (and in IntegrationTests/).'
   timestamp: 2026-10-20T18:58:53.797912+00:00
+- actor: claude-code
+  id: 01m5ddkffh90fv5efgssz7rm9m
+  text: |-
+    Research and implementation notes (implement step):
+    - The production code was already correct before this pass. ^aefmpdz pinned Agents eea0d2b in Package.resolved and IntegrationTests/Package.resolved. ^zt60yv4 made `makeAgentRegistry` use `settingsFolders.stack(for: .agents, workingDirectory:)`. No `agentFolders` stays in Sources, Tests or IntegrationTests.
+    - The session start: `ComposedSessionLauncher` does not exist. Both start paths (`SessionSetup.composeSession` for session/new, and `SessionResume` for session/resume) give the cwd of the started session to `CatalogContext`. No change was necessary.
+    - New tests in SettingsFoldersTests (section "Agents"). They call `AgentsComposition.makeAgentRegistry` over a temporary root, cwd and XDG_CONFIG_HOME: (1) `<root>/<id>/AGENT.md` is in the catalog and the `<cwd>/.agents/<id>/` copy wins; (2) `<root>/_skills/` and `<root>/_rules/`, each with an AGENT.md, are not agents and give no diagnostic; (3) with a root, no agent comes from `<XDG_CONFIG_HOME>/agents/` (both forms); (4) with no root, the catalog is equal to the catalog of the old `DotfolderStack(name: "agents", ...)`.
+    - TDD note: the new tests passed at once, because the earlier cards delivered the behavior. To prove that they can fail, I put the old `DotfolderStack(name: "agents", ...)` back in `makeAgentRegistry` for one run: tests (1) and (3) failed, then I restored the line. Test (2) depends on the AG-10 rule in the dependency, which this board cannot revert. Test (4) is equal to the old stack by design.
+    - The suite imports FoundationModelsAgents, which has its own `ToolCatalog`. A private nested `typealias ToolCatalog = FoundationModelsACPAgent.ToolCatalog` in the suite keeps the existing names.
+    - Tool note: `files edit file` with `replace_all: true` replaced only one occurrence in each call.
+    - Doc comments: AgentsComposition (`compose`, `makeAgentRegistry`) and `ToolCatalog.agentsDotfolderName` now state the `<id>/AGENT.md` and `agents/<id>/AGENT.md` layout, the default agent, the `<cwd>/.agents/` project layer and the `_` rule. README: the agents tool row, the agents paragraph, and the "Settings folders" text that said `<root>/<id>/` comes with AG-10.
+    - Card description checkboxes: the update-task call to tick them did not complete in this session (the tool output was too large). All acceptance items and test items are met.
+  timestamp: 2026-10-20T19:46:21.809812+00:00
+- actor: claude-code
+  id: 01m5ddks73gz640rqc2392gaeq
+  text: |-
+    Correction to the previous comment: the update-task call did complete. The description now has all acceptance and test checkboxes ticked (6/6).
+
+    ### implement — changed
+    - evidence: 4 files — Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift (4 new agent tests, shared `catalogContext` helper), Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift (doc comments only), Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift (doc comment only), README.md (agents layout and Settings folders text). `swift test`: 1074 tests in 118 suites passed, 0 failures, 0 compiler warnings; 1 known issue is the `withKnownIssue` self-test that already existed in HarnessSmokeTests.
+    - next: /review
+  timestamp: 2026-10-20T19:46:31.779857+00:00
+- actor: claude-code
+  id: 01m5ddpcqws5b4enbdnvaja503
+  text: |-
+    ### test — green
+    - evidence: swift test (changed files touched first, rebuilt) — 1074 tests in 118 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted); swift build --build-tests --package-path IntegrationTests — Build complete. Only warning: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle (accepted). No compiler warning in the changed files.
+    - next: review
+  timestamp: 2026-10-20T19:47:57.308940+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
 - 01M5DCV6DGXMS6FGXQ6AEFMPDZ
-position_column: todo
-position_ordinal: '8780'
+position_column: doing
+position_ordinal: '8280'
 title: 'ACPA-16: the agents come from the same list of folders (AG-10)'
 ---
 ## What
@@ -41,14 +70,14 @@ Do this after AG-10:
 - The launcher start (`ComposedSessionLauncher`, if it exists then; else the session start paths) uses the cwd of the started session for the session layer.
 
 ## Acceptance Criteria
-- [ ] With a root, an agent in `<root>/<id>/AGENT.md` is in the catalog, and an agent with the same id in the cwd wins.
-- [ ] `<root>/_skills/` and `<root>/_rules/` are not agents.
-- [ ] With a root, no agent comes from `~` or `XDG_CONFIG_HOME`.
-- [ ] With no root, the catalog is the same as before.
+- [x] With a root, an agent in `<root>/<id>/AGENT.md` is in the catalog, and an agent with the same id in the cwd wins.
+- [x] `<root>/_skills/` and `<root>/_rules/` are not agents.
+- [x] With a root, no agent comes from `~` or `XDG_CONFIG_HOME`.
+- [x] With no root, the catalog is the same as before.
 
 ## Tests
-- [ ] A test with a temporary root and cwd for the three cases above.
-- [ ] `swift test` passes with zero failures and zero warnings.
+- [x] A test with a temporary root and cwd for the three cases above.
+- [x] `swift test` passes with zero failures and zero warnings.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-16

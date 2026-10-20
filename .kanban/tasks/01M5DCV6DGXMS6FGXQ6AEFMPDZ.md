@@ -20,8 +20,24 @@ comments:
     - evidence: swift test — 1070 tests in 118 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted), 0 failures, 0 skipped. swift build --build-tests --package-path IntegrationTests — Build complete. Only warning in both runs: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle (accepted).
     - next: review/commit. No source change was needed. Nothing committed or pushed.
   timestamp: 2026-10-20T19:38:30.470725+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m5dd77ceks5752dwqdajw1ry
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 516282c). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. The engine reviewed 1 file (HookCompositionTests.swift). The .reviewignore rule excluded 12 .kanban/ files. Package.resolved is gitignored on purpose and is not in the commit.
+    - next: The task is in done.
+  timestamp: 2026-10-20T19:39:40.302985+00:00
+- actor: wballard
+  id: 01m5dd7jfpj0rycp7a17fdayhh
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 1 file (plus the local Package.resolved pins)
+    - test: green — swift test 1070 passed; IntegrationTests builds
+    - commit: 516282c
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T19:39:51.670144+00:00
+position_column: done
+position_ordinal: fff380
 title: Update the family dependencies to AG-10, HOOKS-5, MT-14 and the GraphQL toolkit
 ---
 ## What

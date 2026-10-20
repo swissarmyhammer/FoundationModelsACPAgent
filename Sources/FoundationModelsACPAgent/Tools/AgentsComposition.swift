@@ -55,9 +55,11 @@ enum AgentsComposition {
     /// `agents` tool. The `agents` tool is always on, thus each composed
     /// session has this mount.
     ///
-    /// The agent registry reads the agent folders `agents/<name>/AGENT.md`
-    /// of the `agents` dotfolder stack (``ToolCatalog/agentsDotfolderName``),
-    /// and of each marketplace layer of the skills store. It does not watch:
+    /// The agent registry reads the agent folders `<id>/AGENT.md` and
+    /// `agents/<id>/AGENT.md` of each layer of the `agents` dotfolder stack
+    /// (``ToolCatalog/agentsDotfolderName``), and the agent folders
+    /// `agents/<id>/AGENT.md` of each marketplace layer of the skills store
+    /// (see ``makeAgentRegistry(context:marketplaces:)``). It does not watch:
     /// the schema of the tool is fixed when the tool is made, thus an agent
     /// that a later edit adds reaches the next session.
     ///
@@ -123,8 +125,16 @@ enum AgentsComposition {
     /// no file until `load()`. The stack is the ``SettingsFolders/Kind/agents``
     /// stack of ``CatalogContext/settingsFolders``: with a root settings
     /// folder its user layer is the root, and with no root it is the XDG
-    /// user layer. It reads `AGENTS_DEFAULTS_DIR` from the environment of
-    /// the settings folders.
+    /// user layer. The project layer is `<cwd>/.agents/`, never the working
+    /// directory itself. It reads `AGENTS_DEFAULTS_DIR` from the environment
+    /// of the settings folders.
+    ///
+    /// Each local layer holds the agent folders `<id>/AGENT.md` and
+    /// `agents/<id>/AGENT.md`; in one layer the `<id>/` copy wins. The root
+    /// `AGENT.md` of a layer is the default agent. A child folder whose name
+    /// is not a valid agent id is not an agent and gives no diagnostic, thus
+    /// the settings folders `_skills/` and `_rules/` of the root are not
+    /// agents.
     ///
     /// - Parameters:
     ///   - context: The session whose working directory roots the project
