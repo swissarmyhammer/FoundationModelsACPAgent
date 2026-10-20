@@ -95,8 +95,24 @@ comments:
     - evidence: touched ACPAgentTelemetry.swift and ACPAgentTelemetryTests.swift, then `swift test`: 1044 tests in 115 suites passed, 1 known issue (the accepted withKnownIssue). `swift build --build-tests --package-path IntegrationTests`: Build complete. The only warning in both runs is the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle. No compiler warning in the changed files.
     - next: review
   timestamp: 2026-10-20T17:23:59.186804+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5d5heknfyppwrjw8zkezsq3
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit dee0ce2). 0 findings, 0 confirmed, 0 refuted. 2 files reviewed. All prior findings are checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-20T17:25:26.773850+00:00
+- actor: wballard
+  id: 01m5d5hrcrcc4a664whx760pgv
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 2 files
+    - test: green — swift test 1044 passed; IntegrationTests builds
+    - commit: dee0ce2
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T17:25:36.792627+00:00
+position_column: done
+position_ordinal: fff080
 title: 'ACPA-15: session/delete removes the snapshot timeline of its session'
 ---
 ## What

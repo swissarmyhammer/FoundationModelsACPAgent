@@ -1,8 +1,60 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '80'
+comments:
+- actor: claude-code
+  id: 01m5d5raa66d45naak3gk2bex7
+  text: |-
+    Research (implement step). Blocker: FoundationModelsHooks does not have the API that `snapshots list` needs.
+
+    Facts (FoundationModelsHooks at `9a9e20a`, the checkout in `.build/checkouts` and the sibling repository are the same):
+    - The public API of `SnapshotStore` is: `open(sessionKey:owner:workingDirectory:)`, `release(sessionKey:owner:)`, `remove(sessionKey:)`, `shadowSessionKeys()`, `take(sessionKey:trigger:)`, `checkpoints(sessionKey:)`, `rollback(sessionKey:to:)`.
+    - `checkpoints(sessionKey:)` reads only the in-memory history of an OPEN key. For a key that is not open it throws `SnapshotError.unavailable`. An orphan key is never open in the CLI process.
+    - `ShadowRepository`, `TimelineCommit` and `timeline()` are internal. The timeline ref (`refs/snapshots/timeline`), the `Snapshot-Trigger` trailer and the recorded working directory are internal too.
+    - The only public way to read a closed timeline is `open(...)`. It is not usable for `list`: (1) it needs the working directory, and for an orphan key the agent does not know it (the recorded binding is private); (2) it WRITES: a baseline commit on an empty timeline, and a `changedWhileClosed` checkpoint when the work tree changed; (3) it can get `timelineConflict` against another process on the same key. A `list` command must not change a timeline.
+    - A read of the shadow git repository in this package (libgit2 or `git`) copies the internal timeline format of Hooks. The orders tell not to do that and not to change Hooks.
+
+    The exact API that is missing (proposal for a card on FoundationModelsHooks, to discuss first):
+
+    ```swift
+    /// A summary of the timeline of one session key, read from disk.
+    public struct SnapshotTimelineSummary: Sendable, Equatable {
+        public let sessionKey: String
+        /// The number of checkpoints after the baseline.
+        public let checkpointCount: Int
+        /// The commit time of the last checkpoint, or nil when there is no checkpoint.
+        public let lastCheckpointDate: Date?
+    }
+
+    extension SnapshotStore {
+        /// Reads the timeline of `sessionKey` from its shadow directory. The key can be open or closed.
+        /// The call does not open the key, does not need the working directory, and writes nothing.
+        /// - Throws: `SnapshotError.invalidSessionKey`, `SnapshotError.unreadableTimeline`, or an error of libgit2.
+        public func timelineSummary(sessionKey: String) async throws -> SnapshotTimelineSummary
+    }
+    ```
+
+    Other parts of the card have APIs that exist (`shadowSessionKeys()`, `remove(sessionKey:)`, `AgentHooks.dataDirectory(name:environment:)`, `AgentHooks.snapshotDirectory(in:)`, `SessionIndex`, the project registry). No file was changed.
+  timestamp: 2026-10-20T17:29:11.750833+00:00
+- actor: claude-code
+  id: 01m5d5rd5wtzxtj4xxhahm8bp8
+  text: |-
+    ### implement — stuck
+    - evidence: no file changed. `SnapshotStore.checkpoints(sessionKey:)` throws `.unavailable` for a key that is not open, and FoundationModelsHooks `9a9e20a` has no public read of a closed timeline. Missing API: `SnapshotStore.timelineSummary(sessionKey:) async throws -> SnapshotTimelineSummary` (checkpoint count and last checkpoint date, read from disk, no open, no write).
+    - next: a person decides on a FoundationModelsHooks card for that API. Then run implement again. The task stays in `doing`.
+  timestamp: 2026-10-20T17:29:14.684980+00:00
+- actor: wballard
+  id: 01m5d5s2pd8wnwj4wk7hbq4aad
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: stuck — 0 files changed. Missing API in FoundationModelsHooks 9a9e20a: a read-only summary of a timeline that is not open (checkpoint count, last checkpoint date), for example SnapshotStore.timelineSummary(sessionKey:). checkpoints(sessionKey:) throws .unavailable for a closed key, and open(...) writes to the timeline.
+    - test: not run
+    - commit: none
+    - review: not run
+    - next: the user decides whether to open a card on the Hooks board.
+  timestamp: 2026-10-20T17:29:36.717839+00:00
+position_column: doing
+position_ordinal: '8180'
 title: 'acp-agent snapshots: an explicit command that lists and removes snapshot folders'
 ---
 ## What
