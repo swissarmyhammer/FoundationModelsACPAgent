@@ -76,10 +76,26 @@ comments:
     - evidence: touched MCPComposition.swift and MCPSecretReferenceTests.swift, then `swift test` — 1037 tests in 115 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue), no Swift compiler warning; `swift build --build-tests --package-path IntegrationTests` — Build complete, no Swift compiler warning. Only the known SwiftPM warning "missing creator for mutated node" on the mlx-swift_Cmlx bundle appeared.
     - next: review
   timestamp: 2026-10-20T16:53:28.893844+00:00
+- actor: claude-code
+  id: 01m5d3swxqkmfqpfb9jr6wvm9y
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 4fceabe), 0 findings, 0 confirmed, 1 refuted, 7 attempted. All prior review findings are checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-20T16:55:06.423729+00:00
+- actor: wballard
+  id: 01m5d3t774q0s7yjwgtrrzvfex
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files
+    - test: green — swift test 1037 passed; IntegrationTests builds
+    - commit: 4fceabe
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T16:55:16.964480+00:00
 depends_on:
 - 01M5CZ2K9R4436W0DCWZD0PY0N
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffee80
 title: 'ACPA-18: MCP server env and header values can be keychain: references'
 ---
 ## What

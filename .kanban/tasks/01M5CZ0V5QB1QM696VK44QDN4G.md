@@ -1,8 +1,33 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+comments:
+- actor: claude-code
+  id: 01m5d44kvy0m7zp1pqmbgf1a0g
+  text: |-
+    Research and implementation notes:
+    - `SnapshotStore.open` (FoundationModelsHooks) makes the shadow folder `<store>/<sessionKey>` on `SessionStart` when the cwd is a git work tree. Thus one stub turn in a git work tree is enough to make the shadow folder. FoundationModelsHooks did not change.
+    - The stub (echo) model cannot run a tool call through `ComposedAgent.compose`. The file that the turn writes is the transcript in `<cwd>/.<name>/transcripts/` (the default `TranscriptLocation.project`). The test checks that this folder is not empty.
+    - `composeStubAgent` did not set `XDG_DATA_HOME` before. Thus each stub composition wrote its hook data into the real `~/.local/share/<name>/hooks`. The helper now sets `XDG_DATA_HOME` to a throwaway folder (or to the new `dataHome` parameter), and it takes the new `hooksDataDirectory` parameter.
+    - `ComposedAgentTests`: the private `initialize` helper now calls a generic `exchange` helper, so the new `runOneTurn` helper uses the same wire set-up and teardown. `runOneTurn` waits for the idle update before it closes the wire. Without that wait, the log showed `A session/update send failed` warnings.
+    - The DocC symbol links to `compose(...)` in `ComposedAgent.swift`, `GatedStubModel.swift` and `acp-agent/AgentComposition.swift` now include `hooksDataDirectory:`.
+  timestamp: 2026-10-20T17:00:57.598479+00:00
+- actor: claude-code
+  id: 01m5d44pv60q7hnmtrrjahp7ta
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/ComposedAgent.swift, Sources/FoundationModelsACPAgent/Configuration/GatedStubModel.swift, Sources/acp-agent/AgentComposition.swift, Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift, Tests/FoundationModelsACPAgentTests/ComposedAgentTests.swift, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift. RED: the build failed with "extra argument 'hooksDataDirectory' in call". GREEN: the 2 new tests pass. `swift test`: 1039 tests in 115 suites passed, 0 failures, 1 known issue (the `withKnownIssue` that was there before in HarnessSmokeTests), and no compiler warnings. `swift build --build-tests --package-path IntegrationTests` builds.
+    - next: /review
+  timestamp: 2026-10-20T17:01:00.646401+00:00
+- actor: claude-code
+  id: 01m5d47gr3b3m3dty74gfneq8z
+  text: |-
+    ### test — green
+    - evidence: touched the 6 changed files, then `swift test`: 1039 tests in 115 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted). `swift build --build-tests --package-path IntegrationTests`: Build complete. No compiler warning. Only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx.bundle appears.
+    - next: review
+  timestamp: 2026-10-20T17:02:32.707088+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-15: the host gives the snapshot data directory'
 ---
 ## What
@@ -17,14 +42,14 @@ Do this:
 - Do not change FoundationModelsHooks.
 
 ## Acceptance Criteria
-- [ ] `ComposedAgent.compose` takes `hooksDataDirectory`, and the `SnapshotStore` uses `<hooksDataDirectory>/snapshot`.
-- [ ] With no value, the folder is the same as before.
-- [ ] The CLI behavior does not change.
+- [x] `ComposedAgent.compose` takes `hooksDataDirectory`, and the `SnapshotStore` uses `<hooksDataDirectory>/snapshot`.
+- [x] With no value, the folder is the same as before.
+- [x] The CLI behavior does not change.
 
 ## Tests
-- [ ] A test composes an agent with a temporary `hooksDataDirectory`, runs one turn that writes a file, and finds the shadow folder of the session key under `<hooksDataDirectory>/snapshot`.
-- [ ] A test that with no value the folder is `AgentHooks.dataDirectory(name:environment:)` for a given `XDG_DATA_HOME`.
-- [ ] `swift test` passes with zero failures and zero warnings.
+- [x] A test composes an agent with a temporary `hooksDataDirectory`, runs one turn that writes a file, and finds the shadow folder of the session key under `<hooksDataDirectory>/snapshot`.
+- [x] A test that with no value the folder is `AgentHooks.dataDirectory(name:environment:)` for a given `XDG_DATA_HOME`.
+- [x] `swift test` passes with zero failures and zero warnings.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-15

@@ -96,7 +96,7 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
     /// The CLI adds its own choices only: ``dotfolderName``, and the model
@@ -106,6 +106,9 @@ enum AgentComposition {
     /// The CLI gives no secret store. The default store of the library is
     /// the login Keychain under the service ``dotfolderName``, and that is
     /// the store of the CLI (ACPA-18, D101).
+    ///
+    /// The CLI gives no `hooksDataDirectory`. Thus the hooks keep their data,
+    /// and the snapshot timeline, in the XDG data home (ACPA-15, D96).
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory whose dotfolder stack the

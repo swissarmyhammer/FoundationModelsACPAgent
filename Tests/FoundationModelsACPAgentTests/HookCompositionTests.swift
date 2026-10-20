@@ -108,6 +108,22 @@ import Testing
         #expect(directory.path == "\(home)/.local/share/\(AgentClientHarness.dotfolderName)/hooks")
     }
 
+    /// A composition with no `hooksDataDirectory` keeps the hook data in
+    /// ``AgentHooks/dataDirectory(name:environment:)`` of its
+    /// `XDG_DATA_HOME`, as before the parameter was added.
+    @Test
+    func aCompositionWithNoHooksDataDirectoryUsesTheDataHome() async throws {
+        let dataHome = makeResolvedDirectory(label: "HookCompositionTests-compose-data")
+
+        let composed = try await composeStubAgent(
+            name: AgentClientHarness.dotfolderName, label: "HookCompositionTests-compose", dataHome: dataHome)
+
+        let expected = AgentHooks.dataDirectory(
+            name: try DotfolderName(AgentClientHarness.dotfolderName),
+            environment: [AgentHooks.dataHomeEnvironmentKey: dataHome.path])
+        #expect(composed.agent.hooks.dispatcher.dataDirectory.path == expected.path)
+    }
+
     /// The agent hooks keep the snapshots in the `snapshot` folder of the
     /// data directory, and the dispatcher has the data directory and a
     /// visitor: the `SnapshotHook`.

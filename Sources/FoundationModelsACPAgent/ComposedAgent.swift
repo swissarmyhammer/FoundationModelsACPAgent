@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:reporting:)``
+/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -89,9 +89,10 @@ public struct ComposedAgent: Sendable {
     /// layer the in-code default applies. Each session later loads its own
     /// stack again, keyed by the session's `cwd`.
     ///
-    /// The composition also makes the ``AgentHooks`` of the agent, in the
-    /// data directory ``AgentHooks/dataDirectory(name:environment:)``, and
-    /// gives its dispatcher to the router and to the agent.
+    /// The composition also makes the ``AgentHooks`` of the agent, in
+    /// `hooksDataDirectory` or, when the host gives none, in the data
+    /// directory ``AgentHooks/dataDirectory(name:environment:)``, and gives
+    /// its dispatcher to the router and to the agent.
     ///
     /// Call this one time, before the first connection. Then give each
     /// connection the agent with ``agent(boundTo:)``.
@@ -126,6 +127,15 @@ public struct ComposedAgent: Sendable {
     ///     gives the synchronizable items of iCloud Keychain here
     ///     (`KeychainSecretStore(service:synchronizable:)` with
     ///     `synchronizable: true`).
+    ///   - hooksDataDirectory: The directory where the hooks keep their
+    ///     data, or `nil` (the default) for
+    ///     ``AgentHooks/dataDirectory(name:environment:)``, the XDG data
+    ///     home. The snapshot timeline of each session goes into its
+    ///     `snapshot` folder, and that timeline must persist. Thus an app
+    ///     gives a folder in Application Support, for example
+    ///     `<Application Support>/<bundle id>/hooks`. Never give a folder in
+    ///     Caches or in a temporary folder, because macOS can delete those.
+    ///     The `acp-agent` CLI gives no value.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -146,13 +156,15 @@ public struct ComposedAgent: Sendable {
         stubChunkGate: String? = nil,
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
+        hooksDataDirectory: URL? = nil,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
             name: name, workingDirectory: workingDirectory, environment: environment,
             transcriptLocation: transcriptLocation, secretStore: secretStore
         ).load().configuration
-        let hooks = AgentHooks(dataDirectory: AgentHooks.dataDirectory(name: name, environment: environment))
+        let hooks = AgentHooks(
+            dataDirectory: hooksDataDirectory ?? AgentHooks.dataDirectory(name: name, environment: environment))
         let agent = try await RoutedACPAgent(
             name: name,
             router: try makeRouter(

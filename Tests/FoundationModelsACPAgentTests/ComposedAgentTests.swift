@@ -15,6 +15,23 @@ struct ComposedAgentTests {
     /// the `acp-agent` executable, so the composition does not depend on it.
     private static let dotfolderName = "composed-agent-host"
 
+    /// The branch of the git work tree of the snapshot proof.
+    private static let branchName = "main"
+
+    /// The prompt of the snapshot proof. The stub model echoes it.
+    private static let promptText = "one turn in a git work tree"
+
+    /// The name of the folder of the snapshots, under a hook data directory.
+    private static let snapshotFolderName = "snapshot"
+
+    /// The name of the folder of the hook data, under the data folder of the
+    /// dotfolder name in the data home.
+    private static let hooksFolderName = "hooks"
+
+    /// The name of the folder of the transcripts, under the project
+    /// dotfolder.
+    private static let transcriptsFolderName = "transcripts"
+
     /// Sends `initialize` from a client on `clientEnd`, then closes the wire
     /// and waits for the teardown of the agent.
     ///
@@ -32,15 +49,38 @@ struct ComposedAgentTests {
         served agentConnection: AgentSideConnection,
         by composed: ComposedAgent
     ) async throws -> InitializeResponse {
+        try await exchange(over: clientEnd, closing: agentEnd, served: agentConnection, by: composed) {
+            try await $0.initialize(AgentClientHarness.makeInitializeRequest())
+        }
+    }
+
+    /// Runs `requests` from a client on `clientEnd`, then closes the wire and
+    /// waits for the teardown of the agent.
+    ///
+    /// - Parameters:
+    ///   - clientEnd: The client end of the wire.
+    ///   - agentEnd: The agent end of the wire.
+    ///   - agentConnection: The connection that serves the agent on
+    ///     `agentEnd`.
+    ///   - composed: The composition that `agentConnection` serves.
+    ///   - requests: The requests that the client sends over its connection.
+    /// - Returns: The value that `requests` gives.
+    /// - Throws: Whatever `requests` throws.
+    private static func exchange<Value: Sendable>(
+        over clientEnd: InMemoryTransport,
+        closing agentEnd: InMemoryTransport,
+        served agentConnection: AgentSideConnection,
+        by composed: ComposedAgent,
+        _ requests: (ClientSideConnection) async throws -> Value
+    ) async throws -> Value {
         let model = await ConnectionModel()
         let connection = await model.connect(over: clientEnd)
         // Swift has no asynchronous `defer`, and the wire must come down on
         // the failing path as well, so the outcome is held here and given
         // back after the teardown.
-        let outcome: Result<InitializeResponse, any Error>
+        let outcome: Result<Value, any Error>
         do {
-            outcome = .success(
-                try await connection.initialize(AgentClientHarness.makeInitializeRequest()))
+            outcome = .success(try await requests(connection))
         } catch {
             outcome = .failure(error)
         }
@@ -50,6 +90,37 @@ struct ComposedAgentTests {
         agentEnd.close()
         await composed.waitForConnectionTeardown()
         return try outcome.get()
+    }
+
+    /// Sends `initialize`, `session/new` in `workspace` and one prompt from a
+    /// client of `composed`, then closes the wire and waits for the teardown
+    /// of the agent.
+    ///
+    /// - Parameters:
+    ///   - composed: The composition that serves the client.
+    ///   - workspace: The working directory of the session.
+    /// - Returns: The id of the session.
+    /// - Throws: Whatever the handshake, the session call or the prompt
+    ///   throws.
+    private static func runOneTurn(of composed: ComposedAgent, in workspace: URL) async throws -> SessionId {
+        let (clientEnd, agentEnd) = InMemoryTransport.pair()
+        let agentConnection = await composed.serve(over: agentEnd)
+        return try await exchange(over: clientEnd, closing: agentEnd, served: agentConnection, by: composed) {
+            connection in
+            _ = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
+            let session = try await connection.newSession(
+                NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+            // Subscribe before the prompt, so the stream holds the idle
+            // update of the prompt. The wire stays open until that update
+            // came, thus no update of the turn fails to go out.
+            let updates = connection.subscribe(to: session.sessionId).updates
+            _ = try await connection.prompt(
+                AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))
+            for await case .update(.stateUpdate(.idle)) in updates {
+                break
+            }
+            return session.sessionId
+        }
     }
 
     /// A host gives the composed agent to `AgentSideConnection` through the
@@ -84,5 +155,43 @@ struct ComposedAgentTests {
             over: clientEnd, closing: agentEnd, served: agentConnection, by: composed)
 
         #expect(response.info == RoutedACPAgent.implementation)
+    }
+
+    /// A host that gives `hooksDataDirectory` gets the snapshot timeline in
+    /// its `snapshot` folder: one turn in a git work tree writes its
+    /// transcript file, and the shadow folder of the session key (the ACP
+    /// session id) is under `<hooksDataDirectory>/snapshot`. The data home
+    /// gets no hook data.
+    @Test
+    func theSnapshotsOfAGivenHooksDataDirectoryAreInItsSnapshotFolder() async throws {
+        let workspace = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-repo")
+        try GitVerbSupport.makeRepository(in: workspace, branch: Self.branchName)
+        let hooksDataDirectory = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-hooks")
+        let dataHome = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-data")
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-snapshot", workspace: workspace,
+            hooksDataDirectory: hooksDataDirectory, dataHome: dataHome)
+
+        let sessionId = try await Self.runOneTurn(of: composed, in: workspace)
+
+        let transcripts = workspace.appendingPathComponent(".\(Self.dotfolderName)", isDirectory: true)
+            .appendingPathComponent(Self.transcriptsFolderName, isDirectory: true)
+        #expect(!(try FileManager.default.contentsOfDirectory(atPath: transcripts.path)).isEmpty)
+        let shadow = hooksDataDirectory.appendingPathComponent(Self.snapshotFolderName, isDirectory: true)
+            .appendingPathComponent(sessionId.rawValue, isDirectory: true)
+        #expect(Self.isDirectory(shadow))
+        let defaultHooks = dataHome.appendingPathComponent(Self.dotfolderName, isDirectory: true)
+            .appendingPathComponent(Self.hooksFolderName, isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: defaultHooks.path))
+    }
+
+    /// Tells if a directory is at `url`.
+    ///
+    /// - Parameter url: The location to examine.
+    /// - Returns: `true` when a directory is at `url`, and `false` when
+    ///   nothing or a file is at `url`.
+    private static func isDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
