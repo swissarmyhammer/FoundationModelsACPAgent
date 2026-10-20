@@ -42,6 +42,23 @@ import Testing
         #expect(name.rawValue == "acp-agent")
     }
 
+    // MARK: - The secret store
+
+    /// The CLI gives the agent the login Keychain, under the service
+    /// `acp-agent` (task ^y5zy1hz).
+    @Test func theCompositionGivesTheLoginKeychainOfTheCLI() async throws {
+        let configHome = makeResolvedDirectory(label: "AgentCompositionTests-secrets-config")
+        let workspace = makeResolvedDirectory(label: "AgentCompositionTests-secrets-repo")
+        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+
+        let composed = try await AgentComposition.compose(
+            workingDirectory: workspace, environment: environment)
+
+        #expect(
+            composed.agent.secretStore as? KeychainSecretStore
+                == KeychainSecretStore(service: "acp-agent", synchronizable: false))
+    }
+
     // MARK: - The stub composition
 
     /// With the stub selected the composition returns the echo model, and

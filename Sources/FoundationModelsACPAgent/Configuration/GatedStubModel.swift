@@ -11,7 +11,7 @@ import Synchronization
 // library's echo backend answers in one chunk and in microseconds, so a
 // signal always lands after the prompt is over.
 //
-// The chunk gate of ``ComposedAgent/compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:reporting:)``
+// The chunk gate of ``ComposedAgent/compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:reporting:)``
 // holds a prompt open. The prompt comes back word by word, and before each
 // word the stub reads one byte from a named pipe that the test holds. Thus
 // a test can send `SIGINT` into a live prompt across a real process

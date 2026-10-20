@@ -96,11 +96,13 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
-    /// The CLI adds its own choices only: ``dotfolderName``, and the model
-    /// path and the stub gate that `environment` selects. The library
+    /// The CLI adds its own choices only: ``dotfolderName``, the model
+    /// path and the stub gate that `environment` selects, and the login
+    /// Keychain under the service ``dotfolderName`` as the secret store
+    /// (ACPA-18, D101). The library
     /// does the composition, so the CLI holds no copy of it.
     ///
     /// - Parameters:
@@ -129,6 +131,7 @@ enum AgentComposition {
             environment: environment,
             modelSource: modelSource(environment: environment),
             stubChunkGate: stubChunkGate(environment: environment),
+            secretStore: KeychainSecretStore(service: dotfolderName, synchronizable: false),
             reporting: progress)
     }
 

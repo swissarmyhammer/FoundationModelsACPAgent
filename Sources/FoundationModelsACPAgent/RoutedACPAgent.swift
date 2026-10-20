@@ -75,6 +75,14 @@ public actor RoutedACPAgent: Agent {
     /// layer.
     public nonisolated let transcriptLocation: TranscriptLocation?
 
+    /// The store that gives the value of each secret reference
+    /// `keychain:<name>` of the configuration (ACPA-18, D101).
+    ///
+    /// The host gives it, or the initializer sets the login Keychain under
+    /// the service ``name``. The configuration load reads the references
+    /// through it.
+    nonisolated let secretStore: any SecretStore
+
     /// The settle period of each session that this agent makes, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
     /// The initializer sets ``CatalogContext/defaultInlineSettleGrace``, the
@@ -283,6 +291,9 @@ public actor RoutedACPAgent: Agent {
     ///   - transcriptLocation: The transcript location that wins over every
     ///     config layer in each session request, or `nil` (the default) to
     ///     let the config files decide — see ``transcriptLocation``.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference, or `nil` (the default) for the login Keychain under
+    ///     the service `name` — see ``secretStore``.
     /// - Throws: `ProfileResolutionError` when the profile does not
     ///   resolve.
     public init(
@@ -294,7 +305,8 @@ public actor RoutedACPAgent: Agent {
         userDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
-        transcriptLocation: TranscriptLocation? = nil
+        transcriptLocation: TranscriptLocation? = nil,
+        secretStore: (any SecretStore)? = nil
     ) async throws {
         self.name = name
         self.hooks = hooks
@@ -302,6 +314,8 @@ public actor RoutedACPAgent: Agent {
         self.environment = environment
         self.inlineSettleGrace = inlineSettleGrace
         self.transcriptLocation = transcriptLocation
+        self.secretStore =
+            secretStore ?? KeychainSecretStore(service: name.rawValue, synchronizable: false)
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

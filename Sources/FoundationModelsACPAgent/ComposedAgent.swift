@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:reporting:)``
+/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -120,6 +120,12 @@ public struct ComposedAgent: Sendable {
     ///     `session/delete` (``RoutedACPAgent/transcriptLocation``). The
     ///     override is not a config layer, so `config show` and
     ///     `LoadedConfiguration.sources` do not show it.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference `keychain:<name>` of the configuration, or `nil` (the
+    ///     default) for the login Keychain under the service `name`. An app
+    ///     gives the synchronizable items of iCloud Keychain here
+    ///     (`KeychainSecretStore(service:synchronizable:)` with
+    ///     `synchronizable: true`).
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -139,6 +145,7 @@ public struct ComposedAgent: Sendable {
         modelSource: ModelSource = .live,
         stubChunkGate: String? = nil,
         transcriptLocation: TranscriptLocation? = nil,
+        secretStore: (any SecretStore)? = nil,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
@@ -157,7 +164,8 @@ public struct ComposedAgent: Sendable {
             configuration: configuration,
             reporting: progress,
             environment: environment,
-            transcriptLocation: transcriptLocation)
+            transcriptLocation: transcriptLocation,
+            secretStore: secretStore)
         return ComposedAgent(
             agent: agent, modelSource: modelSource, configuration: configuration)
     }
