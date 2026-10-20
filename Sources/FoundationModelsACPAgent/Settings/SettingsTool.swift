@@ -64,10 +64,11 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     /// The description of the tool for the model.
     private static let toolDescription = """
         Reads and changes the agent settings with GraphQL. Query `sections` for the first key of each key \
-        path. Query `setting(keyPath:, cwd:)` for the merged value of a key in a session folder and the level \
-        that set it. Change a key with the mutation `set(keyPath:, value:, level:, cwd:)` or \
-        `clear(keyPath:, level:, cwd:)`, where level is USER or SESSION. A secret key takes only a \
-        keychain:<name> reference.
+        path. Query `setting(keyPath:)` for the merged value of a key in the session folder and the level \
+        that set it. Change a key with the mutation `set(keyPath:, value:, level:)` or \
+        `clear(keyPath:, level:)`, where level is USER or SESSION. SESSION changes the settings of the \
+        session folder only. In a session, do not give `cwd`: the session folder applies. A secret key \
+        takes only a keychain:<name> reference.
         """
 
     /// The name of the tool: `settings`.
@@ -85,12 +86,27 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     /// The endpoint that runs each document.
     private let endpoint: SettingsGraph
 
+    /// The absolute path of the folder of the session that owns the tool, or
+    /// `nil` for a tool of no session.
+    private let sessionDirectory: String?
+
     /// Makes the tool over a store.
     ///
-    /// - Parameter store: The store of the agent settings.
+    /// The session composition gives each session its own tool with the
+    /// working directory of that session. Then a call that gives no `cwd`
+    /// reads the merged value for that folder and writes the session level
+    /// of that folder, and a `cwd` of a different folder is refused
+    /// (``SettingsGraphError/otherSessionWorkingDirectory(path:)``).
+    ///
+    /// - Parameters:
+    ///   - store: The store of the agent settings.
+    ///   - sessionDirectory: The working directory of the session that owns
+    ///     the tool, or `nil` (the default) for a tool of no session, where
+    ///     each call must give `cwd`, the same as the endpoint.
     /// - Throws: An error of the schema builder.
-    public init(store: SettingsStore) throws {
+    public init(store: SettingsStore, sessionDirectory: URL? = nil) throws {
         endpoint = try SettingsGraph(store: store)
+        self.sessionDirectory = sessionDirectory?.path
     }
 
     /// The endpoint of the tool: a list of one, the `settings` endpoint.
@@ -98,7 +114,8 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
         [endpoint]
     }
 
-    /// Runs the document of the arguments on the endpoint, with no viewer.
+    /// Runs the document of the arguments on the endpoint, with no viewer and
+    /// for the session folder of the tool.
     ///
     /// - Parameter arguments: The decoded arguments of the call.
     /// - Returns: The GraphQL response (`{data, errors}`) as JSON text.
@@ -106,7 +123,9 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     public func call(arguments: GraphQLArguments) async throws -> String {
         try await GraphQLTool.answer(arguments, subscriptionHint: Self.subscriptionHint) {
             query, variables, operationName in
-            try await endpoint.execute(query: query, variables: variables, operationName: operationName, viewer: nil)
+            try await endpoint.execute(
+                query: query, variables: variables, operationName: operationName,
+                sessionDirectory: sessionDirectory)
         }
     }
 

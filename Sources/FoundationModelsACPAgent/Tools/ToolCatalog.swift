@@ -385,12 +385,17 @@ public enum ToolCatalog {
     /// With a ``CatalogContext/snapshotStore``, `snapshots` mounts the
     /// `tools.snapshots` verbs (`list`, `take` and `rollback`) over the
     /// snapshot store of the agent. It has no config section.
+    /// With a ``CatalogContext/settingsStore``, the session gets its own
+    /// ``SettingsTool`` over that store and its working directory, under the
+    /// noun `settings` (`tools.settings.querySettings`, ACPA-17, D100 (f)).
+    /// The tool is only in the registry, thus a call goes through `runCode`
+    /// as a call of a built-in verb does. It has no config section.
     ///
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
     /// - Throws: Whatever the MCP composition,
     ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`,
-    ///   `withMCP(servers:)` or
+    ///   ``SettingsTool/init(store:sessionDirectory:)``, `withMCP(servers:)` or
     ///   `buildRegistry()` throws.
     static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
         let builder = MultiTool.Builder()
@@ -437,6 +442,11 @@ public enum ToolCatalog {
         // `HookSession.current` at call time, so it needs no key here.
         if let snapshotStore = context.snapshotStore {
             builder.withCapability(SnapshotsCapability(store: snapshotStore))
+        }
+        if let settingsStore = context.settingsStore {
+            builder.withOperationTool(
+                noun: SettingsGraph.endpointName,
+                tool: try SettingsTool(store: settingsStore, sessionDirectory: context.workingDirectory))
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,

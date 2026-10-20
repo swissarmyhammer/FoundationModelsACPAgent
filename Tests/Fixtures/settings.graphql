@@ -94,9 +94,9 @@ type Query {
     keyPath: [String!]!
 
     """
-    The absolute path of the working directory of the session. It names the session level.
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint must give it. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
     """
-    cwd: String!
+    cwd: String
   ): Setting
 }
 
@@ -117,9 +117,9 @@ type Mutation {
     level: SettingLevel!
 
     """
-    The absolute path of the working directory of the session. It names the session level.
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint must give it. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
     """
-    cwd: String!
+    cwd: String
   ): Setting
 
   """
@@ -135,9 +135,9 @@ type Mutation {
     level: SettingLevel!
 
     """
-    The absolute path of the working directory of the session. It names the session level.
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint must give it. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
     """
-    cwd: String!
+    cwd: String
   ): Setting
 }
 

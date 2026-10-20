@@ -6,7 +6,9 @@ import GraphQL
 /// of each level for the clients of the agent, over one ``SettingsStore``.
 ///
 /// The endpoint has the server scope: one endpoint serves each session, and
-/// each call names the working directory of its session (`cwd`).
+/// each call names the working directory of its session (`cwd`). A call of
+/// the ``SettingsTool`` of a session can omit `cwd`: the folder of that
+/// session applies.
 ///
 /// - `Query.setting` gives the merged value of a key for a session, and the
 ///   layer that set it. `Query.sections` gives the first key of each key
@@ -79,9 +81,31 @@ public struct SettingsGraph: GraphQLEndpoint {
     public func execute(
         query: String, variables: [String: Map], operationName: String?, viewer _: GraphQLViewer?
     ) async throws -> String {
+        try await execute(query: query, variables: variables, operationName: operationName, sessionDirectory: nil)
+    }
+
+    /// Runs one GraphQL document for the folder of one session, or for no
+    /// session.
+    ///
+    /// ``SettingsTool`` calls this with its session folder. Then a field with
+    /// no `cwd` reads or writes the levels of that folder, and a field whose
+    /// `cwd` names a different folder is refused
+    /// (``SettingsGraphContext/workingDirectory(given:)``).
+    ///
+    /// - Parameters:
+    ///   - query: The GraphQL document.
+    ///   - variables: The values of the variables of the document.
+    ///   - operationName: The operation of the document to run, or `nil`.
+    ///   - sessionDirectory: The absolute path of the session folder, or
+    ///     `nil` for a call of the endpoint, where each field must give `cwd`.
+    /// - Returns: The GraphQL response as JSON text.
+    /// - Throws: A fault that is not a GraphQL error.
+    func execute(
+        query: String, variables: [String: Map], operationName: String?, sessionDirectory: String?
+    ) async throws -> String {
         try await api.respond(
             to: query, variables: variables, operationName: operationName, rules: Self.rules,
-            formattedWith: .sortedKeys, context: SettingsGraphContext())
+            formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: sessionDirectory))
     }
 
     /// Starts one GraphQL subscription.
@@ -98,6 +122,6 @@ public struct SettingsGraph: GraphQLEndpoint {
     ) async throws -> AsyncThrowingStream<String, Error> {
         try await api.subscribe(
             to: query, variables: variables, operationName: operationName, rules: Self.rules,
-            formattedWith: .sortedKeys, context: SettingsGraphContext())
+            formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: nil))
     }
 }

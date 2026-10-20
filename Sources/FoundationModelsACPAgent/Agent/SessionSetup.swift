@@ -903,7 +903,8 @@ extension RoutedACPAgent {
             environment: environment,
             inlineSettleGrace: inlineSettleGrace,
             userPresence: userPresence,
-            snapshotStore: hooks.snapshotStore)
+            snapshotStore: hooks.snapshotStore,
+            settingsStore: settingsStore)
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs

@@ -75,6 +75,21 @@ import Testing
     /// `SelectionTier` decodes, so the search completes.
     private static let flashSelectionJSON = #"{"ids":["\#(readVerbPath)"]}"#
 
+    /// The surface path of the one verb of the `settings` tool: the camelCase
+    /// form of its op `query settings` under the noun `settings`.
+    private static let settingsVerbPath = "settings.querySettings"
+
+    /// The key path of `compaction.trigger`.
+    private static let triggerKeyPath = SettingsGraphFixture.triggerKeyPath
+
+    /// The value of `compaction.trigger` that the session level gets.
+    private static let sessionTrigger = 0.9
+
+    /// A `set` mutation of ``triggerKeyPath`` on the session level, with no
+    /// `cwd`: the session folder of the tool applies.
+    private static let sessionTriggerMutation =
+        "mutation { set(keyPath: [\"compaction\", \"trigger\"], value: \(sessionTrigger), level: SESSION) { level } }"
+
     // MARK: Harness
 
     /// Makes a fresh throwaway directory and returns its URL.
@@ -105,6 +120,10 @@ import Testing
     ///     the test must call `codeContextStop` before it ends. The
     ///     default `false` turns the section off, thus a test that does
     ///     not test the code context starts none.
+    ///   - hasSettingsStore: `true` gives the context a settings store over
+    ///     its settings folders and an empty in-memory secret store, thus
+    ///     the registry mounts the `settings` tool. The default `false`
+    ///     gives no store.
     ///   - configure: The mutation that shapes the configuration under
     ///     test. It runs after the `codeContext:` section is set. The
     ///     default keeps every other section at its default.
@@ -116,6 +135,7 @@ import Testing
         loader: StubModelLoader = StubModelLoader(),
         environment: [String: String] = [:],
         keepsCodeContext: Bool = false,
+        hasSettingsStore: Bool = false,
         configure: (inout AgentConfiguration) -> Void = { _ in }
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration.withoutMarketplaces
@@ -123,6 +143,7 @@ import Testing
             configuration.tools.codeContext = .disabled
         }
         configure(&configuration)
+        let settingsFolders = try SettingsFoldersFixture.make(label: "ToolCatalogTests", environment: environment)
         return CatalogContext(
             workingDirectory: try makeTemporaryDirectory(label: "work"),
             additionalRoots: additionalRoots,
@@ -130,8 +151,10 @@ import Testing
             profile: try await makeStubProfile(
                 cacheDirectory: try makeTemporaryDirectory(label: "cache"),
                 loader: loader),
-            settingsFolders: try SettingsFoldersFixture.make(label: "ToolCatalogTests", environment: environment),
-            environment: environment)
+            settingsFolders: settingsFolders,
+            environment: environment,
+            settingsStore: hasSettingsStore
+                ? SettingsStore(settingsFolders: settingsFolders, secretStore: InMemorySecretStore()) : nil)
     }
 
     /// Invokes `tools.files.read` on `path` and decodes the wire result
@@ -538,6 +561,75 @@ import Testing
         #expect(
             now.date.range(of: Self.nowDatePattern, options: .regularExpression) != nil,
             "the date is \(now.date)")
+    }
+
+    // MARK: The settings tool
+
+    /// The slice of the wire result of a `set` mutation through the
+    /// `settings` verb that these tests assert on: the level of the merged
+    /// setting after the change.
+    private struct SettingsSetResult: Decodable {
+        /// The `data` object of the GraphQL response.
+        struct ResponseData: Decodable {
+            /// The result of the `set` mutation, or `nil` when it failed.
+            let set: SetResult?
+        }
+
+        /// The fields of the `Setting` that the mutation selects.
+        struct SetResult: Decodable {
+            /// The layer that set the merged value.
+            let level: String
+        }
+
+        /// The `data` object, or `nil` when the response has none.
+        let data: ResponseData?
+    }
+
+    /// A context with a settings store mounts the one verb of the
+    /// `settings` tool in the registry, under the noun `settings`.
+    @Test func aContextWithASettingsStoreMountsTheSettingsVerb() async throws {
+        let context = try await Self.makeContext(hasSettingsStore: true)
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        let paths = registry.surface.entries.filter { $0.group == SettingsGraph.endpointName }.map(\.path)
+        #expect(paths == [Self.settingsVerbPath])
+    }
+
+    /// A context with no settings store mounts no `settings` noun.
+    @Test func aContextWithNoSettingsStoreMountsNoSettingsNoun() async throws {
+        let context = try await Self.makeContext()
+
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        #expect(!registry.surface.entries.contains { $0.group == SettingsGraph.endpointName })
+    }
+
+    /// The `settings` tool is only in the registry: the top-level tools of
+    /// the session do not change.
+    @Test func theSettingsToolIsNotATopLevelTool() async throws {
+        let context = try await Self.makeContext(hasSettingsStore: true)
+
+        let surface = try await ToolCatalog.sessionSurface(context: context)
+
+        let names = surface.tools.map(\.name)
+        #expect(names == MountOrder.defaultToolNames)
+        #expect(!names.contains(SettingsGraph.endpointName))
+    }
+
+    /// A call of the `settings` verb through the registry with no `cwd`
+    /// writes the session level of the working directory of the session.
+    @Test func aSettingsCallThroughTheRegistryWritesTheSessionLevelOfTheSession() async throws {
+        let context = try await Self.makeContext(hasSettingsStore: true)
+        let store = try #require(context.settingsStore)
+        let registry = try await ToolCatalog.makeRegistry(context: context).registry
+
+        let answer: SettingsSetResult = try await FilesVerbSupport.invoke(
+            try #require(registry.tools[Self.settingsVerbPath]), arguments: ["query": Self.sessionTriggerMutation])
+
+        #expect(answer.data?.set?.level == SettingsGraphFixture.sessionLevel)
+        let stored = try await store.value(at: Self.triggerKeyPath, cwd: context.workingDirectory)
+        #expect(stored == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
     }
 
     // MARK: The skills registry

@@ -41,6 +41,22 @@ struct SettingsGraphFixture {
         }
         """
 
+    /// A query of one setting with no `cwd`. A session tool reads the
+    /// setting for its session folder, and the endpoint refuses the call.
+    static let sessionSettingQuery = """
+        query($keyPath: [String!]!) {
+          setting(keyPath: $keyPath) \(settingFields)
+        }
+        """
+
+    /// A `set` mutation with no `cwd`. A session tool writes the level for
+    /// its session folder.
+    static let sessionSetMutation = """
+        mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!) {
+          set(keyPath: $keyPath, value: $value, level: $level) \(settingFields)
+        }
+        """
+
     /// The subscription of each change for one working directory.
     static let changesSubscription = """
         subscription($cwd: String) { changes(cwd: $cwd) { level cwd keyPath } }

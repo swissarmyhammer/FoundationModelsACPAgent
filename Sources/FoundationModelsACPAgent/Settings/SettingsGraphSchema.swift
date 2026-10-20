@@ -161,8 +161,10 @@ struct SettingsGraphSettingArguments: Codable, Sendable {
     /// The key path.
     let keyPath: [String]
 
-    /// The absolute path of the working directory of the session.
-    let cwd: String
+    /// The absolute path of the working directory of the session, or `nil`
+    /// for the session folder of the call
+    /// (``SettingsGraphContext/workingDirectory(given:)``).
+    let cwd: String?
 }
 
 /// The arguments of `Mutation.set`.
@@ -176,8 +178,10 @@ struct SettingsGraphSetArguments: Codable, Sendable {
     /// The level that gets the value.
     let level: SettingsGraphLevel
 
-    /// The absolute path of the working directory of the session.
-    let cwd: String
+    /// The absolute path of the working directory of the session, or `nil`
+    /// for the session folder of the call
+    /// (``SettingsGraphContext/workingDirectory(given:)``).
+    let cwd: String?
 }
 
 /// The arguments of `Mutation.clear`.
@@ -188,8 +192,10 @@ struct SettingsGraphClearArguments: Codable, Sendable {
     /// The level that loses the key.
     let level: SettingsGraphLevel
 
-    /// The absolute path of the working directory of the session.
-    let cwd: String
+    /// The absolute path of the working directory of the session, or `nil`
+    /// for the session folder of the call
+    /// (``SettingsGraphContext/workingDirectory(given:)``).
+    let cwd: String?
 }
 
 /// The arguments of `Subscription.changes`.
@@ -205,6 +211,54 @@ struct SettingsGraphChangesArguments: Codable, Sendable {
 struct SettingsGraphContext: GraphQLRunContext {
     /// The warnings of the call.
     let warnings = ResponseWarnings()
+
+    /// The absolute path of the session folder of a call of the
+    /// ``SettingsTool`` of a session, or `nil` for a call of the endpoint,
+    /// which serves each session.
+    let sessionDirectory: String?
+
+    /// Gives the working directory of one field of the call.
+    ///
+    /// A call of the endpoint must give `cwd`. A call of the tool of a session
+    /// can omit `cwd`, and then the session folder applies. A `cwd` that the
+    /// tool of a session gets must name its session folder, thus a session
+    /// level write always goes to the cwd of that session. A relative `cwd`
+    /// goes to the engine as it is, and the engine refuses it.
+    ///
+    /// - Parameter cwd: The `cwd` argument of the field, or `nil`.
+    /// - Returns: The path of the working directory.
+    /// - Throws: ``SettingsGraphError/missingWorkingDirectory`` when the call
+    ///   gives no `cwd` and has no session folder;
+    ///   ``SettingsGraphError/otherSessionWorkingDirectory(path:)`` when the
+    ///   `cwd` is an absolute path of a folder that is not the session folder.
+    func workingDirectory(given cwd: String?) throws -> String {
+        guard let sessionDirectory else {
+            guard let cwd else {
+                throw SettingsGraphError.missingWorkingDirectory
+            }
+            return cwd
+        }
+        guard let cwd else {
+            return sessionDirectory
+        }
+        guard SessionSetup.isAbsolute(cwd) else {
+            return cwd
+        }
+        guard Self.resolvedPath(of: cwd) == Self.resolvedPath(of: sessionDirectory) else {
+            throw SettingsGraphError.otherSessionWorkingDirectory(path: cwd)
+        }
+        return sessionDirectory
+    }
+
+    /// Gives the path of a folder with each symbolic link resolved, so that
+    /// two spellings of one folder (for example with and with no `/private`)
+    /// compare equal.
+    ///
+    /// - Parameter path: The absolute path of the folder.
+    /// - Returns: The resolved path.
+    private static func resolvedPath(of path: String) -> String {
+        URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath().path
+    }
 }
 
 /// The root resolver of the `settings` endpoint over the engine.
@@ -225,13 +279,17 @@ struct SettingsGraphResolver: Sendable {
 
     /// Resolves `Query.setting`.
     ///
-    /// - Parameter arguments: The key path and the working directory.
+    /// - Parameters:
+    ///   - context: The context of the call, which gives the working
+    ///     directory when the call gives no `cwd`.
+    ///   - arguments: The key path and the working directory.
     /// - Returns: The setting, or `nil` when no layer has the key.
-    /// - Throws: What ``SettingsEngine/setting(at:cwd:)`` throws.
+    /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
+    ///   ``SettingsEngine/setting(at:cwd:)`` throw.
     func setting(
-        context _: SettingsGraphContext, arguments: SettingsGraphSettingArguments
+        context: SettingsGraphContext, arguments: SettingsGraphSettingArguments
     ) async throws -> SettingsGraphSetting? {
-        try await mergedSetting(at: arguments.keyPath, cwd: arguments.cwd)
+        try await mergedSetting(at: arguments.keyPath, cwd: context.workingDirectory(given: arguments.cwd))
     }
 
     /// Resolves `Mutation.set`.
@@ -241,21 +299,23 @@ struct SettingsGraphResolver: Sendable {
     /// unknown part, as ``settingAfterChange(at:cwd:context:)`` tells.
     ///
     /// - Parameters:
-    ///   - context: The context of the call, which gets the warning of a read
-    ///     after the change that did not complete.
+    ///   - context: The context of the call, which gives the working
+    ///     directory when the call gives no `cwd`, and gets the warning of a
+    ///     read after the change that did not complete.
     ///   - arguments: The key path, the value, the level and the working
     ///     directory.
     /// - Returns: The merged setting after the change, or `nil` when no layer
     ///   has the key or when the read after the change failed as a whole.
-    /// - Throws: What ``SettingsEngine/set(_:at:level:cwd:)`` throws. The
-    ///   change is then not saved.
+    /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
+    ///   ``SettingsEngine/set(_:at:level:cwd:)`` throw. The change is then not
+    ///   saved.
     func set(
         context: SettingsGraphContext, arguments: SettingsGraphSetArguments
     ) async throws -> SettingsGraphSetting? {
+        let cwd = try context.workingDirectory(given: arguments.cwd)
         try await engine.set(
-            YAMLValue(graphQLMap: arguments.value), at: arguments.keyPath, level: arguments.level,
-            cwd: arguments.cwd)
-        return await settingAfterChange(at: arguments.keyPath, cwd: arguments.cwd, context: context)
+            YAMLValue(graphQLMap: arguments.value), at: arguments.keyPath, level: arguments.level, cwd: cwd)
+        return await settingAfterChange(at: arguments.keyPath, cwd: cwd, context: context)
     }
 
     /// Resolves `Mutation.clear`.
@@ -265,18 +325,21 @@ struct SettingsGraphResolver: Sendable {
     /// unknown part, as ``settingAfterChange(at:cwd:context:)`` tells.
     ///
     /// - Parameters:
-    ///   - context: The context of the call, which gets the warning of a read
-    ///     after the change that did not complete.
+    ///   - context: The context of the call, which gives the working
+    ///     directory when the call gives no `cwd`, and gets the warning of a
+    ///     read after the change that did not complete.
     ///   - arguments: The key path, the level and the working directory.
     /// - Returns: The merged setting after the change, or `nil` when no layer
     ///   has the key or when the read after the change failed as a whole.
-    /// - Throws: What ``SettingsEngine/clear(at:level:cwd:)`` throws. The
-    ///   change is then not saved.
+    /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
+    ///   ``SettingsEngine/clear(at:level:cwd:)`` throw. The change is then not
+    ///   saved.
     func clear(
         context: SettingsGraphContext, arguments: SettingsGraphClearArguments
     ) async throws -> SettingsGraphSetting? {
-        try await engine.clear(at: arguments.keyPath, level: arguments.level, cwd: arguments.cwd)
-        return await settingAfterChange(at: arguments.keyPath, cwd: arguments.cwd, context: context)
+        let cwd = try context.workingDirectory(given: arguments.cwd)
+        try await engine.clear(at: arguments.keyPath, level: arguments.level, cwd: cwd)
+        return await settingAfterChange(at: arguments.keyPath, cwd: cwd, context: context)
     }
 
     /// Reads the merged setting of one key for the query.
@@ -362,7 +425,9 @@ struct SettingsGraphAPI: API {
 
     /// The text of the description of a `cwd` argument.
     private static let cwdDescription =
-        "The absolute path of the working directory of the session. It names the session level."
+        "The absolute path of the working directory of the session. It names the session level. A call of the "
+        + "settings endpoint must give it. The settings tool of a session can omit it: the folder of that session "
+        + "applies, and a different folder is refused."
 
     /// The text of the description of a `level` argument.
     private static let levelDescription = "The level that the mutation changes."

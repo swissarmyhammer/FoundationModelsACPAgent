@@ -95,6 +95,13 @@ public struct CatalogContext: Sendable {
     /// (``ToolCatalog/makeRegistry(context:)``).
     public let snapshotStore: SnapshotStore?
 
+    /// The settings store of the agent (``RoutedACPAgent/settingsStore``), or
+    /// `nil` for a catalog that has no agent. With a store, the Multitool
+    /// registry of the session gets a ``SettingsTool`` over it and over
+    /// ``workingDirectory``, under the noun `settings`
+    /// (``ToolCatalog/makeRegistry(context:)``).
+    public let settingsStore: SettingsStore?
+
     /// Makes a catalog context.
     ///
     /// - Parameters:
@@ -116,6 +123,8 @@ public struct CatalogContext: Sendable {
     ///     sessions (``userPresence``). Defaults to `.interactive`.
     ///   - snapshotStore: The snapshot store of the agent, or `nil` (the
     ///     default) for no `snapshots` capability (``snapshotStore``).
+    ///   - settingsStore: The settings store of the agent, or `nil` (the
+    ///     default) for no `settings` tool (``settingsStore``).
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
@@ -126,9 +135,11 @@ public struct CatalogContext: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         userPresence: UserPresence = .interactive,
-        snapshotStore: SnapshotStore? = nil
+        snapshotStore: SnapshotStore? = nil,
+        settingsStore: SettingsStore? = nil
     ) {
         self.snapshotStore = snapshotStore
+        self.settingsStore = settingsStore
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
         self.configuration = configuration

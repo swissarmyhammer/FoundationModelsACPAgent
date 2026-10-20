@@ -268,6 +268,18 @@ import Testing
         #expect(reply.codes == [SettingsGraphError.relativeWorkingDirectory(path: "").code])
     }
 
+    /// The endpoint has no session folder, thus it refuses a call that gives
+    /// no working directory.
+    @Test func aCallWithNoWorkingDirectoryIsRefused() async throws {
+        let fixture = try SettingsGraphFixture(label: "no-cwd")
+
+        let reply = try await fixture.run(
+            SettingsGraphFixture.sessionSettingQuery,
+            variables: ["keyPath": .array(SettingsGraphFixture.triggerKeyPath.map(Map.string))])
+
+        #expect(reply.codes == [SettingsGraphError.missingWorkingDirectory.code])
+    }
+
     // MARK: - Secrets
 
     /// A literal value for a secret key is refused with a message that asks

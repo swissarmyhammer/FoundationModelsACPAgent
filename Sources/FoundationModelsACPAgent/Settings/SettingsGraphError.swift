@@ -21,6 +21,15 @@ public enum SettingsGraphError: CodedError, Equatable {
     /// is the path that the call gave.
     case relativeWorkingDirectory(path: String)
 
+    /// `MISSING_CWD`: the call gives no working directory, and the endpoint
+    /// has no session folder that applies in its place.
+    case missingWorkingDirectory
+
+    /// `NOT_SESSION_CWD`: the call to the ``SettingsTool`` of a session gives
+    /// a working directory that is not the folder of that session. The value
+    /// is the path that the call gave.
+    case otherSessionWorkingDirectory(path: String)
+
     /// `SECRET_NEEDS_REFERENCE`: the call gave a value that is not a
     /// `keychain:<name>` reference for a secret key. The value is the dotted
     /// key path of the secret key.
@@ -49,6 +58,8 @@ public enum SettingsGraphError: CodedError, Equatable {
         case .unknownSection: "UNKNOWN_SECTION"
         case .invalidKeyPath: "INVALID_KEY_PATH"
         case .relativeWorkingDirectory: "INVALID_CWD"
+        case .missingWorkingDirectory: "MISSING_CWD"
+        case .otherSessionWorkingDirectory: "NOT_SESSION_CWD"
         case .secretNeedsReference: "SECRET_NEEDS_REFERENCE"
         case .templateNotKept: "TEMPLATE_NOT_KEPT"
         case .invalidValue: "INVALID_VALUE"
@@ -67,6 +78,11 @@ public enum SettingsGraphError: CodedError, Equatable {
             "The key path is not valid: \(detail). Name a key, and go through mappings only."
         case .relativeWorkingDirectory(let path):
             "The working directory \"\(path)\" is not an absolute path. Give the absolute path of the session folder."
+        case .missingWorkingDirectory:
+            "The call gives no working directory. Give the absolute path of the session folder in cwd."
+        case .otherSessionWorkingDirectory(let path):
+            "The working directory \"\(path)\" is not the folder of this session. Give no cwd: the folder of this "
+                + "session applies."
         case .secretNeedsReference(let keyPath):
             "\(keyPath) is a secret key. Give a \(ConfiguredSecret.referencePrefix)<name> reference, and put the "
                 + "value in the Keychain under <name>. A literal value is refused."

@@ -141,6 +141,96 @@ import Testing
         }
     }
 
+    // MARK: - The session folder
+
+    /// A tool of the session whose folder is the first directory of
+    /// `fixture`.
+    ///
+    /// - Parameter fixture: The fixture that holds the store.
+    /// - Returns: The tool.
+    /// - Throws: The error of the schema build.
+    private static func sessionTool(over fixture: SettingsGraphFixture) throws -> SettingsTool {
+        try SettingsTool(store: fixture.store, sessionDirectory: fixture.firstDirectory)
+    }
+
+    /// The arguments of a `set` call on the session level with no `cwd`.
+    ///
+    /// - Parameter value: The new value.
+    /// - Returns: The arguments.
+    private static func sessionSetArguments(_ value: Double) -> GraphQLArguments {
+        GraphQLArguments(
+            query: SettingsGraphFixture.sessionSetMutation,
+            variables: [
+                "keyPath": .array(SettingsGraphFixture.triggerKeyPath.map(Map.string)),
+                "value": .number(Number(value)),
+                "level": .string(SettingsGraphFixture.sessionLevel),
+            ])
+    }
+
+    /// A query with no `cwd` gives the merged value for the session folder of
+    /// the tool.
+    @Test func aSessionToolReadsTheSettingOfItsSessionFolder() async throws {
+        let fixture = try SettingsGraphFixture(label: "tool-session-read")
+        try await fixture.store.set(.double(Self.userTrigger), at: SettingsGraphFixture.triggerKeyPath, level: .user)
+        try await fixture.store.set(
+            .double(Self.sessionTrigger), at: SettingsGraphFixture.triggerKeyPath,
+            level: .session(fixture.firstDirectory))
+
+        let reply = try GraphQLReply(
+            await Self.sessionTool(over: fixture).call(
+                arguments: GraphQLArguments(
+                    query: SettingsGraphFixture.sessionSettingQuery,
+                    variables: ["keyPath": .array(SettingsGraphFixture.triggerKeyPath.map(Map.string))])))
+
+        let setting = try reply.object("setting")
+        #expect(setting["value"] as? Double == Self.sessionTrigger)
+        #expect(setting["level"] as? String == SettingsGraphFixture.sessionLevel)
+    }
+
+    /// A `set` on the session level with no `cwd` writes the level of the
+    /// session folder of the tool, and no other folder.
+    @Test func aSessionToolWritesTheSessionLevelOfItsSessionFolder() async throws {
+        let fixture = try SettingsGraphFixture(label: "tool-session-write")
+
+        let reply = try GraphQLReply(
+            await Self.sessionTool(over: fixture).call(arguments: Self.sessionSetArguments(Self.sessionTrigger)))
+
+        #expect(reply.codes.isEmpty)
+        let session = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
+        #expect(session == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
+        let other = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.secondDirectory)
+        #expect(other?.level != .project)
+    }
+
+    /// A session tool refuses a `cwd` that is not its session folder, and
+    /// the level of that folder does not change.
+    @Test func aSessionToolRefusesTheFolderOfAnOtherSession() async throws {
+        let fixture = try SettingsGraphFixture(label: "tool-session-other")
+
+        let reply = try GraphQLReply(
+            await Self.sessionTool(over: fixture).call(
+                arguments: Self.setArguments(
+                    Self.sessionTrigger, level: SettingsGraphFixture.sessionLevel, cwd: fixture.secondDirectory)))
+
+        #expect(reply.codes == [SettingsGraphError.otherSessionWorkingDirectory(path: "").code])
+        let other = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.secondDirectory)
+        #expect(other?.level != .project)
+    }
+
+    /// A session tool takes a `cwd` that names its own session folder.
+    @Test func aSessionToolTakesItsOwnSessionFolder() async throws {
+        let fixture = try SettingsGraphFixture(label: "tool-session-own")
+
+        let reply = try GraphQLReply(
+            await Self.sessionTool(over: fixture).call(
+                arguments: Self.setArguments(
+                    Self.sessionTrigger, level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory)))
+
+        #expect(reply.codes.isEmpty)
+        let session = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
+        #expect(session == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
+    }
+
     /// Multitool mounts the tool under a noun that the host gives.
     @Test func multitoolMountsTheTool() throws {
         let fixture = try SettingsGraphFixture(label: "tool-multitool")
