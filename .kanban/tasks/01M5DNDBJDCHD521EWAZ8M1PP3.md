@@ -40,8 +40,24 @@ comments:
     - evidence: touched the 11 changed files, then `swift test`: 1169 tests in 126 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests), 0 failed, 0 skipped, 0 compiler warnings or errors in the output. `swift build --build-tests --package-path IntegrationTests`: Build complete, only the accepted "missing creator for mutated node" warning on mlx-swift_Cmlx.
     - next: review
   timestamp: 2026-10-20T22:10:34.042575+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m5dny5mfe748zd1y8k3pttah
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c11d914). 0 findings, 0 confirmed, 0 refuted. 7 validators ran, 0 failed. 11 files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T22:12:00.783896+00:00
+- actor: wballard
+  id: 01m5dnyefv86sdmxfbvkr7dhc2
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 11 files
+    - test: green — swift test 1169 passed; IntegrationTests builds
+    - commit: c11d914
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T22:12:09.851796+00:00
+position_column: done
+position_ordinal: fffb80
 title: The host gives the skills marketplace cache directory
 ---
 ## What
