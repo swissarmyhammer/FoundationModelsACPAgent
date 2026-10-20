@@ -33,6 +33,13 @@ comments:
     - evidence: no files changed, no commit, no test run. The Router pump (`Task.detached`) parents a run-mail-only submission on nothing: `runAnswer` takes `callerContext` only from user-type mail, and `SessionOutbox.stage(event:as:)` records no caller for run mail. See the research comment above for the Router change needed.
     - next: the Router session adds a session work context (or a run-mail caller context) plus a span link from a `mail` submission to its sender's span; then this card adds `FoundationModelsACPAgent.session.work` from prompt to no-work.
   timestamp: 2026-10-20T20:56:32.842597+00:00
+- actor: claude-code
+  id: 01m5dhnbsgn4zx5g3hd4cpmbgz
+  text: |-
+    ### waits on Router ^yx6931z
+    - Router plan (option B): stage(event:as:) saves the poster's ServiceContext. runAnswer falls back to the first delivered mail that has one. Each submission links to the sender context of each delivered mail. No host API.
+    - With B, the wake on the coder's mail has the coder run span as its parent, so it is already in the prompt trace. Then the work span here is needed only to time the whole instance (prompt to no-work). Check again when the sha comes. If Router uses setWorkContext(_:) in place of B, this card does the host side as planned.
+  timestamp: 2026-10-20T20:57:17.872459+00:00
 position_column: doing
 position_ordinal: '8280'
 title: 'telemetry: one span covers the work of a session from the prompt to no-work, so a mail wake is in the same trace'
