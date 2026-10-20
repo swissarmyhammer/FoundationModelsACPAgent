@@ -450,26 +450,40 @@ enum MCPComposition {
     ) -> NormalizedClientServer {
         switch clientServer {
         case .stdio(let stdio):
-            var env: [String: ConfiguredSecret] = [:]
-            for variable in stdio.env ?? [] {
-                env[variable.name] = ConfiguredSecret(variable.value)
-            }
+            let env = literalSecrets(stdio.env ?? [], name: \.name, value: \.value)
             return .entry(
                 MCPServerConfiguration(
                     name: stdio.name,
                     transport: .stdio(
                         command: stdio.command.rawValue, args: stdio.args ?? [], env: env)))
         case .http(let http):
-            var headers: [String: ConfiguredSecret] = [:]
-            for header in http.headers ?? [] {
-                headers[header.name] = ConfiguredSecret(header.value)
-            }
+            let headers = literalSecrets(http.headers ?? [], name: \.name, value: \.value)
             return .entry(
                 MCPServerConfiguration(
                     name: http.name, transport: .http(url: http.url, headers: headers)))
         case .unknown(_, let payload):
             return .unknownTransport(serverName: Self.name(inUnknownPayload: payload))
         }
+    }
+
+    /// The map of one wire `{name, value}` pair list, such as the `env` list
+    /// of a stdio server or the `headers` list of an http server. Each value
+    /// is a literal ``ConfiguredSecret``. A repeated name keeps the later
+    /// value.
+    ///
+    /// - Parameters:
+    ///   - pairs: The wire pairs, in wire order.
+    ///   - name: The key path of the name of one pair.
+    ///   - value: The key path of the value of one pair.
+    /// - Returns: The map from each name to its literal value.
+    private static func literalSecrets<Pair>(
+        _ pairs: [Pair], name: KeyPath<Pair, String>, value: KeyPath<Pair, String>
+    ) -> [String: ConfiguredSecret] {
+        var secrets: [String: ConfiguredSecret] = [:]
+        for pair in pairs {
+            secrets[pair[keyPath: name]] = ConfiguredSecret(pair[keyPath: value])
+        }
+        return secrets
     }
 
     /// The `name` member of one client-supplied server, or `nil` for an

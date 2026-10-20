@@ -353,17 +353,28 @@ import Testing
     // MARK: - The log
 
     /// The load writes no value of the store and no literal header into a
-    /// log record, and the warning record names the key path.
+    /// log record, and each warning record names the key path.
+    ///
+    /// The first load reads ``storeWithItems``, thus the header reference
+    /// and the env reference both get a value under the capture. The second
+    /// load reads an empty store, thus each reference writes one warning
+    /// record.
     @Test func noLogRecordHoldsAValue() async throws {
         let records = try await TelemetryCapture.run(
             forbidding: [Self.headerValue, Self.envValue, Self.literalHeaderValue]
         ) { context in
-            _ = try Self.load(store: InMemorySecretStore([Self.headerReference: Self.headerValue]))
+            let resolved = try Self.load(store: Self.storeWithItems)
+            #expect(try Self.headers(of: resolved)[Self.headerName]?.value == Self.headerValue)
+            #expect(try Self.env(of: resolved)[Self.envName]?.value == Self.envValue)
+            _ = try Self.load(store: InMemorySecretStore())
             return context.logRecords
         }
 
         let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
         let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
-        #expect(sectionRecords.map { $0.metadata[sectionKey] } == [.string(Self.envKeyPath)])
+        #expect(
+            sectionRecords.map { $0.metadata[sectionKey] } == [
+                .string(Self.headerKeyPath), .string(Self.envKeyPath),
+            ])
     }
 }
