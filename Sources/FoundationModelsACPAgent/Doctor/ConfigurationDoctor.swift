@@ -94,7 +94,9 @@ public struct ConfigurationDoctor: Doctorable {
     // MARK: - The warnings
 
     /// The finding of one loader warning: the warning's own message, and a
-    /// fix that names the key and the file it sits in.
+    /// fix that names the key and the file it sits in. A secret reference
+    /// with no item is one finding, which names the reference and never a
+    /// value.
     ///
     /// - Parameter warning: The warning the loader returned.
     /// - Returns: A finding with the ``HealthStatus/warning`` status.
@@ -102,8 +104,24 @@ public struct ConfigurationDoctor: Doctorable {
         .warning(
             name: sectionCheckName,
             message: warning.description,
-            fix: "remove \"\(warning.sectionKeyPath)\" from \(ConfigurationLoader.configFileName)",
+            fix: fix(for: warning),
             category: category)
+    }
+
+    /// The fix of one loader warning. A secret reference with no item is
+    /// repaired in the secret store, or by the removal of its key. Each
+    /// other warning is repaired by the removal of its key.
+    ///
+    /// - Parameter warning: The warning the loader returned.
+    /// - Returns: The fix text.
+    private static func fix(for warning: ConfigurationWarning) -> String {
+        let removal = "remove \"\(warning.sectionKeyPath)\" from \(ConfigurationLoader.configFileName)"
+        switch warning {
+        case .unresolvedSecret(_, let reference):
+            return "add an item for the reference \"\(reference)\" to the secret store, or \(removal)"
+        case .unknownSection, .unknownToolSection, .cannotDisable:
+            return removal
+        }
     }
 
     // MARK: - The layer paths

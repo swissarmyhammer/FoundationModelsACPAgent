@@ -45,16 +45,19 @@ public enum ConfigurationYAML {
     /// How the document holds each ``ConfiguredSecret``, such as an API key
     /// of `tools.web.apiKeys`.
     public enum SecretForm: Equatable, Sendable {
-        /// Each secret key shows, and its value shows as
-        /// ``ConfiguredSecret/redactedForm``. This is the form a person
-        /// reads: `/config` and `config show`.
+        /// Each secret key shows. A literal value shows as
+        /// ``ConfiguredSecret/redactedForm``, and a reference shows as
+        /// `keychain:<name>`. This is the form a person reads: `/config`
+        /// and `config show`.
         case redacted
 
-        /// No secret shows: a map of secrets is empty. This is the form of
-        /// a document that goes into a layer file: `/config export` and
-        /// `config init`. An empty map in a higher layer keeps the keys of
-        /// the lower layers, because the layers merge by key, thus the
-        /// export does not change the effective configuration.
+        /// No literal secret shows, and each reference shows as
+        /// `keychain:<name>`, because a reference holds no key. A map with
+        /// no reference is empty. This is the form of a document that goes
+        /// into a layer file: `/config export` and `config init`. An empty
+        /// map in a higher layer keeps the keys of the lower layers,
+        /// because the layers merge by key, thus the export does not change
+        /// the effective configuration.
         case omitted
     }
 

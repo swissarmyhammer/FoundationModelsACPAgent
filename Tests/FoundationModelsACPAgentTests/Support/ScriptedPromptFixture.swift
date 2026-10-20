@@ -108,6 +108,9 @@ struct ScriptedPromptFixture {
     ///     gave the model reads the prompt of the run message here.
     ///   - hookVisitors: The hook visitors that the agent gets before
     ///     `session/new`, so they get the `SessionStart` of the session.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference of the configuration. The default is an empty
+    ///     in-memory store.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -124,7 +127,8 @@ struct ScriptedPromptFixture {
         runClock: (any RunClock)? = nil,
         mailOnlyAnswerLimit: Int? = nil,
         recorder: PromptRecorder? = nil,
-        hookVisitors: [any HookVisitor] = []
+        hookVisitors: [any HookVisitor] = [],
+        secretStore: any SecretStore = InMemorySecretStore()
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script, recorder: recorder),
@@ -139,7 +143,8 @@ struct ScriptedPromptFixture {
             commandProviders: commandProviders,
             runClock: runClock,
             mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-            hookVisitors: hookVisitors)
+            hookVisitors: hookVisitors,
+            secretStore: secretStore)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -180,6 +185,9 @@ struct ScriptedPromptFixture {
     ///     the agent, or `nil` for the Router default.
     ///   - hookVisitors: The hook visitors that the agent gets before
     ///     `session/new`, so they get the `SessionStart` of the session.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference of the configuration. The default is an empty
+    ///     in-memory store.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -196,7 +204,8 @@ struct ScriptedPromptFixture {
         commandProviders: [any SlashCommandProviding] = [],
         runClock: (any RunClock)? = nil,
         mailOnlyAnswerLimit: Int? = nil,
-        hookVisitors: [any HookVisitor] = []
+        hookVisitors: [any HookVisitor] = [],
+        secretStore: any SecretStore = InMemorySecretStore()
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -209,7 +218,8 @@ struct ScriptedPromptFixture {
             recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
             userDirectory: userDirectory,
             loader: loader,
-            tracer: tracer
+            tracer: tracer,
+            secretStore: secretStore
         ) { router in
             if let runClock {
                 await router.useRunClock(runClock)

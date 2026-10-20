@@ -58,13 +58,17 @@ import Testing
         ///   - projectConfigYAML: The `config.yaml` to write under
         ///     `<cwd>/.<name>/`, or `nil` to write none.
         ///   - agentsMarkdown: The `AGENTS.md` to write in `cwd`, or `nil`.
+        ///   - secretStore: The store that gives the value of each secret
+        ///     reference of the configuration. The default is an empty
+        ///     in-memory store.
         /// - Returns: The wired fixture.
         /// - Throws: Whatever the construction or the handshake throws.
         static func make(
             label: String,
             loader: any ModelLoader = StubModelLoader(),
             projectConfigYAML: String? = nil,
-            agentsMarkdown: String? = nil
+            agentsMarkdown: String? = nil,
+            secretStore: any SecretStore = InMemorySecretStore()
         ) async throws -> Fixture {
             let cwd = makeResolvedDirectory(label: "\(label)-repo")
             let userDirectory = makeResolvedDirectory(label: "\(label)-user")
@@ -86,7 +90,8 @@ import Testing
                 name: AgentClientHarness.dotfolderName,
                 cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
                 userDirectory: userDirectory,
-                loader: loader)
+                loader: loader,
+                secretStore: secretStore)
             let harness = await AgentClientHarness.makeRecording(agent: agent)
             _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
             let response = try await harness.connection.newSession(
@@ -399,6 +404,51 @@ import Testing
         #expect(!written.contains(keyValue))
         #expect(written.contains("apiKeys: {}"))
         #expect(result.text.contains("tools.web.apiKeys"))
+    }
+
+    /// The reference name of the `keychain:` cases.
+    private static let referenceName = "builtin-kagi-key"
+
+    /// The value that the store of the `keychain:` cases holds.
+    private static let referenceValue = "builtin-secret-value-9d03c4"
+
+    /// A project `config.yaml` that sets the Kagi key as a `keychain:`
+    /// reference.
+    private static let referenceYAML = "tools:\n  web:\n    apiKeys:\n      kagi: keychain:\(referenceName)\n"
+
+    /// `/config` shows a `keychain:` reference as its reference, and never
+    /// the value that the store gives.
+    @Test
+    func configShowsAReferenceAndNeverItsValue() async throws {
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-config-reference", projectConfigYAML: Self.referenceYAML,
+            secretStore: InMemorySecretStore([Self.referenceName: Self.referenceValue]))
+
+        let result = try await fixture.runCommand("/config")
+        await fixture.close()
+
+        #expect(result.text.contains("kagi: \"keychain:\(Self.referenceName)\""))
+        #expect(!result.text.contains(Self.referenceValue))
+    }
+
+    /// `/config export project` keeps a `keychain:` reference in the file,
+    /// because a reference holds no key, and never writes the value.
+    @Test
+    func configExportKeepsAReferenceAndNeverItsValue() async throws {
+        let fixture = try await Fixture.make(
+            label: "BuiltinCommandsTests-export-reference", projectConfigYAML: Self.referenceYAML,
+            secretStore: InMemorySecretStore([Self.referenceName: Self.referenceValue]))
+
+        let result = try await fixture.runCommand("/config export project")
+
+        let configFile = fixture.cwd
+            .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+            .appendingPathComponent(ConfigurationLoader.configFileName)
+        await fixture.close()
+        let written = try String(contentsOf: configFile, encoding: .utf8)
+        #expect(written.contains("kagi: \"keychain:\(Self.referenceName)\""))
+        #expect(!written.contains(Self.referenceValue))
+        #expect(!result.text.contains(Self.referenceValue))
     }
 
     /// The emitted YAML round-trips a non-default configuration — a read-only

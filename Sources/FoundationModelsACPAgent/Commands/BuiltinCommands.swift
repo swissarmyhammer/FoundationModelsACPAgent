@@ -159,10 +159,11 @@ enum BuiltinCommands {
     private static let configUsage = "Usage: /config export home|project"
 
     /// The note that each export confirmation carries: the export writes no
-    /// API key, so that no key goes into a file that can be committed.
+    /// API key value, so that no key goes into a file that can be committed.
+    /// A `keychain:` reference holds no key, thus the export keeps it.
     private static let omittedKeysNote =
-        " The file holds no tools.web.apiKeys value. Keep each key in the layer"
-        + " that sets it, or in the environment."
+        " The file holds no tools.web.apiKeys value, only the keychain: references."
+        + " Keep each key in the layer that sets it, in the environment, or in the Keychain."
 
     /// The multiplier that changes a `0...1` fill fraction into a percent.
     private static let percentScale = 100.0

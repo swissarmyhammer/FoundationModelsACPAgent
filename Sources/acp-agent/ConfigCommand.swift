@@ -112,15 +112,24 @@ extension AcpAgentCommand {
 
             /// Builds the report: the merged configuration of `--cwd`'s
             /// stack in the form the flags select, and the load warnings.
+            /// A secret reference shows as `keychain:<name>`, and never as
+            /// its value.
             ///
-            /// - Parameter environment: The environment the stack reads
-            ///   `XDG_CONFIG_HOME` from.
+            /// - Parameters:
+            ///   - environment: The environment the stack reads
+            ///     `XDG_CONFIG_HOME` from.
+            ///   - secretStore: The store that gives the value of each
+            ///     secret reference, or `nil` (the default) for the login
+            ///     Keychain of the CLI.
             /// - Returns: The report.
             /// - Throws: `DotfolderNameError`, the configuration load
             ///   error, or the encoding error.
-            func report(environment: [String: String]) throws -> CommandReport {
+            func report(
+                environment: [String: String], secretStore: (any SecretStore)? = nil
+            ) throws -> CommandReport {
                 let loaded = try AgentComposition.makeConfigurationLoader(
-                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
+                    workingDirectory: workingDirectoryOptions.directoryURL, environment: environment,
+                    secretStore: secretStore
                 ).load()
                 return CommandReport(
                     standardOutput: try documentText(for: loaded, environment: environment),

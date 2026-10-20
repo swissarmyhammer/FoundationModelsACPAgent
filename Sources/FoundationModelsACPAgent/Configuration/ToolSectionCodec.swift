@@ -375,9 +375,10 @@ public enum WebAPIKeyName: String, CaseIterable, Hashable, Sendable {
 /// turns the tool off too.
 ///
 /// No form of this type shows a key value: each key is a
-/// ``ConfiguredSecret``. An encoder that sets
-/// ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` gets an empty
-/// `apiKeys` map.
+/// ``ConfiguredSecret``: a literal, or a `keychain:<name>` reference whose
+/// value ``ConfigurationLoader`` gets from its ``SecretStore``. An encoder
+/// that sets ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` gets an
+/// `apiKeys` map with the references only.
 public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
     /// Whether the web capability mounts.
     public var enabled: Bool
@@ -428,13 +429,14 @@ public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
             })
     }
 
-    /// Encodes `enabled`, and each key name with the redacted form of its
-    /// value. With ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` set,
-    /// the `apiKeys` map is empty.
+    /// Encodes `enabled`, and each key name with the shown form of its
+    /// value: `keychain:<name>` for a reference, and the redacted form for a
+    /// literal. With ``Swift/CodingUserInfoKey/omitsConfiguredSecrets`` set,
+    /// the `apiKeys` map holds the references only.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(enabled, forKey: .enabled)
-        let written = encoder.omitsConfiguredSecrets ? [:] : apiKeys
+        let written = encoder.omitsConfiguredSecrets ? apiKeys.filter { $0.value.reference != nil } : apiKeys
         try container.encode(
             Dictionary(uniqueKeysWithValues: written.map { ($0.key.rawValue, $0.value) }),
             forKey: .apiKeys)
@@ -448,15 +450,56 @@ public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
 
     /// The process environment with each configured key put in under the
     /// variable of its provider. A configured key wins over the process
-    /// environment for the same variable.
+    /// environment for the same variable. A reference that has no value puts
+    /// nothing in, thus it never gives an empty key.
     ///
     /// - Parameter processEnvironment: The environment of the process.
     /// - Returns: The environment that the web capability reads its keys
     ///   from.
     public func environment(mergedOver processEnvironment: [String: String]) -> [String: String] {
         processEnvironment.merging(
-            apiKeys.map { ($0.key.environmentVariable, $0.value.value) }
+            apiKeys.compactMap { name, secret in secret.value.map { (name.environmentVariable, $0) } }
         ) { _, configured in configured }
+    }
+
+    /// These options with the value of each `keychain:<name>` reference
+    /// from `store`. A literal key does not change.
+    ///
+    /// A reference with no item, or a reference whose lookup throws, is
+    /// left out, thus its key acts as not set. Each one adds one
+    /// ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)`` to
+    /// `warnings`, in the provider table order. No warning holds a value.
+    ///
+    /// - Parameters:
+    ///   - store: The store that gives the value of each reference.
+    ///   - warnings: The warnings of the load. This adds one warning for
+    ///     each reference that has no value.
+    /// - Returns: The options with each reference resolved.
+    func resolvingSecrets(
+        through store: any SecretStore, warnings: inout [ConfigurationWarning]
+    ) -> WebToolOptions {
+        var resolved = self
+        for name in WebAPIKeyName.allCases {
+            guard let reference = apiKeys[name]?.reference else {
+                continue
+            }
+            guard let value = try? store.value(forReference: reference) else {
+                resolved.apiKeys[name] = nil
+                warnings.append(.unresolvedSecret(keyPath: Self.keyPath(of: name), reference: reference))
+                continue
+            }
+            resolved.apiKeys[name] = ConfiguredSecret(reference: reference, value: value)
+        }
+        return resolved
+    }
+
+    /// The dotted key path of one key of the `apiKeys` map, such as
+    /// `tools.web.apiKeys.tavily`.
+    ///
+    /// - Parameter name: The key name.
+    /// - Returns: The key path.
+    static func keyPath(of name: WebAPIKeyName) -> String {
+        apiKeysSection + LoadedConfiguration.keyPathSeparator + name.rawValue
     }
 }
 

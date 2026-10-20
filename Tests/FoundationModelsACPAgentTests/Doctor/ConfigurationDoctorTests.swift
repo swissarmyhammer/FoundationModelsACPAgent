@@ -33,27 +33,50 @@ struct ConfigurationDoctorTests {
     /// The number of findings a test that expects exactly one gets.
     private static let oneFinding = 1
 
+    /// The reference name of the secret reference cases.
+    private static let referenceName = "doctor-tavily-key"
+
+    /// The value that the store of the secret reference cases holds.
+    private static let referenceValue = "doctor-secret-value-5e2b17"
+
+    /// The dotted key path of the Tavily key.
+    private static let referenceKeyPath = "tools.web.apiKeys.tavily"
+
+    /// A project `config.yaml` that sets the Tavily key as a reference.
+    private static let referenceYAML = "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(referenceName)\n"
+
     // MARK: - Helpers
 
     /// The component over `fixture`'s stack, with the one load it reports.
     ///
-    /// - Parameter fixture: The two-layer tree the component reads.
+    /// - Parameters:
+    ///   - fixture: The two-layer tree the component reads.
+    ///   - secretStore: The store of the load. A test gives an in-memory
+    ///     store, so no load touches the real Keychain.
     /// - Returns: The component.
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
-    private static func doctor(in fixture: ConfigCommandFixture) throws -> ConfigurationDoctor {
+    private static func doctor(
+        in fixture: ConfigCommandFixture, secretStore: any SecretStore
+    ) throws -> ConfigurationDoctor {
         let loader = try AgentComposition.makeConfigurationLoader(
-            workingDirectory: fixture.workspace, environment: fixture.environment)
+            workingDirectory: fixture.workspace, environment: fixture.environment,
+            secretStore: secretStore)
         return ConfigurationDoctor(
             stack: loader.stack, outcome: ConfigurationLoadOutcome(of: loader))
     }
 
     /// The findings the component over `fixture` reports.
     ///
-    /// - Parameter fixture: The two-layer tree the component reads.
+    /// - Parameters:
+    ///   - fixture: The two-layer tree the component reads.
+    ///   - secretStore: The store of the load. The default is an empty
+    ///     in-memory store.
     /// - Returns: The findings, in the order the component reports them.
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
-    private static func checks(in fixture: ConfigCommandFixture) async throws -> [HealthCheck] {
-        let component = try doctor(in: fixture)
+    private static func checks(
+        in fixture: ConfigCommandFixture, secretStore: any SecretStore = InMemorySecretStore()
+    ) async throws -> [HealthCheck] {
+        let component = try doctor(in: fixture, secretStore: secretStore)
         return await component.runHealthChecks()
     }
 
@@ -119,6 +142,38 @@ struct ConfigurationDoctorTests {
         #expect(fix.contains(Self.unknownSectionName))
         #expect(fix.contains(ConfigurationLoader.configFileName))
         #expect(Self.findings(.error, in: checks).isEmpty)
+    }
+
+    // MARK: - The secret references
+
+    /// A reference with no item is one `.warning` whose message names the
+    /// reference and the key path, and whose fix names the reference.
+    @Test func aReferenceWithNoItemGivesOneWarningThatNamesTheReference() async throws {
+        let fixture = ConfigCommandFixture(label: "ConfigurationDoctorTests-reference-missing")
+        try fixture.writeProjectConfig(Self.referenceYAML)
+
+        let checks = try await Self.checks(in: fixture)
+
+        let warnings = Self.findings(.warning, in: checks)
+        let warning = try #require(warnings.first)
+        let fix = try #require(warning.fix)
+        #expect(warnings.count == Self.oneFinding)
+        #expect(warning.message.contains(Self.referenceName))
+        #expect(warning.message.contains(Self.referenceKeyPath))
+        #expect(fix.contains(Self.referenceName))
+    }
+
+    /// A reference with an item passes, and no finding shows the value.
+    @Test func aReferenceWithAnItemPassesAndNoFindingShowsTheValue() async throws {
+        let fixture = ConfigCommandFixture(label: "ConfigurationDoctorTests-reference-found")
+        try fixture.writeProjectConfig(Self.referenceYAML)
+
+        let checks = try await Self.checks(
+            in: fixture, secretStore: InMemorySecretStore([Self.referenceName: Self.referenceValue]))
+
+        #expect(checks.allSatisfy { $0.status == .ok })
+        #expect(!checks.contains { $0.message.contains(Self.referenceValue) })
+        #expect(!checks.contains { $0.fix?.contains(Self.referenceValue) == true })
     }
 
     // MARK: - The layer paths

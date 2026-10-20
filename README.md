@@ -183,12 +183,19 @@ tools:
   web:
     enabled: true
     apiKeys:
-      tavily: tvly-...
+      tavily: keychain:tavily-api-key
 ```
 
+A value `keychain:<name>` is a reference. The agent gets the key from the
+Keychain item whose account is `<name>`: the login Keychain under the service
+`acp-agent` for the CLI, or the store that a host gives. A reference with no
+item gives one warning that names the key path and the reference, and the key
+is not set. Another value is the key itself.
+
 Set `enabled: false` (or `web: false`) to set the web tool off. No key value
-shows: `config show`, `/config`, `doctor` and the logs show `<redacted>` or
-the provider name only, and `/config export` writes no key. `config show`
+shows: `config show`, `/config`, `doctor` and the logs show
+`keychain:<name>`, `<redacted>` or the provider name only, and
+`/config export` writes the references and no key. `config show`
 ends with one comment line that names the providers in force, and `doctor`
 has one row for them. The web verbs run in the agent process, not in the
 shell sandbox; they refuse private and local addresses.

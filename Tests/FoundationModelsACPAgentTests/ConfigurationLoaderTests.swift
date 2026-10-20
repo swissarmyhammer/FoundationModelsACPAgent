@@ -53,19 +53,31 @@ import Testing
         }
 
         /// A loader over this fixture with the user directory injected.
-        func makeLoader() throws -> ConfigurationLoader {
+        ///
+        /// - Parameter secretStore: The store that gives the value of each
+        ///   secret reference. The default is an empty in-memory store, so
+        ///   no load touches the real Keychain.
+        func makeLoader(secretStore: any SecretStore = InMemorySecretStore()) throws -> ConfigurationLoader {
             try ConfigurationLoader(
                 name: DotfolderName(ConfigurationLoaderTests.agentName),
                 workingDirectory: workingDirectory,
                 userDirectory: userDirectory,
-                environment: [:])
+                environment: [:],
+                secretStore: secretStore)
         }
 
         /// Writes `contents` as the project-layer `config.yaml` and loads
         /// the stack — the one-call path the codec suites decode through.
-        func loadProjectConfig(_ contents: String) throws -> LoadedConfiguration {
+        ///
+        /// - Parameters:
+        ///   - contents: The project `config.yaml`.
+        ///   - secretStore: The store that gives the value of each secret
+        ///     reference. The default is an empty in-memory store.
+        func loadProjectConfig(
+            _ contents: String, secretStore: any SecretStore = InMemorySecretStore()
+        ) throws -> LoadedConfiguration {
             writeConfig(contents, in: projectDirectory)
-            return try makeLoader().load()
+            return try makeLoader(secretStore: secretStore).load()
         }
     }
 

@@ -796,7 +796,8 @@ extension RoutedACPAgent {
             workingDirectory: workingDirectory,
             userDirectory: userDirectory,
             environment: environment,
-            transcriptLocation: transcriptLocation)
+            transcriptLocation: transcriptLocation,
+            secretStore: secretStore)
     }
 
     /// Resolves the per-cwd configuration one session request starts from:

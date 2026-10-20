@@ -49,6 +49,9 @@ import Tracing
 ///   - environment: The host environment of the agent, below the key of
 ///     the defaults layer. Empty by default. A suite that proves that the
 ///     host environment reaches the session tools gives keys here.
+///   - secretStore: The store that gives the value of each secret
+///     reference of the configuration. The default is an empty in-memory
+///     store, so no session load touches the real Keychain.
 ///   - prepareRouter: The work on the router before the agent resolves its
 ///     profile. A suite that drives the timers of its runs gives the router
 ///     a `ManualRunClock` here. It does nothing by default.
@@ -65,6 +68,7 @@ public func makeStubAgent(
     tracer: (any Tracer)? = nil,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     environment: [String: String] = [:],
+    secretStore: any SecretStore = InMemorySecretStore(),
     prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
     // The hooks of the production composition, with the data directory in a
@@ -83,12 +87,13 @@ public func makeStubAgent(
         hooks: hooks,
         userDirectory: userDirectory,
         environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
-        inlineSettleGrace: inlineSettleGrace)
+        inlineSettleGrace: inlineSettleGrace,
+        secretStore: secretStore)
 }
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:secretStore:prepareRouter:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

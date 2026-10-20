@@ -59,6 +59,13 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     /// the tool stays on. `section` is the key of the tool under `tools:`.
     case cannotDisable(section: String)
 
+    /// A secret reference `keychain:<name>` whose store has no item for the
+    /// name, or whose lookup failed (ACPA-18, D101). The key acts as not
+    /// set. `keyPath` is the dotted key path of the secret, such as
+    /// `tools.web.apiKeys.tavily`, and `reference` is the name. The warning
+    /// never holds a value.
+    case unresolvedSecret(keyPath: String, reference: String)
+
     /// A human-readable message that names the section.
     public var description: String {
         switch self {
@@ -70,6 +77,9 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
         case .cannotDisable(let section):
             return
                 "\(ConfigurationLoader.configFileName): the tool section \"tools.\(section)\" cannot be turned off; the tool stays on"
+        case .unresolvedSecret(let keyPath, let reference):
+            return
+                "\(ConfigurationLoader.configFileName): the secret store has no item for the reference \"\(ConfiguredSecret.referencePrefix)\(reference)\" of \"\(keyPath)\"; the key is not set"
         }
     }
 }
@@ -93,17 +103,21 @@ extension ConfigurationWarning {
             "The configuration has an unknown tool section. The loader ignored the section."
         case .cannotDisable:
             "The configuration turns off a tool that is always on. The tool stays on."
+        case .unresolvedSecret:
+            "The secret store has no item for a secret reference of the configuration. The key is not set."
         }
     }
 
     /// The key path of the section that this warning is about: the section
-    /// name, or `tools.<name>` for a tool section.
+    /// name, `tools.<name>` for a tool section, or the key path of a secret.
     var sectionKeyPath: String {
         switch self {
         case .unknownSection(let name):
             name
         case .unknownToolSection(let name), .cannotDisable(let name):
             ToolsConfiguration.dottedSection(name)
+        case .unresolvedSecret(let keyPath, _):
+            keyPath
         }
     }
 }
@@ -160,6 +174,11 @@ public struct ConfigurationLoader: Sendable {
     /// code override either; the `acp-agent` CLI never gives one.
     public let transcriptLocation: TranscriptLocation?
 
+    /// The store that gives the value of each secret reference
+    /// `keychain:<name>` of the configuration (ACPA-18, D101). Each
+    /// ``load()`` resolves the references through it after the decode.
+    public let secretStore: any SecretStore
+
     /// Gives the tree of layer 1, under the dotfolder stack.
     private let builtinLayer: @Sendable () throws -> YAMLValue
 
@@ -176,17 +195,22 @@ public struct ConfigurationLoader: Sendable {
     ///   - transcriptLocation: The transcript location that wins over every
     ///     layer, or `nil` (the default) to let the files decide — see
     ///     ``transcriptLocation``.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference, or `nil` (the default) for the login Keychain under
+    ///     the service `name` (``KeychainSecretStore/loginKeychain(for:)``).
+    ///     A test gives an ``InMemorySecretStore``.
     public init(
         name: DotfolderName,
         workingDirectory: URL,
         userDirectory: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        transcriptLocation: TranscriptLocation? = nil
+        transcriptLocation: TranscriptLocation? = nil,
+        secretStore: (any SecretStore)? = nil
     ) {
         self.init(
             name: name, workingDirectory: workingDirectory, userDirectory: userDirectory,
             environment: environment, transcriptLocation: transcriptLocation,
-            builtinLayer: BuiltinConfigurationFile.root)
+            secretStore: secretStore, builtinLayer: BuiltinConfigurationFile.root)
     }
 
     /// Builds the stack for `name`, over the layer 1 tree that
@@ -199,6 +223,9 @@ public struct ConfigurationLoader: Sendable {
     ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
     ///   - transcriptLocation: The transcript location that wins over every
     ///     layer, or `nil` to let the files decide.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference, or `nil` for the login Keychain under the service
+    ///     `name`.
     ///   - builtinLayer: Gives the tree of layer 1. Each load calls it.
     init(
         name: DotfolderName,
@@ -206,6 +233,7 @@ public struct ConfigurationLoader: Sendable {
         userDirectory: URL?,
         environment: [String: String],
         transcriptLocation: TranscriptLocation? = nil,
+        secretStore: (any SecretStore)? = nil,
         builtinLayer: @escaping @Sendable () throws -> YAMLValue
     ) {
         self.name = name
@@ -215,6 +243,7 @@ public struct ConfigurationLoader: Sendable {
             userDirectory: userDirectory,
             environment: environment)
         self.transcriptLocation = transcriptLocation
+        self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)
         self.builtinLayer = builtinLayer
     }
 
@@ -248,8 +277,10 @@ public struct ConfigurationLoader: Sendable {
     /// dotfolder name gives, such as the default of `tools.files.exclude`,
     /// is put in after the decode. An unknown top-level section is logged
     /// and returned as a warning. An unknown key inside a known section is
-    /// an error. A ``transcriptLocation`` that is not `nil` then replaces
-    /// the decoded `transcripts.location`.
+    /// an error. Each secret reference `keychain:<name>` then gets its value
+    /// from ``secretStore``; a reference with no value is left out, and it
+    /// is logged and returned as a warning. A ``transcriptLocation`` that is
+    /// not `nil` then replaces the decoded `transcripts.location`.
     ///
     /// - Returns: The decoded configuration and the warnings.
     /// - Throws: `ConfigurationError` for a schema failure;
@@ -265,15 +296,37 @@ public struct ConfigurationLoader: Sendable {
             engine: TemplateEngine(partials: stack),
             context: TemplateContext())
         let root = try layeredRoot(over: document)
-        let warnings = try Self.schemaWarnings(in: root)
-        for warning in warnings {
-            warning.log()
-        }
+        let schemaWarnings = try Self.schemaWarnings(in: root)
+        schemaWarnings.forEach { $0.log() }
+        var secretWarnings: [ConfigurationWarning] = []
+        let decoded = resolvingSecrets(of: try Self.configuration(from: root), warnings: &secretWarnings)
+        secretWarnings.forEach { $0.log() }
         return LoadedConfiguration(
-            configuration: resolvingCodeOverride(
-                of: resolvingDotfolderDefaults(of: try Self.configuration(from: root))),
-            warnings: warnings,
+            configuration: resolvingCodeOverride(of: resolvingDotfolderDefaults(of: decoded)),
+            warnings: schemaWarnings + secretWarnings,
             sources: Self.sources(in: document))
+    }
+
+    /// `configuration` with the value of each secret reference from
+    /// ``secretStore``. The web API keys are the secrets of the schema. A
+    /// web section that is off by the scalar `web: false` holds no key.
+    ///
+    /// - Parameters:
+    ///   - configuration: The decoded configuration.
+    ///   - warnings: The warnings of the load. This adds one
+    ///     ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)`` for
+    ///     each reference that has no value.
+    /// - Returns: The configuration with each reference resolved, and each
+    ///   reference with no value left out.
+    private func resolvingSecrets(
+        of configuration: AgentConfiguration, warnings: inout [ConfigurationWarning]
+    ) -> AgentConfiguration {
+        guard case .enabled(let options) = configuration.tools.web else {
+            return configuration
+        }
+        var resolved = configuration
+        resolved.tools.web = .enabled(options.resolvingSecrets(through: secretStore, warnings: &warnings))
+        return resolved
     }
 
     /// `configuration` with ``transcriptLocation`` over its

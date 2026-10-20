@@ -33,6 +33,16 @@ public struct KeychainSecretStore: SecretStore, Equatable {
         self.synchronizable = synchronizable
     }
 
+    /// The default store of a host that gives no store: the login Keychain
+    /// under the service `name`. The agent and its configuration loader
+    /// both use it, thus the two read the same items.
+    ///
+    /// - Parameter name: The dotfolder name of the host.
+    /// - Returns: The store over the login Keychain.
+    public static func loginKeychain(for name: DotfolderName) -> KeychainSecretStore {
+        KeychainSecretStore(service: name.rawValue, synchronizable: false)
+    }
+
     /// Reads the generic password item of `name` under ``service``.
     ///
     /// - Parameter name: The reference name: the account attribute of the

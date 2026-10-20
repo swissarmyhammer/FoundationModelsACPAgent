@@ -1,6 +1,21 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: wballard
+  id: 01m5d0w3gpejrm041pvxb7tf6w
+  text: |-
+    MT-9 host-tool part is pushed: FoundationModelsMultitool main b2a22d99010231329d6208574179c2b0e694065f (from the Multitool session, 2026-10-20).
+    - API: `MultiTool.Builder.withOperationTool(noun: String, tool: any OperationDescribing) -> Self` (discardable). Use `builder.withOperationTool(noun: "settings", tool: settingsTool)`.
+    - Each operation becomes one verb `tools.settings.<verb>`. The verb is the camelCase form of the op string (`get setting` gives `tools.settings.getSetting`).
+    - The noun is owned: a second registration under `settings` makes `buildRegistry()` fail.
+    - The calls go through the same `runCode` path as the built-in verbs, so the risk check sees them.
+    - Thus `SettingsTool` (card ^cj9s5j0) must conform to `OperationDescribing` too. Update the Multitool dependency to this sha or later.
+  timestamp: 2026-10-20T16:03:52.982583+00:00
+- actor: wballard
+  id: 01m5d0we9m65dk1qemm6pmsnmf
+  text: 'Update from the TestudoApp session (2026-10-20): the risk check (MT-1 of Multitool) has no code yet. Thus the criterion "The risk check sees a settings mutation" cannot be tested now. For this card, test that a `tools.settings` call goes through the registry and the `runCode` path as a built-in verb does. The risk check sees the calls when MT-1 comes. A duplicate noun gives `.duplicateNoun` from `buildRegistry()` (or `.duplicateName` when a verb path collides).'
+  timestamp: 2026-10-20T16:04:04.020727+00:00
 depends_on:
 - 01M5CZ3SZ6Y0PQDSFMGCJ9S5J0
 position_column: todo

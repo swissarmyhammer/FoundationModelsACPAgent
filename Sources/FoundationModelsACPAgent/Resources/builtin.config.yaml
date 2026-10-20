@@ -70,7 +70,8 @@ tools:
     # When false, the web tools are off.
     enabled: true
     # The API keys of the search providers, by provider name. Put a key in
-    # the user layer or in the environment, not in this file.
+    # the user layer or in the environment, not in this file. A value
+    # keychain:<name> gets the key from the Keychain item <name>.
     apiKeys: {}
 
   # The git tools: read the repository of the session working directory.

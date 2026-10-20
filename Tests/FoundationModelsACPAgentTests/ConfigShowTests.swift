@@ -50,6 +50,14 @@ struct ConfigShowTests {
     /// A project `config.yaml` that sets a Tavily key.
     private static let webKeyYAML = "tools:\n  web:\n    apiKeys:\n      tavily: \(webKeyValue)\n"
 
+    /// The reference name that ``webReferenceYAML`` names.
+    private static let webReferenceName = "show-tavily-key"
+
+    /// A project `config.yaml` that sets the Tavily key as a `keychain:`
+    /// reference.
+    private static let webReferenceYAML =
+        "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(webReferenceName)\n"
+
     /// The document `--json --source` writes.
     private struct AnnotatedDocument: Decodable {
         let configuration: AgentConfiguration
@@ -66,18 +74,23 @@ struct ConfigShowTests {
     ///   - fixture: The two-layer tree the report reads.
     ///   - extraEnvironment: Variables added to `fixture`'s environment,
     ///     such as an API key of a search provider.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference. The default is an empty in-memory store, so no report
+    ///     touches the real Keychain.
     /// - Returns: The report.
     /// - Throws: The parse or load error.
     private static func report(
         _ arguments: [String], in fixture: ConfigCommandFixture,
-        extraEnvironment: [String: String] = [:]
+        extraEnvironment: [String: String] = [:],
+        secretStore: any SecretStore = InMemorySecretStore()
     ) throws -> CommandReport {
         let show = try #require(
             try AcpAgentCommand.parseAsRoot(
                 ["config", "show", "--cwd", fixture.workspace.path] + arguments)
                 as? AcpAgentCommand.Config.Show)
         return try show.report(
-            environment: fixture.environment.merging(extraEnvironment) { _, extra in extra })
+            environment: fixture.environment.merging(extraEnvironment) { _, extra in extra },
+            secretStore: secretStore)
     }
 
     /// The lines of `text` that carry a mapping key: not a comment, not a
@@ -361,6 +374,23 @@ struct ConfigShowTests {
 
         #expect(!report.standardOutput.contains(Self.webKeyValue))
         #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
+    }
+
+    /// A `keychain:` reference shows as its reference in the YAML, the JSON
+    /// and the annotated report, and the value that the store gives never
+    /// shows.
+    @Test(arguments: [[], ["--json"], ["--source"]])
+    func aSecretReferenceShowsAsItsReference(arguments: [String]) throws {
+        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-reference")
+        try fixture.writeProjectConfig(Self.webReferenceYAML)
+
+        let report = try Self.report(
+            arguments, in: fixture,
+            secretStore: InMemorySecretStore([Self.webReferenceName: Self.webKeyValue]))
+
+        #expect(report.standardOutput.contains("keychain:\(Self.webReferenceName)"))
+        #expect(!report.standardOutput.contains(Self.webKeyValue))
+        #expect(report.standardErrorLines.isEmpty)
     }
 
     /// The YAML report names the search providers in force, in order, and

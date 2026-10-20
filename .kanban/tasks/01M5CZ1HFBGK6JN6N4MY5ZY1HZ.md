@@ -121,8 +121,24 @@ comments:
     - evidence: `swift test` — 1004 tests in 113 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests). `swift test --package-path IntegrationTests --filter "ClientInteropTests|KeychainSecretStoreTests"` — 2 tests in 2 suites passed. After a touch of StubComposition.swift and ClientInteropTests.swift, `swift build --build-tests` in both packages gave no compiler warning. The only warning is the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.
     - next: review
   timestamp: 2026-10-20T16:03:02.691126+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5d0x9fbt7k6wm7rk3r5999a
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit b5d1c01): 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. All prior review findings are checked.
+    - next: The task moved to done.
+  timestamp: 2026-10-20T16:04:31.851074+00:00
+- actor: wballard
+  id: 01m5d0xnsa79ec0dakkmjtm76c
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 2 files
+    - test: green — swift test 1004 passed; IntegrationTests ClientInteropTests and KeychainSecretStoreTests 2 passed
+    - commit: b5d1c01
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T16:04:44.458611+00:00
+position_column: done
+position_ordinal: ffec80
 title: 'ACPA-18: a SecretStore port and a Keychain implementation'
 ---
 ## What

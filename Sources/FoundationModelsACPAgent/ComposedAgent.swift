@@ -150,7 +150,7 @@ public struct ComposedAgent: Sendable {
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
             name: name, workingDirectory: workingDirectory, environment: environment,
-            transcriptLocation: transcriptLocation
+            transcriptLocation: transcriptLocation, secretStore: secretStore
         ).load().configuration
         let hooks = AgentHooks(dataDirectory: AgentHooks.dataDirectory(name: name, environment: environment))
         let agent = try await RoutedACPAgent(

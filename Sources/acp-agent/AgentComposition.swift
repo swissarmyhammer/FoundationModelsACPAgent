@@ -144,14 +144,20 @@ enum AgentComposition {
     ///   - workingDirectory: The directory the project layer roots under.
     ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
     ///     from.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference `keychain:<name>`, or `nil` (the default) for the login
+    ///     Keychain under the service ``dotfolderName``: the store of the CLI
+    ///     (ACPA-18, D101). A test gives an in-memory store.
     /// - Returns: The loader. Construction touches no file.
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
     static func makeConfigurationLoader(
-        workingDirectory: URL, environment: [String: String]
+        workingDirectory: URL, environment: [String: String],
+        secretStore: (any SecretStore)? = nil
     ) throws -> ConfigurationLoader {
         ConfigurationLoader(
             name: try DotfolderName(dotfolderName),
             workingDirectory: workingDirectory,
-            environment: environment)
+            environment: environment,
+            secretStore: secretStore)
     }
 }

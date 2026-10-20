@@ -16,8 +16,10 @@ import Testing
 ///
 /// The suite drives the agent over the wire, inside one `TelemetryCapture` of
 /// FoundationModelsExtras, through each path that carries content:
-/// `initialize`, a `session/new` with a config MCP server, an `AGENTS.md` and
-/// an `Instructions.md` that is not text, one prompt with two tool calls and an
+/// `initialize`, a `session/new` with a config MCP server, a `keychain:`
+/// reference that the secret store holds and one that no store holds, an
+/// `AGENTS.md` and an `Instructions.md` that is not text, one prompt with two
+/// tool calls and an
 /// elicitation round trip, one slash command with arguments, one prompt that
 /// the client cancels, one slash command whose render fails, a `session/new`
 /// with an http MCP server that cannot connect, and `session/close`. Each
@@ -122,6 +124,16 @@ import Testing
     /// The name of the unknown section of `config.yaml`.
     private static let unknownSectionName = "tcs_unknown_section"
 
+    /// The `keychain:` reference of the Tavily key, which the store holds.
+    private static let secretReferenceName = "tcs-secret-reference"
+
+    /// The value that the store gives for ``secretReferenceName``.
+    private static let secretValue = "tcs-secret-value-3b8e51"
+
+    /// The `keychain:` reference of the Exa key, which no store holds. Its
+    /// warning writes a log record.
+    private static let missingReferenceName = "tcs-missing-reference"
+
     /// The number of prompts that the suite sends.
     private static let promptCount = 4
 
@@ -140,6 +152,7 @@ import Testing
             toolPromptText, cancelledPromptText, responseText, toolArgument, toolOutput, commandArguments,
             elicitationAnswer, ScriptedServer.elicitEchoMessage, envValue, headerValue, configValue,
             agentsFileContent, unreadableFileContent, unreachableServerPath, failingCommandArguments,
+            secretValue,
         ]
     }
 
@@ -192,7 +205,8 @@ import Testing
         let fixture = try await ScriptedPromptFixture.make(
             script: try makeScript(), label: fixtureLabel, workingDirectory: try makeWorkingDirectory(),
             projectConfigYAML: try makeConfigYAML(), tracer: context.tracer,
-            commandProviders: [StubCommandProvider(commandSet: [failingCommand])])
+            commandProviders: [StubCommandProvider(commandSet: [failingCommand])],
+            secretStore: InMemorySecretStore([secretReferenceName: secretValue]))
         try await runToolPrompt(on: fixture)
         try await runPrompt(on: fixture, text: "/\(helpCommandName) \(commandArguments)")
         try await runCancelledPrompt(on: fixture)
@@ -336,13 +350,18 @@ import Testing
     }
 
     /// The project `config.yaml`: the loopback MCP server with an `env`
-    /// value, and an unknown section with a value.
+    /// value, a `keychain:` reference that the store holds, a `keychain:`
+    /// reference that no store holds, and an unknown section with a value.
     ///
     /// - Returns: The YAML document.
     /// - Throws: When the built `mcp-test-server` product is not found.
     private static func makeConfigYAML() throws -> String {
         """
         tools:
+          web:
+            apiKeys:
+              tavily: keychain:\(secretReferenceName)
+              exa: keychain:\(missingReferenceName)
           mcp:
             - name: \(elicitingServerName)
               command: \(try BuiltProductLocator.mcpTestServerURL().path)

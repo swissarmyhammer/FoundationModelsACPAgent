@@ -314,8 +314,7 @@ public actor RoutedACPAgent: Agent {
         self.environment = environment
         self.inlineSettleGrace = inlineSettleGrace
         self.transcriptLocation = transcriptLocation
-        self.secretStore =
-            secretStore ?? KeychainSecretStore(service: name.rawValue, synchronizable: false)
+        self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting
