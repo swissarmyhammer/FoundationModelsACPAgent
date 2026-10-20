@@ -207,6 +207,52 @@ private func makeApplePackage(name: String, from floor: Version) -> Package.Depe
     .package(url: "https://github.com/apple/\(name).git", from: floor)
 }
 
+/// The GraphQL engine: the parser, the validator and the executor. The
+/// `settings` endpoint (ACPA-17, D75) runs on it through the GraphQL toolkit
+/// of Extras. Extras does not re-export it, and a target can link only a
+/// product of a package that its own manifest declares, thus this manifest
+/// declares it. The URL is the URL of Extras, so the package identity stays
+/// one, and `Package.resolved` holds one copy.
+private let graphQLPackage = "GraphQL"
+
+/// The version floor of `graphQLPackage`, matching Extras.
+private let graphQLVersionFloor: Version = "4.3.0"
+
+/// The schema builder of the `settings` endpoint. It makes the GraphQL
+/// schema from Swift types. Extras declares it from the same URL.
+private let graphitiPackage = "Graphiti"
+
+/// The version floor of `graphitiPackage`, matching Extras.
+private let graphitiVersionFloor: Version = "3.1.0"
+
+/// The package of the ordered dictionary that a GraphQL `Map` object holds.
+/// The `settings` endpoint makes a `JSON` value of a settings tree with it.
+/// Extras declares it from the same URL.
+private let collectionsPackage = "swift-collections"
+
+/// The version floor of `collectionsPackage`, matching Extras.
+private let collectionsVersionFloor: Version = "1.0.0"
+
+/// The products of the GraphQL engine that the library target and the test
+/// target link: the engine, the schema builder and the ordered dictionary of
+/// a `Map`.
+private let graphQLProducts: [Target.Dependency] = [
+    .product(name: graphQLPackage, package: graphQLPackage),
+    .product(name: graphitiPackage, package: graphitiPackage),
+    .product(name: "OrderedCollections", package: collectionsPackage),
+]
+
+/// Makes the `.package(url:from:)` dependency of a package hosted under the
+/// GraphQLSwift GitHub organization.
+///
+/// - Parameters:
+///   - name: The package name, which is also the repository name.
+///   - floor: The lowest version the package resolves to.
+/// - Returns: The package dependency.
+private func makeGraphQLSwiftPackage(name: String, from floor: Version) -> Package.Dependency {
+    .package(url: "https://github.com/GraphQLSwift/\(name).git", from: floor)
+}
+
 /// The terminal design system of the agent CLI (cli-plan.md §5.2): one
 /// package in place of a spinner library, a progress library, a table
 /// library and a color library. `TerminalRenderer.swift` is the only
@@ -343,6 +389,11 @@ let package = Package(
         makeApplePackage(name: tracingPackage, from: tracingVersionFloor),
         makeApplePackage(name: loggingPackage, from: loggingVersionFloor),
         makeApplePackage(name: metricsPackage, from: metricsVersionFloor),
+        // The GraphQL engine of the `settings` endpoint — see
+        // `graphQLProducts`.
+        makeGraphQLSwiftPackage(name: graphQLPackage, from: graphQLVersionFloor),
+        makeGraphQLSwiftPackage(name: graphitiPackage, from: graphitiVersionFloor),
+        makeApplePackage(name: collectionsPackage, from: collectionsVersionFloor),
         // The terminal design system of the agent CLI — see
         // `nooraPackage` and `nooraVersion`.
         .package(url: "https://github.com/tuist/\(nooraPackage).git", exact: nooraVersion),
@@ -350,7 +401,7 @@ let package = Package(
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts + [mcpSDKProduct] + telemetryAPIProducts,
+            dependencies: familyProducts + [mcpSDKProduct] + telemetryAPIProducts + graphQLProducts,
             // The builtin configuration — see `builtinConfigurationResource`.
             resources: [.copy(builtinConfigurationResource)]
         ),
@@ -425,6 +476,8 @@ let package = Package(
         // `metricsTestKitProduct`. The hook and no-op suites link the
         // Router test support, whose container puts the tool layers of the
         // live loader on a scripted model — see `routerTestSupportProduct`.
+        // The `settings` endpoint suites give variables to the endpoint as
+        // GraphQL `Map` values and read its schema — see `graphQLProducts`.
         //
         // `acp-print` is NOT here: the suites that spawn a built binary or
         // load a real model live in the nested `IntegrationTests` package,
@@ -444,7 +497,7 @@ let package = Package(
                 inMemoryTracingProduct,
                 metricsTestKitProduct,
             ]
-                + familyProducts + multitoolTestProducts + [mcpSDKProduct]
+                + familyProducts + multitoolTestProducts + [mcpSDKProduct] + graphQLProducts
         ),
     ]
 )

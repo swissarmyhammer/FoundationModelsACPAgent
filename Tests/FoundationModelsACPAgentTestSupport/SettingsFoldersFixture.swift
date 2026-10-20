@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsExtras
 
 /// The one maker of the ``SettingsFolders`` of a test over a throwaway root
 /// settings folder. Each suite that makes a `CatalogContext` or a
@@ -26,5 +27,21 @@ public enum SettingsFoldersFixture {
             name: try DotfolderName(dotfolderName),
             rootSettingsFolder: makeResolvedDirectory(label: "\(label)-settings"),
             environment: environment)
+    }
+
+    /// The root folder of one layer of the configuration stack that
+    /// `settingsFolders` gives for `workingDirectory`: the folder of the
+    /// user level or of the session level of a ``SettingsStore``.
+    ///
+    /// - Parameters:
+    ///   - source: The source of the layer, such as `.user` or `.project`.
+    ///   - settingsFolders: The settings folders of the store.
+    ///   - workingDirectory: The working directory of the session.
+    /// - Returns: The root folder, or `nil` when the stack has no such layer.
+    public static func layerRoot(
+        of source: DotfolderStack.Source, in settingsFolders: SettingsFolders, workingDirectory: URL
+    ) -> URL? {
+        settingsFolders.stack(for: .configuration, workingDirectory: workingDirectory)
+            .layers.first { $0.source == source }?.root
     }
 }

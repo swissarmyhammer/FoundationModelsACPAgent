@@ -1,0 +1,152 @@
+"""
+A point in time: RFC 3339 text in UTC with milliseconds, like 2026-10-06T14:49:10.690Z.
+"""
+scalar DateTime
+
+"""Any JSON value. The keys of each object are in sorted order."""
+scalar JSON
+
+"""A level that a mutation changes."""
+enum SettingLevel {
+  """The user level. It applies to each session."""
+  USER
+
+  """The session level of one working directory. It wins over USER."""
+  SESSION
+}
+
+"""The layer that set a merged value."""
+enum SettingLayer {
+  """The builtin configuration of the agent."""
+  BUILTIN
+
+  """A cached remote skill marketplace."""
+  MARKETPLACE
+
+  """The defaults folder of the host."""
+  DEFAULTS
+
+  """The user level."""
+  USER
+
+  """The session level of the working directory."""
+  SESSION
+}
+
+"""
+One secret key inside a setting. The endpoint never gives a secret value.
+"""
+type Secret {
+  """The dotted key path of the secret key."""
+  keyPath: String!
+
+  """
+  The name of the keychain: reference, or null for a literal that is not shown.
+  """
+  reference: String
+
+  """True when the secret store has an item for the reference."""
+  hasValue: Boolean!
+}
+
+"""The merged value of one key for a session, and the layer that set it."""
+type Setting {
+  """The key path of the setting."""
+  keyPath: [String!]!
+
+  """The merged value. A literal secret shows as <redacted>."""
+  value: JSON
+
+  """The layer that set the value."""
+  level: SettingLayer!
+
+  """Each secret key inside the value."""
+  secrets: [Secret!]!
+}
+
+"""One change of the settings."""
+type SettingsChange {
+  """The level that changed."""
+  level: SettingLevel!
+
+  """The working directory of a session level, or null for the user level."""
+  cwd: String
+
+  """
+  The changed key path, or null when the file of the level changed. Read it again.
+  """
+  keyPath: [String!]
+}
+
+type Query {
+  """The sections of the settings: the first key of each key path."""
+  sections: [String!]!
+
+  """
+  The merged value of one key for a session, or null when no layer has the key.
+  """
+  setting(
+    """
+    The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
+    """
+    keyPath: [String!]!
+
+    """
+    The absolute path of the working directory of the session. It names the session level.
+    """
+    cwd: String!
+  ): Setting
+}
+
+type Mutation {
+  """
+  Sets the value of one key on one level. The merged setting after the change, or null when no layer has the key.
+  """
+  set(
+    """
+    The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
+    """
+    keyPath: [String!]!
+
+    """The new value. A secret key takes only a keychain:<name> reference."""
+    value: JSON!
+
+    """The level that the mutation changes."""
+    level: SettingLevel!
+
+    """
+    The absolute path of the working directory of the session. It names the session level.
+    """
+    cwd: String!
+  ): Setting
+
+  """
+  Removes one key from one level. The value of a lower level applies again. The merged setting after the change, or null when no layer has the key.
+  """
+  clear(
+    """
+    The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
+    """
+    keyPath: [String!]!
+
+    """The level that the mutation changes."""
+    level: SettingLevel!
+
+    """
+    The absolute path of the working directory of the session. It names the session level.
+    """
+    cwd: String!
+  ): Setting
+}
+
+type Subscription {
+  """
+  Each change of the settings, from a mutation or from a change of a file.
+  """
+  changes(
+    """
+    The working directory whose session level to watch, or null for USER only.
+    """
+    cwd: String
+  ): SettingsChange!
+}

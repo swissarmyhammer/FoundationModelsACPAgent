@@ -113,7 +113,9 @@ import Testing
         /// The folder of the user level, from the settings folders.
         var userRoot: URL {
             get throws {
-                try Self.root(of: .user, in: stack(for: firstDirectory))
+                try #require(
+                    SettingsFoldersFixture.layerRoot(
+                        of: .user, in: settingsFolders, workingDirectory: firstDirectory))
             }
         }
 
@@ -124,26 +126,9 @@ import Testing
         /// - Returns: The folder.
         /// - Throws: A failed requirement when the stack has no project layer.
         func sessionRoot(of workingDirectory: URL) throws -> URL {
-            try Self.root(of: .project, in: stack(for: workingDirectory))
-        }
-
-        /// The configuration stack of `workingDirectory`.
-        ///
-        /// - Parameter workingDirectory: The working directory of the session.
-        /// - Returns: The stack.
-        private func stack(for workingDirectory: URL) -> DotfolderStack {
-            settingsFolders.stack(for: .configuration, workingDirectory: workingDirectory)
-        }
-
-        /// The root of the layer of `source` in `stack`.
-        ///
-        /// - Parameters:
-        ///   - source: The source of the layer.
-        ///   - stack: The stack.
-        /// - Returns: The root of the layer.
-        /// - Throws: A failed requirement when the stack has no such layer.
-        private static func root(of source: DotfolderStack.Source, in stack: DotfolderStack) throws -> URL {
-            try #require(stack.layers.first { $0.source == source }).root
+            try #require(
+                SettingsFoldersFixture.layerRoot(
+                    of: .project, in: settingsFolders, workingDirectory: workingDirectory))
         }
 
         /// The `compaction.trigger` of the merged settings of `workingDirectory`.
@@ -392,6 +377,24 @@ import Testing
         try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
         #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
         #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
+    }
+
+    /// After `stopWatching()`, `startWatching(cwd:)` reads the session level
+    /// of `cwd` again and watches its file again, thus an outside write
+    /// sends a change again.
+    @Test(.timeLimit(.minutes(1))) func aStartAfterAStopWatchesAgain() async throws {
+        let fixture = try Fixture(label: "start-again")
+        let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+        try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
+        #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
+        await fixture.store.stopWatching()
+        var changes = await fixture.store.changes().makeAsyncIterator()
+
+        try await fixture.store.startWatching(cwd: fixture.firstDirectory)
+        try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
+
+        let session = SettingsLevel.session(fixture.firstDirectory)
+        #expect(await changes.next() == SettingsChange(level: session, keyPath: nil))
     }
 
     // MARK: - The level text

@@ -24,6 +24,14 @@ public enum SettingsLevel: Hashable, Sendable {
         }
     }
 
+    /// The levels that ``SettingsStore/startWatching(cwd:)`` reads.
+    ///
+    /// - Parameter cwd: The working directory of the session level, or `nil`.
+    /// - Returns: The user level, then the session level of `cwd`.
+    static func watched(cwd: URL?) -> [SettingsLevel] {
+        [.user] + (cwd.map { [SettingsLevel.session($0)] } ?? [])
+    }
+
     /// The source of the dotfolder layer of this level.
     var source: DotfolderStack.Source {
         switch self {
@@ -287,6 +295,26 @@ public actor SettingsStore {
     /// - Parameter token: The token of the stream.
     private nonisolated func removeSubscriber(_ token: UUID) {
         _ = subscribers.withLock { $0.removeValue(forKey: token) }
+    }
+
+    // MARK: - Watch
+
+    /// Reads the user level and, when `cwd` is given, the session level of
+    /// `cwd` into memory, if the store does not have them yet. Thus the store
+    /// watches the `config.yaml` of each of these levels, and an outside
+    /// write of one of them sends a change.
+    ///
+    /// A subscriber calls it to start the watch of its levels, also after
+    /// ``stopWatching()`` forgot them.
+    ///
+    /// - Parameter cwd: The working directory of the session level to read,
+    ///   or `nil` for the user level only.
+    /// - Throws: ``SettingsStoreError/noLayer(_:)`` when the settings folders
+    ///   give no folder for a level; what a read of a level file throws.
+    public func startWatching(cwd: URL?) throws {
+        for level in SettingsLevel.watched(cwd: cwd) {
+            _ = try levelState(of: level)
+        }
     }
 
     // MARK: - Stop
