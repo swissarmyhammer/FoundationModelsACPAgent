@@ -26,8 +26,24 @@ comments:
     - evidence: touched the 6 changed files, then `swift test`: 1039 tests in 115 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted). `swift build --build-tests --package-path IntegrationTests`: Build complete. No compiler warning. Only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx.bundle appears.
     - next: review
   timestamp: 2026-10-20T17:02:32.707088+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5d4ab69jwb0fr2kf14ka013
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 1c6522b). 0 findings, 0 confirmed, 0 refuted. 6 files reviewed. 4 .kanban files not reviewed because of the ignore rule.
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T17:04:05.321588+00:00
+- actor: wballard
+  id: 01m5d4aktf1hq0q1pdfz4cj64r
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test 1039 passed; IntegrationTests builds
+    - commit: 1c6522b
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T17:04:14.159546+00:00
+position_column: done
+position_ordinal: ffef80
 title: 'ACPA-15: the host gives the snapshot data directory'
 ---
 ## What

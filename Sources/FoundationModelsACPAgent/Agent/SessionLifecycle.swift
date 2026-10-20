@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsHooks
 import FoundationModelsRouter
 import Logging
 
@@ -38,6 +39,10 @@ extension RoutedACPAgent {
     /// deleted. An id that never existed, or one already deleted, gives silent
     /// success: "nothing to remove" is not an error.
     ///
+    /// The delete also removes the snapshot timeline of the session key, the
+    /// ACP session id (``removeSnapshotTimeline(sessionKey:)``). Only a delete
+    /// removes it: `session/close` and the start of the agent keep it.
+    ///
     /// - Parameter params: The request naming the session to delete.
     /// - Returns: The empty response.
     /// - Throws: The order rule's invalid-request error.
@@ -56,6 +61,7 @@ extension RoutedACPAgent {
             recordActiveSessions()
         }
         removeSessionTree(ulidString: rootId.ulidString, from: roots)
+        await removeSnapshotTimeline(sessionKey: params.sessionId.rawValue)
         return DeleteSessionResponse()
     }
 
@@ -258,6 +264,36 @@ extension RoutedACPAgent {
             logSessionDeleteError(
                 "The delete could not remove the sessions.jsonl record of a session.",
                 ulidString: ulidString, error: error)
+        }
+    }
+
+    /// Removes the snapshot timeline of `sessionKey`: its shadow folder in
+    /// the ``AgentHooks/snapshotStore``.
+    ///
+    /// The teardown of the session sent its `SessionEnd`, and `SnapshotHook`
+    /// releases the key on that event. The hook gets the event on the queue
+    /// of the dispatcher, thus the call drains the dispatcher first. Then the
+    /// release is done before the remove.
+    ///
+    /// The delete never fails because of the timeline. When another owner
+    /// has the key open, the timeline stays and one `notice` record names the
+    /// key. Each other error gives one `error` record with the key and the
+    /// error case. A key with no shadow folder is not an error.
+    ///
+    /// - Parameter sessionKey: The session key of the timeline: the ACP
+    ///   session id.
+    private func removeSnapshotTimeline(sessionKey: String) async {
+        await hooks.dispatcher.drain()
+        do {
+            try await hooks.snapshotStore.remove(sessionKey: sessionKey)
+        } catch SnapshotError.sessionKeyOpen {
+            ACPAgentTelemetry.logger(.sessionLifecycle).notice(
+                "Another owner has the session key open. The delete keeps its snapshot timeline.",
+                metadata: ACPAgentTelemetry.snapshotKeyMetadata(sessionKey))
+        } catch {
+            ACPAgentTelemetry.logger(.sessionLifecycle).error(
+                "The delete could not remove the snapshot timeline of a session key.",
+                metadata: ACPAgentTelemetry.snapshotKeyMetadata(sessionKey, error: error))
         }
     }
 

@@ -5,6 +5,7 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsHooks
 import FoundationModelsRouter
+import Logging
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -215,12 +216,7 @@ import Testing
     /// of the file back.
     @Test
     func aToolCallThatWritesAFileMakesOneCheckpointThatARollbackRestores() async throws {
-        let cwd = makeResolvedDirectory(label: "HookCompositionTests-snapshots-repo")
-        try GitVerbSupport.makeRepository(in: cwd, branch: Self.branchName)
-        try GitVerbSupport.commitFile(
-            named: ".gitignore", text: Self.gitIgnoreContent, message: "ignore the dotfolder", in: cwd)
-        try GitVerbSupport.commitFile(
-            named: Self.noteFileName, text: Self.committedNoteContent, message: "add the note", in: cwd)
+        let cwd = try Self.makeSnapshotWorkTree(label: "HookCompositionTests-snapshots-repo")
         let fixture = try await ScriptedPromptFixture.make(
             loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
             label: "HookCompositionTests-snapshots", workingDirectory: cwd)
@@ -266,6 +262,121 @@ import Testing
         let countBefore = await fixture.collector.updates.count
         let run = try await ScriptedPromptFixture.runPrompt(on: fixture, text: text, count: count)
         return SkillsLibraryTests.toolCallText(in: Array(run.updates.dropFirst(countBefore)))
+    }
+
+    /// Makes the git work tree of a snapshot proof: a repository on
+    /// ``branchName`` with a commit that ignores the dotfolder and a commit
+    /// that adds the note.
+    ///
+    /// - Parameter label: The directory label of the work tree.
+    /// - Returns: The work tree.
+    /// - Throws: The error of a git command.
+    private static func makeSnapshotWorkTree(label: String) throws -> URL {
+        let cwd = makeResolvedDirectory(label: label)
+        try GitVerbSupport.makeRepository(in: cwd, branch: branchName)
+        try GitVerbSupport.commitFile(
+            named: ".gitignore", text: gitIgnoreContent, message: "ignore the dotfolder", in: cwd)
+        try GitVerbSupport.commitFile(
+            named: noteFileName, text: committedNoteContent, message: "add the note", in: cwd)
+        return cwd
+    }
+
+    // MARK: - The removal of a timeline
+
+    /// The owner ID of the second owner that opens the session key beside
+    /// the session.
+    private static let secondOwner = "HookCompositionTests-second-owner"
+
+    /// The session key of the log record proof.
+    private static let loggedSessionKey = "01M5D4G51WVGFCTAEQK67NKW5X"
+
+    /// Makes a fixture in a git work tree, and runs one prompt whose tool
+    /// call writes the note. Thus the session key has a shadow folder with a
+    /// checkpoint.
+    ///
+    /// - Parameter label: The directory label of the calling test.
+    /// - Returns: The fixture, with its session open.
+    /// - Throws: Whatever the work tree, the fixture or the prompt throws.
+    private static func makeWrittenSnapshotFixture(label: String) async throws -> ScriptedPromptFixture {
+        let cwd = try makeSnapshotWorkTree(label: "\(label)-repo")
+        let fixture = try await ScriptedPromptFixture.make(
+            loader: makeHookLayeredModelLoader(
+                script: try ScriptedPromptFixture.makeToolPromptScript(code: writeCode)),
+            label: label, workingDirectory: cwd)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: writePromptText, count: 1)
+        return fixture
+    }
+
+    /// `session/delete` removes the shadow folder of the session key (the
+    /// ACP session id) after a turn that made a checkpoint.
+    @Test
+    func aSessionDeleteRemovesTheTimelineOfItsSessionKey() async throws {
+        let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-delete")
+        let store = fixture.harness.agent.hooks.snapshotStore
+        let sessionKey = fixture.sessionId.rawValue
+        #expect(!(try await store.checkpoints(sessionKey: sessionKey)).isEmpty)
+        #expect(try await store.shadowSessionKeys().contains(sessionKey))
+
+        _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))
+
+        #expect(!(try await store.shadowSessionKeys()).contains(sessionKey))
+        await fixture.close()
+    }
+
+    /// When a second owner has the session key open, `session/delete`
+    /// succeeds and the shadow folder of the key stays.
+    @Test
+    func aSessionDeleteKeepsTheTimelineThatASecondOwnerHasOpen() async throws {
+        let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-delete-shared")
+        let store = fixture.harness.agent.hooks.snapshotStore
+        let sessionKey = fixture.sessionId.rawValue
+        try await store.open(sessionKey: sessionKey, owner: Self.secondOwner, workingDirectory: fixture.cwd)
+
+        _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))
+
+        #expect(try await store.shadowSessionKeys().contains(sessionKey))
+        await store.release(sessionKey: sessionKey, owner: Self.secondOwner)
+        await fixture.close()
+    }
+
+    /// `session/close` keeps the shadow folder of the session key, so the
+    /// timeline stays for a resume.
+    @Test
+    func aSessionCloseKeepsTheTimelineOfItsSessionKey() async throws {
+        let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-close")
+        let store = fixture.harness.agent.hooks.snapshotStore
+
+        _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
+        await fixture.harness.agent.hooks.dispatcher.drain()
+
+        #expect(try await store.shadowSessionKeys().contains(fixture.sessionId.rawValue))
+        await fixture.close()
+    }
+
+    /// The log record of a kept or failed timeline removal names only the
+    /// session key and, for a failure, the case of the error without its
+    /// payload.
+    ///
+    /// - Parameters:
+    ///   - error: The error of the removal, or `nil` for a kept timeline.
+    ///   - expectedCase: The error case that the record names, or `nil`.
+    @Test(arguments: [
+        (nil, nil),
+        (SnapshotError.unavailable, "unavailable"),
+        (SnapshotError.invalidCheckpoint(index: Self.baselineIndex), "invalidCheckpoint"),
+    ] as [(SnapshotError?, String?)])
+    func theLogOfATimelineRemovalNamesOnlyTheKeyAndTheErrorCase(
+        error: SnapshotError?, expectedCase: String?
+    ) {
+        let metadata = ACPAgentTelemetry.snapshotKeyMetadata(Self.loggedSessionKey, error: error)
+
+        var expected: Logger.Metadata = [
+            ACPAgentTelemetry.LogMetadataKey.snapshotSessionKey: "\(Self.loggedSessionKey)"
+        ]
+        if let expectedCase {
+            expected[ACPAgentTelemetry.LogMetadataKey.errorCase] = "\(expectedCase)"
+        }
+        #expect(metadata == expected)
     }
 
     // MARK: - The end of the connection

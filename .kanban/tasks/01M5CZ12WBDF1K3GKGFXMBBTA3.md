@@ -1,8 +1,36 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+comments:
+- actor: claude-code
+  id: 01m5d4ew44mq3qj8eeeqn5a49c
+  text: |-
+    Research done.
+    - `deleteSession` calls `tearDownSession` only for a session in the table. `tearDownSession` returns at once for a closed session. The `SessionEnd` post event reaches `SnapshotHook` on the dispatcher queue, thus `deleteSession` must call `hooks.dispatcher.drain()` before `snapshotStore.remove(sessionKey:)`.
+    - `SnapshotStore.remove(sessionKey:)` (checkout of FoundationModelsHooks) throws `sessionKeyOpen` when an owner has the key open, and does nothing for a missing directory. No change to FoundationModelsHooks is necessary.
+    - The echo stub model of `composeStubAgent`/`runOneTurn` makes no tool call, thus it writes no file and makes no tool checkpoint. The card asks for "one turn that writes a file (a checkpoint exists)". Thus the tests go in `HookCompositionTests` and use the existing `ScriptedPromptFixture` with the `writeCode` script in a git work tree (the same setup as the existing rollback proof). The git work tree setup is extracted into one helper, so it is not copied.
+    - `ACPAgentTelemetry.caseName(of:)` gives `unknown` for an enum case with no payload (for example `SnapshotError.sessionKeyOpen`), thus the log needs its own case name.
+  timestamp: 2026-10-20T17:06:33.732760+00:00
+- actor: claude-code
+  id: 01m5d4mmdqr8fnh284cg7cqgdn
+  text: |-
+    ### implement — changed
+    - evidence: 3 files. `Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift` (`deleteSession` calls the new `removeSnapshotTimeline(sessionKey:)`: drain the hook dispatcher, then `snapshotStore.remove`; `sessionKeyOpen` gives one notice record with the key only; each other error gives one error record with the key and the error case; the delete always succeeds). `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift` (new `LogMetadataKey.snapshotSessionKey`, `errorCaseName(of:)`, `snapshotKeyMetadata(_:error:)`). `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift` (3 tests from the card, 1 parameterized log metadata test with 3 cases, `makeSnapshotWorkTree` extracted from the rollback proof so the git setup is not copied).
+    - RED: `aSessionDeleteRemovesTheTimelineOfItsSessionKey` failed before the change. The close test and the second-owner test passed before the change, because they guard behavior that already existed.
+    - `swift test`: 1043 tests in 115 suites passed, 0 failures, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests), 0 compiler warnings. The one build line "missing creator for mutated node ... mlx-swift_Cmlx.bundle" is from SwiftPM for the mlx-swift dependency, not from this change.
+    - No change to agent start, to `session/close`, or to FoundationModelsHooks.
+    - Note: the tests do not use `composeStubAgent`/`runOneTurn`, because the echo stub model writes no file and makes no checkpoint. They use the existing `ScriptedPromptFixture` write script.
+    - next: /review
+  timestamp: 2026-10-20T17:09:42.455150+00:00
+- actor: claude-code
+  id: 01m5d4q7h7mt1b7mg7ngg34za5
+  text: |-
+    ### test — green
+    - evidence: swift test (changed files touched first, so they were rebuilt) — 1043 tests in 115 suites passed, 0 failed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted). swift build --build-tests --package-path IntegrationTests — Build complete, 0 errors. Only warning in both runs: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle (accepted). No compiler warning in the changed files.
+    - next: review
+  timestamp: 2026-10-20T17:11:07.559850+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-15: session/delete removes the snapshot timeline of its session'
 ---
 ## What
@@ -19,16 +47,16 @@ Do this in `deleteSession`:
 Do not add a removal to agent start or to `session/close`.
 
 ## Acceptance Criteria
-- [ ] After `session/delete`, the shadow folder of the session key does not exist.
-- [ ] When another owner has the key open, `session/delete` succeeds and the shadow folder stays.
-- [ ] `session/close` and agent start keep the shadow folder.
-- [ ] The logs name only the key and the error case.
+- [x] After `session/delete`, the shadow folder of the session key does not exist.
+- [x] When another owner has the key open, `session/delete` succeeds and the shadow folder stays.
+- [x] `session/close` and agent start keep the shadow folder.
+- [x] The logs name only the key and the error case.
 
 ## Tests
-- [ ] A test: new session, one turn that writes a file (a checkpoint exists), `session/delete`, then `shadowSessionKeys()` does not have the key.
-- [ ] A test: open the key with a second owner on the same `SnapshotStore`, `session/delete`, the delete succeeds and the key stays.
-- [ ] A test: `session/close` keeps the key.
-- [ ] `swift test` passes with zero failures and zero warnings.
+- [x] A test: new session, one turn that writes a file (a checkpoint exists), `session/delete`, then `shadowSessionKeys()` does not have the key.
+- [x] A test: open the key with a second owner on the same `SnapshotStore`, `session/delete`, the delete succeeds and the key stays.
+- [x] A test: `session/close` keeps the key.
+- [x] `swift test` passes with zero failures and zero warnings.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-15

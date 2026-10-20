@@ -191,6 +191,10 @@ enum ACPAgentTelemetry {
         /// can hold content.
         static let errorCase = "error.case"
 
+        /// The session key of a snapshot timeline: the name of its shadow
+        /// folder, which is the ACP session id of the lineage.
+        static let snapshotSessionKey = "snapshot.session_key"
+
         /// The model reference that a session generates with. Router uses
         /// the same key.
         static let modelRef = "model.ref"
@@ -362,6 +366,41 @@ enum ACPAgentTelemetry {
     ///   label, and its description can be a text of the type.
     static func caseName(of value: Any) -> String {
         Mirror(reflecting: value).children.first?.label ?? unknownCaseName
+    }
+
+    /// The name of the case of `error`, without its payload.
+    ///
+    /// An enum case with a payload gives its label. An enum case with no
+    /// payload gives its description: that case holds no value, thus its
+    /// description is a fixed text and not content. An error that is not an
+    /// enum gives its type name.
+    ///
+    /// - Parameter error: The error.
+    /// - Returns: The case name, or the type name of a non-enum error.
+    static func errorCaseName(of error: any Error) -> String {
+        let mirror = Mirror(reflecting: error)
+        guard mirror.displayStyle == .enum else {
+            return errorTypeName(of: error)
+        }
+        return mirror.children.first?.label ?? String(describing: error)
+    }
+
+    /// The metadata of a record about the snapshot timeline of one session
+    /// key: the key and, for a failure, the case of the error. A record has
+    /// no path, because a path can hold content.
+    ///
+    /// - Parameters:
+    ///   - sessionKey: The session key of the timeline.
+    ///   - error: The error of the operation, or `nil` for a record with no
+    ///     error.
+    /// - Returns: The ``LogMetadataKey/snapshotSessionKey`` value, and the
+    ///   ``LogMetadataKey/errorCase`` value when `error` is not `nil`.
+    static func snapshotKeyMetadata(_ sessionKey: String, error: (any Error)? = nil) -> Logger.Metadata {
+        var metadata: Logger.Metadata = [LogMetadataKey.snapshotSessionKey: "\(sessionKey)"]
+        if let error {
+            metadata[LogMetadataKey.errorCase] = "\(errorCaseName(of: error))"
+        }
+        return metadata
     }
 
     /// The metadata of a record about one session: its session id.
