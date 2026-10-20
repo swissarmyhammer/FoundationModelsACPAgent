@@ -31,10 +31,26 @@ comments:
     - evidence: `swift test` — 995 tests in 112 suites passed, 0 failures, 0 warnings (1 known issue: the deliberate `withKnownIssue` in HarnessSmokeTests, from before this change). Files: Package.swift, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift, Tests/FoundationModelsACPAgentTests/NoOpToolCallTests.swift, Tests/FoundationModelsACPAgentTests/Support/HookLayeredModelLoader.swift (new). Router pin aeb29e2 in Package.resolved (gitignored).
     - next: /review. A person confirms the first acceptance criterion (the rg finds the public Router type name only).
   timestamp: 2026-10-19T23:09:51.842858+00:00
+- actor: claude-code
+  id: 01m5b6zg1t85h6nt4veqw13xd1
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 63396b1). 4 source files reviewed (Package.swift, HookCompositionTests.swift, NoOpToolCallTests.swift, Support/HookLayeredModelLoader.swift). 4 .kanban files not reviewed (.reviewignore). Counts: 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. No prior `## Review Findings` section. Card check: `rg -n "sessionChecked" Tests Sources` gives no result. `rg -n "(struct|class|enum) HookLayeredLLMContainer" Tests Sources` gives no result. The 2 `HookLayeredLLMContainer` lines are in Support/HookLayeredModelLoader.swift and are the use of the public Router type, as the corrected first criterion permits. HookCompositionTests.swift and NoOpToolCallTests.swift use a plain `import FoundationModelsRouter`.
+    - next: none. The card moved to done.
+  timestamp: 2026-10-19T23:12:06.714152+00:00
+- actor: wballard
+  id: 01m5b704bq4wvdxhrnqraqf94q
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 995 passed, 0 failed
+    - commit: 63396b1
+    - review: clean — 0 findings
+  timestamp: 2026-10-19T23:12:27.511354+00:00
 depends_on:
 - 01M5ARV1VSNEZKVWBXC0BXNZPA
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffeb80
 title: HookCompositionTests use the public Router test container, not sessionChecked
 ---
 Precondition (other board): the FoundationModelsRouter card 01M5B5B3BVXQHZP8C14FK069KG is done and on origin/main. Until then, this card is blocked. #hooks
