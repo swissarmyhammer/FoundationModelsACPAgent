@@ -350,8 +350,8 @@ enum ACPAgentTelemetry {
         static let spanId = "span.id"
     }
 
-    /// The text that ``caseName(of:)`` gives for a value that shows no case
-    /// label.
+    /// The default text that ``caseName(of:fallback:)`` gives for a value
+    /// that shows no case label.
     private static let unknownCaseName = "unknown"
 
     /// The name of the enum case of `value`, without its payload.
@@ -360,12 +360,15 @@ enum ACPAgentTelemetry {
     /// error, because a payload can hold content: a Router `answered` event
     /// holds the answer text, for example.
     ///
-    /// - Parameter value: An enum value.
-    /// - Returns: The case label, or `unknown` for a case with no payload and
-    ///   for a value that is not an enum. A case with no payload shows no
+    /// - Parameters:
+    ///   - value: An enum value.
+    ///   - fallback: The text for a value that shows no case label. The
+    ///     default is `unknown`.
+    /// - Returns: The case label, or `fallback` for a case with no payload
+    ///   and for a value that is not an enum. A case with no payload shows no
     ///   label, and its description can be a text of the type.
-    static func caseName(of value: Any) -> String {
-        Mirror(reflecting: value).children.first?.label ?? unknownCaseName
+    static func caseName(of value: Any, fallback: @autoclosure () -> String = unknownCaseName) -> String {
+        Mirror(reflecting: value).children.first?.label ?? fallback()
     }
 
     /// The name of the case of `error`, without its payload.
@@ -378,11 +381,10 @@ enum ACPAgentTelemetry {
     /// - Parameter error: The error.
     /// - Returns: The case name, or the type name of a non-enum error.
     static func errorCaseName(of error: any Error) -> String {
-        let mirror = Mirror(reflecting: error)
-        guard mirror.displayStyle == .enum else {
+        guard Mirror(reflecting: error).displayStyle == .enum else {
             return errorTypeName(of: error)
         }
-        return mirror.children.first?.label ?? String(describing: error)
+        return caseName(of: error, fallback: String(describing: error))
     }
 
     /// The metadata of a record about the snapshot timeline of one session

@@ -216,11 +216,9 @@ import Testing
     /// of the file back.
     @Test
     func aToolCallThatWritesAFileMakesOneCheckpointThatARollbackRestores() async throws {
-        let cwd = try Self.makeSnapshotWorkTree(label: "HookCompositionTests-snapshots-repo")
-        let fixture = try await ScriptedPromptFixture.make(
-            loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
-            label: "HookCompositionTests-snapshots", workingDirectory: cwd)
-        let note = cwd.appendingPathComponent(Self.noteFileName, isDirectory: false)
+        let fixture = try await Self.makeSnapshotFixture(
+            script: try Self.makeSnapshotScript(), label: "HookCompositionTests-snapshots")
+        let note = fixture.cwd.appendingPathComponent(Self.noteFileName, isDirectory: false)
 
         _ = try await Self.runPrompt(Self.writePromptText, in: fixture, count: 1)
         #expect(try String(contentsOf: note, encoding: .utf8) == Self.writtenNoteContent)
@@ -281,6 +279,23 @@ import Testing
         return cwd
     }
 
+    /// Makes a fixture of a snapshot proof: a git work tree from
+    /// ``makeSnapshotWorkTree(label:)`` with the label and `-repo`, and a
+    /// session in it whose hook-layered model plays `script`.
+    ///
+    /// - Parameters:
+    ///   - script: The script of the model of the session.
+    ///   - label: The directory label of the calling test.
+    /// - Returns: The fixture, with its session open.
+    /// - Throws: Whatever the work tree or the fixture throws.
+    private static func makeSnapshotFixture(
+        script: [ScriptedPassStep], label: String
+    ) async throws -> ScriptedPromptFixture {
+        let cwd = try makeSnapshotWorkTree(label: "\(label)-repo")
+        return try await ScriptedPromptFixture.make(
+            loader: makeHookLayeredModelLoader(script: script), label: label, workingDirectory: cwd)
+    }
+
     // MARK: - The removal of a timeline
 
     /// The owner ID of the second owner that opens the session key beside
@@ -298,11 +313,8 @@ import Testing
     /// - Returns: The fixture, with its session open.
     /// - Throws: Whatever the work tree, the fixture or the prompt throws.
     private static func makeWrittenSnapshotFixture(label: String) async throws -> ScriptedPromptFixture {
-        let cwd = try makeSnapshotWorkTree(label: "\(label)-repo")
-        let fixture = try await ScriptedPromptFixture.make(
-            loader: makeHookLayeredModelLoader(
-                script: try ScriptedPromptFixture.makeToolPromptScript(code: writeCode)),
-            label: label, workingDirectory: cwd)
+        let fixture = try await makeSnapshotFixture(
+            script: try ScriptedPromptFixture.makeToolPromptScript(code: writeCode), label: label)
         try await ScriptedPromptFixture.runPrompt(on: fixture, text: writePromptText, count: 1)
         return fixture
     }
@@ -363,6 +375,7 @@ import Testing
     @Test(arguments: [
         (nil, nil),
         (SnapshotError.unavailable, "unavailable"),
+        (SnapshotError.sessionKeyOpen, "sessionKeyOpen"),
         (SnapshotError.invalidCheckpoint(index: Self.baselineIndex), "invalidCheckpoint"),
     ] as [(SnapshotError?, String?)])
     func theLogOfATimelineRemovalNamesOnlyTheKeyAndTheErrorCase(

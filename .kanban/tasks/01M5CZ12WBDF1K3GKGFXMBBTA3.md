@@ -29,6 +29,38 @@ comments:
     - evidence: swift test (changed files touched first, so they were rebuilt) — 1043 tests in 115 suites passed, 0 failed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted). swift build --build-tests --package-path IntegrationTests — Build complete, 0 errors. Only warning in both runs: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle (accepted). No compiler warning in the changed files.
     - next: review
   timestamp: 2026-10-20T17:11:07.559850+00:00
+- actor: claude-code
+  id: 01m5d4v5pgewrd8wjk631z0qfa
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (d9d64b1): 2 findings (2 confirmed, 1 refuted) — Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:385, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:302
+    - next: Correct the two reuse/reuse findings in the Review Findings (2026-10-20 12:11) section. Then run the review again.
+  timestamp: 2026-10-20T17:13:16.752063+00:00
+- actor: wballard
+  id: 01m5d4vmt1mxf8d2q9qgq3y11w
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files
+    - test: green — swift test 1043 passed; IntegrationTests builds
+    - commit: d9d64b1
+    - review: findings — Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:385, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:302
+  timestamp: 2026-10-20T17:13:32.225033+00:00
+- actor: claude-code
+  id: 01m5d4zymdkc7bp336ck3x61nm
+  text: |-
+    ### implement — changed
+    - evidence: 2 files. `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift`: `caseName(of:fallback:)` has a fallback parameter (an autoclosure, default `unknown`). `errorCaseName(of:)` keeps only the non-enum branch and calls `caseName(of:fallback:)` with the description as the fallback. Thus there is one Mirror label read, and `sessionKeyOpen` still logs `sessionKeyOpen`. `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift`: new `makeSnapshotFixture(script:label:)` makes the work tree (`<label>-repo`) and the fixture. The rollback proof and `makeWrittenSnapshotFixture` call it. Each script stays at its call site. The log metadata test has a new `sessionKeyOpen` case that guards the no-payload behavior. The other `ScriptedPromptFixture.make` calls in the file use no work tree, so they are not copies of this setup.
+    - `swift test`: 1043 tests in 115 suites passed, 0 failures, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests), 0 compiler warnings. The only build line is the SwiftPM "missing creator for mutated node" line for mlx-swift_Cmlx.bundle, not from this change.
+    - Both findings of Review Findings (2026-10-20 12:11) are `- [x]`.
+    - next: /review
+  timestamp: 2026-10-20T17:15:53.357665+00:00
+- actor: claude-code
+  id: 01m5d52at0n905mtejht9wnnts
+  text: |-
+    ### test — green
+    - evidence: touched ACPAgentTelemetry.swift and HookCompositionTests.swift, then ran `swift test`: 1043 tests in 115 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests). `swift build --build-tests --package-path IntegrationTests`: Build complete. Only warning in both runs: the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx. No compiler warning in the changed files.
+    - next: review
+  timestamp: 2026-10-20T17:17:11.360740+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'ACPA-15: session/delete removes the snapshot timeline of its session'
@@ -60,3 +92,13 @@ Do not add a removal to agent start or to `session/close`.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-15
+
+## Review Findings (2026-10-20 12:11)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:385` `reuse/reuse` — errorCaseName(of:) repeats the Mirror child-label read of caseName(of:) at line 368. The only differences are the fallback value and the non-enum branch. The new function is a near-match that was not extended. It should reuse caseName(of:) or take the fallback as a parameter, so there is one canonical case-name read. Give caseName(of:) a fallback parameter, or have errorCaseName(of:) call caseName(of:) for the enum-with-payload case and keep only the differing fallback and non-enum branch in errorCaseName. Keep one Mirror label read.
+- [x] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:302` `reuse/reuse` — makeWrittenSnapshotFixture repeats the fixture setup of the existing snapshot test in the same file. It builds a ScriptedPromptFixture with makeHookLayeredModelLoader, the same labelled work tree and the same workingDirectory. The new helper is a near-match of that setup that was not extended. It differs only in the script, so the shared part should be one helper that takes the script as a parameter. Move the shared setup into one helper that takes the script and the label, and have both the existing snapshot test and makeWrittenSnapshotFixture call it. Keep the scripts at their call sites.
