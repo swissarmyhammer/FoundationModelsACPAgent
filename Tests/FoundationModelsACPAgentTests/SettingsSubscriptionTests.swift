@@ -90,6 +90,27 @@ import Testing
                     level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory.path, keyPath: nil))
     }
 
+    /// A subscription with no working directory gives the changes of the
+    /// user level only. A session level change comes first and the
+    /// subscription does not send it, thus the first event is the event of
+    /// the user level change that a call with no `cwd` made.
+    @Test(.timeLimit(.minutes(1))) func aSubscriptionWithNoWorkingDirectoryGivesTheUserLevelChanges() async throws {
+        let fixture = try SettingsGraphFixture(label: "subscription-user")
+        var changes = try await fixture.changes(cwd: nil)
+
+        _ = try await fixture.set(
+            .number(Number(Self.sessionTrigger)), at: SettingsGraphFixture.triggerKeyPath,
+            level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory)
+        _ = try await fixture.set(
+            .number(Number(Self.mutationTrigger)), at: SettingsGraphFixture.triggerKeyPath,
+            level: SettingsGraphFixture.userLevel, cwd: nil)
+
+        #expect(
+            try await ChangeEvent.next(of: &changes)
+                == ChangeEvent(
+                    level: SettingsGraphFixture.userLevel, cwd: nil, keyPath: SettingsGraphFixture.triggerKeyPath))
+    }
+
     /// Two clients subscribe, and each one gets the event of a mutation. The
     /// first client leaves, and its connection stops the watch of the store
     /// (`stopWatching()`, as `closeOpenSessions(after:)` does). The

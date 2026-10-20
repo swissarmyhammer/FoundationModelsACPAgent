@@ -311,6 +311,22 @@ import Testing
         #expect(builtinValue == SettingsValue(value: .array([]), level: .builtin))
     }
 
+    /// `value(at:cwd:)` with no working directory gives the user level over
+    /// the builtin layer. No session level applies.
+    @Test func aValueWithNoWorkingDirectoryReadsTheUserLevel() async throws {
+        let fixture = try Fixture(label: "value-user")
+        try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
+        try await fixture.store.set(
+            .double(Self.sessionTrigger), at: Self.triggerKeyPath,
+            level: .session(fixture.firstDirectory))
+
+        let userValue = try await fixture.store.value(at: Self.triggerKeyPath, cwd: nil)
+        let builtinValue = try await fixture.store.value(at: Self.builtinKeyPath, cwd: nil)
+
+        #expect(userValue == SettingsValue(value: .double(Self.userTrigger), level: .user))
+        #expect(builtinValue == SettingsValue(value: .array([]), level: .builtin))
+    }
+
     // MARK: - Changes
 
     /// A `set` sends one change that names its level and its key path.

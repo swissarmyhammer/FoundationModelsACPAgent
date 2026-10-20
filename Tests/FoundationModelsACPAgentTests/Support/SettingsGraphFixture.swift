@@ -20,29 +20,31 @@ struct SettingsGraphFixture {
     /// the key path, the value, the level and the secrets.
     static let settingFields = "{ keyPath value level secrets { keyPath reference hasValue } }"
 
-    /// A query of one setting.
+    /// A query of one setting. A `null` or absent `$cwd` gives no `cwd`.
     static let settingQuery = """
-        query($keyPath: [String!]!, $cwd: String!) {
+        query($keyPath: [String!]!, $cwd: String) {
           setting(keyPath: $keyPath, cwd: $cwd) \(settingFields)
         }
         """
 
-    /// A `set` mutation that gives the setting after the change.
+    /// A `set` mutation that gives the setting after the change. A `null` or
+    /// absent `$cwd` gives no `cwd`.
     static let setMutation = """
-        mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!, $cwd: String!) {
+        mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!, $cwd: String) {
           set(keyPath: $keyPath, value: $value, level: $level, cwd: $cwd) \(settingFields)
         }
         """
 
-    /// A `clear` mutation that gives the setting after the change.
+    /// A `clear` mutation that gives the setting after the change. A `null`
+    /// or absent `$cwd` gives no `cwd`.
     static let clearMutation = """
-        mutation($keyPath: [String!]!, $level: SettingLevel!, $cwd: String!) {
+        mutation($keyPath: [String!]!, $level: SettingLevel!, $cwd: String) {
           clear(keyPath: $keyPath, level: $level, cwd: $cwd) \(settingFields)
         }
         """
 
     /// A query of one setting with no `cwd`. A session tool reads the
-    /// setting for its session folder, and the endpoint refuses the call.
+    /// setting for its session folder, and the endpoint reads the user level.
     static let sessionSettingQuery = """
         query($keyPath: [String!]!) {
           setting(keyPath: $keyPath) \(settingFields)
@@ -170,10 +172,11 @@ struct SettingsGraphFixture {
     ///
     /// - Parameters:
     ///   - keyPath: The key path.
-    ///   - workingDirectory: The working directory of the session.
+    ///   - workingDirectory: The working directory of the session, or `nil`
+    ///     for a call with no `cwd`.
     /// - Returns: The response.
     /// - Throws: What ``run(_:variables:)`` throws.
-    func setting(_ keyPath: [String], cwd workingDirectory: URL) async throws -> GraphQLReply {
+    func setting(_ keyPath: [String], cwd workingDirectory: URL?) async throws -> GraphQLReply {
         try await run(Self.settingQuery, variables: Self.variables(keyPath: keyPath, cwd: workingDirectory))
     }
 
@@ -183,10 +186,11 @@ struct SettingsGraphFixture {
     ///   - value: The new value.
     ///   - keyPath: The key path.
     ///   - level: The `SettingLevel` name.
-    ///   - workingDirectory: The working directory of the session.
+    ///   - workingDirectory: The working directory of the session, or `nil`
+    ///     for a call with no `cwd`.
     /// - Returns: The response.
     /// - Throws: What ``run(_:variables:)`` throws.
-    func set(_ value: Map, at keyPath: [String], level: String, cwd workingDirectory: URL) async throws
+    func set(_ value: Map, at keyPath: [String], level: String, cwd workingDirectory: URL?) async throws
         -> GraphQLReply
     {
         var variables = Self.variables(keyPath: keyPath, cwd: workingDirectory)
@@ -200,10 +204,11 @@ struct SettingsGraphFixture {
     /// - Parameters:
     ///   - keyPath: The key path.
     ///   - level: The `SettingLevel` name.
-    ///   - workingDirectory: The working directory of the session.
+    ///   - workingDirectory: The working directory of the session, or `nil`
+    ///     for a call with no `cwd`.
     /// - Returns: The response.
     /// - Throws: What ``run(_:variables:)`` throws.
-    func clear(_ keyPath: [String], level: String, cwd workingDirectory: URL) async throws -> GraphQLReply {
+    func clear(_ keyPath: [String], level: String, cwd workingDirectory: URL?) async throws -> GraphQLReply {
         var variables = Self.variables(keyPath: keyPath, cwd: workingDirectory)
         variables["level"] = .string(level)
         return try await run(Self.clearMutation, variables: variables)
@@ -211,12 +216,13 @@ struct SettingsGraphFixture {
 
     /// Starts the subscription of each change for `workingDirectory`.
     ///
-    /// - Parameter workingDirectory: The working directory of the session.
+    /// - Parameter workingDirectory: The working directory of the session, or
+    ///   `nil` for a subscription with no `cwd`.
     /// - Returns: The iterator of the response of each event.
     /// - Throws: The fault of the endpoint.
-    func changes(cwd workingDirectory: URL) async throws -> AsyncThrowingStream<String, Error>.AsyncIterator {
+    func changes(cwd workingDirectory: URL?) async throws -> AsyncThrowingStream<String, Error>.AsyncIterator {
         try await graph.subscribe(
-            query: Self.changesSubscription, variables: ["cwd": .string(workingDirectory.path)],
+            query: Self.changesSubscription, variables: Self.cwdVariable(workingDirectory),
             operationName: nil, viewer: nil
         ).makeAsyncIterator()
     }
@@ -225,10 +231,24 @@ struct SettingsGraphFixture {
     ///
     /// - Parameters:
     ///   - keyPath: The key path.
-    ///   - workingDirectory: The working directory of the session.
-    /// - Returns: The variables `keyPath` and `cwd`.
-    static func variables(keyPath: [String], cwd workingDirectory: URL) -> [String: Map] {
-        ["keyPath": .array(keyPath.map(Map.string)), "cwd": .string(workingDirectory.path)]
+    ///   - workingDirectory: The working directory of the session, or `nil`
+    ///     for no `cwd`.
+    /// - Returns: The variable `keyPath`, and the variable `cwd` when
+    ///   `workingDirectory` is given.
+    static func variables(keyPath: [String], cwd workingDirectory: URL?) -> [String: Map] {
+        var variables = cwdVariable(workingDirectory)
+        variables["keyPath"] = .array(keyPath.map(Map.string))
+        return variables
+    }
+
+    /// The variable of a working directory.
+    ///
+    /// - Parameter workingDirectory: The working directory of the session, or
+    ///   `nil` for no `cwd`.
+    /// - Returns: The variable `cwd`, or no variable when `workingDirectory`
+    ///   is `nil`.
+    private static func cwdVariable(_ workingDirectory: URL?) -> [String: Map] {
+        workingDirectory.map { directory in ["cwd": .string(directory.path)] } ?? [:]
     }
 }
 

@@ -6,18 +6,23 @@ import GraphQL
 /// of each level for the clients of the agent, over one ``SettingsStore``.
 ///
 /// The endpoint has the server scope: one endpoint serves each session, and
-/// each call names the working directory of its session (`cwd`). A call of
-/// the ``SettingsTool`` of a session can omit `cwd`: the folder of that
-/// session applies.
+/// a call names the working directory of its session (`cwd`). A call with no
+/// `cwd` works on the user level only, for example the Settings scene of the
+/// app, which has no working directory. A call of the ``SettingsTool`` of a
+/// session can omit `cwd`: the folder of that session applies.
 ///
 /// - `Query.setting` gives the merged value of a key for a session, and the
-///   layer that set it. `Query.sections` gives the first key of each key
-///   path: the sections of ``AgentConfiguration``.
+///   layer that set it. With no `cwd`, it gives the user level over the
+///   builtin layers. `Query.sections` gives the first key of each key path:
+///   the sections of ``AgentConfiguration``.
 /// - `Mutation.set` and `Mutation.clear` change one key on the
-///   level that the call names: `USER` or `SESSION`. A clear on the session
+///   level that the call names: `USER` or `SESSION`. A `USER` change needs
+///   no `cwd`. A `SESSION` change with no `cwd` is refused with
+///   ``SettingsGraphError/missingWorkingDirectory``. A clear on the session
 ///   level makes the user value apply again.
 /// - `Subscription.changes` gives each change of the store, from a mutation,
-///   from ``SettingsTool``, or from a change of a file.
+///   from ``SettingsTool``, or from a change of a file. With no `cwd`, it
+///   gives the changes of the user level only.
 ///
 /// A secret key holds only a `keychain:<name>` reference, and no secret value
 /// goes through the endpoint (``SettingsSecretKeys``). ``SettingsTool`` runs
@@ -97,7 +102,8 @@ public struct SettingsGraph: GraphQLEndpoint {
     ///   - variables: The values of the variables of the document.
     ///   - operationName: The operation of the document to run, or `nil`.
     ///   - sessionDirectory: The absolute path of the session folder, or
-    ///     `nil` for a call of the endpoint, where each field must give `cwd`.
+    ///     `nil` for a call of the endpoint, where a field with no `cwd`
+    ///     works on the user level only.
     /// - Returns: The GraphQL response as JSON text.
     /// - Throws: A fault that is not a GraphQL error.
     func execute(

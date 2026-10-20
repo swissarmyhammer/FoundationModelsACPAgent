@@ -21,8 +21,9 @@ public enum SettingsGraphError: CodedError, Equatable {
     /// is the path that the call gave.
     case relativeWorkingDirectory(path: String)
 
-    /// `MISSING_CWD`: the call gives no working directory, and the endpoint
-    /// has no session folder that applies in its place.
+    /// `MISSING_CWD`: a change of the session level gives no working
+    /// directory, and the endpoint has no session folder that applies in its
+    /// place. A read and a user level change need no working directory.
     case missingWorkingDirectory
 
     /// `NOT_SESSION_CWD`: the call to the ``SettingsTool`` of a session gives
@@ -79,7 +80,8 @@ public enum SettingsGraphError: CodedError, Equatable {
         case .relativeWorkingDirectory(let path):
             "The working directory \"\(path)\" is not an absolute path. Give the absolute path of the session folder."
         case .missingWorkingDirectory:
-            "The call gives no working directory. Give the absolute path of the session folder in cwd."
+            "A SESSION change needs a working directory, and the call gives none. Give the absolute path of the "
+                + "session folder in cwd, or change the USER level."
         case .otherSessionWorkingDirectory(let path):
             "The working directory \"\(path)\" is not the folder of this session. Give no cwd: the folder of this "
                 + "session applies."

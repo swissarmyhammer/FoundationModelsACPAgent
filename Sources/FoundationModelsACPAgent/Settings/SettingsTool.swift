@@ -101,8 +101,9 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     /// - Parameters:
     ///   - store: The store of the agent settings.
     ///   - sessionDirectory: The working directory of the session that owns
-    ///     the tool, or `nil` (the default) for a tool of no session, where
-    ///     each call must give `cwd`, the same as the endpoint.
+    ///     the tool, or `nil` (the default) for a tool of no session, where a
+    ///     call with no `cwd` works on the user level only, the same as the
+    ///     endpoint.
     /// - Throws: An error of the schema builder.
     public init(store: SettingsStore, sessionDirectory: URL? = nil) throws {
         endpoint = try SettingsGraph(store: store)

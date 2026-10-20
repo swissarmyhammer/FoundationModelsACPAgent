@@ -51,7 +51,9 @@ type Secret {
   hasValue: Boolean
 }
 
-"""The merged value of one key for a session, and the layer that set it."""
+"""
+The merged value of one key for a session, or of the USER level when no cwd applies, and the layer that set it.
+"""
 type Setting {
   """The key path of the setting."""
   keyPath: [String!]!
@@ -85,7 +87,7 @@ type Query {
   sections: [String!]!
 
   """
-  The merged value of one key for a session, or null when no layer has the key.
+  The merged value of one key for a session, or of the USER level when no cwd applies, or null when no layer has the key.
   """
   setting(
     """
@@ -94,7 +96,7 @@ type Query {
     keyPath: [String!]!
 
     """
-    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint must give it. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
     """
     cwd: String
   ): Setting
@@ -117,7 +119,7 @@ type Mutation {
     level: SettingLevel!
 
     """
-    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint must give it. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
     """
     cwd: String
   ): Setting
@@ -135,7 +137,7 @@ type Mutation {
     level: SettingLevel!
 
     """
-    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint must give it. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
     """
     cwd: String
   ): Setting
@@ -143,11 +145,11 @@ type Mutation {
 
 type Subscription {
   """
-  Each change of the settings, from a mutation or from a change of a file.
+  Each change of the settings, from a mutation or from a change of a file. With no cwd, only the changes of USER.
   """
   changes(
     """
-    The working directory whose session level to watch, or null for USER only.
+    The working directory whose session level to watch, or null for the changes of USER only.
     """
     cwd: String
   ): SettingsChange!

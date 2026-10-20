@@ -24,7 +24,9 @@ public enum SettingsLevel: Hashable, Sendable {
         }
     }
 
-    /// The levels that ``SettingsStore/startWatching(cwd:)`` reads.
+    /// The levels that ``SettingsStore/startWatching(cwd:)`` reads, and the
+    /// levels that ``SettingsStore/value(at:cwd:)`` merges, lowest precedence
+    /// first.
     ///
     /// - Parameter cwd: The working directory of the session level, or `nil`.
     /// - Returns: The user level, then the session level of `cwd`.
@@ -259,17 +261,20 @@ public actor SettingsStore {
         return try loader.loadedConfiguration(dotfolderRoot: merged.root, sources: merged.dottedSources)
     }
 
-    /// The merged value of one key for a working directory, and the layer
-    /// that set it. A secret reference stays a reference.
+    /// The merged value of one key for a working directory, or for the user
+    /// level only, and the layer that set it. A secret reference stays a
+    /// reference.
     ///
     /// - Parameters:
     ///   - keyPath: The keys from the root, such as `["compaction", "trigger"]`.
-    ///   - cwd: The working directory of the session.
+    ///   - cwd: The working directory of the session, or `nil` for the user
+    ///     level only: then the user level goes over the defaults layer and
+    ///     the builtin layer, and no session level applies.
     /// - Returns: The value and its layer, or `nil` when no layer and no
     ///   builtin default has the key.
     /// - Throws: What ``merged(for:)`` throws for a level file, or what the
     ///   builtin file throws.
-    public func value(at keyPath: [String], cwd: URL) throws -> SettingsValue? {
+    public func value(at keyPath: [String], cwd: URL?) throws -> SettingsValue? {
         let (merged, loader) = try mergedSettings(for: cwd)
         return try loader.layeredRoot(over: merged.root).value(at: keyPath).map {
             SettingsValue(value: $0, level: ConfigurationLayerName(merged.source(of: keyPath)))
@@ -438,13 +443,19 @@ public actor SettingsStore {
     /// user level and the session level of `cwd`, and the configuration
     /// loader of `cwd` that takes the merged tree further.
     ///
-    /// - Parameter cwd: The working directory of the session.
+    /// - Parameter cwd: The working directory of the session, or `nil` for
+    ///   the user level only. With `nil`, the loader is the loader of
+    ///   ``placeholderDirectory``: its builtin layer is the same for each
+    ///   working directory.
     /// - Returns: The merged tree with its sources, and the loader.
     /// - Throws: What ``levelState(of:)`` and a read of the defaults file
     ///   throw.
-    private func mergedSettings(for cwd: URL) throws -> (settings: MergedSettings, loader: ConfigurationLoader) {
-        let trees = try [SettingsLevel.user, .session(cwd)].map { try levelState(of: $0).tree }
-        return (try mergedSettings(over: trees), makeConfigurationLoader(workingDirectory: cwd))
+    private func mergedSettings(for cwd: URL?) throws -> (settings: MergedSettings, loader: ConfigurationLoader) {
+        let trees = try SettingsLevel.watched(cwd: cwd).map { try levelState(of: $0).tree }
+        return (
+            try mergedSettings(over: trees),
+            makeConfigurationLoader(workingDirectory: cwd ?? Self.placeholderDirectory)
+        )
     }
 
     /// The merged settings of the defaults layer and `trees`.

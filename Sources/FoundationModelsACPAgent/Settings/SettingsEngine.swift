@@ -64,18 +64,20 @@ struct SettingsEngine: Sendable {
 
     // MARK: - Reads
 
-    /// Reads the merged value of one key for a session, and the layer that
-    /// set it.
+    /// Reads the merged value of one key for a session, or of the user level
+    /// only, and the layer that set it.
     ///
     /// - Parameters:
     ///   - keyPath: The key path. Its first key is a section.
-    ///   - cwd: The absolute path of the working directory of the session.
+    ///   - cwd: The absolute path of the working directory of the session, or
+    ///     `nil` for the user level over the builtin layers, with no session
+    ///     level.
     /// - Returns: The reading, or `nil` when no layer and no builtin default
     ///   has the key.
     /// - Throws: ``SettingsGraphError`` for a call that the engine refuses,
     ///   or for a secret that the secret store cannot read; what the store
     ///   throws for a file that it cannot read.
-    func setting(at keyPath: [String], cwd: String) async throws -> SettingsReading? {
+    func setting(at keyPath: [String], cwd: String?) async throws -> SettingsReading? {
         try await reading(at: keyPath, cwd: cwd, secretOf: secret(of:))
     }
 
@@ -91,12 +93,13 @@ struct SettingsEngine: Sendable {
     ///
     /// - Parameters:
     ///   - keyPath: The key path. Its first key is a section.
-    ///   - cwd: The absolute path of the working directory of the session.
+    ///   - cwd: The absolute path of the working directory of the session, or
+    ///     `nil` for the user level only, as ``setting(at:cwd:)`` reads it.
     /// - Returns: The reading, or `nil` when no layer and no builtin default
     ///   has the key.
     /// - Throws: ``SettingsGraphError`` for a call that the engine refuses;
     ///   what the store throws for a file that it cannot read.
-    func settingAfterChange(at keyPath: [String], cwd: String) async throws -> SettingsReading? {
+    func settingAfterChange(at keyPath: [String], cwd: String?) async throws -> SettingsReading? {
         try await reading(at: keyPath, cwd: cwd, secretOf: secretAfterChange(of:))
     }
 
@@ -121,7 +124,8 @@ struct SettingsEngine: Sendable {
     ///
     /// - Parameters:
     ///   - keyPath: The key path. Its first key is a section.
-    ///   - cwd: The absolute path of the working directory of the session.
+    ///   - cwd: The absolute path of the working directory of the session, or
+    ///     `nil` for the user level only.
     ///   - secretOf: Gives the secret of one secret key.
     /// - Returns: The reading, or `nil` when no layer and no builtin default
     ///   has the key.
@@ -129,7 +133,7 @@ struct SettingsEngine: Sendable {
     ///   what `secretOf` throws; what the store throws for a file that it
     ///   cannot read.
     private func reading(
-        at keyPath: [String], cwd: String,
+        at keyPath: [String], cwd: String?,
         secretOf: (SettingsSecretKeys.Slot) throws -> SettingsReading.Secret
     ) async throws -> SettingsReading? {
         let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
@@ -191,14 +195,17 @@ struct SettingsEngine: Sendable {
     ///   - keyPath: The key path. Its first key is a section.
     ///   - level: The level that gets the value.
     ///   - cwd: The absolute path of the working directory of the session,
-    ///     which names the session level.
+    ///     which names the session level, or `nil`. The user level needs no
+    ///     working directory.
     /// - Throws: ``SettingsGraphError`` for a call that the engine or the
-    ///   store refuses; what the store throws for a file error.
-    func set(_ value: YAMLValue, at keyPath: [String], level: SettingsGraphLevel, cwd: String) async throws {
-        let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
+    ///   store refuses, for example
+    ///   ``SettingsGraphError/missingWorkingDirectory`` for the session level
+    ///   with no `cwd`; what the store throws for a file error.
+    func set(_ value: YAMLValue, at keyPath: [String], level: SettingsGraphLevel, cwd: String?) async throws {
+        let storeLevel = try Self.checkedLevel(level, cwd: cwd, keyPath: keyPath)
         try SettingsSecretKeys.requireReferences(in: value, at: keyPath)
         try await SettingsGraphError.withCodedErrors {
-            try await store.set(value, at: keyPath, level: level.storeLevel(cwd: directory))
+            try await store.set(value, at: keyPath, level: storeLevel)
         }
     }
 
@@ -209,12 +216,13 @@ struct SettingsEngine: Sendable {
     ///   - keyPath: The key path. Its first key is a section.
     ///   - level: The level that loses the key.
     ///   - cwd: The absolute path of the working directory of the session,
-    ///     which names the session level.
+    ///     which names the session level, or `nil`. The user level needs no
+    ///     working directory.
     /// - Throws: What ``set(_:at:level:cwd:)`` throws.
-    func clear(at keyPath: [String], level: SettingsGraphLevel, cwd: String) async throws {
-        let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
+    func clear(at keyPath: [String], level: SettingsGraphLevel, cwd: String?) async throws {
+        let storeLevel = try Self.checkedLevel(level, cwd: cwd, keyPath: keyPath)
         try await SettingsGraphError.withCodedErrors {
-            try await store.clear(at: keyPath, level: level.storeLevel(cwd: directory))
+            try await store.clear(at: keyPath, level: storeLevel)
         }
     }
 
@@ -224,8 +232,10 @@ struct SettingsEngine: Sendable {
     ///
     /// The stream watches the user level and, when `cwd` is given, the
     /// session level of `cwd`, thus an outside write of one of their files
-    /// sends a change. It gives each change of ``SettingsStore/changes()``,
-    /// of each level.
+    /// sends a change. With `cwd`, it gives each change of
+    /// ``SettingsStore/changes()``, of each level. With no `cwd`, it gives
+    /// only the changes of the user level, because a client with no working
+    /// directory reads the user level only.
     ///
     /// ``SettingsStore/stopWatching()`` ends each stream of the store, for
     /// example when one connection of the agent closes. The subscription of a
@@ -263,7 +273,8 @@ struct SettingsEngine: Sendable {
     /// - Parameters:
     ///   - first: The first stream of the store.
     ///   - store: The store.
-    ///   - cwd: The working directory of the session level to watch, or `nil`.
+    ///   - cwd: The working directory of the session level to watch, or `nil`
+    ///     to give only the changes of the user level.
     ///   - continuation: The continuation of the stream of the subscriber.
     private static func relay(
         from first: AsyncStream<SettingsChange>, of store: SettingsStore, cwd: URL?,
@@ -271,7 +282,7 @@ struct SettingsEngine: Sendable {
     ) async {
         var source = first
         while !Task.isCancelled {
-            for await change in source {
+            for await change in source where cwd != nil || change.level == .user {
                 continuation.yield(change)
             }
             guard !Task.isCancelled else {
@@ -301,16 +312,34 @@ struct SettingsEngine: Sendable {
     /// Checks the working directory and the key path of one call.
     ///
     /// - Parameters:
-    ///   - cwd: The path of the working directory that the call gave.
+    ///   - cwd: The path of the working directory that the call gave, or
+    ///     `nil` when the call gave none.
     ///   - keyPath: The key path that the call gave.
     /// - Returns: The directory URL of `cwd`, as ``workingDirectory(_:)``
-    ///   gives it.
+    ///   gives it, or `nil` when `cwd` is `nil`.
     /// - Throws: What ``workingDirectory(_:)`` and ``requireSection(of:)``
     ///   throw.
-    private static func checkedWorkingDirectory(_ cwd: String, keyPath: [String]) throws -> URL {
-        let directory = try workingDirectory(cwd)
+    private static func checkedWorkingDirectory(_ cwd: String?, keyPath: [String]) throws -> URL? {
+        let directory = try cwd.map(workingDirectory)
         try requireSection(of: keyPath)
         return directory
+    }
+
+    /// Checks the working directory and the key path of one change, and
+    /// gives the level of the store that the change writes.
+    ///
+    /// - Parameters:
+    ///   - level: The level that the call names.
+    ///   - cwd: The path of the working directory that the call gave, or
+    ///     `nil` when the call gave none.
+    ///   - keyPath: The key path that the call gave.
+    /// - Returns: The level of the store.
+    /// - Throws: What ``checkedWorkingDirectory(_:keyPath:)`` and
+    ///   ``SettingsGraphLevel/storeLevel(cwd:)`` throw.
+    private static func checkedLevel(
+        _ level: SettingsGraphLevel, cwd: String?, keyPath: [String]
+    ) throws -> SettingsLevel {
+        try level.storeLevel(cwd: checkedWorkingDirectory(cwd, keyPath: keyPath))
     }
 
     /// Gives the URL of a working directory.

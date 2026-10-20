@@ -268,16 +268,75 @@ import Testing
         #expect(reply.codes == [SettingsGraphError.relativeWorkingDirectory(path: "").code])
     }
 
-    /// The endpoint has no session folder, thus it refuses a call that gives
-    /// no working directory.
-    @Test func aCallWithNoWorkingDirectoryIsRefused() async throws {
-        let fixture = try SettingsGraphFixture(label: "no-cwd")
+    // MARK: - No working directory
 
-        let reply = try await fixture.run(
-            SettingsGraphFixture.sessionSettingQuery,
-            variables: ["keyPath": .array(SettingsGraphFixture.triggerKeyPath.map(Map.string))])
+    /// The endpoint has no session folder, thus it refuses a `set` and a
+    /// `clear` on the session level that give no working directory, and the
+    /// user level does not change.
+    @Test func aSessionChangeWithNoWorkingDirectoryIsRefused() async throws {
+        let fixture = try SettingsGraphFixture(label: "no-cwd-session")
 
-        #expect(reply.codes == [SettingsGraphError.missingWorkingDirectory.code])
+        let set = try await fixture.set(
+            .number(Number(Self.sessionTrigger)), at: SettingsGraphFixture.triggerKeyPath,
+            level: SettingsGraphFixture.sessionLevel, cwd: nil)
+        let clear = try await fixture.clear(
+            SettingsGraphFixture.triggerKeyPath, level: SettingsGraphFixture.sessionLevel, cwd: nil)
+
+        #expect(set.codes == [SettingsGraphError.missingWorkingDirectory.code])
+        #expect(clear.codes == [SettingsGraphError.missingWorkingDirectory.code])
+        #expect(try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: nil) == nil)
+    }
+
+    /// A `set` on the user level with no working directory writes
+    /// `<root>/config.yaml`, and its result is the user value.
+    @Test func aUserSetWithNoWorkingDirectoryWritesTheUserFile() async throws {
+        let fixture = try SettingsGraphFixture(label: "no-cwd-user-set")
+
+        let reply = try await fixture.set(
+            .number(Number(Self.userTrigger)), at: SettingsGraphFixture.triggerKeyPath,
+            level: SettingsGraphFixture.userLevel, cwd: nil)
+
+        #expect(reply.codes.isEmpty)
+        let result = try reply.object("set")
+        #expect(result["value"] as? Double == Self.userTrigger)
+        #expect(result["level"] as? String == SettingsGraphFixture.userLevel)
+        let text = try textOnDisk(at: ConfigCommandFixture.configURL(in: fixture.userRoot))
+        #expect(try YAMLValue.parse(text).value(at: SettingsGraphFixture.triggerKeyPath) == .double(Self.userTrigger))
+    }
+
+    /// A `clear` on the user level with no working directory removes the key
+    /// from `<root>/config.yaml`. No lower layer has the key, thus the result
+    /// is `null`.
+    @Test func aUserClearWithNoWorkingDirectoryRemovesTheUserValue() async throws {
+        let fixture = try SettingsGraphFixture(label: "no-cwd-user-clear")
+        try await fixture.store.set(
+            .double(Self.userTrigger), at: SettingsGraphFixture.triggerKeyPath, level: .user)
+
+        let reply = try await fixture.clear(
+            SettingsGraphFixture.triggerKeyPath, level: SettingsGraphFixture.userLevel, cwd: nil)
+
+        #expect(reply.codes.isEmpty)
+        #expect(reply.data?["clear"] is NSNull)
+        let text = try textOnDisk(at: ConfigCommandFixture.configURL(in: fixture.userRoot))
+        #expect(try YAMLValue.parse(text).value(at: SettingsGraphFixture.triggerKeyPath) == nil)
+    }
+
+    /// A query with no working directory gives the user level over the
+    /// builtin layer. The session level of a folder does not apply.
+    @Test func aQueryWithNoWorkingDirectoryReadsTheUserLevel() async throws {
+        let fixture = try SettingsGraphFixture(label: "no-cwd-query")
+        try await fixture.store.set(
+            .double(Self.userTrigger), at: SettingsGraphFixture.triggerKeyPath, level: .user)
+        try await fixture.store.set(
+            .double(Self.sessionTrigger), at: SettingsGraphFixture.triggerKeyPath,
+            level: .session(fixture.firstDirectory))
+
+        let user = try await fixture.setting(SettingsGraphFixture.triggerKeyPath, cwd: nil).object("setting")
+        let builtin = try await fixture.setting(["tools", "mcp"], cwd: nil).object("setting")
+
+        #expect(user["value"] as? Double == Self.userTrigger)
+        #expect(user["level"] as? String == SettingsGraphFixture.userLevel)
+        #expect(builtin["level"] as? String == SettingsGraphFixture.builtinLayer)
     }
 
     // MARK: - Secrets
