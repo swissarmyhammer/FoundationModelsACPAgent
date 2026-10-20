@@ -37,7 +37,7 @@ comments:
   timestamp: 2026-10-20T22:02:49.916450+00:00
 position_column: doing
 position_ordinal: '80'
-title: The host gives the skills marketplace cache and the model cache directories
+title: The host gives the model cache directory (waits for Extras and Router ^1056ce6)
 ---
 ## What
 The TestudoApp session asks (2026-10-20): the app gives each folder in Application Support. With a root settings folder (ACPA-16), three folders that are not settings can still be in the home folder. `hooksDataDirectory` is done (^44qdn4g). The other two can be set now only through environment variables in the `environment:` argument of `ComposedAgent.compose`:
