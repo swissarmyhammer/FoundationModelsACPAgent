@@ -285,11 +285,42 @@ there is no permission prompt, and the agent never sends
 `session/request_permission`.
 The sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
 
+## Settings folders
+
+Each settings stack comes from one list of folders (`SettingsFolders`), at two
+levels over the built-in level. The session level wins over the user level.
+
+- **The session level** is the project dotfolder of the working directory of
+  each session: `<cwd>/.<name>/` for `config.yaml` and `Instructions.md`,
+  `<cwd>/.skills/` for the skills, `<cwd>/.agents/` for the agents, and
+  `<cwd>/.rules/` for the rules.
+- **The user level** comes from the host. An app gives a root settings folder,
+  for example `<iCloud container>/Agents/`, as `rootSettingsFolder:` of
+  `ComposedAgent.compose` or of `RoutedACPAgent.init`. The `acp-agent` CLI gives
+  none, and keeps the XDG folders.
+
+| Kind | With a root settings folder | With no root (the CLI) |
+|---|---|---|
+| `config.yaml`, `Instructions.md` | `<root>/` | `$XDG_CONFIG_HOME/<name>/` (default `~/.config/<name>/`) |
+| skills | `<root>/_skills/` | `$XDG_CONFIG_HOME/skills/` |
+| rules | `<root>/_rules/` | `$XDG_CONFIG_HOME/rules/` |
+| agents | `<root>/` | `$XDG_CONFIG_HOME/agents/` |
+
+With a root settings folder, no stack holds a folder in the home directory or in
+`XDG_CONFIG_HOME`. The agents layer of the root is the root itself, so an agent
+is `<root>/agents/<id>/AGENT.md` today; the layout `<root>/<id>/` comes with
+AG-10 of `FoundationModelsAgents`. A folder in the root whose name starts with
+`_` holds settings, and it is never a valid agent id. The built-in level is the defaults folder
+that `<NAME>_DEFAULTS_DIR` names, for example `SKILLS_DEFAULTS_DIR`, and the
+compiled-in `builtin.config.yaml`. `acp-agent doctor` and `acp-agent config
+path` show the layers of these folders.
+
 ## Instructions
 
 The system prompt is one markdown file, `Instructions.md`, resolved through the
 dotfolder stack. The nearest layer wins, and it replaces the whole file:
-compiled in, then `~/.config/<name>/Instructions.md`, then
+compiled in, then the user level (`<root>/Instructions.md`, or
+`~/.config/<name>/Instructions.md` for the CLI), then
 `<project>/.<name>/Instructions.md`. Additive instructions go in `AGENTS.md`.
 `Instructions.md` replaces; `AGENTS.md` adds.
 

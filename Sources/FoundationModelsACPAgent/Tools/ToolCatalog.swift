@@ -212,14 +212,17 @@ public struct SessionSurface: Sendable {
 /// capability whose section decodes as off gets no `with…()` call, is not
 /// constructed, and never reaches the model.
 public enum ToolCatalog {
-    /// The dotfolder name the skills stack roots at: `~/.config/skills`
-    /// for the user layer and `<workingDirectory>/.skills` for the
-    /// project layer.
+    /// The dotfolder name the skills stack roots at:
+    /// `<workingDirectory>/.skills` for the project layer, and with no root
+    /// settings folder `~/.config/skills` for the user layer
+    /// (``SettingsFolders``).
     static let skillsDotfolderName = "skills"
 
-    /// The dotfolder name the agents stack roots at: `~/.config/agents` for
-    /// the user layer and `<workingDirectory>/.agents` for the project
-    /// layer. Each layer holds the agent folders `agents/<name>/AGENT.md`.
+    /// The dotfolder name the agents stack roots at:
+    /// `<workingDirectory>/.agents` for the project layer, and with no root
+    /// settings folder `~/.config/agents` for the user layer
+    /// (``SettingsFolders``). Each layer holds the agent folders
+    /// `agents/<name>/AGENT.md`.
     static let agentsDotfolderName = "agents"
 
     /// The surface path of the files read verb, the door the prompt's
@@ -543,18 +546,18 @@ public enum ToolCatalog {
     /// ``CatalogContext/environment``: `SKILLS_MARKETPLACE_CACHE` and
     /// `SKILLS_MARKETPLACE_SEED`. With neither variable, the cache is the
     /// default folder under the home folder, and there is no seed. The
-    /// dotfolder stack reads `SKILLS_DEFAULTS_DIR` and `XDG_CONFIG_HOME` from
-    /// the same environment.
+    /// dotfolder stack is the ``SettingsFolders/Kind/skills`` stack of
+    /// ``CatalogContext/settingsFolders``: with a root settings folder its
+    /// user layer is `<root>/_skills/`, and with no root it is the XDG user
+    /// layer. It reads `SKILLS_DEFAULTS_DIR` from the environment of the
+    /// settings folders.
     ///
     /// - Parameter context: The session whose working directory roots the
     ///   stack's project layer.
     /// - Returns: The skills source.
     public static func makeSkillsSource(context: CatalogContext) async -> SkillsSource {
         let options = context.configuration.tools.skills
-        let stack = DotfolderStack(
-            name: skillsDotfolderName,
-            workingDirectory: context.workingDirectory,
-            environment: context.environment)
+        let stack = context.settingsFolders.stack(for: .skills, workingDirectory: context.workingDirectory)
         guard !options.marketplaces.isEmpty else {
             return SkillsSource(registry: SkillsRegistry(stack: stack, watch: true), marketplaces: nil)
         }

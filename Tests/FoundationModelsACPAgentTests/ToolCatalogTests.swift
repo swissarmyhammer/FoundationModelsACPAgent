@@ -130,6 +130,7 @@ import Testing
             profile: try await makeStubProfile(
                 cacheDirectory: try makeTemporaryDirectory(label: "cache"),
                 loader: loader),
+            settingsFolders: try SettingsFoldersFixture.make(label: "ToolCatalogTests", environment: environment),
             environment: environment)
     }
 

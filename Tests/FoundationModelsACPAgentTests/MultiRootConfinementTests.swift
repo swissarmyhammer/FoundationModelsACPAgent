@@ -239,7 +239,8 @@ import Testing
             additionalRoots: [additionalRoot],
             configuration: configuration,
             profile: try await makeStubProfile(
-                cacheDirectory: Self.makeResolvedDirectory(named: "shell-cache")))
+                cacheDirectory: Self.makeResolvedDirectory(named: "shell-cache")),
+            settingsFolders: try SettingsFoldersFixture.make(label: "MultiRootConfinementTests"))
         let registry = try await ToolCatalog.makeRegistry(context: context).registry
 
         _ = try await ShellVerbSupport.invokeExecute(

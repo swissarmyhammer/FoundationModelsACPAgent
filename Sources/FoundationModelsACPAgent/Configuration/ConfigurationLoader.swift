@@ -157,11 +157,13 @@ public struct LoadedConfiguration: Equatable, Sendable {
 
 /// Loads `config.yaml` through the configuration stack.
 /// Layer 1 is the builtin file `builtin.config.yaml`, a resource of
-/// this library. Over it is the dotfolder stack: the user layer
-/// `~/.config/<name>/` (or `$XDG_CONFIG_HOME/<name>/` when that variable is
-/// set and absolute) under the project layer `<cwd>/.<name>/`. Both
-/// dotfolder layers render untrusted. Layer 1 is not a template and sets no
-/// source, thus a key that only layer 1 sets reports the builtin layer.
+/// this library. Over it is the configuration stack of ``SettingsFolders``:
+/// the user layer under the project layer `<cwd>/.<name>/`. The user layer
+/// is the root settings folder of the host when the host gives one, and
+/// otherwise `~/.config/<name>/` (or `$XDG_CONFIG_HOME/<name>/` when that
+/// variable is set and absolute). Both dotfolder layers render untrusted.
+/// Layer 1 is not a template and sets no source, thus a key that only
+/// layer 1 sets reports the builtin layer.
 ///
 /// The project layer resolves per session, so one loader serves one
 /// working directory. Two loaders with two working directories see two
@@ -173,7 +175,12 @@ public struct ConfigurationLoader: Sendable {
     /// The dotfolder name the stack is rooted at.
     public let name: DotfolderName
 
-    /// The two-layer stack the loader resolves `config.yaml` against.
+    /// The settings folders the stack comes from. The doctor reads the
+    /// skills and agents stacks of the same folders.
+    public let settingsFolders: SettingsFolders
+
+    /// The stack the loader resolves `config.yaml` against: the
+    /// ``SettingsFolders/Kind/configuration`` stack of ``settingsFolders``.
     public let stack: DotfolderStack
 
     /// The transcript location that a host gives in code, or `nil` when
@@ -194,7 +201,38 @@ public struct ConfigurationLoader: Sendable {
     /// Gives the tree of layer 1, under the dotfolder stack.
     private let builtinLayer: @Sendable () throws -> YAMLValue
 
+    /// Builds the configuration stack of `settingsFolders` for one working
+    /// directory, over the builtin configuration file.
+    ///
+    /// - Parameters:
+    ///   - settingsFolders: The settings folders of the host. Their
+    ///     ``SettingsFolders/name`` is the dotfolder name of the loader.
+    ///   - workingDirectory: The session working directory; the project
+    ///     layer roots at `<workingDirectory>/.<name>/`.
+    ///   - transcriptLocation: The transcript location that wins over every
+    ///     layer, or `nil` (the default) to let the files decide — see
+    ///     ``transcriptLocation``.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference, or `nil` (the default) for the login Keychain under
+    ///     the service `name` (``KeychainSecretStore/loginKeychain(for:)``).
+    ///     A test gives an ``InMemorySecretStore``.
+    public init(
+        settingsFolders: SettingsFolders,
+        workingDirectory: URL,
+        transcriptLocation: TranscriptLocation? = nil,
+        secretStore: (any SecretStore)? = nil
+    ) {
+        self.init(
+            settingsFolders: settingsFolders, workingDirectory: workingDirectory,
+            transcriptLocation: transcriptLocation, secretStore: secretStore,
+            builtinLayer: BuiltinConfigurationFile.root)
+    }
+
     /// Builds the stack for `name`, over the builtin configuration file.
+    ///
+    /// The user layer root of the configuration stack is the root settings
+    /// folder of ``SettingsFolders``, thus `userDirectory` goes to the
+    /// settings folders as their root.
     ///
     /// - Parameters:
     ///   - name: The validated dotfolder name.
@@ -248,14 +286,37 @@ public struct ConfigurationLoader: Sendable {
         secretStore: (any SecretStore)? = nil,
         builtinLayer: @escaping @Sendable () throws -> YAMLValue
     ) {
-        self.name = name
-        self.stack = DotfolderStack(
-            name: name.rawValue,
-            workingDirectory: workingDirectory,
-            userDirectory: userDirectory,
-            environment: environment)
+        self.init(
+            settingsFolders: SettingsFolders(
+                name: name, rootSettingsFolder: userDirectory, environment: environment),
+            workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
+            secretStore: secretStore, builtinLayer: builtinLayer)
+    }
+
+    /// Builds the configuration stack of `settingsFolders`, over the layer 1
+    /// tree that `builtinLayer` gives.
+    ///
+    /// - Parameters:
+    ///   - settingsFolders: The settings folders of the host.
+    ///   - workingDirectory: The session working directory.
+    ///   - transcriptLocation: The transcript location that wins over every
+    ///     layer, or `nil` to let the files decide.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference, or `nil` for the login Keychain under the service
+    ///     `name`.
+    ///   - builtinLayer: Gives the tree of layer 1. Each load calls it.
+    init(
+        settingsFolders: SettingsFolders,
+        workingDirectory: URL,
+        transcriptLocation: TranscriptLocation?,
+        secretStore: (any SecretStore)?,
+        builtinLayer: @escaping @Sendable () throws -> YAMLValue
+    ) {
+        self.name = settingsFolders.name
+        self.settingsFolders = settingsFolders
+        self.stack = settingsFolders.stack(for: .configuration, workingDirectory: workingDirectory)
         self.transcriptLocation = transcriptLocation
-        self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)
+        self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
         self.builtinLayer = builtinLayer
     }
 

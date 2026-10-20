@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)``
+/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -103,9 +103,18 @@ public struct ComposedAgent: Sendable {
     ///     hook data directory.
     ///   - workingDirectory: The directory whose dotfolder stack the
     ///     start-up configuration loads from.
-    ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
-    ///     from, and the hooks read `XDG_DATA_HOME` from. The process
-    ///     environment by default.
+    ///   - rootSettingsFolder: The root settings folder of the host, or `nil`
+    ///     (the default) for the XDG user layers. With a root, the user layer
+    ///     of `config.yaml` and `Instructions.md` is `<root>/`, the user
+    ///     layer of the skills is `<root>/_skills/`, and no stack of the
+    ///     agent holds a folder in the home directory or in
+    ///     `XDG_CONFIG_HOME` (``SettingsFolders``). An app gives
+    ///     `<iCloud container>/Agents/` here. The `acp-agent` CLI gives no
+    ///     value.
+    ///   - environment: The environment the stacks read their defaults
+    ///     layer from (and `XDG_CONFIG_HOME` when there is no root), and the
+    ///     hooks read `XDG_DATA_HOME` from. The process environment by
+    ///     default.
     ///   - modelSource: The model path to build the router over.
     ///     ``ModelSource/live`` by default.
     ///   - stubChunkGate: The path of a named pipe that a stub answer reads
@@ -151,6 +160,7 @@ public struct ComposedAgent: Sendable {
     public static func compose(
         name: DotfolderName,
         workingDirectory: URL,
+        rootSettingsFolder: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         modelSource: ModelSource = .live,
         stubChunkGate: String? = nil,
@@ -160,8 +170,10 @@ public struct ComposedAgent: Sendable {
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
-            name: name, workingDirectory: workingDirectory, environment: environment,
-            transcriptLocation: transcriptLocation, secretStore: secretStore
+            settingsFolders: SettingsFolders(
+                name: name, rootSettingsFolder: rootSettingsFolder, environment: environment),
+            workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
+            secretStore: secretStore
         ).load().configuration
         let hooks = AgentHooks(
             dataDirectory: hooksDataDirectory ?? AgentHooks.dataDirectory(name: name, environment: environment))
@@ -175,6 +187,7 @@ public struct ComposedAgent: Sendable {
             hooks: hooks,
             configuration: configuration,
             reporting: progress,
+            rootSettingsFolder: rootSettingsFolder,
             environment: environment,
             transcriptLocation: transcriptLocation,
             secretStore: secretStore)

@@ -51,15 +51,17 @@ public actor RoutedACPAgent: Agent {
     /// came before `initialize`, and is refused.
     public internal(set) var negotiatedClientCapabilities: NegotiatedClientCapabilities?
 
-    /// The user layer root override, or `nil` to derive the XDG location
-    /// from ``environment`` and the home directory. Tests
-    /// inject a value so they never touch the real home directory, the
-    /// same seam `ConfigurationLoader` documents.
-    nonisolated let userDirectory: URL?
+    /// The settings folders of the agent (ACPA-16, D98): ``name``, the root
+    /// settings folder of the host, and ``environment``. Each stack of each
+    /// session comes from them: the configuration stack of each
+    /// ``makeConfigurationLoader(workingDirectory:)`` and the skills and
+    /// agents stacks of each ``CatalogContext``.
+    nonisolated let settingsFolders: SettingsFolders
 
-    /// The environment of the host. The per-session dotfolder stack reads
-    /// `XDG_CONFIG_HOME` from it, and each session composition gives it to
-    /// its ``CatalogContext``, so the session tools read the values that the
+    /// The environment of the host. The per-session dotfolder stacks read
+    /// their defaults layer from it, and with no root settings folder
+    /// `XDG_CONFIG_HOME` too. Each session composition gives it to its
+    /// ``CatalogContext``, so the session tools read the values that the
     /// host gave (``CatalogContext/environment``).
     nonisolated let environment: [String: String]
 
@@ -278,13 +280,16 @@ public actor RoutedACPAgent: Agent {
     ///     is resolved.
     ///   - reporting: The UI-bindable resolution progress, or `nil` for a
     ///     fresh unobserved one.
-    ///   - userDirectory: The user layer root, or `nil` to derive it from
-    ///     `environment` and the home directory. Tests inject a value so
-    ///     they never touch the real home directory.
-    ///   - environment: The environment of the host: `XDG_CONFIG_HOME` is
-    ///     read from it, and the session tools read it
-    ///     (``CatalogContext/environment``). Defaults to the environment of
-    ///     the process.
+    ///   - rootSettingsFolder: The root settings folder of the host, or `nil`
+    ///     (the default) for the XDG user layers of the CLI. With a root,
+    ///     each stack of each session reads its user layer from the root and
+    ///     no stack holds a folder in the home directory or in
+    ///     `XDG_CONFIG_HOME` (``SettingsFolders``). Tests give a temporary
+    ///     folder so they never touch the real home directory.
+    ///   - environment: The environment of the host: the stacks read their
+    ///     defaults layer from it, and with no root `XDG_CONFIG_HOME` too,
+    ///     and the session tools read it (``CatalogContext/environment``).
+    ///     Defaults to the environment of the process.
     ///   - inlineSettleGrace: The settle period of each session that the
     ///     agent makes, in seconds. Defaults to
     ///     ``CatalogContext/defaultInlineSettleGrace``.
@@ -302,7 +307,7 @@ public actor RoutedACPAgent: Agent {
         hooks: AgentHooks,
         configuration: AgentConfiguration = AgentConfiguration(),
         reporting: ResolutionProgress? = nil,
-        userDirectory: URL? = nil,
+        rootSettingsFolder: URL? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         transcriptLocation: TranscriptLocation? = nil,
@@ -310,7 +315,8 @@ public actor RoutedACPAgent: Agent {
     ) async throws {
         self.name = name
         self.hooks = hooks
-        self.userDirectory = userDirectory
+        self.settingsFolders = SettingsFolders(
+            name: name, rootSettingsFolder: rootSettingsFolder, environment: environment)
         self.environment = environment
         self.inlineSettleGrace = inlineSettleGrace
         self.transcriptLocation = transcriptLocation

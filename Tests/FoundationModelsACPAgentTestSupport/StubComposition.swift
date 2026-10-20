@@ -31,6 +31,11 @@ private let dataHomeVariable = "XDG_DATA_HOME"
 ///   - dataHome: The `XDG_DATA_HOME` of the composition, or `nil` (the
 ///     default) for a new throwaway directory. A caller that must find the
 ///     default hook data directory gives it here.
+///   - rootSettingsFolder: The root settings folder to give to the
+///     composition, or `nil` (the default) for the XDG layers.
+///   - configHome: The `XDG_CONFIG_HOME` of the composition, or `nil` (the
+///     default) for a new throwaway directory. A caller that writes a file
+///     into the XDG user layer gives it here.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -40,9 +45,11 @@ public func composeStubAgent(
     workspace: URL? = nil,
     secretStore: (any SecretStore)? = nil,
     hooksDataDirectory: URL? = nil,
-    dataHome: URL? = nil
+    dataHome: URL? = nil,
+    rootSettingsFolder: URL? = nil,
+    configHome: URL? = nil
 ) async throws -> ComposedAgent {
-    let configHome = makeResolvedDirectory(label: "\(label)-config")
+    let configHome = configHome ?? makeResolvedDirectory(label: "\(label)-config")
     let dataHome = dataHome ?? makeResolvedDirectory(label: "\(label)-data")
     let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
     let environment = try StubAgentDefaultsLayer.makeEnvironment(
@@ -50,6 +57,7 @@ public func composeStubAgent(
     return try await ComposedAgent.compose(
         name: DotfolderName(name),
         workingDirectory: workspace,
+        rootSettingsFolder: rootSettingsFolder,
         environment: environment,
         modelSource: .stub,
         secretStore: secretStore,

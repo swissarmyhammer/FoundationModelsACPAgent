@@ -36,6 +36,7 @@ enum CatalogRegistryFixture {
             configuration: configuration,
             profile: try await makeStubProfile(
                 cacheDirectory: makeResolvedDirectory(label: cacheLabel)),
+            settingsFolders: try SettingsFoldersFixture.make(label: cacheLabel),
             environment: [:])
         return try await ToolCatalog.makeRegistry(context: context)
     }

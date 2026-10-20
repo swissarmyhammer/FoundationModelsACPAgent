@@ -6,18 +6,18 @@ import FoundationModelsExtras
 /// on disk can be read.
 ///
 /// The stack is the one ``ToolCatalog/makeSkillsSource(context:)`` builds,
-/// under the same dotfolder name, so this component reports the very
+/// from the same ``SettingsFolders``, so this component reports the very
 /// directories a session reads. A layer that is not on disk passes: skills
 /// are optional, and a fresh install has made none. A layer that is on disk
 /// and cannot be read is an ``HealthStatus/error``, because the session
 /// silently loses every skill in it.
 ///
-/// The agents stack (``ToolCatalog/agentsDotfolderName``) gets the same
-/// rows after the skills rows: one per layer. The skills tool and the
-/// `agents` tool are always on, thus the component reads no configuration.
+/// The agents stack (``SettingsFolders/Kind/agents``) gets the same rows
+/// after the skills rows: one per layer. The skills tool and the `agents`
+/// tool are always on, thus the component reads no configuration.
 ///
-/// The component takes the environment as an argument, so a test drives it
-/// over a temporary stack and no test reads the real home directory.
+/// The component takes the settings folders as an argument, so a test drives
+/// it over a temporary stack and no test reads the real home directory.
 /// Nothing here throws.
 ///
 /// **cli-plan.md §5.12 states a second row, Runtime — "The Metal shader
@@ -45,7 +45,7 @@ public struct RuntimeDoctor: Doctorable {
     /// An unreadable one loses every skill in it, and a person either opens
     /// the directory or takes it away.
     private static let skillsSection = DotfolderSection(
-        dotfolderName: ToolCatalog.skillsDotfolderName,
+        kind: .skills,
         wording: DotfolderLayerCheck.Wording(
             missingReason: "skills are optional",
             noun: ToolCatalog.skillsDotfolderName,
@@ -57,7 +57,7 @@ public struct RuntimeDoctor: Doctorable {
     /// A layer that is not on disk is no fault, because agents are optional.
     /// An unreadable one loses every agent in it.
     private static let agentsSection = DotfolderSection(
-        dotfolderName: ToolCatalog.agentsDotfolderName,
+        kind: .agents,
         wording: DotfolderLayerCheck.Wording(
             missingReason: "agents are optional",
             noun: ToolCatalog.agentsDotfolderName,
@@ -67,8 +67,8 @@ public struct RuntimeDoctor: Doctorable {
     /// The values that make the rows of one dotfolder section different from
     /// the rows of an other section.
     private struct DotfolderSection {
-        /// The dotfolder name of the stack that the section reads.
-        let dotfolderName: String
+        /// The kind of settings whose stack the section reads.
+        let kind: SettingsFolders.Kind
 
         /// The words of a layer row.
         let wording: DotfolderLayerCheck.Wording
@@ -76,13 +76,13 @@ public struct RuntimeDoctor: Doctorable {
 
     // MARK: - Stored state
 
-    /// The directory `--cwd` names, which roots the project layer of the
-    /// skills stack.
+    /// The directory `--cwd` names, which roots the project layer of each
+    /// stack.
     private let workingDirectory: URL
 
-    /// The environment the stack reads, above all `XDG_CONFIG_HOME`, which
-    /// roots the user layer.
-    private let environment: [String: String]
+    /// The settings folders that each stack comes from: the same folders
+    /// that the sessions read.
+    private let settingsFolders: SettingsFolders
 
     // MARK: - Doctorable
 
@@ -92,14 +92,14 @@ public struct RuntimeDoctor: Doctorable {
     /// The group its findings belong to.
     public let doctorCategory = RuntimeDoctor.category
 
-    /// Makes the component over the tree the skills stack roots in.
+    /// Makes the component over the stacks of `settingsFolders`.
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory `--cwd` names.
-    ///   - environment: The environment the stack reads.
-    public init(workingDirectory: URL, environment: [String: String]) {
+    ///   - settingsFolders: The settings folders that each stack comes from.
+    public init(workingDirectory: URL, settingsFolders: SettingsFolders) {
         self.workingDirectory = workingDirectory
-        self.environment = environment
+        self.settingsFolders = settingsFolders
     }
 
     /// Reports one finding per layer of the skills stack, lowest precedence
@@ -112,24 +112,16 @@ public struct RuntimeDoctor: Doctorable {
 
     /// The findings of one dotfolder section: one per layer of its stack.
     ///
+    /// The stack is the stack of the kind of the section in
+    /// ``settingsFolders``, so this component reports the very layers a
+    /// session reads.
+    ///
     /// - Parameter section: The values of the section.
     /// - Returns: The findings, lowest precedence first.
     private func checks(of section: DotfolderSection) -> [HealthCheck] {
-        dotfolderStack(named: section.dotfolderName).layers.map { layer in
+        settingsFolders.stack(for: section.kind, workingDirectory: workingDirectory).layers.map { layer in
             DotfolderLayerCheck.check(
                 of: layer, wording: section.wording, category: Self.category, requiresWrite: false)
         }
-    }
-
-    /// The dotfolder stack that a registry of the session builds over the
-    /// dotfolder name `name`, so this component reports the very layers a
-    /// session reads.
-    ///
-    /// - Parameter name: The dotfolder name, for example
-    ///   ``ToolCatalog/skillsDotfolderName``.
-    /// - Returns: The stack, rooted in the working directory and the
-    ///   environment of this component.
-    private func dotfolderStack(named name: String) -> DotfolderStack {
-        DotfolderStack(name: name, workingDirectory: workingDirectory, environment: environment)
     }
 }

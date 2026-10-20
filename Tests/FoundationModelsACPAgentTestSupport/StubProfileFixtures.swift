@@ -36,7 +36,10 @@ import Tracing
 ///     default) to record nothing — a session-composition suite passes a
 ///     value so `makeSession` writes the session directory to disk.
 ///   - userDirectory: The injected user layer root, or `nil` when the
-///     suite composes no session.
+///     suite composes no session. The agent gets it as its root settings
+///     folder, thus the user layer of `config.yaml` is this folder, the user
+///     layer of the skills is its `_skills` folder, and no session stack
+///     reads the real home directory.
 ///   - loader: The loader the router loads through.
 ///   - tracer: The tracer of each Router session, or `nil` (the default) to
 ///     read `InstrumentationSystem.tracer` at call time. A suite that
@@ -85,7 +88,7 @@ public func makeStubAgent(
         name: DotfolderName(name),
         router: router,
         hooks: hooks,
-        userDirectory: userDirectory,
+        rootSettingsFolder: userDirectory,
         environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
         inlineSettleGrace: inlineSettleGrace,
         secretStore: secretStore)

@@ -341,9 +341,10 @@ enum SessionSetup {
         }
     }
 
-    /// The user layer's root in `stack`, `~/.config/<name>/` in
-    /// production. `ProjectRegistry` lives there, and the
-    /// `home` transcript location resolves against it.
+    /// The user layer's root in `stack`: the root settings folder of the
+    /// host when the host gives one, and `~/.config/<name>/` for the CLI.
+    /// `ProjectRegistry` lives there, and the `home` transcript location
+    /// resolves against it.
     ///
     /// - Parameter stack: The session's dotfolder stack.
     /// - Returns: The user layer root.
@@ -783,19 +784,17 @@ extension RoutedACPAgent {
     /// place where this agent makes a `ConfigurationLoader`.
     ///
     /// Each request path that loads the configuration of a `cwd` calls it,
-    /// so each load gets the same ``name``, ``userDirectory``,
-    /// ``environment`` and ``transcriptLocation``. A new path that calls it
-    /// cannot miss the code override of the host.
+    /// so each load gets the same ``settingsFolders`` and
+    /// ``transcriptLocation``. A new path that calls it cannot miss the code
+    /// override or the root settings folder of the host.
     ///
     /// - Parameter workingDirectory: The working directory whose project
     ///   layer the loader reads.
     /// - Returns: The loader.
     nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
         ConfigurationLoader(
-            name: name,
+            settingsFolders: settingsFolders,
             workingDirectory: workingDirectory,
-            userDirectory: userDirectory,
-            environment: environment,
             transcriptLocation: transcriptLocation,
             secretStore: secretStore)
     }
@@ -880,6 +879,7 @@ extension RoutedACPAgent {
             configuration: context.loaded.configuration,
             profile: residentProfile,
             clientMCPServers: clientMCPServers,
+            settingsFolders: settingsFolders,
             environment: environment,
             inlineSettleGrace: inlineSettleGrace,
             userPresence: userPresence,

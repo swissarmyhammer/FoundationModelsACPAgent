@@ -124,6 +124,7 @@ import Testing
             profile: try await makeStubProfile(
                 cacheDirectory: try makeTemporaryDirectory(label: "cache")),
             clientMCPServers: clientServers,
+            settingsFolders: try SettingsFoldersFixture.make(label: "MCPCompositionTests"),
             userPresence: userPresence)
     }
 

@@ -22,7 +22,8 @@ public enum ConfigurationLayerName: String, Encodable, Equatable, Sendable {
     /// so the name appears only under a `<NAME>_DEFAULTS_DIR` override.
     case defaults
 
-    /// The user layer, `$XDG_CONFIG_HOME/<name>/`.
+    /// The user layer: the root settings folder of the host, or
+    /// `$XDG_CONFIG_HOME/<name>/` for the CLI (``SettingsFolders``).
     case user
 
     /// The project layer, `<cwd>/.<name>/`.

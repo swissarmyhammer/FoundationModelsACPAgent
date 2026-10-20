@@ -52,7 +52,7 @@ enum LiveAgent {
             router: router,
             hooks: hooks,
             configuration: configuration,
-            userDirectory: userDirectory,
+            rootSettingsFolder: userDirectory,
             environment: [:])
         return await AgentClientHarness.makeRecording(agent: agent)
     }

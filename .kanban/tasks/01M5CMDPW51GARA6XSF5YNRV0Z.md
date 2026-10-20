@@ -53,6 +53,14 @@ comments:
     - review: not run
     - next: the user decides whether to open a card on the Hooks board.
   timestamp: 2026-10-20T17:29:36.717839+00:00
+- actor: wballard
+  id: 01m5d8ymc3a082ebfe1mmfpcze
+  text: 'Blocked outside this board (2026-10-20, the user said to work it out with the peer sessions): FoundationModelsHooks card ^rnqwhs1 adds a read-only `SnapshotStore.timelineSummary(sessionKey:)`. After the push, update the Hooks dependency and run /implement again.'
+  timestamp: 2026-10-20T18:25:04.387881+00:00
+- actor: wballard
+  id: 01m5d95p7p77xzbjenyaft2nsd
+  text: 'HOOKS-5 API, agreed with the Hooks session (2026-10-20); the sha follows after the push: `SnapshotStore.timelineSummary(sessionKey:) async throws -> SnapshotTimelineSummary` with `sessionKey`, `workingDirectory: URL?`, `checkpointCount` (no baseline) and `lastCheckpointDate: Date?`. It reads only and works for an open key and a closed key. It throws `.noTimeline`, `.invalidSessionKey` or `.unreadableTimeline`. Show `workingDirectory` only in the local CLI output, never in a log.'
+  timestamp: 2026-10-20T18:28:55.670998+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'acp-agent snapshots: an explicit command that lists and removes snapshot folders'

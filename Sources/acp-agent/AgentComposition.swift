@@ -96,8 +96,10 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)`.
-    /// The CLI gives no `transcriptLocation`: its config files decide.
+    /// `ComposedAgent.compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:reporting:)`.
+    /// The CLI gives no `transcriptLocation`: its config files decide. The
+    /// CLI gives no `rootSettingsFolder`: its stacks keep the XDG user
+    /// layers.
     ///
     /// The CLI adds its own choices only: ``dotfolderName``, and the model
     /// path and the stub gate that `environment` selects. The library
@@ -140,8 +142,13 @@ enum AgentComposition {
     }
 
     /// Makes the loader of `workingDirectory`'s stack under
-    /// ``dotfolderName`` — the one construction the `config` reports share
-    /// (cli-plan.md §5.10, §5.11).
+    /// ``dotfolderName`` — the one construction the `config` reports and
+    /// `doctor` share (cli-plan.md §5.10, §5.11).
+    ///
+    /// The CLI gives no root settings folder, thus the stacks of its
+    /// ``SettingsFolders`` keep the XDG user layers. The loader keeps the
+    /// settings folders (``ConfigurationLoader/settingsFolders``), so
+    /// `doctor` reads the skills and agents stacks of the same folders.
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory the project layer roots under.
@@ -158,9 +165,8 @@ enum AgentComposition {
         secretStore: (any SecretStore)? = nil
     ) throws -> ConfigurationLoader {
         ConfigurationLoader(
-            name: try DotfolderName(dotfolderName),
+            settingsFolders: SettingsFolders(name: try DotfolderName(dotfolderName), environment: environment),
             workingDirectory: workingDirectory,
-            environment: environment,
             secretStore: secretStore)
     }
 }

@@ -120,21 +120,22 @@ enum AgentsComposition {
 
     /// Makes the agent registry over the `agents` dotfolder stack, and over
     /// the marketplace store when the session has one. The registry reads
-    /// no file until `load()`. The stack reads `AGENTS_DEFAULTS_DIR` and
-    /// `XDG_CONFIG_HOME` from ``CatalogContext/environment``.
+    /// no file until `load()`. The stack is the ``SettingsFolders/Kind/agents``
+    /// stack of ``CatalogContext/settingsFolders``: with a root settings
+    /// folder its user layer is the root, and with no root it is the XDG
+    /// user layer. It reads `AGENTS_DEFAULTS_DIR` from the environment of
+    /// the settings folders.
     ///
     /// - Parameters:
     ///   - context: The session whose working directory roots the project
-    ///     layer of the stack, and whose environment gives the defaults
+    ///     layer of the stack, and whose settings folders give the defaults
     ///     layer and the user layer of the stack.
     ///   - marketplaces: The started skills marketplace store, or `nil`.
     /// - Returns: The registry.
     static func makeAgentRegistry(
         context: CatalogContext, marketplaces: MarketplaceStore?
     ) -> AgentRegistry {
-        let stack = DotfolderStack(
-            name: ToolCatalog.agentsDotfolderName, workingDirectory: context.workingDirectory,
-            environment: context.environment)
+        let stack = context.settingsFolders.stack(for: .agents, workingDirectory: context.workingDirectory)
         guard let marketplaces else {
             return AgentRegistry(stack: stack)
         }

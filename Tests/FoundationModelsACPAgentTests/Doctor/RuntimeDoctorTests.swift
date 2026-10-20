@@ -28,14 +28,28 @@ struct RuntimeDoctorTests {
     /// The start of the name of each row of the agents tool.
     private static let agentsRowPrefix = "the agents"
 
+    /// The dotfolder name of the configuration of the settings folders. The
+    /// skills and agents stacks do not read it.
+    private static let dotfolderName = "runtime-doctor-test"
+
     // MARK: - Helpers
 
     /// The component over one fixture tree.
     ///
-    /// - Parameter fixture: The two-layer tree the skills stack roots in.
+    /// - Parameters:
+    ///   - fixture: The two-layer tree the skills stack roots in.
+    ///   - rootSettingsFolder: The root settings folder of the host, or
+    ///     `nil` (the default) for the XDG layers of the CLI.
     /// - Returns: The component.
-    private static func doctor(in fixture: ConfigCommandFixture) -> RuntimeDoctor {
-        RuntimeDoctor(workingDirectory: fixture.workspace, environment: fixture.environment)
+    /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
+    private static func doctor(
+        in fixture: ConfigCommandFixture, rootSettingsFolder: URL? = nil
+    ) throws -> RuntimeDoctor {
+        RuntimeDoctor(
+            workingDirectory: fixture.workspace,
+            settingsFolders: SettingsFolders(
+                name: try DotfolderName(dotfolderName), rootSettingsFolder: rootSettingsFolder,
+                environment: fixture.environment))
     }
 
     /// The findings of `checks` that carry `status`.
@@ -63,10 +77,10 @@ struct RuntimeDoctorTests {
 
     /// A tree with no skills layer on disk passes. Skills are optional, so
     /// a fresh install that never made one is not a fault.
-    @Test func aStackWithNoLayerOnDiskPasses() async {
+    @Test func aStackWithNoLayerOnDiskPasses() async throws {
         let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-absent")
 
-        let checks = await Self.doctor(in: fixture).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture).runHealthChecks()
 
         #expect(!checks.isEmpty)
         #expect(checks.allSatisfy { $0.status == .ok })
@@ -79,7 +93,7 @@ struct RuntimeDoctorTests {
         let layer = Self.projectSkillsDirectory(of: fixture)
         try FileManager.default.createDirectory(at: layer, withIntermediateDirectories: true)
 
-        let checks = await Self.doctor(in: fixture).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture).runHealthChecks()
 
         #expect(checks.allSatisfy { $0.status == .ok })
         #expect(checks.contains { $0.message.contains(layer.path) })
@@ -93,7 +107,7 @@ struct RuntimeDoctorTests {
         try FileManager.default.createDirectory(at: layer, withIntermediateDirectories: true)
         try setPermissions(Self.unreadablePermissions, of: layer)
 
-        let checks = await Self.doctor(in: fixture).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture).runHealthChecks()
         try setPermissions(ownerOnlyPermissions, of: layer)
 
         let errors = Self.findings(.error, in: checks)
@@ -108,14 +122,30 @@ struct RuntimeDoctorTests {
 
     /// The component gives one row for each layer of the agents stack, and
     /// a layer that is not on disk passes.
-    @Test func theComponentGivesOneRowForEachAgentsLayer() async {
+    @Test func theComponentGivesOneRowForEachAgentsLayer() async throws {
         let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-agents")
 
-        let checks = await Self.doctor(in: fixture).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture).runHealthChecks()
 
         let agentsChecks = checks.filter { $0.name.hasPrefix(Self.agentsRowPrefix) }
         #expect(!agentsChecks.isEmpty)
         #expect(agentsChecks.allSatisfy { $0.status == .ok })
+    }
+
+    // MARK: - The root settings folder
+
+    /// With a root settings folder, the rows give the skills layer in the
+    /// root, and no row gives a layer in the XDG config home.
+    @Test func withARootTheRowsGiveTheLayersOfTheRoot() async throws {
+        let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-root")
+        let root = makeResolvedDirectory(label: "RuntimeDoctorTests-root-settings")
+        let skillsLayer = root.appendingPathComponent(SettingsFolders.skillsFolderName, isDirectory: true)
+        try FileManager.default.createDirectory(at: skillsLayer, withIntermediateDirectories: true)
+
+        let checks = try await Self.doctor(in: fixture, rootSettingsFolder: root).runHealthChecks()
+
+        #expect(checks.contains { $0.message.contains(skillsLayer.path) })
+        #expect(!checks.contains { $0.message.contains(fixture.configHome.path) })
     }
 
     // MARK: - The tools that are always on
@@ -123,10 +153,10 @@ struct RuntimeDoctorTests {
     /// The skills tool and the `agents` tool are always on. Each row of the
     /// component is a layer row of the skills stack or of the agents stack,
     /// and no row says that a tool is disabled.
-    @Test func eachRowIsALayerRowAndNoRowSaysDisabled() async {
+    @Test func eachRowIsALayerRowAndNoRowSaysDisabled() async throws {
         let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-always-on")
 
-        let checks = await Self.doctor(in: fixture).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture).runHealthChecks()
 
         #expect(
             checks.allSatisfy {
@@ -145,7 +175,7 @@ struct RuntimeDoctorTests {
         try FileManager.default.createDirectory(at: layer, withIntermediateDirectories: true)
         try setPermissions(Self.unreadablePermissions, of: layer)
 
-        let checks = await Self.doctor(in: fixture).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture).runHealthChecks()
         try setPermissions(ownerOnlyPermissions, of: layer)
 
         #expect(checks.contains { $0.status != .ok })

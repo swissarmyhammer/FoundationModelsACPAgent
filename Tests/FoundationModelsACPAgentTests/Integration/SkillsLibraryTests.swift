@@ -99,7 +99,8 @@ import Testing
             workingDirectory: try Self.makeWorkspace(label: label),
             configuration: configuration,
             profile: try await makeStubProfile(
-                cacheDirectory: makeResolvedDirectory(label: "SkillsLibraryTests-\(label)-cache")))
+                cacheDirectory: makeResolvedDirectory(label: "SkillsLibraryTests-\(label)-cache")),
+            settingsFolders: try SettingsFoldersFixture.make(label: "SkillsLibraryTests-\(label)"))
         return try await ToolCatalog.sessionSurface(context: context)
     }
 
