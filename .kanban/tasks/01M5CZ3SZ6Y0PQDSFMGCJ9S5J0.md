@@ -18,6 +18,7 @@ comments:
   timestamp: 2026-10-20T19:28:55.443262+00:00
 depends_on:
 - 01M5CZ35E8P2EZTW5GW3YTW5VX
+- 01M5DCV6DGXMS6FGXQ6AEFMPDZ
 position_column: todo
 position_ordinal: 8a80
 title: 'ACPA-17: the settings GraphQL endpoint and SettingsTool over one engine'

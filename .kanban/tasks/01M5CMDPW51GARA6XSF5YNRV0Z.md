@@ -69,6 +69,8 @@ comments:
   id: 01m5davps32ha42z895tbarbg2
   text: 'MT-14 is pushed: FoundationModelsMultitool main d618aa8f91b79f4cdf1399d2590b079132f9ff4e (fix 66268e4). It builds against Hooks c66f336. The blockers are gone. Run `swift package update FoundationModelsHooks FoundationModelsMultitool` (and the same in IntegrationTests/), then /implement. The notAvailable text is "Snapshots are not available for this session: <cause>. Do not call tools.snapshots again in this session." with the cause workingDirectoryMismatch, timelineConflict or openFailed, and no path.'
   timestamp: 2026-10-20T18:58:25.699456+00:00
+depends_on:
+- 01M5DCV6DGXMS6FGXQ6AEFMPDZ
 position_column: doing
 position_ordinal: '8180'
 title: 'acp-agent snapshots: an explicit command that lists and removes snapshot folders'

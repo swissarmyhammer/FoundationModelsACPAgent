@@ -326,7 +326,7 @@ import Testing
         let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-delete")
         let store = fixture.harness.agent.hooks.snapshotStore
         let sessionKey = fixture.sessionId.rawValue
-        #expect(!(try await store.checkpoints(sessionKey: sessionKey)).isEmpty)
+        #expect(!(try await store.checkpoints(sessionKey: sessionKey, owner: sessionKey)).isEmpty)
         #expect(try await store.shadowSessionKeys().contains(sessionKey))
 
         _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))

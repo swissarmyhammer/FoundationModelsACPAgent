@@ -106,10 +106,26 @@ comments:
     - evidence: touched the 8 changed files, then `swift test` — 1070 tests in 118 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue), 0 failures, 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests` — Build complete, 0 compiler warnings. `swift test --filter 'SettingsStoreTests|SessionSettingsStoreTests'` run 3 times — 16 tests in 2 suites passed each time. Only warning: the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle.
     - next: review
   timestamp: 2026-10-20T19:30:54.224222+00:00
+- actor: claude-code
+  id: 01m5dctjty1x8rcenh428948bn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 215e76b). 0 findings. 8 files reviewed. 4 files in .kanban/ not reviewed because of an ignore rule. All items in the earlier review findings are checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-10-20T19:32:46.046384+00:00
+- actor: wballard
+  id: 01m5dcv5t1s2de8n41mwts56q4
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 8 files
+    - test: green — swift test 1070 passed; store suites x3 green; IntegrationTests builds
+    - commit: 215e76b
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T19:33:05.473077+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: fff280
 title: 'ACPA-17: a settings object in memory for each level, flushed to config.yaml and reloaded on outside change'
 ---
 ## What
