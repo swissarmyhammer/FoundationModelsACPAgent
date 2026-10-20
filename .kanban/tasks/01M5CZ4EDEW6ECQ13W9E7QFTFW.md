@@ -47,10 +47,26 @@ comments:
     - evidence: touched the 14 changed sources, then swift test: 1157 tests in 125 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted). swift build --build-tests --package-path IntegrationTests: Build complete. Filter SettingsGraphTests, SettingsToolTests, SettingsToolSessionTests, ToolCatalogTests run 3 times: 65 tests in 4 suites passed each time. Compiler warnings: only the accepted mlx-swift_Cmlx "missing creator for mutated node" warning. The "warning" lines in the test output are runtime log lines from tests of warning paths.
     - next: review
   timestamp: 2026-10-20T21:36:51.970226+00:00
+- actor: claude-code
+  id: 01m5dm2xaws4j40vjzjbsnrg58
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (96abb34). 0 findings, 0 confirmed, 1 refuted, 14 pairs attempted, 0 failed. The ignore rule excluded 4 files in .kanban/. No validator matched README.md and Tests/Fixtures/settings.graphql.
+    - next: The task is in done. The risk-check criterion stays open until MT-1 of Multitool has code.
+  timestamp: 2026-10-20T21:39:38.972519+00:00
+- actor: wballard
+  id: 01m5dm39dp2w35gphq7cw73vb1
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 14 files
+    - test: green — swift test 1157 passed; settings and ToolCatalog suites x3 green; IntegrationTests builds
+    - commit: 96abb34
+    - review: clean — 0 findings; task is done. The risk-check criterion stays open until MT-1 of Multitool has code.
+  timestamp: 2026-10-20T21:39:51.350718+00:00
 depends_on:
 - 01M5CZ3SZ6Y0PQDSFMGCJ9S5J0
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: fff880
 title: 'ACPA-17: the session gives SettingsTool to Multitool under the noun settings (MT-9)'
 ---
 ## What
