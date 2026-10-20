@@ -58,23 +58,40 @@ public struct KeychainSecretStore: SecretStore, Equatable {
         return value
     }
 
+    /// The attributes that identify one item of this store: the class, the
+    /// service, the account and the Keychain. The query has no key for the
+    /// data that a lookup gives back.
+    ///
+    /// The lookup of this store and the Keychain integration test both use
+    /// this query, thus the item that the test adds and the item that the
+    /// store reads always have the same attributes.
+    ///
+    /// - Parameter account: The account attribute of the item: the reference
+    ///   name.
+    /// - Returns: The attributes for `SecItemAdd`, `SecItemDelete`, or the
+    ///   start of a lookup query.
+    func itemQuery(account: String) -> [CFString: Any] {
+        var query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+            kSecAttrSynchronizable: synchronizable,
+        ]
+        if !synchronizable {
+            query[kSecUseDataProtectionKeychain] = false
+        }
+        return query
+    }
+
     /// The query of one item of this store, and of its data.
     ///
     /// - Parameter account: The account attribute of the item: the reference
     ///   name.
     /// - Returns: The query attributes for `SecItemCopyMatching`.
     private func lookupQuery(account: String) -> [CFString: Any] {
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecAttrSynchronizable: synchronizable,
-            kSecMatchLimit: kSecMatchLimitOne,
-            kSecReturnData: true,
-        ]
-        if !synchronizable {
-            query[kSecUseDataProtectionKeychain] = false
-        }
+        var query = itemQuery(account: account)
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        query[kSecReturnData] = true
         return query
     }
 }

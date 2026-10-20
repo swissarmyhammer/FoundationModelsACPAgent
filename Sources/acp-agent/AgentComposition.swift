@@ -99,11 +99,13 @@ enum AgentComposition {
     /// `ComposedAgent.compose(name:workingDirectory:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
-    /// The CLI adds its own choices only: ``dotfolderName``, the model
-    /// path and the stub gate that `environment` selects, and the login
-    /// Keychain under the service ``dotfolderName`` as the secret store
-    /// (ACPA-18, D101). The library
+    /// The CLI adds its own choices only: ``dotfolderName``, and the model
+    /// path and the stub gate that `environment` selects. The library
     /// does the composition, so the CLI holds no copy of it.
+    ///
+    /// The CLI gives no secret store. The default store of the library is
+    /// the login Keychain under the service ``dotfolderName``, and that is
+    /// the store of the CLI (ACPA-18, D101).
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory whose dotfolder stack the
@@ -131,7 +133,6 @@ enum AgentComposition {
             environment: environment,
             modelSource: modelSource(environment: environment),
             stubChunkGate: stubChunkGate(environment: environment),
-            secretStore: KeychainSecretStore(service: dotfolderName, synchronizable: false),
             reporting: progress)
     }
 

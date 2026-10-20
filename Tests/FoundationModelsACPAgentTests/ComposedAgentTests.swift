@@ -15,29 +15,6 @@ struct ComposedAgentTests {
     /// the `acp-agent` executable, so the composition does not depend on it.
     private static let dotfolderName = "composed-agent-host"
 
-    /// The environment variable that roots the user configuration layer. The
-    /// suite sets it, so no composition touches the real home directory.
-    private static let configHomeVariable = "XDG_CONFIG_HOME"
-
-    /// Composes the agent over the stub model, with each configuration root
-    /// in a throwaway directory.
-    ///
-    /// - Parameter label: The directory label, so a leftover directory says
-    ///   where it came from.
-    /// - Returns: The composition.
-    /// - Throws: Whatever the composition throws.
-    private static func composeStubAgent(label: String) async throws -> ComposedAgent {
-        let configHome = makeResolvedDirectory(label: "\(label)-config")
-        let workspace = makeResolvedDirectory(label: "\(label)-repo")
-        let environment = try StubAgentDefaultsLayer.makeEnvironment(
-            name: dotfolderName, base: [configHomeVariable: configHome.path])
-        return try await ComposedAgent.compose(
-            name: DotfolderName(dotfolderName),
-            workingDirectory: workspace,
-            environment: environment,
-            modelSource: .stub)
-    }
-
     /// Sends `initialize` from a client on `clientEnd`, then closes the wire
     /// and waits for the teardown of the agent.
     ///
@@ -80,7 +57,8 @@ struct ComposedAgentTests {
     /// answer to `initialize`.
     @Test
     func theFactoryClosureServesTheComposedAgent() async throws {
-        let composed = try await Self.composeStubAgent(label: "ComposedAgentTests-factory")
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-factory")
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
 
         let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
@@ -97,7 +75,8 @@ struct ComposedAgentTests {
     /// client on the other end gets an answer to `initialize`.
     @Test
     func serveBindsTheComposedAgentToATransport() async throws {
-        let composed = try await Self.composeStubAgent(label: "ComposedAgentTests-serve")
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-serve")
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
 
         let agentConnection = await composed.serve(over: agentEnd)

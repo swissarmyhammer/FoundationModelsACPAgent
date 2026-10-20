@@ -1,6 +1,17 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5d0af7r7vdgcxftt8k3gawe
+  text: |-
+    AG-10 API, agreed with the FoundationModelsAgents session on 2026-10-20 (sha follows after its push):
+    - `AgentRegistry` has no `agentFolders:`. The inits are `init(stack:variables:watch:)`, `init(layers:variables:watch:)` and `init(marketplaces:stack:variables:watch:)`.
+    - Each local layer reads `<id>/AGENT.md` and `agents/<id>/AGENT.md`. The root `AGENT.md` of a layer is the default agent. In one layer, `<id>/AGENT.md` wins, and the hidden copy gives an advisory.
+    - A child folder whose name is not a valid agent id (`_skills/`, `_rules/`, `_partials/`, `.git/`) is not an agent and gives no diagnostic.
+    - With a root: `DotfolderStack(layers: [defaults..., Layer(.user, root: <root>), Layer(.project, root: <cwd>/.agents)])`. The project layer root is the dotfolder, NOT the cwd (confirmed).
+    - With no root (the CLI): `DotfolderStack(name: "agents", ...)`, as now. `~/.config/agents/<id>/AGENT.md` is now also an agent.
+  timestamp: 2026-10-20T15:54:15.160927+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
 position_column: todo
