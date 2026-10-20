@@ -451,6 +451,33 @@ struct LoadedSessionContext {
     /// The resolved recording root: `<cwd>/.<name>/transcripts/` by
     /// default.
     let transcriptRoot: URL
+
+    /// Resolves the context of one working directory from the settings in
+    /// memory of `settingsStore` (``SettingsStore/merged(for:)``).
+    ///
+    /// The session requests of the agent and the walk of the project
+    /// registry (``RegisteredRecordingRoots``) both call it, thus each of
+    /// them finds the same recording root for a working directory.
+    ///
+    /// - Parameters:
+    ///   - workingDirectory: The working directory to resolve.
+    ///   - settingsStore: The store that gives the loader and the merged
+    ///     configuration. Its dotfolder name names the project layer.
+    /// - Returns: The resolved context.
+    /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
+    static func load(workingDirectory: URL, from settingsStore: SettingsStore) async throws -> LoadedSessionContext {
+        let loader = settingsStore.makeConfigurationLoader(workingDirectory: workingDirectory)
+        let loaded = try await settingsStore.merged(for: workingDirectory)
+        let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
+        return LoadedSessionContext(
+            loader: loader,
+            loaded: loaded,
+            userLayerRoot: userLayerRoot,
+            transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
+                workingDirectory: workingDirectory,
+                name: settingsStore.settingsFolders.name,
+                userDirectory: userLayerRoot))
+    }
 }
 
 /// What one `session/new` composed before the session was made:
@@ -811,17 +838,7 @@ extension RoutedACPAgent {
     /// - Returns: The resolved context.
     /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
     func loadSessionContext(workingDirectory: URL) async throws -> LoadedSessionContext {
-        let loader = makeConfigurationLoader(workingDirectory: workingDirectory)
-        let loaded = try await settingsStore.merged(for: workingDirectory)
-        let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
-        return LoadedSessionContext(
-            loader: loader,
-            loaded: loaded,
-            userLayerRoot: userLayerRoot,
-            transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
-                workingDirectory: workingDirectory,
-                name: name,
-                userDirectory: userLayerRoot))
+        try await LoadedSessionContext.load(workingDirectory: workingDirectory, from: settingsStore)
     }
 
     /// Runs the per-session composition pipeline: resolve

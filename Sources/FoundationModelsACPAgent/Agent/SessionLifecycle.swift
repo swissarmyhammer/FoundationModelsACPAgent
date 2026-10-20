@@ -200,7 +200,7 @@ extension RoutedACPAgent {
 
     /// The recording roots of every project in the user-layer project
     /// registry, resolved through the settings of each project
-    /// (``loadSessionContext(workingDirectory:)``). A delete of a session no
+    /// (``RegisteredRecordingRoots/resolve(in:)``). A delete of a session no
     /// longer in the table searches these for the session's directory.
     ///
     /// A registry that cannot be read, or a project whose settings cannot be
@@ -210,28 +210,19 @@ extension RoutedACPAgent {
     /// - Returns: The resolved recording roots, one per registered project
     ///   whose settings can be read.
     private func candidateTranscriptRoots() async -> [URL] {
-        let projects: [ProjectRegistryRecord]
-        do {
-            projects = try ProjectRegistry(directory: registryUserLayerRoot()).projects()
-        } catch {
-            Self.logCandidateRootFailure(
-                "The project registry cannot be read. The delete searches no registered project.", error: error)
-            return []
-        }
-        var roots: [URL] = []
-        for project in projects {
-            do {
-                roots.append(
-                    try await loadSessionContext(
-                        workingDirectory: URL(fileURLWithPath: project.path, isDirectory: true)
-                    ).transcriptRoot)
-            } catch {
+        let resolution = await RegisteredRecordingRoots.resolve(in: settingsStore)
+        for failure in resolution.failures {
+            switch failure {
+            case .registryUnreadable(let error):
+                Self.logCandidateRootFailure(
+                    "The project registry cannot be read. The delete searches no registered project.", error: error)
+            case .projectUnreadable(_, let error):
                 Self.logCandidateRootFailure(
                     "The settings of a registered project cannot be read. The delete does not search that project.",
                     error: error)
             }
         }
-        return roots
+        return resolution.roots
     }
 
     /// Writes one `warning` record about a recording root that a delete

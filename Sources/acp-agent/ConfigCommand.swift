@@ -153,10 +153,10 @@ extension AcpAgentCommand {
             ) throws -> String {
                 if asJSON {
                     return try annotatesSource
-                        ? Self.jsonText(
+                        ? JSONDocument.text(
                             of: AnnotatedDocument(
                                 configuration: loaded.configuration, sources: try Self.layerNames(of: loaded)))
-                        : Self.jsonText(of: loaded.configuration)
+                        : JSONDocument.text(of: loaded.configuration)
                 }
                 return try ConfigurationYAML.documentText(
                     for: loaded.configuration, annotation: annotatesSource ? .sources(loaded.sources) : .none)
@@ -182,18 +182,6 @@ extension AcpAgentCommand {
                 }
                 return "# tools.web search providers in force, in order: "
                     + names.joined(separator: ", ") + "\n"
-            }
-
-            /// The JSON text of `document`: pretty, keys sorted, slashes
-            /// plain, newline-terminated.
-            ///
-            /// - Parameter document: The value to encode.
-            /// - Returns: The JSON text.
-            /// - Throws: The encoding error.
-            private static func jsonText(of document: some Encodable) throws -> String {
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-                return String(decoding: try encoder.encode(document), as: UTF8.self) + "\n"
             }
 
             /// The layer of every key of `loaded`'s tree, by dotted key

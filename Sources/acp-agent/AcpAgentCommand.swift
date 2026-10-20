@@ -5,7 +5,8 @@ import Foundation
 ///
 /// One binary, every mode (cli-plan.md §4, §5.3): `run` runs one prompt
 /// and prints the answer, `acp` serves ACP on stdin and stdout, and
-/// `config`, `instructions` and `doctor` report on the configuration.
+/// `config`, `instructions` and `doctor` report on the configuration, and
+/// `snapshots` lists and removes the snapshot folders.
 /// `run` is the default subcommand, so `acp-agent "write a haiku"` runs
 /// a prompt, and `acp-agent run doctor` sends the prompt "doctor" instead
 /// of running the check.
@@ -24,7 +25,7 @@ struct AcpAgentCommand: AsyncParsableCommand {
         commandName: "acp-agent",
         abstract: "A headless coding agent over local models, and an ACP server.",
         version: AgentComposition.version,
-        subcommands: [Run.self, Acp.self, Config.self, Instructions.self, Doctor.self],
+        subcommands: [Run.self, Acp.self, Config.self, Instructions.self, Doctor.self, Snapshots.self],
         defaultSubcommand: Run.self)
 
     /// How the process ends after `parseAsRoot` or `run()` throws: the

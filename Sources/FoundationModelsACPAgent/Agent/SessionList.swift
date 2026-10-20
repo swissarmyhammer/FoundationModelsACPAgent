@@ -2,12 +2,6 @@ import Foundation
 import FoundationModelsACP
 
 extension RoutedACPAgent {
-    /// The placeholder working directory the registry read resolves its
-    /// dotfolder stack against. Only the user layer is read from that
-    /// stack, and the user layer does not depend on the working
-    /// directory, so any absolute directory gives the same root.
-    private static let registryPlaceholderDirectory = URL(fileURLWithPath: "/", isDirectory: true)
-
     /// Lists the persisted sessions: the wire surface over
     /// `TranscriptStore`'s listable-record read and its sort-key cursor
     /// pagination.
@@ -95,14 +89,11 @@ extension RoutedACPAgent {
     }
 
     /// The user layer root the cross-project registry lives in, resolved
-    /// with no project: the stack is built over
-    /// ``registryPlaceholderDirectory``, because the user layer is the
-    /// same for every working directory.
+    /// with no project (``RegisteredRecordingRoots/registryDirectory(of:)``).
     ///
     /// - Returns: The user layer root.
     func registryUserLayerRoot() -> URL {
-        SessionSetup.userLayerRoot(
-            of: makeConfigurationLoader(workingDirectory: Self.registryPlaceholderDirectory).stack)
+        RegisteredRecordingRoots.registryDirectory(of: settingsStore)
     }
 }
 
