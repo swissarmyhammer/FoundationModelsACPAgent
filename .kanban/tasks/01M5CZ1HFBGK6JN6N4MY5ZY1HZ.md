@@ -81,6 +81,46 @@ comments:
     - evidence: touched the 5 changed or new Swift files, then `swift test` — 1004 tests in 113 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests), 0 failures, 0 compiler warnings. `swift test --package-path IntegrationTests --filter KeychainSecretStoreTests` — 1 test in 1 suite passed, 0 compiler warnings. Only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx appears.
     - next: review
   timestamp: 2026-10-20T15:55:20.852533+00:00
+- actor: claude-code
+  id: 01m5d0j5kth61bm3r4c8sg8fng
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (7c7967f). 2 findings, 2 confirmed, 1 refuted. Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:11, Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:23
+    - next: make `ClientInteropTests` in `IntegrationTests/` call the shared `composeStubAgent` and delete its private copy, then run the review again. The task stays in `review`.
+  timestamp: 2026-10-20T15:58:27.450701+00:00
+- actor: wballard
+  id: 01m5d0jrcs4gvvffj2qta9j4qk
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 6 files
+    - test: green — swift test 1004 passed; IntegrationTests KeychainSecretStoreTests 1 passed
+    - commit: 7c7967f
+    - review: findings — Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:11, Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:23
+  timestamp: 2026-10-20T15:58:46.681997+00:00
+- actor: claude-code
+  id: 01m5d0pt3k7vkckww9sd3g31jw
+  text: |-
+    Findings of 10:56 worked. Both are now `- [x]`.
+    - The IntegrationTests package already links the `FoundationModelsACPAgentTestSupport` product (IntegrationTests/Package.swift, `testSupportProductName`), and ClientInteropTests already imports it. No manifest change was necessary.
+    - StubComposition.swift: the shared `composeStubAgent` has a new parameter `workspace: URL? = nil`. With nil, the helper makes a throwaway workspace as before. ClientInteropTests gives its workspace, because it sends the same path in `session/new`.
+    - ClientInteropTests.swift: the private `composeStubAgent` is gone. The suite calls the shared helper with `name: TierThreeFixture.agentDotfolderName`. `TierThreeFixture.configHomeVariable` and the private `configHomeVariable` of the helper both are "XDG_CONFIG_HOME", so the environment is the same as before.
+    - The existing callers (ComposedAgentTests, SecretStoreTests) give `name`, `label`, and `secretStore` by label, so the new defaulted parameter does not change them.
+    - TDD note: this is a refactor of test helpers. The existing ClientInteropTests is the test that holds the behavior. It passed after the change.
+  timestamp: 2026-10-20T16:00:59.507506+00:00
+- actor: claude-code
+  id: 01m5d0pxt85ts61xpvq2p6pt41
+  text: |-
+    ### implement — changed
+    - evidence: 2 files. Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/ClientInteropTests.swift. `swift test --filter "ComposedAgentTests|SecretStoreTests"`: 8 tests in 2 suites passed, 0 failed. `swift test --package-path IntegrationTests --filter "ClientInteropTests|KeychainSecretStoreTests"`: 2 tests in 2 suites passed, 0 failed. No compiler warning. Only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx appears.
+    - next: /review
+  timestamp: 2026-10-20T16:01:03.304289+00:00
+- actor: claude-code
+  id: 01m5d0tjd3rs3s4qwyjxqk42pq
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 1004 tests in 113 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests). `swift test --package-path IntegrationTests --filter "ClientInteropTests|KeychainSecretStoreTests"` — 2 tests in 2 suites passed. After a touch of StubComposition.swift and ClientInteropTests.swift, `swift build --build-tests` in both packages gave no compiler warning. The only warning is the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.
+    - next: review
+  timestamp: 2026-10-20T16:03:02.691126+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'ACPA-18: a SecretStore port and a Keychain implementation'
@@ -134,3 +174,13 @@ The Tests section of this card tells you the opposite: "If the test host has no 
 The two requirements cannot both be correct. The agent did not resolve this conflict. A person must decide: change the card, or change the rule. Then start the work again.
 
 **Resolved (2026-10-20):** the planner who wrote this card changed the Tests section. The skip was a plan detail, not a rule. The Keychain test goes to `IntegrationTests/` and fails when `SecItemAdd` fails. All six findings above are in scope.
+
+## Review Findings (2026-10-20 10:56)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:11` `completeness/invariant-propagation` — The doc comment says the suites that test the public composition share this one setup so it cannot drift. The integration package still keeps its own copy of the same stub setup. `ClientInteropTests` builds its agent with a private `composeStubAgent` that repeats the `XDG_CONFIG_HOME` root, the `StubAgentDefaultsLayer.makeEnvironment` call, and the `ComposedAgent.compose` call with `modelSource: .stub`. The setup can therefore still drift between suites, which is the problem this change set out to remove. Make `ClientInteropTests` call the shared `composeStubAgent(name:label:)` from the test support target and delete its private copy. If the integration suite must keep its own setup, remove the claim in the doc comment on line 11-12 so it does not promise a shared setup that does not exist.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:23` `duplication/duplication` — The shared `composeStubAgent` repeats the stub composition logic that `ClientInteropTests.composeStubAgent` already holds. Both build a throwaway config home, call `StubAgentDefaultsLayer.makeEnvironment`, and call `ComposedAgent.compose` with `.stub`. A fix to one copy, such as a change to the environment setup or to the compose arguments, will not reach the other, so the two can drift apart. Make `ClientInteropTests` call the shared `composeStubAgent` and delete its private copy. The copy is outside this change, so do this as a separate task. If the integration test needs a fixed workspace, add a `workspace` parameter to the shared helper rather than keeping a second copy.

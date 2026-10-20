@@ -62,29 +62,6 @@ struct ClientInteropTests {
         let stopReason: StopReason?
     }
 
-    /// Composes the agent over the stub model, with each configuration root
-    /// in a throwaway directory.
-    ///
-    /// - Parameters:
-    ///   - workspace: The working directory of the composition.
-    ///   - label: The directory label, so a leftover directory says where it
-    ///     came from.
-    /// - Returns: The composition.
-    /// - Throws: Whatever the composition throws.
-    private static func composeStubAgent(
-        workspace: URL, label: String
-    ) async throws -> ComposedAgent {
-        let configHome = makeResolvedDirectory(label: "\(label)-config")
-        let environment = try StubAgentDefaultsLayer.makeEnvironment(
-            name: TierThreeFixture.agentDotfolderName,
-            base: [TierThreeFixture.configHomeVariable: configHome.path])
-        return try await ComposedAgent.compose(
-            name: DotfolderName(TierThreeFixture.agentDotfolderName),
-            workingDirectory: workspace,
-            environment: environment,
-            modelSource: .stub)
-    }
-
     /// Runs one prompt with the client library against the composed agent,
     /// over `InMemoryTransport.pair()`, and then closes the wire and waits
     /// for the teardown of the agent.
@@ -95,7 +72,8 @@ struct ClientInteropTests {
     ///   or the prompt throws.
     private static func runClientLibrary(label: String) async throws -> LibraryAnswer {
         let workspace = makeResolvedDirectory(label: "\(label)-repo")
-        let composed = try await composeStubAgent(workspace: workspace, label: label)
+        let composed = try await composeStubAgent(
+            name: TierThreeFixture.agentDotfolderName, label: label, workspace: workspace)
         #expect(composed.modelSource == .stub)
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
         let agentConnection = await composed.serve(over: agentEnd)
