@@ -60,11 +60,17 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     case cannotDisable(section: String)
 
     /// A secret reference `keychain:<name>` whose store has no item for the
-    /// name, or whose lookup failed (ACPA-18, D101). The key acts as not
-    /// set. `keyPath` is the dotted key path of the secret, such as
-    /// `tools.web.apiKeys.tavily`, and `reference` is the name. The warning
-    /// never holds a value.
+    /// name (ACPA-18, D101). The key acts as not set. `keyPath` is the
+    /// dotted key path of the secret, such as `tools.web.apiKeys.tavily`, and
+    /// `reference` is the name. The warning never holds a value.
     case unresolvedSecret(keyPath: String, reference: String)
+
+    /// A secret reference `keychain:<name>` whose lookup threw, for example
+    /// because the Keychain is locked or refused the access (ACPA-18, D101).
+    /// The key acts as not set. `keyPath` is the dotted key path of the
+    /// secret, and `reference` is the name. The warning never holds a value,
+    /// and it does not hold the error of the store.
+    case unreadableSecret(keyPath: String, reference: String)
 
     /// A human-readable message that names the section.
     public var description: String {
@@ -80,6 +86,9 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
         case .unresolvedSecret(let keyPath, let reference):
             return
                 "\(ConfigurationLoader.configFileName): the secret store has no item for the reference \"\(ConfiguredSecret.referencePrefix)\(reference)\" of \"\(keyPath)\"; the key is not set"
+        case .unreadableSecret(let keyPath, let reference):
+            return
+                "\(ConfigurationLoader.configFileName): the secret store could not read the item for the reference \"\(ConfiguredSecret.referencePrefix)\(reference)\" of \"\(keyPath)\"; the lookup failed and the key is not set"
         }
     }
 }
@@ -105,6 +114,8 @@ extension ConfigurationWarning {
             "The configuration turns off a tool that is always on. The tool stays on."
         case .unresolvedSecret:
             "The secret store has no item for a secret reference of the configuration. The key is not set."
+        case .unreadableSecret:
+            "The secret store could not read the item for a secret reference of the configuration. The key is not set."
         }
     }
 
@@ -116,7 +127,7 @@ extension ConfigurationWarning {
             name
         case .unknownToolSection(let name), .cannotDisable(let name):
             ToolsConfiguration.dottedSection(name)
-        case .unresolvedSecret(let keyPath, _):
+        case .unresolvedSecret(let keyPath, _), .unreadableSecret(let keyPath, _):
             keyPath
         }
     }
@@ -297,14 +308,23 @@ public struct ConfigurationLoader: Sendable {
             context: TemplateContext())
         let root = try layeredRoot(over: document)
         let schemaWarnings = try Self.schemaWarnings(in: root)
-        schemaWarnings.forEach { $0.log() }
+        Self.log(schemaWarnings)
         var secretWarnings: [ConfigurationWarning] = []
         let decoded = resolvingSecrets(of: try Self.configuration(from: root), warnings: &secretWarnings)
-        secretWarnings.forEach { $0.log() }
+        Self.log(secretWarnings)
         return LoadedConfiguration(
             configuration: resolvingCodeOverride(of: resolvingDotfolderDefaults(of: decoded)),
             warnings: schemaWarnings + secretWarnings,
             sources: Self.sources(in: document))
+    }
+
+    /// Writes one log record for each warning, in the order of `warnings`.
+    ///
+    /// - Parameter warnings: The warnings to log.
+    private static func log(_ warnings: [ConfigurationWarning]) {
+        for warning in warnings {
+            warning.log()
+        }
     }
 
     /// `configuration` with the value of each secret reference from
@@ -315,7 +335,9 @@ public struct ConfigurationLoader: Sendable {
     ///   - configuration: The decoded configuration.
     ///   - warnings: The warnings of the load. This adds one
     ///     ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)`` for
-    ///     each reference that has no value.
+    ///     each reference with no item, and one
+    ///     ``ConfigurationWarning/unreadableSecret(keyPath:reference:)`` for
+    ///     each reference whose lookup threw.
     /// - Returns: The configuration with each reference resolved, and each
     ///   reference with no value left out.
     private func resolvingSecrets(

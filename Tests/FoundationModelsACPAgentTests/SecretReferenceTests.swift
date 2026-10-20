@@ -1,6 +1,6 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
-import Security
 import TelemetryTestSupport
 import Testing
 
@@ -57,21 +57,13 @@ import Testing
     /// The store that holds the value of ``referenceName``.
     private static let storeWithItem = InMemorySecretStore([referenceName: secretValue])
 
-    // MARK: - Helpers
+    /// The text of the warning for a reference with no item.
+    private static let noItemText = "has no item"
 
-    /// A store whose every lookup fails, as a Keychain that refuses the
-    /// lookup does.
-    private struct FailingSecretStore: SecretStore {
-        /// Throws ``SecretStoreError/keychainFailure(reference:status:)`` with
-        /// the status of a refused authorization.
-        ///
-        /// - Parameter name: The reference name.
-        /// - Returns: Never returns.
-        /// - Throws: The Keychain failure for `name`.
-        func value(forReference name: String) throws -> String? {
-            throw SecretStoreError.keychainFailure(reference: name, status: errSecAuthFailed)
-        }
-    }
+    /// The text of the warning for a reference whose lookup failed.
+    private static let lookupFailedText = "could not read"
+
+    // MARK: - Helpers
 
     /// Loads `yaml` as the project `config.yaml` over `store`.
     ///
@@ -118,14 +110,22 @@ import Testing
         let message = try #require(loaded.warnings.first).description
         #expect(message.contains(Self.keyPath))
         #expect(message.contains(Self.referenceName))
+        #expect(message.contains(Self.noItemText))
     }
 
-    /// A store that throws gives the same warning, and the key is not set.
-    @Test func aStoreFailureGivesOneWarningAndSetsNoKey() throws {
+    /// A store that throws gives one warning that says the lookup failed,
+    /// and the key is not set. The warning does not say that the item is
+    /// missing, and it names only the key path and the reference.
+    @Test func aStoreFailureGivesOneLookupFailedWarningAndSetsNoKey() throws {
         let loaded = try Self.load(Self.referenceYAML, store: FailingSecretStore())
 
-        #expect(loaded.warnings == [.unresolvedSecret(keyPath: Self.keyPath, reference: Self.referenceName)])
+        #expect(loaded.warnings == [.unreadableSecret(keyPath: Self.keyPath, reference: Self.referenceName)])
         #expect(try Self.webOptions(of: loaded).apiKeys[.tavily] == nil)
+        let message = try #require(loaded.warnings.first).description
+        #expect(message.contains(Self.lookupFailedText))
+        #expect(!message.contains(Self.noItemText))
+        #expect(message.contains(Self.keyPath))
+        #expect(message.contains(Self.referenceName))
     }
 
     /// A literal key still loads, with no reference.

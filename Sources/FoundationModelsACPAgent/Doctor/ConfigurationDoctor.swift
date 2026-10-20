@@ -95,8 +95,8 @@ public struct ConfigurationDoctor: Doctorable {
 
     /// The finding of one loader warning: the warning's own message, and a
     /// fix that names the key and the file it sits in. A secret reference
-    /// with no item is one finding, which names the reference and never a
-    /// value.
+    /// with no item, or a secret reference whose lookup failed, is one
+    /// finding, which names the reference and never a value.
     ///
     /// - Parameter warning: The warning the loader returned.
     /// - Returns: A finding with the ``HealthStatus/warning`` status.
@@ -109,8 +109,10 @@ public struct ConfigurationDoctor: Doctorable {
     }
 
     /// The fix of one loader warning. A secret reference with no item is
-    /// repaired in the secret store, or by the removal of its key. Each
-    /// other warning is repaired by the removal of its key.
+    /// repaired in the secret store, or by the removal of its key. A secret
+    /// reference whose lookup failed is repaired when the store can read the
+    /// item, or by the removal of its key. Each other warning is repaired by
+    /// the removal of its key.
     ///
     /// - Parameter warning: The warning the loader returned.
     /// - Returns: The fix text.
@@ -119,6 +121,9 @@ public struct ConfigurationDoctor: Doctorable {
         switch warning {
         case .unresolvedSecret(_, let reference):
             return "add an item for the reference \"\(reference)\" to the secret store, or \(removal)"
+        case .unreadableSecret(_, let reference):
+            return
+                "unlock the secret store and let this app read the item for the reference \"\(reference)\", or \(removal)"
         case .unknownSection, .unknownToolSection, .cannotDisable:
             return removal
         }

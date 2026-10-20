@@ -62,6 +62,48 @@ comments:
     - evidence: touched the changed Swift files, then `swift test`: 1019 tests in 114 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted). `swift build --build-tests --package-path IntegrationTests`: Build complete. Compiler warnings: none. Only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx.bundle.
     - next: review
   timestamp: 2026-10-20T16:21:01.131830+00:00
+- actor: claude-code
+  id: 01m5d23m3erf7shp1mq1b4wktt
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (e88d8c2): 4 findings (4 confirmed, 1 refuted) — Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:300, Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:303, Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:486 (code rule completeness/public-output-contract), Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:486 (code rule swift/error-handling)
+    - next: implement the 4 open findings in the "Review Findings (2026-10-20 11:21)" section, then review again.
+  timestamp: 2026-10-20T16:25:27.918245+00:00
+- actor: wballard
+  id: 01m5d243nqkgna72cwx3zdt96r
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 22 files (after the card change to resolve references after the decode)
+    - test: green — swift test 1019 passed; IntegrationTests builds
+    - commit: e88d8c2
+    - review: findings — Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:300, :303, Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:486 (2 findings)
+  timestamp: 2026-10-20T16:25:43.863557+00:00
+- actor: claude-code
+  id: 01m5d2by7z92r3kdfp1nbtsf59
+  text: |-
+    Fixed the 4 findings of "Review Findings (2026-10-20 11:21)" (TDD: the new tests failed at compile first because `ConfigurationWarning.unreadableSecret` did not exist).
+    - New case `ConfigurationWarning.unreadableSecret(keyPath:reference:)` (a new case, not a reason on `unresolvedSecret`, so the "no item" case and its callers do not change). Its text says "the secret store could not read the item ... the lookup failed". It names only the key path and the reference. It does not hold the `SecretStoreError` text, because the request is to name only the reference.
+    - `WebToolOptions.resolvingSecrets` now calls a private helper `value(of:keyPath:from:warnings:)` with `do`/`catch`: a nil result gives `unresolvedSecret`, a thrown error gives `unreadableSecret`. That was the only `try?` on a secret lookup in the change.
+    - `doctor` fix text for `unreadableSecret`: "unlock the secret store and let this app read the item for the reference ..., or remove ...". It does not say "add an item".
+    - `ConfigurationLoader.load()`: the two `.forEach { $0.log() }` are now one private `log(_:)` helper with a for-in loop. The log order did not change: the schema warnings still log before the decode, so they log also when the decode throws. (A first draft logged all warnings after the decode; that changed the behavior, so I reverted it.) These were the only `.forEach` that the change added.
+    - `FailingSecretStore` moved from a private type in SecretReferenceTests to Tests/FoundationModelsACPAgentTestSupport/FailingSecretStore.swift, so the doctor test uses the same in-memory double.
+    - README: one sentence about the failed-lookup warning.
+  timestamp: 2026-10-20T16:30:00.447414+00:00
+- actor: claude-code
+  id: 01m5d2c22w66xk5ekj252436hk
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` — 1020 tests in 114 suites passed, 0 failed (1 known issue is the deliberate `withKnownIssue` in HarnessSmokeTests; the only build warning is the pre-existing SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle). New tests: SecretReferenceTests.aStoreFailureGivesOneLookupFailedWarningAndSetsNoKey (replaces aStoreFailureGivesOneWarningAndSetsNoKey), ConfigurationDoctorTests.aFailedLookupGivesOneWarningThatSaysTheLookupFailed. Files: Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift, Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift, Sources/FoundationModelsACPAgent/Doctor/ConfigurationDoctor.swift, README.md, Tests/FoundationModelsACPAgentTestSupport/FailingSecretStore.swift (new), Tests/FoundationModelsACPAgentTests/SecretReferenceTests.swift, Tests/FoundationModelsACPAgentTests/Doctor/ConfigurationDoctorTests.swift. All 4 findings checked.
+    - next: /review
+  timestamp: 2026-10-20T16:30:04.380675+00:00
+- actor: claude-code
+  id: 01m5d2eteh913y70mq9gjdf8n2
+  text: |-
+    ### test — green
+    - evidence: touched the 6 changed files, then swift test: 1020 tests in 114 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests); swift build --build-tests --package-path IntegrationTests: Build complete.
+    - warnings: only the accepted SwiftPM "missing creator for mutated node" warning on mlx-swift_Cmlx.bundle. No compiler warning in the changed files.
+    - next: review
+  timestamp: 2026-10-20T16:31:34.865498+00:00
 depends_on:
 - 01M5CZ1HFBGK6JN6N4MY5ZY1HZ
 position_column: doing
@@ -104,3 +146,19 @@ Do this:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-18
+
+## Review Findings (2026-10-20 11:21)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 20 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:300` `code-hygiene/idioms-swift` — ReplaceForEachWithForLoop: replace use of '.forEach { ... }' with for-in loop.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:303` `code-hygiene/idioms-swift` — ReplaceForEachWithForLoop: replace use of '.forEach { ... }' with for-in loop.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:486` `completeness/public-output-contract` — The `try?` on the store lookup discards the thrown error. A Keychain failure (for example, a locked Keychain or an unexpected status) takes the same path as a missing item. The loader then logs and returns `unresolvedSecret`, whose text says the store has no item for the reference. For a lookup failure, that text is wrong, and the operator is not told that the lookup failed. The doc comment at line 468 says a throwing lookup is left out, so the intent is to handle the failure, not to hide it. Use `do { value = try store.value(forReference:) } catch { ... }`. For a nil result, keep the current warning. For a thrown error, add a warning or message that says the lookup failed, and name only the reference. Add one test that uses a store which throws, and assert that the warning text does not claim the item is missing.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ToolSectionCodec.swift:486` `swift/error-handling` — The `try?` turns every failure of `store.value(forReference:)` into `nil`, so the caller cannot tell a missing Keychain item from a failed lookup, such as a status error or an unreadable item. The resulting warning then says the store has no item for the reference, which is false when the lookup failed. Replace `try?` with `do { ... } catch { ... }`. Map a `nil` result to the no-item case. Map a thrown `SecretStoreError` to a case that names the failed lookup. Either give `ConfigurationWarning.unresolvedSecret` a reason, or reword its message to cover both "no item" and "could not be read". Keep the reference name in the message and never the value.

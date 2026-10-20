@@ -466,9 +466,11 @@ public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
     /// from `store`. A literal key does not change.
     ///
     /// A reference with no item, or a reference whose lookup throws, is
-    /// left out, thus its key acts as not set. Each one adds one
-    /// ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)`` to
-    /// `warnings`, in the provider table order. No warning holds a value.
+    /// left out, thus its key acts as not set. A reference with no item
+    /// adds one ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)``
+    /// to `warnings`. A reference whose lookup throws adds one
+    /// ``ConfigurationWarning/unreadableSecret(keyPath:reference:)``. The
+    /// warnings come in the provider table order. No warning holds a value.
     ///
     /// - Parameters:
     ///   - store: The store that gives the value of each reference.
@@ -483,14 +485,44 @@ public struct WebToolOptions: SwitchableToolOptions, KeyCheckedSection {
             guard let reference = apiKeys[name]?.reference else {
                 continue
             }
-            guard let value = try? store.value(forReference: reference) else {
-                resolved.apiKeys[name] = nil
-                warnings.append(.unresolvedSecret(keyPath: Self.keyPath(of: name), reference: reference))
-                continue
-            }
-            resolved.apiKeys[name] = ConfiguredSecret(reference: reference, value: value)
+            let value = Self.value(
+                of: reference, keyPath: Self.keyPath(of: name), from: store, warnings: &warnings)
+            resolved.apiKeys[name] = value.map { ConfiguredSecret(reference: reference, value: $0) }
         }
         return resolved
+    }
+
+    /// The value of one secret reference from `store`.
+    ///
+    /// A `nil` result of the store adds one
+    /// ``ConfigurationWarning/unresolvedSecret(keyPath:reference:)``. An
+    /// error of the store adds one
+    /// ``ConfigurationWarning/unreadableSecret(keyPath:reference:)``. The
+    /// warning does not hold the error: the warning names only the
+    /// reference, and it never holds a value.
+    ///
+    /// - Parameters:
+    ///   - reference: The reference name.
+    ///   - keyPath: The dotted key path of the secret.
+    ///   - store: The store that gives the value.
+    ///   - warnings: The warnings of the load.
+    /// - Returns: The value, or `nil` when the store has no item or the
+    ///   lookup failed.
+    private static func value(
+        of reference: String, keyPath: String, from store: any SecretStore,
+        warnings: inout [ConfigurationWarning]
+    ) -> String? {
+        let value: String?
+        do {
+            value = try store.value(forReference: reference)
+        } catch {
+            warnings.append(.unreadableSecret(keyPath: keyPath, reference: reference))
+            return nil
+        }
+        if value == nil {
+            warnings.append(.unresolvedSecret(keyPath: keyPath, reference: reference))
+        }
+        return value
     }
 
     /// The dotted key path of one key of the `apiKeys` map, such as

@@ -45,6 +45,15 @@ struct ConfigurationDoctorTests {
     /// A project `config.yaml` that sets the Tavily key as a reference.
     private static let referenceYAML = "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(referenceName)\n"
 
+    /// The text of the warning for a reference with no item.
+    private static let noItemText = "has no item"
+
+    /// The text of the warning for a reference whose lookup failed.
+    private static let lookupFailedText = "could not read"
+
+    /// The text of the fix for a reference with no item.
+    private static let addItemFixText = "add an item"
+
     // MARK: - Helpers
 
     /// The component over `fixture`'s stack, with the one load it reports.
@@ -161,6 +170,27 @@ struct ConfigurationDoctorTests {
         #expect(warning.message.contains(Self.referenceName))
         #expect(warning.message.contains(Self.referenceKeyPath))
         #expect(fix.contains(Self.referenceName))
+    }
+
+    /// A reference whose lookup throws is one `.warning` whose message says
+    /// that the lookup failed, not that the item is missing. Its fix names
+    /// the reference and does not tell the operator to add an item.
+    @Test func aFailedLookupGivesOneWarningThatSaysTheLookupFailed() async throws {
+        let fixture = ConfigCommandFixture(label: "ConfigurationDoctorTests-reference-unreadable")
+        try fixture.writeProjectConfig(Self.referenceYAML)
+
+        let checks = try await Self.checks(in: fixture, secretStore: FailingSecretStore())
+
+        let warnings = Self.findings(.warning, in: checks)
+        let warning = try #require(warnings.first)
+        let fix = try #require(warning.fix)
+        #expect(warnings.count == Self.oneFinding)
+        #expect(warning.message.contains(Self.lookupFailedText))
+        #expect(!warning.message.contains(Self.noItemText))
+        #expect(warning.message.contains(Self.referenceName))
+        #expect(warning.message.contains(Self.referenceKeyPath))
+        #expect(fix.contains(Self.referenceName))
+        #expect(!fix.contains(Self.addItemFixText))
     }
 
     /// A reference with an item passes, and no finding shows the value.

@@ -190,7 +190,9 @@ A value `keychain:<name>` is a reference. The agent gets the key from the
 Keychain item whose account is `<name>`: the login Keychain under the service
 `acp-agent` for the CLI, or the store that a host gives. A reference with no
 item gives one warning that names the key path and the reference, and the key
-is not set. Another value is the key itself.
+is not set. A lookup that fails, for example on a locked Keychain, gives one
+warning that says the lookup failed, and the key is not set. Another value is
+the key itself.
 
 Set `enabled: false` (or `web: false`) to set the web tool off. No key value
 shows: `config show`, `/config`, `doctor` and the logs show
