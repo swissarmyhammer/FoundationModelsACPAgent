@@ -61,6 +61,40 @@ comments:
     - evidence: touched ACPAgentTelemetry.swift and HookCompositionTests.swift, then ran `swift test`: 1043 tests in 115 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests). `swift build --build-tests --package-path IntegrationTests`: Build complete. Only warning in both runs: the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx. No compiler warning in the changed files.
     - next: review
   timestamp: 2026-10-20T17:17:11.360740+00:00
+- actor: claude-code
+  id: 01m5d55425th8ggtaayr9z0x5m
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (c4407e0): 1 finding (1 confirmed, 0 refuted) — Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:371
+    - next: Move the enum check into caseName(of:fallback:) and add a test that gives a struct and expects the fallback. Then run the review again.
+  timestamp: 2026-10-20T17:18:42.757596+00:00
+- actor: wballard
+  id: 01m5d55jr99nd9z4k01mk13a44
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 2 files
+    - test: green — swift test 1043 passed; IntegrationTests builds
+    - commit: c4407e0
+    - review: findings — Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:371
+  timestamp: 2026-10-20T17:18:57.801640+00:00
+- actor: claude-code
+  id: 01m5d5bwb08msvhy1jjw9dg0mk
+  text: |-
+    ### implement — changed
+    - evidence: 2 files. `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift`: new private `isEnum(_:)` (the one `displayStyle == .enum` check). `caseName(of:fallback:)` returns `fallback()` when `isEnum` is false. `errorCaseName(of:)` keeps only its type-name guard (through `isEnum`) and the call to `caseName`. The `value` parameter doc now says that only an enum value can give a case label. `Tests/FoundationModelsACPAgentTests/ACPAgentTelemetryTests.swift`: new test `caseNameOfAStructGivesTheFallback` (a struct with one stored property; before the change it gave `content`, now it gives the fallback).
+    - RED: the new test failed with `"content"` before the change. GREEN: it passed after.
+    - Callers of `caseName(of:)`: `MCPComposition.Refusal.logMetadata` (passes `Refusal`, an enum), `ACPEventTranslator.eventMetadata` (passes `SessionEvent`, an enum of Router), `ACPEventTranslator` `.discoveryPrimingFailed` (passes `DiscoveryPrimingFailure`, an enum of Router), and `errorCaseName` (only after its enum guard). No caller passes a value that is not an enum, thus no caller result changes.
+    - `swift test`: 1044 tests in 115 suites passed, 0 failures, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests). The only warning is the SwiftPM "missing creator for mutated node" line for mlx-swift_Cmlx.bundle, not from this change. No compiler warning.
+    - The finding of Review Findings (2026-10-20 12:17) is `- [x]`.
+    - next: /review
+  timestamp: 2026-10-20T17:22:24.224497+00:00
+- actor: claude-code
+  id: 01m5d5es2jqkrpyfhyhgzxzb9g
+  text: |-
+    ### test — green
+    - evidence: touched ACPAgentTelemetry.swift and ACPAgentTelemetryTests.swift, then `swift test`: 1044 tests in 115 suites passed, 1 known issue (the accepted withKnownIssue). `swift build --build-tests --package-path IntegrationTests`: Build complete. The only warning in both runs is the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle. No compiler warning in the changed files.
+    - next: review
+  timestamp: 2026-10-20T17:23:59.186804+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'ACPA-15: session/delete removes the snapshot timeline of its session'
@@ -102,3 +136,12 @@ Do not add a removal to agent start or to `session/close`.
 
 - [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:385` `reuse/reuse` — errorCaseName(of:) repeats the Mirror child-label read of caseName(of:) at line 368. The only differences are the fallback value and the non-enum branch. The new function is a near-match that was not extended. It should reuse caseName(of:) or take the fallback as a parameter, so there is one canonical case-name read. Give caseName(of:) a fallback parameter, or have errorCaseName(of:) call caseName(of:) for the enum-with-payload case and keep only the differing fallback and non-enum branch in errorCaseName. Keep one Mirror label read.
 - [x] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:302` `reuse/reuse` — makeWrittenSnapshotFixture repeats the fixture setup of the existing snapshot test in the same file. It builds a ScriptedPromptFixture with makeHookLayeredModelLoader, the same labelled work tree and the same workingDirectory. The new helper is a near-match of that setup that was not extended. It differs only in the script, so the shared part should be one helper that takes the script as a parameter. Move the shared setup into one helper that takes the script and the label, and have both the existing snapshot test and makeWrittenSnapshotFixture call it. Keep the scripts at their call sites.
+
+## Review Findings (2026-10-20 12:17)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift:371` `completeness/invariant-propagation` — The doc of caseName(of:fallback:) says a value that is not an enum gives the fallback. The body does not check for an enum. For a non-enum value with stored properties, Mirror's first child is a property, so the function returns that property's label instead of the fallback. The enum guard was added only in errorCaseName (line 384), so the sibling helper does not get the same rule. Move the enum check into caseName: return fallback() when Mirror(reflecting: value).displayStyle != .enum. Then errorCaseName can keep only its type-name branch. Add one test that passes a struct to caseName and expects the fallback.

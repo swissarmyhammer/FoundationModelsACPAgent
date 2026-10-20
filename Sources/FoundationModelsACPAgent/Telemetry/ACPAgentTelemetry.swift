@@ -361,14 +361,28 @@ enum ACPAgentTelemetry {
     /// holds the answer text, for example.
     ///
     /// - Parameters:
-    ///   - value: An enum value.
+    ///   - value: The value. Only an enum value can give a case label.
     ///   - fallback: The text for a value that shows no case label. The
     ///     default is `unknown`.
     /// - Returns: The case label, or `fallback` for a case with no payload
     ///   and for a value that is not an enum. A case with no payload shows no
     ///   label, and its description can be a text of the type.
     static func caseName(of value: Any, fallback: @autoclosure () -> String = unknownCaseName) -> String {
-        Mirror(reflecting: value).children.first?.label ?? fallback()
+        guard isEnum(value) else {
+            return fallback()
+        }
+        return Mirror(reflecting: value).children.first?.label ?? fallback()
+    }
+
+    /// Tells if `value` is an enum value.
+    ///
+    /// The first mirror child of a struct or a class is a stored property,
+    /// not a case. Thus only an enum value can give a case label.
+    ///
+    /// - Parameter value: The value to examine.
+    /// - Returns: `true` when the mirror of `value` shows the enum style.
+    private static func isEnum(_ value: Any) -> Bool {
+        Mirror(reflecting: value).displayStyle == .enum
     }
 
     /// The name of the case of `error`, without its payload.
@@ -381,7 +395,7 @@ enum ACPAgentTelemetry {
     /// - Parameter error: The error.
     /// - Returns: The case name, or the type name of a non-enum error.
     static func errorCaseName(of error: any Error) -> String {
-        guard Mirror(reflecting: error).displayStyle == .enum else {
+        guard isEnum(error) else {
             return errorTypeName(of: error)
         }
         return caseName(of: error, fallback: String(describing: error))

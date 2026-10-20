@@ -51,4 +51,21 @@ import Testing
         let names = Self.spanNames + Self.metricNames
         #expect(Set(names).count == names.count)
     }
+
+    /// A struct with a stored property. Its mirror shows the property label
+    /// as its first child, thus it looks like an enum case with a payload.
+    private struct LabelledValue {
+        /// The stored property that gives the mirror a child label.
+        let content: String
+    }
+
+    /// The fallback text that the struct test expects from `caseName`.
+    private static let structFallback = "not-an-enum"
+
+    /// A value that is not an enum gives the fallback, not the label of its
+    /// first stored property.
+    @Test func caseNameOfAStructGivesTheFallback() {
+        let value = LabelledValue(content: "secret text")
+        #expect(ACPAgentTelemetry.caseName(of: value, fallback: Self.structFallback) == Self.structFallback)
+    }
 }
