@@ -331,6 +331,29 @@ import Testing
         #expect(!set.text.contains(Self.secretValue))
     }
 
+    /// A `null` for a secret key is accepted, the same as a read keeps it: a
+    /// `null` clears the key and holds no secret value. The `value` argument
+    /// is `JSON!`, thus the `null` comes inside a mapping. The query then
+    /// gives `null`, and the secret has no reference and no value.
+    @Test func aNullForASecretKeyIsAccepted() async throws {
+        let fixture = try SettingsGraphFixture(label: "secret-null")
+        let tavily = try #require(SettingsGraphFixture.tavilyKeyPath.last)
+        let apiKeys: Map = [tavily: .null]
+
+        let set = try await fixture.set(
+            apiKeys, at: Array(SettingsGraphFixture.tavilyKeyPath.dropLast()),
+            level: SettingsGraphFixture.userLevel, cwd: fixture.firstDirectory)
+        let reply = try await fixture.setting(SettingsGraphFixture.tavilyKeyPath, cwd: fixture.firstDirectory)
+
+        #expect(set.codes.isEmpty)
+        let setting = try reply.object("setting")
+        #expect(setting["value"] is NSNull)
+        let secrets = try #require(setting["secrets"] as? [[String: Any]])
+        #expect(secrets.first?["keyPath"] as? String == SettingsGraphFixture.tavilyDottedKeyPath)
+        #expect(secrets.first?["reference"] is NSNull)
+        #expect(secrets.first?["hasValue"] as? Bool == false)
+    }
+
     /// A reference whose item the secret store does not have gives
     /// `hasValue: false`.
     @Test func aReferenceWithNoItemHasNoValue() async throws {

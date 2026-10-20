@@ -53,6 +53,47 @@ comments:
     - evidence: `swift test` — 1142 tests in 124 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests), 0 failed, 0 skipped. `swift build --build-tests` after touching all changed Swift files — Build complete, 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests` — Build complete, 0 compiler warnings. Three runs of SettingsGraphTests, SettingsSubscriptionTests, SettingsToolTests and SettingsStoreTests (the filter also matched SessionSettingsStoreTests) — 46 tests in 5 suites passed each time, no flake. Only warning in the output: the accepted SwiftPM "missing creator for mutated node" on the mlx-swift_Cmlx bundle.
     - next: review
   timestamp: 2026-10-20T20:54:13.212235+00:00
+- actor: claude-code
+  id: 01m5dhszbqj3w1c24fq6dj327t
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (commit 854a7fc). 9 findings, 9 confirmed, 2 refuted. Package.swift:253, Sources/FoundationModelsACPAgent/Settings/SettingsEngine.swift:59, SettingsEngine.swift:130, SettingsEngine.swift:147, SettingsEngine.swift:246, Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:243, SettingsGraphSchema.swift:257, Sources/FoundationModelsACPAgent/Settings/SettingsSecretKeys.swift:110, SettingsSecretKeys.swift:241.
+    - next: Do the 9 items in the "Review Findings (2026-10-20 15:54)" section. The task stays in review.
+  timestamp: 2026-10-20T20:59:48.983410+00:00
+- actor: wballard
+  id: 01m5dhtkn22z1nv8zzeqmn021r
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 15 files
+    - test: green — swift test 1142 passed; settings suites x3 green; IntegrationTests builds
+    - commit: 854a7fc
+    - review: findings — Package.swift:253, SettingsEngine.swift:59, :130, :147, :246, SettingsGraphSchema.swift:243, :257, SettingsSecretKeys.swift:110, :241
+  timestamp: 2026-10-20T21:00:09.762339+00:00
+- actor: claude-code
+  id: 01m5dj692txaw7mzzh7vjkyy7q
+  text: |-
+    Review findings (2026-10-20 15:54) worked:
+    - Package.swift: one `makeGitHubPackage(organization:name:from:)` with `appleOrganization` and `graphQLSwiftOrganization` replaces `makeApplePackage` and `makeGraphQLSwiftPackage`. The Noora (`exact:`) and swift-sdk (`branch:`) dependencies stay as they are, because their requirement type is different.
+    - SettingsEngine: the explicit `init(store:)` is gone. New `SettingsGraphError.withCodedErrors(of:)` wraps each store call (value, set, clear, startWatching in `changes` and in `relay`). New private `checkedWorkingDirectory(_:keyPath:)` holds the shared prologue of setting, set and clear. `workingDirectory(_:)` calls `SessionSetup.isAbsolute(_:)` (now internal, was fileprivate); the doc says why it does not call `validatedWorkingDirectory` (that throws a `RequestError` of the ACP wire).
+    - SettingsGraphResolver: one private `mergedSetting(at:cwd:)` read-back for the query, `set` and `clear`. The name is not `setting(at:cwd:)` because an overload of `setting` could make the unapplied reference `SettingsGraphResolver.setting` in the schema builder ambiguous.
+    - SettingsSecretKeys: new `Slot.holdsNoSecretValue` (a reference or a null) is the one rule of `redacted` and `requireReferences`. A null for a secret key is now accepted on write. Shorthand `[String: NewValue](...)`.
+    - Discovery: a top-level null cannot reach `set`, because the `value` argument is `JSON!` and GraphQL validation refuses it (GRAPHQL_VALIDATION_FAILED). Thus the new test `aNullForASecretKeyIsAccepted` sets `tools.web.apiKeys` to `{tavily: null}`. RED gave SECRET_NEEDS_REFERENCE; GREEN after the change.
+  timestamp: 2026-10-20T21:06:32.154980+00:00
+- actor: claude-code
+  id: 01m5dj6cd4dcg43vm47836g1rz
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Package.swift; Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift; Sources/FoundationModelsACPAgent/Settings/{SettingsEngine,SettingsGraphError,SettingsGraphSchema,SettingsSecretKeys}.swift; Tests/FoundationModelsACPAgentTests/SettingsGraphTests.swift. `swift test` — 1143 tests in 124 suites passed, 1 known issue (the accepted withKnownIssue of HarnessSmokeTests), 0 failed; the only warning is the accepted SwiftPM "missing creator" of the mlx-swift_Cmlx bundle. SettingsGraphTests, SettingsSubscriptionTests, SettingsToolTests and SettingsStoreTests — 45 tests in 4 suites passed in each of 3 runs. 9 of 9 findings flipped to [x]. Not committed.
+    - next: review
+  timestamp: 2026-10-20T21:06:35.556264+00:00
+- actor: claude-code
+  id: 01m5dj9z8k34vjt0we35zxdp2h
+  text: |-
+    ### test — green
+    - evidence: touched the 7 changed files; `swift test` — 1143 tests in 124 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted); settings suites (Graph, Store, Subscription, Tool, Folders) run 3 times — 59 tests in 6 suites passed each time; `swift build --build-tests --package-path IntegrationTests` — Build complete.
+    - warnings: only the accepted "missing creator for mutated node" on mlx-swift_Cmlx bundle. No compiler warning in the changed files.
+    - next: review/commit
+  timestamp: 2026-10-20T21:08:33.171318+00:00
 depends_on:
 - 01M5CZ35E8P2EZTW5GW3YTW5VX
 - 01M5DCV6DGXMS6FGXQ6AEFMPDZ
@@ -86,3 +127,23 @@ Do this after EXTRAS-6 and EXTRAS-7:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-17
+
+## Review Findings (2026-10-20 15:54)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 14 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/settings.graphql` — no validator matches this file
+
+- [x] `Package.swift:253` `duplication/duplication` — The new function makeGraphQLSwiftPackage has the same body as the existing makeApplePackage (lines 206-208). Only the GitHub organization differs. Two copies of the same dependency wiring can drift apart. Extract one function that takes the organization as a parameter, for example makePackage(organization:name:from:). Call it from both sites, and delete the copy that this change added. Make makeApplePackage a thin call to it, or keep it for the existing call sites.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsEngine.swift:59` `code-hygiene/idioms-swift` — UseSynthesizedInitializer: remove this explicit initializer, which is identical to the compiler-synthesized initializer.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsEngine.swift:130` `duplication/duplication` — The do/catch block that maps a store error to SettingsGraphError.coded is copied in each store call. The copies differ only by the store call inside the do block. Add one private helper that takes an async throwing closure, runs it, and rethrows any error through SettingsGraphError.coded. Each call site then passes only its store call. Consider putting the helper in SettingsGraphError as a static function.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsEngine.swift:147` `duplication/duplication` — clear(at:level:cwd:) repeats the same prologue as set and setting. It is the same copy as at line 127. Use the same shared helper that is proposed for line 127, and call it here. Delete the copied lines.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsEngine.swift:246` `reuse/reuse` — `workingDirectory(_:)` reimplements the absolute-path check and the directory-URL construction that `SessionSetup.validatedWorkingDirectory(path:field:)` already performs. It calls `(path as NSString).isAbsolutePath` directly, where the existing code calls the shared `isAbsolute(path)` helper. Two copies of the same rule can drift apart, for example if the definition of an absolute path changes in one place only. Call the shared `isAbsolute(path)` helper in place of `(path as NSString).isAbsolutePath`, so the absolute-path rule has one definition. If the two functions must stay separate because they throw different error types (`RequestError` in the ACP layer, `SettingsGraphError` here), keep the separate throw and note in a comment why the settings path does not call `validatedWorkingDirectory` directly.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:243` `duplication/duplication` — The resolver for Mutation.set and the resolver for Mutation.clear both end with the same read-back line. The same expression also appears in the Query.setting resolver. A change to the read-back in one place can be missed in the others. Add one private helper on SettingsGraphResolver, for example settingAfterChange(keyPath:cwd:) async throws -> SettingsGraphSetting?, that performs the read-back. Call it from set and clear.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsGraphSchema.swift:257` `duplication/duplication` — The read-back line in the clear resolver is a copy of the line in the set resolver at line 243. Use the same shared read-back helper that is proposed for line 243, and call it here.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsSecretKeys.swift:110` `completeness/invariant-propagation` — The write check refuses a null value for a secret key, but the read check accepts it. requireReferences tests only referenceName == nil, so a null is refused as a literal. redacted (line 96) explicitly keeps a null. A client cannot clear a secret key with set(value: null), though a read treats null as valid. Exempt .null in requireReferences, the same as redacted does, so a null value is accepted as a clear-like value. Or, if a null must be refused on write, change the redacted doc and the read path to match. Add one test that sets a secret key to null and asserts the chosen result.
+- [x] `Sources/FoundationModelsACPAgent/Settings/SettingsSecretKeys.swift:241` `code-hygiene/idioms-swift` — UseShorthandTypeNames: use shorthand syntax for this 'Dictionary' type.

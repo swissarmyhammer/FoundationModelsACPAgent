@@ -5,11 +5,11 @@ import FoundationModelsExtras
 /// the `settings` engine for them (ACPA-17, ACPA-18, D101).
 ///
 /// A secret key holds only a `keychain:<name>` reference
-/// (``ConfiguredSecret/referencePrefix``). The value of the reference stays
-/// in the ``SecretStore`` of the agent. Thus no value goes through the
-/// `settings` endpoint or ``SettingsTool``: a change that gives a literal
-/// value for a secret key is refused, and a read shows a literal that a file
-/// holds as ``ConfiguredSecret/redactedForm``.
+/// (``ConfiguredSecret/referencePrefix``), or a `null` that clears it. The
+/// value of the reference stays in the ``SecretStore`` of the agent. Thus no
+/// value goes through the `settings` endpoint or ``SettingsTool``: a change
+/// that gives a literal value for a secret key is refused, and a read shows
+/// a literal that a file holds as ``ConfiguredSecret/redactedForm``.
 ///
 /// The secret keys are each key of `tools.web.apiKeys` and each key of the
 /// `headers` of each MCP server in the `tools.mcp` list. An `env` value of an
@@ -31,6 +31,13 @@ enum SettingsSecretKeys {
         /// `keychain:<name>`, or `nil` when the value is not a reference.
         var referenceName: String? {
             SettingsSecretKeys.referenceName(of: value)
+        }
+
+        /// `true` when ``value`` holds no secret value: a `keychain:<name>`
+        /// reference, or a `null` that clears the key. A read shows such a
+        /// value, and a change can write it. Each other value is a literal.
+        var holdsNoSecretValue: Bool {
+            referenceName != nil || value == .null
         }
     }
 
@@ -84,8 +91,10 @@ enum SettingsSecretKeys {
         return slots
     }
 
-    /// Gives a value with each secret key that is not a reference replaced by
-    /// ``ConfiguredSecret/redactedForm``. A reference and a `null` stay.
+    /// Gives a value with each secret key that holds a literal replaced by
+    /// ``ConfiguredSecret/redactedForm``. A reference and a `null` stay
+    /// (``Slot/holdsNoSecretValue``), the same rule as
+    /// ``requireReferences(in:at:)``.
     ///
     /// - Parameters:
     ///   - value: The value.
@@ -93,21 +102,23 @@ enum SettingsSecretKeys {
     /// - Returns: The value that a read can show.
     static func redacted(_ value: YAMLValue, at keyPath: [String]) -> YAMLValue {
         mapping(value, at: keyPath) { slot in
-            slot.referenceName != nil || slot.value == .null ? slot.value : .string(ConfiguredSecret.redactedForm)
+            slot.holdsNoSecretValue ? slot.value : .string(ConfiguredSecret.redactedForm)
         }
     }
 
     /// Checks that each secret key inside a value is a `keychain:<name>`
-    /// reference.
+    /// reference or a `null` (``Slot/holdsNoSecretValue``), the same rule as
+    /// ``redacted(_:at:)``. A `null` clears the key and holds no secret
+    /// value, thus a change can write it.
     ///
     /// - Parameters:
     ///   - value: The value that a change writes.
     ///   - keyPath: The key path of `value` from the root.
     /// - Throws: ``SettingsGraphError/secretNeedsReference(keyPath:)`` for the
-    ///   first secret key that is not a reference. The error names the key,
-    ///   and not the value.
+    ///   first secret key that holds a literal. The error names the key, and
+    ///   not the value.
     static func requireReferences(in value: YAMLValue, at keyPath: [String]) throws {
-        let literal = slots(in: value, at: keyPath).first { slot in slot.referenceName == nil }
+        let literal = slots(in: value, at: keyPath).first { slot in !slot.holdsNoSecretValue }
         if let literal {
             throw SettingsGraphError.secretNeedsReference(keyPath: literal.keyPath)
         }
@@ -238,7 +249,7 @@ extension Dictionary where Key == String {
     fileprivate func mapValuesWithKeys<NewValue>(
         _ transform: (String, Value) throws -> NewValue
     ) rethrows -> [String: NewValue] {
-        Dictionary<String, NewValue>(
+        [String: NewValue](
             uniqueKeysWithValues: try sorted { $0.key < $1.key }.map { key, value in
                 (key, try transform(key, value))
             })

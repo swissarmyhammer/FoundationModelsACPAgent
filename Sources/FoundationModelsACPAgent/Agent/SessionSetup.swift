@@ -195,7 +195,7 @@ enum SessionSetup {
     ///
     /// - Parameter path: The candidate path string.
     /// - Returns: `true` when `path` begins with `/`.
-    fileprivate static func isAbsolute(_ path: String) -> Bool {
+    static func isAbsolute(_ path: String) -> Bool {
         path.hasPrefix(absolutePathPrefix)
     }
 

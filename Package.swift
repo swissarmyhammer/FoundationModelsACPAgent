@@ -196,15 +196,22 @@ private let telemetryAPIProducts: [Target.Dependency] = [
     .product(name: "Metrics", package: metricsPackage),
 ]
 
-/// Makes the `.package(url:from:)` dependency of a package hosted under the
-/// apple GitHub organization.
+/// The GitHub organization of the Apple open-source packages.
+private let appleOrganization = "apple"
+
+/// The GitHub organization of the GraphQL engine and the schema builder.
+private let graphQLSwiftOrganization = "GraphQLSwift"
+
+/// Makes the `.package(url:from:)` dependency of a package hosted under a
+/// GitHub organization.
 ///
 /// - Parameters:
+///   - organization: The GitHub organization that hosts the repository.
 ///   - name: The package name, which is also the repository name.
 ///   - floor: The lowest version the package resolves to.
 /// - Returns: The package dependency.
-private func makeApplePackage(name: String, from floor: Version) -> Package.Dependency {
-    .package(url: "https://github.com/apple/\(name).git", from: floor)
+private func makeGitHubPackage(organization: String, name: String, from floor: Version) -> Package.Dependency {
+    .package(url: "https://github.com/\(organization)/\(name).git", from: floor)
 }
 
 /// The GraphQL engine: the parser, the validator and the executor. The
@@ -241,17 +248,6 @@ private let graphQLProducts: [Target.Dependency] = [
     .product(name: graphitiPackage, package: graphitiPackage),
     .product(name: "OrderedCollections", package: collectionsPackage),
 ]
-
-/// Makes the `.package(url:from:)` dependency of a package hosted under the
-/// GraphQLSwift GitHub organization.
-///
-/// - Parameters:
-///   - name: The package name, which is also the repository name.
-///   - floor: The lowest version the package resolves to.
-/// - Returns: The package dependency.
-private func makeGraphQLSwiftPackage(name: String, from floor: Version) -> Package.Dependency {
-    .package(url: "https://github.com/GraphQLSwift/\(name).git", from: floor)
-}
 
 /// The terminal design system of the agent CLI (cli-plan.md §5.2): one
 /// package in place of a spinner library, a progress library, a table
@@ -384,16 +380,18 @@ let package = Package(
         // `mcpSDKPackage`.
         .package(url: "https://github.com/swissarmyhammer/\(mcpSDKPackage).git", branch: mainBranch),
         // The parser of the agent CLI — see `argumentParserPackage`.
-        makeApplePackage(name: argumentParserPackage, from: argumentParserVersionFloor),
+        makeGitHubPackage(
+            organization: appleOrganization, name: argumentParserPackage, from: argumentParserVersionFloor),
         // The telemetry APIs of the library — see `telemetryAPIProducts`.
-        makeApplePackage(name: tracingPackage, from: tracingVersionFloor),
-        makeApplePackage(name: loggingPackage, from: loggingVersionFloor),
-        makeApplePackage(name: metricsPackage, from: metricsVersionFloor),
+        makeGitHubPackage(organization: appleOrganization, name: tracingPackage, from: tracingVersionFloor),
+        makeGitHubPackage(organization: appleOrganization, name: loggingPackage, from: loggingVersionFloor),
+        makeGitHubPackage(organization: appleOrganization, name: metricsPackage, from: metricsVersionFloor),
         // The GraphQL engine of the `settings` endpoint — see
         // `graphQLProducts`.
-        makeGraphQLSwiftPackage(name: graphQLPackage, from: graphQLVersionFloor),
-        makeGraphQLSwiftPackage(name: graphitiPackage, from: graphitiVersionFloor),
-        makeApplePackage(name: collectionsPackage, from: collectionsVersionFloor),
+        makeGitHubPackage(organization: graphQLSwiftOrganization, name: graphQLPackage, from: graphQLVersionFloor),
+        makeGitHubPackage(
+            organization: graphQLSwiftOrganization, name: graphitiPackage, from: graphitiVersionFloor),
+        makeGitHubPackage(organization: appleOrganization, name: collectionsPackage, from: collectionsVersionFloor),
         // The terminal design system of the agent CLI — see
         // `nooraPackage` and `nooraVersion`.
         .package(url: "https://github.com/tuist/\(nooraPackage).git", exact: nooraVersion),

@@ -53,13 +53,6 @@ struct SettingsEngine: Sendable {
     /// The store of the settings.
     let store: SettingsStore
 
-    /// Makes the engine over a store.
-    ///
-    /// - Parameter store: The store of the settings.
-    init(store: SettingsStore) {
-        self.store = store
-    }
-
     // MARK: - Reads
 
     /// Reads the merged value of one key for a session, and the layer that
@@ -73,13 +66,9 @@ struct SettingsEngine: Sendable {
     /// - Throws: ``SettingsGraphError`` for a call that the engine refuses;
     ///   what the store throws for a file that it cannot read.
     func setting(at keyPath: [String], cwd: String) async throws -> SettingsReading? {
-        let directory = try Self.workingDirectory(cwd)
-        try Self.requireSection(of: keyPath)
-        let merged: SettingsValue?
-        do {
-            merged = try await store.value(at: keyPath, cwd: directory)
-        } catch {
-            throw SettingsGraphError.coded(error)
+        let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
+        let merged = try await SettingsGraphError.withCodedErrors {
+            try await store.value(at: keyPath, cwd: directory)
         }
         guard let merged else {
             return nil
@@ -124,13 +113,10 @@ struct SettingsEngine: Sendable {
     /// - Throws: ``SettingsGraphError`` for a call that the engine or the
     ///   store refuses; what the store throws for a file error.
     func set(_ value: YAMLValue, at keyPath: [String], level: SettingsGraphLevel, cwd: String) async throws {
-        let directory = try Self.workingDirectory(cwd)
-        try Self.requireSection(of: keyPath)
+        let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
         try SettingsSecretKeys.requireReferences(in: value, at: keyPath)
-        do {
+        try await SettingsGraphError.withCodedErrors {
             try await store.set(value, at: keyPath, level: level.storeLevel(cwd: directory))
-        } catch {
-            throw SettingsGraphError.coded(error)
         }
     }
 
@@ -144,12 +130,9 @@ struct SettingsEngine: Sendable {
     ///     which names the session level.
     /// - Throws: What ``set(_:at:level:cwd:)`` throws.
     func clear(at keyPath: [String], level: SettingsGraphLevel, cwd: String) async throws {
-        let directory = try Self.workingDirectory(cwd)
-        try Self.requireSection(of: keyPath)
-        do {
+        let directory = try Self.checkedWorkingDirectory(cwd, keyPath: keyPath)
+        try await SettingsGraphError.withCodedErrors {
             try await store.clear(at: keyPath, level: level.storeLevel(cwd: directory))
-        } catch {
-            throw SettingsGraphError.coded(error)
         }
     }
 
@@ -180,10 +163,8 @@ struct SettingsEngine: Sendable {
     func changes(cwd: String?) async throws -> AsyncThrowingStream<SettingsChange, Error> {
         let directory = try cwd.map(Self.workingDirectory)
         let first = await store.changes()
-        do {
+        try await SettingsGraphError.withCodedErrors {
             try await store.startWatching(cwd: directory)
-        } catch {
-            throw SettingsGraphError.coded(error)
         }
         let (stream, continuation) = AsyncThrowingStream.makeStream(of: SettingsChange.self)
         let relay = Task { [store] in
@@ -216,12 +197,14 @@ struct SettingsEngine: Sendable {
             }
             source = await store.changes()
             do {
-                try await store.startWatching(cwd: cwd)
+                try await SettingsGraphError.withCodedErrors {
+                    try await store.startWatching(cwd: cwd)
+                }
             } catch {
                 ACPAgentTelemetry.logger(.configuration).warning(
                     "The settings store stopped, and a settings subscription could not read its levels again.",
                     metadata: ACPAgentTelemetry.errorMetadata(error))
-                continuation.finish(throwing: SettingsGraphError.coded(error))
+                continuation.finish(throwing: error)
                 return
             }
             for level in SettingsLevel.watched(cwd: cwd) {
@@ -233,7 +216,28 @@ struct SettingsEngine: Sendable {
 
     // MARK: - Checks
 
+    /// Checks the working directory and the key path of one call.
+    ///
+    /// - Parameters:
+    ///   - cwd: The path of the working directory that the call gave.
+    ///   - keyPath: The key path that the call gave.
+    /// - Returns: The directory URL of `cwd`, as ``workingDirectory(_:)``
+    ///   gives it.
+    /// - Throws: What ``workingDirectory(_:)`` and ``requireSection(of:)``
+    ///   throw.
+    private static func checkedWorkingDirectory(_ cwd: String, keyPath: [String]) throws -> URL {
+        let directory = try workingDirectory(cwd)
+        try requireSection(of: keyPath)
+        return directory
+    }
+
     /// Gives the URL of a working directory.
+    ///
+    /// The absolute-path rule is ``SessionSetup/isAbsolute(_:)``, the one
+    /// definition of the rule. This function does not call
+    /// ``SessionSetup/validatedWorkingDirectory(path:field:)``, because that
+    /// function throws a ``RequestError`` of the ACP wire, and the `settings`
+    /// endpoint must give a ``SettingsGraphError`` with its code.
     ///
     /// - Parameter path: The path that a call gave.
     /// - Returns: The directory URL of the path as the call gave it. The path
@@ -243,7 +247,7 @@ struct SettingsEngine: Sendable {
     /// - Throws: ``SettingsGraphError/relativeWorkingDirectory(path:)`` when
     ///   the path is not absolute.
     private static func workingDirectory(_ path: String) throws -> URL {
-        guard (path as NSString).isAbsolutePath else {
+        guard SessionSetup.isAbsolute(path) else {
             throw SettingsGraphError.relativeWorkingDirectory(path: path)
         }
         return URL(fileURLWithPath: path, isDirectory: true)

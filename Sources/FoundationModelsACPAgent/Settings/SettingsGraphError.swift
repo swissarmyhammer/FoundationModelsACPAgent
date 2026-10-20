@@ -103,4 +103,20 @@ public enum SettingsGraphError: CodedError, Equatable {
             error
         }
     }
+
+    /// Runs one call of the settings store, and gives each error that it
+    /// throws as ``coded(_:)`` gives it.
+    ///
+    /// - Parameter storeCall: The call of the store.
+    /// - Returns: What `storeCall` returns.
+    /// - Throws: The coded error of the error that `storeCall` throws.
+    static func withCodedErrors<Value>(
+        of storeCall: () async throws -> Value
+    ) async throws -> Value {
+        do {
+            return try await storeCall()
+        } catch {
+            throw coded(error)
+        }
+    }
 }

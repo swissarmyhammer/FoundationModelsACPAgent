@@ -225,7 +225,7 @@ struct SettingsGraphResolver: Sendable {
     func setting(
         context _: SettingsGraphContext, arguments: SettingsGraphSettingArguments
     ) async throws -> SettingsGraphSetting? {
-        try await engine.setting(at: arguments.keyPath, cwd: arguments.cwd).map(SettingsGraphSetting.init)
+        try await mergedSetting(at: arguments.keyPath, cwd: arguments.cwd)
     }
 
     /// Resolves `Mutation.set`.
@@ -240,7 +240,7 @@ struct SettingsGraphResolver: Sendable {
         try await engine.set(
             YAMLValue(graphQLMap: arguments.value), at: arguments.keyPath, level: arguments.level,
             cwd: arguments.cwd)
-        return try await engine.setting(at: arguments.keyPath, cwd: arguments.cwd).map(SettingsGraphSetting.init)
+        return try await mergedSetting(at: arguments.keyPath, cwd: arguments.cwd)
     }
 
     /// Resolves `Mutation.clear`.
@@ -254,7 +254,19 @@ struct SettingsGraphResolver: Sendable {
         context _: SettingsGraphContext, arguments: SettingsGraphClearArguments
     ) async throws -> SettingsGraphSetting? {
         try await engine.clear(at: arguments.keyPath, level: arguments.level, cwd: arguments.cwd)
-        return try await engine.setting(at: arguments.keyPath, cwd: arguments.cwd).map(SettingsGraphSetting.init)
+        return try await mergedSetting(at: arguments.keyPath, cwd: arguments.cwd)
+    }
+
+    /// Reads the merged setting of one key, for the query and for the result
+    /// of each mutation.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path.
+    ///   - cwd: The absolute path of the working directory of the session.
+    /// - Returns: The setting, or `nil` when no layer has the key.
+    /// - Throws: What ``SettingsEngine/setting(at:cwd:)`` throws.
+    private func mergedSetting(at keyPath: [String], cwd: String) async throws -> SettingsGraphSetting? {
+        try await engine.setting(at: keyPath, cwd: cwd).map(SettingsGraphSetting.init)
     }
 
     /// Resolves the source of `Subscription.changes`.
