@@ -1,0 +1,1 @@
+{"id":"01M5DHFKB4KMVQDA67CHKHDHEJ","timestamp":"2026-10-20T20:54:08.996988Z","op":"create","item_id":"01M5DHFKB4H4ES38HGTDJ4CHSQ","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: d73a4a\n+tag_name: telemetry\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: d73a4a\n-tag_name: telemetry\n","transaction_id":null}
