@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
+import FoundationModelsHooks
 @testable import FoundationModelsRouter
 import Testing
 import Tracing
@@ -105,6 +106,8 @@ struct ScriptedPromptFixture {
     ///   - recorder: Records each prompt that the scripted model gets, or
     ///     `nil` for no record. A test that must read what a background run
     ///     gave the model reads the prompt of the run message here.
+    ///   - hookVisitors: The hook visitors that the agent gets before
+    ///     `session/new`, so they get the `SessionStart` of the session.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -120,7 +123,8 @@ struct ScriptedPromptFixture {
         commandProviders: [any SlashCommandProviding] = [],
         runClock: (any RunClock)? = nil,
         mailOnlyAnswerLimit: Int? = nil,
-        recorder: PromptRecorder? = nil
+        recorder: PromptRecorder? = nil,
+        hookVisitors: [any HookVisitor] = []
     ) async throws -> ScriptedPromptFixture {
         try await make(
             loader: makeScriptedModelLoader(script: script, recorder: recorder),
@@ -134,7 +138,8 @@ struct ScriptedPromptFixture {
             tracer: tracer,
             commandProviders: commandProviders,
             runClock: runClock,
-            mailOnlyAnswerLimit: mailOnlyAnswerLimit)
+            mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+            hookVisitors: hookVisitors)
     }
 
     /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -173,6 +178,8 @@ struct ScriptedPromptFixture {
     ///     `ManualRunClock`.
     ///   - mailOnlyAnswerLimit: The `mailOnlyAnswerLimit` of each session of
     ///     the agent, or `nil` for the Router default.
+    ///   - hookVisitors: The hook visitors that the agent gets before
+    ///     `session/new`, so they get the `SessionStart` of the session.
     /// - Returns: The fixture.
     /// - Throws: Whatever the construction or the handshake throws.
     static func make(
@@ -188,7 +195,8 @@ struct ScriptedPromptFixture {
         tracer: (any Tracer)? = nil,
         commandProviders: [any SlashCommandProviding] = [],
         runClock: (any RunClock)? = nil,
-        mailOnlyAnswerLimit: Int? = nil
+        mailOnlyAnswerLimit: Int? = nil,
+        hookVisitors: [any HookVisitor] = []
     ) async throws -> ScriptedPromptFixture {
         let userDirectory = makeResolvedDirectory(label: "\(label)-user")
         let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -208,6 +216,7 @@ struct ScriptedPromptFixture {
             }
         }
         await agent.registerCommandProviders(commandProviders)
+        await agent.registerHookVisitors(hookVisitors)
         if let mailOnlyAnswerLimit {
             await agent.useMailOnlyAnswerLimit(mailOnlyAnswerLimit)
         }
@@ -394,6 +403,68 @@ struct ScriptedPromptFixture {
     ///   - sessionId: The session to watch.
     static func waitForPromptsFinished(_ agent: RoutedACPAgent, _ sessionId: SessionId) async {
         await agent.awaitPromptsFinished(of: sessionId)
+    }
+
+    /// One prompt that ran to its end with
+    /// ``runPrompt(_:through:count:whileRunning:)``.
+    struct PromptRun {
+        /// The prompt response, which names the user message.
+        let response: PromptResponse
+
+        /// The collected sequence at the idle wait, from the start of the
+        /// connection.
+        let updates: [UpdateSessionNotification]
+    }
+
+    /// Sends one prompt in the session of `fixture` over the wire, and waits
+    /// until the prompt and its end work are done.
+    ///
+    /// - Parameters:
+    ///   - fixture: The wired fixture.
+    ///   - text: The prompt text.
+    ///   - count: The number of idle updates that the collector holds after
+    ///     this prompt.
+    ///   - whileRunning: The work of the client while the prompt runs.
+    /// - Returns: The response and the collected sequence.
+    /// - Throws: Whatever the prompt, `whileRunning` or a wait throws.
+    @discardableResult
+    static func runPrompt(
+        on fixture: ScriptedPromptFixture, text: String, count: Int = 1,
+        whileRunning: () async throws -> Void = {}
+    ) async throws -> PromptRun {
+        try await runPrompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text),
+            through: fixture.harness, count: count, whileRunning: whileRunning)
+    }
+
+    /// Sends `request` over the wire and waits until the prompt and its end
+    /// work are done. Then it drains the hook dispatcher of the agent, so
+    /// each post event and each snapshot of the prompt is complete.
+    ///
+    /// This is the one send, idle-wait and prompts-finished sequence of the
+    /// suites. A suite reads its own text from the returned updates.
+    ///
+    /// - Parameters:
+    ///   - request: The prompt request. Its session is the session to watch.
+    ///   - harness: The recording harness of the agent.
+    ///   - count: The number of idle updates that the collector holds after
+    ///     this prompt. The collector counts each session on the wire.
+    ///   - whileRunning: The work of the client while the prompt runs.
+    /// - Returns: The response and the collected sequence.
+    /// - Throws: Whatever the prompt, `whileRunning` or a wait throws, or a
+    ///   failed requirement when the harness records no updates.
+    @discardableResult
+    static func runPrompt(
+        _ request: PromptRequest, through harness: AgentClientHarness, count: Int = 1,
+        whileRunning: () async throws -> Void = {}
+    ) async throws -> PromptRun {
+        let collector = try #require(harness.collector)
+        let response = try await harness.connection.prompt(request)
+        try await whileRunning()
+        let updates = try await waitForIdle(collector, count: count)
+        await waitForPromptsFinished(harness.agent, request.sessionId)
+        await harness.agent.hooks.dispatcher.drain()
+        return PromptRun(response: response, updates: updates)
     }
 
     /// Waits until the session model applied the idle state update that

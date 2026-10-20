@@ -5,19 +5,16 @@ import FoundationModelsExtras
 /// row): the skills dotfolder stack is found, and each layer of it that is
 /// on disk can be read.
 ///
-/// The stack is the one ``ToolCatalog/makeSkillsRegistry(context:)`` builds,
+/// The stack is the one ``ToolCatalog/makeSkillsSource(context:)`` builds,
 /// under the same dotfolder name, so this component reports the very
 /// directories a session reads. A layer that is not on disk passes: skills
 /// are optional, and a fresh install has made none. A layer that is on disk
 /// and cannot be read is an ``HealthStatus/error``, because the session
 /// silently loses every skill in it.
 ///
-/// With `tools.skills: false` no layer is read at all, so the component
-/// reports one passing row that says the section is off and reads nothing.
-///
 /// The agents stack (``ToolCatalog/agentsDotfolderName``) gets the same
-/// rows after the skills rows: one per layer when `tools.agents` is on, and
-/// one passing row that names `tools.agents.enabled` when it is off.
+/// rows after the skills rows: one per layer. The skills tool and the
+/// `agents` tool are always on, thus the component reads no configuration.
 ///
 /// The component takes the environment as an argument, so a test drives it
 /// over a temporary stack and no test reads the real home directory.
@@ -42,17 +39,12 @@ public struct RuntimeDoctor: Doctorable {
     /// The group every finding of this component belongs to.
     public static let category = "runtime"
 
-    /// The skills section: the row of a section that is off names
-    /// `tools.skills`, and a layer row says that skills are optional.
+    /// The skills section: a layer row says that skills are optional.
     ///
     /// A layer that is not on disk is no fault, because skills are optional.
     /// An unreadable one loses every skill in it, and a person either opens
     /// the directory or takes it away.
     private static let skillsSection = DotfolderSection(
-        checkName: "the skills tool",
-        key: AgentConfiguration.CodingKeys.tools.stringValue
-            + LoadedConfiguration.keyPathSeparator
-            + ToolsConfiguration.CodingKeys.skills.stringValue,
         dotfolderName: ToolCatalog.skillsDotfolderName,
         wording: DotfolderLayerCheck.Wording(
             missingReason: "skills are optional",
@@ -60,20 +52,11 @@ public struct RuntimeDoctor: Doctorable {
             unreadableCost: ", so its skills are lost",
             unreadableFixHint: ", or remove it"))
 
-    /// The agents section: the row of a section that is off names
-    /// `tools.agents.enabled`, as the git and environment rows of
-    /// ``ToolsDoctor`` name their `enabled` keys, and a layer row says that
-    /// agents are optional.
+    /// The agents section: a layer row says that agents are optional.
     ///
     /// A layer that is not on disk is no fault, because agents are optional.
     /// An unreadable one loses every agent in it.
     private static let agentsSection = DotfolderSection(
-        checkName: "the agents tool",
-        key: AgentConfiguration.CodingKeys.tools.stringValue
-            + LoadedConfiguration.keyPathSeparator
-            + ToolsConfiguration.CodingKeys.agents.stringValue
-            + LoadedConfiguration.keyPathSeparator
-            + AgentsToolOptions.CodingKeys.enabled.stringValue,
         dotfolderName: ToolCatalog.agentsDotfolderName,
         wording: DotfolderLayerCheck.Wording(
             missingReason: "agents are optional",
@@ -84,12 +67,6 @@ public struct RuntimeDoctor: Doctorable {
     /// The values that make the rows of one dotfolder section different from
     /// the rows of an other section.
     private struct DotfolderSection {
-        /// The name of the one row of a section that is off.
-        let checkName: String
-
-        /// The dotted key path that the row of a section that is off names.
-        let key: String
-
         /// The dotfolder name of the stack that the section reads.
         let dotfolderName: String
 
@@ -98,10 +75,6 @@ public struct RuntimeDoctor: Doctorable {
     }
 
     // MARK: - Stored state
-
-    /// The resolved configuration, whose `tools.skills:` section says
-    /// whether any layer is read.
-    private let configuration: AgentConfiguration
 
     /// The directory `--cwd` names, which roots the project layer of the
     /// skills stack.
@@ -119,65 +92,30 @@ public struct RuntimeDoctor: Doctorable {
     /// The group its findings belong to.
     public let doctorCategory = RuntimeDoctor.category
 
-    /// Makes the component over one resolved configuration and the tree the
-    /// skills stack roots in.
+    /// Makes the component over the tree the skills stack roots in.
     ///
     /// - Parameters:
-    ///   - configuration: The resolved configuration.
     ///   - workingDirectory: The directory `--cwd` names.
     ///   - environment: The environment the stack reads.
-    public init(
-        configuration: AgentConfiguration, workingDirectory: URL, environment: [String: String]
-    ) {
-        self.configuration = configuration
+    public init(workingDirectory: URL, environment: [String: String]) {
         self.workingDirectory = workingDirectory
         self.environment = environment
     }
 
     /// Reports one finding per layer of the skills stack, lowest precedence
-    /// first, or the one row of a skills section that is off, then the same
-    /// for the agents stack.
+    /// first, then the same for the agents stack.
     ///
     /// - Returns: The findings, in that order.
     public func runHealthChecks() async -> [HealthCheck] {
-        skillsChecks() + agentsChecks()
+        checks(of: Self.skillsSection) + checks(of: Self.agentsSection)
     }
 
-    /// The findings of the skills section: one per layer of the skills
-    /// stack, or the one row of a section that is off.
+    /// The findings of one dotfolder section: one per layer of its stack.
     ///
+    /// - Parameter section: The values of the section.
     /// - Returns: The findings, lowest precedence first.
-    private func skillsChecks() -> [HealthCheck] {
-        checks(of: Self.skillsSection, isMounted: configuration.tools.skills != .disabled)
-    }
-
-    /// The findings of the agents section: one per layer of the agents
-    /// stack, or the one row of a section that is off by either shape, the
-    /// scalar `agents: false` or `enabled: false`.
-    ///
-    /// - Returns: The findings, lowest precedence first.
-    private func agentsChecks() -> [HealthCheck] {
-        checks(
-            of: Self.agentsSection,
-            isMounted: configuration.tools.agents.mountedOptions != nil)
-    }
-
-    /// The findings of one dotfolder section: one per layer of its stack,
-    /// or the one row of a section that is off.
-    ///
-    /// - Parameters:
-    ///   - section: The values of the section.
-    ///   - isMounted: Whether the configuration mounts the tool of the
-    ///     section. When it is `false`, no layer is read.
-    /// - Returns: The findings, lowest precedence first.
-    private func checks(of section: DotfolderSection, isMounted: Bool) -> [HealthCheck] {
-        guard isMounted else {
-            return [
-                DisabledSectionCheck.check(
-                    name: section.checkName, key: section.key, category: Self.category)
-            ]
-        }
-        return dotfolderStack(named: section.dotfolderName).layers.map { layer in
+    private func checks(of section: DotfolderSection) -> [HealthCheck] {
+        dotfolderStack(named: section.dotfolderName).layers.map { layer in
             DotfolderLayerCheck.check(
                 of: layer, wording: section.wording, category: Self.category, requiresWrite: false)
         }

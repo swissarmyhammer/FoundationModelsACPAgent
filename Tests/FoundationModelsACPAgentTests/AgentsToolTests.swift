@@ -242,28 +242,28 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
         #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(Self.agentsToolName) })
         let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
-        // The agent list of the tool description names each startable agent.
-        #expect(agents.description.contains("- \(Self.quickAgent)"))
-        #expect(agents.description.contains("- \(Self.slowAgent)"))
+        let agentNames = await agents.launchableAgents().map(\.name)
+        #expect(agentNames.contains(Self.quickAgent))
+        #expect(agentNames.contains(Self.slowAgent))
         await surface.shutdown()
     }
 
-    /// The scalar `agents: false` and the body `enabled: false` each give a
-    /// session with no `agents` tool and no agent runner.
-    @Test(arguments: [
-        ToolSection<AgentsToolOptions>.disabled, .enabled(AgentsToolOptions(enabled: false)),
-    ])
-    func eachOffShapeOfTheAgentsSectionMountsNoAgentsTool(
-        section: ToolSection<AgentsToolOptions>
-    ) async throws {
+    /// The config cannot turn the `agents` tool off. The scalar
+    /// `agents: false` and the body `enabled: false` that the loader reads
+    /// each give a session with the `agents` tool and an agent runner.
+    @Test(arguments: ["agents: false", "agents:\n    enabled: false"])
+    func aConfigThatTurnsTheAgentsToolOffStillMountsTheAgentsTool(entry: String) async throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  \(entry)\n  skills:\n    marketplaces: []\n  codeContext: false\n")
         let context = try await Self.makeContext(label: "off") { configuration in
-            configuration.tools.agents = section
+            configuration.tools = loaded.configuration.tools
         }
 
         let surface = try await SurfaceCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == MountOrder.withoutAgentsNames)
-        #expect(surface.agents == nil)
+        #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
+        #expect(surface.agents != nil)
+        await surface.shutdown()
     }
 
     /// The runs read the skills registry that the session gives the
@@ -271,7 +271,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// tool of the agent environment by name.
     @Test func theRunsGetTheSkillsToolOfTheOneRegistryAndTheSessionTools() async throws {
         let context = try await Self.makeContext(label: "skills")
-        let skills = try #require(await SurfaceCatalog.makeSkillsSource(context: context))
+        let skills = await SurfaceCatalog.makeSkillsSource(context: context)
 
         let surface = try await SurfaceCatalog.sessionSurface(context: context, skills: skills)
 
@@ -298,22 +298,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
             embedder: embedder, fallback: searchTools)
 
         #expect(tool.name == Self.runCodeName)
-    }
-
-    /// With the skills section off, the root session has no `skills` tool,
-    /// and the runs get a `skills` tool over an empty skills registry.
-    @Test func aSkillsSectionOffGivesTheRunsAnEmptySkillsRegistry() async throws {
-        let context = try await Self.makeContext(label: "noskills") { configuration in
-            configuration.tools.skills = .disabled
-        }
-
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-
-        #expect(surface.tools.map(\.name) == MountOrder.withoutSkillsNames)
-        let agents = try #require(surface.agents)
-        #expect(agents.environment.tools.names.contains(Self.skillsToolName))
-        #expect(agents.environment.skills.metadata().isEmpty)
-        await surface.shutdown()
     }
 
     // MARK: - The settle period

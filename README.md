@@ -120,8 +120,13 @@ is on by default. Set its config section to `false` to set it off.
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
 | `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
-| `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list | `tools.skills` |
-| `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `agents/<name>/AGENT.md` of the `agents` dotfolder stack | `tools.agents` |
+| `snapshots` | The `tools.snapshots.*` verbs — `list`, `take` and `rollback` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. A rollback returns the work tree to a checkpoint and adds a new checkpoint, so the history is append only. The snapshots are in `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot` for the CLI). Always on | none |
+| `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list. Always on | `tools.skills` |
+| `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `agents/<name>/AGENT.md` of the `agents` dotfolder stack. Always on | none |
+
+The `skills` tool and the `agents` tool are always on. A config that sets
+`tools.skills: false`, `tools.agents: false` or `tools.agents.enabled: false`
+still loads: the loader gives a warning, and the tool stays on.
 
 `tools.files` has four keys. `readOnly`, `allowSymlinks` and `recordsChanges`
 are flags, and each default is `false`. `exclude` is a list of patterns in
@@ -253,8 +258,8 @@ Use the HTTPS form of a marketplace URL. The SSH form (`git@github.com:…`) is
 not supported: the skills package gives `unreachable` for it, and the session
 then has no marketplace skill.
 
-`tools.agents` has one key, `enabled` (default `true`). The `agents` tool
-starts an agent in its own session: an agent is a folder
+The `agents` tool has no option, thus the config has no `tools.agents`
+section. The tool starts an agent in its own session: an agent is a folder
 `agents/<name>/AGENT.md` in a layer of the `agents` dotfolder stack
 (`<cwd>/.agents/` and `~/.config/agents/`), or in a marketplace of
 `tools.skills.marketplaces`; the agent registry reads the same marketplace
@@ -264,15 +269,7 @@ as the output of the call; a longer run goes to the background, and its final
 message is injected into the session as a new message, which starts the model
 working again. Each run gets the `searchTools`,
 `runCode` and `skills` tools, and the root session and the runs read one skills
-registry. When the session closes, its agent runs stop first. Set
-`enabled: false` (or `agents: false`) to set the agents tool off; `doctor`
-then has one row that says it is disabled.
-
-```yaml
-tools:
-  agents:
-    enabled: false
-```
+registry. When the session closes, its agent runs stop first.
 
 **Know the sandbox limit.** The sandbox is the only gate on shell commands:
 there is no permission prompt, and the agent never sends

@@ -6,12 +6,4 @@ enum MountOrder {
     /// tools, then the standalone `skills` tool, then the standalone
     /// `agents` tool.
     static let defaultToolNames = ["searchTools", "runCode", "skills", "agents"]
-
-    /// The mount order with the skills section off: the Multitool session
-    /// tools, then the standalone `agents` tool.
-    static let withoutSkillsNames = ["searchTools", "runCode", "agents"]
-
-    /// The mount order with the agents section off: the Multitool session
-    /// tools, then the standalone `skills` tool.
-    static let withoutAgentsNames = ["searchTools", "runCode", "skills"]
 }

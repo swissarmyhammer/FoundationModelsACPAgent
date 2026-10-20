@@ -84,10 +84,7 @@ import Testing
     ) async throws -> (recorded: UserPresence?, resumed: UserPresence?) {
         let first = try await ScriptedPromptFixture.make(
             script: [.textDelta("recorded"), .endPass], label: label, capabilities: recordedWith)
-        _ = try await first.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: first.sessionId, text: "record this session"))
-        _ = try await ScriptedPromptFixture.waitForIdle(first.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(first.harness.agent, first.sessionId)
+        try await ScriptedPromptFixture.runPrompt(on: first, text: "record this session")
         let recorded = try await presence(of: first)
         _ = try await first.harness.connection.closeSession(CloseSessionRequest(sessionId: first.sessionId))
         await first.close()
@@ -185,10 +182,7 @@ import Testing
         let first = try await ScriptedPromptFixture.make(
             script: [.textDelta("recorded"), .endPass], label: label, capabilities: recordedWith,
             projectConfigYAML: try Self.mcpConfigYAML())
-        _ = try await first.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: first.sessionId, text: "record this session"))
-        _ = try await ScriptedPromptFixture.waitForIdle(first.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(first.harness.agent, first.sessionId)
+        try await ScriptedPromptFixture.runPrompt(on: first, text: "record this session")
         let recorded = try await Self.mcpPresences(of: first.harness.agent, sessionId: first.sessionId)
         _ = try await first.harness.connection.closeSession(CloseSessionRequest(sessionId: first.sessionId))
         await first.close()

@@ -8,8 +8,12 @@
 #   tools:
 #     web: false
 #
-# A tool body that is a mapping turns the tool on. The agents, web, git and
+# A tool body that is a mapping turns the tool on. The web, git and
 # environment bodies also have the "enabled" key.
+#
+# The skills tool and the agents tool are always on. A layer that sets one
+# of them to false gives a warning, and the tool stays on. The agents tool
+# has no option, thus this file has no agents section.
 #
 # Do not put a secret, for example an API key, in this file.
 #
@@ -35,7 +39,8 @@ tools:
     # shell tools use their own directory.
     storeDirectory: null
 
-  # The skills tool: find and load the skills of the dotfolder stack.
+  # The skills tool: find and load the skills of the dotfolder stack. This
+  # tool is always on.
   skills:
     # The remote skill marketplaces. Each item has a "url" key. The default
     # is the "main" branch of the swissarmyhammer/skills repository. It gives
@@ -50,13 +55,6 @@ tools:
     marketplaces:
       - url: https://github.com/swissarmyhammer/skills.git
         ref: main
-
-  # The agents tool: start an agent, a folder agents/<name>/AGENT.md of the
-  # agents dotfolder stack, in its own session. The agents of a marketplace
-  # come from the marketplaces of the skills tool.
-  agents:
-    # When false, the agents tool is off.
-    enabled: true
 
   # The code context tools: the symbol index, the call graph and the
   # language servers of the session working directory.

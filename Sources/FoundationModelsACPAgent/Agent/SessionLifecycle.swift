@@ -87,6 +87,12 @@ extension RoutedACPAgent {
     /// servers shut down, and `session-history.json` is written. A session
     /// already closed is skipped. One `notice` record names the reason.
     ///
+    /// After the sessions close, the call waits until the hook dispatcher
+    /// delivered each post event (`HookDispatcher.drain()`). Thus the
+    /// `SessionEnd` of each session and the last snapshots are complete
+    /// before the host process ends, for `acp-agent acp` and for
+    /// `acp-agent run`.
+    ///
     /// The connection already ended each inbound handler when `closed`
     /// gives its reason, so no handler runs beside this teardown.
     ///
@@ -104,6 +110,7 @@ extension RoutedACPAgent {
         for (sessionId, entry) in sessions where !entry.isClosed {
             await tearDownSession(sessionId, entry: entry)
         }
+        await hooks.dispatcher.drain()
     }
 
     /// The name of a close reason, for the log record of a connection close.

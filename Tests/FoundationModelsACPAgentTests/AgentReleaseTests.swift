@@ -126,10 +126,7 @@ import Testing
                     script: [.textDelta(Self.answerText), .endPass], lifetimes: lifetimes),
                 label: "\(Self.label)-prompt",
                 commandProviders: [sentinel])
-            _ = try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+            try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.promptText)
             _ = try await fixture.harness.connection.closeSession(
                 CloseSessionRequest(sessionId: fixture.sessionId))
             updates = await fixture.collector.updates

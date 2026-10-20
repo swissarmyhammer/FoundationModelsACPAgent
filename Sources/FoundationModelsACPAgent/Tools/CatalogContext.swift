@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsHooks
 import FoundationModelsRouter
 
 /// What each builder call of the tool catalog needs: the
@@ -81,6 +82,12 @@ public struct CatalogContext: Sendable {
     /// reason "no user is present".
     public let userPresence: UserPresence
 
+    /// The snapshot store of the agent (``AgentHooks/snapshotStore``), or
+    /// `nil` for a catalog that has no agent. With a store, the Multitool
+    /// registry of the session mounts the `snapshots` capability over it
+    /// (``ToolCatalog/makeRegistry(context:)``).
+    public let snapshotStore: SnapshotStore?
+
     /// Makes a catalog context.
     ///
     /// - Parameters:
@@ -98,6 +105,8 @@ public struct CatalogContext: Sendable {
     ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
     ///   - userPresence: Whether a user can answer the questions of the
     ///     sessions (``userPresence``). Defaults to `.interactive`.
+    ///   - snapshotStore: The snapshot store of the agent, or `nil` (the
+    ///     default) for no `snapshots` capability (``snapshotStore``).
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
@@ -106,8 +115,10 @@ public struct CatalogContext: Sendable {
         clientMCPServers: [FoundationModelsACP.MCPServer] = [],
         environment: [String: String] = ProcessInfo.processInfo.environment,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
-        userPresence: UserPresence = .interactive
+        userPresence: UserPresence = .interactive,
+        snapshotStore: SnapshotStore? = nil
     ) {
+        self.snapshotStore = snapshotStore
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
         self.configuration = configuration

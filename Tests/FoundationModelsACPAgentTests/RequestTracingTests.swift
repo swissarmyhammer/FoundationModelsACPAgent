@@ -130,9 +130,7 @@ import Tracing
                 script: [.textDelta(answerText), .endPass], context: context)
             var request = AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: promptText)
             request.meta = promptMeta
-            _ = try await fixture.harness.connection.prompt(request)
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+            try await ScriptedPromptFixture.runPrompt(request, through: fixture.harness)
             try await fixture.harness.connection.sessionCancel(
                 CancelSessionNotification(sessionId: fixture.sessionId))
             await context.wait { capture in

@@ -64,17 +64,16 @@ import Testing
     @Test
     func cancellingALongRunningPromptMakesIdleCancelledTheLastUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("working"), .hold])
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
-
-        try await fixture.harness.connection.sessionCancel(
-            CancelSessionNotification(sessionId: fixture.sessionId))
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        // The agent clears the finished prompt after the idle went out,
-        // so the collector holds everything the prompt sent once the
-        // session is available again.
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        try await ScriptedPromptFixture.runPrompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
+        ) {
+            try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+            try await fixture.harness.connection.sessionCancel(
+                CancelSessionNotification(sessionId: fixture.sessionId))
+        }
+        // The agent clears the finished prompt after the idle went out. The
+        // run waited for that clear, so the collector holds everything that
+        // the prompt sent.
         let updates = await fixture.collector.updates
         await fixture.close()
 

@@ -96,10 +96,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     static func makeContext(repository: URL, cache: URL) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
         configuration.tools.codeContext = .disabled
-        configuration.tools.skills = .enabled(
-            SkillsToolOptions(marketplaces: [
-                MarketplaceSource(fileURLPrefix + repository.path, ref: marketplaceBranch)
-            ]))
+        configuration.tools.skills = SkillsToolOptions(marketplaces: [
+            MarketplaceSource(fileURLPrefix + repository.path, ref: marketplaceBranch)
+        ])
         return CatalogContext(
             workingDirectory: makeResolvedDirectory(label: "SkillsMarketplaceTests-work"),
             configuration: configuration,
@@ -119,7 +118,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
             script: [.endPass], label: "SkillsMarketplaceTests-stub")
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
 
-        #expect(entry.configuration.tools.skills == .enabled(SkillsToolOptions(marketplaces: [])))
+        #expect(entry.configuration.tools.skills == SkillsToolOptions(marketplaces: []))
         await fixture.close()
     }
 
@@ -135,15 +134,13 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let cache = makeResolvedDirectory(label: "SkillsMarketplaceTests-cache")
         let context = try await Self.makeContext(repository: repository, cache: cache)
 
-        let skills = try #require(await SurfaceCatalog.makeSkillsSource(context: context))
+        let skills = await SurfaceCatalog.makeSkillsSource(context: context)
         let surface = try await SurfaceCatalog.sessionSurface(context: context, skills: skills)
 
         let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
         #expect(skills.marketplaces != nil)
         #expect(skills.registry.metadata().map(\.id).contains(Self.skillName))
-        // The agent list of the tool description names each startable agent
-        // as `- name` or `- name: description`.
-        #expect(agents.description.contains("- \(Self.agentName)"))
+        #expect(await agents.launchableAgents().map(\.name).contains(Self.agentName))
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: cache.path)).isEmpty)
         await surface.shutdown()
     }

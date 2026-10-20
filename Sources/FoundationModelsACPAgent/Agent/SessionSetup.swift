@@ -881,7 +881,8 @@ extension RoutedACPAgent {
             clientMCPServers: clientMCPServers,
             environment: environment,
             inlineSettleGrace: inlineSettleGrace,
-            userPresence: userPresence)
+            userPresence: userPresence,
+            snapshotStore: hooks.snapshotStore)
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs
@@ -891,7 +892,7 @@ extension RoutedACPAgent {
         let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
         let instructions = try await InstructionsAssembler(
             stack: context.loader.stack, workingDirectory: workingDirectory
-        ).assemble(skills: skills?.registry)
+        ).assemble(skills: skills.registry)
 
         let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
             .appending(hostTools: hostTools)
@@ -900,7 +901,7 @@ extension RoutedACPAgent {
             configuration: context.loaded.configuration,
             instructions: instructions.text,
             surface: surface,
-            commandProviders: makeCommandProviders(surface: surface, skills: skills?.registry),
+            commandProviders: makeCommandProviders(surface: surface, skills: skills.registry),
             userLayerRoot: context.userLayerRoot,
             transcriptRoot: context.transcriptRoot,
             isReplayOnly: false)
@@ -913,18 +914,13 @@ extension RoutedACPAgent {
     ///
     /// - Parameters:
     ///   - surface: The mounted tool surface whose conformers join.
-    ///   - skills: The session's skills registry, or `nil` when the
-    ///     `skills:` section is off.
+    ///   - skills: The session's skills registry.
     /// - Returns: The providers, in precedence order.
     private func makeCommandProviders(
-        surface: SessionSurface, skills: SkillsRegistry?
+        surface: SessionSurface, skills: SkillsRegistry
     ) -> [any SlashCommandProviding] {
-        var providers = surface.tools.compactMap { $0 as? any SlashCommandProviding }
-        providers.append(contentsOf: commandProviders)
-        if let skills {
-            providers.append(SkillCommandSource(registry: skills))
-        }
-        return providers
+        surface.tools.compactMap { $0 as? any SlashCommandProviding } + commandProviders
+            + [SkillCommandSource(registry: skills)]
     }
 
     /// Publishes each change of the session's command set:
@@ -1010,6 +1006,11 @@ extension RoutedLLM {
     ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
     ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
     ///     is Router's default.
+    ///   - hookLineage: The hook lineage that the host gives the session, or
+    ///     `nil` (the default) to let Router give it. A new session of
+    ///     `session/new` gives `nil`: Router then gives the session its own
+    ///     id as its key, and that id is the ACP session id. The model-slot
+    ///     switch gives the lineage of the session that it replaces.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``). While an
@@ -1024,7 +1025,8 @@ extension RoutedLLM {
         repetition: RepetitionConfiguration,
         inlineSettleGrace: TimeInterval,
         userPresence: UserPresence = .interactive,
-        mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit
+        mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
+        hookLineage: HookLineage? = nil
     ) -> any RoutedSession {
         // The resolved context decides two things that a reader cannot see
         // otherwise: the fold point of the compaction, and the token ceiling
@@ -1057,7 +1059,9 @@ extension RoutedLLM {
                 mailOnlyAnswerLimit: mailOnlyAnswerLimit,
                 inlineSettleGrace: inlineSettleGrace,
                 isNoOpToolCall: NoOpToolCall.check,
-                userPresence: userPresence))
+                userPresence: userPresence,
+                hookSessionKey: hookLineage?.sessionKey,
+                hookOrigin: hookLineage?.origin))
     }
 
     /// Restores one recorded session with the host rules that

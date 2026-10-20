@@ -160,14 +160,22 @@ import Testing
         await stop()
     }
 
-    @Test func aDisabledSkillsSectionAppendsNoSkillsTool() async throws {
+    /// The config cannot turn the skills tool off: the `tools.skills: false`
+    /// that the loader reads gives the default skills options, and the
+    /// session mounts the `skills` tool. The test empties the marketplace
+    /// list of those options only to keep the unit test off the network.
+    @Test func aConfigThatTurnsTheSkillsToolOffStillMountsTheSkillsTool() async throws {
+        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+            "tools:\n  skills: false\n")
         let context = try await Self.makeContext { configuration in
-            configuration.tools.skills = .disabled
+            configuration.tools.skills = loaded.configuration.tools.skills
+            configuration.tools.skills.marketplaces = []
         }
 
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
-        #expect(surface.tools.map(\.name) == MountOrder.withoutSkillsNames)
+        #expect(loaded.configuration.tools.skills == SkillsToolOptions())
+        #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
     }
 
     // MARK: The profile embedder
@@ -536,19 +544,9 @@ import Testing
     @Test func theSkillsRegistryWatchesForCommandUpdates() async throws {
         let context = try await Self.makeContext()
 
-        let made = await ToolCatalog.makeSkillsRegistry(context: context)
-        let registry = try #require(made)
+        let registry = await ToolCatalog.makeSkillsSource(context: context).registry
 
         #expect(registry.commandUpdates != nil)
-    }
-
-    @Test func aDisabledSkillsSectionBuildsNoSkillsRegistry() async throws {
-        let context = try await Self.makeContext { configuration in
-            configuration.tools.skills = .disabled
-        }
-
-        let made = await ToolCatalog.makeSkillsRegistry(context: context)
-        #expect(made == nil)
     }
 }
 

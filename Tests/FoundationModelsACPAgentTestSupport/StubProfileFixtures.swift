@@ -41,7 +41,7 @@ import Tracing
 ///   - tracer: The tracer of each Router session, or `nil` (the default) to
 ///     read `InstrumentationSystem.tracer` at call time. A suite that
 ///     captures the Router spans gives the tracer of its capture — see
-///     ``EchoModel/makeRouter(cacheDirectory:recordingsDirectory:loader:tracer:)``.
+///     ``EchoModel/makeRouter(cacheDirectory:recordingsDirectory:loader:tracer:hooks:)``.
 ///   - inlineSettleGrace: The settle period of each session of the agent,
 ///     in seconds. The default is ``CatalogContext/defaultInlineSettleGrace``,
 ///     the value of the production agent. A suite that proves the settle
@@ -67,15 +67,20 @@ public func makeStubAgent(
     environment: [String: String] = [:],
     prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
+    // The hooks of the production composition, with the data directory in a
+    // fresh temporary directory, so no test writes under the real home.
+    let hooks = AgentHooks(dataDirectory: makeResolvedDirectory(label: "StubAgentHooks"))
     let router = EchoModel.makeRouter(
         cacheDirectory: cacheDirectory,
         recordingsDirectory: recordingsDirectory,
         loader: loader,
-        tracer: tracer)
+        tracer: tracer,
+        hooks: hooks.dispatcher)
     await prepareRouter(router)
     return try await RoutedACPAgent(
         name: DotfolderName(name),
         router: router,
+        hooks: hooks,
         userDirectory: userDirectory,
         environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
         inlineSettleGrace: inlineSettleGrace)

@@ -13,9 +13,6 @@ import Testing
 /// shapes each session's tool roster, the project registry records the cwd,
 /// and the session index stays empty until the first recorded activity.
 @Suite struct SessionSetupTests {
-    /// The name of the standalone skills tool in the composed roster.
-    private static let skillsToolName = "skills"
-
     /// A cwd string that is not absolute, so the agent must refuse it.
     private static let relativeCwd = "relative/path"
 
@@ -346,35 +343,33 @@ import Testing
     // MARK: Concurrent sessions with per-cwd config
 
     /// Two sessions at once in two repos read two project layers: the repo
-    /// whose config disables skills mounts no skills tool, while the plain
-    /// repo mounts it.
+    /// whose config turns the shell tools off has a configuration with the
+    /// shell section off, while the plain repo keeps the section on.
     @Test
     func twoConcurrentSessionsReadDifferentProjectLayerConfig() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
-        let repoWithSkillsOff = makeResolvedDirectory(label: "SessionSetupTests-repo-skills-off")
+        let repoWithShellOff = makeResolvedDirectory(label: "SessionSetupTests-repo-shell-off")
         let plainRepo = makeResolvedDirectory(label: "SessionSetupTests-repo-plain")
 
-        let dotfolder = repoWithSkillsOff.appendingPathComponent(
+        let dotfolder = repoWithShellOff.appendingPathComponent(
             ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
         try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)
-        try "tools:\n  skills: false\n".write(
+        try "tools:\n  shell: false\n".write(
             to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
             atomically: true, encoding: .utf8)
 
         let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
-        let skillsOff = try await agent.newSession(
-            Self.makeNewSessionRequest(cwd: repoWithSkillsOff))
+        let shellOff = try await agent.newSession(
+            Self.makeNewSessionRequest(cwd: repoWithShellOff))
         let plain = try await agent.newSession(Self.makeNewSessionRequest(cwd: plainRepo))
 
         let entries = await agent.sessions
-        #expect(Set(entries.keys) == [skillsOff.sessionId, plain.sessionId])
+        #expect(Set(entries.keys) == [shellOff.sessionId, plain.sessionId])
 
-        let skillsOffEntry = try #require(entries[skillsOff.sessionId])
+        let shellOffEntry = try #require(entries[shellOff.sessionId])
         let plainEntry = try #require(entries[plain.sessionId])
-        #expect(!skillsOffEntry.surface.tools.map(\.name).contains(Self.skillsToolName))
-        #expect(plainEntry.surface.tools.map(\.name).contains(Self.skillsToolName))
-        #expect(skillsOffEntry.configuration.tools.skills == .disabled)
-        #expect(plainEntry.configuration.tools.skills != .disabled)
+        #expect(shellOffEntry.configuration.tools.shell == .disabled)
+        #expect(plainEntry.configuration.tools.shell != .disabled)
     }
 
     // MARK: Registry now, index at first activity

@@ -476,6 +476,78 @@ import Testing
         #expect(loaded.warnings[0].description.contains("permissions"))
     }
 
+    // MARK: - The tools that are always on
+
+    /// One `tools:` entry that tries to turn off a tool that is always on,
+    /// and the tool key that the warning names.
+    struct AlwaysOnEntry: Sendable, CustomTestStringConvertible {
+        /// The entry under `tools:`, with no indent on its first line.
+        let entry: String
+
+        /// The key of the tool under `tools:`.
+        let tool: String
+
+        /// The name of the case in the test report.
+        var testDescription: String { entry }
+    }
+
+    /// Each entry that tries to turn off the skills tool or the `agents`
+    /// tool.
+    static let alwaysOnOffEntries = [
+        AlwaysOnEntry(entry: "skills: false", tool: "skills"),
+        AlwaysOnEntry(entry: "agents: false", tool: "agents"),
+        AlwaysOnEntry(entry: "agents:\n    enabled: false", tool: "agents"),
+    ]
+
+    /// An entry that tries to turn off a tool that is always on loads. It
+    /// gives one `cannotDisable` warning that names the tool, and the
+    /// configuration is the builtin configuration.
+    @Test(arguments: alwaysOnOffEntries)
+    func anEntryThatTurnsOffAnAlwaysOnToolGivesTheCannotDisableWarning(
+        entry: AlwaysOnEntry
+    ) throws {
+        let fixture = Fixture()
+        fixture.writeConfig("tools:\n  \(entry.entry)\n", in: fixture.projectDirectory)
+        let loader = try fixture.makeLoader()
+
+        let loaded = try loader.load()
+
+        #expect(loaded.warnings == [.cannotDisable(section: entry.tool)])
+        #expect(loaded.warnings[0].description.contains("tools.\(entry.tool)"))
+        #expect(loaded.configuration == loader.builtinConfiguration)
+    }
+
+    /// An entry that keeps an always-on tool on, and an empty marketplace
+    /// list, give no warning.
+    @Test(arguments: [
+        "skills: true", "skills:\n    marketplaces: []", "agents: true",
+        "agents:\n    enabled: true",
+    ])
+    func anEntryThatKeepsAnAlwaysOnToolOnGivesNoWarning(entry: String) throws {
+        let loaded = try Fixture().loadProjectConfig("tools:\n  \(entry)\n")
+
+        #expect(loaded.warnings.isEmpty)
+    }
+
+    /// A `cannotDisable` warning writes one `warning` record, with the
+    /// dotted tool section in its metadata.
+    @Test func theCannotDisableWarningWritesOneWarningWithTheToolSectionInMetadata() async throws {
+        let fixture = Fixture()
+        fixture.writeConfig("tools:\n  skills: false\n", in: fixture.projectDirectory)
+
+        let records = try await TelemetryCapture.run(forbidding: []) { context in
+            _ = try fixture.makeLoader().load()
+            return context.logRecords
+        }
+
+        let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
+        let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
+        #expect(sectionRecords.count == 1)
+        let record = try #require(sectionRecords.first)
+        #expect(record.level == .warning)
+        #expect(record.metadata[sectionKey] == .string("tools.skills"))
+    }
+
     // MARK: - The warning log record
 
     /// The label of each logger of the configuration loader.

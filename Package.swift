@@ -64,6 +64,12 @@ private let extrasDependencyName = "FoundationModelsExtras"
 /// and MCP packages dissolved into it, so none of the three is declared here.
 private let multitoolDependencyName = "FoundationModelsMultitool"
 
+/// The hook vocabulary of the family: the hook events, the `HookDispatcher`
+/// that Router sends them to, and the workspace snapshots (`SnapshotStore`,
+/// `SnapshotHook`). The composition makes one dispatcher and one store, and
+/// gives the store to the Multitool `snapshots` capability too.
+private let hooksDependencyName = "FoundationModelsHooks"
+
 /// The stand-alone skills package. It gives a plain
 /// `FoundationModels.Tool`. It is NOT a Multitool capability, so a skill loads
 /// in one request/response and not through the async code-mode lane.
@@ -233,6 +239,13 @@ private let metricsTestKitProduct = Target.Dependency.product(
 private let telemetryTestSupportProduct = Target.Dependency.product(
     name: "TelemetryTestSupport", package: extrasDependencyName)
 
+/// The test support of Router: `HookLayeredLLMContainer`, which puts the
+/// tool layers of the live model loader (the no-op check, the repetition
+/// check and the tool hook layer) on the tools of each session of a scripted
+/// container. Only the unit test target links it.
+private let routerTestSupportProduct = Target.Dependency.product(
+    name: "\(routerDependencyName)TestSupport", package: routerDependencyName)
+
 /// The MCP swift-sdk, reached through the organization fork
 /// `https://github.com/swissarmyhammer/swift-sdk` — the exact URL Multitool
 /// declares, because a second URL for the same package identity makes the
@@ -267,6 +280,7 @@ private let familyDependencyNames = [
     routerDependencyName,
     extrasDependencyName,
     multitoolDependencyName,
+    hooksDependencyName,
     skillsDependencyName,
     agentsDependencyName,
     codeContextDependencyName,
@@ -404,7 +418,9 @@ let package = Package(
         // they read, and the span API with the in-memory tracer, whose span
         // kinds and span ids they read — see `inMemoryTracingProduct` — and
         // the test metrics kit, whose metric values they read — see
-        // `metricsTestKitProduct`.
+        // `metricsTestKitProduct`. The hook and no-op suites link the
+        // Router test support, whose container puts the tool layers of the
+        // live loader on a scripted model — see `routerTestSupportProduct`.
         //
         // `acp-print` is NOT here: the suites that spawn a built binary or
         // load a real model live in the nested `IntegrationTests` package,
@@ -418,6 +434,7 @@ let package = Package(
                 makeFamilyProduct(name: clientDependencyName),
                 argumentParserProduct,
                 telemetryTestSupportProduct,
+                routerTestSupportProduct,
                 loggingProduct,
                 tracingProduct,
                 inMemoryTracingProduct,

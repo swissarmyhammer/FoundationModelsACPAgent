@@ -196,11 +196,8 @@ import Testing
     func settingFlashSwitchesLaterPromptsToTheFlashSlot() async throws {
         let fixture = try await Self.makeFixture(label: "ConfigOptionsTests-switch")
 
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
-        let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let firstPrompt = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "first").updates
         #expect(ScriptedPromptFixture.agentText(in: firstPrompt).contains(Self.standardAnswer))
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
 
         let response = try await fixture.harness.connection.setSessionConfigOption(
             Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
@@ -209,14 +206,11 @@ import Testing
         #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
         #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.selectedSlot == .flash)
 
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
-        let bothPrompts = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        let bothPrompts = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "second", count: 2).updates
         #expect(ScriptedPromptFixture.agentText(in: bothPrompts).contains(Self.flashAnswer))
 
         // The set response already carried the complete state, so no
         // push follows it.
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
         await fixture.close()
     }
@@ -350,10 +344,7 @@ import Testing
         #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
 
         // The push reconciled the state, so a second prompt pushes nothing.
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "second"))
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
-        await ScriptedPromptFixture.waitForPromptsFinished(agent, fixture.sessionId)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: "second", count: 2)
         #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).count == 1)
         await fixture.close()
     }

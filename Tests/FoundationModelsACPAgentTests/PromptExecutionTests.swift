@@ -147,22 +147,25 @@ import Testing
     @Test
     func aSecondPromptDuringARunningPromptIsAcceptedAndWaits() async throws {
         let fixture = try await Self.makeFixture(script: [.hold])
-        let first = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
-
-        let second = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
-            of: fixture.collector, toReach: "the echo of the second prompt"
-        ) { updates in
-            updates.contains { userMessageEcho(of: $0.update)?.messageId == second.messageId }
+        var secondResponse: PromptResponse?
+        let run = try await ScriptedPromptFixture.runPrompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
+        ) {
+            try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+            let response = try await fixture.harness.connection.prompt(
+                Self.makePromptRequest(sessionId: fixture.sessionId))
+            secondResponse = response
+            _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
+                of: fixture.collector, toReach: "the echo of the second prompt"
+            ) { updates in
+                updates.contains { userMessageEcho(of: $0.update)?.messageId == response.messageId }
+            }
+            try await fixture.harness.connection.sessionCancel(
+                CancelSessionNotification(sessionId: fixture.sessionId))
         }
-        try await fixture.harness.connection.sessionCancel(
-            CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         await fixture.close()
+        let (first, updates) = (run.response, run.updates)
+        let second = try #require(secondResponse)
 
         #expect(first.messageId != second.messageId)
         #expect(updates.compactMap { userMessageEcho(of: $0.update)?.messageId } == [first.messageId, second.messageId])
@@ -237,9 +240,9 @@ import Testing
     @Test
     func aCancelWithNoPromptOpenSendsNoStateUpdate() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("answered"), .endPass])
-        _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
-        let first = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        let first = try await ScriptedPromptFixture.runPrompt(
+            Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
+        ).updates
 
         try await fixture.harness.connection.sessionCancel(CancelSessionNotification(sessionId: fixture.sessionId))
         _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
@@ -828,13 +831,13 @@ import Testing
         let fixture = try await ScriptedPromptFixture.make(
             script: repeatingReasoningScript, label: "PromptExecutionTests-repetition",
             projectConfigYAML: repetitionConfigYAML)
-        _ = try await fixture.harness.connection.prompt(makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let updates = try await ScriptedPromptFixture.runPrompt(
+            makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
+        ).updates
         let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
         // When the Router session is idle, its journal holds each event of
         // the answer, the repeatedPartRemoval event too.
         try await ResumeSessionFixture.waitForJournal(of: fixture.sessionId, in: fixture.harness.agent)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         let events = try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
         return (fixture, ScriptedPromptFixture.idleStopReason(in: updates), events)
     }

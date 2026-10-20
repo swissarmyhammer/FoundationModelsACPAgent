@@ -67,10 +67,7 @@ import Testing
             let agent = fixture.harness.agent
             let entry = try #require(await agent.sessions[fixture.sessionId])
             transcriptDirectory = entry.transcriptDirectory
-            _ = try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            await ScriptedPromptFixture.waitForPromptsFinished(agent, fixture.sessionId)
+            try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.promptText)
             // The end of the prompt wrote the history. The case removes the
             // file, so only the close path of the dropped wire can write it
             // again.
@@ -138,9 +135,10 @@ import Testing
     /// Drops the client end of the wire with no `session/close`: the client
     /// connection closes, and the wire closes, so the agent end reads the end
     /// of its input. The agent connection is not closed here.
+    /// `HookCompositionTests` drops the client end the same way.
     ///
     /// - Parameter harness: The harness whose client goes away.
-    private static func dropClientEnd(of harness: AgentClientHarness) async {
+    static func dropClientEnd(of harness: AgentClientHarness) async {
         await harness.connection.close()
         harness.wire.close()
     }

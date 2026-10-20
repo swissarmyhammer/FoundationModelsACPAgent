@@ -178,25 +178,6 @@ import Testing
             workingDirectory: workingDirectory)
     }
 
-    /// Prompts `text` over the wire and waits for the prompt to end.
-    ///
-    /// - Parameters:
-    ///   - text: The prompt text.
-    ///   - fixture: The wired fixture.
-    ///   - count: The number of prompts that end with this one.
-    /// - Returns: The prompt response and the raw updates collected so far.
-    /// - Throws: Whatever the prompt or the waits throw.
-    @discardableResult
-    private static func runPrompt(
-        _ text: String, on fixture: ScriptedPromptFixture, count: Int
-    ) async throws -> (response: PromptResponse, updates: [SessionUpdate]) {
-        let response = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: text))
-        let notifications = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: count)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
-        return (response, notifications.map(\.update))
-    }
-
     /// Waits until the collector of `fixture` holds the terminal entry of a
     /// compaction. The entry comes from the compaction events, after the end
     /// of the `/compact` command.
@@ -262,10 +243,9 @@ import Testing
     func aCompactionWithNoPromptOpenReachesTheClient() async throws {
         let fixture = try await ScriptedPromptFixture.make(
             script: [.textDelta(Self.automaticSummary), .endPass], label: "CompactionReportTests-no-prompt")
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.earlierPrompt))
-        let promptUpdates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+        let promptUpdates = try await ScriptedPromptFixture.runPrompt(
+            on: fixture, text: Self.earlierPrompt, count: 1
+        ).updates
 
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
         let signal = session.compact()
@@ -380,7 +360,7 @@ import Testing
     @Test
     func manualCompactSendsInProgressThenCompletedWithTheSummary() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-manual")
-        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: "/compact", count: 1)
         // The reporter sends the `usage_update` after the completed entry, so
         // the wait is for that update, and not only for the entry.
         let updates = try await ScriptedPromptFixture.waitForUpdates(
@@ -414,7 +394,7 @@ import Testing
         let fixture = try await Self.makeFixture(
             label: "CompactionReportTests-shortfall",
             phraseRepeat: CompactionStubBackend.oversizedPhraseRepeat)
-        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: "/compact", count: 1)
         let updates = try await Self.waitForTerminalEntry(of: fixture)
 
         let compactions = Self.compactionUpdates(in: updates)
@@ -431,7 +411,7 @@ import Testing
     @Test
     func manualCompactFailureSendsFailedWithTheError() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-failure", shouldFail: true)
-        try await Self.runPrompt("/compact", on: fixture, count: 1)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: "/compact", count: 1)
         let updates = try await Self.waitForTerminalEntry(of: fixture)
 
         let compactions = Self.compactionUpdates(in: updates)
@@ -480,12 +460,12 @@ import Testing
     @Test
     func earlierMessagesKeepTheirIdsAndContentAfterACompaction() async throws {
         let fixture = try await Self.makeFixture(label: "CompactionReportTests-history")
-        try await Self.runPrompt(Self.earlierPrompt, on: fixture, count: 1)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.earlierPrompt, count: 1)
         let before = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.history)
         let earlier = Self.messages(of: before)
         #expect(earlier.first?.text == Self.earlierPrompt)
 
-        try await Self.runPrompt("/compact", on: fixture, count: 2)
+        try await ScriptedPromptFixture.runPrompt(on: fixture, text: "/compact", count: 2)
         _ = try await Self.waitForTerminalEntry(of: fixture)
 
         let after = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.history)
@@ -505,8 +485,8 @@ import Testing
     @Test
     func aResumeReplaysTheCompactionEntryAndTheEarlierMessages() async throws {
         let first = try await Self.makeFixture(label: "CompactionReportTests-resume")
-        try await Self.runPrompt(Self.earlierPrompt, on: first, count: 1)
-        try await Self.runPrompt("/compact", on: first, count: 2)
+        try await ScriptedPromptFixture.runPrompt(on: first, text: Self.earlierPrompt, count: 1)
+        try await ScriptedPromptFixture.runPrompt(on: first, text: "/compact", count: 2)
         let liveUpdates = try await Self.waitForTerminalEntry(of: first)
         let earlier = ReplayedMessage.live(in: liveUpdates)
         let liveCompaction = try #require(Self.compactionUpdates(in: liveUpdates).last)
@@ -529,7 +509,7 @@ import Testing
     @Test
     func aResumeReplaysTheFinalStatusOfAnAutomaticCompaction() async throws {
         let first = try await Self.makeFixture(label: "CompactionReportTests-automatic-resume")
-        try await Self.runPrompt(Self.earlierPrompt, on: first, count: 1)
+        try await ScriptedPromptFixture.runPrompt(on: first, text: Self.earlierPrompt, count: 1)
         await Self.projectThroughHistory(
             [Self.makeAutomaticStart(), Self.makeAutomaticFailure(.failed(Self.automaticFailureText))],
             of: first)

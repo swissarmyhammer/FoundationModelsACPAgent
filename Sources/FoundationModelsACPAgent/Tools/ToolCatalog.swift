@@ -60,7 +60,8 @@ public struct SessionSurface: Sendable {
     public let inlineSettleGrace: TimeInterval
 
     /// The mounted `agents` tool, its runner and its environment, or `nil`
-    /// when the `agents:` section is off.
+    /// for a surface that the catalog did not compose, such as the empty
+    /// surface of a replay-only session.
     let agents: AgentsMount?
 
     /// The join of each tool run of the session to its SDK tool call (tasks
@@ -115,8 +116,8 @@ public struct SessionSurface: Sendable {
     ///   - mcpServers: The connected MCP servers, in mount order. Empty by
     ///     default.
     ///   - inlineSettleGrace: The settle period of the root session.
-    ///   - agents: The mounted `agents` tool, or `nil` when the `agents:`
-    ///     section is off.
+    ///   - agents: The mounted `agents` tool, or `nil` for a surface that
+    ///     the catalog did not compose.
     ///   - runCallJoins: The join table of the session, which the agent
     ///     environment of `agents` writes.
     init(
@@ -276,11 +277,10 @@ public enum ToolCatalog {
     /// standalone `agents` tool (``AgentsComposition``), and the server pool
     /// behind the mounted MCP verbs.
     ///
-    /// With the `agents:` section on, the `skills` tool of the root session
-    /// is `AgentEnvironment.skillsTool`: the environment makes it from the
-    /// one skills registry of the session, and each agent run gets the same
-    /// tool. With the section off, the catalog makes the `skills` tool
-    /// itself through ``makeSkillsTool(context:registry:)``.
+    /// The `skills` tool and the `agents` tool are always on. The `skills`
+    /// tool of the root session is `AgentEnvironment.skillsTool`: the
+    /// environment makes it from the one skills registry of the session,
+    /// and each agent run gets the same tool.
     ///
     /// The MCP servers connect inside ``makeRegistry(context:)``, before
     /// the registry build, because Router's tool-instancing pipeline is
@@ -317,18 +317,19 @@ public enum ToolCatalog {
         let embedder = ProfileEmbedding(embedder: context.profile.embedding)
         let mounted = try built.registry.makeSessionToolsAndStaging(
             selection: selection, embedder: embedder)
-        var skillsSource = skills
-        if skillsSource == nil {
-            skillsSource = await makeSkillsSource(context: context)
-        }
+        let skillsSource =
+            if let skills {
+                skills
+            } else {
+                await makeSkillsSource(context: context)
+            }
         let runCallJoins = RunCallJoinTable()
         let agents = try await AgentsComposition.compose(
             context: context, skills: skillsSource,
             runTools: AgentsComposition.makeRunTools(
                 registry: built.registry, selection: selection, embedder: embedder),
             runCallJoins: runCallJoins)
-        let tools = try await mounted.tools + makeStandaloneTools(
-            context: context, skills: skillsSource, agents: agents)
+        let tools = mounted.tools + makeStandaloneTools(agents: agents)
         await MCPComposition.startSurfaceRefresher(
             source: built.source, staging: mounted.staging, servers: built.mcpServers,
             pool: built.pool)
@@ -346,29 +347,13 @@ public enum ToolCatalog {
     }
 
     /// The standalone tools that follow the Multitool session tools, in
-    /// mount order: the `skills` tool, then the `agents` tool.
+    /// mount order: the `skills` tool of the agent environment, then the
+    /// `agents` tool.
     ///
-    /// With an `agents` mount, the `skills` tool is the tool of the agent
-    /// environment, and only when the `skills:` section is on. With no
-    /// mount, the catalog makes the `skills` tool from `skills`.
-    ///
-    /// - Parameters:
-    ///   - context: The session whose profile backs the skills selection.
-    ///   - skills: The skills source of the session, or `nil` when the
-    ///     `skills:` section is off.
-    ///   - agents: The `agents` mount, or `nil` when the `agents:` section
-    ///     is off.
+    /// - Parameter agents: The `agents` mount of the session.
     /// - Returns: The standalone tools, in mount order.
-    /// - Throws: Whatever ``makeSkillsTool(context:registry:)`` throws.
-    static func makeStandaloneTools(
-        context: CatalogContext, skills: SkillsSource?, agents: AgentsMount?
-    ) async throws -> [any FoundationModels.Tool] {
-        guard let agents else {
-            guard let skills else { return [] }
-            return [try await makeSkillsTool(context: context, registry: skills.registry)].compactMap { $0 }
-        }
-        let skillsTools: [any FoundationModels.Tool] = skills == nil ? [] : [agents.environment.skillsTool]
-        return skillsTools + [agents.tool]
+    static func makeStandaloneTools(agents: AgentsMount) -> [any FoundationModels.Tool] {
+        [agents.environment.skillsTool, agents.tool]
     }
 
     /// Builds the Multitool registry over the enabled capability modules.
@@ -393,6 +378,9 @@ public enum ToolCatalog {
     /// starts one `CodeContext` over the session working directory, with the
     /// profile's embedding slot as its embedder, and mounts the operations
     /// of its three tools as the verbs of the `tools.code_context` group.
+    /// With a ``CatalogContext/snapshotStore``, `snapshots` mounts the
+    /// `tools.snapshots` verbs (`list`, `take` and `rollback`) over the
+    /// snapshot store of the agent. It has no config section.
     ///
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
@@ -440,6 +428,11 @@ public enum ToolCatalog {
             // way to give the capability an environment
             // (`EnvironmentContext.init` is internal).
             builder.withEnvironment()
+        }
+        // The `snapshots` capability reads the session key from
+        // `HookSession.current` at call time, so it needs no key here.
+        if let snapshotStore = context.snapshotStore {
+            builder.withCapability(SnapshotsCapability(store: snapshotStore))
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,
@@ -523,8 +516,9 @@ public enum ToolCatalog {
             firstIndexPass: { await codeContext.waitForFirstIndexPass() })
     }
 
-    /// Builds the skills registry over the dotfolder stack, or `nil` when
-    /// the `skills:` section is off.
+    /// Builds the skills registry of the session over the dotfolder stack,
+    /// and keeps the started marketplace store beside it. The skills tool
+    /// is always on, thus each session has a skills source.
     ///
     /// The registry is built from the stack, never from bare roots:
     /// `SkillsRegistry(roots:)` maps every root to
@@ -541,17 +535,6 @@ public enum ToolCatalog {
     /// already has the skills. A fetch that fails gives a diagnostic and no
     /// layer; it does not fail the session.
     ///
-    /// - Parameter context: The session whose working directory roots the
-    ///   stack's project layer.
-    /// - Returns: The watched registry, or `nil` when skills is disabled.
-    static func makeSkillsRegistry(context: CatalogContext) async -> SkillsRegistry? {
-        await makeSkillsSource(context: context)?.registry
-    }
-
-    /// Builds the skills registry of ``makeSkillsRegistry(context:)``, and
-    /// keeps the started marketplace store beside it, or gives `nil` when
-    /// the `skills:` section is off.
-    ///
     /// The agent registry reads the marketplace layers of the same store
     /// (``AgentsComposition``), thus a marketplace is fetched one time for
     /// the skills and the agents of a session.
@@ -565,11 +548,9 @@ public enum ToolCatalog {
     ///
     /// - Parameter context: The session whose working directory roots the
     ///   stack's project layer.
-    /// - Returns: The skills source, or `nil` when skills is disabled.
-    public static func makeSkillsSource(context: CatalogContext) async -> SkillsSource? {
-        guard case .enabled(let options) = context.configuration.tools.skills else {
-            return nil
-        }
+    /// - Returns: The skills source.
+    public static func makeSkillsSource(context: CatalogContext) async -> SkillsSource {
+        let options = context.configuration.tools.skills
         let stack = DotfolderStack(
             name: skillsDotfolderName,
             workingDirectory: context.workingDirectory,
@@ -584,38 +565,6 @@ public enum ToolCatalog {
         await store.start()
         return SkillsSource(
             registry: SkillsRegistry(marketplaces: store, stack: stack, watch: true), marketplaces: store)
-    }
-
-    /// Builds the standalone `skills` tool, or `nil` when the `skills:`
-    /// section is off.
-    ///
-    /// Skills is not a Multitool capability: the tool is a
-    /// plain `FoundationModels.Tool` appended beside the Multitool session
-    /// tools, so a skill loads in one request/response step. Its selection
-    /// tier runs on the profile's flash slot through a
-    /// ``RoutedSelectionModel``, which captures the profile itself so the
-    /// resident models outlive the context. The tier asks for its
-    /// `Selection` type, so each Router session gets the JSON Schema of that
-    /// type as its grammar, and a small model cannot write `[explore]`.
-    ///
-    /// - Parameters:
-    ///   - context: The session whose profile backs the selection tier.
-    ///   - registry: The registry the tool reads, or `nil` to make one
-    ///     through ``makeSkillsRegistry(context:)``.
-    /// - Returns: The `skills` tool, or `nil` when skills is disabled.
-    /// - Throws: Whatever `SkillsTool.make(registry:model:)` throws.
-    static func makeSkillsTool(
-        context: CatalogContext, registry: SkillsRegistry? = nil
-    ) async throws -> (any FoundationModels.Tool)? {
-        var registry = registry
-        if registry == nil {
-            registry = await makeSkillsRegistry(context: context)
-        }
-        guard let registry else {
-            return nil
-        }
-        return try await SkillsTool.make(
-            registry: registry, model: RoutedSelectionModel(profile: context.profile))
     }
 
     /// Makes the selection tier of `searchTools`: for each catalog, a

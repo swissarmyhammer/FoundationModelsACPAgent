@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsExtras
+import FoundationModelsHooks
 import FoundationModelsRouter
 import Logging
 import Synchronization
@@ -139,6 +140,24 @@ public actor RoutedACPAgent: Agent {
         hostTools.append(contentsOf: tools)
     }
 
+    /// The hook objects of this agent: the dispatcher that the router of
+    /// ``residentProfile`` sends the hook events of each session to, and the
+    /// snapshot store of the `snapshots` capability of each session.
+    nonisolated let hooks: AgentHooks
+
+    /// Registers hook visitors of the host on the dispatcher of ``hooks``.
+    /// It exists for the tests and for an in-process host that adds its own
+    /// visitors after the agent is made. Each visitor comes after the
+    /// visitors that are already registered, in the order of the calls. A
+    /// visitor gets the events that the sessions send after this call.
+    ///
+    /// - Parameter visitors: The visitors to append, in order.
+    func registerHookVisitors(_ visitors: [any HookVisitor]) {
+        for visitor in visitors {
+            hooks.dispatcher.register(visitor)
+        }
+    }
+
     /// The most answers in a row that run mail alone starts in each session
     /// that this agent opens later (`SessionConfiguration.mailOnlyAnswerLimit`).
     /// Production keeps the Router default. A test sets a small value with
@@ -244,6 +263,9 @@ public actor RoutedACPAgent: Agent {
     ///     is also the fallback for the profile's name.
     ///   - router: The router that resolves the profile and owns its
     ///     residency.
+    ///   - hooks: The hook objects of the agent. The caller gives the same
+    ///     ``AgentHooks/dispatcher`` to `Router.init(hooks:)` of `router`,
+    ///     because the router does not publish its dispatcher.
     ///   - configuration: The agent configuration whose `profile` section
     ///     is resolved.
     ///   - reporting: The UI-bindable resolution progress, or `nil` for a
@@ -266,6 +288,7 @@ public actor RoutedACPAgent: Agent {
     public init(
         name: DotfolderName,
         router: Router,
+        hooks: AgentHooks,
         configuration: AgentConfiguration = AgentConfiguration(),
         reporting: ResolutionProgress? = nil,
         userDirectory: URL? = nil,
@@ -274,6 +297,7 @@ public actor RoutedACPAgent: Agent {
         transcriptLocation: TranscriptLocation? = nil
     ) async throws {
         self.name = name
+        self.hooks = hooks
         self.userDirectory = userDirectory
         self.environment = environment
         self.inlineSettleGrace = inlineSettleGrace

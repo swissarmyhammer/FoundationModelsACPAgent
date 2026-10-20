@@ -53,6 +53,12 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     /// A key under `tools:` that names no tool in the roster.
     case unknownToolSection(name: String)
 
+    /// A `tools:` entry that tries to turn off a tool that is always on:
+    /// `tools.skills: false`, `tools.agents: false`, or
+    /// `tools.agents.enabled: false`. The loader ignores the request, and
+    /// the tool stays on. `section` is the key of the tool under `tools:`.
+    case cannotDisable(section: String)
+
     /// A human-readable message that names the section.
     public var description: String {
         switch self {
@@ -61,6 +67,9 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
         case .unknownToolSection(let name):
             return
                 "\(ConfigurationLoader.configFileName): unknown tool section \"tools.\(name)\" is ignored"
+        case .cannotDisable(let section):
+            return
+                "\(ConfigurationLoader.configFileName): the tool section \"tools.\(section)\" cannot be turned off; the tool stays on"
         }
     }
 }
@@ -82,16 +91,18 @@ extension ConfigurationWarning {
             "The configuration has an unknown section. The loader ignored the section."
         case .unknownToolSection:
             "The configuration has an unknown tool section. The loader ignored the section."
+        case .cannotDisable:
+            "The configuration turns off a tool that is always on. The tool stays on."
         }
     }
 
     /// The key path of the section that this warning is about: the section
     /// name, or `tools.<name>` for a tool section.
-    private var sectionKeyPath: String {
+    var sectionKeyPath: String {
         switch self {
         case .unknownSection(let name):
             name
-        case .unknownToolSection(let name):
+        case .unknownToolSection(let name), .cannotDisable(let name):
             ToolsConfiguration.dottedSection(name)
         }
     }

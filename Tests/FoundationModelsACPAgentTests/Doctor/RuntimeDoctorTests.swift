@@ -22,41 +22,20 @@ struct RuntimeDoctorTests {
     /// not read, which is how a test makes a layer unreadable.
     private static let unreadablePermissions = NSNumber(value: 0o300)
 
-    /// The word a disabled tool section reports, so a person sees why the
-    /// tool is absent.
-    private static let disabledWord = "disabled"
-
-    /// The configuration key a disabled-section row names.
-    private static let skillsKey = "tools.skills"
-
     /// The start of the name of each row of the skills tool.
     private static let skillsRowPrefix = "the skills"
 
     /// The start of the name of each row of the agents tool.
     private static let agentsRowPrefix = "the agents"
 
-    /// The name of the row of an agents section that is off.
-    private static let agentsToolCheckName = "the agents tool"
-
-    /// The configuration key that the row of an agents section that is off
-    /// names.
-    private static let agentsEnabledKey = "tools.agents.enabled"
-
     // MARK: - Helpers
 
-    /// The component over one configuration and one fixture tree.
+    /// The component over one fixture tree.
     ///
-    /// - Parameters:
-    ///   - configuration: The resolved configuration the checks read.
-    ///   - fixture: The two-layer tree the skills stack roots in.
+    /// - Parameter fixture: The two-layer tree the skills stack roots in.
     /// - Returns: The component.
-    private static func doctor(
-        configuration: AgentConfiguration = AgentConfiguration(),
-        in fixture: ConfigCommandFixture
-    ) -> RuntimeDoctor {
-        RuntimeDoctor(
-            configuration: configuration, workingDirectory: fixture.workspace,
-            environment: fixture.environment)
+    private static func doctor(in fixture: ConfigCommandFixture) -> RuntimeDoctor {
+        RuntimeDoctor(workingDirectory: fixture.workspace, environment: fixture.environment)
     }
 
     /// The findings of `checks` that carry `status`.
@@ -125,34 +104,11 @@ struct RuntimeDoctorTests {
         #expect(fix.contains(layer.path))
     }
 
-    // MARK: - The disabled section
-
-    /// `tools.skills: false` gives one `.ok` row that says disabled, and no
-    /// layer is read: a layer that cannot be read changes nothing.
-    @Test func aDisabledSkillsSectionSaysDisabledAndReadsNoLayer() async throws {
-        let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-off")
-        let layer = Self.projectSkillsDirectory(of: fixture)
-        try FileManager.default.createDirectory(at: layer, withIntermediateDirectories: true)
-        try setPermissions(Self.unreadablePermissions, of: layer)
-        var configuration = AgentConfiguration()
-        configuration.tools.skills = .disabled
-
-        let checks = await Self.doctor(configuration: configuration, in: fixture)
-            .runHealthChecks()
-        try setPermissions(ownerOnlyPermissions, of: layer)
-
-        let skillsChecks = checks.filter { $0.name.hasPrefix(Self.skillsRowPrefix) }
-        #expect(skillsChecks.count == Self.oneFinding)
-        #expect(skillsChecks.allSatisfy { $0.status == .ok })
-        #expect(skillsChecks.contains { $0.message.contains(Self.disabledWord) })
-        #expect(skillsChecks.contains { $0.message.contains(Self.skillsKey) })
-    }
-
     // MARK: - The agents tool
 
-    /// With the agents section on, the component gives one row for each
-    /// layer of the agents stack, and a layer that is not on disk passes.
-    @Test func theAgentsSectionOnGivesOneRowForEachAgentsLayer() async {
+    /// The component gives one row for each layer of the agents stack, and
+    /// a layer that is not on disk passes.
+    @Test func theComponentGivesOneRowForEachAgentsLayer() async {
         let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-agents")
 
         let checks = await Self.doctor(in: fixture).runHealthChecks()
@@ -160,32 +116,23 @@ struct RuntimeDoctorTests {
         let agentsChecks = checks.filter { $0.name.hasPrefix(Self.agentsRowPrefix) }
         #expect(!agentsChecks.isEmpty)
         #expect(agentsChecks.allSatisfy { $0.status == .ok })
-        #expect(agentsChecks.allSatisfy { $0.name != Self.agentsToolCheckName })
     }
 
-    /// `tools.agents: false` and `tools.agents.enabled: false` each give
-    /// one `.ok` row for the agents tool that says disabled and names the
-    /// key that turns the tool on again.
-    @Test(arguments: [
-        ToolSection<AgentsToolOptions>.disabled, .enabled(AgentsToolOptions(enabled: false)),
-    ])
-    func eachOffShapeOfTheAgentsSectionSaysDisabled(
-        section: ToolSection<AgentsToolOptions>
-    ) async {
-        let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-agents-off")
-        var configuration = AgentConfiguration()
-        configuration.tools.agents = section
+    // MARK: - The tools that are always on
 
-        let checks = await Self.doctor(configuration: configuration, in: fixture)
-            .runHealthChecks()
+    /// The skills tool and the `agents` tool are always on. Each row of the
+    /// component is a layer row of the skills stack or of the agents stack,
+    /// and no row says that a tool is disabled.
+    @Test func eachRowIsALayerRowAndNoRowSaysDisabled() async {
+        let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-always-on")
 
-        let agentsChecks = checks.filter { $0.name.hasPrefix(Self.agentsRowPrefix) }
-        #expect(agentsChecks.count == Self.oneFinding)
-        let row = agentsChecks.first
-        #expect(row?.name == Self.agentsToolCheckName)
-        #expect(row?.status == .ok)
-        #expect(row?.message.contains(Self.disabledWord) == true)
-        #expect(row?.message.contains(Self.agentsEnabledKey) == true)
+        let checks = await Self.doctor(in: fixture).runHealthChecks()
+
+        #expect(
+            checks.allSatisfy {
+                $0.name.hasPrefix(Self.skillsRowPrefix) || $0.name.hasPrefix(Self.agentsRowPrefix)
+            })
+        #expect(!checks.contains { $0.message.contains(DisabledSectionCheck.disabledWord) })
     }
 
     // MARK: - The fix rule

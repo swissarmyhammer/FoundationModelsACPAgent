@@ -228,7 +228,8 @@ extension RoutedACPAgent {
         // `compaction:` section the session was composed from, against the
         // selected slot's resolved context (the context size comes from the
         // model, never from configuration), and the same
-        // `repetition:` section, and the same user presence.
+        // `repetition:` section, and the same user presence. The hooks see
+        // one lineage: the replacement has the key of the ACP session.
         let replacement = ConfigOptions.handle(for: slot, of: residentProfile)
             .makeBudgetedSession(
                 instructions: entry.instructions,
@@ -239,7 +240,8 @@ extension RoutedACPAgent {
                 repetition: entry.configuration.repetition,
                 inlineSettleGrace: entry.surface.inlineSettleGrace,
                 userPresence: entry.userPresence,
-                mailOnlyAnswerLimit: mailOnlyAnswerLimit)
+                mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+                hookLineage: .replacement(in: sessionId))
         // The projector reads the replacement before any prompt can mail it.
         // The reader of the replaced session stays until that session
         // closes (task ^9xs24pn, decision Q3).

@@ -52,7 +52,8 @@ struct AgentsMount: Sendable {
 /// `FoundationModelsAgents.ToolCatalog` does not name the type.
 enum AgentsComposition {
     /// Builds the agent registry, the environment, the runner and the
-    /// `agents` tool, or gives `nil` when the `agents:` section is off.
+    /// `agents` tool. The `agents` tool is always on, thus each composed
+    /// session has this mount.
     ///
     /// The agent registry reads the agent folders `agents/<name>/AGENT.md`
     /// of the `agents` dotfolder stack (``ToolCatalog/agentsDotfolderName``),
@@ -63,29 +64,25 @@ enum AgentsComposition {
     /// - Parameters:
     ///   - context: The session whose configuration, profile, working
     ///     directory and settle period the composition reads.
-    ///   - skills: The skills source of the session, or `nil` when the
-    ///     `skills:` section is off. With `nil`, the runs get a `skills` tool
-    ///     over an empty skills registry, and the agent registry reads no
-    ///     marketplace.
+    ///   - skills: The skills source of the session. The runs get a `skills`
+    ///     tool over its registry, and the agent registry reads its
+    ///     marketplace store.
     ///   - runTools: The tools that a run can get, by name.
     ///   - runCallJoins: The join table of the session. The environment
     ///     writes the entry of each tool run of each agent run into it
     ///     (``makeRunEventObserver(runCallJoins:)``).
-    /// - Returns: The mount, or `nil` when the section is off.
+    /// - Returns: The mount.
     /// - Throws: Whatever `AgentRegistry.load()`, `AgentEnvironment.make`
     ///   or `AgentsTool.make(context:)` throws.
     static func compose(
-        context: CatalogContext, skills: SkillsSource?, runTools: FoundationModelsAgents::ToolCatalog,
+        context: CatalogContext, skills: SkillsSource, runTools: FoundationModelsAgents::ToolCatalog,
         runCallJoins: RunCallJoinTable
-    ) async throws -> AgentsMount? {
-        guard context.configuration.tools.agents.mountedOptions != nil else {
-            return nil
-        }
-        let registry = makeAgentRegistry(context: context, marketplaces: skills?.marketplaces)
+    ) async throws -> AgentsMount {
+        let registry = makeAgentRegistry(context: context, marketplaces: skills.marketplaces)
         try await registry.load()
         let environment = try await AgentEnvironment.make(
             profile: context.profile,
-            skills: skills?.registry ?? SkillsRegistry(roots: []),
+            skills: skills.registry,
             skillsSelectionModel: RoutedSelectionModel(profile: context.profile),
             workingDirectory: context.workingDirectory,
             tools: runTools,

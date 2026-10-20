@@ -122,13 +122,11 @@ import Testing
         idleCount: Int,
         root: URL
     ) async throws {
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(
-                sessionId: sessionId, text: promptText + String(ordinal)))
-        _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: idleCount)
+        try await ScriptedPromptFixture.runPrompt(
+            AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText + String(ordinal)),
+            through: fixture.harness, count: idleCount)
         try await ResumeSessionFixture.waitForRecordedResponses(
             under: root, sessionId: sessionId, count: ordinal, agent: fixture.harness.agent)
-        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, sessionId)
     }
 
     // MARK: - The proofs

@@ -11,7 +11,7 @@ extension AgentConfiguration {
     /// stub agent.
     public static var withoutMarketplaces: AgentConfiguration {
         var configuration = AgentConfiguration()
-        configuration.tools.skills = .enabled(SkillsToolOptions(marketplaces: []))
+        configuration.tools.skills = SkillsToolOptions(marketplaces: [])
         return configuration
     }
 }
