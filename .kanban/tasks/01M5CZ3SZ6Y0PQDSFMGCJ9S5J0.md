@@ -136,11 +136,27 @@ comments:
     - evidence: touched 4 Swift files, then `swift test` — 1147 tests in 124 suites passed, 1 known issue (the accepted withKnownIssue in HarnessSmokeTests), 0 failures, 0 skipped; build output had no compiler warning (only the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx bundle). `swift build --build-tests --package-path IntegrationTests` — Build complete, no compiler warning. `swift test --skip-build --filter Settings` run 3 times — 63 tests in 6 suites passed each time.
     - next: review
   timestamp: 2026-10-20T21:21:29.227101+00:00
+- actor: claude-code
+  id: 01m5dk5z5ck6jnr2e4ft8gbyy8
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 3b15e58). 0 findings, 0 confirmed, 4 refuted. All prior review items are checked.
+    - next: The task moved to done.
+  timestamp: 2026-10-20T21:23:50.572368+00:00
+- actor: wballard
+  id: 01m5dk6b83hsbra8gnagwbdm2y
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 5 files
+    - test: green — swift test 1147 passed; settings suites x3 green; IntegrationTests builds
+    - commit: 3b15e58
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T21:24:02.947866+00:00
 depends_on:
 - 01M5CZ35E8P2EZTW5GW3YTW5VX
 - 01M5DCV6DGXMS6FGXQ6AEFMPDZ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: fff780
 title: 'ACPA-17: the settings GraphQL endpoint and SettingsTool over one engine'
 ---
 ## What
