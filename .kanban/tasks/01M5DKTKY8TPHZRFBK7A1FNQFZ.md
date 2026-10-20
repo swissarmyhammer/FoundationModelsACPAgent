@@ -32,10 +32,26 @@ comments:
     - evidence: touched the 10 changed Swift files, then `swift test`: 1162 tests in 125 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue, accepted), 0 failed, 0 skipped. Build had no compiler warning. `swift build --build-tests --package-path IntegrationTests`: Build complete, 0 compiler warnings. Only warning in both: SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle (accepted). Settings suites (Graph, Store, Subscription, Tool, ToolSession) run 3 times: 65 tests in 7 suites passed each time.
     - next: review
   timestamp: 2026-10-20T21:50:50.097339+00:00
+- actor: claude-code
+  id: 01m5dmtx24zrrv271g1sy0r5gp
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (ce05222): 0 findings, 0 confirmed, 0 refuted, 14 attempted, 0 failed. 10 files reviewed. Not reviewed: 2 files in .kanban/ (ignore rule), Tests/Fixtures/settings.graphql (no validator matches this file).
+    - next: none. The task is in done.
+  timestamp: 2026-10-20T21:52:45.124549+00:00
+- actor: wballard
+  id: 01m5dmv6r643yn03xha930q5c1
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 11 files
+    - test: green — swift test 1162 passed; settings suites x3 green; IntegrationTests builds
+    - commit: ce05222
+    - review: clean — 0 findings; task is done
+  timestamp: 2026-10-20T21:52:55.046317+00:00
 depends_on:
 - 01M5CZ4EDEW6ECQ13W9E7QFTFW
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: fff980
 title: The settings endpoint reads and writes the user level with no cwd
 ---
 ## What
