@@ -155,6 +155,36 @@ public struct AgentClientHarness: Sendable {
             cacheDirectory: makeResolvedDirectory(label: "AgentClientHarness-cache"))
     }
 
+    /// Makes a stub agent for ``dotfolderName`` over throwaway folders, with
+    /// no wire, and runs `initialize` so the order rule passes. The agent
+    /// records durably under a throwaway recordings root, thus a session
+    /// that it makes writes its session directory to disk.
+    ///
+    /// - Parameters:
+    ///   - label: The prefix that names the throwaway folders.
+    ///   - userDirectory: The injected user layer root, or `nil` (the
+    ///     default) for a new throwaway folder.
+    /// - Returns: The initialized agent.
+    /// - Throws: What the construction or the handshake throws.
+    public static func makeInitializedAgent(label: String, userDirectory: URL? = nil) async throws -> RoutedACPAgent {
+        let agent = try await makeStubAgent(
+            name: dotfolderName,
+            cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
+            recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
+            userDirectory: userDirectory ?? makeResolvedDirectory(label: "\(label)-user"))
+        _ = try await agent.initialize(makeInitializeRequest())
+        return agent
+    }
+
+    /// The `session/new` request for `cwd`, with no additional directories
+    /// and no client MCP servers.
+    ///
+    /// - Parameter cwd: The session working directory.
+    /// - Returns: The request.
+    public static func makeNewSessionRequest(cwd: URL) -> NewSessionRequest {
+        NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path))
+    }
+
     /// The client's `initialize` request with the driver's own values.
     ///
     /// - Parameters:

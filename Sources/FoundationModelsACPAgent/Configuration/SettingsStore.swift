@@ -129,7 +129,9 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
 /// iCloud brings a change from another device) and its text is not the text
 /// that the store last read or wrote, the store reads the file again and
 /// sends a change. ``changes()`` gives each change of a `set`, a `clear` and
-/// an outside write.
+/// an outside write. ``stopWatching()`` stops each watcher, forgets each
+/// level and ends each ``changes()`` stream; a later call reads its levels
+/// from the files again.
 ///
 /// The defaults layer that `<NAME>_DEFAULTS_DIR` names is not a level: no
 /// change goes into it, thus each merge reads it from the disk, as the loader
@@ -181,7 +183,8 @@ public actor SettingsStore {
         var text: String?
 
         /// The watcher of ``file``. The state keeps it, thus it watches for
-        /// as long as the store keeps the level.
+        /// as long as the store keeps the level. ``SettingsStore/stopWatching()``
+        /// stops it.
         let watcher: DotfolderWatcher
 
         /// The `config.yaml` of the level.
@@ -244,9 +247,8 @@ public actor SettingsStore {
     /// - Throws: What ``ConfigurationLoader/load()`` throws for a file that
     ///   cannot be read, rendered, parsed, checked or decoded.
     public func merged(for cwd: URL) throws -> LoadedConfiguration {
-        let merged = try mergedSettings(over: [levelState(of: .user), levelState(of: .session(cwd))].map(\.tree))
-        return try makeConfigurationLoader(workingDirectory: cwd).loadedConfiguration(
-            dotfolderRoot: merged.root, sources: merged.dottedSources)
+        let (merged, loader) = try mergedSettings(for: cwd)
+        return try loader.loadedConfiguration(dotfolderRoot: merged.root, sources: merged.dottedSources)
     }
 
     /// The merged value of one key for a working directory, and the layer
@@ -260,16 +262,16 @@ public actor SettingsStore {
     /// - Throws: What ``merged(for:)`` throws for a level file, or what the
     ///   builtin file throws.
     public func value(at keyPath: [String], cwd: URL) throws -> SettingsValue? {
-        let merged = try mergedSettings(over: [levelState(of: .user), levelState(of: .session(cwd))].map(\.tree))
-        let root = try makeConfigurationLoader(workingDirectory: cwd).layeredRoot(over: merged.root)
-        return root.value(at: keyPath).map {
+        let (merged, loader) = try mergedSettings(for: cwd)
+        return try loader.layeredRoot(over: merged.root).value(at: keyPath).map {
             SettingsValue(value: $0, level: ConfigurationLayerName(merged.source(of: keyPath)))
         }
     }
 
     /// A stream of each change that the store makes or reads from now on.
     ///
-    /// - Returns: The stream. It ends when the caller stops to iterate it.
+    /// - Returns: The stream. It ends when the caller stops to iterate it, or
+    ///   when ``stopWatching()`` runs.
     public func changes() -> AsyncStream<SettingsChange> {
         let (stream, continuation) = AsyncStream.makeStream(of: SettingsChange.self)
         let token = UUID()
@@ -285,6 +287,30 @@ public actor SettingsStore {
     /// - Parameter token: The token of the stream.
     private nonisolated func removeSubscriber(_ token: UUID) {
         _ = subscribers.withLock { $0.removeValue(forKey: token) }
+    }
+
+    // MARK: - Stop
+
+    /// Stops the watch of each `config.yaml` that the store read, forgets
+    /// each level, and ends each open ``changes()`` stream.
+    ///
+    /// The host calls it when the store is done, for example when the
+    /// connection of the agent closed. A later call reads the file of each
+    /// level that it needs again, and watches that file again, because no
+    /// watcher kept the forgotten levels up to date.
+    public func stopWatching() {
+        for state in levels.values {
+            state.watcher.stop()
+        }
+        levels.removeAll()
+        let continuations = subscribers.withLock { subscribers in
+            let continuations = Array(subscribers.values)
+            subscribers.removeAll()
+            return continuations
+        }
+        for continuation in continuations {
+            continuation.finish()
+        }
     }
 
     // MARK: - Writes
@@ -380,6 +406,19 @@ public actor SettingsStore {
 
     // MARK: - Levels
 
+    /// The merged settings of one working directory: the defaults layer, the
+    /// user level and the session level of `cwd`, and the configuration
+    /// loader of `cwd` that takes the merged tree further.
+    ///
+    /// - Parameter cwd: The working directory of the session.
+    /// - Returns: The merged tree with its sources, and the loader.
+    /// - Throws: What ``levelState(of:)`` and a read of the defaults file
+    ///   throw.
+    private func mergedSettings(for cwd: URL) throws -> (settings: MergedSettings, loader: ConfigurationLoader) {
+        let trees = try [SettingsLevel.user, .session(cwd)].map { try levelState(of: $0).tree }
+        return (try mergedSettings(over: trees), makeConfigurationLoader(workingDirectory: cwd))
+    }
+
     /// The merged settings of the defaults layer and `trees`.
     ///
     /// - Parameter trees: The trees of the levels, lowest precedence first.
@@ -474,9 +513,7 @@ public actor SettingsStore {
         } catch {
             ACPAgentTelemetry.logger(.configuration).warning(
                 "A settings file changed, and the store could not read it again. The settings in memory stay.",
-                metadata: [
-                    ACPAgentTelemetry.LogMetadataKey.errorType: "\(ACPAgentTelemetry.errorTypeName(of: error))"
-                ])
+                metadata: ACPAgentTelemetry.errorMetadata(error))
             return
         }
         levels[file.path] = state

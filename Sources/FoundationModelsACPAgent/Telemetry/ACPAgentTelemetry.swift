@@ -450,9 +450,16 @@ enum ACPAgentTelemetry {
     /// - Returns: The ``LogMetadataKey/sessionId`` and
     ///   ``LogMetadataKey/errorType`` values.
     static func errorMetadata(_ error: any Error, sessionId: SessionId) -> Logger.Metadata {
-        var metadata = sessionMetadata(sessionId)
-        metadata[LogMetadataKey.errorType] = "\(errorTypeName(of: error))"
-        return metadata
+        sessionMetadata(sessionId).merging(errorMetadata(error)) { current, _ in current }
+    }
+
+    /// The metadata of an error that no session owns: the type name of the
+    /// error, never its message.
+    ///
+    /// - Parameter error: The error.
+    /// - Returns: The ``LogMetadataKey/errorType`` value.
+    static func errorMetadata(_ error: any Error) -> Logger.Metadata {
+        [LogMetadataKey.errorType: "\(errorTypeName(of: error))"]
     }
 
     /// The type name of `error`, for the ``AttributeKey/errorType`` attribute

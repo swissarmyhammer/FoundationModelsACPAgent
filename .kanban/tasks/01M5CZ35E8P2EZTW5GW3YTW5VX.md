@@ -56,6 +56,56 @@ comments:
     - evidence: `swift test`: 1066 tests in 118 suites passed, 1 known issue (the accepted withKnownIssue test). `swift build --build-tests --package-path IntegrationTests`: build complete. After touching the 12 changed files, `swift build --build-tests`: build complete, no compiler warning. The only warning is the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx. `SettingsStoreTests` and `SessionSettingsStoreTests` run three times: 13 tests in 2 suites passed each time.
     - next: review
   timestamp: 2026-10-20T19:12:36.227525+00:00
+- actor: claude-code
+  id: 01m5dbxzka992ch08m5rfhb3vt
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit ee08458); 6 findings (6 confirmed, 1 refuted) — SettingsStore.swift:185, SettingsStore.swift:263, SettingsStore.swift:475, SessionSettingsStoreTests.swift:22, SessionSettingsStoreTests.swift:36, SettingsStoreTests.swift:153
+    - next: correct each open item in the 2026-10-20 14:13 Review Findings section, then run the review again.
+  timestamp: 2026-10-20T19:17:08.842961+00:00
+- actor: wballard
+  id: 01m5dbygcandd85eb3k9q616hz
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 12 files (two implement rounds: the second keeps template tags in the flush)
+    - test: green — swift test 1066 passed; store suites x3 green; IntegrationTests builds
+    - commit: ee08458
+    - review: findings — SettingsStore.swift:185, :263, :475, SessionSettingsStoreTests.swift:22, :36, SettingsStoreTests.swift:153
+  timestamp: 2026-10-20T19:17:26.026067+00:00
+- actor: claude-code
+  id: 01m5dc2x1vt9q9g5d6pe6y4xk0
+  text: |-
+    Picked up the 2026-10-20 14:13 findings. Research:
+    - `DotfolderWatcher` has `start()`, `stop()` and a `deinit` that calls `stop()`. The store holds one watcher for each level in `LevelState.watcher`, and no code reads it after the init.
+    - `ACPAgentTelemetry.errorMetadata(_:sessionId:)` needs a session id. `reload` and `SessionLifecycle.logCandidateRootFailure` have no session. Plan: add `errorMetadata(_:)` (error type only), let `errorMetadata(_:sessionId:)` use it, and call it from both places.
+    - `SessionSetupTests` has the same private `makeInitializedAgent` and `makeNewSessionRequest(cwd:)` as `SessionSettingsStoreTests`. Plan: `AgentClientHarness.makeNewSessionRequest(cwd:)` and `AgentClientHarness.makeInitializedAgent(label:userDirectory:)` in test support; delete both private copies.
+    - `ConfigCommandFixture.configURL(in:)` (same test target) joins the same path as `SettingsStoreTests.Fixture.configFile(in:)`. Plan: call it, and delete the copy.
+  timestamp: 2026-10-20T19:19:50.075094+00:00
+- actor: claude-code
+  id: 01m5dcjj5e4q5a97fnb92kcqby
+  text: |-
+    Findings of 2026-10-20 14:13 corrected:
+    - `watcher`: new `SettingsStore.stopWatching()` calls `stop()` on each watcher, forgets each level and ends each `changes()` stream. A later call reads the files again and watches again (a rebind of the agent then reads fresh settings). `closeOpenSessions(after:)` calls it after the hook drain. Tests: `aStopEndsEachChangeStream`, `aStopForgetsEachLevel` (a second store is the witness of the watch period), `aConnectionCloseStopsTheSettingsWatch`.
+    - Merge copy: private `mergedSettings(for:)` gives the merged tree and the loader of `cwd`; `merged(for:)` and `value(at:cwd:)` call it.
+    - Log copy: new `ACPAgentTelemetry.errorMetadata(_:)` (error type only); `errorMetadata(_:sessionId:)` uses it; `SettingsStore.reload` and `SessionLifecycle.logCandidateRootFailure` call it. Test `errorMetadataWithNoSessionHoldsTheErrorTypeOnly`.
+    - Test helpers: `AgentClientHarness.makeInitializedAgent(label:userDirectory:)` and `AgentClientHarness.makeNewSessionRequest(cwd:)` in test support; the private copies in `SessionSettingsStoreTests` and `SessionSetupTests` are gone and their callers changed.
+    - `Fixture.configFile(in:)` is gone; `SettingsStoreTests` calls `ConfigCommandFixture.configURL(in:)` (same test target).
+    Note: the `replace_all` option of the files tool did not replace more than one match in this session; one edit for each match worked.
+  timestamp: 2026-10-20T19:28:23.214184+00:00
+- actor: claude-code
+  id: 01m5dcjnyshksrmmbnfhs5gmb7
+  text: |-
+    ### implement — changed
+    - evidence: `swift test`: 1070 tests in 118 suites passed, 1 known issue (the existing withKnownIssue). `swift build --build-tests`: no compiler warning (only the accepted SwiftPM "missing creator" note). `SettingsStoreTests|SessionSettingsStoreTests` three times: 16 tests in 2 suites passed each time. `swift build --build-tests --package-path IntegrationTests`: build complete. Files: Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift, Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Tests/FoundationModelsACPAgentTestSupport/Harness.swift, Tests/FoundationModelsACPAgentTests/ACPAgentTelemetryTests.swift, Tests/FoundationModelsACPAgentTests/SessionSettingsStoreTests.swift, Tests/FoundationModelsACPAgentTests/SessionSetupTests.swift, Tests/FoundationModelsACPAgentTests/SettingsStoreTests.swift. All 6 findings checked.
+    - next: /review
+  timestamp: 2026-10-20T19:28:27.097541+00:00
+- actor: claude-code
+  id: 01m5dcq5mgaf365wc78e8kez2k
+  text: |-
+    ### test — green
+    - evidence: touched the 8 changed files, then `swift test` — 1070 tests in 118 suites passed, 1 known issue (HarnessSmokeTests withKnownIssue), 0 failures, 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests` — Build complete, 0 compiler warnings. `swift test --filter 'SettingsStoreTests|SessionSettingsStoreTests'` run 3 times — 16 tests in 2 suites passed each time. Only warning: the accepted SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle.
+    - next: review
+  timestamp: 2026-10-20T19:30:54.224222+00:00
 depends_on:
 - 01M5CZ1Y88XJXTTF4XCZT60YV4
 position_column: doing
@@ -89,3 +139,17 @@ Do this:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-17
+
+## Review Findings (2026-10-20 14:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:185` `code-hygiene/dead-code-swift` — var.instance `watcher` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:263` `duplication/duplication` — The same two-line body is repeated in `value(at:cwd:)` and `merged(for:)`. Both build the merged settings of the user level and the session level of `cwd` with the same expression. A change to the level order or the merge inputs must be made in both places, and they can drift apart. The `makeConfigurationLoader(workingDirectory: cwd)` call is also repeated with it. Extract a private helper, for example `mergedSettings(for cwd: URL) throws -> MergedSettings`, that holds the level list and the merge. Call it from `merged(for:)` and `value(at:cwd:)`. Keep the loader call in the helper too if it reads the same cwd.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:475` `duplication/duplication` — The warning log record with the error type metadata is written again here. The same pattern is in `SessionLifecycle.logCandidateRootFailure`, which this change also added. The two blocks differ only by the logger category and the message. Each copy must keep the same metadata key and the same error type rule. Check whether `ACPAgentTelemetry.errorMetadata` (or a similar helper) already builds this metadata. If so, call it here. If not, add one shared helper that takes the category and the message and writes the warning, then call it from both `reload` and `logCandidateRootFailure`.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSettingsStoreTests.swift:22` `reuse/reuse` — makeInitializedAgent(label:) repeats the setup that an existing suite helper already performs: it builds a stub agent over temporary folders and runs initialize. Each suite keeps its own copy, so the setup is duplicated. Move the shared initialized-agent builder to Tests/FoundationModelsACPAgentTestSupport and have these suites call it, passing the label and any folder overrides.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSettingsStoreTests.swift:36` `reuse/reuse` — makeNewSessionRequest(cwd:) reimplements an existing helper. The new code builds the same NewSessionRequest from a URL that a shared test helper already builds, so the copy can drift from the original. Move the helper to the shared test support module, or call the SessionSetupTests version, and delete this copy.
+- [x] `Tests/FoundationModelsACPAgentTests/SettingsStoreTests.swift:153` `reuse/reuse` — Fixture.configFile(in:) rebuilds the config.yaml URL of a layer root. The same path join already exists in a test support fixture, so the config file name is now joined in two places. Call the existing configURL helper, or move one shared helper to the test support module and have both fixtures use it.

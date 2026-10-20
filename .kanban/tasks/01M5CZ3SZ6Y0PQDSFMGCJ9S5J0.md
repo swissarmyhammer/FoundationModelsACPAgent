@@ -12,6 +12,10 @@ comments:
     - Test kit: `GraphQLEndpointConformance.problems(of:scope:probe:)`, `GraphQLSchemaDescriptions.undescribed(in:)`, `GraphQLSchemaGolden.problems(of:against:)`. Use them in the tests of this card.
     - Worked example: FoundationModelsExtras `Tests/FoundationModelsExtrasTests/GraphQL/ExampleGraph.swift`.
   timestamp: 2026-10-20T16:22:05.544059+00:00
+- actor: wballard
+  id: 01m5dckhmkwc0vhyzm0kmyxxze
+  text: 'Note from ^3ytw5vx (2026-10-20): `SettingsStore.stopWatching()` stops each watcher, removes each level from memory and ENDS each `changes()` stream. `closeOpenSessions(after:)` calls it when a connection closes. If one agent serves more than one connection (the tunnel, D54), the subscription of a second client must not end when the first client leaves. Check this in this card: either stop the watch only when the last connection closes, or let a subscription start a new `changes()` stream after a stop. Add a test with two connections.'
+  timestamp: 2026-10-20T19:28:55.443262+00:00
 depends_on:
 - 01M5CZ35E8P2EZTW5GW3YTW5VX
 position_column: todo

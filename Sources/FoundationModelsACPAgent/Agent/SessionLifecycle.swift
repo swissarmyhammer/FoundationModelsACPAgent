@@ -99,6 +99,10 @@ extension RoutedACPAgent {
     /// before the host process ends, for `acp-agent acp` and for
     /// `acp-agent run`.
     ///
+    /// Last, the call stops the watch of each `config.yaml` of the
+    /// ``settingsStore`` (``SettingsStore/stopWatching()``), because no
+    /// session of this connection reads the settings again.
+    ///
     /// The connection already ended each inbound handler when `closed`
     /// gives its reason, so no handler runs beside this teardown.
     ///
@@ -117,6 +121,7 @@ extension RoutedACPAgent {
             await tearDownSession(sessionId, entry: entry)
         }
         await hooks.dispatcher.drain()
+        await settingsStore.stopWatching()
     }
 
     /// The name of a close reason, for the log record of a connection close.
@@ -237,9 +242,7 @@ extension RoutedACPAgent {
     ///   - message: The fixed message of the record.
     ///   - error: The error of the read.
     private static func logCandidateRootFailure(_ message: Logger.Message, error: any Error) {
-        ACPAgentTelemetry.logger(.sessionLifecycle).warning(
-            message,
-            metadata: [ACPAgentTelemetry.LogMetadataKey.errorType: "\(ACPAgentTelemetry.errorTypeName(of: error))"])
+        ACPAgentTelemetry.logger(.sessionLifecycle).warning(message, metadata: ACPAgentTelemetry.errorMetadata(error))
     }
 
     /// Removes the session's transcript directory and its index line under

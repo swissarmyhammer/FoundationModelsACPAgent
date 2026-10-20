@@ -146,14 +146,6 @@ import Testing
             try #require(stack.layers.first { $0.source == source }).root
         }
 
-        /// The `config.yaml` of the layer root `root`.
-        ///
-        /// - Parameter root: The layer root.
-        /// - Returns: The file URL.
-        static func configFile(in root: URL) -> URL {
-            root.appendingPathComponent(ConfigurationLoader.configFileName)
-        }
-
         /// The `compaction.trigger` of the merged settings of `workingDirectory`.
         ///
         /// - Parameter workingDirectory: The working directory of the session.
@@ -188,7 +180,7 @@ import Testing
 
         #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.userTrigger)
         #expect(try await fixture.mergedTrigger(for: fixture.secondDirectory) == Self.userTrigger)
-        let userFile = Fixture.configFile(in: try fixture.userRoot)
+        let userFile = ConfigCommandFixture.configURL(in: try fixture.userRoot)
         #expect(FileManager.default.fileExists(atPath: userFile.path))
         #expect(try fixture.loadedTrigger(for: fixture.secondDirectory) == Self.userTrigger)
     }
@@ -207,9 +199,9 @@ import Testing
         #expect(try await fixture.mergedTrigger(for: fixture.secondDirectory) == Self.userTrigger)
         let merged = try await fixture.store.merged(for: fixture.firstDirectory)
         #expect(merged.sources[Self.triggerSourceKey] == .project)
-        let sessionFile = Fixture.configFile(in: try fixture.sessionRoot(of: fixture.firstDirectory))
+        let sessionFile = ConfigCommandFixture.configURL(in: try fixture.sessionRoot(of: fixture.firstDirectory))
         #expect(FileManager.default.fileExists(atPath: sessionFile.path))
-        let otherFile = Fixture.configFile(in: try fixture.sessionRoot(of: fixture.secondDirectory))
+        let otherFile = ConfigCommandFixture.configURL(in: try fixture.sessionRoot(of: fixture.secondDirectory))
         #expect(!FileManager.default.fileExists(atPath: otherFile.path))
         #expect(try fixture.loadedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
     }
@@ -242,7 +234,7 @@ import Testing
                 .string(Self.badRecordingLevel), at: Self.recordingLevelKeyPath, level: .user)
         }
 
-        #expect(try textOnDisk(at: Fixture.configFile(in: userRoot)) == Self.userTriggerYAML)
+        #expect(try textOnDisk(at: ConfigCommandFixture.configURL(in: userRoot)) == Self.userTriggerYAML)
         let merged = try await fixture.store.merged(for: fixture.firstDirectory)
         #expect(merged.configuration.recording.level == RecordingLevel.full)
     }
@@ -260,7 +252,7 @@ import Testing
                 level: .session(fixture.firstDirectory))
         }
 
-        #expect(try textOnDisk(at: Fixture.configFile(in: sessionRoot)) == Self.sessionTriggerYAML)
+        #expect(try textOnDisk(at: ConfigCommandFixture.configURL(in: sessionRoot)) == Self.sessionTriggerYAML)
     }
 
     /// A `keychain:` reference in a level file stays a reference after a
@@ -273,7 +265,7 @@ import Testing
 
         try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
 
-        let text = try textOnDisk(at: Fixture.configFile(in: userRoot))
+        let text = try textOnDisk(at: ConfigCommandFixture.configURL(in: userRoot))
         #expect(text.contains("keychain:\(Self.referenceName)"))
         #expect(!text.contains(Self.secretValue))
         let merged = try await fixture.store.merged(for: fixture.firstDirectory)
@@ -291,7 +283,7 @@ import Testing
 
         try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
 
-        let text = try textOnDisk(at: Fixture.configFile(in: userRoot))
+        let text = try textOnDisk(at: ConfigCommandFixture.configURL(in: userRoot))
         #expect(text.contains(Self.templateExpression))
         #expect(!text.contains(renderedValue))
         #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.userTrigger)
@@ -310,7 +302,7 @@ import Testing
             try await fixture.store.set(.double(Self.sessionTrigger), at: Self.triggerKeyPath, level: .user)
         }
 
-        #expect(try textOnDisk(at: Fixture.configFile(in: userRoot)) == Self.blockYAML)
+        #expect(try textOnDisk(at: ConfigCommandFixture.configURL(in: userRoot)) == Self.blockYAML)
         #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.userTrigger)
     }
 
@@ -363,6 +355,43 @@ import Testing
         #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
         try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
         #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
+    }
+
+    // MARK: - Stop
+
+    /// `stopWatching()` ends each open `changes()` stream.
+    @Test(.timeLimit(.minutes(1))) func aStopEndsEachChangeStream() async throws {
+        let fixture = try Fixture(label: "stop-stream")
+        var changes = await fixture.store.changes().makeAsyncIterator()
+
+        await fixture.store.stopWatching()
+
+        #expect(await changes.next() == nil)
+    }
+
+    /// After `stopWatching()`, an outside write sends no change, and the next
+    /// read gives the new text of the file, because the store forgot the
+    /// level. A second store over the same folders still watches, and its
+    /// change shows that the watch period of the write is over. The next
+    /// change of the stopped store is the change of a later `set`.
+    @Test(.timeLimit(.minutes(1))) func aStopForgetsEachLevel() async throws {
+        let fixture = try Fixture(label: "stop-outside")
+        let witness = SettingsStore(settingsFolders: fixture.settingsFolders, secretStore: InMemorySecretStore())
+        let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+        try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
+        #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
+        _ = try await witness.merged(for: fixture.firstDirectory)
+        var witnessChanges = await witness.changes().makeAsyncIterator()
+        await fixture.store.stopWatching()
+        var changes = await fixture.store.changes().makeAsyncIterator()
+
+        try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
+
+        let session = SettingsLevel.session(fixture.firstDirectory)
+        #expect(await witnessChanges.next() == SettingsChange(level: session, keyPath: nil))
+        try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
+        #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
+        #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
     }
 
     // MARK: - The level text

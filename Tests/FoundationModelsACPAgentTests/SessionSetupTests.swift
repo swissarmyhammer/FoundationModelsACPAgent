@@ -44,33 +44,11 @@ import Testing
     /// The request id the raw `session/new` frame carries.
     private static let newSessionRequestId = 1.0
 
+    /// The prefix that names the throwaway folders of each agent of this
+    /// suite.
+    private static let label = "SessionSetupTests"
+
     // MARK: Harness
-
-    /// Makes a stub agent that records durably under a throwaway
-    /// recordings root, with the user layer at `userDirectory`, and runs
-    /// `initialize` so the order rule passes.
-    ///
-    /// - Parameter userDirectory: The injected user layer root.
-    /// - Returns: The initialized agent.
-    /// - Throws: Whatever the construction or the handshake throws.
-    private static func makeInitializedAgent(userDirectory: URL) async throws -> RoutedACPAgent {
-        let agent = try await makeStubAgent(
-            name: AgentClientHarness.dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "SessionSetupTests-cache"),
-            recordingsDirectory: makeResolvedDirectory(label: "SessionSetupTests-recordings"),
-            userDirectory: userDirectory)
-        _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
-        return agent
-    }
-
-    /// The `session/new` request for `cwd`, with no additional directories
-    /// and no client MCP servers.
-    ///
-    /// - Parameter cwd: The session working directory.
-    /// - Returns: The request.
-    private static func makeNewSessionRequest(cwd: URL) -> NewSessionRequest {
-        NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path))
-    }
 
     /// The project-local transcripts root of `cwd`, the default
     /// `transcripts.location`.
@@ -93,9 +71,9 @@ import Testing
     func sessionIdIsARouterULIDAndNamesTheSessionDirectory() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
-        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
 
-        let response = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
+        let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
         #expect(ULID(ulidString: response.sessionId.rawValue) != nil)
         #expect(response.configOptions?.map(\.configId) == [ConfigOptions.modelOptionId])
@@ -160,8 +138,8 @@ import Testing
         params: FoundationModelsACP.JSONValue
     ) async throws -> [String: FoundationModelsACP.JSONValue] {
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agent = try await Self.makeInitializedAgent(
-            userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
+        let agent = try await AgentClientHarness.makeInitializedAgent(
+            label: Self.label, userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
         let agentConnection = await AgentSideConnection(stream: agentEnd) { _ in agent }
         let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
 
@@ -299,15 +277,15 @@ import Testing
     func sessionNewWithAMissingCwdIsRefusedAndCreatesNoDirectory() async throws {
         let missing = makeResolvedDirectory(label: "SessionSetupTests-missing-cwd")
             .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
-        let agent = try await Self.makeInitializedAgent(
-            userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
+        let agent = try await AgentClientHarness.makeInitializedAgent(
+            label: Self.label, userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
 
         await InitializationTests.expectRequestError(
             .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
             data: Self.expectedRefusalData(
                 naming: .cwd, reason: Self.doesNotExistReason, path: missing)
         ) {
-            _ = try await agent.newSession(Self.makeNewSessionRequest(cwd: missing))
+            _ = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: missing))
         }
 
         #expect(await agent.sessions.isEmpty)
@@ -322,8 +300,8 @@ import Testing
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
         let missing = makeResolvedDirectory(label: "SessionSetupTests-missing-extra")
             .appendingPathComponent(Self.missingDirectoryName, isDirectory: true)
-        let agent = try await Self.makeInitializedAgent(
-            userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
+        let agent = try await AgentClientHarness.makeInitializedAgent(
+            label: Self.label, userDirectory: makeResolvedDirectory(label: "SessionSetupTests-user"))
 
         await InitializationTests.expectRequestError(
             .invalidParams, wireValue: InitializationTests.invalidParamsWireValue,
@@ -358,10 +336,10 @@ import Testing
             to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
             atomically: true, encoding: .utf8)
 
-        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
         let shellOff = try await agent.newSession(
-            Self.makeNewSessionRequest(cwd: repoWithShellOff))
-        let plain = try await agent.newSession(Self.makeNewSessionRequest(cwd: plainRepo))
+            AgentClientHarness.makeNewSessionRequest(cwd: repoWithShellOff))
+        let plain = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: plainRepo))
 
         let entries = await agent.sessions
         #expect(Set(entries.keys) == [shellOff.sessionId, plain.sessionId])
@@ -380,9 +358,9 @@ import Testing
     func sessionNewRegistersTheProjectAndWritesNoIndexRecord() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
-        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
 
-        _ = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
+        _ = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
         let records = try ProjectRegistry(directory: userDirectory).projects()
         #expect(records.map(\.path) == [cwd.standardizedFileURL.path])
@@ -442,9 +420,9 @@ import Testing
             """.write(
                 to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
                 atomically: true, encoding: .utf8)
-        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
 
-        let response = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
+        let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
         let sidecarFile = Self.projectTranscriptsRoot(of: cwd)
             .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)
@@ -498,9 +476,9 @@ import Testing
             """.write(
                 to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
                 atomically: true, encoding: .utf8)
-        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
 
-        let response = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
+        let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
         let sidecarFile = Self.projectTranscriptsRoot(of: cwd)
             .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)
@@ -523,10 +501,10 @@ import Testing
     func theProfileStaysAliveAcrossTwoSequentialSessions() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
-        let agent = try await Self.makeInitializedAgent(userDirectory: userDirectory)
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
 
-        let first = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
-        let second = try await agent.newSession(Self.makeNewSessionRequest(cwd: cwd))
+        let first = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
+        let second = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
         #expect(first.sessionId != second.sessionId)
         #expect(ULID(ulidString: second.sessionId.rawValue) != nil)

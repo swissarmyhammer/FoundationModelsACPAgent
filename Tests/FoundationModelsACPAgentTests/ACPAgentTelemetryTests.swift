@@ -68,4 +68,19 @@ import Testing
         let value = LabelledValue(content: "secret text")
         #expect(ACPAgentTelemetry.caseName(of: value, fallback: Self.structFallback) == Self.structFallback)
     }
+
+    /// The error of the metadata test. Its message must not go in the
+    /// metadata.
+    private struct ProbeError: Error, CustomStringConvertible {
+        /// A message that the metadata must not hold.
+        var description: String { "secret message" }
+    }
+
+    /// The error metadata of a record with no session holds the full type
+    /// name of the error, and no session id and no message.
+    @Test func errorMetadataWithNoSessionHoldsTheErrorTypeOnly() {
+        let metadata = ACPAgentTelemetry.errorMetadata(ProbeError())
+
+        #expect(metadata == [ACPAgentTelemetry.LogMetadataKey.errorType: "\(String(reflecting: ProbeError.self))"])
+    }
 }
