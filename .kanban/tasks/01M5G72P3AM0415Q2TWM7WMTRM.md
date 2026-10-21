@@ -28,7 +28,24 @@ comments:
     - evidence: `swift test` in FoundationModelsACP at fb3c08d — 135 tests in 17 suites passed, 0 failed, 0 skipped. Forced rebuild (touched all Sources and Tests, `swift build --build-tests`, 122 steps) — 0 warnings, 0 errors. No release build run.
     - next: review
   timestamp: 2026-10-21T22:01:20.728616+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m5g7rancvaxvmmvf4m0v5rj3
+  text: |-
+    ### review — stuck
+    - evidence: the review was not run. The request was to review FoundationModelsACP 270f9e3..fb3c08d. The `review` skill says "Review only the repository that contains the current working directory", and "If the user gives a target outside the root, do not review it ... Do not change the working directory, and do not clone or fetch a different repository, to make the target valid." This session's repository root is /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent. FoundationModelsACP is a separate repository with its own root (/Users/wballard/github/swissarmyhammer/FoundationModelsACP). The brief and the skill's scope rule cannot both be obeyed.
+    - blocker: a person must decide how this card is reviewed.
+    - next: run `/review` from a session whose working directory is /Users/wballard/github/swissarmyhammer/FoundationModelsACP (`review sha 270f9e3..fb3c08d`), then record the findings on this card; or change the scope rule of the `review` skill to allow a cross-repo target.
+  timestamp: 2026-10-21T22:01:52.556125+00:00
+- actor: claude-code
+  id: 01m5g7s9b20sz84kkb74hqsajr
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: changed — FoundationModelsACP fb3c08d (not pushed), 11 new tests
+    - test: green — FoundationModelsACP swift test 135 tests/17 suites, forced rebuild 0 warnings
+    - commit: 4c9371d (card records here; code commit fb3c08d in FoundationModelsACP)
+    - review: stuck — the review engine is scoped to the repo of this session (`Validator 'scope' error: path ... escapes the repository root`), and the code is in FoundationModelsACP. A person must decide: run `/review` from a session in FoundationModelsACP, or allow a review of another repo. fb3c08d is NOT pushed until a review passes.
+  timestamp: 2026-10-21T22:02:23.970072+00:00
+position_column: review
 position_ordinal: '80'
 title: 'ACP-3 (in FoundationModelsACP): dispatch of extension methods and notifications that start with `_`'
 ---
