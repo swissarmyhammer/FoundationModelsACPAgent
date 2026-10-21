@@ -66,8 +66,25 @@ comments:
     - open: the acceptance line of `skillsMarketplaceCacheDirectory` stays unchecked here. The planner moved it to ^z8m1pp3 (commit c11d914).
     - next: /review
   timestamp: 2026-10-21T10:03:53.486341+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5eyrx7r6s5ardp6dgdhxbrf
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 596d68c). 0 findings, 0 confirmed, 0 refuted. 6 files reviewed. 7 validator runs, 0 failed.
+    - scope note: The skills marketplace cache box is not checked. Task ^z8m1pp3 (commit c11d914, done) did that work. This is resolved scope. It is not a finding.
+    - next: The task is in done.
+  timestamp: 2026-10-21T10:05:39.960057+00:00
+- actor: wballard
+  id: 01m5eys80ms4y4d7hsj1xqn3cy
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test, 1175 passed, 0 failures (1 known issue from before)
+    - commit: 596d68c
+    - review: clean — 0 findings
+  timestamp: 2026-10-21T10:05:50.996067+00:00
+position_column: done
+position_ordinal: fffc80
 title: The host gives the model cache directory
 ---
 ## What
