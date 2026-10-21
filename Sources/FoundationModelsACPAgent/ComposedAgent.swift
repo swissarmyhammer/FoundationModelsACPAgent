@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:reporting:)``
+/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -154,6 +154,20 @@ public struct ComposedAgent: Sendable {
     ///     same folder. An app gives a folder in Application Support, for
     ///     example `<Application Support>/<bundle id>/skills-marketplace`.
     ///     The `acp-agent` CLI gives no value.
+    ///   - modelCacheDirectory: The Hugging Face hub cache folder of the
+    ///     models, or `nil` (the default) for the default Hugging Face
+    ///     cache. A ``ModelSource/live`` router downloads each model into
+    ///     this folder and loads the weights from it, also when
+    ///     `HF_HUB_CACHE` or `HF_HOME` names a different folder. With `nil`,
+    ///     the cache folder comes from `HF_HUB_CACHE` or `HF_HOME` of the
+    ///     process environment, or is `~/.cache/huggingface/hub`. The models
+    ///     are large, and a new download takes a long time. Thus an app
+    ///     gives a folder in Application Support, for example
+    ///     `<Application Support>/<bundle id>/models`. Do not give a folder
+    ///     in Caches, because macOS can delete it. The model check of
+    ///     `doctor` must read the same folder: give it to
+    ///     `SystemModelResolver.init(environment:modelCacheDirectory:)`.
+    ///     The `acp-agent` CLI gives no value.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -177,6 +191,7 @@ public struct ComposedAgent: Sendable {
         secretStore: (any SecretStore)? = nil,
         hooksDataDirectory: URL? = nil,
         skillsMarketplaceCacheDirectory: URL? = nil,
+        modelCacheDirectory: URL? = nil,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
@@ -193,7 +208,8 @@ public struct ComposedAgent: Sendable {
                 for: modelSource,
                 gatedBy: stubChunkGate,
                 recordingInto: try makeRecordingsDirectory(),
-                hooks: hooks.dispatcher),
+                hooks: hooks.dispatcher,
+                modelCacheDirectory: modelCacheDirectory),
             hooks: hooks,
             configuration: configuration,
             reporting: progress,
@@ -276,6 +292,10 @@ public struct ComposedAgent: Sendable {
     ///     ``makeRecordingsDirectory()``.
     ///   - hooks: The dispatcher that each session of the router sends its
     ///     hook events to: the ``AgentHooks/dispatcher`` of the agent.
+    ///   - modelCacheDirectory: The model cache folder of the host, or `nil`
+    ///     for the default Hugging Face cache — see
+    ///     ``makeLiveModelLoader(modelCacheDirectory:)``. The stub path
+    ///     ignores it, because it downloads nothing.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
@@ -284,11 +304,14 @@ public struct ComposedAgent: Sendable {
         for modelSource: ModelSource,
         gatedBy chunkGate: String?,
         recordingInto recordingsDirectory: URL,
-        hooks: HookDispatcher
+        hooks: HookDispatcher,
+        modelCacheDirectory: URL?
     ) throws -> Router {
         switch modelSource {
         case .live:
-            Router(recordingsDir: recordingsDirectory, loader: LiveModelLoader(), hooks: hooks)
+            Router(
+                recordingsDir: recordingsDirectory,
+                loader: makeLiveModelLoader(modelCacheDirectory: modelCacheDirectory), hooks: hooks)
         case .stub:
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
@@ -296,6 +319,19 @@ public struct ComposedAgent: Sendable {
                 loader: makeStubLoader(gatedBy: chunkGate),
                 hooks: hooks)
         }
+    }
+
+    /// Makes the loader of the live path over one model cache folder.
+    ///
+    /// - Parameter modelCacheDirectory: The Hugging Face hub cache folder
+    ///   that the host gave, or `nil` for the default Hugging Face cache.
+    ///   Each download writes to a given folder, and each load reads the
+    ///   weights from it, also when `HF_HUB_CACHE` or `HF_HOME` names a
+    ///   different folder. The default cache reads these variables from the
+    ///   process environment.
+    /// - Returns: The live loader over that cache.
+    static func makeLiveModelLoader(modelCacheDirectory: URL?) -> LiveModelLoader {
+        LiveModelLoader(cacheDirectory: modelCacheDirectory)
     }
 
     /// Makes the loader of the stub path.
