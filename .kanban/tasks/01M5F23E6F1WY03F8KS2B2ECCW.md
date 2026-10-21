@@ -16,13 +16,25 @@ comments:
     - evidence: no code change; FoundationModelsACP 270f9e3 checked.
     - next: unblock on ACP-3 + the tunnel host (+ ACP-1 for trust over HTTP).
   timestamp: 2026-10-21T21:42:59.513031+00:00
+- actor: claude-code
+  id: 01m5gcxg1w4nxjmmtr6samhpk8
+  text: |-
+    Picked up again after ACP-3/ACP-1 landed (FoundationModelsACP a78fb48). `swift package update FoundationModelsExtras` run: Extras now 589f27e (has `GraphQLViewer.startedSessions`); Package.resolved is gitignored, so no manifest change.
+
+    Research:
+    - `AgentSideConnection` reads `Agent.extensionHandlers` once, when the factory returns. The factory returns a `RoutedACPConnection`, which knows its `ConnectionId`, so its handlers can name the calling connection on each `_sah/graphql/*` call. No change to ACP is needed to get the connection of a call.
+    - `ConnectionTable` already holds the trust, owners and starters; the viewer comes from one locked read of it.
+    - Endpoints: the agent holds the one `settings` endpoint (`settingsEndpoint`). The `snapshots` endpoint is made per session by `SnapshotsCapability(store:)` (identity session-key maps) inside `runCode`; `SnapshotsGraph(store:sessionKey:sessionId:)` is public and shares one change log per store, so the agent can hold one server-scope `snapshots` endpoint over `hooks.snapshotStore` with the same identity maps, and a call with no session reaches it. The session-folder endpoints (kanban, agents, skills, ...) come from `ActiveSession.surface.tools` (`GraphQLEndpointTool`); a host tool from `registerHostTools` is a top-level tool too, which is the seam for the test probe endpoint.
+    - Rule 4 (EXTRAS-9): an `external` viewer sees the sessions it owns (and, by the EXTRAS-5 amendment, the ones it started) and their folders; the host checks the folder of a `sessionFolder` call. The wire `ExecuteRequest/SubscribeRequest` carry `sessionId`, which selects the folder, so the check is: the folder of the named session must be the folder of a session the external viewer can see; otherwise `NOT_FOUND` (does not tell that the session exists).
+    - Toolkit `CodedError.responseJSON()` gives the `{"errors":[...]}` body for a coded routing error, so the tunnel reuses it.
+  timestamp: 2026-10-21T23:32:04.796173+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
 - 01M5G0KG6B1THJF53W3S415RD3
 - 01M5G72P3AM0415Q2TWM7WMTRM
-position_column: todo
-position_ordinal: '8280'
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-13: a GraphQLViewer for each _sah/graphql/* tunnel call, from its connection row'
 ---
 Spec: TestudoApp features/packages/foundationmodels-acpagent.md, ACPA-13 (agreed). ACPA-5 is agreed now (D120). It is cards ACPA-5a to ACPA-5e on this board, and this card waits on them. The Multitool session waits on this card for its sessions endpoint (^j5jb3z2en, with `ownedByViewer`/`hasOwner`).

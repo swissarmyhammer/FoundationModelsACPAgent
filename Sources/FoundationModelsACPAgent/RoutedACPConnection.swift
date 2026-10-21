@@ -32,6 +32,14 @@ public final class RoutedACPConnection: Agent {
         agent.clientCapabilities(of: id)
     }
 
+    /// The `_sah/graphql/*` methods of the GraphQL tunnel for this connection
+    /// (ACPA-13). The connection reads this value one time, when its factory
+    /// returns this `Agent`; each handler names ``id`` on its call, so each
+    /// call gets the viewer of this connection.
+    public var extensionHandlers: ExtensionHandlers {
+        agent.graphQLTunnelHandlers(for: id)
+    }
+
     /// Serves `initialize` for this connection.
     ///
     /// - Parameter params: The client's `initialize` request.

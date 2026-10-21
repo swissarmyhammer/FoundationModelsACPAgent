@@ -77,6 +77,66 @@ public actor ElicitationWireRecorder {
     }
 }
 
+/// One `_sah/graphql/*` notification that the agent sent to the client.
+public enum GraphQLTunnelNotification: Equatable, Sendable {
+    /// `_sah/graphql/next`: the next result of a subscription.
+    case next(SAH.GraphQL.NextNotification)
+
+    /// `_sah/graphql/error`: the subscription ended with errors.
+    case error(SAH.GraphQL.ErrorNotification)
+
+    /// `_sah/graphql/complete`: the subscription ended with no error.
+    case complete(SAH.GraphQL.CompleteNotification)
+
+    /// Whether the notification ends its subscription: `error` or
+    /// `complete`.
+    public var endsSubscription: Bool {
+        switch self {
+        case .next: false
+        case .error, .complete: true
+        }
+    }
+}
+
+/// Collects the `_sah/graphql/*` notifications that the agent sends to the
+/// client, in arrival order.
+///
+/// A test waits for a condition over the sequence with
+/// ``wait(for:until:)``: each record resumes the waits whose condition is
+/// now true, so the wait uses no clock and no poll.
+public final class GraphQLTunnelRecorder: Sendable {
+    /// The recorded notifications, in arrival order, with their waits.
+    private let recorded = WatchedValue<[GraphQLTunnelNotification]>([])
+
+    /// Creates a recorder that has recorded nothing.
+    public init() {}
+
+    /// Appends one notification, and resumes each wait whose condition is
+    /// now true.
+    ///
+    /// - Parameter notification: The notification to record.
+    public func record(_ notification: GraphQLTunnelNotification) {
+        recorded.update { $0.append(notification) }
+    }
+
+    /// Waits until `isMet` is true for the recorded sequence. Returns at
+    /// once when it is true now.
+    ///
+    /// - Parameters:
+    ///   - condition: The name of the condition, for the error of a
+    ///     cancelled wait.
+    ///   - isMet: Tells if the condition is true for a sequence.
+    /// - Returns: The first recorded sequence for which `isMet` is true.
+    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+    ///   cancelled before the condition comes.
+    public func wait(
+        for condition: String,
+        until isMet: @escaping @Sendable ([GraphQLTunnelNotification]) -> Bool
+    ) async throws -> [GraphQLTunnelNotification] {
+        try await recorded.wait(for: condition, until: isMet)
+    }
+}
+
 /// The forwarding recorder: it appends each
 /// `UpdateSessionNotification` to its ``UpdateCollector`` and then
 /// forwards it to the router of a `ConnectionModel`. The elicitation
@@ -101,6 +161,9 @@ final class RecordingClient: Client {
     /// The recorder of the elicitation traffic.
     let elicitations: ElicitationWireRecorder
 
+    /// The recorder of the `_sah/graphql/*` notifications.
+    let graphQLNotifications: GraphQLTunnelRecorder
+
     /// The router of the connection model, which gets each message.
     private let router: any Client
 
@@ -110,14 +173,35 @@ final class RecordingClient: Client {
     ///   - router: The router of the connection model to forward to.
     ///   - collector: The recorder of the raw update sequence.
     ///   - elicitations: The recorder of the elicitation traffic.
+    ///   - graphQLNotifications: The recorder of the `_sah/graphql/*`
+    ///     notifications.
     init(
         forwardingTo router: any Client,
         collector: UpdateCollector,
-        elicitations: ElicitationWireRecorder
+        elicitations: ElicitationWireRecorder,
+        graphQLNotifications: GraphQLTunnelRecorder
     ) {
         self.router = router
         self.collector = collector
         self.elicitations = elicitations
+        self.graphQLNotifications = graphQLNotifications
+    }
+
+    /// The handlers of the router, with one handler for each notification
+    /// of the GraphQL tunnel that records it in ``graphQLNotifications``.
+    var extensionHandlers: ExtensionHandlers {
+        var handlers = router.extensionHandlers
+        let recorder = graphQLNotifications
+        handlers.registerNotification(SAH.GraphQL.Method.next, params: SAH.GraphQL.NextNotification.self) {
+            recorder.record(.next($0))
+        }
+        handlers.registerNotification(SAH.GraphQL.Method.error, params: SAH.GraphQL.ErrorNotification.self) {
+            recorder.record(.error($0))
+        }
+        handlers.registerNotification(SAH.GraphQL.Method.complete, params: SAH.GraphQL.CompleteNotification.self) {
+            recorder.record(.complete($0))
+        }
+        return handlers
     }
 
     func sessionUpdate(_ notification: UpdateSessionNotification) async {

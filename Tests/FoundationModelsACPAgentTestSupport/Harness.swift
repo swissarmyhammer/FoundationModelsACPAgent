@@ -112,6 +112,10 @@ public struct AgentClientHarness: Sendable {
     /// harness was wired without one (``make(wire:)``).
     public let elicitations: ElicitationWireRecorder?
 
+    /// The recorder of the `_sah/graphql/*` notifications of the agent, or
+    /// `nil` when the harness was wired without one (``make(wire:)``).
+    public let graphQLNotifications: GraphQLTunnelRecorder?
+
     /// The tap on the client end of the wire, or `nil` when the harness
     /// was wired without one.
     ///
@@ -244,6 +248,7 @@ public struct AgentClientHarness: Sendable {
                 routedConnection: parts.routedConnection,
                 collector: nil,
                 elicitations: nil,
+                graphQLNotifications: nil,
                 wireTap: nil,
                 agentWireTap: nil,
                 wire: wire))
@@ -300,10 +305,13 @@ public struct AgentClientHarness: Sendable {
             agent: agent, agentEnd: agentWireTap ?? wire.agentEnd, trust: trust)
         let collector = UpdateCollector()
         let elicitations = ElicitationWireRecorder()
+        let graphQLNotifications = GraphQLTunnelRecorder()
         let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
         let clientEnd: any ACPTransport = wireTap ?? wire.clientEnd
         let connection = await parts.client.connect(over: clientEnd) { router in
-            RecordingClient(forwardingTo: router, collector: collector, elicitations: elicitations)
+            RecordingClient(
+                forwardingTo: router, collector: collector, elicitations: elicitations,
+                graphQLNotifications: graphQLNotifications)
         }
         return registered(
             AgentClientHarness(
@@ -314,6 +322,7 @@ public struct AgentClientHarness: Sendable {
                 routedConnection: parts.routedConnection,
                 collector: collector,
                 elicitations: elicitations,
+                graphQLNotifications: graphQLNotifications,
                 wireTap: wireTap,
                 agentWireTap: agentWireTap,
                 wire: wire))

@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsHooks
+import FoundationModelsMultitool
 import FoundationModelsRouter
 import Logging
 import Synchronization
@@ -126,6 +127,18 @@ public actor RoutedACPAgent: Agent {
     /// schema is built one time for the agent, and each tool gives one cursor
     /// sequence.
     nonisolated let settingsEndpoint: SettingsGraph
+
+    /// The one `snapshots` endpoint of the agent over the snapshot store of
+    /// ``hooks`` (MT-13), for the GraphQL tunnel (ACPA-13): a client reaches
+    /// it with no session, because it has the server scope. Each session's
+    /// `snapshots` capability makes its own endpoint over the same store,
+    /// with the same session-key maps, and one store has one change log, so
+    /// each gives the same cursor (EXTRAS-9 rule 1).
+    nonisolated let snapshotsEndpoint: SnapshotsGraph
+
+    /// The open `_sah/graphql/subscribe` subscriptions of each connection
+    /// (ACPA-13). The close of a connection cancels its subscriptions.
+    nonisolated let graphQLSubscriptions = GraphQLTunnelSubscriptions()
 
     /// The settle period of each session that this agent makes, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
@@ -384,6 +397,10 @@ public actor RoutedACPAgent: Agent {
             settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
             secretStore: self.secretStore)
         self.settingsEndpoint = try SettingsGraph(store: settingsStore)
+        // The session keys of this agent are the session ids, as the
+        // `SnapshotsCapability(store:)` of each session reads them.
+        self.snapshotsEndpoint = SnapshotsGraph(
+            store: hooks.snapshotStore, sessionKey: { sessionId in sessionId }, sessionId: { sessionKey in sessionKey })
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

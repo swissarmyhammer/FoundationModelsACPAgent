@@ -124,8 +124,9 @@ extension RoutedACPAgent {
 
     /// Negotiates the protocol version and the capabilities.
     ///
-    /// The response carries ``implementation``, the negotiated version, and
-    /// ``advertisedCapabilities``. It omits `authMethods`, because the agent
+    /// The response carries ``implementation``, the negotiated version,
+    /// ``advertisedCapabilities``, and in `_meta.sah` the SAH extensions with
+    /// the endpoints of the GraphQL tunnel. It omits `authMethods`, because the agent
     /// has no authentication. The
     /// client's capabilities are read into the row of the
     /// ``ConnectionId/direct`` caller (``clientCapabilities(of:)``), which
@@ -175,7 +176,26 @@ extension RoutedACPAgent {
         return InitializeResponse(
             info: Self.implementation,
             protocolVersion: protocolVersion,
-            capabilities: Self.advertisedCapabilities)
+            capabilities: Self.advertisedCapabilities,
+            meta: advertisedSAHMeta())
+    }
+
+    /// The `_meta` of the `initialize` response: `_meta.sah` advertises the
+    /// SAH extensions and the endpoints of the GraphQL tunnel (ACP-5,
+    /// ACPA-13), the same list as `_sah/graphql/endpoints`.
+    ///
+    /// - Returns: The `_meta` value, or `nil` when the SAH object does not
+    ///   encode; the response then advertises no extension.
+    private func advertisedSAHMeta() -> FoundationModelsACP.JSONValue? {
+        do {
+            return try SAH.InitializeMeta(graphql: graphQLEndpointList()).inject(into: nil)
+        } catch {
+            assertionFailure("the SAH object of initialize did not encode: \(error)")
+            ACPAgentTelemetry.logger(.initialization).error(
+                "The SAH object of initialize did not encode. The response advertises no extension.",
+                metadata: ACPAgentTelemetry.errorMetadata(error))
+            return nil
+        }
     }
 
     /// Negotiates the protocol version as behavior, not as a number.

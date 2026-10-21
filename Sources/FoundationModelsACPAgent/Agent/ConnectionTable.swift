@@ -231,6 +231,37 @@ final class ConnectionTable: Sendable {
         state.withLock { $0.starters[sessionId] }
     }
 
+    /// The viewer of one GraphQL call of a connection (ACPA-13, EXTRAS-5):
+    /// the id and the trust of the connection, the sessions that it owns,
+    /// the sessions that any connection owns, and the sessions that it
+    /// started. One locked read gives all of them, so the sets agree.
+    ///
+    /// A connection with no row (it closed) reads as `external`, as
+    /// ``take(_:by:)`` reads it.
+    ///
+    /// - Parameter id: The id of the connection of the call.
+    /// - Returns: The viewer.
+    func viewer(of id: ConnectionId) -> GraphQLViewer {
+        state.withLock { state in
+            GraphQLViewer(
+                clientId: id.rawValue,
+                trust: state.rows[id]?.trust ?? .external,
+                ownedSessions: Self.sessions(in: state.owners, of: id),
+                clientOwnedSessions: Set(state.owners.keys.map(\.rawValue)),
+                startedSessions: Self.sessions(in: state.starters, of: id))
+        }
+    }
+
+    /// The ids of the sessions that a record gives to one connection.
+    ///
+    /// - Parameters:
+    ///   - record: The owners or the starters.
+    ///   - id: The id of the connection.
+    /// - Returns: The ids of the sessions whose entry is `id`.
+    private static func sessions(in record: [SessionId: ConnectionId], of id: ConnectionId) -> Set<String> {
+        Set(record.filter { $0.value == id }.keys.map(\.rawValue))
+    }
+
     /// The outbound path of a session: the path of its owner.
     ///
     /// - Parameter sessionId: The session.

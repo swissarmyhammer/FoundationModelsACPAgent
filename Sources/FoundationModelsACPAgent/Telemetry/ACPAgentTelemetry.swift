@@ -531,6 +531,10 @@ enum ACPAgentTelemetry {
         /// not build.
         case agentsComposition = "AgentsComposition"
 
+        /// The GraphQL tunnel: a notification of a subscription that could
+        /// not reach its client, and a coded error that did not encode.
+        case graphQLTunnel = "GraphQLTunnel"
+
         /// The transcripts module: the damaged lines of the session index
         /// and of the project registry.
         case transcripts = "Transcripts"

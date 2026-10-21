@@ -114,7 +114,9 @@ extension RoutedACPAgent {
     /// connection that can take it takes it with `session/resume`. A client
     /// can go away with no `session/close`: it closes its end of the wire,
     /// its input stream fails, or the host closes the connection. One
-    /// `notice` record names the reason.
+    /// `notice` record names the reason. The teardown also cancels each
+    /// GraphQL tunnel subscription of the connection (ACPA-13), because no
+    /// notification of it can reach the client.
     ///
     /// The teardown task of ``bind(connection:trust:)`` calls it when
     /// `AgentSideConnection.closed` gives its reason. The connection already
@@ -138,6 +140,7 @@ extension RoutedACPAgent {
         ACPAgentTelemetry.logger(.sessionLifecycle).notice(
             "The connection closed. Its sessions go on with no owner.", metadata: metadata)
         connections.remove(id)
+        graphQLSubscriptions.cancelAll(of: id)
     }
 
     /// Closes each open session of the agent, as `session/close` closes one:
