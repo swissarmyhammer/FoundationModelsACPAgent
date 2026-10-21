@@ -1,18 +1,30 @@
 ---
 assignees:
 - claude-code
+depends_on:
+- 01M5G0JS7YFSWXJXXHEZNEPBKJ
+- 01M5G0K2CEA2F4EEN91BXST844
+- 01M5G0K65FDK5TE2MG93XK7PA4
+- 01M5G0KG6B1THJF53W3S415RD3
 position_column: todo
 position_ordinal: '8280'
-title: 'ACPA-13: a GraphQLViewer for each _sah/graphql/* tunnel call, from the owner registry (blocked on ACPA-5)'
+title: 'ACPA-13: a GraphQLViewer for each _sah/graphql/* tunnel call, from its connection row'
 ---
-Spec: TestudoApp/features/packages/foundationmodels-acpagent.md, ACPA-13 (status agreed). Asked for by the Multitool session: without it, the viewer rules of every endpoint cannot be tested end to end (EXTRAS-9 rule 4).
+Spec: TestudoApp features/packages/foundationmodels-acpagent.md, ACPA-13 (agreed). ACPA-5 is agreed now (D120). It is cards ACPA-5a to ACPA-5e on this board, and this card waits on them. The Multitool session waits on this card for its sessions endpoint (^j5jb3z2en, with `ownedByViewer`/`hasOwner`).
 
 ## Change
-Each `_sah/graphql/*` call that the tunnel carries gets a `GraphQLViewer` (EXTRAS-5; it exists in FoundationModelsExtras `GraphQL/GraphQLViewer.swift`). The viewer holds the client id, the trust of the connection, and the sessions that the client owns. The host also checks the folder of a `sessionFolder` call (rule 4). Today `SettingsGraph.execute` takes `viewer _: GraphQLViewer?` and ignores it.
+Each `_sah/graphql/*` call that the tunnel carries gets a `GraphQLViewer` (FoundationModelsExtras `GraphQL/GraphQLViewer.swift`), built from the connection row of the call (^ACPA-5a):
+- `clientId` = the connection id
+- `trust` = the trust of the connection (^ACPA-5b)
+- `ownedSessions` = the ids of the sessions that this connection owns (^ACPA-5c)
+- `clientOwnedSessions` = the ids of the sessions that any connection owns
 
-## Blocked
-- ACPA-5 (one `RoutedACPAgent` for each connection, with one shared session registry that knows the owner of each session) is only a **proposal** in the spec. This repo has no owner registry yet: `RoutedACPAgent` is bound to one connection, and a second bind replaces the first. The user must agree ACPA-5 first, and then it needs its own card.
-- Also needs the tunnel wire types of ACP-3/ACP-5 (`FoundationModelsACP/SAH/SAHGraphQL.swift` exists; check what it carries).
+The viewer carries the sets, and the endpoint asks no port.
+
+The `external` visibility rule also needs the sessions that this connection STARTED (D120 e). GraphQLViewer has no field for them yet. That needs an Extras change (for example `startedSessions: Set<String>`), which the Multitool session takes to Extras. Until it lands, fill the fields that exist.
+
+The host also checks the folder of a `sessionFolder` call (EXTRAS-9 rule 4).
 
 ## Done when
-- A failing test first (TDD): two clients on two connections each make a `_sah/graphql/*` call. Each resolver gets a viewer with its own client id and trust, and an `external` client sees only the sessions that it owns. #acpa-13 #blocked
+- A failing test first (TDD): two connections on one agent each make a `_sah/graphql/*` call. Each endpoint resolver gets a viewer with its own connection id and trust, and with the right owned sets.
+- The full `swift test` passes. #acpa-13
