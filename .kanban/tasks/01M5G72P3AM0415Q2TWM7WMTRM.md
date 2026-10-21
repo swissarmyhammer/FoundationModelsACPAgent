@@ -45,8 +45,16 @@ comments:
     - commit: 4c9371d (card records here; code commit fb3c08d in FoundationModelsACP)
     - review: stuck — the review engine is scoped to the repo of this session (`Validator 'scope' error: path ... escapes the repository root`), and the code is in FoundationModelsACP. A person must decide: run `/review` from a session in FoundationModelsACP, or allow a review of another repo. fb3c08d is NOT pushed until a review passes.
   timestamp: 2026-10-21T22:02:23.970072+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5gchq6c033853jazxtczrmk
+  text: |-
+    ### review — clean (in FoundationModelsACP)
+    - The FoundationModelsACP session (foundationmodelsacp-50) reviewed 270f9e3..72f9e9c. It fixed 4 findings in d8f79f4 and a78fb48 (named size constants, and the shared HTTPTestSupport.makeRequest). The re-review gave 0 findings.
+    - Pushed: FoundationModelsACP origin/main a78fb48. swift test there 571/60 + 135/17, 0 warnings.
+    - ACPAgent builds and passes against 72f9e9c (1178 tests, 1 known issue). The later commits change no public API.
+  timestamp: 2026-10-21T23:25:38.892216+00:00
+position_column: done
+position_ordinal: ffff8680
 title: 'ACP-3 (in FoundationModelsACP): dispatch of extension methods and notifications that start with `_`'
 ---
 The work is in the repo /Users/wballard/github/swissarmyhammer/FoundationModelsACP (main 270f9e3), and not in this repo. The user gave the FoundationModelsACP work to this session, relayed through the Multitool coordinating session. ACP-3 is first, because it unblocks ACPA-5e and ACPA-13 here.

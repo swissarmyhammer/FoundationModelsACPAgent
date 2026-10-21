@@ -40,8 +40,15 @@ comments:
     - commit: card records committed here; code commits in FoundationModelsACP
     - review: stuck — the review engine is scoped to the repo of this session ("escapes the repository root"), and the code is in FoundationModelsACP (same blocker as ^m7wmtrm). A person must decide how FoundationModelsACP is reviewed. Not pushed until then.
   timestamp: 2026-10-21T22:16:51.168706+00:00
-position_column: review
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m5gchsgwsag2xcqc3skskhw3
+  text: |-
+    ### review — clean (in FoundationModelsACP)
+    - The FoundationModelsACP session (foundationmodelsacp-50) reviewed 270f9e3..72f9e9c. It fixed 4 findings in d8f79f4 and a78fb48: magic numbers at HTTPMessage.swift:166 and :169 and HTTPServerTransport.swift:195, and the duplicated request() helper, now in HTTPTestSupport.makeRequest. The re-review gave 0 findings.
+    - Pushed: FoundationModelsACP origin/main a78fb48.
+  timestamp: 2026-10-21T23:25:41.276991+00:00
+position_column: done
+position_ordinal: ffff8780
 title: 'ACP-1 (in FoundationModelsACP): HTTP server transport with Acp-Connection-Id and the credential of each connection'
 ---
 The work is in the repo /Users/wballard/github/swissarmyhammer/FoundationModelsACP, and not in this repo. The user gave the FoundationModelsACP work to this session. Do it after ACP-3. It unblocks ACPA-5b here.
