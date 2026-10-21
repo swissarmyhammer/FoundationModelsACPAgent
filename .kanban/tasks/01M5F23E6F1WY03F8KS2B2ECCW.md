@@ -37,6 +37,13 @@ comments:
     - notes: trust over HTTP still waits on ACPA-5b (bearer -> trust); stdio and in-memory are userDevice. No ACP-1 connectionInfo is used, because the agent mints the connection ids.
     - next: review
   timestamp: 2026-10-21T23:44:00.496501+00:00
+- actor: claude-code
+  id: 01m5gdrzpbhph6059xjhmjpa9a
+  text: |-
+    ### test — green
+    - evidence: swift test (debug, sources touched to force rebuild of this package) 1190 tests in 130 suites passed, 0 failed, 1 known issue (HarnessSmokeTests, expected); python3 -m unittest discover -s bench: 265 tests OK, 1 skip (pre-existing skipIf swebench not installed, from 6946e7b). Build warnings: one in this package (SettingsToolTests multitoolMountsTheTool: redundant inner `try` on non-throwing Self.tool(over:)) fixed in ebdd718; final full run has zero warnings from this package (only a dependency-bundle note, mlx-swift_Cmlx.bundle "missing creator for mutated node").
+    - next: review
+  timestamp: 2026-10-21T23:47:05.547646+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
