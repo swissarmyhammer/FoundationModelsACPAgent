@@ -17,8 +17,14 @@ comments:
     - Commit: f8611f0 on main (not pushed).
     - next: /review
   timestamp: 2026-10-21T13:30:46.329120+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m5fahwh4xxzm1wy5p6bhm6wc
+  text: |-
+    ### done
+    - sha f8611f0 (test) + 9e9e5c2 (record). The behavior came with the Multitool c9f70cd update in 563334a, so the test passed on its first real run; RED was shown with wrong snapshots version/scope (2 issues). Full swift test: 1189 tests / 129 suites passed, 1 known issue.
+  timestamp: 2026-10-21T13:31:32.772120+00:00
+position_column: done
+position_ordinal: ffff80
 title: 'EXTRAS-9: a composed session gives the settings and snapshots endpoints through its top-level tools'
 ---
 From the Multitool session (coordination card, a check that this repo owns).
