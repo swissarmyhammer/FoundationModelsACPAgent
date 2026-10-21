@@ -1,10 +1,22 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5g5y2f41q5xs8x3nntvfwvm
+  text: |-
+    ### implement — changed
+    - evidence: d8fe637. RED first: SessionOwnerTests.theRequestsOfASessionGoToItsOwnerAndOnlyAUserDeviceTakesIt failed at "expected the refusal of an external take" (the external resume took the session). GREEN after the change. Full `swift test`: 1177 tests in 129 suites passed, 1 known issue.
+    - The test: A (userDevice, loopback eliciting MCP server) makes a session; its elicitation goes to A only (B and C recorders empty). B (external, bind trust from the harness) gets invalid request with data.code SESSION_HAS_OWNER on session/resume. C (userDevice) resumes it: owner == C, starter == A; C's prompt's elicitation goes to C (1 create), A keeps 1 create and gets no new idle.
+    - Notes: the agent sends no session/request_permission at all (the Seatbelt sandbox is the only gate), so "the requests that need the user" are the elicitations; they go to the owner via ElicitationRelay's outbound path. A non-owner may still prompt a session (the spec does not forbid it); the echo and the updates go to the owner.
+    - Trust seam: bind(connection:trust:) — the host gives the trust (stdio/in-process default userDevice). ^bxst844 stays blocked on ACP-1 for the bearer token.
+    - Found while testing: AgentClientHarness.close waited for every bound connection (waitForConnectionTeardown), so closing one of several harnesses on one agent hung; added waitForTeardown(of:) and the harness uses it.
+    - next: ^s415rd3
+  timestamp: 2026-10-21T21:30:03.620509+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffff8480
 title: 'ACPA-5c: the owner of a session is a connection id; requests for the user go to the owner only'
 ---
 Spec: ACPA-5 (D120 c, D11), TestudoApp foundationmodels-acpagent.md.
