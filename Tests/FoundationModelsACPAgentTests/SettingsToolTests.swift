@@ -265,7 +265,7 @@ import Testing
         let fixture = try SettingsGraphFixture(label: "tool-multitool")
 
         #expect(throws: Never.self) {
-            try MultiTool.Builder().withOperationTool(noun: Self.noun, tool: try Self.tool(over: fixture))
+            try MultiTool.Builder().withOperationTool(noun: Self.noun, tool: Self.tool(over: fixture))
                 .buildRegistry()
         }
     }
