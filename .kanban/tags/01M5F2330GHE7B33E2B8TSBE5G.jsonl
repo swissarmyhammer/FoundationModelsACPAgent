@@ -1,0 +1,1 @@
+{"id":"01M5F2330HCGY2NBT5Z93B53SS","timestamp":"2026-10-21T11:03:39.281110Z","op":"create","item_id":"01M5F2330GHE7B33E2B8TSBE5G","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: d876e3\n+tag_name: settings\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: d876e3\n-tag_name: settings\n","transaction_id":null}
