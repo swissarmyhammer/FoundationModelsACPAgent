@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsRouter
 
 /// The recording roots of the projects of the user-layer project registry.
 ///

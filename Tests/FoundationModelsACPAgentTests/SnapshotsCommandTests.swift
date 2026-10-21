@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsACPAgent

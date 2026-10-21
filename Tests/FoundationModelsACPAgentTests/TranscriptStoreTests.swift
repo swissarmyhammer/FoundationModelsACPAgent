@@ -529,4 +529,22 @@ import Testing
 
         #expect(projects.map(\.path) == [fixture.workingDirectory.standardizedFileURL.path])
     }
+
+    @Test("allProjects() gives the project that Router's ProjectRegistry holds")
+    func allProjectsGivesTheProjectRoutersProjectRegistryHolds() async throws {
+        let fixture = try await Self.makeFixture()
+        defer { fixture.cleanUp() }
+        try FoundationModelsRouter.ProjectRegistry(directory: fixture.userDirectory)
+            .recordSessionStart(workingDirectory: fixture.workingDirectory, at: Self.baseDate)
+
+        let projects = try fixture.store.allProjects()
+
+        #expect(
+            projects == [
+                FoundationModelsRouter.ProjectRegistryRecord(
+                    path: fixture.workingDirectory.standardizedFileURL.path,
+                    firstSeen: Self.baseDate,
+                    lastSeen: Self.baseDate)
+            ])
+    }
 }
