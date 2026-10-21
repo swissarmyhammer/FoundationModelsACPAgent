@@ -46,6 +46,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// The document of an agent folder.
     static let agentDocumentName = "AGENT.md"
 
+    /// The sidecar Router writes one time into each session directory.
+    static let sessionSidecarFileName = "session.json"
+
     /// The agent whose run ends at once.
     static let quickAgent = "quick"
 
@@ -368,7 +371,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
             .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
         let files = try #require(FileManager.default.enumerator(at: transcriptsRoot, includingPropertiesForKeys: nil))
         return try files.compactMap { $0 as? URL }
-            .filter { $0.lastPathComponent == SessionIndex.sidecarFileName }
+            .filter { $0.lastPathComponent == sessionSidecarFileName }
             .map { sidecar in
                 try JSONDecoder().decode(SidecarSettleSlice.self, from: Data(contentsOf: sidecar))
                     .configuration?.inlineSettleGrace

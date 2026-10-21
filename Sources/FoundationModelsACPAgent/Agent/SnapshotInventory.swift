@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsHooks
+import FoundationModelsRouter
 
 /// Whether the project registry has a session for a snapshot key.
 public enum SnapshotRecordedState: String, Codable, Sendable {

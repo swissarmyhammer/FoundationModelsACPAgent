@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsRouter
 
 extension RoutedACPAgent {
     /// Lists the persisted sessions: the wire surface over

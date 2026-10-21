@@ -10,8 +10,8 @@ import Testing
 // the file the process left behind. A test at this level cannot pass on a
 // no-op recorder: no fixture stands between the composition and the disk.
 //
-// It reads `transcript.jsonl` and never `sessions.jsonl`. The index is
-// written by this package's own `SessionIndex`, on a path that never
+// It reads `transcript.jsonl` and never `sessions.jsonl`. This package
+// writes the index through Router's `SessionIndex`, on a path that never
 // touches the Router recorder, so it stays correct while every event
 // drops.
 //

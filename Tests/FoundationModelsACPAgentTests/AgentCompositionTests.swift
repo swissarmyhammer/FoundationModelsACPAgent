@@ -93,7 +93,7 @@ import Testing
     /// event goes nowhere, and `--resume` has nothing to read.
     ///
     /// The assertion reads the recorded file. It never reads
-    /// `sessions.jsonl`: that index is written by this package's own
+    /// `sessions.jsonl`: this package writes that index through Router's
     /// `SessionIndex`, on a path that never touches the recorder, so it
     /// stays correct while every event drops.
     @Test

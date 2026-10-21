@@ -233,6 +233,24 @@ import Testing
         #expect(records.first?.cwd == fixture.workingDirectory.standardizedFileURL.path)
     }
 
+    @Test("the listing gives the past session that Router's SessionIndex holds")
+    func listingGivesThePastSessionRoutersSessionIndexHolds() async throws {
+        let fixture = try await Self.makeFixture()
+        defer { fixture.cleanUp() }
+        let id = try await Self.makeRecordedSession(in: fixture)
+        let record = FoundationModelsRouter.SessionIndexRecord(
+            sessionId: id.description,
+            cwd: fixture.workingDirectory.standardizedFileURL.path,
+            title: "held by Router",
+            updatedAt: Self.steppedDate(1),
+            additionalDirectories: ["/extra/router"])
+        try FoundationModelsRouter.SessionIndex(root: fixture.root).append(record)
+
+        let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
+
+        #expect(records == [record])
+    }
+
     // MARK: - The listability predicate
 
     @Test("a fork is excluded because its parentId is set")
