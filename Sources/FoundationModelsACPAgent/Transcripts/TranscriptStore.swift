@@ -269,38 +269,9 @@ public struct TranscriptStore: Sendable {
             sessionId: id.description,
             cwd: cwd.standardizedFileURL.path,
             title: "",
-            updatedAt: lastActivityDate(
+            updatedAt: SessionIndex.lastActivityDate(
                 inSessionDirectory: root.appendingPathComponent(id.description, isDirectory: true)),
             additionalDirectories: [])
-    }
-
-    /// The files whose modification date tells the most recent activity of
-    /// a session directory, newest source first: the transcript Router
-    /// appends, then the sidecar Router writes one time, for a session with
-    /// no transcript yet.
-    private static let activityFileNames = ["transcript.jsonl", "session.json"]
-
-    /// The most recent activity a scan can observe in a session directory:
-    /// the modification date of the first of ``activityFileNames`` that
-    /// reads, or the current instant when none reads. The date is truncated
-    /// to a whole second — the precision of the RFC 3339 index line — so a
-    /// scanned record sorts the way its index line would.
-    ///
-    /// Router's `SessionIndex.rebuild(cwd:)` dates a rebuilt record the same
-    /// way, but Router keeps that helper internal, so the store states it.
-    ///
-    /// - Parameter directory: The session directory.
-    /// - Returns: The instant of the session's most recent activity.
-    private static func lastActivityDate(inSessionDirectory directory: URL) -> Date {
-        let modificationDate = activityFileNames.lazy
-            .compactMap { fileName in
-                try? directory.appendingPathComponent(fileName)
-                    .resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate
-            }
-            .first
-        let date = modificationDate ?? Date()
-        return Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
     }
 
     /// The listing order: `updatedAt` descending, then `sessionId`
