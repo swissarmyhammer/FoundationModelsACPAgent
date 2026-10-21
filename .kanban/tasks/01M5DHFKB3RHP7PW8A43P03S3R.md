@@ -40,6 +40,23 @@ comments:
     - Router plan (option B): stage(event:as:) saves the poster's ServiceContext. runAnswer falls back to the first delivered mail that has one. Each submission links to the sender context of each delivered mail. No host API.
     - With B, the wake on the coder's mail has the coder run span as its parent, so it is already in the prompt trace. Then the work span here is needed only to time the whole instance (prompt to no-work). Check again when the sha comes. If Router uses setWorkContext(_:) in place of B, this card does the host side as planned.
   timestamp: 2026-10-20T20:57:17.872459+00:00
+- actor: claude-code
+  id: 01m5fbhkkpbefeqdnqh91xv3mt
+  text: |-
+    ### implement — no-change (gap closed by Router 31eab019; test only)
+    - Router checkout .build/checkouts/FoundationModelsRouter at f055e696 (31eab019 is an ancestor). `SessionOutbox.stage(event:as:)` keeps `ServiceContext.current` of the poster; `answerParentContext(of:callers:)` falls back to it; each submission links to each sender.
+    - Tests (commit 04c33aa, no production code):
+      - `PromptFollowUpTests.theWakeOnRunMailAfterThePromptIsInTheTraceOfThePrompt` (background shell `cat` on a named pipe; prompt ends; pipe write wakes the root on run mail).
+      - `AgentsToolTests.theWakeOnAgentMailAfterThePromptIsInTheTraceOfThePrompt` (ACP prompt, `start agent` slow run held past the 6 s settle period; prompt ends; release; the final message mails the root). 6.4 s each.
+      - Shared check `Support/RunMailWakeTrace.expectTheWakeIsInTheTraceOfThePrompt`: the `FoundationModelsRouter.submission` with `submission.cause = mail` has the prompt trace id, a non-nil parent that walks up to the prompt span, >= 1 link, each link span in the prompt subtree.
+    - First run: both passed (that is the evidence). Probe ids:
+      - shell run: prompt 64a431f6…/aee1812cd80e5977; wake a78c32ed38d51975 same trace; parent chain d230d03e45437086 (FoundationModelsExtras.tool) -> ebec1cca1c9c62d9 (submission, cause message) -> aee1812cd80e5977 (prompt); links [d230d03e45437086, 9b536a353589f6b8].
+      - agent run: prompt a25bb8…/1d938220cd3f2fa1; wake 40da1689e314dd13 (cause mail) parent 9de7419f3febaa70 (agents tool span, child of submission b2d70e1688caa90b, child of prompt); links [9de7419f3febaa70 (tool), 6a89bf1bd1224c47 (FoundationModelsExtras.run of the agent run)].
+    - The check can fail: the same three assertions applied to the `sessionNew` span of the same run (another trace 8ceb670f…, parent ffa7401af569f784 outside the prompt subtree, links []) failed all three (temporary probe, removed). A root wake span (old Router: parent nil, new trace, no link) fails at the `#require(parentSpanID)`.
+    - No `FoundationModelsACPAgent.session.work` span added (per the decision rule: gap closed). `FoundationModelsACPAgent.prompt` unchanged.
+    - Full `swift test`: 1191 tests in 129 suites passed with 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); only build warning is the pre-existing mlx-swift_Cmlx "missing creator".
+    - Open on the card: "In a bench telemetry file, each submission of an instance has a parent" needs a bench run to confirm; not run here.
+  timestamp: 2026-10-21T13:48:52.214240+00:00
 position_column: doing
 position_ordinal: '8280'
 title: 'telemetry: one span covers the work of a session from the prompt to no-work, so a mail wake is in the same trace'
