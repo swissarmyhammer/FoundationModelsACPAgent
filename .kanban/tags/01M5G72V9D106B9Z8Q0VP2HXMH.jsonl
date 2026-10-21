@@ -1,0 +1,1 @@
+{"id":"01M5G72V9DZYGKE9P4F2XY54ZY","timestamp":"2026-10-21T21:50:08.685162Z","op":"create","item_id":"01M5G72V9D106B9Z8Q0VP2HXMH","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: bfd4f2\n+tag_name: acp-1\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: bfd4f2\n-tag_name: acp-1\n","transaction_id":null}

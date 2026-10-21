@@ -18,9 +18,9 @@ comments:
   timestamp: 2026-10-21T21:42:59.513031+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
-- 01M5G0K2CEA2F4EEN91BXST844
 - 01M5G0K65FDK5TE2MG93XK7PA4
 - 01M5G0KG6B1THJF53W3S415RD3
+- 01M5G72P3AM0415Q2TWM7WMTRM
 position_column: todo
 position_ordinal: '8280'
 title: 'ACPA-13: a GraphQLViewer for each _sah/graphql/* tunnel call, from its connection row'
@@ -42,4 +42,4 @@ The host also checks the folder of a `sessionFolder` call (EXTRAS-9 rule 4).
 
 ## Done when
 - A failing test first (TDD): two connections on one agent each make a `_sah/graphql/*` call. Each endpoint resolver gets a viewer with its own connection id and trust, and with the right owned sets.
-- The full `swift test` passes. #acpa-13 #blocked #blocked-upstream
+- The full `swift test` passes. #acpa-13

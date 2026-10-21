@@ -20,6 +20,7 @@ comments:
   timestamp: 2026-10-21T20:39:35.303038+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
+- 01M5G72V9BGAQNTKHBXW9NH4C6
 position_column: todo
 position_ordinal: '8480'
 title: 'ACPA-5b: the trust of a connection comes from its credential, never from the client'
@@ -36,4 +37,4 @@ Spec: ACPA-5 (D120 b), TestudoApp foundationmodels-acpagent.md.
 
 ## Done when
 - A failing test first (TDD): a connection with a user-device token is `userDevice`, a connection with another token is `external`, and an `initialize` that claims more does not change it. An in-process (InMemoryTransport) connection is `userDevice`.
-- The full `swift test` passes. #acpa-5 #blocked #blocked-upstream
+- The full `swift test` passes. #acpa-5
