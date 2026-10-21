@@ -86,12 +86,18 @@ public struct SystemModelResolver: ModelResolver {
 
     /// Makes the resolver that reads the real Hub and the real cache.
     ///
-    /// - Parameter environment: The environment the cache location is read
-    ///   from. See ``hubCacheDirectory(environment:)``.
-    public init(environment: [String: String]) {
+    /// - Parameters:
+    ///   - environment: The environment the cache location is read from
+    ///     when `modelCacheDirectory` is `nil`. See
+    ///     ``hubCacheDirectory(environment:modelCacheDirectory:)``.
+    ///   - modelCacheDirectory: The hub cache folder that the host gives, or
+    ///     `nil` (the default) to read the folder from `environment`. A
+    ///     folder here wins over `HF_HUB_CACHE` and `HF_HOME`.
+    public init(environment: [String: String], modelCacheDirectory: URL? = nil) {
         self.init(
             source: HuggingFaceMetadataSource(),
-            cacheDirectory: Self.hubCacheDirectory(environment: environment))
+            cacheDirectory: Self.hubCacheDirectory(
+                environment: environment, modelCacheDirectory: modelCacheDirectory))
     }
 
     /// Makes the resolver over one metadata source and one cache
@@ -105,15 +111,25 @@ public struct SystemModelResolver: ModelResolver {
         self.cacheDirectory = cacheDirectory
     }
 
-    /// The hub cache directory `environment` names.
+    /// The hub cache directory that the host gives, or else the one that
+    /// `environment` names.
     ///
-    /// The order is the one the Hugging Face libraries use: `HF_HUB_CACHE`
-    /// first, then the `hub` subdirectory of `HF_HOME`, then
+    /// A folder from the host wins over each variable. With no folder from
+    /// the host, the order is the one the Hugging Face libraries use:
+    /// `HF_HUB_CACHE` first, then the `hub` subdirectory of `HF_HOME`, then
     /// `~/.cache/huggingface/hub`.
     ///
-    /// - Parameter environment: The environment to read.
+    /// - Parameters:
+    ///   - environment: The environment to read.
+    ///   - modelCacheDirectory: The hub cache folder that the host gives, or
+    ///     `nil` (the default) to read the folder from `environment`.
     /// - Returns: The cache directory.
-    public static func hubCacheDirectory(environment: [String: String]) -> URL {
+    public static func hubCacheDirectory(
+        environment: [String: String], modelCacheDirectory: URL? = nil
+    ) -> URL {
+        if let modelCacheDirectory {
+            return modelCacheDirectory
+        }
         if let cache = environment[hubCacheVariable], !cache.isEmpty {
             return directory(atPath: cache)
         }

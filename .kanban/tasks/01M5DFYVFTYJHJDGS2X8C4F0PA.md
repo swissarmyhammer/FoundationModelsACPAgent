@@ -35,9 +35,57 @@ comments:
   id: 01m5dndbnwegpx058xp2ed300c
   text: 'Planner decision (2026-10-20): the skills marketplace part moves to a new card. This card keeps only the model cache (`modelCacheDirectory`), and it waits for FoundationModelsExtras (a public `MLXModelLoader` init that takes the hub cache folder, and `load` gives it to the downloader) and FoundationModelsRouter (a public `LiveModelLoader.init(reporting:cacheDirectory:)` or a public `init(reporting:modelLoader:)`). The resolver and `doctor` must use the same folder as the download, so do them in this card after both pushes.'
   timestamp: 2026-10-20T22:02:49.916450+00:00
-position_column: doing
-position_ordinal: '80'
-title: The host gives the model cache directory (waits for Extras and Router ^1056ce6)
+- actor: claude-code
+  id: 01m5ey98z943e0wbba4mcgza5q
+  text: |-
+    Research (after the pushes of Extras 6670bc0 and Router f055e69):
+    - `swift package update FoundationModelsRouter FoundationModelsExtras` resolves Extras at 6670bc0 and Router at f055e69, in the root package and in IntegrationTests.
+    - Router now has `LiveModelLoader.init(reporting:cacheDirectory:)`. It gives the folder to Extras `MLXModelLoader(cacheDirectory:)`, which makes `HubCache(cacheDirectory:)`. That folder is the hub cache itself (it holds `models--<owner>--<repo>`), the same folder as `HF_HUB_CACHE`, and the same as `SystemModelResolver.cacheDirectory`. With `nil`, the loader uses `HubCache.default`, which reads `HF_HUB_CACHE` and `HF_HOME` from the process environment, not from the `environment:` argument of `compose`. That stays the same.
+    - Places that use the model cache in ACPAgent: `ComposedAgent.makeRouter` (live path, `LiveModelLoader()`), `SystemModelResolver.init(environment:)` / `hubCacheDirectory(environment:)` (Doctor/ModelResolver.swift), and `AcpAgentCommand.Doctor.components` (the resolver and the free-disk figure of the cache, Sources/acp-agent/DoctorCommand.swift).
+    - The router keeps its loader private, and the loader keeps its cache private. A unit test with no network can read the folder of the live loader only with `Mirror` (path `modelLoader.cache.cacheDirectory`; all three types are structs).
+    - Plan: `compose(... modelCacheDirectory:)` -> `makeRouter` -> `LiveModelLoader(cacheDirectory:)`; `SystemModelResolver.init(environment:modelCacheDirectory:)` and `hubCacheDirectory(environment:modelCacheDirectory:)` where a given folder wins; `Doctor.components(... modelCacheDirectory:)`. The CLI gives no value.
+  timestamp: 2026-10-21T09:57:07.689746+00:00
+- actor: claude-code
+  id: 01m5eyn4x3n46487m3k2c6nxhe
+  text: |-
+    Implementation done (TDD: the three tests with a given folder failed first, the three tests with no folder passed; then all six passed).
+    - `ComposedAgent.compose(... skillsMarketplaceCacheDirectory:modelCacheDirectory:reporting:)`: the new parameter goes to `makeRouter`, then to the new internal `makeLiveModelLoader(modelCacheDirectory:)`, which makes Router `LiveModelLoader(cacheDirectory:)`. The doc says: an app gives a folder in Application Support, macOS can delete a folder in Caches, the CLI gives no value.
+    - `RoutedACPAgent` and `CatalogContext` do not get the value: they do not use it. Only the router loads models, and `compose` makes the router. A host that makes its own router gives `LiveModelLoader(cacheDirectory:)` itself.
+    - `SystemModelResolver.init(environment:modelCacheDirectory:)` and `hubCacheDirectory(environment:modelCacheDirectory:)`: a given folder wins over `HF_HUB_CACHE` and `HF_HOME`. With `nil`, the old order stays.
+    - `AcpAgentCommand.Doctor.components(... modelCacheDirectory:)`: the resolver and the free-disk figure use the given folder. The `doctor` command gives no value.
+    - The doc links of the `compose` signature in ComposedAgent.swift, GatedStubModel.swift and AgentComposition.swift now name `modelCacheDirectory:`.
+    - Tests: Tests/FoundationModelsACPAgentTests/ModelCacheDirectoryTests.swift, 6 tests, no network. The router loader and `ProfileDoctor` keep the folder private, so the tests read it with `Mirror` (path `modelLoader.cache.cacheDirectory` for the loader). If Router or Extras renames these private properties, the two live-loader tests fail and must get the new path.
+    - One limit: the live loader reads `HF_HOME` from the process environment, not from the `environment:` argument. Thus no unit test sets `HF_HOME` for the download: to set it, a test must change the environment of the whole test process. The download test proves that the loader holds the given folder. Extras documents that `MLXModelLoader(cacheDirectory:)` uses that folder also when `HF_HUB_CACHE` or `HF_HOME` is set. The resolver and doctor tests set both variables to other folders.
+    - The title no longer says "(waits for Extras and Router ^1056ce6)".
+  timestamp: 2026-10-21T10:03:36.739029+00:00
+- actor: claude-code
+  id: 01m5eynn8ezykm18y9fb9gggbx
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/ComposedAgent.swift, Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift, Sources/FoundationModelsACPAgent/Configuration/GatedStubModel.swift (doc link), Sources/acp-agent/DoctorCommand.swift, Sources/acp-agent/AgentComposition.swift (doc), Tests/FoundationModelsACPAgentTests/ModelCacheDirectoryTests.swift (new). `swift build`: no warnings except the known build-system note "missing creator for mutated node" of the mlx-swift bundle. `swift test`: 1175 tests in 127 suites passed, 0 failures (1 known issue, the deliberate `withKnownIssue` in HarnessSmokeTests). `swift build --package-path IntegrationTests --build-tests`: complete. Not committed.
+    - open: the acceptance line of `skillsMarketplaceCacheDirectory` stays unchecked here. The planner moved it to ^z8m1pp3 (commit c11d914).
+    - next: /review
+  timestamp: 2026-10-21T10:03:53.486341+00:00
+- actor: claude-code
+  id: 01m5eyrx7r6s5ardp6dgdhxbrf
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 596d68c). 0 findings, 0 confirmed, 0 refuted. 6 files reviewed. 7 validator runs, 0 failed.
+    - scope note: The skills marketplace cache box is not checked. Task ^z8m1pp3 (commit c11d914, done) did that work. This is resolved scope. It is not a finding.
+    - next: The task is in done.
+  timestamp: 2026-10-21T10:05:39.960057+00:00
+- actor: wballard
+  id: 01m5eys80ms4y4d7hsj1xqn3cy
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files
+    - test: green — swift test, 1175 passed, 0 failures (1 known issue from before)
+    - commit: 596d68c
+    - review: clean — 0 findings
+  timestamp: 2026-10-21T10:05:50.996067+00:00
+position_column: done
+position_ordinal: fffc80
+title: The host gives the model cache directory
 ---
 ## What
 The TestudoApp session asks (2026-10-20): the app gives each folder in Application Support. With a root settings folder (ACPA-16), three folders that are not settings can still be in the home folder. `hooksDataDirectory` is done (^44qdn4g). The other two can be set now only through environment variables in the `environment:` argument of `ComposedAgent.compose`:
@@ -52,12 +100,12 @@ Do this:
 
 ## Acceptance Criteria
 - [ ] With `skillsMarketplaceCacheDirectory`, the marketplace store uses that folder, also when `SKILLS_MARKETPLACE_CACHE` is set.
-- [ ] With `modelCacheDirectory`, the resolver, `doctor` and the live download use that folder, also when `HF_HOME` is set.
-- [ ] With no values, nothing changes.
+- [x] With `modelCacheDirectory`, the resolver, `doctor` and the live download use that folder, also when `HF_HOME` is set.
+- [x] With no values, nothing changes.
 
 ## Tests
-- [ ] A test for each parameter with a temporary folder, and one with the environment variable set to another folder.
-- [ ] `swift test` passes with zero failures and zero warnings.
+- [x] A test for each parameter with a temporary folder, and one with the environment variable set to another folder.
+- [x] `swift test` passes with zero failures and zero warnings.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #acpa-16

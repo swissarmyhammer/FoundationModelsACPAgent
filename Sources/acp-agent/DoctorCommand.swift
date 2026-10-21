@@ -98,6 +98,15 @@ extension AcpAgentCommand {
         ///     the dotfolder stack the checks read.
         ///   - environment: The environment the checks read, above all
         ///     `XDG_CONFIG_HOME`.
+        ///   - modelCacheDirectory: The hub cache folder of the models, or
+        ///     `nil` (the default) for the folder that `HF_HUB_CACHE` or
+        ///     `HF_HOME` of `environment` names. A folder here wins over these
+        ///     variables. The profile check prices the download against this
+        ///     folder, and reads the free disk of this folder. Give the same
+        ///     folder as the `modelCacheDirectory` of `ComposedAgent.compose`,
+        ///     so the check reads the folder of the download. The `doctor`
+        ///     command gives no value, because the CLI gives no folder to
+        ///     `ComposedAgent.compose`.
         ///   - prober: How ``ToolsDoctor`` reaches the world. The default
         ///     starts the real seatbelt canary and connects each real MCP
         ///     server; a test injects a stub, so no unit test spawns a
@@ -113,6 +122,7 @@ extension AcpAgentCommand {
         /// - Returns: The components, in the order the report lists them.
         static func components(
             workingDirectory: URL, environment: [String: String],
+            modelCacheDirectory: URL? = nil,
             prober: any ToolsProber = SystemToolsProber(),
             resolver: (any ModelResolver)? = nil,
             memoryBytes: Int64 = MachineFigures.physicalMemoryBytes,
@@ -124,13 +134,15 @@ extension AcpAgentCommand {
             else {
                 return []
             }
-            let cache = SystemModelResolver.hubCacheDirectory(environment: environment)
+            let cache = SystemModelResolver.hubCacheDirectory(
+                environment: environment, modelCacheDirectory: modelCacheDirectory)
             let outcome = ConfigurationLoadOutcome(of: loader)
             return [
                 ConfigurationDoctor(stack: loader.stack, outcome: outcome),
                 ProfileDoctor(
                     configuration: outcome.configuration,
-                    resolver: resolver ?? SystemModelResolver(environment: environment),
+                    resolver: resolver
+                        ?? SystemModelResolver(environment: environment, modelCacheDirectory: modelCacheDirectory),
                     memoryBytes: memoryBytes,
                     freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: cache)),
                 TranscriptsDoctor(
