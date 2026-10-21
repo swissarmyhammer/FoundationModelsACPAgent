@@ -28,6 +28,15 @@ comments:
     - Rule 4 (EXTRAS-9): an `external` viewer sees the sessions it owns (and, by the EXTRAS-5 amendment, the ones it started) and their folders; the host checks the folder of a `sessionFolder` call. The wire `ExecuteRequest/SubscribeRequest` carry `sessionId`, which selects the folder, so the check is: the folder of the named session must be the folder of a session the external viewer can see; otherwise `NOT_FOUND` (does not tell that the session exists).
     - Toolkit `CodedError.responseJSON()` gives the `{"errors":[...]}` body for a coded routing error, so the tunnel reuses it.
   timestamp: 2026-10-21T23:32:04.796173+00:00
+- actor: claude-code
+  id: 01m5gdkazgavvs8ed8yfd61qgv
+  text: |-
+    ### implement — changed
+    - evidence: commit 5352c01. RED: the new GraphQLTunnelTests had 12 tests, and all 12 failed with methodNotFound / no _meta.sah. GREEN: all 12 pass. Full `swift test`: 1190 tests in 130 suites passed, with 1 known issue (HarnessSmokeTests).
+    - what: RoutedACPConnection.extensionHandlers -> RoutedACPAgent.graphQLTunnelHandlers(for:) serves execute/subscribe/unsubscribe/endpoints (Agent/GraphQLTunnel*.swift). Routing by name: first the agent endpoints (settings, plus a new agent-level `snapshots` SnapshotsGraph over hooks.snapshotStore with identity key maps), then the endpoints of the top-level tools of the session (SessionSurface.graphQLEndpoints). A call with no session reaches server-scope session endpoints only. ConnectionTable.viewer(of:) builds the viewer in one locked read: clientId = connection id, trust, owned, clientOwned, started. Folder check (EXTRAS-9 rule 4): an external viewer reaches a sessionFolder endpoint only when the folder of the named session is the folder of a session it owns or started; otherwise, and for an unknown or closed session, NOT_FOUND. Codes: UNKNOWN_ENDPOINT (the message lists the known names) and SESSION_REQUIRED. Subscriptions send next, then complete or error. Unsubscribe and the connection close cancel the subscription. initialize now advertises _meta.sah {version, graphql} with the same list as endpoints. Package.resolved (gitignored) is on Extras 589f27e.
+    - notes: trust over HTTP still waits on ACPA-5b (bearer -> trust); stdio and in-memory are userDevice. No ACP-1 connectionInfo is used, because the agent mints the connection ids.
+    - next: review
+  timestamp: 2026-10-21T23:44:00.496501+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
