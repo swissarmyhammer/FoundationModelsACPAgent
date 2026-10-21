@@ -187,6 +187,34 @@ import Testing
         #expect(collapsed.contains("| \"It is a one-line fix in a known place\" | Start the agent. You do not know the place before you read the code. |"))
     }
 
+    /// The names of agents that a session can list. The builtin names none
+    /// of them: the order of the work comes from the agent descriptions.
+    static let agentNames = ["coder", "diagnose"]
+
+    /// The prompt to an agent carries the user's task and each agent report
+    /// as they are, and no fix of the root. In the bench runs telemetry-16 and
+    /// router-telemetry-16 (2026-10-20/21) every failed instance had a root
+    /// brief that dictated a fix or cited lines that do not exist, and the
+    /// agent built it. The rule names no agent.
+    @Test func theBuiltinPassesTheTaskAndTheReportsAsTheyAreAndNamesNoAgent() throws {
+        let text = BuiltinInstructions.text
+        let collapsed = Self.collapsingWhitespace(text)
+
+        #expect(collapsed.contains("Give it to the agent at the start, before you read the code. The agent reads the code. - When you give work"))
+        #expect(!collapsed.contains("Put the full task in its prompt."))
+        #expect(collapsed.contains("When you give work to an agent, give the user's task and each agent report as they are. Do not add a fix, a cause, or a line of code of your own."))
+        for name in Self.agentNames {
+            #expect(!text.lowercased().contains(name))
+        }
+        let analyzeRow = try #require(collapsed.range(of: "| \"I will analyze first, then delegate\" |"))
+        let fixRow = try #require(collapsed.range(of: "| \"I found the cause, I will tell the agent the fix\" | Give the task and the reports as they are. A fix that you add is a guess, and the agent builds it. |"))
+        #expect(analyzeRow.upperBound < fixRow.lowerBound)
+        // The row comes right after the analyze row: only the closing cell
+        // border of the analyze row lies between them.
+        let between = collapsed[analyzeRow.upperBound..<fixRow.lowerBound]
+        #expect(between.filter { $0 == "|" }.count == 1)
+    }
+
     /// The first lines make the root session the lead of the work: it plans,
     /// gives each part to an agent, and checks the result, and it does a step
     /// itself only when no agent matches. The engineer role belongs to the

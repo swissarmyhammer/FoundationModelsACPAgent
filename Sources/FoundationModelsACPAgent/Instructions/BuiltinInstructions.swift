@@ -150,6 +150,14 @@
 /// rule names the first call, `start agent`, and the table names both
 /// excuses.
 ///
+/// ## Why the prompt to an agent holds no fix of the root
+///
+/// In the bench runs telemetry-16 and router-telemetry-16 (2026-10-20/21),
+/// every failed instance had a root brief that dictated a fix ("apply
+/// exactly this") or cited lines that do not exist, and the coder built it.
+/// The rule names no agent, because the order of the work comes from the
+/// agent descriptions.
+///
 /// ## Why the prompt opens with the lead role
 ///
 /// The first line was "You are a software engineer", and every section after
@@ -204,7 +212,10 @@ public enum BuiltinInstructions {
           work to that agent.
         - A bug fix or a feature, with its test, is a whole unit of work.
           Give it to the agent at the start, before you read the code. The
-          agent reads the code. Put the full task in its prompt.
+          agent reads the code.
+        - When you give work to an agent, give the user's task and each
+          agent report as they are. Do not add a fix, a cause, or a line
+          of code of your own.
         - When the session has an agent for it, your FIRST tool call is
           `start agent` with the full text of the task. Do not read a file
           first. Do not analyze the code first. The agent does both.
@@ -217,6 +228,7 @@ public enum BuiltinInstructions {
         | "The fix is small, I will do it myself" | Give it to the agent. A small fix is a whole unit of work. |
         | "It is a one-line fix in a known place" | Start the agent. You do not know the place before you read the code. |
         | "I will analyze first, then delegate" | Start the agent now. Work you do first is done two times. |
+        | "I found the cause, I will tell the agent the fix" | Give the task and the reports as they are. A fix that you add is a guess, and the agent builds it. |
         | "I know this skill" | Load it again. Skills change. |
         | "Let me read the code first" | The skill tells you how to read it. |
         | "The skill is too much for this" | Load it. Small work grows. |
