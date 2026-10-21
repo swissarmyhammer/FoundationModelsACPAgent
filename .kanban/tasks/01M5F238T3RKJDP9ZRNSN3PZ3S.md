@@ -17,6 +17,13 @@ comments:
       - A subscriber that is more than `capacity` events behind gets RESYNC_REQUIRED.
     - The description already holds rev 2 (opaque cursor, added/changed/removed).
   timestamp: 2026-10-21T11:35:03.029828+00:00
+- actor: claude-code
+  id: 01m5f644sdq91gj1t8px8sgtf3
+  text: |-
+    ### the ID scalar is in (Extras 44c2f54, tip 9c47e10)
+    - For the change ids, call `SchemaBuilder.addToolkitIDScalar()` and use `ToolkitID`. Do not add an exception for ^70231sy.
+    - EXTRAS-11 (dbf4202) makes SettingsGraphTests fail on rule 7 and rule 9 after the Extras update. In the same change, either land ^hfw2eqh, or pass `exceptions:` (rule 7 removedBy ^hfw2eqh, rule 9 removedBy this card) and `codes:` with each error and warning code of SettingsGraph.
+  timestamp: 2026-10-21T12:14:08.173215+00:00
 position_column: todo
 position_ordinal: '8180'
 title: 'EXTRAS-9 settings: changes(after:) with an opaque cursor, a cursor query, and RESYNC_REQUIRED (blocked on EXTRAS-10 ChangeLog)'
