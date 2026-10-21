@@ -108,12 +108,12 @@ extension RoutedACPAgent {
     // MARK: - The close of the connection
 
     /// Tears down one connection after it closed: removes its row from
-    /// ``connections`` and closes each open session of the connection, as
-    /// `session/close` closes one. A session of another connection goes on.
-    /// Agent shutdown must close each session too, because `RoutedSession`
-    /// does not run its sweep in `deinit`.
+    /// ``connections`` and closes each open session that the connection
+    /// owns, as `session/close` closes one. A session of another owner goes
+    /// on. Agent shutdown must close each session too, because
+    /// `RoutedSession` does not run its sweep in `deinit`.
     ///
-    /// The teardown task of ``bind(connection:)`` calls it when
+    /// The teardown task of ``bind(connection:trust:)`` calls it when
     /// `AgentSideConnection.closed` gives its reason. A client can go away
     /// with no `session/close`: it closes its end of the wire, its input
     /// stream fails, or the host closes the connection. Each open session of
@@ -150,7 +150,7 @@ extension RoutedACPAgent {
         ACPAgentTelemetry.logger(.sessionLifecycle).notice(
             "The connection closed. The agent closes each open session of the connection.", metadata: metadata)
         connections.remove(id)
-        for sessionId in connections.sessions(of: id) {
+        for sessionId in connections.sessions(ownedBy: id) {
             guard let entry = sessions[sessionId], !entry.isClosed else {
                 continue
             }

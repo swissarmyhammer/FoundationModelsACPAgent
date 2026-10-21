@@ -37,6 +37,32 @@ extension RequestError {
             ]))
     }
 
+    /// The `data.code` of ``sessionHasOwner(id:)``, for a client that tells
+    /// the refusals apart by code.
+    static let sessionHasOwnerCode = "SESSION_HAS_OWNER"
+
+    /// The reason of ``sessionHasOwner(id:)``.
+    private static let sessionHasOwnerReason =
+        "the session has an owner, and an external connection cannot take it"
+
+    /// The owner refusal (D120 c): an `external` connection asked to take a
+    /// session that another connection owns. Invalid request, with the id,
+    /// ``sessionHasOwnerCode`` and the reason in `data`. The owner does not
+    /// change, and the session goes on.
+    ///
+    /// - Parameter id: The session the connection tried to take.
+    /// - Returns: The typed invalid-request error.
+    static func sessionHasOwner(id: SessionId) -> RequestError {
+        RequestError(
+            code: .invalidRequest,
+            message: RequestError.invalidRequest.message,
+            data: .object([
+                "sessionId": .string(id.rawValue),
+                "code": .string(sessionHasOwnerCode),
+                "reason": .string(sessionHasOwnerReason),
+            ]))
+    }
+
     /// The unknown replay-cursor refusal: a cursor type
     /// this agent cannot honor must not degrade to a silent no-replay.
     /// Invalid params, with the refused type in `data`.
@@ -89,8 +115,9 @@ extension RoutedACPAgent {
     /// - Throws: The order rule's invalid-request error;
     ///   `RequestError.unknownSession` for an id no recording holds —
     ///   a deleted session included; the cwd-mismatch and
-    ///   unknown-cursor refusals; or whatever the composition or the
-    ///   restore throws.
+    ///   unknown-cursor refusals; the owner refusal of an `external`
+    ///   connection (``RequestError/sessionHasOwner(id:)``); or whatever the
+    ///   composition or the restore throws.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
         try await resumeSession(params, from: .direct)
     }
@@ -147,6 +174,13 @@ extension RoutedACPAgent {
         let additionalRoots = try SessionSetup.additionalRoots(
             fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
 
+        // The resume takes the session for the connection of the request
+        // (D120 c) before anything else changes: an `external` connection
+        // cannot take a session that another connection owns. From here on,
+        // each update and each request for the user goes to the new owner,
+        // and the old owner gets none.
+        try takeSession(params.sessionId, for: caller)
+
         // A live entry gets the full teardown of `session/close` first: its
         // open prompts end with `idle(cancelled)`, its Router session closes
         // and its projector stops. Thus no update of the old session comes
@@ -188,8 +222,7 @@ extension RoutedACPAgent {
             restored.session,
             composition: composition,
             placement: SessionPlacement(
-                workingDirectory: workingDirectory, additionalRoots: additionalRoots, caller: caller,
-                userPresence: userPresence),
+                workingDirectory: workingDirectory, additionalRoots: additionalRoots, userPresence: userPresence),
             indexRecorded: indexRecorded,
             history: history)
 
@@ -207,6 +240,25 @@ extension RoutedACPAgent {
     }
 
     // MARK: - The pre-checks
+
+    /// Takes a session for the connection of a resume (D120 c): the
+    /// connection becomes the owner (``ConnectionTable/take(_:by:)``). A
+    /// `userDevice` connection takes each session; an `external` connection
+    /// takes only a session with no owner, or one that it owns.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session to take.
+    ///   - caller: The connection of the resume.
+    /// - Throws: ``RequestError/sessionHasOwner(id:)`` when the rule refuses
+    ///   the take.
+    private func takeSession(_ sessionId: SessionId, for caller: ConnectionId) throws {
+        guard connections.take(sessionId, by: caller) else {
+            ACPAgentTelemetry.logger(.sessionResume).warning(
+                "An external connection tried to take a session that has an owner. The agent refuses the resume.",
+                metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+            throw RequestError.sessionHasOwner(id: sessionId)
+        }
+    }
 
     /// The parsed replay cursor of the request, or `nil` for no replay.
     /// Parsed before any other work, so an unknown cursor refuses before

@@ -3,8 +3,8 @@ assignees:
 - claude-code
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
-position_column: todo
-position_ordinal: '8580'
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-5c: the owner of a session is a connection id; requests for the user go to the owner only'
 ---
 Spec: ACPA-5 (D120 c, D11), TestudoApp foundationmodels-acpagent.md.

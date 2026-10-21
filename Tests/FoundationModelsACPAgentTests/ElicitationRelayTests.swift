@@ -212,7 +212,7 @@ import Testing
     // MARK: - The harness wiring
 
     /// The name the eliciting MCP test server mounts under.
-    private static let serverName = "elicitor"
+    private static let serverName = ScriptedPromptFixture.loopbackServerName
 
     /// The prompt text of every scripted elicitation case.
     private static let promptText = "Run the eliciting tool pass"
@@ -230,8 +230,7 @@ import Testing
     private static let cancelledResultText = "elicitation cancel"
 
     /// The snippet that runs the form-mode eliciting loopback tool.
-    private static let formSnippet =
-        "return await tools.\(serverName).\(ScriptedServer.elicitEchoToolName)({});"
+    private static let formSnippet = ScriptedPromptFixture.loopbackFormSnippet
 
     /// The snippet that runs the URL-mode eliciting loopback tool.
     private static let urlSnippet =
@@ -272,17 +271,8 @@ import Testing
         capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
         label: String
     ) async throws -> ScriptedPromptFixture {
-        let serverCommand = try BuiltProductLocator.mcpTestServerURL().path
-        let server = FoundationModelsACP.MCPServer.stdio(
-            MCPServerStdio(
-                command: AbsolutePath(rawValue: serverCommand),
-                name: serverName,
-                args: [ServerMode.flagName, ServerMode.loopback.rawValue]))
-        return try await ScriptedPromptFixture.make(
-            script: ScriptedPromptFixture.makeToolPromptScript(code: code, onPromptContaining: promptText),
-            label: label,
-            capabilities: capabilities,
-            mcpServers: [server])
+        try await ScriptedPromptFixture.makeLoopback(
+            code: code, capabilities: capabilities, label: label, onPromptContaining: promptText)
     }
 
     /// Prompts the fixture's one session with the shared prompt text.

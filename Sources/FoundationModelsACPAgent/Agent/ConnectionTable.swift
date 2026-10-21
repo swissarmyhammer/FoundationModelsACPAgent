@@ -84,7 +84,8 @@ struct ClientPath: Sendable {
 }
 
 /// The connection table of the agent (ACPA-5, D120): one row for each
-/// connection, and the connection of each session.
+/// connection, the owner of each session, and the connection that started
+/// each session.
 ///
 /// The agent is one instance for all its connections, as a listener, and it
 /// keys its state by these ids. A `Mutex` holds the table outside actor
@@ -92,15 +93,24 @@ struct ClientPath: Sendable {
 /// synchronous and adds the row of its connection during the construction of
 /// the connection, and because each outbound path reads the table from a
 /// synchronous sink.
+///
+/// The owner record and the started-by record are in memory only (D120 e):
+/// after a restart no session has an owner until a client takes it.
 final class ConnectionTable: Sendable {
-    /// The rows and the connection of each session.
+    /// The rows, the owners and the starters.
     private struct State {
         /// The rows, keyed by the connection id.
         var rows: [ConnectionId: ConnectionRow]
 
-        /// The connection of each session: the one that its updates go
-        /// out on. `session/new` and `session/resume` set it.
-        var sessionConnections: [SessionId: ConnectionId] = [:]
+        /// The owner of each session (D11): the connection that its updates
+        /// and its requests for the user go out on. `session/new` sets it,
+        /// and a `session/resume` that takes the session changes it.
+        var owners: [SessionId: ConnectionId] = [:]
+
+        /// The connection that started each session with `session/new`.
+        /// The visibility rule of an `external` viewer reads it (ACPA-13).
+        /// A take does not change it.
+        var starters: [SessionId: ConnectionId] = [:]
     }
 
     /// The table, under its lock.
@@ -167,42 +177,79 @@ final class ConnectionTable: Sendable {
         state.withLock { Self.path(of: id, in: $0) }
     }
 
-    /// Sets the connection that the updates of a session go out on.
+    /// Records the start of a session by `session/new`: the connection of
+    /// the request owns the session and is its starter.
     ///
     /// - Parameters:
-    ///   - id: The id of the connection.
-    ///   - sessionId: The session.
-    func setConnection(_ id: ConnectionId, of sessionId: SessionId) {
-        state.withLock { $0.sessionConnections[sessionId] = id }
-    }
-
-    /// The connection that the updates of a session go out on.
-    ///
-    /// - Parameter sessionId: The session.
-    /// - Returns: Its connection id, or `nil` when no connection made or
-    ///   resumed the session.
-    func connection(of sessionId: SessionId) -> ConnectionId? {
-        state.withLock { $0.sessionConnections[sessionId] }
-    }
-
-    /// The outbound path of a session: the path of its connection.
-    ///
-    /// - Parameter sessionId: The session.
-    /// - Returns: The path, or `nil` when the session has no connection or
-    ///   its connection has no outbound path.
-    func path(forSession sessionId: SessionId) -> ClientPath? {
+    ///   - sessionId: The new session.
+    ///   - id: The id of the connection that started it.
+    func recordStart(of sessionId: SessionId, by id: ConnectionId) {
         state.withLock { state in
-            state.sessionConnections[sessionId].flatMap { Self.path(of: $0, in: state) }
+            state.owners[sessionId] = id
+            state.starters[sessionId] = id
         }
     }
 
-    /// The ids of the sessions whose updates go out on a connection.
+    /// Takes a session for a connection (D120 c): the connection becomes
+    /// the owner, and the old owner loses the session. A session with no
+    /// owner, or one that the connection owns already, can be taken by any
+    /// connection. An `external` connection cannot take a session that
+    /// another connection owns; a `userDevice` connection can. The check and
+    /// the change are one locked step, so two takes cannot both win.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session to take.
+    ///   - id: The id of the connection that takes it.
+    /// - Returns: `false` when the rule refuses the take; the owner then does
+    ///   not change.
+    func take(_ sessionId: SessionId, by id: ConnectionId) -> Bool {
+        state.withLock { state in
+            let owner = state.owners[sessionId]
+            let trust = state.rows[id]?.trust ?? .external
+            guard owner == nil || owner == id || trust == .userDevice else {
+                return false
+            }
+            state.owners[sessionId] = id
+            return true
+        }
+    }
+
+    /// The owner of a session.
+    ///
+    /// - Parameter sessionId: The session.
+    /// - Returns: The id of the owner connection, or `nil` when the session
+    ///   has no owner.
+    func owner(of sessionId: SessionId) -> ConnectionId? {
+        state.withLock { $0.owners[sessionId] }
+    }
+
+    /// The connection that started a session with `session/new`.
+    ///
+    /// - Parameter sessionId: The session.
+    /// - Returns: The id of the starter, or `nil` when no connection of this
+    ///   process started the session.
+    func starter(of sessionId: SessionId) -> ConnectionId? {
+        state.withLock { $0.starters[sessionId] }
+    }
+
+    /// The outbound path of a session: the path of its owner.
+    ///
+    /// - Parameter sessionId: The session.
+    /// - Returns: The path, or `nil` when the session has no owner or its
+    ///   owner has no outbound path.
+    func path(forSession sessionId: SessionId) -> ClientPath? {
+        state.withLock { state in
+            state.owners[sessionId].flatMap { Self.path(of: $0, in: state) }
+        }
+    }
+
+    /// The ids of the sessions that a connection owns.
     ///
     /// - Parameter id: The id of the connection.
     /// - Returns: The session ids.
-    func sessions(of id: ConnectionId) -> [SessionId] {
+    func sessions(ownedBy id: ConnectionId) -> [SessionId] {
         state.withLock { state in
-            state.sessionConnections.filter { $0.value == id }.map(\.key)
+            state.owners.filter { $0.value == id }.map(\.key)
         }
     }
 

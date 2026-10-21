@@ -528,9 +528,9 @@ struct SessionActivation {
     let configOptions: [SessionConfigOption]
 }
 
-/// Where one mounted session works, and the connection of the request that
-/// mounts it: the `session/new` or `session/resume` inputs of the mount that
-/// the composition does not hold.
+/// Where one mounted session works, and whether a user can answer it: the
+/// `session/new` or `session/resume` inputs of the mount that the
+/// composition does not hold.
 struct SessionPlacement {
     /// The validated session working directory.
     let workingDirectory: URL
@@ -538,12 +538,8 @@ struct SessionPlacement {
     /// The session's additional confinement roots, in wire order.
     let additionalRoots: [URL]
 
-    /// The connection of the request. The session sends its updates
-    /// through it.
-    let caller: ConnectionId
-
     /// The user presence of the session (``RoutedACPAgent/userPresence(of:)``
-    /// of `caller`).
+    /// of the connection of the request).
     let userPresence: UserPresence
 }
 
@@ -648,6 +644,10 @@ extension RoutedACPAgent {
             userPresence: userPresence,
             mailOnlyAnswerLimit: mailOnlyAnswerLimit)
 
+        // The connection of the request owns the new session and is its
+        // starter (D120 c), before the mount sends anything for the session.
+        connections.recordStart(of: SessionId(rawValue: session.id.description), by: caller)
+
         // The `sessions.jsonl` index record is NOT written here: the
         // prompt task appends it at the first recorded activity,
         // with the title, because a session with zero prompts is not listable.
@@ -655,8 +655,7 @@ extension RoutedACPAgent {
             session,
             composition: composition,
             placement: SessionPlacement(
-                workingDirectory: workingDirectory, additionalRoots: additionalRoots, caller: caller,
-                userPresence: userPresence),
+                workingDirectory: workingDirectory, additionalRoots: additionalRoots, userPresence: userPresence),
             indexRecorded: false,
             history: SessionMergeEngine())
 
@@ -674,14 +673,15 @@ extension RoutedACPAgent {
     /// history, the command-set publication, the terminal projection, and
     /// the status report of the MCP servers.
     ///
-    /// The session sends its updates through the connection of the request
-    /// from now on (``ConnectionTable/setConnection(_:of:)``).
+    /// The caller sets the owner of the session before the mount
+    /// (``ConnectionTable/recordStart(of:by:)`` or
+    /// ``ConnectionTable/take(_:by:)``), so each update of the mount goes to
+    /// the owner.
     ///
     /// - Parameters:
     ///   - session: The root Router session to mount.
     ///   - composition: What the composition pipeline built for it.
-    ///   - placement: Where the session works, and the connection of the
-    ///     request.
+    ///   - placement: Where the session works, and its user presence.
     ///   - indexRecorded: Whether the `sessions.jsonl` record already
     ///     exists, so the first prompt knows whether to append it.
     ///   - history: The retained history of the session: empty for a new
@@ -706,7 +706,6 @@ extension RoutedACPAgent {
         }
 
         let sessionId = SessionId(rawValue: session.id.description)
-        connections.setConnection(placement.caller, of: sessionId)
 
         // Assemble the command registry now the session exists: the six
         // builtins capture a context bound to the live

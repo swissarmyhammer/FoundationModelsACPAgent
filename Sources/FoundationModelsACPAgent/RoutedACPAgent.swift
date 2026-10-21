@@ -25,7 +25,7 @@ import Synchronization
 /// available on this agent. The agent never raises `-32000`.
 ///
 /// One agent serves each client connection (ACPA-5, D120), as a listener
-/// with a connection table (``connections``): ``bind(connection:)`` gives
+/// with a connection table (``connections``): ``bind(connection:trust:)`` gives
 /// each connection its own ``RoutedACPConnection``, which names the
 /// connection on each call. The `Agent` methods of the agent itself serve
 /// the ``ConnectionId/direct`` caller: a test or an in-process host with no
@@ -53,8 +53,8 @@ public actor RoutedACPAgent: Agent {
 
     /// The connection table (ACPA-5, D120): one row for each bound
     /// connection and one for ``ConnectionId/direct``, with the client
-    /// capabilities of the `initialize` of each, and the connection of each
-    /// session.
+    /// capabilities of the `initialize` of each and its trust, and the owner
+    /// and the starter of each session (D11, D120 c).
     ///
     /// The order rule reads it: a `session/*` request of a connection whose
     /// row has no capabilities came before the `initialize` of that
@@ -257,36 +257,58 @@ public actor RoutedACPAgent: Agent {
     /// After the task ends, the agent goes when its callers let it go, and
     /// gives back its models.
     ///
-    /// - Parameter connection: The new connection.
+    /// The trust of the connection comes from the host, which knows the
+    /// credential of the connection (D120 b), and never from the client:
+    /// `initialize` does not change it. Stdio and `InMemoryTransport` carry
+    /// no credential, and they serve the in-process UI and the local CLI,
+    /// so their trust is `userDevice`. When the HTTP transport (ACP-1) gives
+    /// the bearer token of a connection, the host maps the token to the
+    /// trust here (ACPA-5b).
+    ///
+    /// - Parameters:
+    ///   - connection: The new connection.
+    ///   - trust: The trust of the connection, from its credential.
     /// - Returns: The `Agent` of the connection, which names the connection
     ///   on each call to this agent.
-    public nonisolated func bind(connection: AgentSideConnection) -> RoutedACPConnection {
-        let id = connections.add(connection, trust: .userDevice)
+    public nonisolated func bind(
+        connection: AgentSideConnection, trust: ConnectionTrust = .userDevice
+    ) -> RoutedACPConnection {
+        let id = connections.add(connection, trust: trust)
         // Never wait for `closed` in an inbound handler: the value waits
         // for each handler to end. This task is not a handler.
         let teardown = Task {
             await tearDownConnection(id, after: await connection.closed)
         }
-        connectionTeardowns.withLock { $0.append(teardown) }
+        connectionTeardowns.withLock { $0[id] = teardown }
         return RoutedACPConnection(id: id, agent: self)
     }
 
-    /// The teardown task of each connection that ``bind(connection:)``
-    /// bound, in the order of the binds. See ``bind(connection:)``.
-    private nonisolated let connectionTeardowns = Mutex<[Task<Void, Never>]>([])
+    /// The teardown task of each connection that ``bind(connection:trust:)``
+    /// bound, keyed by the connection id. See ``bind(connection:trust:)``.
+    private nonisolated let connectionTeardowns = Mutex<[ConnectionId: Task<Void, Never>]>([:])
 
     /// Waits until the teardown of each bound connection ended: each one
     /// closed, and the agent closed its open sessions. Returns at once
-    /// before the first ``bind(connection:)``.
+    /// before the first ``bind(connection:trust:)``.
     ///
     /// A host that ends the process after its connections closed calls this
     /// first, so the teardown can write the history of each session and
     /// stop the MCP servers before the exit. A connection that is still open
-    /// keeps this wait.
+    /// keeps this wait; a host that closed one connection of many waits with
+    /// ``waitForTeardown(of:)``.
     public nonisolated func waitForConnectionTeardown() async {
-        for teardown in connectionTeardowns.withLock({ $0 }) {
+        for teardown in connectionTeardowns.withLock({ Array($0.values) }) {
             await teardown.value
         }
+    }
+
+    /// Waits until the teardown of one bound connection ended: it closed, and
+    /// the agent closed its open sessions. Returns at once for an id that
+    /// ``bind(connection:trust:)`` did not give.
+    ///
+    /// - Parameter id: The id of the connection.
+    public nonisolated func waitForTeardown(of id: ConnectionId) async {
+        await connectionTeardowns.withLock { $0[id] }?.value
     }
 
     /// Creates an agent for the dotfolder `name` and resolves the

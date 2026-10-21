@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgent
 import FoundationModelsACPClient
+import FoundationModelsExtras
 
 /// The instant type of ``HoldingClock``: an offset from the clock's epoch.
 struct HoldingInstant: InstantProtocol {
@@ -283,16 +284,20 @@ public struct AgentClientHarness: Sendable {
     ///     because only the cli-plan.md §5.9 cancel proof reads it.
     ///   - wire: The transport pair to run over. The in-process pair by
     ///     default; a cli-plan.md §4 comparison passes the stdio pipes instead.
+    ///   - trust: The trust that the bind gives the connection: `userDevice`
+    ///     by default, as each in-process connection; an ownership proof
+    ///     passes `external` (ACPA-5c).
     /// - Returns: The connected harness, with a collector.
     public static func makeRecording(
         agent: RoutedACPAgent,
         tapsWire: Bool = false,
         tapsAgentWire: Bool = false,
-        wire: HarnessWire = .makeInMemory()
+        wire: HarnessWire = .makeInMemory(),
+        trust: ConnectionTrust = .userDevice
     ) async -> AgentClientHarness {
         let agentWireTap = tapsAgentWire ? WireTap(tapping: wire.agentEnd) : nil
         let parts = await makeParts(
-            agent: agent, agentEnd: agentWireTap ?? wire.agentEnd)
+            agent: agent, agentEnd: agentWireTap ?? wire.agentEnd, trust: trust)
         let collector = UpdateCollector()
         let elicitations = ElicitationWireRecorder()
         let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
@@ -327,9 +332,11 @@ public struct AgentClientHarness: Sendable {
     /// transport pair. A pipe wire holds descriptors, so the release is
     /// what gives them back.
     ///
-    /// Then it waits until the agent closed each session that is still
-    /// open. Thus that teardown ends inside the test that
-    /// made the sessions, and does not run beside a later test.
+    /// Then it waits until the agent tore down the connection of this
+    /// harness and closed each of its sessions that is still open. Thus that
+    /// teardown ends inside the test that made the sessions, and does not
+    /// run beside a later test. Another harness on the same agent keeps its
+    /// own connection open.
     ///
     /// The first call closes. Each later call, on this harness or on a
     /// copy of it, does nothing (test rule T1).
@@ -343,7 +350,7 @@ public struct AgentClientHarness: Sendable {
         wireTap?.stop()
         agentWireTap?.stop()
         wire.close()
-        await agent.waitForConnectionTeardown()
+        await agent.waitForTeardown(of: routedConnection.id)
     }
 
     /// The wiring every factory shares: the agent with its connection
@@ -355,10 +362,11 @@ public struct AgentClientHarness: Sendable {
     ///   - agent: The agent under test.
     ///   - agentEnd: The end the agent serves: the wire's own agent end,
     ///     or a ``WireTap`` around it.
+    ///   - trust: The trust that the bind gives the connection.
     /// - Returns: The agent with its connection and the `Agent` of that
     ///   connection, and the client.
     private static func makeParts(
-        agent: RoutedACPAgent, agentEnd: any ACPTransport
+        agent: RoutedACPAgent, agentEnd: any ACPTransport, trust: ConnectionTrust = .userDevice
     ) async -> (
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
@@ -369,7 +377,7 @@ public struct AgentClientHarness: Sendable {
         // the box holds the bind result when the construction returns.
         let bound = WatchedValue<RoutedACPConnection?>(nil)
         let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
-            let routed = agent.bind(connection: connection)
+            let routed = agent.bind(connection: connection, trust: trust)
             bound.update { $0 = routed }
             return routed
         }
