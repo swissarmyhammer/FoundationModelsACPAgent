@@ -181,7 +181,22 @@ extension RoutedACPAgent {
     public func setSessionConfigOption(
         _ params: SetSessionConfigOptionRequest
     ) async throws -> SetSessionConfigOptionResponse {
-        try requireInitialized(before: ACPMethod.sessionSetConfigOption)
+        try await setSessionConfigOption(params, from: .direct)
+    }
+
+    /// Applies one config-option set for one connection: the work of
+    /// ``setSessionConfigOption(_:)``.
+    ///
+    /// - Parameters:
+    ///   - params: The request: the session, the option id, and the tagged
+    ///     value.
+    ///   - caller: The connection of the request.
+    /// - Returns: The complete option state after the set.
+    /// - Throws: The errors that ``setSessionConfigOption(_:)`` names.
+    func setSessionConfigOption(
+        _ params: SetSessionConfigOptionRequest, from caller: ConnectionId
+    ) async throws -> SetSessionConfigOptionResponse {
+        try requireInitialized(before: ACPMethod.sessionSetConfigOption, from: caller)
         guard let entry = sessions[params.sessionId] else {
             throw RequestError.unknownSession(id: params.sessionId)
         }
@@ -287,8 +302,7 @@ extension RoutedACPAgent {
             profile: residentProfile, selectedSlot: entry.selectedSlot)
         guard truth != entry.announcedConfigOptions else { return }
         recordAnnouncedConfigOptions(truth, for: sessionId)
-        guard let connection = boundConnection else { return }
-        await connection.post(
+        await connections.path(forSession: sessionId)?.connection.post(
             .configOptionUpdate(ConfigOptionUpdate(configOptions: truth)), in: sessionId)
     }
 }

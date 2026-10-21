@@ -1,8 +1,19 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8380'
+comments:
+- actor: claude-code
+  id: 01m5g2j7hv60pshamcccwy07sj
+  text: |-
+    Research (picked up). Baseline `swift test`: 1174 tests in 127 suites, 1 known issue.
+    - FoundationModelsACP (270f9e3, = origin/main) has NO HTTP transport (ACP-1) and NO `_` extension-method dispatch (ACP-3). So no transport gives an `Acp-Connection-Id` today: every connection (stdio, InMemoryTransport) gets an id from the agent at bind.
+    - The wire `Agent` protocol carries no connection context, and `AgentSideConnection` builds one `any Agent` per connection with its factory. Plan (listen and fork): `bind(connection:)` mints a `ConnectionId`, adds a row to a `ConnectionTable` (Mutex, because the factory closure is synchronous) and returns a `RoutedACPConnection: Agent` that forwards each call to the one `RoutedACPAgent` with its id. The row holds the client capabilities of its `initialize`, the trust (`GraphQLViewer.Trust`, `userDevice` until ^ACPA-5b) and a weak ref to its `AgentSideConnection` (the outbound path).
+    - `RoutedACPAgent` keeps its own `Agent` conformance as the `direct` caller (tests and in-process calls with no wire): a row with no outbound path.
+    - Outbound: each session's `session/update`, elicitation and command list go to the connection of the session (the one that made or resumed it; ^ACPA-5c makes this the owner with the takeover rules). Today every one of them reads the one agent-wide `boundConnection`.
+    - Connection close (until ^ACPA-5d): the teardown closes only the sessions of that connection, and the settings watch stops when no wire connection is left.
+  timestamp: 2026-10-21T20:31:09.883182+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-5a: one agent with a connection table; a bind adds a RoutedACPConnection and does not replace the last one'
 ---
 Spec: TestudoApp features/packages/foundationmodels-acpagent.md#acpa-5-one-agent-with-a-connection-table, D120 (TestudoApp 9311882). Status agreed.

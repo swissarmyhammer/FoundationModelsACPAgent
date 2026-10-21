@@ -22,7 +22,20 @@ extension RoutedACPAgent {
     ///   invalid-params error for a relative `cwd` or for a cursor this
     ///   agent did not mint, or whatever the store read throws.
     public func listSessions(_ params: ListSessionsRequest) async throws -> ListSessionsResponse {
-        try requireInitialized(before: ACPMethod.sessionList)
+        try listSessions(params, from: .direct)
+    }
+
+    /// Lists the persisted sessions for one connection: the work of
+    /// ``listSessions(_:)``.
+    ///
+    /// - Parameters:
+    ///   - params: The request: the optional `cwd` filter and the optional
+    ///     opaque `cursor` from a previous response.
+    ///   - caller: The connection of the request.
+    /// - Returns: One page of `SessionInfo` records.
+    /// - Throws: The errors that ``listSessions(_:)`` names.
+    func listSessions(_ params: ListSessionsRequest, from caller: ConnectionId) throws -> ListSessionsResponse {
+        try requireInitialized(before: ACPMethod.sessionList, from: caller)
         let records: [SessionIndexRecord]
         if let cwd = params.cwd {
             records = try listableRecords(

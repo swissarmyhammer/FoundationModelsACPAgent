@@ -528,6 +528,25 @@ struct SessionActivation {
     let configOptions: [SessionConfigOption]
 }
 
+/// Where one mounted session works, and the connection of the request that
+/// mounts it: the `session/new` or `session/resume` inputs of the mount that
+/// the composition does not hold.
+struct SessionPlacement {
+    /// The validated session working directory.
+    let workingDirectory: URL
+
+    /// The session's additional confinement roots, in wire order.
+    let additionalRoots: [URL]
+
+    /// The connection of the request. The session sends its updates
+    /// through it.
+    let caller: ConnectionId
+
+    /// The user presence of the session (``RoutedACPAgent/userPresence(of:)``
+    /// of `caller`).
+    let userPresence: UserPresence
+}
+
 extension RoutedACPAgent {
     /// Creates one root Router session for `params.cwd`.
     ///
@@ -554,25 +573,43 @@ extension RoutedACPAgent {
     ///   additional directory that is not an existing directory, or
     ///   whatever the composition pipeline throws.
     public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
+        try await newSession(params, from: .direct)
+    }
+
+    /// Creates one root Router session for one connection: the work of
+    /// ``newSession(_:)``. The updates of the new session go out on
+    /// `caller`.
+    ///
+    /// - Parameters:
+    ///   - params: The `session/new` request.
+    ///   - caller: The connection of the request.
+    /// - Returns: The response carrying the new sessionId, the
+    ///   `availableCommands` list and the `configOptions` list.
+    /// - Throws: The errors that ``newSession(_:)`` names.
+    func newSession(_ params: NewSessionRequest, from caller: ConnectionId) async throws -> NewSessionResponse {
         try await RequestTracing.withEnteredRequestSpan(
             ACPAgentTelemetry.SpanName.sessionNew, method: ACPMethod.sessionNew, sessionId: nil,
             meta: params.meta, logger: ACPAgentTelemetry.logger(.session)
         ) { span in
-            let response = try await createSession(params)
+            let response = try await createSession(params, from: caller)
             span.attributes[ACPAgentTelemetry.AttributeKey.sessionId] = response.sessionId.rawValue
             return response
         }
     }
 
     /// Creates the root Router session of one `session/new`: the work of
-    /// ``newSession(_:)``.
+    /// ``newSession(_:from:)`` in its span.
     ///
-    /// - Parameter params: The `session/new` request.
+    /// - Parameters:
+    ///   - params: The `session/new` request.
+    ///   - caller: The connection of the request.
     /// - Returns: The response carrying the new sessionId, the
     ///   `availableCommands` list and the `configOptions` list.
     /// - Throws: The errors that ``newSession(_:)`` names.
-    private func createSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
-        try requireInitialized(before: ACPMethod.sessionNew)
+    private func createSession(
+        _ params: NewSessionRequest, from caller: ConnectionId
+    ) async throws -> NewSessionResponse {
+        try requireInitialized(before: ACPMethod.sessionNew, from: caller)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
             path: params.cwd.rawValue, field: .cwd)
         let additionalRoots = try SessionSetup.additionalRoots(
@@ -582,10 +619,13 @@ extension RoutedACPAgent {
         try SessionSetup.requireExistingDirectories(
             workingDirectory: workingDirectory, additionalRoots: additionalRoots)
 
+        let userPresence = userPresence(of: caller)
         let composition = try await composeSession(
+            from: loadSessionContext(workingDirectory: workingDirectory),
             workingDirectory: workingDirectory,
             additionalRoots: additionalRoots,
-            clientMCPServers: params.mcpServers ?? [])
+            clientMCPServers: params.mcpServers ?? [],
+            userPresence: userPresence)
 
         // The session comes from the profile's standard slot, never from
         // the router. `grammar` stays absent — a plain
@@ -614,8 +654,9 @@ extension RoutedACPAgent {
         let activation = try await activateSession(
             session,
             composition: composition,
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
+            placement: SessionPlacement(
+                workingDirectory: workingDirectory, additionalRoots: additionalRoots, caller: caller,
+                userPresence: userPresence),
             indexRecorded: false,
             history: SessionMergeEngine())
 
@@ -633,12 +674,14 @@ extension RoutedACPAgent {
     /// history, the command-set publication, the terminal projection, and
     /// the status report of the MCP servers.
     ///
+    /// The session sends its updates through the connection of the request
+    /// from now on (``ConnectionTable/setConnection(_:of:)``).
+    ///
     /// - Parameters:
     ///   - session: The root Router session to mount.
     ///   - composition: What the composition pipeline built for it.
-    ///   - workingDirectory: The validated session working directory.
-    ///   - additionalRoots: The session's additional confinement roots,
-    ///     in wire order.
+    ///   - placement: Where the session works, and the connection of the
+    ///     request.
     ///   - indexRecorded: Whether the `sessions.jsonl` record already
     ///     exists, so the first prompt knows whether to append it.
     ///   - history: The retained history of the session: empty for a new
@@ -649,11 +692,11 @@ extension RoutedACPAgent {
     func activateSession(
         _ session: any RoutedSession,
         composition: SessionComposition,
-        workingDirectory: URL,
-        additionalRoots: [URL],
+        placement: SessionPlacement,
         indexRecorded: Bool,
         history: SessionMergeEngine
     ) async throws -> SessionActivation {
+        let workingDirectory = placement.workingDirectory
         // Register the cwd in the user-layer project registry, so a
         // cross-project browser finds this project. A replay-only session
         // has no cwd on disk, so it registers nothing.
@@ -663,6 +706,7 @@ extension RoutedACPAgent {
         }
 
         let sessionId = SessionId(rawValue: session.id.description)
+        connections.setConnection(placement.caller, of: sessionId)
 
         // Assemble the command registry now the session exists: the six
         // builtins capture a context bound to the live
@@ -701,23 +745,18 @@ extension RoutedACPAgent {
 
         // The one reader of the events of the session starts before anything
         // can mail the session, so it keeps each event (elicitation-plan
-        // task 1). A missing negotiation reads as "supports nothing", the
-        // same rule `initialize` applies to an unparsable capabilities
-        // object.
+        // task 1). The relay reads the outbound path of the session at each
+        // question, so a question goes to the connection of the session as
+        // it is then.
         let shellOutput = composition.surface.shellOutput
-        let stateLedger = SessionStateLedger(send: boundHistorySink(for: sessionId))
+        let stateLedger = SessionStateLedger(send: historySink(for: sessionId))
+        let table = connections
         let projector = SessionProjector(
             sessionId: sessionId,
             modelName: ConfigOptions.handle(for: ConfigOptions.defaultSlot, of: residentProfile).chosen.stringValue,
-            send: boundHistorySink(for: sessionId),
+            send: historySink(for: sessionId),
             shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
-            relay: boundConnection.map { connection in
-                ElicitationRelay(
-                    sessionId: sessionId,
-                    capabilities: negotiatedClientCapabilities
-                        ?? NegotiatedClientCapabilities(reading: ClientCapabilities()),
-                    connection: connection)
-            },
+            relay: ElicitationRelay(sessionId: sessionId) { table.path(forSession: sessionId) },
             runCallJoins: composition.surface.runCallJoins,
             stateLedger: stateLedger)
         await projector.attach(session)
@@ -727,13 +766,13 @@ extension RoutedACPAgent {
             configuration: composition.configuration,
             instructions: composition.instructions,
             workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
+            additionalRoots: placement.additionalRoots,
             transcriptDirectory: session.recordingDirectory,
             surface: composition.surface,
             commands: commands,
             selectedSlot: ConfigOptions.defaultSlot,
             announcedConfigOptions: configOptions,
-            userPresence: userPresence,
+            userPresence: placement.userPresence,
             stateLedger: stateLedger,
             projector: projector,
             isReplayOnly: composition.isReplayOnly,
@@ -757,24 +796,22 @@ extension RoutedACPAgent {
 
     /// Starts the session's terminal projection: the
     /// one consumer loop over the host-owned shell output stream,
-    /// posting each terminal update through the bound connection and
-    /// keeping it in the retained history (``historySink(for:connection:)``).
+    /// posting each terminal update through the connection of the session
+    /// and keeping it in the retained history (``historySink(for:)``).
     /// The join table of the surface (``SessionSurface/runCallJoins``) gives
     /// the wire id of each `Terminal` announce.
-    /// A session with no shell mount, or an agent with no bound
-    /// connection, starts nothing. The loop ends when
+    /// A session with no shell mount starts nothing. The loop ends when
     /// ``markSessionClosed(_:)`` finishes the stream.
     ///
     /// - Parameters:
     ///   - surface: The session's mounted surface.
     ///   - sessionId: The session the updates belong to.
     private func startTerminalProjection(over surface: SessionSurface, sessionId: SessionId) {
-        guard let shellOutput = surface.shellOutput, let connection = boundConnection else {
+        guard let shellOutput = surface.shellOutput else {
             return
         }
         TerminalStream.start(
-            over: shellOutput, runCallJoins: surface.runCallJoins,
-            send: historySink(for: sessionId, connection: connection))
+            over: shellOutput, runCallJoins: surface.runCallJoins, send: historySink(for: sessionId))
     }
 
     /// Sends the status report of the MCP servers of a session after the
@@ -786,17 +823,17 @@ extension RoutedACPAgent {
     ///
     /// The updates go through `post(_:in:)` directly, never through the
     /// history sink: the status is live, and the retained history and a
-    /// replay never hold it. A session with no MCP server, or an agent with
-    /// no bound connection, sends nothing. The deferred work keeps the
-    /// connection weakly, as the agent keeps the connection (task
-    /// `^173qn8n`).
+    /// replay never hold it. A session with no MCP server, or a session
+    /// whose connection has no outbound path, sends nothing. The deferred
+    /// work keeps the connection weakly, as the agent keeps the connection
+    /// (task `^173qn8n`).
     ///
     /// - Parameters:
     ///   - outcomes: The outcome of each MCP server of the session, in mount
     ///     order.
     ///   - sessionId: The session the updates belong to.
     private func reportMCPServerStatus(_ outcomes: [MCPComposition.ServerOutcome], of sessionId: SessionId) {
-        guard !outcomes.isEmpty, let connection = boundConnection else {
+        guard !outcomes.isEmpty, let connection = connections.path(forSession: sessionId)?.connection else {
             return
         }
         let updates = outcomes.map(MCPServerStatusReport.update(for:))
@@ -841,31 +878,6 @@ extension RoutedACPAgent {
         try await LoadedSessionContext.load(workingDirectory: workingDirectory, from: settingsStore)
     }
 
-    /// Runs the per-session composition pipeline: resolve
-    /// the cwd config layer, assemble the instructions, then connect the
-    /// MCP servers and build the tool roster through the catalog.
-    ///
-    /// - Parameters:
-    ///   - workingDirectory: The validated session working directory.
-    ///   - additionalRoots: The session's additional confinement roots,
-    ///     in wire order.
-    ///   - clientMCPServers: The client's session-scoped MCP servers, in
-    ///     wire order.
-    /// - Returns: The composed inputs of `makeSession`.
-    /// - Throws: Whatever the config load, the instructions assembly, or
-    ///   the tool composition throws.
-    private func composeSession(
-        workingDirectory: URL,
-        additionalRoots: [URL],
-        clientMCPServers: [FoundationModelsACP.MCPServer]
-    ) async throws -> SessionComposition {
-        try await composeSession(
-            from: loadSessionContext(workingDirectory: workingDirectory),
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
-            clientMCPServers: clientMCPServers)
-    }
-
     /// Makes the catalog context of one session composition: the session
     /// root set and MCP servers, the per-cwd configuration, and what the
     /// agent shares with each session, among them the snapshot store and the
@@ -879,12 +891,15 @@ extension RoutedACPAgent {
     ///     wire order.
     ///   - clientMCPServers: The client's session-scoped MCP servers, in wire
     ///     order.
+    ///   - userPresence: The user presence of the session
+    ///     (``userPresence(of:)`` of the connection that opens it).
     /// - Returns: The catalog context.
     func catalogContext(
         from context: LoadedSessionContext,
         workingDirectory: URL,
         additionalRoots: [URL],
-        clientMCPServers: [FoundationModelsACP.MCPServer]
+        clientMCPServers: [FoundationModelsACP.MCPServer],
+        userPresence: UserPresence
     ) -> CatalogContext {
         CatalogContext(
             workingDirectory: workingDirectory,
@@ -921,6 +936,8 @@ extension RoutedACPAgent {
     ///     in wire order.
     ///   - clientMCPServers: The client's session-scoped MCP servers, in
     ///     wire order.
+    ///   - userPresence: The user presence of the session
+    ///     (``userPresence(of:)`` of the connection that opens it).
     /// - Returns: The composed inputs of `makeSession`.
     /// - Throws: Whatever the instructions assembly or the tool
     ///   composition throws.
@@ -928,11 +945,12 @@ extension RoutedACPAgent {
         from context: LoadedSessionContext,
         workingDirectory: URL,
         additionalRoots: [URL],
-        clientMCPServers: [FoundationModelsACP.MCPServer]
+        clientMCPServers: [FoundationModelsACP.MCPServer],
+        userPresence: UserPresence
     ) async throws -> SessionComposition {
         let catalogContext = catalogContext(
             from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-            clientMCPServers: clientMCPServers)
+            clientMCPServers: clientMCPServers, userPresence: userPresence)
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs
@@ -978,55 +996,56 @@ extension RoutedACPAgent {
     /// list (ACP schema-v2.0.0-alpha.7), and the registry starts to publish
     /// after that response. A publication sends an
     /// `available_commands_update` only when its list differs from the
-    /// list that the client has (``publishCommandList(_:of:through:)``),
-    /// so no update repeats the list of the response.
+    /// list that the client has (``publishCommandList(_:of:)``),
+    /// so no update repeats the list of the response. Each update goes to
+    /// the connection of the session as it is when the update goes out.
     ///
-    /// The closures keep the agent, the connection and the registry weakly,
-    /// as the agent keeps the connection (task `^173qn8n`):
+    /// The closures keep the agent and the registry weakly, and no closure
+    /// keeps a connection, as the agent keeps the connection (task
+    /// `^173qn8n`):
     ///
     /// - The registry keeps the sink for the life of the session entry. A
-    ///   strong reference to the connection would keep the connection, and
-    ///   through it the agent and its models, after the connection closed.
+    ///   strong reference to the agent would keep the agent and its models
+    ///   for as long as the publisher lives.
     /// - Upstream, the connection releases the deferred work after it ran.
     ///   The skills watcher that `session/new` starts lives on, so a strong
     ///   reference to the registry would still keep the registry, its
     ///   builtins, the session they read and the models of the profile for
     ///   as long as the publisher lives.
     ///
-    /// The session entry keeps the registry for as long as it publishes.
+    /// The session entry keeps the registry for as long as it publishes. A
+    /// session whose connection has no outbound path (the
+    /// ``ConnectionId/direct`` caller) has no response to follow, so it
+    /// starts no publisher.
     ///
     /// - Parameters:
     ///   - commands: The session's loaded registry.
     ///   - sessionId: The session the updates belong to.
     func publishAvailableCommands(from commands: CommandRegistry, sessionId: SessionId) {
-        guard let connection = boundConnection else { return }
-        connection.afterRespondingToCurrentRequest { [weak self, weak connection, weak commands] in
-            await commands?.beginPublishing { [weak self, weak connection] commandSet in
-                guard let connection else { return }
-                await self?.publishCommandList(
-                    CommandRegistry.availableCommands(for: commandSet), of: sessionId, through: connection)
+        guard let connection = connections.path(forSession: sessionId)?.connection else { return }
+        connection.afterRespondingToCurrentRequest { [weak self, weak commands] in
+            await commands?.beginPublishing { [weak self] commandSet in
+                await self?.publishCommandList(CommandRegistry.availableCommands(for: commandSet), of: sessionId)
             }
         }
     }
 
-    /// Sends one `available_commands_update` with `list`, and keeps it in
-    /// the retained history, when `list` differs from the list that the
-    /// client has. The history holds that list: the response seeded it,
-    /// and each update after the response changed it.
+    /// Sends one `available_commands_update` with `list` through the
+    /// connection of the session, and keeps it in the retained history,
+    /// when `list` differs from the list that the client has. The history
+    /// holds that list: the response seeded it, and each update after the
+    /// response changed it.
     ///
     /// - Parameters:
     ///   - list: The new command list.
     ///   - sessionId: The session the list belongs to.
-    ///   - connection: The bound connection that sends the update.
-    private func publishCommandList(
-        _ list: [AvailableCommand], of sessionId: SessionId, through connection: AgentSideConnection
-    ) async {
+    private func publishCommandList(_ list: [AvailableCommand], of sessionId: SessionId) async {
         guard let entry = sessions[sessionId], entry.history.availableCommands != list else {
             return
         }
         let update = SessionUpdate.availableCommandsUpdate(AvailableCommandsUpdate(availableCommands: list))
         recordInHistory(update, of: sessionId)
-        await connection.post(update, in: sessionId)
+        await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
     }
 }
 

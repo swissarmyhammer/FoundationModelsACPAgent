@@ -177,7 +177,7 @@ import Testing
 
     /// Two clients subscribe, and each one gets the event of a mutation. The
     /// first client leaves, and its connection stops the watch of the store
-    /// (`stopWatching()`, as `closeOpenSessions(after:)` does). The
+    /// (`stopWatching()`, as `tearDownConnection(_:after:)` does). The
     /// subscription of the second client does not end: the store reads its
     /// levels again and sends one event with no key path for each level, with
     /// no id because no key differs from before the stop. Then it sends the

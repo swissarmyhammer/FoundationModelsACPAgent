@@ -37,9 +37,10 @@ import Testing
     /// the agent: each open `changes()` stream of the store ends.
     @Test(.timeLimit(.minutes(1))) func aConnectionCloseStopsTheSettingsWatch() async throws {
         let agent = try await AgentClientHarness.makeInitializedAgent(label: "SessionSettingsStoreTests-close")
+        let harness = await AgentClientHarness.makeRecording(agent: agent)
         var changes = await agent.settingsStore.changes().makeAsyncIterator()
 
-        await agent.closeOpenSessions(after: .closedLocally)
+        await harness.close()
 
         #expect(await changes.next() == nil)
     }
@@ -57,7 +58,8 @@ import Testing
         for directory in directories {
             let loaded = try await LoadedSessionContext.load(workingDirectory: directory, from: agent.settingsStore)
             let context = await agent.catalogContext(
-                from: loaded, workingDirectory: directory, additionalRoots: [], clientMCPServers: [])
+                from: loaded, workingDirectory: directory, additionalRoots: [], clientMCPServers: [],
+                userPresence: .headless)
             let tool = try #require(ToolCatalog.settingsTool(in: context))
             endpoints.append(try #require(tool.graphQLEndpoints.first as? SettingsGraph))
         }

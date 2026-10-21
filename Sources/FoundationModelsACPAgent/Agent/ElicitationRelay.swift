@@ -51,6 +51,11 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// `SessionEvent.elicitationEnded` (``end(_:)``), so the client leaves its
 /// waiting state.
 ///
+/// The outbound path: each question goes to the connection of the session
+/// as it is when the question comes (ACPA-5), with the capabilities of that
+/// connection. A session with no connection with an outbound path gets
+/// `cancel` for its question, as when the connection is gone.
+///
 /// The capability gate: the client said what it answers at
 /// `initialize`. An absent capability, or an absent mode object, means
 /// unsupported. A request in an unsupported mode gets `decline` at Router,
@@ -63,22 +68,32 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// `elicitationId` stays unique among the outstanding URL elicitations on
 /// the connection; a duplicate gets `decline`. The `elicitation/complete`
 /// notification goes only through the one connection that received the
-/// create — this actor holds exactly that connection.
+/// create — this actor keeps exactly that connection for each URL flow.
 actor ElicitationRelay {
     /// The id of the session this relay serves, for the wire scope and the
     /// log lines.
     private let sessionId: SessionId
 
-    /// The client's negotiated capabilities, read at `initialize`.
-    private let capabilities: NegotiatedClientCapabilities
+    /// Gives the outbound path of the session as it is now: the connection
+    /// that a create goes through, and its client capabilities, or `nil`
+    /// when the session has none.
+    private let outboundPath: @Sendable () -> ClientPath?
 
-    /// The one connection the create, and a later completion, go through.
+    /// A weak reference to the connection that received the create of a URL
+    /// flow.
     ///
     /// The relay lives as long as the session, and the agent keeps the
     /// session, so the relay keeps the connection weakly, as the history sink
-    /// does (task `^173qn8n`): the connection keeps the agent. When the
-    /// connection is gone, a round trip gets `cancel`.
-    private weak var connection: AgentSideConnection?
+    /// does (task `^173qn8n`): the connection keeps the agent.
+    private struct FlowConnection {
+        /// The connection, or `nil` after its release.
+        weak var connection: AgentSideConnection?
+    }
+
+    /// The connection that received the create of each accepted URL flow,
+    /// keyed by the elicitation id. Its `elicitation/complete` goes through
+    /// that connection only.
+    private var flowConnections: [String: FlowConnection] = [:]
 
     /// How the wait of one round trip ended.
     private enum ClientAnswer {
@@ -155,20 +170,15 @@ actor ElicitationRelay {
         respondHold = hold
     }
 
-    /// Creates a relay for one session over one bound connection.
+    /// Creates a relay for one session.
     ///
     /// - Parameters:
     ///   - sessionId: The session this relay serves.
-    ///   - capabilities: The client's capabilities from `initialize`.
-    ///   - connection: The connection the wire messages go through.
-    init(
-        sessionId: SessionId,
-        capabilities: NegotiatedClientCapabilities,
-        connection: AgentSideConnection
-    ) {
+    ///   - outboundPath: Gives the outbound path of the session as it is
+    ///     when a question comes, or `nil` when the session has none.
+    init(sessionId: SessionId, outboundPath: @escaping @Sendable () -> ClientPath?) {
         self.sessionId = sessionId
-        self.capabilities = capabilities
-        self.connection = connection
+        self.outboundPath = outboundPath
     }
 
     // MARK: - The round trip
@@ -237,7 +247,8 @@ actor ElicitationRelay {
         on session: any RoutedSession
     ) async -> ElicitationResponse {
         let elicitationId = request.elicitationId.ulidString
-        guard supports(request.mode) else {
+        let path = outboundPath()
+        if let path, !Self.supports(request.mode, by: path.capabilities) {
             await decline(
                 elicitationId: elicitationId, mode: request.mode, on: session,
                 reason: .unsupportedMode)
@@ -259,7 +270,7 @@ actor ElicitationRelay {
             return .decline
         }
         let outcome = await deliverRoundTrip(
-            wireRequest, elicitationId: elicitationId, mode: request.mode, on: session)
+            wireRequest, elicitationId: elicitationId, mode: request.mode, over: path?.connection, on: session)
         if !awaitingCompletion.contains(elicitationId) {
             endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
         }
@@ -341,6 +352,7 @@ actor ElicitationRelay {
         awaitingCompletion = []
         earlyCompletions = []
         outstandingURLElicitationIds = []
+        flowConnections = [:]
         let waiting = pendingAnswers
         pendingAnswers = [:]
         for (elicitationId, continuation) in waiting {
@@ -360,6 +372,8 @@ actor ElicitationRelay {
     ///   - wireRequest: The mapped `elicitation/create` request.
     ///   - elicitationId: The pending elicitation's id.
     ///   - mode: The mode of the request.
+    ///   - connection: The connection the create goes through, or `nil`
+    ///     when the session has no outbound path.
     ///   - session: The Router session the answer goes back to.
     /// - Returns: The answer that went to Router, or the response of the end
     ///   that Router sent.
@@ -367,10 +381,16 @@ actor ElicitationRelay {
         _ wireRequest: CreateElicitationRequest,
         elicitationId: String,
         mode: ElicitationMode,
+        over connection: AgentSideConnection?,
         on session: any RoutedSession
     ) async -> ElicitationResponse {
+        if mode == .url {
+            flowConnections[elicitationId] = FlowConnection(connection: connection)
+        }
         let answer: ElicitationResponse
-        switch await clientAnswer(to: wireRequest, elicitationId: elicitationId, mode: mode) {
+        switch await clientAnswer(
+            to: wireRequest, elicitationId: elicitationId, mode: mode, over: connection)
+        {
         case .answered(let response):
             answer = response
         case .ended(let end):
@@ -413,9 +433,13 @@ actor ElicitationRelay {
     ///   - wireRequest: The mapped `elicitation/create` request.
     ///   - elicitationId: The pending elicitation's id.
     ///   - mode: The mode of the request.
+    ///   - connection: The connection the create goes through, or `nil`
+    ///     when the session has no outbound path: then the relay delivers
+    ///     `cancel`.
     /// - Returns: The decoded answer, `cancel`, or the end from Router.
     private func clientAnswer(
-        to wireRequest: CreateElicitationRequest, elicitationId: String, mode: ElicitationMode
+        to wireRequest: CreateElicitationRequest, elicitationId: String, mode: ElicitationMode,
+        over connection: AgentSideConnection?
     ) async -> ClientAnswer {
         await withCheckedContinuation { continuation in
             if let end = earlyEnds.removeValue(forKey: elicitationId) {
@@ -436,7 +460,7 @@ actor ElicitationRelay {
             let cancellation = OutboundCancellation()
             cancellations[elicitationId] = cancellation
             answerTasks[elicitationId] = Task {
-                guard let connection = self.connection else {
+                guard let connection else {
                     ACPAgentTelemetry.logger(.elicitationRelay).warning(
                         "The connection to the client is gone. The relay delivers cancel.",
                         metadata: self.elicitationMetadata(elicitationId))
@@ -555,7 +579,7 @@ actor ElicitationRelay {
 
     /// Ends an awaiting URL-mode flow: the relay releases its id, and the
     /// `elicitation/complete` notification goes to the one client that
-    /// received the create — this relay holds exactly that connection.
+    /// received the create — this relay keeps that connection for the flow.
     ///
     /// - Parameter elicitationId: The accepted elicitation's id.
     private func finishURLFlow(elicitationId: String) async {
@@ -563,6 +587,7 @@ actor ElicitationRelay {
             return
         }
         outstandingURLElicitationIds.remove(elicitationId)
+        let connection = flowConnections.removeValue(forKey: elicitationId)?.connection
         do {
             guard let connection else {
                 throw CancellationError()
@@ -628,9 +653,12 @@ actor ElicitationRelay {
     /// Whether the client answers requests in `mode`. Absent means
     /// unsupported, and `url` never falls back to `form`.
     ///
-    /// - Parameter mode: The requested mode.
+    /// - Parameters:
+    ///   - mode: The requested mode.
+    ///   - capabilities: The capabilities of the connection the create goes
+    ///     through.
     /// - Returns: Whether the mode is supported.
-    private func supports(_ mode: ElicitationMode) -> Bool {
+    private static func supports(_ mode: ElicitationMode, by capabilities: NegotiatedClientCapabilities) -> Bool {
         switch mode {
         case .form:
             capabilities.supportsFormElicitation
@@ -714,6 +742,7 @@ actor ElicitationRelay {
             return
         }
         outstandingURLElicitationIds.remove(elicitationId)
+        flowConnections.removeValue(forKey: elicitationId)
     }
 
     // MARK: - The wire mapping

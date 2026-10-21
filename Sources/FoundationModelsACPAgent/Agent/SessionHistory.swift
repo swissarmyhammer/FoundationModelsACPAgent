@@ -174,56 +174,37 @@ extension RoutedACPAgent {
     }
 
     /// The sink of the updates of one session: it merges each update into
-    /// the retained history of the session, then sends it through
-    /// `connection`. Each `session/update` that the agent sends for a
-    /// session goes through one such sink, with two exceptions: the replay
-    /// of the history itself, and the `_mcp_server_status` report of the MCP
-    /// servers (``MCPServerStatusReport``). That report is a live status and
-    /// not part of the session history, so the retained history and a
-    /// replay never hold it.
+    /// the retained history of the session, then sends it through the
+    /// connection of the session as it is when the update goes out
+    /// (``ConnectionTable/path(forSession:)``). Each `session/update`
+    /// that the agent sends for a session goes through one such sink, with
+    /// two exceptions: the replay of the history itself, and the
+    /// `_mcp_server_status` report of the MCP servers
+    /// (``MCPServerStatusReport``). That report is a live status and not
+    /// part of the session history, so the retained history and a replay
+    /// never hold it.
     ///
-    /// The sink keeps the agent and the connection weakly, as the agent
-    /// keeps the connection (task `^173qn8n`): the prompt-state owner keeps
-    /// the sink in the session entry, and a long-lived task, such as the
-    /// terminal projection, keeps it for the life of the session.
+    /// An update that goes out while the session has no connection with an
+    /// outbound path still goes into the history, so a later
+    /// `session/resume` replays it, and goes to no client: no client is there
+    /// to see it.
     ///
-    /// - Parameters:
-    ///   - sessionId: The session the updates belong to.
-    ///   - connection: The bound connection that sends the updates.
-    /// - Returns: The sink.
-    nonisolated func historySink(
-        for sessionId: SessionId, connection: AgentSideConnection
-    ) -> SessionUpdateSink {
-        { [weak self, weak connection] update in
-            await self?.recordInHistory(update, of: sessionId)
-            await connection?.post(update, in: sessionId)
-        }
-    }
-
-    /// The history sink of a session over the connection that is bound when
-    /// each update goes out (``historySink(for:connection:)``).
-    ///
-    /// A part of the session that lives longer than one request keeps this
-    /// sink, such as the compaction report of `/compact`
-    /// (``CompactionReporter``). An update that goes out while no connection
-    /// is bound goes nowhere: no client is there to see it.
-    ///
-    /// The sink sends through the connection that it read, and not through
-    /// a ``historySink(for:connection:)`` closure that it makes for each
-    /// update. That closure keeps the connection weakly, and in a release
-    /// build its weak reference read `nil` when the sink called it at once.
-    /// Each `running`, chunk and `idle` of a session then went nowhere, with
-    /// no log line.
+    /// The sink keeps the agent weakly, and the table keeps each connection
+    /// weakly, as the agent keeps the connection (task `^173qn8n`): the
+    /// prompt-state owner keeps the sink in the session entry, and a
+    /// long-lived task, such as the terminal projection, keeps it for the
+    /// life of the session. The sink sends through the connection that it
+    /// read from the table for this update, strongly for the send.
     ///
     /// - Parameter sessionId: The session the updates belong to.
     /// - Returns: The sink.
-    nonisolated func boundHistorySink(for sessionId: SessionId) -> SessionUpdateSink {
+    nonisolated func historySink(for sessionId: SessionId) -> SessionUpdateSink {
         { [weak self] update in
-            guard let self, let connection = boundConnection else {
+            guard let self else {
                 return
             }
             await recordInHistory(update, of: sessionId)
-            await connection.post(update, in: sessionId)
+            await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
         }
     }
 

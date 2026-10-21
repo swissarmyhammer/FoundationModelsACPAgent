@@ -98,6 +98,11 @@ public struct AgentClientHarness: Sendable {
     /// The agent side of the wire.
     public let agentConnection: AgentSideConnection
 
+    /// The `Agent` that the bind of ``agentConnection`` gave: it names the
+    /// connection of this harness on each call to ``agent``. A test that
+    /// calls the agent as this connection, with no wire, calls it here.
+    public let routedConnection: RoutedACPConnection
+
     /// The recorder of the raw update sequence, or `nil` when the
     /// harness was wired without one (``make(wire:)``).
     public let collector: UpdateCollector?
@@ -235,6 +240,7 @@ public struct AgentClientHarness: Sendable {
                 client: parts.client,
                 connection: connection,
                 agentConnection: parts.agentConnection,
+                routedConnection: parts.routedConnection,
                 collector: nil,
                 elicitations: nil,
                 wireTap: nil,
@@ -300,6 +306,7 @@ public struct AgentClientHarness: Sendable {
                 client: parts.client,
                 connection: connection,
                 agentConnection: parts.agentConnection,
+                routedConnection: parts.routedConnection,
                 collector: collector,
                 elicitations: elicitations,
                 wireTap: wireTap,
@@ -348,20 +355,29 @@ public struct AgentClientHarness: Sendable {
     ///   - agent: The agent under test.
     ///   - agentEnd: The end the agent serves: the wire's own agent end,
     ///     or a ``WireTap`` around it.
-    /// - Returns: The agent with its connection, and the client.
+    /// - Returns: The agent with its connection and the `Agent` of that
+    ///   connection, and the client.
     private static func makeParts(
         agent: RoutedACPAgent, agentEnd: any ACPTransport
     ) async -> (
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
+        routedConnection: RoutedACPConnection,
         client: ConnectionModel
     ) {
+        // The factory runs inside the construction of the connection, so
+        // the box holds the bind result when the construction returns.
+        let bound = WatchedValue<RoutedACPConnection?>(nil)
         let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
-            agent.bind(connection: connection)
-            return agent
+            let routed = agent.bind(connection: connection)
+            bound.update { $0 = routed }
+            return routed
+        }
+        guard let routedConnection = bound.value else {
+            preconditionFailure("the factory of AgentSideConnection runs before its init returns")
         }
         let client = await ConnectionModel(
             coalescingCadence: coalescingCadence, clock: HoldingClock())
-        return (agent, agentConnection, client)
+        return (agent, agentConnection, routedConnection, client)
     }
 }

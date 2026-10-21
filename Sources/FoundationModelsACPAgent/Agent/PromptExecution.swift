@@ -692,15 +692,26 @@ extension RoutedACPAgent {
     ///   `closedSession`, `missingSessionWorkingDirectory` for a replay-only
     ///   session, or a command refusal.
     public func prompt(_ params: PromptRequest) async throws -> PromptResponse {
+        try await prompt(params, from: .direct)
+    }
+
+    /// Accepts one prompt for one connection: the work of ``prompt(_:)``.
+    ///
+    /// - Parameters:
+    ///   - params: The prompt request.
+    ///   - caller: The connection of the request.
+    /// - Returns: The response that names the user message.
+    /// - Throws: The errors that ``prompt(_:)`` names.
+    func prompt(_ params: PromptRequest, from caller: ConnectionId) async throws -> PromptResponse {
         let measurement = PromptMeasurement()
         let span = RequestTracing.startRequestSpan(
             ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
             sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.promptExecution))
         do {
-            let (response, owner) = try await InstrumentationContext.withValue(span.context) {
-                try await acceptPrompt(params)
+            let (response, owner, connection) = try await InstrumentationContext.withValue(span.context) {
+                try await acceptPrompt(params, from: caller)
             }
-            endTelemetryAfterPrompt(span: span, measurement: measurement, owner: owner)
+            endTelemetryAfterPrompt(span: span, measurement: measurement, owner: owner, connection: connection)
             return response
         } catch {
             RequestTracing.endRequestSpan(span, throwing: error)
@@ -719,14 +730,17 @@ extension RoutedACPAgent {
     /// so the work waits for the end of the prompt
     /// (``PromptStateOwner/waitForPromptEnd()``), and then it reads the stop
     /// reason from the prompt-state owner. An accepted prompt always has a
-    /// bound connection.
+    /// connection.
     ///
     /// - Parameters:
     ///   - span: The span of the prompt.
     ///   - measurement: The measurement of the prompt.
     ///   - owner: The prompt-state owner of the prompt.
-    private func endTelemetryAfterPrompt(span: any Span, measurement: PromptMeasurement, owner: PromptStateOwner) {
-        boundConnection?.afterRespondingToCurrentRequest {
+    ///   - connection: The connection the prompt registered its work with.
+    private func endTelemetryAfterPrompt(
+        span: any Span, measurement: PromptMeasurement, owner: PromptStateOwner, connection: AgentSideConnection
+    ) {
+        connection.afterRespondingToCurrentRequest {
             await owner.waitForPromptEnd()
             let stopReason = await owner.stopReason
             RequestTracing.endPromptSpan(span, stopReason: stopReason)
@@ -740,12 +754,21 @@ extension RoutedACPAgent {
     /// closed session gives an error before the insertion of the user
     /// message, which ACP permits (task ^he1rmw6, decision G3).
     ///
-    /// - Parameter params: The prompt request.
-    /// - Returns: The response that names the user message, and the
-    ///   prompt-state owner of the prompt.
+    /// The prompt registers its work with the connection of the session, or,
+    /// when the session has none with an outbound path, with the connection
+    /// of the request.
+    ///
+    /// - Parameters:
+    ///   - params: The prompt request.
+    ///   - caller: The connection of the request.
+    /// - Returns: The response that names the user message, the
+    ///   prompt-state owner of the prompt, and the connection the prompt
+    ///   registered its work with.
     /// - Throws: The errors that ``prompt(_:)`` names.
-    private func acceptPrompt(_ params: PromptRequest) async throws -> (PromptResponse, PromptStateOwner) {
-        try requireInitialized(before: ACPMethod.sessionPrompt)
+    private func acceptPrompt(
+        _ params: PromptRequest, from caller: ConnectionId
+    ) async throws -> (PromptResponse, PromptStateOwner, AgentSideConnection) {
+        try requireInitialized(before: ACPMethod.sessionPrompt, from: caller)
         guard let entry = sessions[params.sessionId] else {
             throw RequestError.unknownSession(id: params.sessionId)
         }
@@ -757,25 +780,29 @@ extension RoutedACPAgent {
         guard !entry.isReplayOnly else {
             throw RequestError.missingSessionWorkingDirectory(id: params.sessionId)
         }
-        guard let connection = boundConnection else {
+        guard
+            let connection = connections.path(forSession: params.sessionId)?.connection
+                ?? connections.path(of: caller)?.connection
+        else {
             throw RequestError.internalError(
-                detail: "the agent has no bound connection to notify through")
+                detail: "the agent has no connection to notify through")
         }
 
         // A leading /name goes through the registry before anything
         // touches the session. It never reaches the
         // model as a prompt.
         if let command = CommandDispatch.parseCommand(blocks: params.prompt) {
-            return try await dispatchCommand(
+            let (response, owner) = try await dispatchCommand(
                 command, params: params, entry: entry, connection: connection)
+            return (response, owner, connection)
         }
 
         let owner = beginPrompt(params: params)
         let response = scheduleModelPrompt(
             overridePrompt: nil,
             params: params, entry: entry, connection: connection, owner: owner,
-            send: historySink(for: params.sessionId, connection: connection))
-        return (response, owner)
+            send: historySink(for: params.sessionId))
+        return (response, owner, connection)
     }
 
     /// Registers one prompt in flight: installs a fresh prompt-state owner
@@ -789,7 +816,7 @@ extension RoutedACPAgent {
             // A `session/delete` can remove the entry while a `.rendered`
             // command renders. The prompt still gets an owner, over a
             // ledger of its own.
-            return PromptStateOwner(send: boundHistorySink(for: sessionId))
+            return PromptStateOwner(send: historySink(for: sessionId))
         }
         let owner = PromptStateOwner(ledger: ledger)
         sessions[sessionId]?.openPrompts.append(owner)

@@ -24,6 +24,13 @@ import Synchronization
 /// `auth/logout` keep the wire package's default: `-32601`, the method is not
 /// available on this agent. The agent never raises `-32000`.
 ///
+/// One agent serves each client connection (ACPA-5, D120), as a listener
+/// with a connection table (``connections``): ``bind(connection:)`` gives
+/// each connection its own ``RoutedACPConnection``, which names the
+/// connection on each call. The `Agent` methods of the agent itself serve
+/// the ``ConnectionId/direct`` caller: a test or an in-process host with no
+/// wire.
+///
 /// `session/new` lives in `Agent/SessionSetup.swift`: the
 /// per-cwd composition pipeline and the actor-held session table. Each
 /// remaining session handler lives beside it in its own `Agent/` file, and
@@ -44,12 +51,24 @@ public actor RoutedACPAgent: Agent {
     /// models alive between sessions.
     public nonisolated let residentProfile: LanguageModelProfile
 
-    /// The client's capabilities as read at the latest `initialize`, or
-    /// `nil` before the first one.
+    /// The connection table (ACPA-5, D120): one row for each bound
+    /// connection and one for ``ConnectionId/direct``, with the client
+    /// capabilities of the `initialize` of each, and the connection of each
+    /// session.
     ///
-    /// The order rule reads this: a `session/*` request that finds it `nil`
-    /// came before `initialize`, and is refused.
-    public internal(set) var negotiatedClientCapabilities: NegotiatedClientCapabilities?
+    /// The order rule reads it: a `session/*` request of a connection whose
+    /// row has no capabilities came before the `initialize` of that
+    /// connection, and is refused.
+    nonisolated let connections = ConnectionTable()
+
+    /// The client capabilities of the `initialize` of one connection.
+    ///
+    /// - Parameter id: The id of the connection.
+    /// - Returns: The capabilities, or `nil` before the first `initialize` of
+    ///   the connection.
+    public nonisolated func clientCapabilities(of id: ConnectionId) -> NegotiatedClientCapabilities? {
+        connections.clientCapabilities(of: id)
+    }
 
     /// The settings folders of the agent (ACPA-16, D98): ``name``, the root
     /// settings folder of the host, and ``environment``. Each stack of each
@@ -206,81 +225,68 @@ public actor RoutedACPAgent: Agent {
         mailOnlyAnswerLimit = limit
     }
 
-    /// A weak reference to the bound wire connection.
+    /// Binds one more wire connection to this agent (ACPA-5, D120 a), and
+    /// gives back the `Agent` that serves it.
     ///
-    /// The connection keeps this agent strongly: its factory built the
-    /// agent, and it serves each inbound call to it. A strong reference
-    /// back would make a cycle that a closed connection never breaks. The
-    /// agent would then live on, and keep the hold of each model of
-    /// ``residentProfile`` in the model pool of the process (task
-    /// `^173qn8n`). The caller of `AgentSideConnection.init` keeps the
-    /// connection for as long as it serves.
-    private struct ConnectionReference {
-        /// The bound connection, or `nil` before the bind and after the
-        /// release of the connection.
-        weak var connection: AgentSideConnection?
-    }
-
-    /// The bound wire connection, or `nil` before ``bind(connection:)``.
+    /// The bind adds a row to ``connections`` with a new id: no transport
+    /// gives a connection id yet, so the agent gives one. It does not replace
+    /// an earlier connection: each bound connection is served at the same
+    /// time, and each session sends its updates through its own connection.
+    /// Call it from the `AgentSideConnection` factory closure, and give back
+    /// the result:
     ///
-    /// A `Mutex` holds it outside actor isolation, because the
-    /// connection factory closure is synchronous and binds during
-    /// `AgentSideConnection` construction.
-    private nonisolated let connectionHolder = Mutex(ConnectionReference())
-
-    /// Binds the wire connection this agent notifies through.
+    /// ```swift
+    /// let connection = await AgentSideConnection(stream: transport) { connection in
+    ///     agent.bind(connection: connection)
+    /// }
+    /// ```
     ///
-    /// Each prompt sends every `session/update` through this
-    /// connection, and registers its post-response work with the
-    /// connection's `afterRespondingToCurrentRequest(_:)`, so the
-    /// response goes out before the notifications of the prompt.
-    /// Call it from the `AgentSideConnection` factory closure.
-    ///
-    /// The agent keeps the connection weakly, so the caller that made the
+    /// The row keeps the connection weakly, so the caller that made the
     /// connection keeps it for as long as it serves.
     ///
-    /// The bind also starts the teardown task. It waits for
-    /// `AgentSideConnection.closed`, then it closes each open session as
-    /// `session/close` does (``closeOpenSessions(after:)``), and then it
-    /// ends. Thus a client that goes away with no `session/close` (the end
-    /// of the input, a failed input stream, or a local close) leaves no
-    /// session open. The task holds this agent strongly until its end: a
-    /// weak hold can find the agent already gone, and then no session
-    /// closes. The hold adds no lifetime, because the read loop of the
-    /// connection already keeps this agent until the loop ends, and `closed`
-    /// fires at the end of that loop. After the task ends, the agent goes
-    /// when its caller lets it go, and gives back its models.
+    /// The bind also starts the teardown task of the connection. It waits
+    /// for `AgentSideConnection.closed`, then it removes the row and closes
+    /// each open session of the connection as `session/close` does
+    /// (``tearDownConnection(_:after:)``), and then it ends. Thus a client
+    /// that goes away with no `session/close` (the end of the input, a failed
+    /// input stream, or a local close) leaves no session of its own open. The
+    /// task holds this agent strongly until its end: a weak hold can find the
+    /// agent already gone, and then no session closes. The hold adds no
+    /// lifetime, because the read loop of the connection already keeps this
+    /// agent until the loop ends, and `closed` fires at the end of that loop.
+    /// After the task ends, the agent goes when its callers let it go, and
+    /// gives back its models.
     ///
-    /// - Parameter connection: The connection around this agent.
-    public nonisolated func bind(connection: AgentSideConnection) {
-        connectionHolder.withLock { $0.connection = connection }
+    /// - Parameter connection: The new connection.
+    /// - Returns: The `Agent` of the connection, which names the connection
+    ///   on each call to this agent.
+    public nonisolated func bind(connection: AgentSideConnection) -> RoutedACPConnection {
+        let id = connections.add(connection, trust: .userDevice)
         // Never wait for `closed` in an inbound handler: the value waits
         // for each handler to end. This task is not a handler.
         let teardown = Task {
-            await closeOpenSessions(after: await connection.closed)
+            await tearDownConnection(id, after: await connection.closed)
         }
-        connectionTeardown.withLock { $0 = teardown }
+        connectionTeardowns.withLock { $0.append(teardown) }
+        return RoutedACPConnection(id: id, agent: self)
     }
 
-    /// The teardown task of the latest bound connection, or `nil` before
-    /// ``bind(connection:)``. See ``bind(connection:)``.
-    private nonisolated let connectionTeardown = Mutex<Task<Void, Never>?>(nil)
+    /// The teardown task of each connection that ``bind(connection:)``
+    /// bound, in the order of the binds. See ``bind(connection:)``.
+    private nonisolated let connectionTeardowns = Mutex<[Task<Void, Never>]>([])
 
-    /// Waits until the agent closed its open sessions after the close of
-    /// the latest bound connection. Returns at once before
-    /// ``bind(connection:)``.
+    /// Waits until the teardown of each bound connection ended: each one
+    /// closed, and the agent closed its open sessions. Returns at once
+    /// before the first ``bind(connection:)``.
     ///
-    /// A host that ends the process after the connection closed calls this
+    /// A host that ends the process after its connections closed calls this
     /// first, so the teardown can write the history of each session and
-    /// stop the MCP servers before the exit.
+    /// stop the MCP servers before the exit. A connection that is still open
+    /// keeps this wait.
     public nonisolated func waitForConnectionTeardown() async {
-        await connectionTeardown.withLock { $0 }?.value
-    }
-
-    /// The bound connection, or `nil` before ``bind(connection:)`` and
-    /// after the release of the connection.
-    nonisolated var boundConnection: AgentSideConnection? {
-        connectionHolder.withLock { $0.connection }
+        for teardown in connectionTeardowns.withLock({ $0 }) {
+            await teardown.value
+        }
     }
 
     /// Creates an agent for the dotfolder `name` and resolves the
@@ -371,11 +377,16 @@ public actor RoutedACPAgent: Agent {
     /// invalid-request error, so the agent never acts on capabilities
     /// that were not negotiated.
     ///
-    /// - Parameter method: The wire name of the session request.
+    /// The rule reads the connection of the request: each connection
+    /// initializes for itself.
+    ///
+    /// - Parameters:
+    ///   - method: The wire name of the session request.
+    ///   - caller: The connection of the request.
     /// - Throws: `RequestError.initializeRequired(before:)`, a JSON-RPC
     ///   invalid-request error, when no `initialize` came first.
-    func requireInitialized(before method: String) throws {
-        guard negotiatedClientCapabilities != nil else {
+    func requireInitialized(before method: String, from caller: ConnectionId) throws {
+        guard connections.clientCapabilities(of: caller) != nil else {
             ACPAgentTelemetry.logger(.session).warning(
                 "A session request came before initialize. The agent refuses it.",
                 metadata: [ACPAgentTelemetry.LogMetadataKey.acpMethod: "\(method)"])

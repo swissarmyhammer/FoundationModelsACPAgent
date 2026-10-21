@@ -34,23 +34,26 @@ public struct NegotiatedClientCapabilities: Hashable, Sendable {
 }
 
 extension RoutedACPAgent {
-    /// The user presence of a session that this agent opens now
+    /// The user presence of a session that one connection opens now
     /// (elicitation-plan tasks 6 and 7). Router gives it to the run plane of
     /// the session (`SessionConfiguration.userPresence`).
     ///
-    /// - `.headless` when no ACP client connection is bound: no relay is
-    ///   wired, so no user can answer, for example an in-process composition
-    ///   with no connection.
-    /// - `.headless` when the client answers no elicitation: no
-    ///   `elicitation` capability, or neither `form` nor `url`. No
-    ///   `initialize` yet reads as "supports nothing".
+    /// - `.headless` when the connection has no outbound path: no relay can
+    ///   reach a user, for example ``ConnectionId/direct``, an in-process
+    ///   call with no wire.
+    /// - `.headless` when the client of the connection answers no
+    ///   elicitation: no `elicitation` capability, or neither `form` nor
+    ///   `url`. No `initialize` yet reads as "supports nothing".
     /// - `.interactive` otherwise.
     ///
     /// In a headless session, Extras answers each question at once with
     /// cancel and the reason `RunPlane.noUserPresentReason`, so a question
     /// never waits for a user who is not there.
-    var userPresence: UserPresence {
-        guard boundConnection != nil, negotiatedClientCapabilities?.supportsElicitation == true else {
+    ///
+    /// - Parameter caller: The connection that opens the session.
+    /// - Returns: The user presence.
+    nonisolated func userPresence(of caller: ConnectionId) -> UserPresence {
+        guard let path = connections.path(of: caller), path.capabilities.supportsElicitation else {
             return .headless
         }
         return .interactive
@@ -124,30 +127,45 @@ extension RoutedACPAgent {
     /// The response carries ``implementation``, the negotiated version, and
     /// ``advertisedCapabilities``. It omits `authMethods`, because the agent
     /// has no authentication. The
-    /// client's capabilities are read into
-    /// ``negotiatedClientCapabilities``, which also marks the agent as
-    /// initialized for the order rule.
-    ///
-    /// The request runs in one server span (``RequestTracing``).
+    /// client's capabilities are read into the row of the
+    /// ``ConnectionId/direct`` caller (``clientCapabilities(of:)``), which
+    /// also marks that caller as initialized for the order rule.
     ///
     /// - Parameter params: The client's `initialize` request.
     /// - Returns: The agent's `initialize` response.
     public func initialize(_ params: InitializeRequest) async throws -> InitializeResponse {
+        await initialize(params, from: .direct)
+    }
+
+    /// Negotiates the protocol version and the capabilities for one
+    /// connection: the work of ``initialize(_:)`` and of
+    /// ``RoutedACPConnection/initialize(_:)``. The client's capabilities go
+    /// into the row of `caller` only: each connection has its own.
+    ///
+    /// The request runs in one server span (``RequestTracing``).
+    ///
+    /// - Parameters:
+    ///   - params: The client's `initialize` request.
+    ///   - caller: The connection of the request.
+    /// - Returns: The agent's `initialize` response.
+    func initialize(_ params: InitializeRequest, from caller: ConnectionId) async -> InitializeResponse {
         await RequestTracing.withRequestSpan(
             ACPAgentTelemetry.SpanName.initialize, method: ACPMethod.initialize, sessionId: nil, meta: params.meta
         ) { _ in
-            negotiate(params)
+            negotiate(params, from: caller)
         }
     }
 
     /// Negotiates the protocol version, reads the client's capabilities and
-    /// logs the client identity: the work of ``initialize(_:)``.
+    /// logs the client identity: the work of ``initialize(_:from:)``.
     ///
-    /// - Parameter params: The client's `initialize` request.
+    /// - Parameters:
+    ///   - params: The client's `initialize` request.
+    ///   - caller: The connection of the request.
     /// - Returns: The agent's `initialize` response.
-    private func negotiate(_ params: InitializeRequest) -> InitializeResponse {
+    private func negotiate(_ params: InitializeRequest, from caller: ConnectionId) -> InitializeResponse {
         let protocolVersion = Self.negotiateProtocolVersion(requested: params.protocolVersion)
-        negotiatedClientCapabilities = NegotiatedClientCapabilities(reading: params.capabilities)
+        connections.recordClientCapabilities(NegotiatedClientCapabilities(reading: params.capabilities), of: caller)
         ACPAgentTelemetry.logger(.initialization).info(
             "A client initialized the agent.",
             metadata: [

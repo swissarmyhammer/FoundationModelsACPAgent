@@ -35,13 +35,22 @@ struct HeadlessCLITests {
         let composed = try await CLICompositionFixture.scripted(
             script: [.endPass], label: "HeadlessCLITests-handshake")
         let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        _ = await composed.serve(over: agentEnd)
+        // The bind of `ComposedAgent.serve(over:logger:)`, with the
+        // connection of the bind kept, so the case reads its row.
+        let bound = WatchedValue<RoutedACPConnection?>(nil)
+        let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
+            let routed = composed.agent.bind(connection: connection)
+            bound.update { $0 = routed }
+            return routed
+        }
+        let routed = try #require(bound.value)
         let model = await ConnectionModel()
         let connection = await model.connect(over: clientEnd)
 
         try await RunPrompt.handshake(over: connection)
-        let capabilities = await composed.agent.negotiatedClientCapabilities
-        let presence = await composed.agent.userPresence
+        let capabilities = routed.clientCapabilities
+        let presence = composed.agent.userPresence(of: routed.id)
+        await agentConnection.close()
         await connection.close()
         clientEnd.close()
         agentEnd.close()

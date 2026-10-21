@@ -14,7 +14,7 @@ import Testing
 /// `snapshots` endpoint over the snapshot store of the agent.
 ///
 /// Each test composes a session through
-/// `RoutedACPAgent.composeSession(from:workingDirectory:additionalRoots:clientMCPServers:)`,
+/// `RoutedACPAgent.composeSession(from:workingDirectory:additionalRoots:clientMCPServers:userPresence:)`,
 /// the path of `session/new`, over temporary folders only.
 @Suite struct ComposedSessionEndpointsTests {
     /// The version of the schema of the `settings` and the `snapshots`
@@ -35,7 +35,8 @@ import Testing
         let workingDirectory = makeResolvedDirectory(label: "\(label)-repo")
         let loaded = try await LoadedSessionContext.load(workingDirectory: workingDirectory, from: agent.settingsStore)
         let composition = try await agent.composeSession(
-            from: loaded, workingDirectory: workingDirectory, additionalRoots: [], clientMCPServers: [])
+            from: loaded, workingDirectory: workingDirectory, additionalRoots: [], clientMCPServers: [],
+            userPresence: .headless)
         let endpoints = composition.surface.tools
             .compactMap { tool in tool as? any GraphQLEndpointTool }
             .flatMap(\.graphQLEndpoints)

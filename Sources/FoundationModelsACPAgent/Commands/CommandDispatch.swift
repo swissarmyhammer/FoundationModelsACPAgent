@@ -328,12 +328,12 @@ extension RoutedACPAgent {
             return .modelPrompt(
                 text: CommandDispatch.modelPrompt(expandedText: expandedText, attachments: command.attachments),
                 owner: beginPrompt(params: params),
-                send: historySink(for: params.sessionId, connection: connection))
+                send: historySink(for: params.sessionId))
         case .rendered(let render):
             // Record the prompt in flight before the async render, so a
             // cancel or a close during the render reaches it.
             let owner = beginPrompt(params: params)
-            let send = historySink(for: params.sessionId, connection: connection)
+            let send = historySink(for: params.sessionId)
             let renderedText: String
             do {
                 renderedText = try await render(

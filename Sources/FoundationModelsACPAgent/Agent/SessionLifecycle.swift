@@ -21,7 +21,19 @@ extension RoutedACPAgent {
     /// - Throws: The order rule's invalid-request error, or
     ///   `RequestError.unknownSession` for an id no live session holds.
     public func closeSession(_ params: CloseSessionRequest) async throws -> CloseSessionResponse {
-        try requireInitialized(before: ACPMethod.sessionClose)
+        try await closeSession(params, from: .direct)
+    }
+
+    /// Closes one session for one connection: the work of
+    /// ``closeSession(_:)``.
+    ///
+    /// - Parameters:
+    ///   - params: The request naming the session to close.
+    ///   - caller: The connection of the request.
+    /// - Returns: The empty response.
+    /// - Throws: The errors that ``closeSession(_:)`` names.
+    func closeSession(_ params: CloseSessionRequest, from caller: ConnectionId) async throws -> CloseSessionResponse {
+        try requireInitialized(before: ACPMethod.sessionClose, from: caller)
         guard let entry = sessions[params.sessionId] else {
             throw RequestError.unknownSession(id: params.sessionId)
         }
@@ -47,7 +59,21 @@ extension RoutedACPAgent {
     /// - Returns: The empty response.
     /// - Throws: The order rule's invalid-request error.
     public func deleteSession(_ params: DeleteSessionRequest) async throws -> DeleteSessionResponse {
-        try requireInitialized(before: ACPMethod.sessionDelete)
+        try await deleteSession(params, from: .direct)
+    }
+
+    /// Deletes one session for one connection: the work of
+    /// ``deleteSession(_:)``.
+    ///
+    /// - Parameters:
+    ///   - params: The request naming the session to delete.
+    ///   - caller: The connection of the request.
+    /// - Returns: The empty response.
+    /// - Throws: The order rule's invalid-request error.
+    func deleteSession(
+        _ params: DeleteSessionRequest, from caller: ConnectionId
+    ) async throws -> DeleteSessionResponse {
+        try requireInitialized(before: ACPMethod.sessionDelete, from: caller)
         guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
             // A non-ULID id names no session this agent ever minted; a real
             // delete of nothing is silent success.
@@ -81,17 +107,20 @@ extension RoutedACPAgent {
 
     // MARK: - The close of the connection
 
-    /// Closes each open session after the bound connection closed, as
-    /// `session/close` closes one. Agent shutdown must close each session
-    /// too, because `RoutedSession` does not run its sweep in `deinit`.
+    /// Tears down one connection after it closed: removes its row from
+    /// ``connections`` and closes each open session of the connection, as
+    /// `session/close` closes one. A session of another connection goes on.
+    /// Agent shutdown must close each session too, because `RoutedSession`
+    /// does not run its sweep in `deinit`.
     ///
     /// The teardown task of ``bind(connection:)`` calls it when
     /// `AgentSideConnection.closed` gives its reason. A client can go away
     /// with no `session/close`: it closes its end of the wire, its input
-    /// stream fails, or the host closes the connection. Each open session
-    /// then gets the full teardown here: the shell stream finishes, the MCP
-    /// servers shut down, and `session-history.json` is written. A session
-    /// already closed is skipped. One `notice` record names the reason.
+    /// stream fails, or the host closes the connection. Each open session of
+    /// the connection then gets the full teardown here: the shell stream
+    /// finishes, the MCP servers shut down, and `session-history.json` is
+    /// written. A session already closed is skipped. One `notice` record
+    /// names the reason.
     ///
     /// After the sessions close, the call waits until the hook dispatcher
     /// delivered each post event (`HookDispatcher.drain()`). Thus the
@@ -99,15 +128,18 @@ extension RoutedACPAgent {
     /// before the host process ends, for `acp-agent acp` and for
     /// `acp-agent run`.
     ///
-    /// Last, the call stops the watch of each `config.yaml` of the
-    /// ``settingsStore`` (``SettingsStore/stopWatching()``), because no
-    /// session of this connection reads the settings again.
+    /// Last, when no bound connection is left, the call stops the watch of
+    /// each `config.yaml` of the ``settingsStore``
+    /// (``SettingsStore/stopWatching()``), because no client reads the
+    /// settings again.
     ///
     /// The connection already ended each inbound handler when `closed`
-    /// gives its reason, so no handler runs beside this teardown.
+    /// gives its reason, so no handler of it runs beside this teardown.
     ///
-    /// - Parameter reason: Why the connection closed.
-    func closeOpenSessions(after reason: ConnectionCloseReason) async {
+    /// - Parameters:
+    ///   - id: The id of the closed connection.
+    ///   - reason: Why the connection closed.
+    func tearDownConnection(_ id: ConnectionId, after reason: ConnectionCloseReason) async {
         var metadata: Logger.Metadata = [
             ACPAgentTelemetry.LogMetadataKey.connectionCloseReason: "\(Self.connectionCloseReasonName(reason))"
         ]
@@ -116,12 +148,18 @@ extension RoutedACPAgent {
                 "\(ACPAgentTelemetry.errorTypeName(of: error))"
         }
         ACPAgentTelemetry.logger(.sessionLifecycle).notice(
-            "The connection closed. The agent closes each open session.", metadata: metadata)
-        for (sessionId, entry) in sessions where !entry.isClosed {
+            "The connection closed. The agent closes each open session of the connection.", metadata: metadata)
+        connections.remove(id)
+        for sessionId in connections.sessions(of: id) {
+            guard let entry = sessions[sessionId], !entry.isClosed else {
+                continue
+            }
             await tearDownSession(sessionId, entry: entry)
         }
         await hooks.dispatcher.drain()
-        await settingsStore.stopWatching()
+        if connections.boundConnectionCount == 0 {
+            await settingsStore.stopWatching()
+        }
     }
 
     /// The name of a close reason, for the log record of a connection close.

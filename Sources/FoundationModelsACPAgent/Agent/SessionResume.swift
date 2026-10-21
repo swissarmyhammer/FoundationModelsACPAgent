@@ -92,22 +92,42 @@ extension RoutedACPAgent {
     ///   unknown-cursor refusals; or whatever the composition or the
     ///   restore throws.
     public func resumeSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
+        try await resumeSession(params, from: .direct)
+    }
+
+    /// Resumes one recorded root session for one connection: the work of
+    /// ``resumeSession(_:)``. The updates of the resumed session go out on
+    /// `caller`.
+    ///
+    /// - Parameters:
+    ///   - params: The resume request.
+    ///   - caller: The connection of the request.
+    /// - Returns: The response that ``resumeSession(_:)`` names.
+    /// - Throws: The errors that ``resumeSession(_:)`` names.
+    func resumeSession(
+        _ params: ResumeSessionRequest, from caller: ConnectionId
+    ) async throws -> ResumeSessionResponse {
         try await RequestTracing.withEnteredRequestSpan(
             ACPAgentTelemetry.SpanName.sessionResume, method: ACPMethod.sessionResume,
             sessionId: params.sessionId, meta: params.meta, logger: ACPAgentTelemetry.logger(.sessionResume)
         ) { _ in
-            try await restoreSession(params)
+            try await restoreSession(params, from: caller)
         }
     }
 
     /// Restores one recorded root session: the work of
-    /// ``resumeSession(_:)``.
+    /// ``resumeSession(_:from:)`` in its span.
     ///
-    /// - Parameter params: The resume request.
+    /// - Parameters:
+    ///   - params: The resume request.
+    ///   - caller: The connection of the request.
     /// - Returns: The response that ``resumeSession(_:)`` names.
     /// - Throws: The errors that ``resumeSession(_:)`` names.
-    private func restoreSession(_ params: ResumeSessionRequest) async throws -> ResumeSessionResponse {
-        try requireInitialized(before: ACPMethod.sessionResume)
+    private func restoreSession(
+        _ params: ResumeSessionRequest, from caller: ConnectionId
+    ) async throws -> ResumeSessionResponse {
+        try requireInitialized(before: ACPMethod.sessionResume, from: caller)
+        let userPresence = userPresence(of: caller)
         let workingDirectory = try SessionSetup.validatedWorkingDirectory(
             path: params.cwd.rawValue, field: .cwd)
         guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
@@ -147,9 +167,9 @@ extension RoutedACPAgent {
 
         let composition = try await composeResumedSession(
             from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-            params: params)
+            params: params, userPresence: userPresence)
         let restored = try await restoreRecordedSession(
-            rootId, sessionId: params.sessionId, composition: composition)
+            rootId, sessionId: params.sessionId, composition: composition, userPresence: userPresence)
         let history = resumedHistory(
             kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
             sessionId: params.sessionId)
@@ -167,8 +187,9 @@ extension RoutedACPAgent {
         let activation = try await activateSession(
             restored.session,
             composition: composition,
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
+            placement: SessionPlacement(
+                workingDirectory: workingDirectory, additionalRoots: additionalRoots, caller: caller,
+                userPresence: userPresence),
             indexRecorded: indexRecorded,
             history: history)
 
@@ -260,14 +281,16 @@ extension RoutedACPAgent {
     ///   - workingDirectory: The validated session working directory.
     ///   - additionalRoots: The requested additional roots, in wire order.
     ///   - params: The resume request.
+    ///   - userPresence: The user presence of the session.
     /// - Returns: The full composition, or the replay-only composition.
-    /// - Throws: Whatever ``composeSession(from:workingDirectory:additionalRoots:clientMCPServers:)``
+    /// - Throws: Whatever ``composeSession(from:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``
     ///   throws.
     private func composeResumedSession(
         from context: LoadedSessionContext,
         workingDirectory: URL,
         additionalRoots: [URL],
-        params: ResumeSessionRequest
+        params: ResumeSessionRequest,
+        userPresence: UserPresence
     ) async throws -> SessionComposition {
         guard
             SessionSetup.allDirectoriesExist(
@@ -282,7 +305,8 @@ extension RoutedACPAgent {
             from: context,
             workingDirectory: workingDirectory,
             additionalRoots: additionalRoots,
-            clientMCPServers: params.mcpServers ?? [])
+            clientMCPServers: params.mcpServers ?? [],
+            userPresence: userPresence)
     }
 
     /// Restores the recorded root session with the freshly assembled
@@ -300,11 +324,12 @@ extension RoutedACPAgent {
     ///   - rootId: The recorded root session's id.
     ///   - sessionId: The wire session id, for the refusals and the log.
     ///   - composition: The freshly composed session inputs.
+    ///   - userPresence: The user presence of the session.
     /// - Returns: The restored session and its reports.
     /// - Throws: `RequestError.unknownSession` when the recording is
     ///   gone, or whatever the restore throws.
     private func restoreRecordedSession(
-        _ rootId: ULID, sessionId: SessionId, composition: SessionComposition
+        _ rootId: ULID, sessionId: SessionId, composition: SessionComposition, userPresence: UserPresence
     ) async throws -> RestoredSession {
         do {
             let restored = try await residentProfile.standard.restoreSessionWithHostChecks(
@@ -433,16 +458,17 @@ extension RoutedACPAgent {
     ///   - history: The retained history of the session.
     ///   - cursor: Where the replay begins, or `nil` for no replay.
     ///   - sessionId: The session the updates belong to.
-    /// - Throws: An internal error when no connection is bound.
+    /// - Throws: An internal error when the session has no connection with
+    ///   an outbound path.
     private func replayHistory(
         _ history: SessionMergeEngine, from cursor: ReplayCursor?, sessionId: SessionId
     ) async throws {
         guard let cursor else {
             return
         }
-        guard let connection = boundConnection else {
+        guard let connection = connections.path(forSession: sessionId)?.connection else {
             throw RequestError.internalError(
-                detail: "the agent has no bound connection to notify through")
+                detail: "the agent has no connection to notify through")
         }
         for update in history.replayUpdates(from: cursor) {
             await connection.post(update, in: sessionId)

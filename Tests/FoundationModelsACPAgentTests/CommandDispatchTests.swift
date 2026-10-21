@@ -119,7 +119,7 @@ import Testing
             ])
 
         do {
-            _ = try await fixture.harness.agent.prompt(
+            _ = try await fixture.harness.routedConnection.prompt(
                 AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "/deployy now"))
             Issue.record("expected the unknown-command refusal")
         } catch let error as RequestError {
@@ -203,7 +203,7 @@ import Testing
             .resourceLink(ResourceLink(name: "notes", uri: "file:///tmp/notes.txt")),
         ]
         do {
-            _ = try await fixture.harness.agent.prompt(
+            _ = try await fixture.harness.routedConnection.prompt(
                 PromptRequest(prompt: blocks, sessionId: fixture.sessionId))
             Issue.record("expected the attachment refusal")
         } catch let error as RequestError {

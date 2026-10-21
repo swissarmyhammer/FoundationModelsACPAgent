@@ -222,18 +222,18 @@ public struct ComposedAgent: Sendable {
             agent: agent, modelSource: modelSource, configuration: configuration)
     }
 
-    /// Binds ``agent`` to `connection`, so a prompt can notify through it
-    /// and gives the agent back.
+    /// Binds one more connection to ``agent`` (ACPA-5) and gives back the
+    /// `Agent` that serves it: a ``RoutedACPConnection`` that names the
+    /// connection on each call. An earlier connection stays bound.
     ///
     /// Call it from the factory closure of `AgentSideConnection`. It is
     /// synchronous and does not throw. It starts no transport and no serve
     /// loop: the connection that called it serves the agent.
     ///
     /// - Parameter connection: The connection around the agent.
-    /// - Returns: ``agent``, bound to `connection`.
+    /// - Returns: The `Agent` of `connection`.
     public func agent(boundTo connection: AgentSideConnection) -> any Agent {
         agent.bind(connection: connection)
-        return agent
     }
 
     /// Binds ``agent`` to the agent side of `transport`, so a client
@@ -257,8 +257,8 @@ public struct ComposedAgent: Sendable {
         }
     }
 
-    /// Waits until ``agent`` closed its open sessions after the close of
-    /// the latest connection that ``agent(boundTo:)`` bound.
+    /// Waits until ``agent`` closed the open sessions of each connection that
+    /// ``agent(boundTo:)`` bound, after the close of that connection.
     ///
     /// A host does not have to send `session/close`: the client closes
     /// the wire, and the agent closes each open session itself

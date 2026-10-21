@@ -167,15 +167,15 @@ import Testing
     /// capability is read as supported; an absent one as unsupported.
     @Test func clientCapabilitiesAreReadWithAbsentMeaningUnsupported() async throws {
         let agent = try await AgentClientHarness.makeAgent()
-        #expect(await agent.negotiatedClientCapabilities == nil)
+        #expect(agent.clientCapabilities(of: .direct) == nil)
 
         _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
-        let advertised = try #require(await agent.negotiatedClientCapabilities)
+        let advertised = try #require(agent.clientCapabilities(of: .direct))
         #expect(advertised.supportsFormElicitation)
         #expect(advertised.supportsURLElicitation)
 
         _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest(capabilities: ClientCapabilities()))
-        let absent = try #require(await agent.negotiatedClientCapabilities)
+        let absent = try #require(agent.clientCapabilities(of: .direct))
         #expect(!absent.supportsFormElicitation)
         #expect(!absent.supportsURLElicitation)
     }
@@ -212,7 +212,7 @@ import Testing
         #expect(fields["error"] == nil)
         #expect(result["protocolVersion"] == Self.protocolVersion2WireValue)
 
-        let negotiated = try #require(await agent.negotiatedClientCapabilities)
+        let negotiated = try #require(agent.clientCapabilities(of: .direct))
         #expect(!negotiated.supportsFormElicitation)
         #expect(!negotiated.supportsURLElicitation)
 

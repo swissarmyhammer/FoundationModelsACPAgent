@@ -201,7 +201,7 @@ import Testing
     ///   - events: The events to project, in order.
     ///   - fixture: The wired fixture.
     private static func projectThroughHistory(_ events: [SessionEvent], of fixture: ScriptedPromptFixture) async {
-        let send = fixture.harness.agent.boundHistorySink(for: fixture.sessionId)
+        let send = fixture.harness.agent.historySink(for: fixture.sessionId)
         let execution = SyntheticExecution(send: send)
         _ = await execution.drive(events: makeEventStream(events))
     }
