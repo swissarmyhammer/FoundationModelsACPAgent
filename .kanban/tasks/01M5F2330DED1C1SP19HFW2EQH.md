@@ -15,8 +15,14 @@ comments:
     - note: rule 7 (EXTRAS-9) requires exactly `verbNoun(input: VerbNounInput!)`, so the flat-argument form `set(keyPath:, value:, level:)` cannot stay. The aliases `set`/`clear` are NAME aliases only: an old caller keeps working only with the input form (`set(input: {...})`), which theOldSetAndClearNamesGiveTheSameResult proves, with the rewrite in extensions.rewrites. A caller that still sends flat arguments gets GRAPHQL_VALIDATION_FAILED. TestudoApp has no settings mutation caller (checked by the lead).
     - next: /review
   timestamp: 2026-10-21T12:46:25.409117+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m5f80df1x8w3qkbmvr1kevyv
+  text: |-
+    ### done
+    - sha c5ab74b (feature) + 0b9d945 (record). RED: 24 of 69 tests in the 4 settings suites failed with GRAPHQL_VALIDATION_FAILED (no `input` argument). GREEN: the 69 tests pass; full `swift test` 1177 tests / 127 suites passed, 1 known issue. Conformance with the alias probe is empty.
+  timestamp: 2026-10-21T12:47:03.137165+00:00
+position_column: done
+position_ordinal: fffd80
 title: 'EXTRAS-9 settings: updateSetting(input:) and clearSetting(input:), with set and clear as aliases'
 ---
 From the Multitool session, which coordinates the GraphQL endpoint conventions (EXTRAS-9 rule 7, D115, status proposed; spec in TestudoApp/features/packages/foundationmodels-extras.md). SettingsGraph is the reference endpoint that the others copy.
