@@ -31,14 +31,17 @@ import GraphQL
 ///   change log cannot resume ends it with `RESYNC_REQUIRED`.
 ///
 /// The change log is the log of the store
-/// (``SettingsStore/loggedChanges(after:where:)``), not of the endpoint, thus
-/// each endpoint over one store, for example the endpoint of each
-/// ``SettingsTool`` of a session, gives one cursor sequence.
+/// (``SettingsStore/loggedChanges(after:where:)``), and the agent makes one
+/// endpoint instance over its one store (``RoutedACPAgent/settingsEndpoint``)
+/// next to the store: the ``SettingsTool`` of each session runs on that
+/// instance, thus each one gives one cursor sequence and no tool builds a
+/// schema of its own. The endpoint is a class, so that this one instance has
+/// an identity.
 ///
 /// A secret key holds only a `keychain:<name>` reference, and no secret value
 /// goes through the endpoint (``SettingsSecretKeys``). ``SettingsTool`` runs
 /// each call of the model on this same endpoint.
-public struct SettingsGraph: GraphQLEndpoint {
+public final class SettingsGraph: GraphQLEndpoint, Sendable {
     /// The name of the endpoint.
     public static let endpointName = "settings"
 

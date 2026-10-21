@@ -866,6 +866,41 @@ extension RoutedACPAgent {
             clientMCPServers: clientMCPServers)
     }
 
+    /// Makes the catalog context of one session composition: the session
+    /// root set and MCP servers, the per-cwd configuration, and what the
+    /// agent shares with each session, among them the snapshot store and the
+    /// one `settings` endpoint of the agent (``settingsEndpoint``), thus the
+    /// `settings` tool of each session runs on that same instance.
+    ///
+    /// - Parameters:
+    ///   - context: The resolved per-cwd configuration.
+    ///   - workingDirectory: The validated session working directory.
+    ///   - additionalRoots: The session's additional confinement roots, in
+    ///     wire order.
+    ///   - clientMCPServers: The client's session-scoped MCP servers, in wire
+    ///     order.
+    /// - Returns: The catalog context.
+    func catalogContext(
+        from context: LoadedSessionContext,
+        workingDirectory: URL,
+        additionalRoots: [URL],
+        clientMCPServers: [FoundationModelsACP.MCPServer]
+    ) -> CatalogContext {
+        CatalogContext(
+            workingDirectory: workingDirectory,
+            additionalRoots: additionalRoots,
+            configuration: context.loaded.configuration,
+            profile: residentProfile,
+            clientMCPServers: clientMCPServers,
+            settingsFolders: settingsFolders,
+            environment: environment,
+            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
+            inlineSettleGrace: inlineSettleGrace,
+            userPresence: userPresence,
+            snapshotStore: hooks.snapshotStore,
+            settingsEndpoint: settingsEndpoint)
+    }
+
     /// Composes one session over an already-resolved configuration:
     /// assemble the instructions, then connect the MCP
     /// servers and build the tool roster through the catalog.
@@ -895,19 +930,9 @@ extension RoutedACPAgent {
         additionalRoots: [URL],
         clientMCPServers: [FoundationModelsACP.MCPServer]
     ) async throws -> SessionComposition {
-        let catalogContext = CatalogContext(
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
-            configuration: context.loaded.configuration,
-            profile: residentProfile,
-            clientMCPServers: clientMCPServers,
-            settingsFolders: settingsFolders,
-            environment: environment,
-            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
-            inlineSettleGrace: inlineSettleGrace,
-            userPresence: userPresence,
-            snapshotStore: hooks.snapshotStore,
-            settingsStore: settingsStore)
+        let catalogContext = catalogContext(
+            from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
+            clientMCPServers: clientMCPServers)
 
         // One watched registry serves the preload assembly here, the
         // slash-command source below, the `skills` tool and the agent runs

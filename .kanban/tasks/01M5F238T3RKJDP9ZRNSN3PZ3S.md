@@ -48,6 +48,18 @@ comments:
     - open decision for review: one ChangeLog per store (shared by all endpoints), not one cached SettingsGraph instance per store (see the comment above).
     - next: /review
   timestamp: 2026-10-21T13:15:42.477210+00:00
+- actor: claude-code
+  id: 01m5fa4swd8eevmqwsybd8vhdt
+  text: |-
+    ### done: one settings endpoint per store (supersedes the "open decision" in the comments above)
+    - The agent builds the one SettingsGraph next to its store (`RoutedACPAgent.settingsEndpoint`, made in init right after `settingsStore`). `CatalogContext.settingsEndpoint` (in place of `settingsStore`) carries that instance to every session composition, and `ToolCatalog.settingsTool(in:)` makes each session's `SettingsTool(endpoint:sessionDirectory:)` over it. `SettingsTool(store:)` is gone, so no tool builds a schema. No cycle: the agent owns both the store and the endpoint.
+    - SettingsGraph is now a `final class` (Sendable), so the one instance has an identity.
+    - Seam for the test: `RoutedACPAgent.catalogContext(from:workingDirectory:additionalRoots:clientMCPServers:)`, pulled out of composeSession.
+    - There is no separate server-scope endpoint list in this repo: hosts get the endpoint through `SettingsTool.graphQLEndpoints`, which now gives that same instance. No sibling repo calls `SettingsTool(store:)` or `CatalogContext(settingsStore:)`.
+    - RED (compile): SessionSettingsStoreTests.eachSessionSettingsToolUsesTheOneEndpointOfTheAgent → "value of type 'RoutedACPAgent' has no member 'settingsEndpoint'" / "'catalogContext'", "type 'ToolCatalog' has no member 'settingsTool'", and "argument type 'SettingsGraph' expected to be an instance of a class" (the `===` check on a struct).
+    - GREEN: `swift test --filter 'SessionSettingsStoreTests|SettingsToolTests|ToolCatalogTests'` → 43 tests passed. Full `swift test`: 1187 tests in 128 suites passed with 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps).
+    - Updated callers: SessionSetup (composeSession), ToolCatalog.makeRegistry, SettingsToolTests (tools over `fixture.graph`), ToolCatalogTests (context gets an endpoint; the registry-call test reads the stored value through the endpoint).
+  timestamp: 2026-10-21T13:24:24.077085+00:00
 position_column: doing
 position_ordinal: '8380'
 title: 'EXTRAS-9 settings: changes(after:) with an opaque cursor, a cursor query, and RESYNC_REQUIRED (blocked on EXTRAS-10 ChangeLog)'

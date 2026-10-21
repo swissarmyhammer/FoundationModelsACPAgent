@@ -120,10 +120,10 @@ import Testing
     ///     the test must call `codeContextStop` before it ends. The
     ///     default `false` turns the section off, thus a test that does
     ///     not test the code context starts none.
-    ///   - hasSettingsStore: `true` gives the context a settings store over
-    ///     its settings folders and an empty in-memory secret store, thus
-    ///     the registry mounts the `settings` tool. The default `false`
-    ///     gives no store.
+    ///   - hasSettingsStore: `true` gives the context the `settings` endpoint
+    ///     of a settings store over its settings folders and an empty
+    ///     in-memory secret store, thus the registry mounts the `settings`
+    ///     tool. The default `false` gives no endpoint.
     ///   - configure: The mutation that shapes the configuration under
     ///     test. It runs after the `codeContext:` section is set. The
     ///     default keeps every other section at its default.
@@ -153,8 +153,10 @@ import Testing
                 loader: loader),
             settingsFolders: settingsFolders,
             environment: environment,
-            settingsStore: hasSettingsStore
-                ? SettingsStore(settingsFolders: settingsFolders, secretStore: InMemorySecretStore()) : nil)
+            settingsEndpoint: hasSettingsStore
+                ? try SettingsGraph(
+                    store: SettingsStore(settingsFolders: settingsFolders, secretStore: InMemorySecretStore()))
+                : nil)
     }
 
     /// Invokes `tools.files.read` on `path` and decodes the wire result
@@ -622,15 +624,21 @@ import Testing
     /// writes the session level of the working directory of the session.
     @Test func aSettingsCallThroughTheRegistryWritesTheSessionLevelOfTheSession() async throws {
         let context = try await Self.makeContext(hasSettingsStore: true)
-        let store = try #require(context.settingsStore)
+        let endpoint = try #require(context.settingsEndpoint)
         let registry = try await ToolCatalog.makeRegistry(context: context).registry
 
         let answer: SettingsSetResult = try await FilesVerbSupport.invoke(
             try #require(registry.tools[Self.settingsVerbPath]), arguments: ["query": Self.sessionTriggerMutation])
 
         #expect(answer.data?.updateSetting?.level == SettingsGraphFixture.sessionLevel)
-        let stored = try await store.value(at: Self.triggerKeyPath, cwd: context.workingDirectory)
-        #expect(stored == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
+        let stored = try GraphQLReply(
+            await endpoint.execute(
+                query: SettingsGraphFixture.settingQuery,
+                variables: SettingsGraphFixture.variables(keyPath: Self.triggerKeyPath, cwd: context.workingDirectory),
+                operationName: nil, viewer: nil)
+        ).object("setting")
+        #expect(stored["value"] as? Double == Self.sessionTrigger)
+        #expect(stored["level"] as? String == SettingsGraphFixture.sessionLevel)
     }
 
     // MARK: The skills registry

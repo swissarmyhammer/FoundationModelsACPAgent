@@ -360,6 +360,20 @@ public enum ToolCatalog {
         [agents.environment.skillsTool, agents.tool]
     }
 
+    /// The `settings` tool of a session: a ``SettingsTool`` over the one
+    /// endpoint of the agent (``CatalogContext/settingsEndpoint``) and the
+    /// working directory of the session. The tool builds no schema of its
+    /// own, thus each session of an agent runs on one endpoint instance and
+    /// one cursor sequence.
+    ///
+    /// - Parameter context: The catalog context of the session.
+    /// - Returns: The tool, or `nil` when the context has no endpoint.
+    static func settingsTool(in context: CatalogContext) -> SettingsTool? {
+        context.settingsEndpoint.map { endpoint in
+            SettingsTool(endpoint: endpoint, sessionDirectory: context.workingDirectory)
+        }
+    }
+
     /// Builds the Multitool registry over the enabled capability modules.
     ///
     /// Each enabled section becomes one builder call:
@@ -385,18 +399,18 @@ public enum ToolCatalog {
     /// With a ``CatalogContext/snapshotStore``, `snapshots` mounts the
     /// `tools.snapshots` verbs (`list`, `take` and `rollback`) over the
     /// snapshot store of the agent. It has no config section.
-    /// With a ``CatalogContext/settingsStore``, the session gets its own
-    /// ``SettingsTool`` over that store and its working directory, under the
-    /// noun `settings` (`tools.settings.querySettings`, ACPA-17, D100 (f)).
-    /// The tool is only in the registry, thus a call goes through `runCode`
-    /// as a call of a built-in verb does. It has no config section.
+    /// With a ``CatalogContext/settingsEndpoint``, the session gets its own
+    /// ``SettingsTool`` over that one endpoint and its working directory,
+    /// under the noun `settings` (`tools.settings.querySettings`, ACPA-17,
+    /// D100 (f); ``settingsTool(in:)``). The tool is only in the registry,
+    /// thus a call goes through `runCode` as a call of a built-in verb does.
+    /// It has no config section.
     ///
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
     /// - Throws: Whatever the MCP composition,
     ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`,
-    ///   ``SettingsTool/init(store:sessionDirectory:)``, `withMCP(servers:)` or
-    ///   `buildRegistry()` throws.
+    ///   `withMCP(servers:)` or `buildRegistry()` throws.
     static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
         let builder = MultiTool.Builder()
         if case .enabled(let options) = context.configuration.tools.files {
@@ -443,10 +457,8 @@ public enum ToolCatalog {
         if let snapshotStore = context.snapshotStore {
             builder.withCapability(SnapshotsCapability(store: snapshotStore))
         }
-        if let settingsStore = context.settingsStore {
-            builder.withOperationTool(
-                noun: SettingsGraph.endpointName,
-                tool: try SettingsTool(store: settingsStore, sessionDirectory: context.workingDirectory))
+        if let settingsTool = settingsTool(in: context) {
+            builder.withOperationTool(noun: SettingsGraph.endpointName, tool: settingsTool)
         }
         let composed = try await MCPComposition.connectServers(
             section: context.configuration.tools.mcp,

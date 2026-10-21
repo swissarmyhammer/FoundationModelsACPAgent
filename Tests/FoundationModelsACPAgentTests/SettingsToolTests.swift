@@ -24,13 +24,12 @@ import Testing
     /// An operation that the tool does not have.
     private static let unknownOperation = "drop settings"
 
-    /// A tool over the store of `fixture`.
+    /// A tool over the one endpoint of `fixture`.
     ///
-    /// - Parameter fixture: The fixture that holds the store.
+    /// - Parameter fixture: The fixture that holds the store and its endpoint.
     /// - Returns: The tool.
-    /// - Throws: The error of the schema build.
-    private static func tool(over fixture: SettingsGraphFixture) throws -> SettingsTool {
-        try SettingsTool(store: fixture.store)
+    private static func tool(over fixture: SettingsGraphFixture) -> SettingsTool {
+        SettingsTool(endpoint: fixture.graph)
     }
 
     /// The arguments of an `updateSetting` call.
@@ -51,7 +50,7 @@ import Testing
     @Test func theToolGivesTheSettingsEndpoint() throws {
         let fixture = try SettingsGraphFixture(label: "tool-endpoint")
 
-        let endpoints = try Self.tool(over: fixture).graphQLEndpoints
+        let endpoints = Self.tool(over: fixture).graphQLEndpoints
 
         #expect(endpoints.map(\.name) == [SettingsGraph.endpointName])
         #expect(endpoints.first?.scope == .server)
@@ -61,7 +60,7 @@ import Testing
     /// work through the tool, and the store has each change.
     @Test func eachLevelChangesThroughTheTool() async throws {
         let fixture = try SettingsGraphFixture(label: "tool-levels")
-        let tool = try Self.tool(over: fixture)
+        let tool = Self.tool(over: fixture)
 
         let user = try GraphQLReply(
             await tool.call(
@@ -106,7 +105,7 @@ import Testing
     @Test func theToolDescribesOneOperation() throws {
         let fixture = try SettingsGraphFixture(label: "tool-descriptors")
 
-        let descriptors = try Self.tool(over: fixture).operationDescriptors
+        let descriptors = Self.tool(over: fixture).operationDescriptors
 
         #expect(descriptors.map(\.opString) == [SettingsTool.queryOperation])
         #expect(descriptors.first?.parameters.map(\.name) == ["query", "variables", "operationName"])
@@ -146,11 +145,10 @@ import Testing
     /// A tool of the session whose folder is the first directory of
     /// `fixture`.
     ///
-    /// - Parameter fixture: The fixture that holds the store.
+    /// - Parameter fixture: The fixture that holds the store and its endpoint.
     /// - Returns: The tool.
-    /// - Throws: The error of the schema build.
-    private static func sessionTool(over fixture: SettingsGraphFixture) throws -> SettingsTool {
-        try SettingsTool(store: fixture.store, sessionDirectory: fixture.firstDirectory)
+    private static func sessionTool(over fixture: SettingsGraphFixture) -> SettingsTool {
+        SettingsTool(endpoint: fixture.graph, sessionDirectory: fixture.firstDirectory)
     }
 
     /// The arguments of an `updateSetting` call on the session level with no `cwd`.
@@ -237,8 +235,8 @@ import Testing
     /// before the change.
     @Test(.timeLimit(.minutes(1))) func twoToolsOnOneStoreShareOneCursorSequence() async throws {
         let fixture = try SettingsGraphFixture(label: "tool-shared-cursor")
-        let first = try Self.tool(over: fixture)
-        let second = try Self.tool(over: fixture)
+        let first = Self.tool(over: fixture)
+        let second = Self.tool(over: fixture)
         let cursorQuery = GraphQLArguments(query: SettingsGraphFixture.cursorQuery)
         let before = try #require(
             try GraphQLReply(await first.call(arguments: cursorQuery)).data?[SettingsGraphFixture.cursorField]

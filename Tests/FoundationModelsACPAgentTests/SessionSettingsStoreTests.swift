@@ -43,4 +43,26 @@ import Testing
 
         #expect(await changes.next() == nil)
     }
+
+    /// The agent has one `settings` endpoint over its one store
+    /// (EXTRAS-9 rule 9): the ``SettingsTool`` of each session composition
+    /// runs on that same endpoint instance, and builds no schema of its own.
+    @Test func eachSessionSettingsToolUsesTheOneEndpointOfTheAgent() async throws {
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: "SessionSettingsStoreTests-endpoint")
+        let directories = ["first", "second"].map { name in
+            makeResolvedDirectory(label: "SessionSettingsStoreTests-endpoint-\(name)")
+        }
+
+        var endpoints: [SettingsGraph] = []
+        for directory in directories {
+            let loaded = try await LoadedSessionContext.load(workingDirectory: directory, from: agent.settingsStore)
+            let context = await agent.catalogContext(
+                from: loaded, workingDirectory: directory, additionalRoots: [], clientMCPServers: [])
+            let tool = try #require(ToolCatalog.settingsTool(in: context))
+            endpoints.append(try #require(tool.graphQLEndpoints.first as? SettingsGraph))
+        }
+
+        #expect(endpoints.count == directories.count)
+        #expect(endpoints.allSatisfy { endpoint in endpoint === agent.settingsEndpoint })
+    }
 }

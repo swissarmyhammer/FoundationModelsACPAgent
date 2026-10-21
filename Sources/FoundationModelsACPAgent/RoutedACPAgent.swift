@@ -100,6 +100,14 @@ public actor RoutedACPAgent: Agent {
     /// load of the files.
     nonisolated let settingsStore: SettingsStore
 
+    /// The one `settings` endpoint of the agent over ``settingsStore``
+    /// (EXTRAS-9 rule 9): the initializer makes it next to the store, and
+    /// each session composition gives this same instance to its
+    /// ``SettingsTool`` (``CatalogContext/settingsEndpoint``). Thus the
+    /// schema is built one time for the agent, and each tool gives one cursor
+    /// sequence.
+    nonisolated let settingsEndpoint: SettingsGraph
+
     /// The settle period of each session that this agent makes, in seconds:
     /// the ``CatalogContext/inlineSettleGrace`` of each session composition.
     /// The initializer sets ``CatalogContext/defaultInlineSettleGrace``, the
@@ -319,7 +327,7 @@ public actor RoutedACPAgent: Agent {
     ///     `SKILLS_MARKETPLACE_CACHE` of `environment` — see
     ///     ``skillsMarketplaceCacheDirectory``.
     /// - Throws: `ProfileResolutionError` when the profile does not
-    ///   resolve.
+    ///   resolve; an error of the schema builder of ``settingsEndpoint``.
     public init(
         name: DotfolderName,
         router: Router,
@@ -345,6 +353,7 @@ public actor RoutedACPAgent: Agent {
         self.settingsStore = SettingsStore(
             settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
             secretStore: self.secretStore)
+        self.settingsEndpoint = try SettingsGraph(store: settingsStore)
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

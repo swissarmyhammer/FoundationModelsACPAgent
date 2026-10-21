@@ -107,12 +107,13 @@ public struct CatalogContext: Sendable {
     /// (``ToolCatalog/makeRegistry(context:)``).
     public let snapshotStore: SnapshotStore?
 
-    /// The settings store of the agent (``RoutedACPAgent/settingsStore``), or
-    /// `nil` for a catalog that has no agent. With a store, the Multitool
-    /// registry of the session gets a ``SettingsTool`` over it and over
+    /// The one `settings` endpoint of the agent over its settings store
+    /// (``RoutedACPAgent/settingsEndpoint``), or `nil` for a catalog that has
+    /// no agent. With an endpoint, the Multitool registry of the session gets
+    /// a ``SettingsTool`` over this same instance and over
     /// ``workingDirectory``, under the noun `settings`
-    /// (``ToolCatalog/makeRegistry(context:)``).
-    public let settingsStore: SettingsStore?
+    /// (``ToolCatalog/settingsTool(in:)``).
+    public let settingsEndpoint: SettingsGraph?
 
     /// Makes a catalog context.
     ///
@@ -138,8 +139,8 @@ public struct CatalogContext: Sendable {
     ///     sessions (``userPresence``). Defaults to `.interactive`.
     ///   - snapshotStore: The snapshot store of the agent, or `nil` (the
     ///     default) for no `snapshots` capability (``snapshotStore``).
-    ///   - settingsStore: The settings store of the agent, or `nil` (the
-    ///     default) for no `settings` tool (``settingsStore``).
+    ///   - settingsEndpoint: The one `settings` endpoint of the agent, or
+    ///     `nil` (the default) for no `settings` tool (``settingsEndpoint``).
     public init(
         workingDirectory: URL,
         additionalRoots: [URL] = [],
@@ -152,11 +153,11 @@ public struct CatalogContext: Sendable {
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         userPresence: UserPresence = .interactive,
         snapshotStore: SnapshotStore? = nil,
-        settingsStore: SettingsStore? = nil
+        settingsEndpoint: SettingsGraph? = nil
     ) {
         self.skillsMarketplaceCacheDirectory = skillsMarketplaceCacheDirectory
         self.snapshotStore = snapshotStore
-        self.settingsStore = settingsStore
+        self.settingsEndpoint = settingsEndpoint
         self.workingDirectory = workingDirectory
         self.additionalRoots = additionalRoots
         self.configuration = configuration

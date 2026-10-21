@@ -91,23 +91,24 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     /// `nil` for a tool of no session.
     private let sessionDirectory: String?
 
-    /// Makes the tool over a store.
+    /// Makes the tool over the one `settings` endpoint of a store.
     ///
     /// The session composition gives each session its own tool with the
-    /// working directory of that session. Then a call that gives no `cwd`
-    /// reads the merged value for that folder and writes the session level
-    /// of that folder, and a `cwd` of a different folder is refused
-    /// (``SettingsGraphError/otherSessionWorkingDirectory(path:)``).
+    /// working directory of that session, over the one endpoint of the agent
+    /// (``RoutedACPAgent/settingsEndpoint``), thus no tool builds a schema of
+    /// its own and each tool gives one cursor sequence. Then a call that
+    /// gives no `cwd` reads the merged value for that folder and writes the
+    /// session level of that folder, and a `cwd` of a different folder is
+    /// refused (``SettingsGraphError/otherSessionWorkingDirectory(path:)``).
     ///
     /// - Parameters:
-    ///   - store: The store of the agent settings.
+    ///   - endpoint: The `settings` endpoint of the store.
     ///   - sessionDirectory: The working directory of the session that owns
     ///     the tool, or `nil` (the default) for a tool of no session, where a
     ///     call with no `cwd` works on the user level only, the same as the
     ///     endpoint.
-    /// - Throws: An error of the schema builder.
-    public init(store: SettingsStore, sessionDirectory: URL? = nil) throws {
-        endpoint = try SettingsGraph(store: store)
+    public init(endpoint: SettingsGraph, sessionDirectory: URL? = nil) {
+        self.endpoint = endpoint
         self.sessionDirectory = sessionDirectory?.path
     }
 
