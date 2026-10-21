@@ -30,8 +30,8 @@ comments:
     Coordinator update 3 (2026-10-21): Router is landing SessionIndex and ProjectRegistry on FoundationModelsRouter main itself; RouterSessionDirectory (EXTRAS-3) is on main (19254b88). Rule: if Router main holds them, do ACPA-14 on main against Router main (no acpa-14 branch, no pin; drop a branch and move its commits to main). If not, keep the branch plan. The Router update and ACPA-14 must land in one change (the name clashes break the test target).
     Check at 2026-10-21: `git ls-remote` main = be3f0811 (tip "^k176prd is on router-3-session-index at 5b9423f7"); main's tree has RouterSessionDirectory.swift but no SessionIndex/ProjectRegistry. router-3-session-index = 5b9423f7. So for now: branch plan. Check again when this card starts.
   timestamp: 2026-10-21T12:57:07.175087+00:00
-position_column: todo
-position_ordinal: '8480'
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-14: read past sessions from Router; remove the ACPAgent copies of SessionIndex and ProjectRegistry'
 ---
 Spec: TestudoApp/features/packages/foundationmodels-acpagent.md, ACPA-14 (status agreed; D23, D72; depends on ROUTER-3).
