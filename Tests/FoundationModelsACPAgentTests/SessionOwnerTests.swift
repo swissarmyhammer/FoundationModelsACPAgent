@@ -19,6 +19,9 @@ import Testing
     /// The `data.code` of the refusal of a take by an `external` connection.
     private static let sessionHasOwnerCode = "SESSION_HAS_OWNER"
 
+    /// The answer that the held work writes after its connection closed.
+    private static let lateAnswer = "The work went on after the close."
+
     /// Connection A makes a session, and its question goes to A only. An
     /// `external` connection B cannot take the session. A `userDevice`
     /// connection C takes it with `session/resume`: then its question and
@@ -58,6 +61,45 @@ import Testing
         #expect(await externalCreates.creates.isEmpty)
         #expect(ScriptedPromptFixture.idleCount(in: await owner.collector.updates) == 1)
         await owner.close()
+    }
+
+    /// Connection A makes a session and starts work, and its wire closes
+    /// while the work runs (ACPA-5d, D120 d, D68). The session is not closed:
+    /// it has no owner, and its work goes on to its end. A `userDevice`
+    /// connection B then takes it with `session/resume` and gets its updates,
+    /// the answer that the work wrote after A closed among them.
+    @Test
+    func aClosedConnectionFreesItsSessionAndTheWorkGoesOn() async throws {
+        let hold = ScriptedHold()
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.holdUntilReleased(hold), .textDelta(Self.lateAnswer), .endPass],
+            label: "SessionOwnerTests-free")
+        let agent = fixture.harness.agent
+        _ = try await fixture.harness.connection.prompt(
+            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: Self.promptText))
+        _ = try await fixture.collector.wait(for: "the running of the prompt") { updates in
+            updates.contains { if case .stateUpdate(.running) = $0.update { true } else { false } }
+        }
+
+        await ConnectionCloseTests.dropClientEnd(of: fixture.harness)
+        hold.release()
+        await agent.waitForTeardown(of: fixture.harness.routedConnection.id)
+        await agent.awaitPromptsFinished(of: fixture.sessionId)
+
+        #expect(await agent.sessions[fixture.sessionId]?.isClosed == false)
+        #expect(agent.connections.owner(of: fixture.sessionId) == nil)
+
+        let taker = await AgentClientHarness.makeRecording(agent: agent)
+        _ = try await taker.connection.initialize(AgentClientHarness.makeInitializeRequest())
+        _ = try await taker.connection.resumeSession(
+            ResumeSessionRequest(
+                cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId,
+                replayFrom: .start(ReplayFromStart())))
+        let takerCollector = try #require(taker.collector)
+        _ = try await takerCollector.wait(for: "the replay of the late answer") { updates in
+            (try? encodedWireText(of: updates))?.contains(Self.lateAnswer) == true
+        }
+        #expect(agent.connections.owner(of: fixture.sessionId) == taker.routedConnection.id)
     }
 
     /// Prompts the session of `fixture` on its own connection, declines the

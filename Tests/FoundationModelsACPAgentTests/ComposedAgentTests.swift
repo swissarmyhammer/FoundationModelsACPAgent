@@ -90,6 +90,7 @@ struct ComposedAgentTests {
         clientEnd.close()
         agentEnd.close()
         await composed.waitForConnectionTeardown()
+        await composed.closeOpenSessions()
         return try outcome.get()
     }
 

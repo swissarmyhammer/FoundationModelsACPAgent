@@ -33,8 +33,8 @@ import FoundationModelsRouter
 /// `acp-agent` executable uses it for its stdio and in-process modes.
 ///
 /// After the connection closed, and before the process ends, the host
-/// calls ``waitForConnectionTeardown()``, so the agent can close each
-/// open session.
+/// calls ``waitForConnectionTeardown()`` and then ``closeOpenSessions()``,
+/// so the agent closes each open session.
 ///
 /// Where a frontend appends its own tools: `ToolCatalog`
 /// is the one place this package composes the per-session tool surface.
@@ -257,17 +257,25 @@ public struct ComposedAgent: Sendable {
         }
     }
 
-    /// Waits until ``agent`` closed the open sessions of each connection that
-    /// ``agent(boundTo:)`` bound, after the close of that connection.
+    /// Waits until ``agent`` removed the row of each connection that
+    /// ``agent(boundTo:)`` bound, after the close of that connection, and
+    /// freed its sessions (``RoutedACPAgent/waitForConnectionTeardown()``).
     ///
-    /// A host does not have to send `session/close`: the client closes
-    /// the wire, and the agent closes each open session itself
-    /// with the same teardown as `session/close`. A host calls this
-    /// after the connection closed
-    /// and before the process exits, so the agent can write the history
-    /// of each session and stop its MCP servers.
+    /// A closed connection does not close its sessions: they go on with no
+    /// owner (ACPA-5d, D68). A host that ends its process calls this, and
+    /// then ``closeOpenSessions()``.
     public func waitForConnectionTeardown() async {
         await agent.waitForConnectionTeardown()
+    }
+
+    /// Closes each open session of ``agent``, as `session/close` does, at
+    /// the end of the host (``RoutedACPAgent/closeOpenSessions()``).
+    ///
+    /// A host does not have to send `session/close`: it calls this after
+    /// its connections closed and before the process exits, so the agent
+    /// writes the history of each session and stops its MCP servers.
+    public func closeOpenSessions() async {
+        await agent.closeOpenSessions()
     }
 
     /// Makes the router of one model path.

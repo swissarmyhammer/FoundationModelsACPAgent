@@ -29,11 +29,12 @@ let composed = try await ComposedAgent.compose(name: name, workingDirectory: cwd
 // streams session/update notifications. stdout carries ndJSON only; logs go
 // to stderr. A read-one-then-write-one loop deadlocks here.
 let connection = await composed.serve(over: .stdio, logger: .standardError)
-// The connection serves until the client closes the wire. Then the agent
-// closes each open session, and the host waits for that before it exits, so
-// the history of each session is written.
+// The connection serves until the client closes the wire. A closed connection
+// frees its sessions and they go on, so the host closes each open session
+// before it exits, and the history of each session is written.
 _ = await connection.closed
 await composed.waitForConnectionTeardown()
+await composed.closeOpenSessions()
 ```
 
 A host that makes its own `AgentSideConnection`, for example over an

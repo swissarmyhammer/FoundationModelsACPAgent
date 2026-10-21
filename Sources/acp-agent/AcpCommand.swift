@@ -78,14 +78,16 @@ extension AcpAgentCommand {
             // and ends when the client stops. A process manager can end it
             // earlier with `SIGTERM`: the connection closes, and the thrown
             // exit code takes the failure path of `main()`. The client sends no
-            // `session/close` before it closes stdin, so the agent closes
-            // each open session itself after the close; the process waits
-            // for that, so the history is written before the exit.
+            // `session/close` before it closes stdin. A closed connection
+            // only frees its sessions (ACPA-5d), so the process closes each
+            // open session itself after the close, and waits for that, so
+            // the history is written before the exit.
             try await TerminationHandler.serve(
                 untilInboundEnd: { await transport.waitForInboundEnd() },
                 closing: {
                     await connection.close()
                     await composed.waitForConnectionTeardown()
+                    await composed.closeOpenSessions()
                 },
                 watchedBy: TerminationHandler.onSIGTERM)
         }

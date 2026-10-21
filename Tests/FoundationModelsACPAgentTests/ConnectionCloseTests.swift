@@ -8,14 +8,15 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The close of the open sessions when the connection ends with no
-/// `session/close`.
+/// The end of a connection with no `session/close`.
 ///
 /// A client can drop the wire at any time: it closes the standard input of
-/// a stdio agent, or a host lets the transport go. The agent then runs the
-/// `session/close` path for each open session itself. It finishes the shell
+/// a stdio agent, or a host lets the transport go. The agent then frees each
+/// session of the connection, and the session goes on with no owner
+/// (ACPA-5d). At its end the host runs the `session/close` path for each open
+/// session (``RoutedACPAgent/closeOpenSessions()``). It finishes the shell
 /// stream, shuts the MCP servers down, and writes `session-history.json`.
-/// Then the agent goes, and gives back its models. Without that path, the
+/// Then the agent goes, and gives back its models. Without that close, the
 /// agent goes first, and the `SurfaceRefresher` of a session that mounts a
 /// server goes while its watch task runs: Multitool then stops the debug
 /// build (task `^56jbp35`).
@@ -52,7 +53,7 @@ import Testing
     private struct StreamFailure: Error {}
 
     @Test
-    func aDroppedWireClosesAnOpenMountedSessionWritesItsHistoryAndReleasesTheAgent() async throws {
+    func aDroppedWireFreesAnOpenMountedSessionAndTheHostCloseWritesItsHistoryAndReleasesTheAgent() async throws {
         // The agent and the Router session are actors with no deinit event,
         // so the case waits for proxies of their release
         // (`Support/ReleaseWatch.swift`).
@@ -75,6 +76,14 @@ import Testing
                 at: transcriptDirectory.appendingPathComponent(SessionHistoryFile.fileName))
             updates = await fixture.collector.updates
             await Self.dropClientEnd(of: fixture.harness)
+            // The dropped wire frees the session and does not close it
+            // (ACPA-5d): the history is not written yet.
+            await agent.waitForTeardown(of: fixture.harness.routedConnection.id)
+            #expect(await agent.sessions[fixture.sessionId]?.isClosed == false)
+            #expect(agent.connections.owner(of: fixture.sessionId) == nil)
+            #expect(try SessionHistoryFile.read(from: transcriptDirectory) == nil)
+            // The host closes the open sessions at its end.
+            await agent.closeOpenSessions()
         }
 
         _ = try await released.wait(for: "the agent is released") { $0 }

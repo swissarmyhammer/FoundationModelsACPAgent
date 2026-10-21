@@ -245,17 +245,17 @@ public actor RoutedACPAgent: Agent {
     /// connection keeps it for as long as it serves.
     ///
     /// The bind also starts the teardown task of the connection. It waits
-    /// for `AgentSideConnection.closed`, then it removes the row and closes
-    /// each open session of the connection as `session/close` does
+    /// for `AgentSideConnection.closed`, then it removes the row and frees
+    /// each session that the connection owns
     /// (``tearDownConnection(_:after:)``), and then it ends. Thus a client
     /// that goes away with no `session/close` (the end of the input, a failed
-    /// input stream, or a local close) leaves no session of its own open. The
-    /// task holds this agent strongly until its end: a weak hold can find the
-    /// agent already gone, and then no session closes. The hold adds no
-    /// lifetime, because the read loop of the connection already keeps this
-    /// agent until the loop ends, and `closed` fires at the end of that loop.
-    /// After the task ends, the agent goes when its callers let it go, and
-    /// gives back its models.
+    /// input stream, or a local close) leaves its sessions running with no
+    /// owner (D68), for another client to take. The task holds this agent
+    /// strongly until its end, so the row of a closed connection is always
+    /// removed. The hold adds no lifetime, because the read loop of the
+    /// connection already keeps this agent until the loop ends, and `closed`
+    /// fires at the end of that loop. A host closes the sessions at its own
+    /// end (``closeOpenSessions()``).
     ///
     /// The trust of the connection comes from the host, which knows the
     /// credential of the connection (D120 b), and never from the client:
@@ -288,12 +288,14 @@ public actor RoutedACPAgent: Agent {
     private nonisolated let connectionTeardowns = Mutex<[ConnectionId: Task<Void, Never>]>([:])
 
     /// Waits until the teardown of each bound connection ended: each one
-    /// closed, and the agent closed its open sessions. Returns at once
-    /// before the first ``bind(connection:trust:)``.
+    /// closed, its row is gone, and its sessions are free (ACPA-5d). Returns
+    /// at once before the first ``bind(connection:trust:)``.
     ///
-    /// A host that ends the process after its connections closed calls this
-    /// first, so the teardown can write the history of each session and
-    /// stop the MCP servers before the exit. A connection that is still open
+    /// The wait is for the rows, not for the sessions: a closed connection
+    /// does not close its sessions, and they go on (D68). A host that ends
+    /// the process after its connections closed calls this, and then
+    /// ``closeOpenSessions()``, so the history of each session is written and
+    /// the MCP servers stop before the exit. A connection that is still open
     /// keeps this wait; a host that closed one connection of many waits with
     /// ``waitForTeardown(of:)``.
     public nonisolated func waitForConnectionTeardown() async {
@@ -302,9 +304,9 @@ public actor RoutedACPAgent: Agent {
         }
     }
 
-    /// Waits until the teardown of one bound connection ended: it closed, and
-    /// the agent closed its open sessions. Returns at once for an id that
-    /// ``bind(connection:trust:)`` did not give.
+    /// Waits until the teardown of one bound connection ended: it closed,
+    /// its row is gone, and its sessions are free. Returns at once for an id
+    /// that ``bind(connection:trust:)`` did not give.
     ///
     /// - Parameter id: The id of the connection.
     public nonisolated func waitForTeardown(of id: ConnectionId) async {

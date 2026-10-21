@@ -24,8 +24,9 @@ import Testing
 //   read. `StdioContractTests` holds the stdout of the agent side.
 // - "No `acp-agent acp` process outlives the run." The in-process drive
 //   spawns no agent process. Its equivalent is that
-//   `ComposedAgent.waitForConnectionTeardown()` returns after the wire
-//   closes. A teardown that does not end holds the test, and a sample of
+//   `ComposedAgent.waitForConnectionTeardown()` and
+//   `ComposedAgent.closeOpenSessions()` return after the wire closes. A
+//   teardown that does not end holds the test, and a sample of
 //   the test process shows where it waits.
 //
 // It carries no gate. The package boundary is the selection: the root
@@ -93,6 +94,7 @@ struct ClientInteropTests {
         clientEnd.close()
         agentEnd.close()
         await composed.waitForConnectionTeardown()
+        await composed.closeOpenSessions()
         return try outcome.get()
     }
 

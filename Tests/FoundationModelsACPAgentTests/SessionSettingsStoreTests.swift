@@ -33,14 +33,17 @@ import Testing
         #expect(await agent.sessions[response.sessionId] != nil)
     }
 
-    /// The close of the connection stops the watch of the settings store of
-    /// the agent: each open `changes()` stream of the store ends.
-    @Test(.timeLimit(.minutes(1))) func aConnectionCloseStopsTheSettingsWatch() async throws {
+    /// The close of the host stops the watch of the settings store of the
+    /// agent: each open `changes()` stream of the store ends. The close of a
+    /// connection does not stop it (ACPA-5d): another connection, or a
+    /// session with no owner, can still read the settings.
+    @Test(.timeLimit(.minutes(1))) func theHostCloseStopsTheSettingsWatch() async throws {
         let agent = try await AgentClientHarness.makeInitializedAgent(label: "SessionSettingsStoreTests-close")
         let harness = await AgentClientHarness.makeRecording(agent: agent)
         var changes = await agent.settingsStore.changes().makeAsyncIterator()
 
         await harness.close()
+        await agent.closeOpenSessions()
 
         #expect(await changes.next() == nil)
     }

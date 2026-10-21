@@ -136,17 +136,16 @@ final class ConnectionTable: Sendable {
         return id
     }
 
-    /// Removes the row of a closed connection.
+    /// Removes the row of a closed connection, and frees each session that
+    /// it owns (D120 d): the session then has no owner, and any connection
+    /// that can take it may take it. The started-by record stays.
     ///
     /// - Parameter id: The id of the connection.
     func remove(_ id: ConnectionId) {
-        state.withLock { _ = $0.rows.removeValue(forKey: id) }
-    }
-
-    /// The count of the rows with an outbound path: each bound connection
-    /// that is not closed yet.
-    var boundConnectionCount: Int {
-        state.withLock { $0.rows.values.count { $0.connection != nil } }
+        state.withLock { state in
+            state.rows.removeValue(forKey: id)
+            state.owners = state.owners.filter { $0.value != id }
+        }
     }
 
     /// Records the client capabilities of the `initialize` of a connection.
@@ -240,16 +239,6 @@ final class ConnectionTable: Sendable {
     func path(forSession sessionId: SessionId) -> ClientPath? {
         state.withLock { state in
             state.owners[sessionId].flatMap { Self.path(of: $0, in: state) }
-        }
-    }
-
-    /// The ids of the sessions that a connection owns.
-    ///
-    /// - Parameter id: The id of the connection.
-    /// - Returns: The session ids.
-    func sessions(ownedBy id: ConnectionId) -> [SessionId] {
-        state.withLock { state in
-            state.owners.filter { $0.value == id }.map(\.key)
         }
     }
 

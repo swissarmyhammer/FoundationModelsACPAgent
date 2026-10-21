@@ -551,12 +551,13 @@ import Testing
 
     // MARK: - The end of the connection
 
-    /// When the client goes away, the teardown of the connection closes each
-    /// open session and then waits until the dispatcher delivered each post
-    /// event. Thus the `SessionEnd` of a slow visitor is delivered before the
-    /// teardown returns.
+    /// When the client goes away, the connection frees its session (ACPA-5d),
+    /// and the host then closes each open session
+    /// (``RoutedACPAgent/closeOpenSessions()``), which waits until the
+    /// dispatcher delivered each post event. Thus the `SessionEnd` of a slow
+    /// visitor is delivered before the close returns.
     @Test
-    func theConnectionTeardownReturnsAfterTheDispatcherDrained() async throws {
+    func theHostCloseReturnsAfterTheDispatcherDrained() async throws {
         let milestones = WatchedValue<[TeardownMilestone]>([])
         let gate = WatchedValue(false)
         let fixture = try await ScriptedPromptFixture.make(
@@ -566,7 +567,8 @@ import Testing
 
         await ConnectionCloseTests.dropClientEnd(of: fixture.harness)
         let teardown = Task {
-            await agent.waitForConnectionTeardown()
+            await agent.waitForTeardown(of: fixture.harness.routedConnection.id)
+            await agent.closeOpenSessions()
             milestones.update { $0.append(.teardownReturned) }
         }
         _ = try await milestones.wait(for: "the SessionEnd delivery started") {
@@ -703,7 +705,7 @@ enum TeardownMilestone: Sendable, Equatable {
     case sessionEndEntered
     /// The visitor ended its work on the `SessionEnd`.
     case sessionEndDelivered
-    /// `waitForConnectionTeardown()` returned.
+    /// `closeOpenSessions()` returned, after the connection teardown.
     case teardownReturned
 }
 

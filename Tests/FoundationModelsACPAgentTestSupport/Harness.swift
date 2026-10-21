@@ -333,10 +333,12 @@ public struct AgentClientHarness: Sendable {
     /// what gives them back.
     ///
     /// Then it waits until the agent tore down the connection of this
-    /// harness and closed each of its sessions that is still open. Thus that
-    /// teardown ends inside the test that made the sessions, and does not
-    /// run beside a later test. Another harness on the same agent keeps its
-    /// own connection open.
+    /// harness, which frees its sessions (ACPA-5d), and it closes each open
+    /// session that has no owner now
+    /// (``RoutedACPAgent/closeSessionsWithNoOwner()``). Thus the close ends
+    /// inside the test that made the sessions, and does not run beside a
+    /// later test. Another harness on the same agent keeps its own
+    /// connection and the sessions that it owns.
     ///
     /// The first call closes. Each later call, on this harness or on a
     /// copy of it, does nothing (test rule T1).
@@ -351,6 +353,7 @@ public struct AgentClientHarness: Sendable {
         agentWireTap?.stop()
         wire.close()
         await agent.waitForTeardown(of: routedConnection.id)
+        await agent.closeSessionsWithNoOwner()
     }
 
     /// The wiring every factory shares: the agent with its connection

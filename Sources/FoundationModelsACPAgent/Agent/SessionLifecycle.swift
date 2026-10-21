@@ -107,39 +107,27 @@ extension RoutedACPAgent {
 
     // MARK: - The close of the connection
 
-    /// Tears down one connection after it closed: removes its row from
-    /// ``connections`` and closes each open session that the connection
-    /// owns, as `session/close` closes one. A session of another owner goes
-    /// on. Agent shutdown must close each session too, because
-    /// `RoutedSession` does not run its sweep in `deinit`.
+    /// Tears down one connection after it closed (ACPA-5d, D120 d): removes
+    /// its row from ``connections`` and frees each session that it owns. A
+    /// freed session has no owner, and it is not closed: its work goes on
+    /// (D68), each of its updates goes into its retained history, and any
+    /// connection that can take it takes it with `session/resume`. A client
+    /// can go away with no `session/close`: it closes its end of the wire,
+    /// its input stream fails, or the host closes the connection. One
+    /// `notice` record names the reason.
     ///
     /// The teardown task of ``bind(connection:trust:)`` calls it when
-    /// `AgentSideConnection.closed` gives its reason. A client can go away
-    /// with no `session/close`: it closes its end of the wire, its input
-    /// stream fails, or the host closes the connection. Each open session of
-    /// the connection then gets the full teardown here: the shell stream
-    /// finishes, the MCP servers shut down, and `session-history.json` is
-    /// written. A session already closed is skipped. One `notice` record
-    /// names the reason.
+    /// `AgentSideConnection.closed` gives its reason. The connection already
+    /// ended each inbound handler then, so no handler of it runs beside this
+    /// teardown.
     ///
-    /// After the sessions close, the call waits until the hook dispatcher
-    /// delivered each post event (`HookDispatcher.drain()`). Thus the
-    /// `SessionEnd` of each session and the last snapshots are complete
-    /// before the host process ends, for `acp-agent acp` and for
-    /// `acp-agent run`.
-    ///
-    /// Last, when no bound connection is left, the call stops the watch of
-    /// each `config.yaml` of the ``settingsStore``
-    /// (``SettingsStore/stopWatching()``), because no client reads the
-    /// settings again.
-    ///
-    /// The connection already ended each inbound handler when `closed`
-    /// gives its reason, so no handler of it runs beside this teardown.
+    /// The close of the sessions is the job of the host at its end
+    /// (``closeOpenSessions()``), not of a connection close.
     ///
     /// - Parameters:
     ///   - id: The id of the closed connection.
     ///   - reason: Why the connection closed.
-    func tearDownConnection(_ id: ConnectionId, after reason: ConnectionCloseReason) async {
+    func tearDownConnection(_ id: ConnectionId, after reason: ConnectionCloseReason) {
         var metadata: Logger.Metadata = [
             ACPAgentTelemetry.LogMetadataKey.connectionCloseReason: "\(Self.connectionCloseReasonName(reason))"
         ]
@@ -148,18 +136,52 @@ extension RoutedACPAgent {
                 "\(ACPAgentTelemetry.errorTypeName(of: error))"
         }
         ACPAgentTelemetry.logger(.sessionLifecycle).notice(
-            "The connection closed. The agent closes each open session of the connection.", metadata: metadata)
+            "The connection closed. Its sessions go on with no owner.", metadata: metadata)
         connections.remove(id)
-        for sessionId in connections.sessions(ownedBy: id) {
-            guard let entry = sessions[sessionId], !entry.isClosed else {
-                continue
-            }
+    }
+
+    /// Closes each open session of the agent, as `session/close` closes one:
+    /// the shell stream finishes, the MCP servers shut down, and
+    /// `session-history.json` is written. A session already closed is
+    /// skipped. A host calls it at its end, after its connections closed,
+    /// because a closed connection frees its sessions and does not close
+    /// them (``tearDownConnection(_:after:)``), and `RoutedSession` does not
+    /// run its sweep in `deinit`.
+    ///
+    /// After the sessions close, the call waits until the hook dispatcher
+    /// delivered each post event (`HookDispatcher.drain()`). Thus the
+    /// `SessionEnd` of each session and the last snapshots are complete
+    /// before the host process ends, for `acp-agent acp` and for
+    /// `acp-agent run`. Last, the call stops the watch of each `config.yaml`
+    /// of the ``settingsStore`` (``SettingsStore/stopWatching()``), because
+    /// no session reads the settings again.
+    ///
+    /// The agent stays usable: a later `session/resume` brings a closed
+    /// session back.
+    public func closeOpenSessions() async {
+        for (sessionId, entry) in sessions where !entry.isClosed {
             await tearDownSession(sessionId, entry: entry)
         }
         await hooks.dispatcher.drain()
-        if connections.boundConnectionCount == 0 {
-            await settingsStore.stopWatching()
+        await settingsStore.stopWatching()
+    }
+
+    /// Closes each open session that has no owner now, as `session/close`
+    /// closes one, and waits until the hook dispatcher delivered each post
+    /// event. A session that a bound connection or ``ConnectionId/direct``
+    /// owns stays open, and the watch of the ``settingsStore`` goes on.
+    ///
+    /// A host that serves many connections in turn calls it to end the
+    /// sessions that no client took after their connection closed. The test
+    /// harness calls it at the close of one harness, so that the sessions of
+    /// that harness end inside its test, while another harness on the same
+    /// agent keeps its own sessions.
+    public func closeSessionsWithNoOwner() async {
+        for (sessionId, entry) in sessions
+        where !entry.isClosed && connections.owner(of: sessionId) == nil {
+            await tearDownSession(sessionId, entry: entry)
         }
+        await hooks.dispatcher.drain()
     }
 
     /// The name of a close reason, for the log record of a connection close.
