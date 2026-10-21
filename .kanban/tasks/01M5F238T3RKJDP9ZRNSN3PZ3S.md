@@ -60,6 +60,14 @@ comments:
     - GREEN: `swift test --filter 'SessionSettingsStoreTests|SettingsToolTests|ToolCatalogTests'` → 43 tests passed. Full `swift test`: 1187 tests in 128 suites passed with 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps).
     - Updated callers: SessionSetup (composeSession), ToolCatalog.makeRegistry, SettingsToolTests (tools over `fixture.graph`), ToolCatalogTests (context gets an endpoint; the registry-call test reads the stored value through the endpoint).
   timestamp: 2026-10-21T13:24:24.077085+00:00
+- actor: claude-code
+  id: 01m5fa587tbgmfjympny4wwhe2
+  text: |-
+    ### implement — changed
+    - evidence: 407b000 feat(settings): one settings endpoint per store (^sn3pz3s), on top of 2e5fbbd. Full `swift test`: 1187 tests in 128 suites passed with 1 known issue. 9 files: Agent/SessionSetup.swift, RoutedACPAgent.swift, Settings/SettingsGraph.swift, Settings/SettingsTool.swift, Tools/CatalogContext.swift, Tools/ToolCatalog.swift, SessionSettingsStoreTests, SettingsToolTests, ToolCatalogTests.
+    - open decision: none. Every requirement of the card is in the diff.
+    - next: /review
+  timestamp: 2026-10-21T13:24:38.778326+00:00
 position_column: doing
 position_ordinal: '8380'
 title: 'EXTRAS-9 settings: changes(after:) with an opaque cursor, a cursor query, and RESYNC_REQUIRED (blocked on EXTRAS-10 ChangeLog)'
