@@ -40,6 +40,14 @@ comments:
     - Rule 10 (SUBSCRIPTION_NOT_IN_TOOL) was already covered by SettingsToolTests.theToolRefusesASubscription.
     - Full `swift test`: 1186 tests in 128 suites passed with 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps).
   timestamp: 2026-10-21T13:15:13.164246+00:00
+- actor: claude-code
+  id: 01m5f9mwgdjaxmp735p393dh1c
+  text: |-
+    ### implement — changed
+    - evidence: 2e5fbbd feat(settings): changes(after:) with an opaque cursor, a cursor query and RESYNC_REQUIRED (^sn3pz3s); before it 563334a build(deps) (Extras ac1b9f2, Multitool c9f70cd). Full `swift test`: 1186 tests in 128 suites passed with 1 known issue. 13 files: Sources/.../Configuration/SettingsStore.swift, Configuration/SettingsLoggedChange.swift (new), Settings/SettingsEngine.swift, Settings/SettingsGraph.swift, Settings/SettingsGraphSchema.swift, Tests/Fixtures/settings.graphql, SettingsGraphTests, SettingsSubscriptionTests, SettingsToolTests, SettingsTreeDifferenceTests (new), Support/SettingsGraphFixture.swift, + this card.
+    - open decision for review: one ChangeLog per store (shared by all endpoints), not one cached SettingsGraph instance per store (see the comment above).
+    - next: /review
+  timestamp: 2026-10-21T13:15:42.477210+00:00
 position_column: doing
 position_ordinal: '8380'
 title: 'EXTRAS-9 settings: changes(after:) with an opaque cursor, a cursor query, and RESYNC_REQUIRED (blocked on EXTRAS-10 ChangeLog)'
