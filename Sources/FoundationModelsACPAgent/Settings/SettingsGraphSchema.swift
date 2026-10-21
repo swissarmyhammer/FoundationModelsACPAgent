@@ -175,8 +175,8 @@ struct SettingsGraphSettingArguments: Codable, Sendable {
     let cwd: String?
 }
 
-/// The arguments of `Mutation.set`.
-struct SettingsGraphSetArguments: Codable, Sendable {
+/// The `UpdateSettingInput` input object of `Mutation.updateSetting`.
+struct SettingsGraphUpdateInput: Codable, Sendable {
     /// The key path.
     let keyPath: [String]
 
@@ -193,8 +193,14 @@ struct SettingsGraphSetArguments: Codable, Sendable {
     let cwd: String?
 }
 
-/// The arguments of `Mutation.clear`.
-struct SettingsGraphClearArguments: Codable, Sendable {
+/// The arguments of `Mutation.updateSetting`.
+struct SettingsGraphUpdateArguments: Codable, Sendable {
+    /// The input object of the mutation.
+    let input: SettingsGraphUpdateInput
+}
+
+/// The `ClearSettingInput` input object of `Mutation.clearSetting`.
+struct SettingsGraphClearInput: Codable, Sendable {
     /// The key path.
     let keyPath: [String]
 
@@ -206,6 +212,12 @@ struct SettingsGraphClearArguments: Codable, Sendable {
     /// the call has no session folder: then only a user level change works
     /// (``SettingsGraphContext/workingDirectory(given:)``).
     let cwd: String?
+}
+
+/// The arguments of `Mutation.clearSetting`.
+struct SettingsGraphClearArguments: Codable, Sendable {
+    /// The input object of the mutation.
+    let input: SettingsGraphClearInput
 }
 
 /// The arguments of `Subscription.changes`.
@@ -302,7 +314,7 @@ struct SettingsGraphResolver: Sendable {
         try await mergedSetting(at: arguments.keyPath, cwd: context.workingDirectory(given: arguments.cwd))
     }
 
-    /// Resolves `Mutation.set`.
+    /// Resolves `Mutation.updateSetting`.
     ///
     /// A failure of the read after the change does not fail the mutation,
     /// because the change is saved before that read. Then the result has an
@@ -312,23 +324,23 @@ struct SettingsGraphResolver: Sendable {
     ///   - context: The context of the call, which gives the working
     ///     directory when the call gives no `cwd`, and gets the warning of a
     ///     read after the change that did not complete.
-    ///   - arguments: The key path, the value, the level and the working
-    ///     directory.
+    ///   - arguments: The input object: the key path, the value, the level
+    ///     and the working directory.
     /// - Returns: The merged setting after the change, or `nil` when no layer
     ///   has the key or when the read after the change failed as a whole.
     /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
     ///   ``SettingsEngine/set(_:at:level:cwd:)`` throw. The change is then not
     ///   saved.
-    func set(
-        context: SettingsGraphContext, arguments: SettingsGraphSetArguments
+    func updateSetting(
+        context: SettingsGraphContext, arguments: SettingsGraphUpdateArguments
     ) async throws -> SettingsGraphSetting? {
-        let cwd = try context.workingDirectory(given: arguments.cwd)
-        try await engine.set(
-            YAMLValue(graphQLMap: arguments.value), at: arguments.keyPath, level: arguments.level, cwd: cwd)
-        return await settingAfterChange(at: arguments.keyPath, cwd: cwd, context: context)
+        let input = arguments.input
+        let cwd = try context.workingDirectory(given: input.cwd)
+        try await engine.set(YAMLValue(graphQLMap: input.value), at: input.keyPath, level: input.level, cwd: cwd)
+        return await settingAfterChange(at: input.keyPath, cwd: cwd, context: context)
     }
 
-    /// Resolves `Mutation.clear`.
+    /// Resolves `Mutation.clearSetting`.
     ///
     /// A failure of the read after the change does not fail the mutation,
     /// because the change is saved before that read. Then the result has an
@@ -338,18 +350,20 @@ struct SettingsGraphResolver: Sendable {
     ///   - context: The context of the call, which gives the working
     ///     directory when the call gives no `cwd`, and gets the warning of a
     ///     read after the change that did not complete.
-    ///   - arguments: The key path, the level and the working directory.
+    ///   - arguments: The input object: the key path, the level and the
+    ///     working directory.
     /// - Returns: The merged setting after the change, or `nil` when no layer
     ///   has the key or when the read after the change failed as a whole.
     /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
     ///   ``SettingsEngine/clear(at:level:cwd:)`` throw. The change is then not
     ///   saved.
-    func clear(
+    func clearSetting(
         context: SettingsGraphContext, arguments: SettingsGraphClearArguments
     ) async throws -> SettingsGraphSetting? {
-        let cwd = try context.workingDirectory(given: arguments.cwd)
-        try await engine.clear(at: arguments.keyPath, level: arguments.level, cwd: cwd)
-        return await settingAfterChange(at: arguments.keyPath, cwd: cwd, context: context)
+        let input = arguments.input
+        let cwd = try context.workingDirectory(given: input.cwd)
+        try await engine.clear(at: input.keyPath, level: input.level, cwd: cwd)
+        return await settingAfterChange(at: input.keyPath, cwd: cwd, context: context)
     }
 
     /// Reads the merged setting of one key for the query.
@@ -508,6 +522,20 @@ struct SettingsGraphAPI: API {
                         .description("The changed key path, or null when the file of the level changed. Read it again.")
                 }
                 .description("One change of the settings.")
+                Input(SettingsGraphUpdateInput.self, as: "UpdateSettingInput") {
+                    InputField("keyPath", at: \.keyPath).description(Self.keyPathDescription)
+                    InputField("value", at: \.value)
+                        .description("The new value. A secret key takes only a keychain:<name> reference.")
+                    InputField("level", at: \.level).description(Self.levelDescription)
+                    InputField("cwd", at: \.cwd).description(Self.cwdDescription)
+                }
+                .description("The key, the new value and the level of an updateSetting mutation.")
+                Input(SettingsGraphClearInput.self, as: "ClearSettingInput") {
+                    InputField("keyPath", at: \.keyPath).description(Self.keyPathDescription)
+                    InputField("level", at: \.level).description(Self.levelDescription)
+                    InputField("cwd", at: \.cwd).description(Self.cwdDescription)
+                }
+                .description("The key and the level of a clearSetting mutation.")
             }
             .addQuery {
                 Field("sections", at: SettingsGraphResolver.sections)
@@ -521,18 +549,12 @@ struct SettingsGraphAPI: API {
                         + "when no layer has the key.")
             }
             .addMutation {
-                Field("set", at: SettingsGraphResolver.set) {
-                    Argument("keyPath", at: \.keyPath).description(Self.keyPathDescription)
-                    Argument("value", at: \.value)
-                        .description("The new value. A secret key takes only a keychain:<name> reference.")
-                    Argument("level", at: \.level).description(Self.levelDescription)
-                    Argument("cwd", at: \.cwd).description(Self.cwdDescription)
+                Field("updateSetting", at: SettingsGraphResolver.updateSetting) {
+                    Argument("input", at: \.input).description("The key, the new value and the level.")
                 }
                 .description("Sets the value of one key on one level. \(Self.resultDescription)")
-                Field("clear", at: SettingsGraphResolver.clear) {
-                    Argument("keyPath", at: \.keyPath).description(Self.keyPathDescription)
-                    Argument("level", at: \.level).description(Self.levelDescription)
-                    Argument("cwd", at: \.cwd).description(Self.cwdDescription)
+                Field("clearSetting", at: SettingsGraphResolver.clearSetting) {
+                    Argument("input", at: \.input).description("The key and the level.")
                 }
                 .description(
                     "Removes one key from one level. The value of a lower level applies again. "

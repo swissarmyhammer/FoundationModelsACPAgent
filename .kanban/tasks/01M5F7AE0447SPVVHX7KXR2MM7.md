@@ -1,6 +1,15 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5f7c6npbystb4thgjgkngz8
+  text: |-
+    Coordinator update (2026-10-21): Router branch router-3-session-index at 29ae4767 has only SessionIndex, no ProjectRegistry yet. Router is adding ProjectRegistry (^k176prd) to that branch and will send the sha.
+    - Do the SessionIndex half first.
+    - Do the ProjectRegistry half last. Before removing ProjectRegistry.swift, run `swift package update FoundationModelsRouter` on the acpa-14 branch and check that Router's ProjectRegistry is in .build/checkouts/FoundationModelsRouter.
+    - If it is not there yet, keep ProjectRegistry.swift and report that this half waits for the Router sha.
+  timestamp: 2026-10-21T12:36:00.822082+00:00
 position_column: todo
 position_ordinal: '8480'
 title: 'ACPA-14: read past sessions from Router; remove the ACPAgent copies of SessionIndex and ProjectRegistry'

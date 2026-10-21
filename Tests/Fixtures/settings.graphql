@@ -82,6 +82,41 @@ type SettingsChange {
   keyPath: [String!]
 }
 
+"""The key, the new value and the level of an updateSetting mutation."""
+input UpdateSettingInput {
+  """
+  The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
+  """
+  keyPath: [String!]!
+
+  """The new value. A secret key takes only a keychain:<name> reference."""
+  value: JSON!
+
+  """The level that the mutation changes."""
+  level: SettingLevel!
+
+  """
+  The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+  """
+  cwd: String
+}
+
+"""The key and the level of a clearSetting mutation."""
+input ClearSettingInput {
+  """
+  The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
+  """
+  keyPath: [String!]!
+
+  """The level that the mutation changes."""
+  level: SettingLevel!
+
+  """
+  The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+  """
+  cwd: String
+}
+
 type Query {
   """The sections of the settings: the first key of each key path."""
   sections: [String!]!
@@ -106,40 +141,17 @@ type Mutation {
   """
   Sets the value of one key on one level. The merged setting after the change, or null when no layer has the key. The change is saved before the read of this result. When that read does not complete, the mutation does not fail: a part that the read could not get is null, and extensions.warnings has the code READ_AFTER_CHANGE_INCOMPLETE.
   """
-  set(
-    """
-    The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
-    """
-    keyPath: [String!]!
-
-    """The new value. A secret key takes only a keychain:<name> reference."""
-    value: JSON!
-
-    """The level that the mutation changes."""
-    level: SettingLevel!
-
-    """
-    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
-    """
-    cwd: String
+  updateSetting(
+    """The key, the new value and the level."""
+    input: UpdateSettingInput!
   ): Setting
 
   """
   Removes one key from one level. The value of a lower level applies again. The merged setting after the change, or null when no layer has the key. The change is saved before the read of this result. When that read does not complete, the mutation does not fail: a part that the read could not get is null, and extensions.warnings has the code READ_AFTER_CHANGE_INCOMPLETE.
   """
-  clear(
-    """
-    The keys from the root, for example ["compaction", "trigger"]. The first key is a section.
-    """
-    keyPath: [String!]!
-
-    """The level that the mutation changes."""
-    level: SettingLevel!
-
-    """
-    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
-    """
-    cwd: String
+  clearSetting(
+    """The key and the level."""
+    input: ClearSettingInput!
   ): Setting
 }
 

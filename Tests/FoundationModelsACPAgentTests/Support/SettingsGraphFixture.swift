@@ -27,21 +27,47 @@ struct SettingsGraphFixture {
         }
         """
 
-    /// A `set` mutation that gives the setting after the change. A `null` or
-    /// absent `$cwd` gives no `cwd`.
-    static let setMutation = """
-        mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!, $cwd: String) {
-          set(keyPath: $keyPath, value: $value, level: $level, cwd: $cwd) \(settingFields)
-        }
-        """
+    /// The response key of the `updateSetting` mutation.
+    static let updateField = "updateSetting"
 
-    /// A `clear` mutation that gives the setting after the change. A `null`
-    /// or absent `$cwd` gives no `cwd`.
-    static let clearMutation = """
-        mutation($keyPath: [String!]!, $level: SettingLevel!, $cwd: String) {
-          clear(keyPath: $keyPath, level: $level, cwd: $cwd) \(settingFields)
+    /// The response key of the `clearSetting` mutation.
+    static let clearField = "clearSetting"
+
+    /// An `updateSetting` mutation that gives the setting after the change. A
+    /// `null` or absent `$cwd` gives no `cwd`.
+    static let setMutation = updateDocument(named: updateField)
+
+    /// A `clearSetting` mutation that gives the setting after the change. A
+    /// `null` or absent `$cwd` gives no `cwd`.
+    static let clearMutation = clearDocument(named: clearField)
+
+    /// An update mutation that a call names with `name`: `updateSetting` or
+    /// one of its aliases.
+    ///
+    /// - Parameter name: The name of the mutation in the document.
+    /// - Returns: The document, whose variables are `$keyPath`, `$value`,
+    ///   `$level` and `$cwd`.
+    static func updateDocument(named name: String) -> String {
+        """
+        mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!, $cwd: String) {
+          \(name)(input: {keyPath: $keyPath, value: $value, level: $level, cwd: $cwd}) \(settingFields)
         }
         """
+    }
+
+    /// A clear mutation that a call names with `name`: `clearSetting` or one
+    /// of its aliases.
+    ///
+    /// - Parameter name: The name of the mutation in the document.
+    /// - Returns: The document, whose variables are `$keyPath`, `$level` and
+    ///   `$cwd`.
+    static func clearDocument(named name: String) -> String {
+        """
+        mutation($keyPath: [String!]!, $level: SettingLevel!, $cwd: String) {
+          \(name)(input: {keyPath: $keyPath, level: $level, cwd: $cwd}) \(settingFields)
+        }
+        """
+    }
 
     /// A query of one setting with no `cwd`. A session tool reads the
     /// setting for its session folder, and the endpoint reads the user level.
@@ -51,11 +77,11 @@ struct SettingsGraphFixture {
         }
         """
 
-    /// A `set` mutation with no `cwd`. A session tool writes the level for
-    /// its session folder.
+    /// An `updateSetting` mutation with no `cwd`. A session tool writes the
+    /// level for its session folder.
     static let sessionSetMutation = """
         mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!) {
-          set(keyPath: $keyPath, value: $value, level: $level) \(settingFields)
+          updateSetting(input: {keyPath: $keyPath, value: $value, level: $level}) \(settingFields)
         }
         """
 
@@ -269,6 +295,10 @@ struct GraphQLReply {
     /// The `code` of each item of `extensions.warnings`, in order.
     let warningCodes: [String]
 
+    /// Each item of `extensions.rewrites` as its `from` and `to` names, in
+    /// order.
+    let rewrites: [[String]]
+
     /// Reads a response.
     ///
     /// - Parameter text: The JSON text.
@@ -280,8 +310,11 @@ struct GraphQLReply {
         let errors = object["errors"] as? [[String: Any]] ?? []
         codes = errors.compactMap { error in (error["extensions"] as? [String: Any])?["code"] as? String }
         messages = errors.compactMap { error in error["message"] as? String }
-        let warnings = (object["extensions"] as? [String: Any])?["warnings"] as? [[String: Any]] ?? []
+        let extensions = object["extensions"] as? [String: Any]
+        let warnings = extensions?["warnings"] as? [[String: Any]] ?? []
         warningCodes = warnings.compactMap { warning in warning["code"] as? String }
+        let rewriteItems = extensions?["rewrites"] as? [[String: Any]] ?? []
+        rewrites = rewriteItems.map { rewrite in [rewrite["from"], rewrite["to"]].compactMap { $0 as? String } }
     }
 
     /// The object of one field of `data`.

@@ -85,10 +85,10 @@ import Testing
     /// The value of `compaction.trigger` that the session level gets.
     private static let sessionTrigger = 0.9
 
-    /// A `set` mutation of ``triggerKeyPath`` on the session level, with no
-    /// `cwd`: the session folder of the tool applies.
+    /// An `updateSetting` mutation of ``triggerKeyPath`` on the session level,
+    /// with no `cwd`: the session folder of the tool applies.
     private static let sessionTriggerMutation =
-        "mutation { set(keyPath: [\"compaction\", \"trigger\"], value: \(sessionTrigger), level: SESSION) { level } }"
+        "mutation { updateSetting(input: {keyPath: [\"compaction\", \"trigger\"], value: \(sessionTrigger), level: SESSION}) { level } }"
 
     // MARK: Harness
 
@@ -565,14 +565,15 @@ import Testing
 
     // MARK: The settings tool
 
-    /// The slice of the wire result of a `set` mutation through the
+    /// The slice of the wire result of an `updateSetting` mutation through the
     /// `settings` verb that these tests assert on: the level of the merged
     /// setting after the change.
     private struct SettingsSetResult: Decodable {
         /// The `data` object of the GraphQL response.
         struct ResponseData: Decodable {
-            /// The result of the `set` mutation, or `nil` when it failed.
-            let set: SetResult?
+            /// The result of the `updateSetting` mutation, or `nil` when it
+            /// failed.
+            let updateSetting: SetResult?
         }
 
         /// The fields of the `Setting` that the mutation selects.
@@ -627,7 +628,7 @@ import Testing
         let answer: SettingsSetResult = try await FilesVerbSupport.invoke(
             try #require(registry.tools[Self.settingsVerbPath]), arguments: ["query": Self.sessionTriggerMutation])
 
-        #expect(answer.data?.set?.level == SettingsGraphFixture.sessionLevel)
+        #expect(answer.data?.updateSetting?.level == SettingsGraphFixture.sessionLevel)
         let stored = try await store.value(at: Self.triggerKeyPath, cwd: context.workingDirectory)
         #expect(stored == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
     }

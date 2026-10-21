@@ -28,7 +28,7 @@ import Testing
     /// The `SettingLevel` and `SettingLayer` name of the session level.
     private static let sessionLevel = SettingsGraphFixture.sessionLevel
 
-    /// The snippet: a `set` mutation on the session level and a `setting`
+    /// The snippet: an `updateSetting` mutation on the session level and a `setting`
     /// query, both with no `cwd`. Each call reports the level and the value
     /// of its response on one labeled line, or the whole response when the
     /// response has no setting.
@@ -36,12 +36,12 @@ import Testing
         """
         const json = (answer) => typeof answer === "string" ? JSON.parse(answer) : answer;
         const set = json(await tools.settings.querySettings({
-            query: "mutation { set(keyPath: [\\"compaction\\", \\"trigger\\"], value: \(sessionTrigger), level: \(sessionLevel)) { level } }"
+            query: "mutation { updateSetting(input: {keyPath: [\\"compaction\\", \\"trigger\\"], value: \(sessionTrigger), level: \(sessionLevel)}) { level } }"
         }));
         const read = json(await tools.settings.querySettings({
             query: "{ setting(keyPath: [\\"compaction\\", \\"trigger\\"]) { value level } }"
         }));
-        const setLine = set.data && set.data.set ? set.data.set.level : JSON.stringify(set);
+        const setLine = set.data && set.data.updateSetting ? set.data.updateSetting.level : JSON.stringify(set);
         const readLine = read.data && read.data.setting
             ? read.data.setting.level + " " + read.data.setting.value : JSON.stringify(read);
         return ["\(setLabel)=" + setLine, "\(readLabel)=" + readLine].join("\\n");

@@ -33,7 +33,7 @@ import Testing
         try SettingsTool(store: fixture.store)
     }
 
-    /// The arguments of a `set` call.
+    /// The arguments of an `updateSetting` call.
     ///
     /// - Parameters:
     ///   - value: The new value.
@@ -57,7 +57,7 @@ import Testing
         #expect(endpoints.first?.scope == .server)
     }
 
-    /// A `set` on each level and a `clear` on the session level
+    /// An `updateSetting` on each level and a `clearSetting` on the session level
     /// work through the tool, and the store has each change.
     @Test func eachLevelChangesThroughTheTool() async throws {
         let fixture = try SettingsGraphFixture(label: "tool-levels")
@@ -85,7 +85,7 @@ import Testing
         #expect(sessionValue == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
         let restored = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
         #expect(restored == SettingsValue(value: .double(Self.userTrigger), level: .user))
-        #expect(try clear.object("clear")["level"] as? String == SettingsGraphFixture.userLevel)
+        #expect(try clear.object(SettingsGraphFixture.clearField)["level"] as? String == SettingsGraphFixture.userLevel)
     }
 
     /// The tool does not run a subscription.
@@ -153,7 +153,7 @@ import Testing
         try SettingsTool(store: fixture.store, sessionDirectory: fixture.firstDirectory)
     }
 
-    /// The arguments of a `set` call on the session level with no `cwd`.
+    /// The arguments of an `updateSetting` call on the session level with no `cwd`.
     ///
     /// - Parameter value: The new value.
     /// - Returns: The arguments.
@@ -187,7 +187,7 @@ import Testing
         #expect(setting["level"] as? String == SettingsGraphFixture.sessionLevel)
     }
 
-    /// A `set` on the session level with no `cwd` writes the level of the
+    /// An `updateSetting` on the session level with no `cwd` writes the level of the
     /// session folder of the tool, and no other folder.
     @Test func aSessionToolWritesTheSessionLevelOfItsSessionFolder() async throws {
         let fixture = try SettingsGraphFixture(label: "tool-session-write")

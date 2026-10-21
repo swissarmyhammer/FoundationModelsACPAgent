@@ -7,7 +7,7 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The `settings` GraphQL endpoint (ACPA-17, D100, D75): the merged value of
-/// a key and its level, the `set` and `clear` mutations on
+/// a key and its level, the `updateSetting` and `clearSetting` mutations on
 /// each level, and the rules of a secret key.
 ///
 /// Each test uses ``SettingsGraphFixture``: temporary folders and an
@@ -157,7 +157,7 @@ import Testing
             level: SettingsGraphFixture.userLevel, cwd: fixture.firstDirectory)
 
         #expect(reply.codes.isEmpty)
-        let result = try reply.object("set")
+        let result = try reply.object(SettingsGraphFixture.updateField)
         #expect(result["value"] as? Double == Self.userTrigger)
         #expect(result["level"] as? String == SettingsGraphFixture.userLevel)
         let other = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.secondDirectory)
@@ -174,7 +174,7 @@ import Testing
             .number(Number(Self.sessionTrigger)), at: SettingsGraphFixture.triggerKeyPath,
             level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory)
 
-        let result = try reply.object("set")
+        let result = try reply.object(SettingsGraphFixture.updateField)
         #expect(result["value"] as? Double == Self.sessionTrigger)
         #expect(result["level"] as? String == SettingsGraphFixture.sessionLevel)
         let other = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.secondDirectory)
@@ -194,13 +194,14 @@ import Testing
             SettingsGraphFixture.triggerKeyPath, level: SettingsGraphFixture.sessionLevel,
             cwd: fixture.firstDirectory)
 
-        let result = try reply.object("clear")
+        let result = try reply.object(SettingsGraphFixture.clearField)
         #expect(result["value"] as? Double == Self.userTrigger)
         #expect(result["level"] as? String == SettingsGraphFixture.userLevel)
     }
 
-    /// A mutation name that a call writes in place of `set` or `clear`, such
-    /// as `setSetting` or `unset`, reaches the mutation of the schema.
+    /// A mutation name that a call writes in place of `updateSetting` or
+    /// `clearSetting`, such as `setSetting` or `unset`, reaches the mutation
+    /// of the schema.
     @Test func aMutationAliasReachesTheMutation() async throws {
         let fixture = try SettingsGraphFixture(label: "mutation-alias")
         var variables = SettingsGraphFixture.variables(
@@ -208,21 +209,42 @@ import Testing
         variables["level"] = .string(SettingsGraphFixture.userLevel)
         variables["value"] = .number(Number(Self.userTrigger))
 
-        let set = try await fixture.run(
-            "mutation($keyPath: [String!]!, $value: JSON!, $level: SettingLevel!, $cwd: String!) "
-                + "{ setSetting(keyPath: $keyPath, value: $value, level: $level, cwd: $cwd) { level } }",
-            variables: variables)
+        let set = try await fixture.run(SettingsGraphFixture.updateDocument(named: "setSetting"), variables: variables)
         variables["value"] = nil
-        let clear = try await fixture.run(
-            "mutation($keyPath: [String!]!, $level: SettingLevel!, $cwd: String!) "
-                + "{ unset(keyPath: $keyPath, level: $level, cwd: $cwd) { level } }",
-            variables: variables)
+        let clear = try await fixture.run(SettingsGraphFixture.clearDocument(named: "unset"), variables: variables)
 
         #expect(set.codes.isEmpty)
         #expect(try set.object("setSetting")["level"] as? String == SettingsGraphFixture.userLevel)
         #expect(clear.codes.isEmpty)
         let stored = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
         #expect(stored == nil)
+    }
+
+    /// The old names `set` and `clear` are aliases of `updateSetting` and
+    /// `clearSetting`: each gives the same result as the new name, and the
+    /// response tells the rewrite in `extensions.rewrites`.
+    @Test func theOldSetAndClearNamesGiveTheSameResult() async throws {
+        let fixture = try SettingsGraphFixture(label: "old-names")
+        var variables = SettingsGraphFixture.variables(
+            keyPath: SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
+        variables["level"] = .string(SettingsGraphFixture.sessionLevel)
+        variables["value"] = .number(Number(Self.sessionTrigger))
+        try await fixture.store.set(.double(Self.userTrigger), at: SettingsGraphFixture.triggerKeyPath, level: .user)
+
+        let update = try await fixture.run(SettingsGraphFixture.setMutation, variables: variables)
+        let set = try await fixture.run(SettingsGraphFixture.updateDocument(named: "set"), variables: variables)
+        variables["value"] = nil
+        let clear = try await fixture.run(SettingsGraphFixture.clearDocument(named: "clear"), variables: variables)
+
+        #expect(set.codes.isEmpty)
+        #expect(clear.codes.isEmpty)
+        let updated = try update.object(SettingsGraphFixture.updateField)
+        let viaSet = try set.object("set")
+        #expect(viaSet["value"] as? Double == updated["value"] as? Double)
+        #expect(viaSet["level"] as? String == updated["level"] as? String)
+        #expect(set.rewrites.contains(["set", SettingsGraphFixture.updateField]))
+        #expect(try clear.object("clear")["level"] as? String == SettingsGraphFixture.userLevel)
+        #expect(clear.rewrites.contains(["clear", SettingsGraphFixture.clearField]))
     }
 
     /// A change that would lose a template construct of the file is refused
@@ -297,7 +319,7 @@ import Testing
             level: SettingsGraphFixture.userLevel, cwd: nil)
 
         #expect(reply.codes.isEmpty)
-        let result = try reply.object("set")
+        let result = try reply.object(SettingsGraphFixture.updateField)
         #expect(result["value"] as? Double == Self.userTrigger)
         #expect(result["level"] as? String == SettingsGraphFixture.userLevel)
         let text = try textOnDisk(at: ConfigCommandFixture.configURL(in: fixture.userRoot))
@@ -316,7 +338,7 @@ import Testing
             SettingsGraphFixture.triggerKeyPath, level: SettingsGraphFixture.userLevel, cwd: nil)
 
         #expect(reply.codes.isEmpty)
-        #expect(reply.data?["clear"] is NSNull)
+        #expect(reply.data?[SettingsGraphFixture.clearField] is NSNull)
         let text = try textOnDisk(at: ConfigCommandFixture.configURL(in: fixture.userRoot))
         #expect(try YAMLValue.parse(text).value(at: SettingsGraphFixture.triggerKeyPath) == nil)
     }
@@ -480,7 +502,7 @@ import Testing
         #expect(reply.codes.isEmpty)
         #expect(reply.warningCodes == [SettingsGraphResolver.readBackWarningCode])
         #expect(try textOnDisk(at: ConfigCommandFixture.configURL(in: try fixture.userRoot)).contains(Self.reference))
-        let result = try reply.object("set")
+        let result = try reply.object(SettingsGraphFixture.updateField)
         #expect(result["value"] as? String == Self.reference)
         let secrets = try #require(result["secrets"] as? [[String: Any]])
         #expect(secrets.first?["reference"] as? String == Self.referenceName)
@@ -506,7 +528,7 @@ import Testing
         #expect(reply.warningCodes == [SettingsGraphResolver.readBackWarningCode])
         let sessionFile = ConfigCommandFixture.configURL(in: try fixture.sessionRoot(of: fixture.firstDirectory))
         #expect(try !textOnDisk(at: sessionFile).contains(Self.sessionReference))
-        let result = try reply.object("clear")
+        let result = try reply.object(SettingsGraphFixture.clearField)
         #expect(result["level"] as? String == SettingsGraphFixture.userLevel)
         let secrets = try #require(result["secrets"] as? [[String: Any]])
         #expect(secrets.first?["reference"] as? String == Self.referenceName)
@@ -527,7 +549,7 @@ import Testing
 
         #expect(reply.codes.isEmpty)
         #expect(reply.warningCodes == [SettingsGraphResolver.readBackWarningCode])
-        #expect(reply.data?["set"] is NSNull)
+        #expect(reply.data?[SettingsGraphFixture.updateField] is NSNull)
         let userFile = ConfigCommandFixture.configURL(in: try fixture.userRoot)
         #expect(try textOnDisk(at: userFile).contains("\(Self.userTrigger)"))
         let stored = try await fixture.store.value(

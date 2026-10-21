@@ -65,10 +65,11 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     private static let toolDescription = """
         Reads and changes the agent settings with GraphQL. Query `sections` for the first key of each key \
         path. Query `setting(keyPath:)` for the merged value of a key in the session folder and the level \
-        that set it. Change a key with the mutation `set(keyPath:, value:, level:)` or \
-        `clear(keyPath:, level:)`, where level is USER or SESSION. SESSION changes the settings of the \
-        session folder only. In a session, do not give `cwd`: the session folder applies. A secret key \
-        takes only a keychain:<name> reference.
+        that set it. Change a key with the mutation \
+        `updateSetting(input: {keyPath:, value:, level:})` or `clearSetting(input: {keyPath:, level:})`, \
+        where level is USER or SESSION. SESSION changes the settings of the session folder only. In a \
+        session, do not give `cwd`: the session folder applies. A secret key takes only a keychain:<name> \
+        reference.
         """
 
     /// The name of the tool: `settings`.

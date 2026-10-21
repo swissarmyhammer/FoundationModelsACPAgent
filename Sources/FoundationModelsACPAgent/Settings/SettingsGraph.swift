@@ -15,9 +15,11 @@ import GraphQL
 ///   layer that set it. With no `cwd`, it gives the user level over the
 ///   builtin layers. `Query.sections` gives the first key of each key path:
 ///   the sections of ``AgentConfiguration``.
-/// - `Mutation.set` and `Mutation.clear` change one key on the
-///   level that the call names: `USER` or `SESSION`. A `USER` change needs
-///   no `cwd`. A `SESSION` change with no `cwd` is refused with
+/// - `Mutation.updateSetting(input:)` and `Mutation.clearSetting(input:)`
+///   change one key on the level that the input names: `USER` or `SESSION`,
+///   and give the changed `Setting`. The old names `set` and `clear` are
+///   aliases of them, with the same input. A `USER` change needs no `cwd`.
+///   A `SESSION` change with no `cwd` is refused with
 ///   ``SettingsGraphError/missingWorkingDirectory``. A clear on the session
 ///   level makes the user value apply again.
 /// - `Subscription.changes` gives each change of the store, from a mutation,
@@ -33,7 +35,8 @@ public struct SettingsGraph: GraphQLEndpoint {
 
     /// The other names that a call can write for the names of the schema:
     /// for the key path and the working directory everywhere, and for the
-    /// `set` and `clear` mutations.
+    /// `updateSetting` and `clearSetting` mutations, whose old names `set`
+    /// and `clear` are aliases.
     static let rules = GraphQLNameRules(
         aliases: GraphQLAliasTable(
             everywhere: [
@@ -42,8 +45,8 @@ public struct SettingsGraph: GraphQLEndpoint {
             ],
             byType: [
                 "Mutation": [
-                    "set": ["setSetting", "update", "updateSetting"],
-                    "clear": ["clearSetting", "unset", "remove", "removeSetting"],
+                    "updateSetting": ["set", "setSetting", "update"],
+                    "clearSetting": ["clear", "unset", "remove", "removeSetting"],
                 ]
             ])
     )
