@@ -57,8 +57,17 @@ comments:
     - Full `swift test`: 1191 tests in 129 suites passed with 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); only build warning is the pre-existing mlx-swift_Cmlx "missing creator".
     - Open on the card: "In a bench telemetry file, each submission of an instance has a parent" needs a bench run to confirm; not run here.
   timestamp: 2026-10-21T13:48:52.214240+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m5fbkb55rycs8k0qfn3xnkg4
+  text: |-
+    ### done — gap closed by Router 31eab019, no production code
+    - Tests 04c33aa (+ record 7ca9136): AgentsToolTests.theWakeOnAgentMailAfterThePromptIsInTheTraceOfThePrompt and PromptFollowUpTests.theWakeOnRunMailAfterThePromptIsInTheTraceOfThePrompt. The `mail` submission is in the prompt's trace, its parent chain reaches the prompt span (parent = the tool span), and it links to the tool span and the run span. The same check fails against a span outside the prompt (sessionNew probe, removed).
+    - No session.work span added: the wake is already in the prompt trace.
+    - Full swift test: 1191 tests / 129 suites passed, 1 known issue.
+    - Not checked here: the bench telemetry item (each submission has a parent); a bench run uses the release binary, which this session must not build. Check it in the next bench telemetry file.
+  timestamp: 2026-10-21T13:49:49.093454+00:00
+position_column: done
+position_ordinal: ffff8180
 title: 'telemetry: one span covers the work of a session from the prompt to no-work, so a mail wake is in the same trace'
 ---
 ## The gap (telemetry-16, django__django-13447)
