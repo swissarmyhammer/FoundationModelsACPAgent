@@ -45,8 +45,18 @@ comments:
     - Router API gap: `SessionIndex.lastActivityDate(inSessionDirectory:)` is internal in Router, so TranscriptStore now has a private copy of that fallback (the `updatedAt` of a session with no index line: the mtime of transcript.jsonl, then session.json, cut to whole seconds). If Router makes it public, TranscriptStore should call it and drop the copy.
     - next: tell the Router session (foundationmodelsrouter-08) that ACPA-14 is ready on acpa-14; after Router merges, run `swift package update FoundationModelsRouter`, run the full suite again, and merge acpa-14 to main.
   timestamp: 2026-10-21T14:19:09.088769+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5fe0mq2xy6md8k01191kvky
+  text: |-
+    ### done — on main 7031203 (pushed)
+    - Router merged ROUTER-3 to main; `swift package update FoundationModelsRouter FoundationModelsExtras` gave Router 62d1e875 and Extras 6716646 (contains fda3a55). No pin, no `swift package edit` left.
+    - What the update broke, fixed in 07301d5: RoutedSession gained `nonisolated var facts: SessionFacts` (ROUTER-1); test double CloseCountingRoutedSession now forwards it.
+    - 7031203 refactor(transcripts): use Router's SessionIndex.lastActivityDate: TranscriptStore's private copy is removed. No RED test is possible here: Router's public helper has the same file order (transcript.jsonl, then session.json), the same whole-second truncation and the same Date() fallback, so a test could not fail before the change. The existing tests cover it.
+    - Full `swift test` on acpa-14 before the merge: "Test run with 1174 tests in 127 suites passed after 19.085 seconds with 1 known issue" (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps). main fast-forwarded from f8e70ef to 7031203, so the suite was not run again; acpa-14 deleted.
+    - Commits: 40806f3, 993dbf8, 6d2762b, 07301d5, 7031203.
+  timestamp: 2026-10-21T14:32:02.018872+00:00
+position_column: done
+position_ordinal: ffff8280
 title: 'ACPA-14: read past sessions from Router; remove the ACPAgent copies of SessionIndex and ProjectRegistry'
 ---
 Spec: TestudoApp/features/packages/foundationmodels-acpagent.md, ACPA-14 (status agreed; D23, D72; depends on ROUTER-3).
