@@ -67,6 +67,9 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// The grammar of the real session.
     nonisolated var grammar: Grammar? { wrapped.grammar }
 
+    /// The mutable facts of the real session.
+    nonisolated var facts: SessionFacts { wrapped.facts }
+
     /// The context fill of the real session.
     var contextFill: Double {
         get async { await wrapped.contextFill }
