@@ -10,6 +10,20 @@ comments:
     - Do the ProjectRegistry half last. Before removing ProjectRegistry.swift, run `swift package update FoundationModelsRouter` on the acpa-14 branch and check that Router's ProjectRegistry is in .build/checkouts/FoundationModelsRouter.
     - If it is not there yet, keep ProjectRegistry.swift and report that this half waits for the Router sha.
   timestamp: 2026-10-21T12:36:00.822082+00:00
+- actor: claude-code
+  id: 01m5f86nshv3fwxyf9vw9c7tas
+  text: |-
+    Coordinator update 2 (2026-10-21): Router's ProjectRegistry is on router-3-session-index at 5b9423f7. Build acpa-14 against that sha and do both halves (supersedes "keep ProjectRegistry.swift").
+    Router public API:
+    - ProjectRegistryRecord(path:firstSeen:lastSeen:), public vars for all three.
+    - ProjectRegistry(directory:): registryFileName "projects.jsonl", .directory, recordSessionStart(workingDirectory:at:) (at defaults to Date()), projects() (drops folders that no longer exist).
+    - SessionIndex, SessionIndexRecord, SessionIndexReadResult, SessionIndexWarning, SessionIndexError keep the same names.
+    - Old ACPAgent files read back the same; new entries write the same bytes.
+    Name clashes Router found in a scratch build of 93e11c9 that ACPA-14 must clear:
+    - TranscriptStoreTests.swift:503 (ProjectRegistry)
+    - TranscriptRecordingFixtures.swift:138 and TranscriptStoreTests.swift:53 (SessionIndex)
+    Also remove this package's ProjectRegistryRecord.
+  timestamp: 2026-10-21T12:50:28.273991+00:00
 position_column: todo
 position_ordinal: '8480'
 title: 'ACPA-14: read past sessions from Router; remove the ACPAgent copies of SessionIndex and ProjectRegistry'
