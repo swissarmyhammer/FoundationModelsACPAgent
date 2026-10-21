@@ -231,6 +231,37 @@ import Testing
         #expect(session == SettingsValue(value: .double(Self.sessionTrigger), level: .project))
     }
 
+    /// Two tools over one store share one cursor sequence: a change through
+    /// one tool moves the cursor that the other tool gives, and the endpoint
+    /// of the first tool gives that change after the cursor that it gave
+    /// before the change.
+    @Test(.timeLimit(.minutes(1))) func twoToolsOnOneStoreShareOneCursorSequence() async throws {
+        let fixture = try SettingsGraphFixture(label: "tool-shared-cursor")
+        let first = try Self.tool(over: fixture)
+        let second = try Self.tool(over: fixture)
+        let cursorQuery = GraphQLArguments(query: SettingsGraphFixture.cursorQuery)
+        let before = try #require(
+            try GraphQLReply(await first.call(arguments: cursorQuery)).data?[SettingsGraphFixture.cursorField]
+                as? String)
+
+        _ = try await second.call(
+            arguments: Self.setArguments(Self.userTrigger, level: SettingsGraphFixture.userLevel, cwd: fixture.firstDirectory))
+
+        let firstAfter = try GraphQLReply(await first.call(arguments: cursorQuery)).data?[SettingsGraphFixture.cursorField]
+        let secondAfter = try GraphQLReply(await second.call(arguments: cursorQuery)).data?[SettingsGraphFixture.cursorField]
+        let after = try #require(firstAfter as? String)
+        #expect(after != before)
+        #expect(secondAfter as? String == after)
+        let endpoint = try #require(first.graphQLEndpoints.first)
+        var changes = try await endpoint.subscribe(
+            query: SettingsGraphFixture.changesSubscription, variables: ["after": .string(before)], operationName: nil,
+            viewer: nil
+        ).makeAsyncIterator()
+        let change = try GraphQLReply(try #require(try await changes.next())).object("changes")
+        #expect(change["cursor"] as? String == after)
+        #expect(change["keyPath"] as? [String] == SettingsGraphFixture.triggerKeyPath)
+    }
+
     /// Multitool mounts the tool under a noun that the host gives.
     @Test func multitoolMountsTheTool() throws {
         let fixture = try SettingsGraphFixture(label: "tool-multitool")

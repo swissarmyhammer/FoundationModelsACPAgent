@@ -22,9 +22,18 @@ import GraphQL
 ///   A `SESSION` change with no `cwd` is refused with
 ///   ``SettingsGraphError/missingWorkingDirectory``. A clear on the session
 ///   level makes the user value apply again.
-/// - `Subscription.changes` gives each change of the store, from a mutation,
-///   from ``SettingsTool``, or from a change of a file. With no `cwd`, it
-///   gives the changes of the user level only.
+/// - `Subscription.changes(after:)` gives each change of the store after a
+///   cursor, from a mutation, from ``SettingsTool``, or from a change of a
+///   file, in the shape of EXTRAS-9 rule 9: `cursor`, `at`, and the dotted
+///   key paths in `added`, `changed` and `removed` (``SettingsLoggedChange``).
+///   `Query.cursor` gives the cursor of the newest change. With no `cwd`, the
+///   subscription gives the changes of the user level only. A cursor that the
+///   change log cannot resume ends it with `RESYNC_REQUIRED`.
+///
+/// The change log is the log of the store
+/// (``SettingsStore/loggedChanges(after:where:)``), not of the endpoint, thus
+/// each endpoint over one store, for example the endpoint of each
+/// ``SettingsTool`` of a session, gives one cursor sequence.
 ///
 /// A secret key holds only a `keychain:<name>` reference, and no secret value
 /// goes through the endpoint (``SettingsSecretKeys``). ``SettingsTool`` runs

@@ -133,8 +133,25 @@ struct SettingsGraphSetting: Codable, Sendable {
     }
 }
 
-/// The `SettingsChange` object: one change of the settings.
+/// The `SettingsChange` object: one change of the settings, in the shape of
+/// rule 9 (`cursor`, `at`, `added`, `changed`, `removed`), with the level,
+/// the working directory and the key path of the change as more fields.
 struct SettingsGraphChange: Codable, Sendable {
+    /// The cursor that resumes `changes(after:)` after this change.
+    let cursor: String
+
+    /// The time of the change.
+    let at: DateTime
+
+    /// The dotted key path of each key that the change added.
+    let added: [ToolkitID]
+
+    /// The dotted key path of each key that the change changed.
+    let changed: [ToolkitID]
+
+    /// The dotted key path of each key that the change removed.
+    let removed: [ToolkitID]
+
     /// The level that changed.
     let level: SettingsGraphLevel
 
@@ -144,9 +161,25 @@ struct SettingsGraphChange: Codable, Sendable {
     /// The changed key path, or `nil` when the store read the file of the
     /// level again.
     let keyPath: [String]?
+
+    /// Makes the object of one entry of the change log.
+    ///
+    /// - Parameter entry: The entry: its cursor, its time and its change.
+    init(_ entry: SettingsEngine.LoggedEntry) {
+        let change = entry.event.change
+        let ids = entry.event.ids
+        cursor = entry.cursor
+        at = DateTime(entry.at)
+        added = ids.added.map(ToolkitID.init(_:))
+        changed = ids.changed.map(ToolkitID.init(_:))
+        removed = ids.removed.map(ToolkitID.init(_:))
+        level = SettingsGraphLevel(change.level)
+        cwd = change.level.workingDirectory?.path
+        keyPath = change.keyPath
+    }
 }
 
-extension SettingsChange {
+extension ChangeLogEntry where Event == SettingsLoggedChange {
     /// Resolves one event of `Subscription.changes`.
     ///
     /// - Parameters:
@@ -156,8 +189,7 @@ extension SettingsChange {
     func graphQLChange(
         context _: SettingsGraphContext, arguments _: SettingsGraphChangesArguments
     ) async throws -> SettingsGraphChange {
-        SettingsGraphChange(
-            level: SettingsGraphLevel(level), cwd: level.workingDirectory?.path, keyPath: keyPath)
+        SettingsGraphChange(self)
     }
 }
 
@@ -222,8 +254,20 @@ struct SettingsGraphClearArguments: Codable, Sendable {
 
 /// The arguments of `Subscription.changes`.
 struct SettingsGraphChangesArguments: Codable, Sendable {
+    /// The cursor to resume after, or `nil` for the new changes only.
+    let after: String?
+
     /// The absolute path of the working directory whose session level the
     /// subscription watches, or `nil` for the user level only.
+    let cwd: String?
+}
+
+/// The arguments of `Query.cursor`.
+struct SettingsGraphCursorArguments: Codable, Sendable {
+    /// The absolute path of the working directory whose session level the
+    /// read starts to watch, or `nil` for the session folder of the call, or
+    /// for the user level only when the call has no session folder
+    /// (``SettingsGraphContext/workingDirectory(given:)``).
     let cwd: String?
 }
 
@@ -429,15 +473,29 @@ struct SettingsGraphResolver: Sendable {
             code: readBackWarningCode)
     }
 
+    /// Resolves `Query.cursor`.
+    ///
+    /// - Parameters:
+    ///   - context: The context of the call, which gives the working
+    ///     directory when the call gives no `cwd`.
+    ///   - arguments: The working directory to watch.
+    /// - Returns: The cursor of the newest change.
+    /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
+    ///   ``SettingsEngine/cursor(cwd:)`` throw.
+    func cursor(context: SettingsGraphContext, arguments: SettingsGraphCursorArguments) async throws -> String {
+        try await engine.cursor(cwd: context.workingDirectory(given: arguments.cwd))
+    }
+
     /// Resolves the source of `Subscription.changes`.
     ///
-    /// - Parameter arguments: The working directory to watch.
-    /// - Returns: The stream of each change.
-    /// - Throws: What ``SettingsEngine/changes(cwd:)`` throws.
+    /// - Parameter arguments: The cursor to resume after and the working
+    ///   directory to watch.
+    /// - Returns: The stream of each entry of the change log.
+    /// - Throws: What ``SettingsEngine/changes(after:cwd:)`` throws.
     func changes(
         context _: SettingsGraphContext, arguments: SettingsGraphChangesArguments
-    ) async throws -> AsyncThrowingStream<SettingsChange, Error> {
-        try await engine.changes(cwd: arguments.cwd)
+    ) async throws -> AsyncThrowingStream<SettingsEngine.LoggedEntry, Error> {
+        try await engine.changes(after: arguments.after, cwd: arguments.cwd)
     }
 }
 
@@ -480,6 +538,7 @@ struct SettingsGraphAPI: API {
         resolver = SettingsGraphResolver(engine: engine)
         schema = try SchemaBuilder(SettingsGraphResolver.self, SettingsGraphContext.self)
             .addToolkitScalars()
+            .addToolkitIDScalar()
             .add {
                 Enum(SettingsGraphLevel.self, as: "SettingLevel") {
                     Value(.user).description("The user level. It applies to each session.")
@@ -515,6 +574,16 @@ struct SettingsGraphAPI: API {
                     "The merged value of one key for a session, or of the USER level when no cwd applies, and the "
                         + "layer that set it.")
                 Type(SettingsGraphChange.self, as: "SettingsChange") {
+                    Field("cursor", at: \.cursor)
+                        .description("The cursor of this change. changes(after:) with it resumes after this change.")
+                    Field("at", at: \.at).description("The time of the change.")
+                    Field("added", at: \.added)
+                        .description("The dotted key path of each key that the change added: it had no value on the level.")
+                    Field("changed", at: \.changed)
+                        .description(
+                            "The dotted key path of each key that the change changed. A change of a file names each "
+                                + "leaf key whose value differs.")
+                    Field("removed", at: \.removed).description("The dotted key path of each key that the change removed.")
                     Field("level", at: \.level).description("The level that changed.")
                     Field("cwd", at: \.cwd)
                         .description("The working directory of a session level, or null for the user level.")
@@ -547,6 +616,16 @@ struct SettingsGraphAPI: API {
                 .description(
                     "The merged value of one key for a session, or of the USER level when no cwd applies, or null "
                         + "when no layer has the key.")
+                Field("cursor", at: SettingsGraphResolver.cursor) {
+                    Argument("cwd", at: \.cwd)
+                        .description(
+                            "The working directory whose session level the read starts to watch, thus an outside "
+                                + "write of its file after the read is in the changes after the cursor. "
+                                + Self.cwdDescription)
+                }
+                .description(
+                    "The cursor of the newest change of the settings. Read the state, read this cursor, then "
+                        + "subscribe to changes(after:) with it for each change after the read.")
             }
             .addMutation {
                 Field("updateSetting", at: SettingsGraphResolver.updateSetting) {
@@ -562,15 +641,21 @@ struct SettingsGraphAPI: API {
             }
             .addSubscription {
                 SubscriptionField(
-                    "changes", at: SettingsChange.graphQLChange, atSub: SettingsGraphResolver.changes
+                    "changes", at: SettingsEngine.LoggedEntry.graphQLChange, atSub: SettingsGraphResolver.changes
                 ) {
+                    Argument("after", at: \.after)
+                        .description(
+                            "The cursor to resume after: the cursor query or the cursor of a change. Null for the "
+                                + "new changes only. A cursor of another run of the agent, a cursor whose next change "
+                                + "left the change log, or a cursor after the newest change ends the subscription with "
+                                + "RESYNC_REQUIRED: read the state and the cursor again, then subscribe again.")
                     Argument("cwd", at: \.cwd)
                         .description(
                             "The working directory whose session level to watch, or null for the changes of USER only.")
                 }
                 .description(
-                    "Each change of the settings, from a mutation or from a change of a file. With no cwd, only "
-                        + "the changes of USER.")
+                    "Each change of the settings after a cursor, from a mutation or from a change of a file. With no "
+                        + "cwd, only the changes of USER.")
             }
             .build()
     }

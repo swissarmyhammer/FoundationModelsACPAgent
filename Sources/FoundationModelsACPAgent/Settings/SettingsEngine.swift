@@ -228,70 +228,129 @@ struct SettingsEngine: Sendable {
 
     // MARK: - Changes
 
-    /// Starts a stream of each change of the settings.
+    /// One entry of the change log of the store, as `changes(after:)` gives
+    /// it.
+    typealias LoggedEntry = ChangeLogEntry<SettingsLoggedChange>
+
+    /// Gives the cursor of the newest change of the store, for the `cursor`
+    /// query of rule 9.
     ///
-    /// The stream watches the user level and, when `cwd` is given, the
-    /// session level of `cwd`, thus an outside write of one of their files
-    /// sends a change. With `cwd`, it gives each change of
-    /// ``SettingsStore/changes()``, of each level. With no `cwd`, it gives
-    /// only the changes of the user level, because a client with no working
-    /// directory reads the user level only.
-    ///
-    /// ``SettingsStore/stopWatching()`` ends each stream of the store, for
-    /// example when one connection of the agent closes. The subscription of a
-    /// client of a different connection must not end then. Thus, when the
-    /// stream of the store ends, this stream starts a new stream of the store,
-    /// reads its levels again, and sends one change with no key path for each
-    /// of its levels: a change can come between the stop and the new read,
-    /// and a change with no key path tells the subscriber to read the level
-    /// again. This stream ends only when its reader stops to read it, or
-    /// with an error when the store cannot read a level again.
+    /// The read watches the user level and, when `cwd` is given, the session
+    /// level of `cwd`, thus an outside write of one of their files after the
+    /// read is in the changes after the cursor.
     ///
     /// - Parameter cwd: The absolute path of the working directory of the
     ///   session to watch, or `nil` for the user level only.
-    /// - Returns: The stream.
+    /// - Returns: The opaque cursor.
     /// - Throws: ``SettingsGraphError`` for a working directory that is not
     ///   absolute, or for a level that the store cannot read.
-    func changes(cwd: String?) async throws -> AsyncThrowingStream<SettingsChange, Error> {
+    func cursor(cwd: String?) async throws -> String {
         let directory = try cwd.map(Self.workingDirectory)
-        let first = await store.changes()
         try await SettingsGraphError.withCodedErrors {
             try await store.startWatching(cwd: directory)
         }
-        let (stream, continuation) = AsyncThrowingStream.makeStream(of: SettingsChange.self)
-        let relay = Task { [store] in
-            await Self.relay(from: first, of: store, cwd: directory, to: continuation)
+        return await store.changeCursor()
+    }
+
+    /// Starts a stream of each change of the settings after a cursor, from
+    /// the change log of the store (``SettingsStore/loggedChanges(after:where:)``).
+    ///
+    /// The stream watches the user level and, when `cwd` is given, the
+    /// session level of `cwd`, thus an outside write of one of their files
+    /// sends a change. With `cwd`, it gives each change of each level. With
+    /// no `cwd`, it gives only the changes of the user level, because a
+    /// client with no working directory reads the user level only. A cursor
+    /// that the log cannot resume ends the stream with `RESYNC_REQUIRED`.
+    ///
+    /// ``SettingsStore/stopWatching()`` stops the watch of the store, for
+    /// example when one connection of the agent closes. The subscription of a
+    /// client of a different connection must not end then. Thus, when the
+    /// stop ends the ``SettingsStore/changes()`` stream that this stream
+    /// holds, this stream takes a new one and reads its levels again with
+    /// ``SettingsStore/resumeWatching(cwd:)``, which logs one change with no
+    /// key path for each level that the stop forgot. This stream ends when
+    /// its reader stops to read it, with `RESYNC_REQUIRED`, or with an error
+    /// when the store cannot read a level again.
+    ///
+    /// - Parameters:
+    ///   - cursor: The cursor to resume after, or `nil` for the new changes
+    ///     only.
+    ///   - cwd: The absolute path of the working directory of the session to
+    ///     watch, or `nil` for the user level only.
+    /// - Returns: The stream of the entries of the change log.
+    /// - Throws: ``SettingsGraphError`` for a working directory that is not
+    ///   absolute, or for a level that the store cannot read.
+    func changes(after cursor: String?, cwd: String?) async throws -> AsyncThrowingStream<LoggedEntry, Error> {
+        let directory = try cwd.map(Self.workingDirectory)
+        let stops = await store.changes()
+        try await SettingsGraphError.withCodedErrors {
+            try await store.startWatching(cwd: directory)
         }
-        continuation.onTermination = { _ in relay.cancel() }
+        let logged = await store.loggedChanges(after: cursor) { logged in
+            directory != nil || logged.change.level == .user
+        }
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: LoggedEntry.self)
+        let relay = Task {
+            await Self.relay(logged, to: continuation)
+        }
+        let keeper = Task { [store] in
+            await Self.keepWatching(after: stops, of: store, cwd: directory, failing: continuation)
+        }
+        continuation.onTermination = { _ in
+            relay.cancel()
+            keeper.cancel()
+        }
         return stream
     }
 
-    /// Gives each change of the store to a continuation, and starts a new
-    /// stream of the store each time that the stream of the store ends. Ends
+    /// Gives each entry of the change log to a continuation, and ends the
+    /// continuation as the log ends its stream, for example with
+    /// `RESYNC_REQUIRED`. Ends when the task is cancelled.
+    ///
+    /// - Parameters:
+    ///   - logged: The stream of the change log.
+    ///   - continuation: The continuation of the stream of the subscriber.
+    private static func relay(
+        _ logged: ChangeLog<SettingsLoggedChange>.Changes,
+        to continuation: AsyncThrowingStream<LoggedEntry, Error>.Continuation
+    ) async {
+        do {
+            for try await entry in logged {
+                continuation.yield(entry)
+            }
+            continuation.finish()
+        } catch {
+            continuation.finish(throwing: error)
+        }
+    }
+
+    /// Reads the levels of a subscriber again each time that a stop of the
+    /// store ends the ``SettingsStore/changes()`` stream that it holds. Ends
     /// when the task is cancelled.
     ///
     /// - Parameters:
-    ///   - first: The first stream of the store.
+    ///   - first: The first ``SettingsStore/changes()`` stream, which only
+    ///     tells of a stop when it ends.
     ///   - store: The store.
     ///   - cwd: The working directory of the session level to watch, or `nil`
-    ///     to give only the changes of the user level.
-    ///   - continuation: The continuation of the stream of the subscriber.
-    private static func relay(
-        from first: AsyncStream<SettingsChange>, of store: SettingsStore, cwd: URL?,
-        to continuation: AsyncThrowingStream<SettingsChange, Error>.Continuation
+    ///     for the user level only.
+    ///   - continuation: The continuation of the stream of the subscriber,
+    ///     which ends with the error when the store cannot read a level
+    ///     again.
+    private static func keepWatching(
+        after first: AsyncStream<SettingsChange>, of store: SettingsStore, cwd: URL?,
+        failing continuation: AsyncThrowingStream<LoggedEntry, Error>.Continuation
     ) async {
-        var source = first
+        var stops = first
         while !Task.isCancelled {
-            for await change in source where cwd != nil || change.level == .user {
-                continuation.yield(change)
-            }
+            for await _ in stops {}
             guard !Task.isCancelled else {
-                break
+                return
             }
-            source = await store.changes()
+            stops = await store.changes()
             do {
                 try await SettingsGraphError.withCodedErrors {
-                    try await store.startWatching(cwd: cwd)
+                    try await store.resumeWatching(cwd: cwd)
                 }
             } catch {
                 ACPAgentTelemetry.logger(.configuration).warning(
@@ -300,11 +359,7 @@ struct SettingsEngine: Sendable {
                 continuation.finish(throwing: error)
                 return
             }
-            for level in SettingsLevel.watched(cwd: cwd) {
-                continuation.yield(SettingsChange(level: level, keyPath: nil))
-            }
         }
-        continuation.finish()
     }
 
     // MARK: - Checks

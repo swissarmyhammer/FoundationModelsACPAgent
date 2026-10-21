@@ -24,8 +24,24 @@ comments:
     - For the change ids, call `SchemaBuilder.addToolkitIDScalar()` and use `ToolkitID`. Do not add an exception for ^70231sy.
     - EXTRAS-11 (dbf4202) makes SettingsGraphTests fail on rule 7 and rule 9 after the Extras update. In the same change, either land ^hfw2eqh, or pass `exceptions:` (rule 7 removedBy ^hfw2eqh, rule 9 removedBy this card) and `codes:` with each error and warning code of SettingsGraph.
   timestamp: 2026-10-21T12:14:08.173215+00:00
-position_column: todo
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m5f9kzwcvnzvgpkc1ggt7p0w
+  text: |-
+    ### implement: rule 9 for settings (Extras ac1b9f2, Multitool c9f70cd)
+    - RED 1 (runtime): `swift test --filter 'SettingsSubscriptionTests|SettingsToolTests/twoToolsOnOneStoreShareOneCursorSequence|SettingsGraphTests/theEndpointConforms'` → 10 tests failed: no `cursor` field (`reply.data?[cursor]` nil), the new `changes(cwd:after:){cursor at added changed removed …}` shape (no `changes` object), and theEndpointConforms with the rule 9 exception removed (7 rule 9 problems).
+    - RED 2 (compile): aTooOldCursorGivesResyncRequired needs `SettingsStore(changeCapacity:)` / `SettingsStore.defaultChangeCapacity` → "extra argument 'changeCapacity'".
+    - GREEN: the same filter + SettingsStore/SessionSettingsStore suites → 72 tests, only the golden file failed; re-recorded `Tests/Fixtures/settings.graphql` with GRAPHQL_GOLDEN_RECORD=1 on theSchemaMatchesTheGoldenFile only and checked the diff (cursor/at/added/changed/removed on SettingsChange, Query.cursor(cwd:), changes(after:, cwd:)).
+    - SettingsTreeDifferenceTests was written after the code (not TDD order). Its first run failed (aNullRootHasNoKey): a whole nested mapping that was added gave its top key, not its leaves. Fixed the code to list the leaves; the removed-section expectation in the other test moved to the leaf for the same rule.
+    - Design: the ChangeLog<SettingsLoggedChange> lives in SettingsStore (one per store; a new store = a new epoch). Every SettingsGraph / SettingsTool over a store reads that one log, so two tools share one cursor sequence (twoToolsOnOneStoreShareOneCursorSequence). I did NOT cache one SettingsGraph instance per store: the store owning the graph would make a store → graph → engine → store retain cycle, and the endpoint holds no state of its own besides the store. The schema is still built once per SettingsTool, as before. If one instance is still wanted, the cycle-free way is to build the graph next to the store (RoutedACPAgent) and pass it through CatalogContext. That is a separate card.
+    - ids: set of a key with no value on its level → added; set of a key with a value → changed; clear → removed (the key path, dotted). A file reload (keyPath nil) → the leaf key paths that differ between the rendered tree before and after (SettingsTreeDifference); a whole mapping added/removed lists its leaves; a list is one leaf. The re-read after stopWatching() is logged once per forgotten level by `SettingsStore.resumeWatching(cwd:)`, with the difference from the tree before the stop (empty when nothing changed). It goes to the log only, not to the legacy `changes()` streams.
+    - `cursor(cwd:)` starts the watch of the levels of cwd, so an outside write after the read is in the changes after the cursor (test aCursorWithAWorkingDirectoryWatchesItsSessionLevel).
+    - Store mutations are now `async` (they wait for their log append). Each append is chained after the one before it, so the log keeps the order of the commits, and `changeCursor()` waits for the appends before it.
+    - IDChange could not be used directly: ChangeLogEntry has no public init, so `IDChange(_:)` cannot take an entry of a ChangeLog<SettingsLoggedChange>. ChangedIDs, ToolkitID and DateTime are used instead.
+    - Rule 10 (SUBSCRIPTION_NOT_IN_TOOL) was already covered by SettingsToolTests.theToolRefusesASubscription.
+    - Full `swift test`: 1186 tests in 128 suites passed with 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps).
+  timestamp: 2026-10-21T13:15:13.164246+00:00
+position_column: doing
+position_ordinal: '8380'
 title: 'EXTRAS-9 settings: changes(after:) with an opaque cursor, a cursor query, and RESYNC_REQUIRED (blocked on EXTRAS-10 ChangeLog)'
 ---
 From the Multitool session (EXTRAS-9 rev 2, rule 9; D115; status proposed; spec in TestudoApp/features/packages/foundationmodels-extras.md).

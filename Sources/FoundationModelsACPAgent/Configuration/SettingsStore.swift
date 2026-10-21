@@ -175,6 +175,28 @@ public actor SettingsStore {
     /// continuation from a synchronous handler.
     private nonisolated let subscribers = Mutex<[UUID: AsyncStream<SettingsChange>.Continuation]>([:])
 
+    /// The number of the newest changes that the change log keeps when the
+    /// host gives no other number: the default of `ChangeLog`.
+    public static let defaultChangeCapacity = 1024
+
+    /// The change log of the store: each change with its cursor and its
+    /// time, the source of `changes(after:)` of the `settings` endpoint
+    /// (EXTRAS-9 rule 9). The store has one log, thus each endpoint over the
+    /// store gives one cursor sequence. A new store has a new epoch, thus a
+    /// cursor of another store does not resume this log.
+    private let changeLog: ChangeLog<SettingsLoggedChange>
+
+    /// The task that appends the newest change to ``changeLog``, or `nil`
+    /// before the first change. Each append waits for the append before it,
+    /// thus the log keeps the order in which the store made the changes.
+    private var lastAppend: Task<Void, Never>?
+
+    /// The rendered tree of each level that ``stopWatching()`` forgot, keyed
+    /// by the path of its `config.yaml`, until
+    /// ``resumeWatching(cwd:)`` reads the level again and logs the
+    /// difference.
+    private var forgottenRoots: [String: YAMLValue] = [:]
+
     /// The settings object of one level.
     private struct LevelState {
         /// The level.
@@ -218,14 +240,20 @@ public actor SettingsStore {
     ///   - secretStore: The store that gives the value of each secret
     ///     reference, or `nil` (the default) for the login Keychain under the
     ///     service of the dotfolder name.
+    ///   - changeCapacity: The number of the newest changes that the change
+    ///     log keeps, so that `changes(after:)` resumes after a cursor at most
+    ///     this many changes old. It must be at least 1. The default is
+    ///     ``defaultChangeCapacity``.
     public init(
         settingsFolders: SettingsFolders,
         transcriptLocation: TranscriptLocation? = nil,
-        secretStore: (any SecretStore)? = nil
+        secretStore: (any SecretStore)? = nil,
+        changeCapacity: Int = SettingsStore.defaultChangeCapacity
     ) {
         self.settingsFolders = settingsFolders
         self.transcriptLocation = transcriptLocation
         self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
+        changeLog = ChangeLog(capacity: changeCapacity)
     }
 
     /// Makes the configuration loader of one working directory over the
@@ -322,6 +350,67 @@ public actor SettingsStore {
         }
     }
 
+    /// Reads the levels of a subscriber again after ``stopWatching()``, as
+    /// ``startWatching(cwd:)`` reads them, and logs one change with no key
+    /// path for each level that the stop forgot.
+    ///
+    /// A change can come between the stop and this read, thus the change of
+    /// a forgotten level names each key that differs from the tree before
+    /// the stop (``SettingsLoggedChange``), and tells a subscriber to read
+    /// the level again. The store logs the change of one forgotten level one
+    /// time, for the first subscriber that reads it again, and does not send
+    /// it to the ``changes()`` streams, which give the changes of a `set`, a
+    /// `clear` and an outside write only.
+    ///
+    /// - Parameter cwd: The working directory of the session level to read,
+    ///   or `nil` for the user level only.
+    /// - Throws: What ``startWatching(cwd:)`` throws.
+    public func resumeWatching(cwd: URL?) async throws {
+        for level in SettingsLevel.watched(cwd: cwd) {
+            let state = try levelState(of: level)
+            guard let forgotten = forgottenRoots.removeValue(forKey: state.file.path) else {
+                continue
+            }
+            await appendToLog(
+                SettingsLoggedChange(
+                    change: SettingsChange(level: level, keyPath: nil),
+                    ids: SettingsTreeDifference.ids(from: forgotten, to: state.root)))
+        }
+    }
+
+    // MARK: - The change log
+
+    /// The cursor of the newest change in the change log, after each change
+    /// that the store made before this call. `changes(after:)` with it gives
+    /// each change after this call.
+    ///
+    /// - Returns: The opaque cursor.
+    public func changeCursor() async -> String {
+        await lastAppend?.value
+        return await changeLog.cursor
+    }
+
+    /// Gives the changes of the change log after a cursor: first the logged
+    /// changes after it, then the new changes, in order.
+    ///
+    /// The stream ends with `GraphQLToolkitError.resyncRequired(reason:)`
+    /// when the log cannot give each change after the cursor: a cursor of
+    /// another store or of an earlier run, a cursor whose next change left
+    /// the log, a cursor after the newest change, or a subscriber that falls
+    /// more than the capacity of the log behind.
+    ///
+    /// - Parameters:
+    ///   - cursor: The cursor to resume after, or `nil` for the new changes
+    ///     only.
+    ///   - isIncluded: Tells if the stream gives a change.
+    /// - Returns: The stream of the entries of the log.
+    public func loggedChanges(
+        after cursor: String?, where isIncluded: @escaping @Sendable (SettingsLoggedChange) -> Bool
+    ) async -> ChangeLog<SettingsLoggedChange>.Changes {
+        await lastAppend?.value
+        return await changeLog.changes(after: cursor, where: isIncluded)
+    }
+
     // MARK: - Stop
 
     /// Stops the watch of each `config.yaml` that the store read, forgets
@@ -330,10 +419,13 @@ public actor SettingsStore {
     /// The host calls it when the store is done, for example when the
     /// connection of the agent closed. A later call reads the file of each
     /// level that it needs again, and watches that file again, because no
-    /// watcher kept the forgotten levels up to date.
+    /// watcher kept the forgotten levels up to date. The store keeps the tree
+    /// of each forgotten level for ``resumeWatching(cwd:)``. The change log
+    /// stays.
     public func stopWatching() {
         for state in levels.values {
             state.watcher.stop()
+            forgottenRoots[state.file.path] = state.root
         }
         levels.removeAll()
         let continuations = subscribers.withLock { subscribers in
@@ -349,7 +441,8 @@ public actor SettingsStore {
     // MARK: - Writes
 
     /// Sets the value of one key on one level, and writes the level to its
-    /// `config.yaml`.
+    /// `config.yaml`. The change adds the key path when the key had no value
+    /// on the level, and changes it otherwise.
     ///
     /// - Parameters:
     ///   - value: The new value.
@@ -361,39 +454,49 @@ public actor SettingsStore {
     ///   the file kept; `ConfigurationError` or `YAMLValueDecodingError` for
     ///   a result that does not pass the schema or does not decode; a file
     ///   error. After an error, the level and its file do not change.
-    public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) throws {
-        try change(at: keyPath, level: level) { try $0.setting(value, at: keyPath) }
+    public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) async throws {
+        let id = SettingsTreeDifference.id(of: keyPath)
+        try await change(at: keyPath, level: level) { tree in
+            let ids = tree.value(at: keyPath) == nil ? ChangedIDs(added: [id]) : ChangedIDs(changed: [id])
+            return (tree: try tree.setting(value, at: keyPath), ids: ids)
+        }
     }
 
     /// Removes one key from one level, and writes the level to its
-    /// `config.yaml`. The value of a lower level then applies again.
+    /// `config.yaml`. The value of a lower level then applies again. The
+    /// change removes the key path.
     ///
     /// - Parameters:
     ///   - keyPath: The keys from the root. It must name a key.
     ///   - level: The level that loses the key.
     /// - Throws: What ``set(_:at:level:)`` throws.
-    public func clear(at keyPath: [String], level: SettingsLevel) throws {
-        try change(at: keyPath, level: level) { try $0.removingValue(at: keyPath) }
+    public func clear(at keyPath: [String], level: SettingsLevel) async throws {
+        let ids = ChangedIDs(removed: [SettingsTreeDifference.id(of: keyPath)])
+        try await change(at: keyPath, level: level) { tree in
+            (tree: try tree.removingValue(at: keyPath), ids: ids)
+        }
     }
 
     /// Changes the source tree of one level, renders the changed text,
     /// checks the merged result, writes the changed source text to the file
-    /// of the level, and sends the change. A change that gives the same
-    /// source tree writes nothing and sends nothing.
+    /// of the level, and sends and logs the change. A change that gives the
+    /// same source tree writes nothing, sends nothing and logs nothing.
     ///
     /// - Parameters:
     ///   - keyPath: The changed key path, for the change event and the
     ///     errors.
     ///   - level: The level to change.
-    ///   - transform: Gives the changed source tree of the level.
+    ///   - transform: Gives the changed source tree of the level, and the
+    ///     ids of the change.
     /// - Throws: What ``set(_:at:level:)`` throws.
     private func change(
-        at keyPath: [String], level: SettingsLevel, transform: (YAMLValue) throws -> YAMLValue
-    ) throws {
+        at keyPath: [String], level: SettingsLevel,
+        transform: (YAMLValue) throws -> (tree: YAMLValue, ids: ChangedIDs)
+    ) async throws {
         var state = try levelState(of: level)
         let source = try SettingsSourceText(text: state.text, keyPath: keyPath)
         try source.requireKeepable(keyPath)
-        let changed = try transform(source.tree)
+        let (changed, ids) = try transform(source.tree)
         guard changed != source.tree else {
             return
         }
@@ -404,7 +507,7 @@ public actor SettingsStore {
         state.root = root
         state.text = text
         levels[state.file.path] = state
-        send(SettingsChange(level: level, keyPath: keyPath))
+        await record(SettingsLoggedChange(change: SettingsChange(level: level, keyPath: keyPath), ids: ids))
     }
 
     /// Checks the merged settings with `root` as the tree of `level`: the
@@ -533,15 +636,17 @@ public actor SettingsStore {
     }
 
     /// Reads the file of a level again when its text is not the text that
-    /// the store last read or wrote, and sends a change. A file that cannot
+    /// the store last read or wrote, and sends and logs a change, whose ids
+    /// name each key that differs from the tree before. A file that cannot
     /// be read or parsed leaves the level as it was, and the store logs the
     /// type of the error.
     ///
     /// - Parameter file: The `config.yaml` of the level.
-    private func reload(_ file: URL) {
+    private func reload(_ file: URL) async {
         guard var state = levels[file.path] else {
             return
         }
+        let before = state.root
         do {
             let text = try Self.text(of: file)
             guard text != state.text else {
@@ -556,7 +661,34 @@ public actor SettingsStore {
             return
         }
         levels[file.path] = state
-        send(SettingsChange(level: state.level, keyPath: nil))
+        await record(
+            SettingsLoggedChange(
+                change: SettingsChange(level: state.level, keyPath: nil),
+                ids: SettingsTreeDifference.ids(from: before, to: state.root)))
+    }
+
+    /// Sends a change to each open ``changes()`` stream, and appends it to
+    /// the change log.
+    ///
+    /// - Parameter logged: The change and its ids.
+    private func record(_ logged: SettingsLoggedChange) async {
+        send(logged.change)
+        await appendToLog(logged)
+    }
+
+    /// Appends a change to the change log after each change before it, and
+    /// waits until the log has it, thus a ``changeCursor()`` after this call
+    /// is the cursor of this change or of a later one.
+    ///
+    /// - Parameter logged: The change and its ids.
+    private func appendToLog(_ logged: SettingsLoggedChange) async {
+        let previous = lastAppend
+        let append = Task { [changeLog] in
+            await previous?.value
+            await changeLog.append(logged)
+        }
+        lastAppend = append
+        await append.value
     }
 
     /// Sends `change` to each open ``changes()`` stream.

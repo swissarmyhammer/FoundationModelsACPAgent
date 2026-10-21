@@ -70,6 +70,27 @@ type Setting {
 
 """One change of the settings."""
 type SettingsChange {
+  """
+  The cursor of this change. changes(after:) with it resumes after this change.
+  """
+  cursor: String!
+
+  """The time of the change."""
+  at: DateTime!
+
+  """
+  The dotted key path of each key that the change added: it had no value on the level.
+  """
+  added: [ID!]!
+
+  """
+  The dotted key path of each key that the change changed. A change of a file names each leaf key whose value differs.
+  """
+  changed: [ID!]!
+
+  """The dotted key path of each key that the change removed."""
+  removed: [ID!]!
+
   """The level that changed."""
   level: SettingLevel!
 
@@ -135,6 +156,16 @@ type Query {
     """
     cwd: String
   ): Setting
+
+  """
+  The cursor of the newest change of the settings. Read the state, read this cursor, then subscribe to changes(after:) with it for each change after the read.
+  """
+  cursor(
+    """
+    The working directory whose session level the read starts to watch, thus an outside write of its file after the read is in the changes after the cursor. The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+    """
+    cwd: String
+  ): String!
 }
 
 type Mutation {
@@ -157,9 +188,14 @@ type Mutation {
 
 type Subscription {
   """
-  Each change of the settings, from a mutation or from a change of a file. With no cwd, only the changes of USER.
+  Each change of the settings after a cursor, from a mutation or from a change of a file. With no cwd, only the changes of USER.
   """
   changes(
+    """
+    The cursor to resume after: the cursor query or the cursor of a change. Null for the new changes only. A cursor of another run of the agent, a cursor whose next change left the change log, or a cursor after the newest change ends the subscription with RESYNC_REQUIRED: read the state and the cursor again, then subscribe again.
+    """
+    after: String
+
     """
     The working directory whose session level to watch, or null for the changes of USER only.
     """

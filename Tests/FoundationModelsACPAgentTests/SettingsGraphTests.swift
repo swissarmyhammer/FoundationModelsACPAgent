@@ -76,9 +76,13 @@ import Testing
         .unreadableSecret(reference: referenceName),
     ]
 
-    /// Each error code and warning code that the endpoint can give.
+    /// Each error code and warning code that the endpoint can give: the code
+    /// of each ``SettingsGraphError``, the warning of a read after a change,
+    /// and `RESYNC_REQUIRED` of `changes(after:)`.
     private static let endpointCodes =
-        errorOfEachCase.map(\.code) + [SettingsGraphResolver.readBackWarningCode]
+        errorOfEachCase.map(\.code) + [
+            SettingsGraphResolver.readBackWarningCode, GraphQLToolkitError.resyncRequired(reason: "").code,
+        ]
 
     // MARK: - The endpoint contract
 
@@ -94,8 +98,7 @@ import Testing
             from: "key", to: "keyPath")
 
         let problems = await GraphQLEndpointConformance.problems(
-            of: fixture.graph, scope: .server, probe: probe, codes: Self.endpointCodes,
-            exceptions: [GraphQLConventionException(rule: .changes, removedBy: "^sn3pz3s")])
+            of: fixture.graph, scope: .server, probe: probe, codes: Self.endpointCodes)
 
         #expect(problems.isEmpty)
         #expect(fixture.graph.name == SettingsGraph.endpointName)

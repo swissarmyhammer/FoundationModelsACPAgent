@@ -85,10 +85,20 @@ struct SettingsGraphFixture {
         }
         """
 
-    /// The subscription of each change for one working directory.
+    /// The subscription of each change for one working directory, after a
+    /// cursor. A `null` or absent `$after` gives the live changes only.
     static let changesSubscription = """
-        subscription($cwd: String) { changes(cwd: $cwd) { level cwd keyPath } }
+        subscription($cwd: String, $after: String) {
+          changes(cwd: $cwd, after: $after) { cursor at added changed removed level cwd keyPath }
+        }
         """
+
+    /// The query of the cursor of the newest change. A `null` or absent
+    /// `$cwd` gives no `cwd`.
+    static let cursorQuery = "query($cwd: String) { cursor(cwd: $cwd) }"
+
+    /// The response key of the query of the cursor.
+    static let cursorField = "cursor"
 
     // MARK: - Names of the schema
 
@@ -151,11 +161,17 @@ struct SettingsGraphFixture {
     ///   - label: The prefix that names the test.
     ///   - secretStore: The secret store of the settings store, for example a
     ///     ``FailingSecretStore``.
+    ///   - changeCapacity: The number of the newest changes that the change
+    ///     log of the store keeps, or the default of the store.
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused, or
     ///   the error of the schema build.
-    init(label: String, secretStore: any SecretStore) throws {
+    init(
+        label: String, secretStore: any SecretStore,
+        changeCapacity: Int = SettingsStore.defaultChangeCapacity
+    ) throws {
         settingsFolders = try SettingsFoldersFixture.make(label: "SettingsGraph-\(label)")
-        store = SettingsStore(settingsFolders: settingsFolders, secretStore: secretStore)
+        store = SettingsStore(
+            settingsFolders: settingsFolders, secretStore: secretStore, changeCapacity: changeCapacity)
         graph = try SettingsGraph(store: store)
         firstDirectory = makeResolvedDirectory(label: "SettingsGraph-\(label)-first")
         secondDirectory = makeResolvedDirectory(label: "SettingsGraph-\(label)-second")
@@ -242,15 +258,33 @@ struct SettingsGraphFixture {
 
     /// Starts the subscription of each change for `workingDirectory`.
     ///
-    /// - Parameter workingDirectory: The working directory of the session, or
-    ///   `nil` for a subscription with no `cwd`.
+    /// - Parameters:
+    ///   - workingDirectory: The working directory of the session, or `nil`
+    ///     for a subscription with no `cwd`.
+    ///   - cursor: The cursor to resume after, or `nil` (the default) for the
+    ///     live changes only.
     /// - Returns: The iterator of the response of each event.
     /// - Throws: The fault of the endpoint.
-    func changes(cwd workingDirectory: URL?) async throws -> AsyncThrowingStream<String, Error>.AsyncIterator {
-        try await graph.subscribe(
-            query: Self.changesSubscription, variables: Self.cwdVariable(workingDirectory),
-            operationName: nil, viewer: nil
+    func changes(
+        cwd workingDirectory: URL?, after cursor: String? = nil
+    ) async throws -> AsyncThrowingStream<String, Error>.AsyncIterator {
+        var variables = Self.cwdVariable(workingDirectory)
+        variables["after"] = cursor.map(Map.string)
+        return try await graph.subscribe(
+            query: Self.changesSubscription, variables: variables, operationName: nil, viewer: nil
         ).makeAsyncIterator()
+    }
+
+    /// Reads the cursor of the newest change through the endpoint.
+    ///
+    /// - Parameter workingDirectory: The working directory of the session, or
+    ///   `nil` for a call with no `cwd`.
+    /// - Returns: The cursor.
+    /// - Throws: What ``run(_:variables:)`` throws, or a failed requirement
+    ///   when the response has no cursor.
+    func cursor(cwd workingDirectory: URL?) async throws -> String {
+        let reply = try await run(Self.cursorQuery, variables: Self.cwdVariable(workingDirectory))
+        return try #require(reply.data?[Self.cursorField] as? String, "no cursor in \(reply.text)")
     }
 
     /// The variables of a key path and a working directory.
