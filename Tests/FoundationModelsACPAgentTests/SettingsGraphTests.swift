@@ -61,11 +61,31 @@ import Testing
     /// A working directory that is not an absolute path.
     private static let relativeDirectory = "relative/folder"
 
+    /// One error of each case of ``SettingsGraphError``, for the codes of rule
+    /// 8. The values of the cases are of no matter: the code is of the case.
+    private static let errorOfEachCase: [SettingsGraphError] = [
+        .unknownSection(key: unknownSection),
+        .invalidKeyPath(detail: ""),
+        .relativeWorkingDirectory(path: relativeDirectory),
+        .missingWorkingDirectory,
+        .otherSessionWorkingDirectory(path: relativeDirectory),
+        .secretNeedsReference(keyPath: ""),
+        .templateNotKept(keyPath: ""),
+        .invalidValue(detail: ""),
+        .noLevel(detail: ""),
+        .unreadableSecret(reference: referenceName),
+    ]
+
+    /// Each error code and warning code that the endpoint can give.
+    private static let endpointCodes =
+        errorOfEachCase.map(\.code) + [SettingsGraphResolver.readBackWarningCode]
+
     // MARK: - The endpoint contract
 
     /// The endpoint has the name `settings`, the server scope, an SDL schema
-    /// that builds, and the response conventions of the toolkit, and it
-    /// rewrites an alias name.
+    /// that builds, and the response conventions of the toolkit, it rewrites
+    /// an alias name, and it obeys the endpoint conventions, each code
+    /// included.
     @Test func theEndpointConforms() async throws {
         let fixture = try SettingsGraphFixture(label: "conformance")
         let probe = GraphQLAliasProbe(
@@ -73,7 +93,9 @@ import Testing
             variables: ["cwd": .string(fixture.firstDirectory.path)],
             from: "key", to: "keyPath")
 
-        let problems = await GraphQLEndpointConformance.problems(of: fixture.graph, scope: .server, probe: probe)
+        let problems = await GraphQLEndpointConformance.problems(
+            of: fixture.graph, scope: .server, probe: probe, codes: Self.endpointCodes,
+            exceptions: [GraphQLConventionException(rule: .changes, removedBy: "^sn3pz3s")])
 
         #expect(problems.isEmpty)
         #expect(fixture.graph.name == SettingsGraph.endpointName)
