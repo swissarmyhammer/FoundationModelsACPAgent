@@ -1,6 +1,21 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5g6nr5smrep2rf2xkabewz8
+  text: |-
+    ### implement — stuck
+    Blocked upstream, the same way as ACPA-5e (^j6vrwxt). The card's test is "two connections on one agent each make a `_sah/graphql/*` call, and each endpoint resolver gets a viewer". No `_sah/graphql/*` call can reach the agent today:
+    - FoundationModelsACP (origin/main 270f9e3) has the tunnel wire types (ACP-5) but no `_` method dispatch (ACP-3): `AgentSideConnection` throws `methodNotFound` for every method outside the generated table. The spec lists ACP-3 as a dependency of ACPA-13.
+    - No tunnel host serves `_sah/graphql/*` (spec: the server host, APP-16 / D55), so there is no call to build a viewer for.
+    - The trust field also waits on ACPA-5b (^bxst844, blocked on ACP-1: no HTTP transport and no bearer token). Stdio and in-memory connections are `userDevice` now.
+
+    The data the viewer needs is in place after ACPA-5a/5c/5d: `ConnectionTable` has the connection id, the trust, `owner(of:)` and `starter(of:)` for each session. FoundationModelsExtras main has `GraphQLViewer.startedSessions` (a9ae13b); this package still pins Extras 6716646, and `swift package update FoundationModelsExtras` was NOT run, because nothing can use the field until the tunnel exists.
+    What is needed first: ACP-3 (with the connection of each `_` call available to its handler) and the tunnel host. Then: update Extras, build the viewer from the row (clientId = connection id, trust, ownedSessions, clientOwnedSessions, startedSessions), and write the two-connection test.
+    - evidence: no code change; FoundationModelsACP 270f9e3 checked.
+    - next: unblock on ACP-3 + the tunnel host (+ ACP-1 for trust over HTTP).
+  timestamp: 2026-10-21T21:42:59.513031+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K2CEA2F4EEN91BXST844
@@ -27,4 +42,4 @@ The host also checks the folder of a `sessionFolder` call (EXTRAS-9 rule 4).
 
 ## Done when
 - A failing test first (TDD): two connections on one agent each make a `_sah/graphql/*` call. Each endpoint resolver gets a viewer with its own connection id and trust, and with the right owned sets.
-- The full `swift test` passes. #acpa-13
+- The full `swift test` passes. #acpa-13 #blocked #blocked-upstream
