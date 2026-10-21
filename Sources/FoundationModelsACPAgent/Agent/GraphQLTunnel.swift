@@ -48,7 +48,7 @@ extension RoutedACPAgent {
         handlers.registerNotification(
             SAH.GraphQL.Method.unsubscribe, params: SAH.GraphQL.UnsubscribeNotification.self
         ) { notification in
-            self.graphQLSubscriptions.cancel(.init(connection: caller, subscription: notification.subscriptionId))
+            self.graphQLSubscriptions.cancel(notification.subscriptionId, of: caller)
         }
         handlers.registerMethod(SAH.GraphQL.Method.endpoints, params: SAH.GraphQL.EndpointsRequest.self) { _ in
             SAH.GraphQL.EndpointsResponse(endpoints: await self.graphQLEndpointList())

@@ -44,6 +44,32 @@ comments:
     - evidence: swift test (debug, sources touched to force rebuild of this package) 1190 tests in 130 suites passed, 0 failed, 1 known issue (HarnessSmokeTests, expected); python3 -m unittest discover -s bench: 265 tests OK, 1 skip (pre-existing skipIf swebench not installed, from 6946e7b). Build warnings: one in this package (SettingsToolTests multitoolMountsTheTool: redundant inner `try` on non-throwing Self.tool(over:)) fixed in ebdd718; final full run has zero warnings from this package (only a dependency-bundle note, mlx-swift_Cmlx.bundle "missing creator for mutated node").
     - next: review
   timestamp: 2026-10-21T23:47:05.547646+00:00
+- actor: claude-code
+  id: 01m5ge4841p1kfeagfpm5pe4j6
+  text: |-
+    ### review — findings
+    - evidence: review sha 472c787..HEAD — 1 finding (1 confirmed, 0 refuted; 14 of 15 files attempted, 0 failed). Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:21 `code-hygiene/dead-code-swift` — var.instance `subscription` is assignOnlyProperty. Done when: the two-connection viewer test (GraphQLTunnelTests.eachTunnelCallGetsTheViewerOfItsOwnConnection) exists, the EXTRAS-9 rule 4 folder check is in GraphQLTunnel.swift (requireVisibleFolder) with external/userDevice tests, and the test record shows full `swift test` green.
+    - next: implement — remove the assign-only `subscription` property cause from GraphQLTunnelSubscriptions.swift, then test, commit, and review again.
+  timestamp: 2026-10-21T23:53:14.625431+00:00
+- actor: claude-code
+  id: 01m5ge4rqr1b8n048jtmr3x0wm
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5352c01 (tunnel + viewer), 12 new tests
+    - test: green — swift test 1190/130, 1 known issue; bench 265 OK (1 old skip); warning fix ebdd718
+    - commit: 1dc4592
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:21
+  timestamp: 2026-10-21T23:53:31.640733+00:00
+- actor: claude-code
+  id: 01m5geaywypvqfgdg5dshm7jyt
+  text: |-
+    ### implement — changed
+    - finding: `Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:21` `code-hygiene/dead-code-swift` — var.instance `subscription` is assignOnlyProperty. Cause: the `Key` struct (connection + subscription) existed only to be hashed; its `subscription` field was never read, and `connection` was read only to filter keys in `cancelAll`.
+    - fix: removed `Key`. The table is now `[ConnectionId: [SubscriptionId: Entry]]`; `start/finish/cancel` take `(_ id:, of connection:)`, and `cancelAll(of:)` removes the group of the connection in one step (no key filter). A private `State.remove(_:of:)` drops an empty group. Callers updated: GraphQLTunnelSubscription.swift (startGraphQLSubscription), GraphQLTunnel.swift (unsubscribe handler). No assign-only stored property is left in the file.
+    - test: added GraphQLTunnelTests.anUnsubscribeEndsOnlyTheSubscriptionOfItsOwnConnection (same id on two connections; the unsubscribe of one ends only its stream; the close of the other ends the other). It is a behavior guard for the refactor, so it passed on the old code before the change and passes after; the existing unsubscribe and connection-close tests pass too.
+    - evidence: `swift test --filter GraphQLTunnelTests` 13/13 passed; full `swift test` 1191 tests in 130 suites passed, 1 known issue (HarnessSmokeTests). Only warning is the dependency bundle note (mlx-swift_Cmlx.bundle). Finding flipped to [x].
+    - next: test, commit already done in this step (see sha in the next comment), review
+  timestamp: 2026-10-21T23:56:54.558460+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
@@ -71,3 +97,12 @@ The host also checks the folder of a `sessionFolder` call (EXTRAS-9 rule 4).
 ## Done when
 - A failing test first (TDD): two connections on one agent each make a `_sah/graphql/*` call. Each endpoint resolver gets a viewer with its own connection id and trust, and with the right owned sets.
 - The full `swift test` passes. #acpa-13
+
+## Review Findings (2026-10-21 18:47)
+
+> Scope: `review sha 472c787..HEAD` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:21` `code-hygiene/dead-code-swift` — var.instance `subscription` is assignOnlyProperty.

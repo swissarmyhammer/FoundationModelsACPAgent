@@ -237,6 +237,31 @@ import Testing
         _ = try await fixture.log.endedStreams.wait(for: "the end of the held stream") { $0 == 1 }
     }
 
+    /// A subscription id is unique for each connection (ACP-5): two
+    /// connections open one id each, and the unsubscribe of one connection
+    /// ends its own stream, not the stream of the other one.
+    @Test
+    func anUnsubscribeEndsOnlyTheSubscriptionOfItsOwnConnection() async throws {
+        let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-shared-id", holdsStreams: true)
+        let subscriptionId = SAH.GraphQL.SubscriptionId(rawValue: "subscription-shared")
+        let deviceRecorder = try #require(fixture.device.graphQLNotifications)
+        let externalRecorder = try #require(fixture.external.graphQLNotifications)
+
+        _ = try await Self.subscribe(on: fixture.device, id: subscriptionId, sessionId: fixture.deviceSession)
+        _ = try await Self.subscribe(on: fixture.external, id: subscriptionId, sessionId: fixture.externalSession)
+        _ = try await deviceRecorder.wait(for: "the first device event") { !$0.isEmpty }
+        _ = try await externalRecorder.wait(for: "the first external event") { !$0.isEmpty }
+        try await fixture.device.connection.sendExtensionNotification(
+            SAH.GraphQL.Method.unsubscribe, SAH.GraphQL.UnsubscribeNotification(subscriptionId: subscriptionId))
+        _ = try await fixture.log.endedStreams.wait(for: "the end of the device stream") { $0 == 1 }
+        await fixture.external.close()
+
+        _ = try await fixture.log.endedStreams.wait(for: "the end of the external stream") { $0 == 2 }
+        #expect(
+            fixture.log.viewers.value.map { $0?.clientId }
+                == [fixture.device.routedConnection.id.rawValue, fixture.external.routedConnection.id.rawValue])
+    }
+
     /// The close of a connection ends each subscription that it holds.
     @Test
     func theCloseOfAConnectionEndsItsSubscriptions() async throws {

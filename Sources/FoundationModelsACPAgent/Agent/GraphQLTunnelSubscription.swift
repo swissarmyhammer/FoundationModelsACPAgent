@@ -25,11 +25,11 @@ extension RoutedACPAgent {
     nonisolated func startGraphQLSubscription(
         _ request: SAH.GraphQL.SubscribeRequest, from caller: ConnectionId
     ) throws -> SAH.GraphQL.SubscribeResponse {
-        let key = GraphQLTunnelSubscriptions.Key(connection: caller, subscription: request.subscriptionId)
+        let id = request.subscriptionId
         let subscriptions = graphQLSubscriptions
-        let started = subscriptions.start(key) { generation in
+        let started = subscriptions.start(id, of: caller) { generation in
             await self.runGraphQLSubscription(request, from: caller) {
-                subscriptions.finish(key, generation: generation)
+                subscriptions.finish(id, of: caller, generation: generation)
             }
         }
         guard started else {
