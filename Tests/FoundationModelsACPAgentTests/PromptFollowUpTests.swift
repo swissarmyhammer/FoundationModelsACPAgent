@@ -3,7 +3,10 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsExtras
+import InMemoryTracing
+import TelemetryTestSupport
 import Testing
+import Tracing
 
 @testable import FoundationModelsACPAgent
 // `SubmissionID` has an internal initializer only. A debug build compiles
@@ -83,13 +86,18 @@ import Testing
     /// prompt that starts the background run, and waits until the `runCode`
     /// call of the prompt completed with its pending answer.
     ///
-    /// - Parameter label: The directory label of the proof.
+    /// - Parameters:
+    ///   - label: The directory label of the proof.
+    ///   - tracer: The tracer of the agent and of its Router sessions, or
+    ///     `nil` for the tracer of the fixture.
     /// - Returns: The fixture, with the run of the prompt in the background.
     /// - Throws: Whatever the construction, the wire or the wait throws.
-    private static func startPromptWithABackgroundRun(label: String) async throws -> ScriptedPromptFixture {
+    private static func startPromptWithABackgroundRun(
+        label: String, tracer: (any Tracer)? = nil
+    ) async throws -> ScriptedPromptFixture {
         let directory = try NamedPipe.makeDirectory(holding: releasePipeName, label: label)
         let fixture = try await ScriptedPromptFixture.make(
-            script: try makeScript(), label: label, workingDirectory: directory)
+            script: try makeScript(), label: label, workingDirectory: directory, tracer: tracer)
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: startRunMarker))
         _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
@@ -149,6 +157,41 @@ import Testing
         #expect(mailChunk < idle)
         #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
+    }
+
+    // MARK: - The trace of the wake on run mail (task ^3p03s3r)
+
+    /// Runs the prompt that leaves its shell run in the background inside one
+    /// capture, ends the prompt, releases the run, and waits until the
+    /// submission that the run mail starts ended.
+    ///
+    /// - Returns: The spans of the run.
+    /// - Throws: Whatever the fixture, the wire or the waits throw.
+    private static func runTheWakeOnRunMail() async throws -> [FinishedInMemorySpan] {
+        try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await startPromptWithABackgroundRun(
+                label: "PromptFollowUpTests-traced-wake", tracer: context.tracer)
+            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+            try await NamedPipe.write(
+                releaseText, toPipeAt: fixture.cwd.appendingPathComponent(releasePipeName))
+            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await context.wait { capture in capture.spans.contains(where: RunMailWakeTrace.isRunMailSubmission) }
+            _ = try await fixture.harness.connection.closeSession(
+                CloseSessionRequest(sessionId: fixture.sessionId))
+            await fixture.close()
+            return context.spans
+        }
+    }
+
+    /// The prompt ends while its run waits in the background. The answer
+    /// that the run mail starts later is in the trace of the prompt: its
+    /// submission is no root span, its parent is a span of the subtree of the
+    /// prompt span, and it links to the span that sent the mail.
+    @Test
+    func theWakeOnRunMailAfterThePromptIsInTheTraceOfThePrompt() async throws {
+        let spans = try await Self.runTheWakeOnRunMail()
+
+        try RunMailWakeTrace.expectTheWakeIsInTheTraceOfThePrompt(among: spans)
     }
 
     // MARK: - The work state with no prompt open (elicitation-plan task 2)

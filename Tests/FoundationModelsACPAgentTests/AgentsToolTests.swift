@@ -5,6 +5,8 @@ import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Foundation
+import InMemoryTracing
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -564,5 +566,50 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         #expect(await stateAtRootClose.value == .cancelled)
         hold.release()
         await fixture.close()
+    }
+
+    // MARK: - The trace of the wake on agent mail (task ^3p03s3r)
+
+    /// Runs one ACP prompt whose `start agent` call leaves the slow run in
+    /// the background inside one capture, ends the prompt, releases the run,
+    /// and waits until the submission that the mail of the run starts ended.
+    ///
+    /// The settle period of the call runs on the real clock: the prompt ends
+    /// when the period ends, and the held run cannot end before the test
+    /// releases it.
+    ///
+    /// - Returns: The spans of the run.
+    /// - Throws: Whatever the fixture, the wire or the waits throw.
+    static func runTheWakeOnAgentMail() async throws -> [FinishedInMemorySpan] {
+        let hold = ScriptedHold()
+        let cwd = makeResolvedDirectory(label: "AgentsToolTests-traced-wake-repo")
+        try writeAgent(named: slowAgent, in: cwd)
+        return try await TelemetryCapture.run(forbidding: []) { context in
+            let fixture = try await ScriptedPromptFixture.make(
+                script: startAgentScript(hold: hold), label: "AgentsToolTests-traced-wake",
+                workingDirectory: cwd, tracer: context.tracer)
+            _ = try await fixture.harness.connection.prompt(
+                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: rootSlowPrompt))
+            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+            hold.release()
+            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+            await context.wait { capture in capture.spans.contains(where: RunMailWakeTrace.isRunMailSubmission) }
+            _ = try await fixture.harness.connection.closeSession(
+                CloseSessionRequest(sessionId: fixture.sessionId))
+            await fixture.close()
+            return context.spans
+        }
+    }
+
+    /// The prompt ends while the agent run that it started waits in the
+    /// background. The answer that the final message of the run starts
+    /// later, as mail to the root session, is in the trace of the prompt: its
+    /// submission is no root span, its parent is a span of the subtree of the
+    /// prompt span, and it links to the span that sent the mail.
+    @Test
+    func theWakeOnAgentMailAfterThePromptIsInTheTraceOfThePrompt() async throws {
+        let spans = try await Self.runTheWakeOnAgentMail()
+
+        try RunMailWakeTrace.expectTheWakeIsInTheTraceOfThePrompt(among: spans)
     }
 }
