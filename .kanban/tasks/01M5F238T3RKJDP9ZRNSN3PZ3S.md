@@ -68,8 +68,14 @@ comments:
     - open decision: none. Every requirement of the card is in the diff.
     - next: /review
   timestamp: 2026-10-21T13:24:38.778326+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m5fa6darpsv1eevzt9qhd111
+  text: |-
+    ### done
+    - shas: 563334a (Extras ac1b9f2 + Multitool c9f70cd update, rule 9 exception naming this card), 2e5fbbd (cursor, changes(after:), RESYNC_REQUIRED, ToolkitID ids, exception removed), 407b000 (one SettingsGraph per store via RoutedACPAgent/CatalogContext). Full swift test at 407b000: 1187 tests / 128 suites passed, 1 known issue. No conformance exception left.
+  timestamp: 2026-10-21T13:25:16.760841+00:00
+position_column: done
+position_ordinal: fffe80
 title: 'EXTRAS-9 settings: changes(after:) with an opaque cursor, a cursor query, and RESYNC_REQUIRED (blocked on EXTRAS-10 ChangeLog)'
 ---
 From the Multitool session (EXTRAS-9 rev 2, rule 9; D115; status proposed; spec in TestudoApp/features/packages/foundationmodels-extras.md).
