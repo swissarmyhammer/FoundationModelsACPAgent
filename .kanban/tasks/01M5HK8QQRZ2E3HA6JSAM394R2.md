@@ -28,6 +28,17 @@ comments:
     - Router main already deleted SessionIndex and sessions.jsonl (70a5d3b9). This repo still uses Router's SessionIndex, so DO NOT run a full `swift package update` before this card is done. Update only the packages that a card needs.
     - Also moved here from ^mbs9b3m: "TranscriptStore reads index.md" (in place of session.json).
   timestamp: 2026-10-22T19:41:15.650207+00:00
+- actor: claude-code
+  id: 01m5jj5nb3cq061rjnrnmvgnx4
+  text: |-
+    ### Router API update (Router session, 2026-10-22)
+    - ^2cqepsd (index.md) is committed in Router as f98b49e6. Its review is running, and it goes to main when the review is clean. ^16ken1m (ProjectStore) comes next.
+    - The title setter is `setTitle(_:of:)`, NOT `setTitle(_:for:)` (Extras' SessionDirectory protocol). Router card ^axhfdx1 makes it write index.md; until then its body throws. So this card also waits on ^axhfdx1.
+    - `RouterSessionDirectory.recordedSessions(in: URL) -> [SessionRecord]` is static and returns the records newest first. It does NOT filter zero-prompt sessions: drop the records whose `firstActivityAt` is nil.
+    - `setAdditionalDirectories(to:for:)`: on a live session it logs a failed save; on a recorded session it throws the save error.
+    - `SessionRecord` is public. It is the frontmatter of `<root>/<sessionId>/index.md`: the facts flat at the top level, `cwd`, and millisecond ISO 8601 dates.
+    - `SessionSidecar`, `session.json` and `SessionSidecar.AgentSpawn` are deleted; the agent-spawn data is in SessionRecord. Update each ACPAgent use of them in this card as well.
+  timestamp: 2026-10-22T19:42:24.099149+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
