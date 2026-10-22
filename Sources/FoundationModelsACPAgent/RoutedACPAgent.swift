@@ -396,7 +396,7 @@ public actor RoutedACPAgent: Agent {
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
         skillsMarketplaceCacheDirectory: URL? = nil,
-        userDeviceTokens: Set<String> = []
+        userDeviceTokens: Set<String> = Set()
     ) async throws {
         self.name = name
         self.hooks = hooks

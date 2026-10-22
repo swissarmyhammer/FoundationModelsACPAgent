@@ -199,7 +199,7 @@ public struct ComposedAgent: Sendable {
         hooksDataDirectory: URL? = nil,
         skillsMarketplaceCacheDirectory: URL? = nil,
         modelCacheDirectory: URL? = nil,
-        userDeviceTokens: Set<String> = [],
+        userDeviceTokens: Set<String> = Set(),
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(

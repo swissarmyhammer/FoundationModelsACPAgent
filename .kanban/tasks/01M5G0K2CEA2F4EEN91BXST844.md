@@ -42,6 +42,23 @@ comments:
     - evidence: swift test (root, all Sources/Tests .swift touched to force rebuild of this package): 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps), 0 compiler warnings from this package (only SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle, third-party). python3 -m unittest discover -s bench: 265 tests OK (skipped=1, the swebench skip). IntegrationTests swift test: first run did not build (cannot find ACPConnectionInfo / ExtensionHandlers) because IntegrationTests/Package.resolved pinned stale FoundationModelsACP 270f9e3 (root pins a78fb48); ran `swift package update` inside IntegrationTests only (Package.resolved is gitignored), then swift test: 27 tests in 13 suites passed (incl. ClientInteropTests), 0 failures, 0 skips, 0 compiler warnings.
     - no source change, nothing committed, nothing pushed; no release build; no root swift package update/edit.
   timestamp: 2026-10-22T00:39:18.970957+00:00
+- actor: claude-code
+  id: 01m5gh22w86ja39gtqjfagx76a
+  text: |-
+    ### review — findings
+    - evidence: review sha f5e02e5..HEAD — 1 finding (1 confirmed, 2 refuted; 7 attempted, 0 failed): Tests/FoundationModelsACPAgentTests/ConnectionTrustTests.swift:99 `swift/initialization`. Recorded in the dated `## Review Findings (2026-10-21 19:39)` section.
+    - fact for the implementer: the finding says an array literal does not convert to `Set<String>`. The test record (1202 tests passed, ConnectionTrustTests included) shows this file compiled as written, and `Set` conforms to `ExpressibleByArrayLiteral`. Resolve the finding; if the rule's claim and the compiler disagree, raise it as a conflict for a person to decide.
+    - next: /implement the finding, then /review
+  timestamp: 2026-10-22T00:44:29.448088+00:00
+- actor: claude-code
+  id: 01m5gh2n02q13ykjnmthzmre0z
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 136414d (trust from the bearer token, userDeviceTokens, the ACP connection id as the row id)
+    - test: green — swift test 1202/131, 1 known issue, 0 package warnings; bench 265 OK; IntegrationTests 27/13
+    - commit: dd78e2d
+    - review: findings — Tests/FoundationModelsACPAgentTests/ConnectionTrustTests.swift:99 (swift/initialization)
+  timestamp: 2026-10-22T00:44:48.002015+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
@@ -62,3 +79,12 @@ Spec: ACPA-5 (D120 b), TestudoApp foundationmodels-acpagent.md.
 ## Done when
 - A failing test first (TDD): a connection with a user-device token is `userDevice`, a connection with another token is `external`, and an `initialize` that claims more does not change it. An in-process (InMemoryTransport) connection is `userDevice`.
 - The full `swift test` passes. #acpa-5
+
+## Review Findings (2026-10-21 19:39)
+
+> Scope: `review sha f5e02e5..HEAD` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ConnectionTrustTests.swift:99` `swift/initialization` — Array literal `[TestBearerToken.userDevice]` passed where `Set<String>` is expected. Swift does not implicitly convert array literals to sets; the argument type does not match the parameter type `Set<String>`. Change to `userDeviceTokens: Set([TestBearerToken.userDevice])`.

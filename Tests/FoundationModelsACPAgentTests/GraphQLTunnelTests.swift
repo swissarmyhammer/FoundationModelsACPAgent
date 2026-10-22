@@ -100,7 +100,7 @@ import Testing
         let agent = try await makeStubAgent(
             name: AgentClientHarness.dotfolderName,
             cacheDirectory: makeResolvedDirectory(label: "GraphQLTunnelTests-credential-cache"),
-            userDeviceTokens: [TestBearerToken.userDevice])
+            userDeviceTokens: Set([TestBearerToken.userDevice]))
         let log = ProbeLog()
         await agent.registerHostTools([ProbeTool(log: log, holdsStreams: false)])
         let device = await AgentClientHarness.makeRecording(

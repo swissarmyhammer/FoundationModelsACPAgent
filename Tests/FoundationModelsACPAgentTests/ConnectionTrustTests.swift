@@ -96,7 +96,7 @@ import Testing
     func theTokensThatTheHostGivesTheCompositionGiveTheTrust() async throws {
         let composed = try await composeStubAgent(
             name: AgentClientHarness.dotfolderName, label: "ConnectionTrustTests-composed",
-            userDeviceTokens: [TestBearerToken.userDevice])
+            userDeviceTokens: Set([TestBearerToken.userDevice]))
 
         let device = await AgentClientHarness.makeRecording(
             agent: composed.agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.userDevice))
@@ -116,7 +116,7 @@ import Testing
         try await makeStubAgent(
             name: AgentClientHarness.dotfolderName,
             cacheDirectory: makeResolvedDirectory(label: "ConnectionTrustTests-cache"),
-            userDeviceTokens: [TestBearerToken.userDevice])
+            userDeviceTokens: Set([TestBearerToken.userDevice]))
     }
 
     /// The trust that the connection table holds for the connection of
