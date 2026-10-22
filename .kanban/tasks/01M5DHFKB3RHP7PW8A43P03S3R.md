@@ -66,6 +66,12 @@ comments:
     - Full swift test: 1191 tests / 129 suites passed, 1 known issue.
     - Not checked here: the bench telemetry item (each submission has a parent); a bench run uses the release binary, which this session must not build. Check it in the next bench telemetry file.
   timestamp: 2026-10-21T13:49:49.093454+00:00
+- actor: claude-code
+  id: 01m5h6mdszqw4cy2p71jdqzk0g
+  text: |-
+    ### bench check — done
+    - diagnose2-16 (2026-10-22, binary with Router f055e69 and later), django__django-13447: 9 FoundationModelsRouter.submission spans, 0 with no parent. The open bench check of this card passes.
+  timestamp: 2026-10-22T07:01:30.559617+00:00
 position_column: done
 position_ordinal: ffff8180
 title: 'telemetry: one span covers the work of a session from the prompt to no-work, so a mail wake is in the same trace'
