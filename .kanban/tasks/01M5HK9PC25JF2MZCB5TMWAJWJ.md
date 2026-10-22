@@ -13,6 +13,13 @@ comments:
     - evidence: 88bcfa0 (Sources/FoundationModelsACPAgent/Settings/SettingsGraph.swift, Tests/FoundationModelsACPAgentTests/SettingsGraphTests.swift); full `swift test`: 1202 tests in 131 suites passed, 1 known issue
     - next: done (problems empty with both probes, no exceptions)
   timestamp: 2026-10-22T10:47:17.743129+00:00
+- actor: claude-code
+  id: 01m5hkp3mq843keq363dsahznz
+  text: |-
+    ### review — clean
+    - evidence: review sha 2ce9997..1a62792 — 0 findings (0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed); 2 source files reviewed, .kanban/ excluded by .reviewignore
+    - next: none — card stays in done
+  timestamp: 2026-10-22T10:49:37.175102+00:00
 position_column: done
 position_ordinal: ffff8b80
 title: 'EXTRAS-11 settings: the conformance test probes a subscription alias too (probes: [query, subscription])'
