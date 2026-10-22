@@ -20,6 +20,16 @@ comments:
     - JSONLFile(url:) opens nothing, so the CLI usage error for an unusable `--telemetry-file` path (TelemetryBootstrap.makeWriter -> ValidationError) needs its own check at init: stat/access(2) on the file, or on its folder when the file is absent. No raw open of the .jsonl outside JSONLFile.
     - Callers: TelemetryBootstrap.makeWriter, TelemetryFileLogHandler, TelemetryFileTracer/Span, TelemetryFileMetrics all call only `init(path:)` and `write(_:)`; the signature stays.
   timestamp: 2026-10-22T19:32:28.907374+00:00
+- actor: claude-code
+  id: 01m5jht4rg5j3bpv3hxfzvft87
+  text: |-
+    ### implement — changed
+    - evidence: a787fb1 — Sources/acp-agent/TelemetryFileWriter.swift, Tests/FoundationModelsACPAgentTests/TelemetryFileTests.swift. Extras bumped 589f27e -> 78d2532 with `swift package update FoundationModelsExtras` only (Package.resolved is gitignored; Router pin untouched, build fine).
+    - TDD: 6 new tests. RED on the old writer: aRecordAfterATornLineStartsOnALineOfItsOwn, aRecordAfterTheFileWasRemovedMakesTheFileAgain (per-record O_APPEND open). Characterizations that pass on both and guard the format: aRecordIsOneLineWithSortedKeys (exact line), aNonFiniteNumberWritesAsItsText, aRecordAppendsAfterTheLinesAlreadyInTheFile, aTelemetryPathThatIsAFolderIsAUsageError. The existing concurrentWritesGiveWholeLinesOnly (8 tasks x 50 records of 16 KiB) stays green with no in-process lock around the append.
+    - `swift test`: 1230 tests in 135 suites passed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps). The only build warning is the Swift Build "missing creator for mutated node ... mlx-swift_Cmlx.bundle" line that was there before this change (Extras allowed the same warning in 78d2532). `python3 -m unittest discover -s bench`: 265 OK, 1 skipped ('swebench is not installed', environment).
+    - Design notes: the Mutex is gone; an Atomic<Bool> keeps the "report the first dropped record to stderr once" rule. JSONLFile's encoder has no non-conforming float strategy, so the writer maps NaN/±Infinity (any depth) to their text before the append.
+    - next: /review
+  timestamp: 2026-10-22T19:36:06.672275+00:00
 position_column: doing
 position_ordinal: '80'
 title: Move every JSONL write onto Extras JSONLFile, and read session folders from index.md
