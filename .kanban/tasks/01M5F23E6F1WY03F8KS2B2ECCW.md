@@ -97,6 +97,14 @@ comments:
     - commit: b309312
     - review: findings — Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:37, Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:100 (swift/doc-parameter-naming). The prior finding :21 is checked and fixed.
   timestamp: 2026-10-22T00:03:06.023741+00:00
+- actor: claude-code
+  id: 01m5gev3v2888b69qfptmr5c4f
+  text: |-
+    ### implement — changed
+    - What: every `- Parameters:` group in GraphQLTunnelSubscriptions.swift (State.remove, start, finish, cancel) is rewritten as separate `/// - Parameter <name>: <text>` lines, with no group header. cancelAll already used that form. `- Returns:` lines are unchanged. Doc-only; no other file touched. Both swift/doc-parameter-naming findings (2026-10-21 18:58) are flipped to [x].
+    - evidence: 6099115. `swift build` OK. `swift test --filter GraphQLTunnelTests`: 13 tests passed. Full `swift test`: 1191 tests in 130 suites passed, 1 known issue. The only warning is SwiftPM's `missing creator for mutated node` on the mlx-swift_Cmlx bundle, which is build-system noise and not from the code.
+    - next: /review
+  timestamp: 2026-10-22T00:05:43.906029+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
