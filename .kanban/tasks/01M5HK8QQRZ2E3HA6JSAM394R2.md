@@ -49,6 +49,16 @@ comments:
       - (2) Projects: ProjectStore (^16ken1m) when it lands; ProjectRegistry is still on Router main until then.
     - Asked Router to do ^axhfdx1 before ^16ken1m.
   timestamp: 2026-10-22T19:52:42.224199+00:00
+- actor: claude-code
+  id: 01m5jkmxh1bw5bq4srx6a7gmks
+  text: |-
+    ### ProjectStore landed (Router main 582740cf, feature 538a3104); ProjectRegistry is deleted
+    - `ProjectStore(directory:)` with `register(workingDirectory:at: Date = Date()) throws`, `remove(workingDirectory:) throws` and `projects() throws -> [ProjectRecord]`.
+    - `ProjectRecord { path, firstSeen, lastSeen }`; `ProjectStore.fileName(forWorkingDirectory:)`.
+    - `projects()` drops the paths that no longer exist, and orders by firstSeen, then path. A missing folder lists as empty. A file that does not parse (an iCloud conflict copy or placeholder, or a name that is not the hash of its path) is skipped with a warning.
+    - Use `AgentHome.projectsDirectory` as the directory. `recordSessionStart` becomes `register(workingDirectory:)`.
+    - Still waiting on ^axhfdx1 (setTitle writes index.md). Router started it 2026-10-22. Both halves land in ONE ACPAgent change after it.
+  timestamp: 2026-10-22T20:08:12.577468+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
