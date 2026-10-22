@@ -69,6 +69,14 @@ comments:
     - not changed: local typed declarations `Set<String> = [...]` that 136414d did not add (SessionLifecycle.swift `swept`, GraphQLTunnelTests `bothSessions` and `expected`) — they are not parameters and not lines of this change.
     - next: /review
   timestamp: 2026-10-22T00:47:45.813177+00:00
+- actor: claude-code
+  id: 01m5ghfvv4q2j0b12b8q2xn5ps
+  text: |-
+    ### test — green
+    - evidence: touched all Sources/Tests/Package.swift then `swift test` rebuilt the package (196 build steps): 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps), 0 failures, 0 skipped. `python3 -m unittest discover -s bench`: 265 tests OK, skipped=1 (old swebench skip). IntegrationTests `swift test`: 27 tests in 13 suites passed. Only build message: "missing creator for mutated node" for the mlx-swift_Cmlx.bundle (dependency bundle, no Swift warning from this package's sources).
+    - changes: none, nothing to commit (HEAD 9d7a16e).
+    - next: review
+  timestamp: 2026-10-22T00:52:00.996386+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
