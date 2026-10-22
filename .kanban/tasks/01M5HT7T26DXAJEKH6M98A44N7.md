@@ -22,6 +22,25 @@ comments:
     ## Done when (added)
     - A test: a session whose cwd is inside the synced root writes no SQLite database, WAL or shell log in its cwd.
   timestamp: 2026-10-22T12:44:38.922832+00:00
+- actor: claude-code
+  id: 01m5hxvw9fj8vrxaqp1dmnwe2a
+  text: |-
+    ### User, 2026-10-22: the home and the dotfolder stacks
+    "yeah for cli - 'home' is XDG based so a .config/<some name> -- probably acp-agent by default or whatever you are using now. testudo passes the home based on icloud. but -- we need to make sure all the 'home' is used correctly in the dotfolder stacks"
+
+    - CLI: the home is XDG, `~/.config/acp-agent` (the `name` used now). The local part is the XDG data/cache folders under the same name.
+    - Testudo: passes its iCloud-based home.
+    - REQUIRED: every DotfolderStack (FoundationModelsExtras) that ACPAgent builds or hands to a package takes its user (home) layer from AgentHome. Nothing reads `~`, `$HOME/.<name>`, `XDG_CONFIG_HOME` or the process cwd on its own. This covers:
+      - config.yaml and settings (SettingsFolders);
+      - Instructions.md;
+      - skills, both the user layer and the marketplace cache;
+      - agents (FoundationModelsAgents, AG-10);
+      - rules (FoundationModelsRules);
+      - hooks;
+      - each other stack found by the audit.
+    - First step of the work: an audit table on this card. One row per stack or folder that ACPAgent or a package it composes reads or writes, with: who builds it, its home layer today, its project layer, and the change. Grep for DotfolderStack, homeDirectoryForCurrentUser, NSHomeDirectory, XDG_, ".config", and FileManager.default.currentDirectoryPath in Sources and in .build/checkouts.
+    - A test: with a custom AgentHome in a temp folder, and HOME and the XDG variables pointed at another empty temp folder, a composed session plus one prompt touch nothing under that other folder. All stacks read their user layer from the custom home.
+  timestamp: 2026-10-22T13:47:32.015607+00:00
 position_column: todo
 position_ordinal: '8280'
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'
