@@ -117,6 +117,15 @@ comments:
     - card items: AgentHome with synced/local roots, required `home:` on compose and RoutedACPAgent.init (separate params removed, choice written), every settings stack from the home, `--home`/`ACP_AGENT_HOME`, doctor HomeDoctor rows, tests in Tests/FoundationModelsACPAgentTests (AgentHomeTests, HomeOptionsTests, OutOfProcessHomeTests, HomeDoctorTests, SettingsFoldersTests, ...). Unmet and written on the card as blocked on other packages: code-context index still in `<cwd>/.code-context` (FoundationModelsCodeContext needs an index-folder parameter); HF token lookup still reads ~ (Router LiveModelLoader / Extras MLXModelLoader need a token-provider parameter).
     - next: fix the finding, then /review again; stays in review.
   timestamp: 2026-10-22T14:49:48.025079+00:00
+- actor: claude-code
+  id: 01m5j1q35mm17p7e409v11qg9k
+  text: |-
+    ### implement — changed
+    - evidence: f065690 refactor(home): AgentHome presets in the make form, makeXDG and makeCustom. TDD: callers in Tests renamed first; `swift build --build-tests` RED with "type 'AgentHome' has no member 'makeCustom'"; after the rename, AgentHomeTests/HomeOptionsTests/HomeDoctorTests GREEN (16 tests). Full `swift test`: 1224 tests / 135 suites passed, 1 known issue (HarnessSmokeTests). `python3 -m unittest discover -s bench`: 265 OK (1 skipped). IntegrationTests package builds with tests.
+    - done: finding swift/fluent-usage fixed at its cause: both static factories of AgentHome now use the make form, `xdg(name:environment:)` -> `makeXDG(name:environment:)` and `custom(synced:local:)` -> `makeCustom(synced:local:)`, with the same argument labels. No other static factory exists in AgentHome.swift (`projectKey(of:)` and `baseDirectory(...)` return a String and a URL; `SettingsLayout.xdg(configHome:)` is an enum case, not a factory). Callers updated: AgentComposition.home(environment:), the ComposedAgent doc comments (example and parameter docs), AgentHome's own doc comment, README (example and The home section), AgentHomeFixture, and 10 test files. IntegrationTests uses only AgentHomeFixture, so no change there. Finding flipped to [x]; the card's Change section names the presets `AgentHome.makeXDG(name:environment:)` and `AgentHome.makeCustom(synced:local:)`.
+    - note: the earlier comments keep the old names, because they record history.
+    - next: /review
+  timestamp: 2026-10-22T14:54:49.524966+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'
