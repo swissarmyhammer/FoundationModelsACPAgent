@@ -112,13 +112,29 @@ comments:
     - evidence: HEAD 85218b4; touched all Sources/Tests .swift files to force rebuild of own modules (FoundationModelsACPAgent, TestSupport, acp-agent, tests all recompiled); `swift test` — 1191 tests in 130 suites passed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps), 0 failures; `python3 -m unittest discover -s bench` — 265 tests OK, skipped=1 (old swebench skip). Warnings from this package: 0 (only SwiftPM build-system notice "missing creator for mutated node ... mlx-swift_Cmlx.bundle", a dependency bundle, not package source). No tracked file changed, nothing to commit.
     - next: review
   timestamp: 2026-10-22T00:07:16.815249+00:00
+- actor: claude-code
+  id: 01m5gf0b5rjaj5d1asjs75yx6d
+  text: |-
+    ### review — clean
+    - evidence: review sha b309312..HEAD — 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed); 1 file reviewed (.kanban/ excluded by .reviewignore); all 3 prior findings checked
+    - next: none — moved to done
+  timestamp: 2026-10-22T00:08:35.256623+00:00
+- actor: claude-code
+  id: 01m5gf0rse5srbt6m6pw2g11jq
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 6099115 (doc parameter entries as `- Parameter <name>:`)
+    - test: green — swift test 1191/130, 1 known issue, 0 package warnings; bench 265 OK
+    - commit: 3df1745
+    - review: clean — 0 findings; all 3 earlier findings checked. Card in done.
+  timestamp: 2026-10-22T00:08:49.198886+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
 - 01M5G0KG6B1THJF53W3S415RD3
 - 01M5G72P3AM0415Q2TWM7WMTRM
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffff8880
 title: 'ACPA-13: a GraphQLViewer for each _sah/graphql/* tunnel call, from its connection row'
 ---
 Spec: TestudoApp features/packages/foundationmodels-acpagent.md, ACPA-13 (agreed). ACPA-5 is agreed now (D120). It is cards ACPA-5a to ACPA-5e on this board, and this card waits on them. The Multitool session waits on this card for its sessions endpoint (^j5jb3z2en, with `ownedByViewer`/`hasOwner`).
