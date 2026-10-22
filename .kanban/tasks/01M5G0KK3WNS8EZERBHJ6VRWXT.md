@@ -36,6 +36,13 @@ comments:
     They passed at once (3/3): the shared instance already holds, no bug (no two cursors). To show they can fail I broke the assumption on purpose in `tunnelEndpoint(named:)`: a new `SettingsGraph` over a new `SettingsStore` and a new `SnapshotsGraph` over a new `SnapshotStore` per call. Result: 3/3 failed — settings cursors `013526AF-…:0` vs `C075ECCB-…:0`, snapshots cursors `97C7465D-…:0` vs `7FA78EE5-…:0`, and the change test hit its 1 minute time limit (the change never reached the other connection). Reverted the break with `git checkout` of GraphQLTunnel.swift; no source change ships.
     Full `swift test`: 1194 tests in 130 suites passed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps), exit 0.
   timestamp: 2026-10-22T00:17:37.673610+00:00
+- actor: claude-code
+  id: 01m5gfhfs5jtb2gma20ha6wxee
+  text: |-
+    ### implement — changed
+    - evidence: 63fec16 (Tests/FoundationModelsACPAgentTests/GraphQLTunnelTests.swift only; no source change). New tests 3/3 pass; with a per-connection endpoint/store break in `tunnelEndpoint(named:)` 3/3 fail (two settings cursors, two snapshots cursors, change test times out), break reverted. Full `swift test`: 1194 tests in 130 suites passed, 1 known issue.
+    - next: /review. Card left in doing.
+  timestamp: 2026-10-22T00:17:57.029763+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
