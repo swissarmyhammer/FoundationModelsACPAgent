@@ -25,6 +25,16 @@ comments:
 
     Plan: `RoutedACPAgent.init` and `ComposedAgent.compose` take `userDeviceTokens: Set<String> = []` (host config, no store). `bind(connection:)` drops the host `trust:` parameter of ^ACPA-5c (the credential now feeds it): no credential -> userDevice, listed token -> userDevice, other token -> external; the row id is `connectionInfo.id` when present, else a minted ULID. `RoutedACPConnection.trust` reads the row. Test harness: `makeRecording(bearerToken:)` wraps the agent end in a test transport that reports a connectionInfo, replacing `trust:`; `makeStubAgent(userDeviceTokens:)`.
   timestamp: 2026-10-22T00:24:21.524200+00:00
+- actor: claude-code
+  id: 01m5ggf8ssbpppak59xgrknfrk
+  text: |-
+    ### implement — changed
+    - evidence: 136414d. RED first: ConnectionTrustTests (other token -> external, row id = Acp-Connection-Id, initialize claim) failed by assertion on the old bind; the user-device-token tests and the tunnel viewer test failed to compile (no userDeviceTokens). GREEN: filtered run 28 tests / 4 suites passed; full `swift test` 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps), no warnings beyond the SwiftPM mlx bundle notice.
+    - change: `RoutedACPAgent.bind(connection:)` reads `connection.connectionInfo`: row id = its `Acp-Connection-Id`, else a minted ULID (`ConnectionId.make(for:)`); trust = `ConnectionTrust(credentialOf:userDeviceTokens:)`: no connection header (stdio, in-memory) -> userDevice; token in `userDeviceTokens` -> userDevice; any other token OR an HTTP connection with no token -> external. `initialize` never touches it. Host API: `userDeviceTokens: Set<String> = []` on `RoutedACPAgent.init` and `ComposedAgent.compose` (stored as `RoutedACPAgent.userDeviceTokens`; no store). The ACPA-5c `trust:` parameter of `bind` is removed (the credential feeds the row now); `ConnectionTable.add` takes the id.
+    - tests: `Tests/FoundationModelsACPAgentTestSupport/CredentialTransport.swift` (wraps a wire end, reports an `ACPConnectionInfo`; `TestBearerToken`; `ACPConnectionInfo.makeHTTP(bearerToken:)`), harness `makeRecording(connectionInfo:)` replaces `trust:`, `makeStubAgent`/`composeStubAgent(userDeviceTokens:)`; `ConnectionTrustTests` (7 tests incl. compose path and HTTP-no-token); `GraphQLTunnelTests.theViewerOfATunnelCallCarriesTheTrustOfItsCredential`; SessionOwnerTests and TunnelFixture now make `external` with an unlisted token.
+    - decision to note: an HTTP connection with no bearer token is `external` (not in the card text; it would otherwise be a remote userDevice). No change in FoundationModelsACP.
+    - next: /review
+  timestamp: 2026-10-22T00:34:12.921625+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
