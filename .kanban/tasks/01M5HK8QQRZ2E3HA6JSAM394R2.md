@@ -103,6 +103,13 @@ comments:
     - New test support: RecordedSessionIndexFile, and TranscriptRecordingFixtures `setUpdatedAt(_:ofSession:under:)`, which rewrites `updatedAt` in index.md. Tests need it because `SessionRecord.init` is internal to Router.
     - next: /review
   timestamp: 2026-10-22T21:12:26.480107+00:00
+- actor: claude-code
+  id: 01m5jqh2wgdpzh5k9v8063k612
+  text: |-
+    ### test — green
+    - evidence: HEAD 9bcfe47, touched all Sources/Tests .swift to force rebuild of own sources (Build complete 18.38s, no warnings from this package; only the build-system note "missing creator for mutated node ... mlx-swift_Cmlx.bundle" from a dependency). `swift test`: 1233 tests in 136 suites passed, 1 known issue (HarnessSmokeTests), 0 skipped. `python3 -m unittest discover -s bench`: 265 tests OK, skipped=1 (old swebench skip). `swift test` in IntegrationTests: 27 tests in 13 suites passed, 0 skipped, 0 warnings.
+    - next: no code changed, nothing to commit; proceed to review.
+  timestamp: 2026-10-22T21:16:01.296437+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
