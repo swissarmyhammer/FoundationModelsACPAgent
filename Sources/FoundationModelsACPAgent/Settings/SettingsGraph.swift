@@ -46,9 +46,10 @@ public final class SettingsGraph: GraphQLEndpoint, Sendable {
     public static let endpointName = "settings"
 
     /// The other names that a call can write for the names of the schema:
-    /// for the key path and the working directory everywhere, and for the
+    /// for the key path and the working directory everywhere, for the
     /// `updateSetting` and `clearSetting` mutations, whose old names `set`
-    /// and `clear` are aliases.
+    /// and `clear` are aliases, and `settingsChanges` for the `changes`
+    /// subscription (EXTRAS-9 rule 9: `<noun>Changes`).
     static let rules = GraphQLNameRules(
         aliases: GraphQLAliasTable(
             everywhere: [
@@ -59,7 +60,10 @@ public final class SettingsGraph: GraphQLEndpoint, Sendable {
                 "Mutation": [
                     "updateSetting": ["set", "setSetting", "update"],
                     "clearSetting": ["clear", "unset", "remove", "removeSetting"],
-                ]
+                ],
+                "Subscription": [
+                    "changes": ["settingsChanges"]
+                ],
             ])
     )
 

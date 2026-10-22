@@ -88,17 +88,28 @@ import Testing
 
     /// The endpoint has the name `settings`, the server scope, an SDL schema
     /// that builds, and the response conventions of the toolkit, it rewrites
-    /// an alias name, and it obeys the endpoint conventions, each code
-    /// included.
-    @Test func theEndpointConforms() async throws {
+    /// an alias name of a query and of a subscription, and it obeys the
+    /// endpoint conventions, each code included.
+    ///
+    /// The subscription probe resumes after a cursor that a change of the
+    /// user level follows, thus its first response comes at once.
+    @Test(.timeLimit(.minutes(1))) func theEndpointConforms() async throws {
         let fixture = try SettingsGraphFixture(label: "conformance")
-        let probe = GraphQLAliasProbe(
+        let queryProbe = GraphQLAliasProbe(
             query: "query($cwd: String!) { setting(key: [\"compaction\", \"trigger\"], cwd: $cwd) { level } }",
             variables: ["cwd": .string(fixture.firstDirectory.path)],
             from: "key", to: "keyPath")
+        let cursor = try await fixture.cursor(cwd: nil)
+        _ = try await fixture.set(
+            .number(Number(Self.userTrigger)), at: SettingsGraphFixture.triggerKeyPath,
+            level: SettingsGraphFixture.userLevel, cwd: nil)
+        let subscriptionProbe = GraphQLAliasProbe(
+            query: "subscription($after: String) { settingsChanges(after: $after) { cursor } }",
+            variables: ["after": .string(cursor)],
+            from: "settingsChanges", to: "changes", kind: .subscription)
 
         let problems = await GraphQLEndpointConformance.problems(
-            of: fixture.graph, scope: .server, probe: probe, codes: Self.endpointCodes)
+            of: fixture.graph, scope: .server, probes: [queryProbe, subscriptionProbe], codes: Self.endpointCodes)
 
         #expect(problems.isEmpty)
         #expect(fixture.graph.name == SettingsGraph.endpointName)

@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+position_column: doing
+position_ordinal: '80'
 title: 'EXTRAS-11 settings: the conformance test probes a subscription alias too (probes: [query, subscription])'
 ---
 From the Multitool session's GraphQL coordination card: SettingsGraph must pass `GraphQLEndpointConformance.problems(of:scope:probes:codes:exceptions:)` with no exceptions, with alias probes for queries AND subscriptions.
