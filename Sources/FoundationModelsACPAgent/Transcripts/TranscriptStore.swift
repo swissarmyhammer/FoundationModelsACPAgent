@@ -20,7 +20,7 @@ public enum TranscriptStoreError: Error, Equatable, Sendable, CustomStringConver
 public struct SessionPage: Equatable, Sendable {
     /// The page's records, sorted `updatedAt`-descending with a descending
     /// `sessionId` tiebreak.
-    public let records: [SessionIndexRecord]
+    public let records: [SessionRecord]
 
     /// The opaque token that fetches the next page, or `nil` on the final
     /// page.
@@ -31,28 +31,26 @@ public struct SessionPage: Equatable, Sendable {
     /// - Parameters:
     ///   - records: The page's records, in listing order.
     ///   - nextCursor: The next page's token, or `nil`.
-    public init(records: [SessionIndexRecord], nextCursor: String?) {
+    public init(records: [SessionRecord], nextCursor: String?) {
         self.records = records
         self.nextCursor = nextCursor
     }
 }
 
-/// The read side of the transcripts: the browse summaries
-/// `session/list` serves, the cursor pagination, the cross-project
-/// registry read, and one session's ordered event stream.
+/// The read side of the transcripts: the browse records `session/list`
+/// serves, the cursor pagination, the cross-project project read, and one
+/// session's ordered event stream.
 ///
-/// The store is built on `TranscriptEvent.merged(under:)` — the one public
-/// read the Router gives. The merged events are grouped by `sessionId`, and
-/// parentage is rebuilt from `parentId`. The store never reads
-/// `session.json` and never reimplements the Router's transcript format.
+/// The listing reads the session folders of a recording root through
+/// Router's `RouterSessionDirectory.recordedSessions(in:)`, which decodes
+/// the `index.md` of each folder. The store never writes a session record
+/// and never reimplements the Router's recording format: one folder per
+/// session, so no file is shared by two sessions.
 ///
-/// **The listability predicate**: a session lists when it has a
-/// persisted transcript — a zero-prompt session never wrote one — and it is a
-/// root: `parentId == nil` on every event, and no event carries the
-/// `agentSpawn` fact the Router stamps on the `session` event of an
-/// agent-spawned session. Agent spawns do not occur in this iteration
-/// (agents are not implemented yet), but the predicate already excludes them, because a
-/// later Multitool agents capability will make them.
+/// **The listability predicate**: a session lists when it had a prompt —
+/// Router sets `firstActivityAt` at its first submission — and it is a
+/// root: no fork parent, and no `agentSpawn`, which Router records for a
+/// session that the `agents` tool started.
 ///
 /// **The ownership boundary**: this store never records and never
 /// restores. The Router owns event writes, entry reconstruction, and
@@ -69,7 +67,7 @@ public struct TranscriptStore: Sendable {
     private static let cursorFieldCount = 2
 
     /// Milliseconds per second — the scale the cursor stores `updatedAt`
-    /// at, which keeps the whole-second RFC 3339 dates lossless.
+    /// at, which keeps the millisecond dates of the records lossless.
     private static let millisecondsPerSecond: Double = 1_000
 
     /// Where a project's recording root resolves.
@@ -82,38 +80,36 @@ public struct TranscriptStore: Sendable {
     /// inject a value so they never touch the real home directory.
     public let userDirectory: URL
 
-    /// Makes a store over the three location inputs.
+    /// The folder of the project store, one file for each project
+    /// (``AgentHome/projectsDirectory``).
+    public let projectsDirectory: URL
+
+    /// Makes a store over the location inputs and the projects folder.
     ///
     /// - Parameters:
     ///   - location: Where recording roots resolve.
     ///   - name: The validated dotfolder name.
     ///   - userDirectory: The user layer root.
-    public init(location: TranscriptLocation, name: DotfolderName, userDirectory: URL) {
+    ///   - projectsDirectory: The folder of the project store.
+    public init(location: TranscriptLocation, name: DotfolderName, userDirectory: URL, projectsDirectory: URL) {
         self.location = location
         self.name = name
         self.userDirectory = userDirectory
+        self.projectsDirectory = projectsDirectory
     }
 
     // MARK: - Sessions
 
-    /// The listable sessions of one project, joined with the
-    /// `sessions.jsonl` records for the title, `updatedAt`, and the
-    /// ordered `additionalDirectories`.
-    ///
-    /// A session the scan finds without an index line still lists, with an
-    /// empty title, an empty directory list, and `updatedAt` from the
-    /// session directory's newest recorded file. An index record whose
-    /// session left no events is excluded. When one session has several
-    /// index lines, the last line wins.
+    /// The listable sessions of one project: the record in the `index.md`
+    /// of each session folder under the project's recording root.
     ///
     /// - Parameter workingDirectory: The project's absolute working
     ///   directory. An unknown directory gives an empty list, not an error.
     /// - Returns: The records, sorted `updatedAt`-descending with a
     ///   descending `sessionId` tiebreak.
-    /// - Throws: Whatever the merged event read throws, or
-    ///   `SessionIndexError.corruptLine` for a damaged index.
-    public func sessions(inProject workingDirectory: URL) throws -> [SessionIndexRecord] {
-        try sortedListableRecords(inProject: workingDirectory)
+    /// - Throws: Whatever ``listableRecords(in:)`` throws.
+    public func sessions(inProject workingDirectory: URL) throws -> [SessionRecord] {
+        try Self.listableRecords(in: recordingRoot(inProject: workingDirectory)).sorted(by: Self.sortsBefore)
     }
 
     /// One page of ``sessions(inProject:)``, for the cursor pagination of
@@ -137,8 +133,22 @@ public struct TranscriptStore: Sendable {
     public func sessions(
         inProject workingDirectory: URL, limit: Int, cursor: String?
     ) throws -> SessionPage {
-        try Self.page(
-            of: sortedListableRecords(inProject: workingDirectory), limit: limit, cursor: cursor)
+        try Self.page(of: sessions(inProject: workingDirectory), limit: limit, cursor: cursor)
+    }
+
+    /// The listable records of one recording root: Router's record of each
+    /// session folder, kept when the session had a prompt and is a root.
+    /// `session/list` and the snapshot inventory both read a root through
+    /// it, so both agree on which sessions are recorded.
+    ///
+    /// - Parameter root: The recording root.
+    /// - Returns: The listable records, in Router's order (newest first).
+    ///   A root that does not exist gives none.
+    /// - Throws: The error of `RouterSessionDirectory.recordedSessions(in:)`:
+    ///   the listing of a root that exists, or the read of an `index.md`
+    ///   that does not decode.
+    public static func listableRecords(in root: URL) throws -> [SessionRecord] {
+        try RouterSessionDirectory.recordedSessions(in: root).filter(isListable)
     }
 
     /// One page of an already-gathered record list, with the same cursor
@@ -163,11 +173,11 @@ public struct TranscriptStore: Sendable {
     /// - Throws: ``TranscriptStoreError/invalidCursor(_:)`` for a token
     ///   this store did not mint.
     public static func page(
-        of records: [SessionIndexRecord], limit: Int, cursor: String?
+        of records: [SessionRecord], limit: Int, cursor: String?
     ) throws -> SessionPage {
         let key = try cursor.map(decodedCursorKey)
         let sorted = records.sorted(by: sortsBefore)
-        let remaining: [SessionIndexRecord]
+        let remaining: [SessionRecord]
         if let key {
             remaining = Array(sorted.drop { !sortsAfter($0, key) })
         } else {
@@ -181,15 +191,15 @@ public struct TranscriptStore: Sendable {
 
     // MARK: - Projects
 
-    /// The live cross-project registry entries, in file
-    /// order. A stale entry — a project that was moved or deleted — is
+    /// The live projects of the project store, the earliest `firstSeen`
+    /// first. A stale project — one that was moved or deleted — is
     /// skipped, not an error.
     ///
     /// - Returns: The live records.
-    /// - Throws: A file-system error when an existing registry file cannot
-    ///   be read.
-    public func allProjects() throws -> [ProjectRegistryRecord] {
-        try ProjectRegistry(directory: userDirectory).projects()
+    /// - Throws: A file-system error when an existing projects folder
+    ///   cannot be read.
+    public func allProjects() throws -> [ProjectRecord] {
+        try ProjectStore(directory: projectsDirectory).projects()
     }
 
     // MARK: - Transcripts
@@ -234,54 +244,23 @@ public struct TranscriptStore: Sendable {
         return try TranscriptEvent.merged(under: root)
     }
 
-    /// The listable sessions joined with their index records, in listing
-    /// order.
-    private func sortedListableRecords(
-        inProject workingDirectory: URL
-    ) throws -> [SessionIndexRecord] {
-        let root = recordingRoot(inProject: workingDirectory)
-        let groups = Dictionary(
-            grouping: try mergedEvents(inProject: workingDirectory), by: \.sessionId)
-        let listableIds = groups.filter { _, events in
-            events.allSatisfy { $0.parentId == nil && $0.agentSpawn == nil }
-        }.keys
-        let storedRecords = try SessionIndex(root: root).read().records
-        let recordsBySessionId = Dictionary(
-            storedRecords.map { ($0.sessionId, $0) },
-            uniquingKeysWith: { _, later in later })
-        return
-            listableIds
-            .map { id in
-                recordsBySessionId[id.description]
-                    ?? Self.scannedRecord(for: id, under: root, cwd: workingDirectory)
-            }
-            .sorted(by: Self.sortsBefore)
-    }
-
-    /// The record the scan synthesizes for a session with no index line:
-    /// an empty title, an empty directory list, and `updatedAt` from the
-    /// session directory's newest recorded file — the same source Router's
-    /// `SessionIndex.rebuild(cwd:)` uses.
-    private static func scannedRecord(
-        for id: ULID, under root: URL, cwd: URL
-    ) -> SessionIndexRecord {
-        SessionIndexRecord(
-            sessionId: id.description,
-            cwd: cwd.standardizedFileURL.path,
-            title: "",
-            updatedAt: SessionIndex.lastActivityDate(
-                inSessionDirectory: root.appendingPathComponent(id.description, isDirectory: true)),
-            additionalDirectories: [])
+    /// Whether a record lists: the session had a prompt, and it is a root —
+    /// neither a fork nor a session that the `agents` tool started.
+    ///
+    /// - Parameter record: The record of one session folder.
+    /// - Returns: `true` for a listable record.
+    private static func isListable(_ record: SessionRecord) -> Bool {
+        record.firstActivityAt != nil && record.forkParentId == nil && record.agentSpawn == nil
     }
 
     /// The listing order: `updatedAt` descending, then `sessionId`
     /// descending — newest first on both keys, because a ULID sorts by its
     /// creation instant.
-    private static func sortsBefore(_ lhs: SessionIndexRecord, _ rhs: SessionIndexRecord) -> Bool {
+    private static func sortsBefore(_ lhs: SessionRecord, _ rhs: SessionRecord) -> Bool {
         guard lhs.updatedAt == rhs.updatedAt else {
             return lhs.updatedAt > rhs.updatedAt
         }
-        return lhs.sessionId > rhs.sessionId
+        return lhs.sessionId.description > rhs.sessionId.description
     }
 
     // MARK: - The cursor
@@ -303,17 +282,17 @@ public struct TranscriptStore: Sendable {
     /// Whether `record` sorts strictly after the cursor key in listing
     /// order, so a page never repeats and never skips an entry that was
     /// already listed.
-    private static func sortsAfter(_ record: SessionIndexRecord, _ key: CursorKey) -> Bool {
+    private static func sortsAfter(_ record: SessionRecord, _ key: CursorKey) -> Bool {
         let recordMilliseconds = milliseconds(of: record.updatedAt)
         guard recordMilliseconds == key.updatedAtMilliseconds else {
             return recordMilliseconds < key.updatedAtMilliseconds
         }
-        return record.sessionId < key.sessionId
+        return record.sessionId.description < key.sessionId
     }
 
     /// The opaque token that names `record`'s sort key.
-    private static func encodedCursor(after record: SessionIndexRecord) -> String {
-        let raw = "\(milliseconds(of: record.updatedAt))\(cursorFieldSeparator)\(record.sessionId)"
+    private static func encodedCursor(after record: SessionRecord) -> String {
+        let raw = "\(milliseconds(of: record.updatedAt))\(cursorFieldSeparator)\(record.sessionId.description)"
         return Data(raw.utf8).base64EncodedString()
     }
 

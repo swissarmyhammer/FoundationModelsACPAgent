@@ -8,18 +8,15 @@ import Testing
 
 /// The inventory of the snapshot folders that `acp-agent snapshots` shows and
 /// removes: each shadow folder of the `SnapshotStore`, its timeline summary,
-/// and its recorded state. A key is recorded when the `sessions.jsonl` of a
-/// project of the project registry has the key as a session id.
+/// and its recorded state. A key is recorded when the recording root of a
+/// project of the project store holds a listable session folder of that id.
 ///
 /// Each test uses a temporary hook data directory, a temporary custom home
 /// and temporary git work trees. No test reads the home directory.
 struct SnapshotInventoryTests {
     // MARK: - Constants
 
-    /// The session key that the `sessions.jsonl` of the project has.
-    private static let recordedKey = "01M5DF0Q6S3V6J5G4XN6C7T1RA"
-
-    /// The session key that no `sessions.jsonl` has.
+    /// The session key that no recording root has a session folder of.
     private static let unrecordedKey = "01M5DF0Q6S3V6J5G4XN6C7T1RB"
 
     /// A session key that has no shadow folder: a key that the user mistyped.
@@ -41,6 +38,9 @@ struct SnapshotInventoryTests {
     /// The text that each timeline checkpoint writes.
     private static let changedFileText = "a changed file\n"
 
+    /// The opening of the warning of a project store that cannot be read.
+    private static let projectStoreWarningOpening = "The project store cannot be read"
+
     /// The number of checkpoints that ``makeTimeline(sessionKey:in:label:)``
     /// takes after the baseline.
     private static let checkpointsPerTimeline = 1
@@ -48,15 +48,15 @@ struct SnapshotInventoryTests {
     // MARK: - The fixture
 
     /// A temporary hook data directory, a settings store over a temporary
-    /// custom home, and one registered project whose
-    /// `sessions.jsonl` has ``recordedKey``.
+    /// custom home, and one registered project whose recording root holds
+    /// the session folder of ``recordedKey``.
     private struct Fixture {
         /// The hook data directory. The snapshots are in its `snapshot`
         /// folder.
         let dataDirectory: URL
 
-        /// The settings store that the inventory reads the registry and the
-        /// project settings from.
+        /// The settings store that the inventory reads the project store and
+        /// the project settings from.
         let settingsStore: SettingsStore
 
         /// The working directory of the registered project.
@@ -65,26 +65,30 @@ struct SnapshotInventoryTests {
         /// The store of the snapshots of ``dataDirectory``.
         let snapshotStore: SnapshotStore
 
-        /// Makes the directories, registers the project and records
-        /// ``SnapshotInventoryTests/recordedKey`` in its `sessions.jsonl`.
+        /// The session key that the recording root of the project has: the
+        /// id of a prompted Router session recorded there.
+        let recordedKey: String
+
+        /// Makes the directories, registers the project and records one
+        /// prompted session, whose id is ``recordedKey``, under its
+        /// recording root.
         ///
         /// - Parameter label: The prefix that names the calling test.
-        /// - Throws: The error of the settings folders, of the registry write
-        ///   or of the index write.
-        init(label: String) throws {
+        /// - Throws: The error of the settings folders, of the project store
+        ///   write or of the recorded session.
+        init(label: String) async throws {
             let settingsFolders = try SettingsFoldersFixture.make(label: "\(label)-settings")
             dataDirectory = makeResolvedDirectory(label: "\(label)-data")
             settingsStore = SettingsStore(settingsFolders: settingsFolders, secretStore: InMemorySecretStore())
             project = makeResolvedDirectory(label: "\(label)-project")
             snapshotStore = SnapshotStore(directory: AgentHooks.snapshotDirectory(in: dataDirectory))
-            try ProjectRegistry(directory: RegisteredRecordingRoots.registryDirectory(of: settingsStore))
-                .recordSessionStart(workingDirectory: project)
-            let recordingRoot = try projectRecordingRoot(
-                of: project, dotfolderName: settingsFolders.name.rawValue)
-            try SessionIndex(root: recordingRoot).append(
-                SessionIndexRecord(
-                    sessionId: SnapshotInventoryTests.recordedKey, cwd: project.path, title: "a recorded session",
-                    updatedAt: Date(), additionalDirectories: []))
+            try ProjectStore(directory: RegisteredRecordingRoots.projectsDirectory(of: settingsStore))
+                .register(workingDirectory: project)
+            let recorder = try await makeRecordedProjectFixture(
+                workingDirectory: project,
+                cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
+                recordingRoot: try projectRecordingRoot(of: project, dotfolderName: settingsFolders.name.rawValue))
+            recordedKey = try await recorder.makeRecordedSession(title: "a recorded session").description
         }
 
         /// The inventory over the fixture.
@@ -92,9 +96,10 @@ struct SnapshotInventoryTests {
             SnapshotInventory(hooksDataDirectory: dataDirectory, settingsStore: settingsStore)
         }
 
-        /// The folder of the registry of the projects.
-        var registryDirectory: URL {
-            RegisteredRecordingRoots.registryDirectory(of: settingsStore)
+        /// The projects folder of the home: the project store, one file for
+        /// each project.
+        var projectsDirectory: URL {
+            RegisteredRecordingRoots.projectsDirectory(of: settingsStore)
         }
     }
 
@@ -150,22 +155,22 @@ struct SnapshotInventoryTests {
 
     // MARK: - The listing
 
-    /// Two keys with a timeline, one recorded in the `sessions.jsonl` of a
+    /// Two keys with a timeline, one recorded in the recording root of a
     /// registered project and one not: the inventory reports both, each with
     /// its checkpoint count, its last checkpoint date, its working directory
     /// and the correct recorded state.
     @Test
     func theInventoryReportsEachKeyWithItsRecordedState() async throws {
-        let fixture = try Fixture(label: "SnapshotInventoryTests-list")
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-list")
         let recordedTree = try await Self.makeTimeline(
-            sessionKey: Self.recordedKey, in: fixture.snapshotStore, label: "SnapshotInventoryTests-list-recorded")
+            sessionKey: fixture.recordedKey, in: fixture.snapshotStore, label: "SnapshotInventoryTests-list-recorded")
         _ = try await Self.makeTimeline(
             sessionKey: Self.unrecordedKey, in: fixture.snapshotStore, label: "SnapshotInventoryTests-list-unrecorded")
 
         let listing = try await fixture.inventory.list()
 
-        #expect(listing.entries.map(\.sessionKey) == [Self.recordedKey, Self.unrecordedKey])
-        let recorded = try Self.entry(of: Self.recordedKey, in: listing)
+        #expect(listing.entries.map(\.sessionKey) == [fixture.recordedKey, Self.unrecordedKey].sorted())
+        let recorded = try Self.entry(of: fixture.recordedKey, in: listing)
         #expect(recorded.recordedState == .recorded)
         #expect(recorded.checkpointCount == Self.checkpointsPerTimeline)
         #expect(recorded.lastCheckpointDate != nil)
@@ -183,7 +188,7 @@ struct SnapshotInventoryTests {
     /// it. It gives no warning.
     @Test
     func aShadowFolderWithNoTimelineIsListedWithNoCount() async throws {
-        let fixture = try Fixture(label: "SnapshotInventoryTests-empty")
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-empty")
         try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: fixture.dataDirectory)
 
         let listing = try await fixture.inventory.list()
@@ -196,16 +201,15 @@ struct SnapshotInventoryTests {
         #expect(listing.warnings.isEmpty)
     }
 
-    /// A registry that cannot be read makes the recorded state unknown: the
-    /// listing has a warning, and it tells that the recorded state is not
-    /// known, so that a remove of the unrecorded keys removes nothing.
+    /// A project store that cannot be read makes the recorded state
+    /// unknown: the listing has a warning, and it tells that the project
+    /// store cannot be read and that the recorded state is not known, so
+    /// that a remove of the unrecorded keys removes nothing.
     @Test
-    func anUnreadableRegistryMakesTheRecordedStateUnknown() async throws {
-        let fixture = try Fixture(label: "SnapshotInventoryTests-registry")
-        let registryFile = fixture.registryDirectory.appendingPathComponent(
-            ProjectRegistry.registryFileName, isDirectory: false)
-        try FileManager.default.removeItem(at: registryFile)
-        try FileManager.default.createDirectory(at: registryFile, withIntermediateDirectories: true)
+    func anUnreadableProjectStoreMakesTheRecordedStateUnknown() async throws {
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-project-store")
+        try FileManager.default.removeItem(at: fixture.projectsDirectory)
+        try Data().write(to: fixture.projectsDirectory)
         try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: fixture.dataDirectory)
 
         let listing = try await fixture.inventory.list()
@@ -213,6 +217,7 @@ struct SnapshotInventoryTests {
         #expect(!listing.isRecordedStateKnown)
         #expect(listing.warnings.count == 1)
         #expect(listing.warnings.allSatisfy { $0.makesRecordedStateUnknown })
+        #expect(listing.warnings.allSatisfy { $0.description.hasPrefix(Self.projectStoreWarningOpening) })
     }
 
     // MARK: - The removal
@@ -221,9 +226,9 @@ struct SnapshotInventoryTests {
     /// unrecorded key. The recorded key keeps its shadow folder.
     @Test
     func aRemoveOfTheUnrecordedKeysRemovesOnlyTheUnrecordedKey() async throws {
-        let fixture = try Fixture(label: "SnapshotInventoryTests-unrecorded")
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-unrecorded")
         _ = try await Self.makeTimeline(
-            sessionKey: Self.recordedKey, in: fixture.snapshotStore,
+            sessionKey: fixture.recordedKey, in: fixture.snapshotStore,
             label: "SnapshotInventoryTests-unrecorded-recorded")
         try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: fixture.dataDirectory)
         let inventory = fixture.inventory
@@ -231,7 +236,7 @@ struct SnapshotInventoryTests {
         let outcomes = try await inventory.remove(sessionKeys: try await inventory.list().unrecordedKeys)
 
         #expect(outcomes == [.removed(sessionKey: Self.unrecordedKey)])
-        #expect(try await fixture.snapshotStore.shadowSessionKeys() == [Self.recordedKey])
+        #expect(try await fixture.snapshotStore.shadowSessionKeys() == [fixture.recordedKey])
     }
 
     /// A key with no snapshot folder, for example a mistyped key, is not
@@ -239,7 +244,7 @@ struct SnapshotInventoryTests {
     /// `noSnapshotFolder`, and the next key is removed.
     @Test
     func aKeyWithNoSnapshotFolderIsNotRemovedAndTheNextKeyIs() async throws {
-        let fixture = try Fixture(label: "SnapshotInventoryTests-unknown")
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-unknown")
         try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: fixture.dataDirectory)
 
         let outcomes = try await fixture.inventory.remove(sessionKeys: [Self.mistypedKey, Self.unrecordedKey])
@@ -256,7 +261,7 @@ struct SnapshotInventoryTests {
     /// case of the error, and the shadow folder stays.
     @Test
     func aRefusedRemoveGivesAFailedOutcomeWithTheErrorCase() async throws {
-        let fixture = try Fixture(label: "SnapshotInventoryTests-refused")
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-refused")
         try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: fixture.dataDirectory)
         let snapshotDirectory = AgentHooks.snapshotDirectory(in: fixture.dataDirectory)
         try setPermissions(Self.readOnlyPermissions, of: snapshotDirectory)

@@ -82,15 +82,22 @@ enum PromptStop: Equatable, Sendable {
     case failed(message: String)
 }
 
-/// What the first recorded activity writes: the
-/// `sessions.jsonl` index and the record to append, deferred from
-/// `session/new` by the zero-prompt rule.
-struct FirstActivity: Sendable {
-    /// The index of the session's recording root.
-    let index: SessionIndex
+/// The title that the first prompt of a session gives it: the one-line
+/// title of the prompt text, set through the Router session directory,
+/// which writes it to the `index.md` of the session folder.
+struct SessionTitleRecord: Sendable {
+    /// The session directory the session is registered in.
+    let directory: RouterSessionDirectory
 
-    /// The record to append, with the generated one-line title.
-    let record: SessionIndexRecord
+    /// The id of the root Router session: the name of its session folder.
+    let sessionId: ULID
+
+    /// The one-line title of the first prompt.
+    let title: String
+
+    /// The instant the first prompt was accepted, for the
+    /// `session_info_update` that announces the title.
+    let acceptedAt: Date
 }
 
 /// The input side of one prompt: one ACP `session/prompt`, from the
@@ -100,7 +107,7 @@ struct FirstActivity: Sendable {
 /// dispatch task through `afterRespondingToCurrentRequest`. The
 /// `user_message` echo goes out before it, through the same response hooks
 /// (``RoutedACPAgent/insertUserMessage(_:through:)``). The prompt writes the
-/// first-activity index record, opens itself in the ``SessionProjector`` of
+/// title record of the session, opens itself in the ``SessionProjector`` of
 /// the session, and mails its text into the Router session. The projector
 /// sends the events and the one `idle` state update of the prompt.
 struct PromptExecution: Sendable {
@@ -192,11 +199,11 @@ struct PromptExecution: Sendable {
     /// The prompt-state owner of the prompt.
     let promptState: PromptStateOwner
 
-    /// The sink of the first-activity update of this prompt.
+    /// The sink of the title update of this prompt.
     let send: SessionUpdateSink
 
-    /// The first-activity index write, or `nil` when the record exists.
-    let firstActivity: FirstActivity?
+    /// The title the prompt sets, or `nil` when the session has its title.
+    let titleRecord: SessionTitleRecord?
 
     /// The model reference the prompt's session generates with.
     ///
@@ -216,7 +223,7 @@ struct PromptExecution: Sendable {
     /// the scheduling wiring supplies the session surface's verb.
     var contentResolver = ResourceLinkResolver(readVerb: nil)
 
-    /// Runs the prompt: the first-activity record, `running`, the open of
+    /// Runs the prompt: the title record, `running`, the open of
     /// the prompt in the projector, and the mail of the prompt, in this
     /// order (elicitation-plan task 49). A plain prompt folds through
     /// `PromptContent`; an expanded command keeps its override text. The
@@ -243,7 +250,7 @@ struct PromptExecution: Sendable {
         mailId: MailID = MailID(), session: any RoutedSession, projector: SessionProjector,
         onEnd: @escaping @Sendable (StopReason) async -> Void
     ) async {
-        await recordFirstActivity()
+        await recordTitle()
         await promptState.promptDidStart()
         let prompt: String
         if let modelPrompt {
@@ -273,25 +280,25 @@ struct PromptExecution: Sendable {
         }
     }
 
-    // MARK: - The first activity
+    // MARK: - The title
 
-    /// Appends the `sessions.jsonl` record and announces the title with
-    /// `session_info_update`. A write failure is logged; it does not end
-    /// the prompt.
-    private func recordFirstActivity() async {
-        guard let firstActivity else { return }
+    /// Sets the title of the session through the Router session directory
+    /// and announces it with `session_info_update`. A failure is logged; it
+    /// does not end the prompt.
+    private func recordTitle() async {
+        guard let titleRecord else { return }
         do {
-            try firstActivity.index.append(firstActivity.record)
+            try await titleRecord.directory.setTitle(titleRecord.title, of: titleRecord.sessionId)
         } catch {
             ACPAgentTelemetry.logger(.promptExecution).error(
-                "The append to sessions.jsonl failed.",
+                "The title of the session could not be set.",
                 metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
         }
         await send(
             .sessionInfoUpdate(
                 SessionInfoUpdate(
-                    title: .value(firstActivity.record.title),
-                    updatedAt: .value(Self.rfc3339(firstActivity.record.updatedAt)))))
+                    title: .value(titleRecord.title),
+                    updatedAt: .value(Self.rfc3339(titleRecord.acceptedAt)))))
     }
 
     // MARK: - The stop-reason mapping
@@ -843,7 +850,7 @@ extension RoutedACPAgent {
     ///   - entry: The session's table entry.
     ///   - connection: The bound connection the prompt registers with.
     ///   - owner: The prompt-state owner ``beginPrompt(params:)`` installed.
-    ///   - send: The sink of the first-activity update of the prompt.
+    ///   - send: The sink of the title update of the prompt.
     /// - Returns: The response that names the user message.
     func scheduleModelPrompt(
         overridePrompt: String?,
@@ -866,7 +873,7 @@ extension RoutedACPAgent {
             promptBlocks: params.prompt,
             promptState: owner,
             send: send,
-            firstActivity: makeFirstActivity(for: sessionId, entry: entry, blocks: params.prompt),
+            titleRecord: makeTitleRecord(for: sessionId, entry: entry, blocks: params.prompt),
             modelName: ConfigOptions.handle(for: entry.selectedSlot, of: residentProfile)
                 .chosen.stringValue,
             modelPrompt: overridePrompt,
@@ -1027,29 +1034,24 @@ extension RoutedACPAgent {
         }
     }
 
-    /// The first-activity index write, or `nil` when the session already
-    /// has its record. A session with zero prompts is not listed, so the
-    /// record waits for the first prompt. Marks the record written at
-    /// acceptance, so one session appends at most one record.
+    /// The title the prompt sets, or `nil` when the session already has its
+    /// title. The title is the first line of the first prompt. Marks the
+    /// title recorded at acceptance, so one session sets it at most once.
     ///
     /// - Parameters:
     ///   - sessionId: The session being prompted.
     ///   - entry: The session's table entry.
     ///   - blocks: The prompt's content blocks, for the title.
-    /// - Returns: The write, or `nil`.
-    private func makeFirstActivity(
+    /// - Returns: The title record, or `nil`.
+    private func makeTitleRecord(
         for sessionId: SessionId, entry: ActiveSession, blocks: [ContentBlock]
-    ) -> FirstActivity? {
-        guard !entry.indexRecorded else { return nil }
-        sessions[sessionId]?.indexRecorded = true
-        let record = SessionIndexRecord(
-            sessionId: sessionId.rawValue,
-            cwd: entry.workingDirectory.path,
+    ) -> SessionTitleRecord? {
+        guard !entry.titleRecorded, let rootId = ULID(ulidString: sessionId.rawValue) else { return nil }
+        sessions[sessionId]?.titleRecorded = true
+        return SessionTitleRecord(
+            directory: sessionDirectory,
+            sessionId: rootId,
             title: PromptExecution.oneLineTitle(from: PromptExecution.promptText(from: blocks)),
-            updatedAt: Date(),
-            additionalDirectories: entry.additionalRoots.map(\.path))
-        return FirstActivity(
-            index: SessionIndex(root: entry.transcriptDirectory.deletingLastPathComponent()),
-            record: record)
+            acceptedAt: Date())
     }
 }

@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
+import Testing
 
 // MARK: - Recorded-session fixtures for the transcript read side
 
@@ -98,6 +99,21 @@ struct TranscriptStubContainer: LoadedLLMContainer {
     }
 }
 
+/// Makes a router whose sessions record real transcript events.
+///
+/// - Parameters:
+///   - cacheDirectory: Where the router caches. A fresh temporary
+///     directory per call keeps runs apart.
+///   - recordingsDirectory: The durable transcripts root the router
+///     records under when a session names no per-session root.
+/// - Returns: The router, over ``TranscriptStubContainer`` models.
+func makeRecordingStubRouter(cacheDirectory: URL, recordingsDirectory: URL) -> Router {
+    EchoModel.makeRouter(
+        cacheDirectory: cacheDirectory,
+        recordingsDirectory: recordingsDirectory,
+        loader: StubModelLoader(makeLLMContainer: { _ in TranscriptStubContainer() }))
+}
+
 /// Resolves a profile whose sessions record real transcript events.
 ///
 /// Each call stands up its own router, so two calls give two recorder
@@ -114,17 +130,21 @@ struct TranscriptStubContainer: LoadedLLMContainer {
 func makeRecordingStubProfile(
     cacheDirectory: URL, recordingsDirectory: URL
 ) async throws -> LanguageModelProfile {
-    try await makeStubProfile(
-        cacheDirectory: cacheDirectory,
-        recordingsDirectory: recordingsDirectory,
-        loader: StubModelLoader(makeLLMContainer: { _ in TranscriptStubContainer() }))
+    try await resolveStubProfile(
+        on: makeRecordingStubRouter(
+            cacheDirectory: cacheDirectory, recordingsDirectory: recordingsDirectory))
 }
 
 /// One recorded project for the transcript read side and the
 /// `session/list` wire tests: the working directory, the resolved
 /// recording root, a profile whose sessions record real events, and the
-/// root's `sessions.jsonl` index.
+/// session directory of its router, which writes the `index.md` of each
+/// session folder.
 struct RecordedProjectFixture {
+    /// The key of the last-activity instant in the frontmatter of an
+    /// `index.md`.
+    private static let updatedAtKey = "updatedAt:"
+
     /// The project working directory.
     let workingDirectory: URL
 
@@ -134,61 +154,93 @@ struct RecordedProjectFixture {
     /// The resolved profile whose sessions record.
     let profile: LanguageModelProfile
 
-    /// The `sessions.jsonl` index of the root.
-    let index: SessionIndex
+    /// The session directory of the router of ``profile``: it changes the
+    /// record of a live session, and of a closed session under ``root``.
+    let directory: RouterSessionDirectory
 
     /// Drives one recorded root session with one request for each prompt
     /// and returns its id.
     ///
+    /// The title and the additional directories go to the record through
+    /// the session directory while the session is live, as the agent sets
+    /// them. The last-activity instant is written after the close, because
+    /// Router stamps each submission with the clock.
+    ///
     /// - Parameters:
-    ///   - prompts: The prompt texts to send, in order.
+    ///   - prompts: The prompt texts to send, in order. A session with no
+    ///     prompt has no first activity, so it does not list.
     ///   - agentSpawn: The spawn context, or `nil` for a plain root.
+    ///   - title: The title of the record, or `nil` for none.
+    ///   - additionalDirectories: The additional directories of the record.
+    ///   - updatedAt: The last-activity instant of the record, or `nil` for
+    ///     the instant Router stamps.
+    ///   - sessionWorkingDirectory: The working directory of the session —
+    ///     the `cwd` of its record — or `nil` for ``workingDirectory``. A
+    ///     shared-root test records sessions of two projects under one root.
     /// - Returns: The session's ULID — the name of its directory.
-    /// - Throws: Whatever driving the session throws.
+    /// - Throws: Whatever driving the session, a record change, or the
+    ///   rewrite of ``setUpdatedAt(_:ofSession:under:)`` throws.
     func makeRecordedSession(
         prompts: [String] = ["one prompt"],
-        agentSpawn: SessionSidecar.AgentSpawn? = nil
+        agentSpawn: SessionRecord.AgentSpawn? = nil,
+        title: String? = nil,
+        additionalDirectories: [URL] = [],
+        updatedAt: Date? = nil,
+        in sessionWorkingDirectory: URL? = nil
     ) async throws -> ULID {
         let session = profile.standard.makeSession(
-            workingDirectory: workingDirectory,
+            workingDirectory: sessionWorkingDirectory ?? workingDirectory,
             recordingRoot: root,
             agentSpawn: agentSpawn)
         for prompt in prompts {
             _ = try await session.respond(to: prompt)
         }
+        if let title {
+            _ = try await directory.setTitle(title, of: session.id)
+        }
+        if !additionalDirectories.isEmpty {
+            try await directory.setAdditionalDirectories(to: additionalDirectories, for: session.id)
+        }
         await session.close()
+        if let updatedAt {
+            try Self.setUpdatedAt(updatedAt, ofSession: session.id, under: root)
+        }
         return session.id
     }
 
-    /// Appends one index record that names `id`.
+    /// Rewrites the last-activity instant in the `index.md` of one closed
+    /// session folder: the one shared way a test pins `updatedAt`, for a
+    /// sort order, a wire value, or a cursor walk.
+    ///
+    /// Router writes each date as ISO 8601 text in UTC with milliseconds,
+    /// so the rewrite writes `date` the same way and keeps the quoting of
+    /// the line.
     ///
     /// - Parameters:
-    ///   - id: The session the record names.
-    ///   - title: The record's title.
-    ///   - updatedAt: The record's most-recent-activity instant.
-    ///   - additionalDirectories: The record's ordered directory list.
-    ///   - cwd: The record's working directory, or `nil` for the
-    ///     fixture's own. A shared-root test writes records that name
-    ///     two different projects into one index.
-    /// - Throws: Whatever the index append throws.
-    func appendRecord(
-        id: ULID,
-        title: String,
-        updatedAt: Date,
-        additionalDirectories: [String] = [],
-        cwd: URL? = nil
-    ) throws {
-        try index.append(
-            SessionIndexRecord(
-                sessionId: id.description,
-                cwd: (cwd ?? workingDirectory).standardizedFileURL.path,
-                title: title,
-                updatedAt: updatedAt,
-                additionalDirectories: additionalDirectories))
+    ///   - date: The new last-activity instant.
+    ///   - id: The session, whose id names its folder.
+    ///   - root: The recording root that holds the folder.
+    /// - Throws: The read or the write error, or a failed requirement when
+    ///   the frontmatter holds no `updatedAt` date.
+    static func setUpdatedAt(_ date: Date, ofSession id: ULID, under root: URL) throws {
+        let file = RecordedSessionIndexFile.fileURL(ofSession: id.description, under: root)
+        var lines = try String(contentsOf: file, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let position = try #require(
+            lines.firstIndex { $0.hasPrefix(updatedAtKey) }, "the index.md holds no updatedAt")
+        let text = Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(date)
+        let rewritten = lines[position].replacing(/\d{4}-\d{2}-\d{2}T[0-9:.]+Z/, with: text)
+        try #require(rewritten != lines[position], "the updatedAt line holds no date")
+        lines[position] = rewritten
+        try lines.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
     }
 }
 
 /// Makes a recorded-project fixture over the given directories.
+///
+/// The session directory of the fixture's router reads closed sessions
+/// from `recordingRoot`, so a test can change the record of a session it
+/// already closed.
 ///
 /// - Parameters:
 ///   - workingDirectory: The project working directory.
@@ -202,10 +254,12 @@ struct RecordedProjectFixture {
 func makeRecordedProjectFixture(
     workingDirectory: URL, cacheDirectory: URL, recordingRoot: URL
 ) async throws -> RecordedProjectFixture {
-    RecordedProjectFixture(
+    let router = makeRecordingStubRouter(
+        cacheDirectory: cacheDirectory, recordingsDirectory: recordingRoot)
+    await router.sessionDirectory.useRecordingRoots { [recordingRoot] }
+    return RecordedProjectFixture(
         workingDirectory: workingDirectory,
         root: recordingRoot,
-        profile: try await makeRecordingStubProfile(
-            cacheDirectory: cacheDirectory, recordingsDirectory: recordingRoot),
-        index: SessionIndex(root: recordingRoot))
+        profile: try await resolveStubProfile(on: router),
+        directory: router.sessionDirectory)
 }

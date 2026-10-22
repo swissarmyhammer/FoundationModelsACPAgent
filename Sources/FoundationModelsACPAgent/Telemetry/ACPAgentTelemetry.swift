@@ -535,8 +535,8 @@ enum ACPAgentTelemetry {
         /// not reach its client, and a coded error that did not encode.
         case graphQLTunnel = "GraphQLTunnel"
 
-        /// The transcripts module: the damaged lines of the session index
-        /// and of the project registry.
+        /// The transcripts module: the read of the session folders and of
+        /// the project store of the home.
         case transcripts = "Transcripts"
 
         /// The configuration loader: the unknown sections of `config.yaml`.

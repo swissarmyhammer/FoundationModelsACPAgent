@@ -46,8 +46,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// The document of an agent folder.
     static let agentDocumentName = "AGENT.md"
 
-    /// The sidecar Router writes one time into each session directory.
-    static let sessionSidecarFileName = "session.json"
 
     /// The agent whose run ends at once.
     static let quickAgent = "quick"
@@ -323,11 +321,11 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         await surface.shutdown()
     }
 
-    /// The slice of a recorded `session.json` sidecar that the settle-period
-    /// tests read. The stored properties of the sidecar are internal to
-    /// Router, thus the tests decode only the key that they need.
-    struct SidecarSettleSlice: Decodable {
-        /// The configuration envelope of the sidecar.
+    /// The slice of the recorded `index.md` of a session folder that the
+    /// settle-period tests read. The stored properties of the record are
+    /// internal to Router, thus the tests decode only the key that they need.
+    struct RecordSettleSlice: Decodable {
+        /// The configuration envelope of the record.
         struct Configuration: Decodable {
             /// The settle period that the session got in its
             /// `SessionConfiguration`, in seconds.
@@ -358,30 +356,25 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         return agent
     }
 
-    /// The recorded settle period of each session sidecar under the
+    /// The recorded settle period of each session record under the
     /// project-local transcripts root of `cwd`, in no fixed order.
     ///
     /// - Parameter cwd: The session working directory.
-    /// - Returns: One value for each `session.json`, or `nil` for a sidecar
-    ///   that records no settle period.
-    /// - Throws: The read or the decode error of a sidecar.
+    /// - Returns: One value for each `index.md`, or `nil` for a record that
+    ///   holds no settle period.
+    /// - Throws: The walk, the read or the decode error of a record.
     static func recordedSettlePeriods(under cwd: URL) throws -> [TimeInterval?] {
         let transcriptsRoot = cwd
             .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
             .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
-        let files = try #require(FileManager.default.enumerator(at: transcriptsRoot, includingPropertiesForKeys: nil))
-        return try files.compactMap { $0 as? URL }
-            .filter { $0.lastPathComponent == sessionSidecarFileName }
-            .map { sidecar in
-                try JSONDecoder().decode(SidecarSettleSlice.self, from: Data(contentsOf: sidecar))
-                    .configuration?.inlineSettleGrace
-            }
+        return try RecordedSessionIndexFile.slices(under: transcriptsRoot, as: RecordSettleSlice.self)
+            .map { $0.configuration?.inlineSettleGrace }
     }
 
     /// `session/new` gives the session that `makeBudgetedSession` makes the
-    /// settle period of the agent in its `SessionConfiguration`: the sidecar
-    /// of the root session records the short period, not the default. The
-    /// test reads the sidecar, not a clock.
+    /// settle period of the agent in its `SessionConfiguration`: the record
+    /// of the root session holds the short period, not the default. The
+    /// test reads the record, not a clock.
     @Test
     func aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration() async throws {
         let agent = try await Self.makeAgent(label: "settle-new", inlineSettleGrace: Self.shortSettlePeriod)
@@ -395,9 +388,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
     /// A model-slot switch gives the replacement session that
     /// `makeBudgetedSession` makes the settle period of the agent in its
-    /// `SessionConfiguration`: after the switch, the sidecar of the root
-    /// session and the sidecar of the replacement both record the short
-    /// period. The test reads the sidecars, not a clock.
+    /// `SessionConfiguration`: after the switch, the record of the root
+    /// session and the record of the replacement both hold the short
+    /// period. The test reads the records, not a clock.
     @Test
     func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
         let agent = try await Self.makeAgent(label: "settle-switch", inlineSettleGrace: Self.shortSettlePeriod)

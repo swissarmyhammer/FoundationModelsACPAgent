@@ -9,7 +9,8 @@ extension RoutedACPAgent {
     ///
     /// A `cwd` filter reads one project; an unknown directory gives an
     /// empty array, not an error. An unfiltered request goes
-    /// cross-project through `projects.jsonl`. The method is baseline in
+    /// cross-project through the project store of the home
+    /// (``AgentHome/projectsDirectory``). The method is baseline in
     /// ACP v2, so it is never capability-gated — only the order rule
     /// applies.
     ///
@@ -36,7 +37,7 @@ extension RoutedACPAgent {
     /// - Throws: The errors that ``listSessions(_:)`` names.
     func listSessions(_ params: ListSessionsRequest, from caller: ConnectionId) throws -> ListSessionsResponse {
         try requireInitialized(before: ACPMethod.sessionList, from: caller)
-        let records: [SessionIndexRecord]
+        let records: [SessionRecord]
         if let cwd = params.cwd {
             records = try listableRecords(
                 inProject: SessionSetup.validatedWorkingDirectory(
@@ -70,17 +71,18 @@ extension RoutedACPAgent {
     /// - Returns: The records, in listing order.
     /// - Throws: Whatever the configuration load or the store read
     ///   throws.
-    private func listableRecords(inProject workingDirectory: URL) throws -> [SessionIndexRecord] {
+    private func listableRecords(inProject workingDirectory: URL) throws -> [SessionRecord] {
         let loader = makeConfigurationLoader(workingDirectory: workingDirectory)
         let store = TranscriptStore(
             location: try loader.load().configuration.transcripts.location,
             name: name,
-            userDirectory: SessionSetup.userLayerRoot(of: loader.stack))
+            userDirectory: SessionSetup.userLayerRoot(of: loader.stack),
+            projectsDirectory: home.projectsDirectory)
         return try store.sessions(inProject: workingDirectory)
     }
 
-    /// The merged listable records of every project in the user-layer
-    /// project registry, one record for each session.
+    /// The merged listable records of every project in the project store
+    /// of the home, one record for each session.
     ///
     /// Two projects whose configurations name one shared absolute
     /// recording root each list that root's sessions, so the merge keeps
@@ -89,52 +91,45 @@ extension RoutedACPAgent {
     ///
     /// - Returns: The merged records; ``listSessions(_:)`` sorts and
     ///   pages them.
-    /// - Throws: Whatever the registry read or a project's record read
+    /// - Throws: Whatever the project store read or a project's record read
     ///   throws.
-    private func allListableRecords() throws -> [SessionIndexRecord] {
-        let merged = try ProjectRegistry(directory: registryUserLayerRoot())
+    private func allListableRecords() throws -> [SessionRecord] {
+        let merged = try ProjectStore(directory: home.projectsDirectory)
             .projects()
             .flatMap { project in
                 try listableRecords(
                     inProject: URL(fileURLWithPath: project.path, isDirectory: true))
             }
-        var listedSessionIds = Set<String>()
+        var listedSessionIds: Set<ULID> = []
         return merged.filter { listedSessionIds.insert($0.sessionId).inserted }
-    }
-
-    /// The user layer root the cross-project registry lives in, resolved
-    /// with no project (``RegisteredRecordingRoots/registryDirectory(of:)``).
-    ///
-    /// - Returns: The user layer root.
-    func registryUserLayerRoot() -> URL {
-        RegisteredRecordingRoots.registryDirectory(of: settingsStore)
     }
 }
 
 extension SessionInfo {
-    /// The wire projection of one index record: `title`,
-    /// `updatedAt` (RFC 3339), and the complete ordered
-    /// `additionalDirectories` are always filled.
+    /// The wire projection of one session record: `title`, `updatedAt`
+    /// (RFC 3339), and the complete ordered `additionalDirectories` are
+    /// always filled.
     ///
-    /// The schema requires an absolute `cwd`, and every writer of this
-    /// package records one; a damaged record whose `cwd` is not absolute
-    /// cannot go on the wire, so the projection gives `nil` and the
-    /// listing drops that record. A directory entry that is not absolute
-    /// is dropped from the list for the same reason. A stored record is
-    /// not a request, so there is no client to answer: dropping is the
-    /// whole remedy.
+    /// The schema requires an absolute `cwd`, and Router records the
+    /// absolute working folder of each session; a damaged record whose
+    /// `cwd` is not absolute cannot go on the wire, so the projection gives
+    /// `nil` and the listing drops that record. A directory entry that is
+    /// not absolute is dropped from the list for the same reason. A stored
+    /// record is not a request, so there is no client to answer: dropping
+    /// is the whole remedy.
     ///
-    /// - Parameter record: The store's index record.
-    init?(record: SessionIndexRecord) {
-        guard let cwd = AbsolutePath(absolute: record.cwd) else {
+    /// - Parameter record: The record of one session folder.
+    init?(record: SessionRecord) {
+        guard let cwd = AbsolutePath(absolute: record.workingDirectory.standardizedFileURL.path) else {
             return nil
         }
         self.init(
             cwd: cwd,
-            sessionId: SessionId(rawValue: record.sessionId),
-            additionalDirectories: record.additionalDirectories.compactMap(
-                AbsolutePath.init(absolute:)),
-            title: record.title,
+            sessionId: SessionId(rawValue: record.sessionId.description),
+            additionalDirectories: record.additionalDirectories.compactMap { directory in
+                AbsolutePath(absolute: directory.path)
+            },
+            title: record.facts.title,
             updatedAt: PromptExecution.rfc3339(record.updatedAt))
     }
 }

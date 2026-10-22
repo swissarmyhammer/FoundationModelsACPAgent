@@ -10,7 +10,7 @@ import Testing
 
 /// The prompt execution: the acknowledge-then-notify
 /// order, the `user_message` echo, the prompt-state machine, the stop-reason
-/// mapping, and the first-activity index record.
+/// mapping, and the title record.
 @Suite(.closesHarnesses) struct PromptExecutionTests {
     // MARK: - Constants
 
@@ -51,14 +51,19 @@ import Testing
         AgentClientHarness.makePromptRequest(sessionId: sessionId, text: text)
     }
 
-    /// The index of the fixture session's recording root.
+    /// The record of the fixture session, as the `index.md` of its session
+    /// folder holds it now.
     ///
     /// - Parameter fixture: The fixture whose session is open.
-    /// - Returns: The `sessions.jsonl` index.
-    /// - Throws: When the session is not in the agent's table.
-    private static func sessionIndex(of fixture: ScriptedPromptFixture) async throws -> SessionIndex {
+    /// - Returns: The record.
+    /// - Throws: When the session is not in the agent's table, the read of
+    ///   the recording root fails, or the root holds no record of the
+    ///   session.
+    private static func sessionRecord(of fixture: ScriptedPromptFixture) async throws -> SessionRecord {
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
-        return SessionIndex(root: entry.transcriptDirectory.deletingLastPathComponent())
+        let records = try RouterSessionDirectory.recordedSessions(
+            in: entry.transcriptDirectory.deletingLastPathComponent())
+        return try #require(records.first { $0.sessionId.description == fixture.sessionId.rawValue })
     }
 
     /// Reads one string field of a wire error's `data` object.
@@ -79,8 +84,8 @@ import Testing
     // MARK: - The prompt order
 
     /// A scripted prompt streams the acknowledge-then-notify order: the
-    /// `{}` response returns first, then the echo, the first-activity
-    /// info update, `running`, the chunks, and one `idle` with
+    /// `{}` response returns first, then the echo, the title info
+    /// update, `running`, the chunks, and one `idle` with
     /// `end_turn`. The echo owns the message identity: the agent
     /// chunks ride one different id.
     @Test
@@ -217,7 +222,7 @@ import Testing
         await owner.noteCancelRequested()
         let execution = PromptExecution(
             sessionId: fixture.sessionId, promptBlocks: [], promptState: owner, send: { _ in },
-            firstActivity: nil, modelName: syntheticModelName, modelPrompt: "never sent")
+            titleRecord: nil, modelName: syntheticModelName, modelPrompt: "never sent")
         let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
 
         await execution.run(session: entry.session, projector: entry.projector) { reason in
@@ -1320,26 +1325,23 @@ import Testing
         await fixture.close()
     }
 
-    // MARK: - The title and the index timing
+    // MARK: - The title and the record timing
 
-    /// `sessions.jsonl` is absent before the first prompt, gains the
-    /// session's record with a one-line title at the first prompt, and
-    /// gains nothing more at the second prompt.
+    /// The `index.md` of the session holds no title before the first
+    /// prompt, holds a one-line title after the first prompt, and keeps
+    /// that title at the second prompt.
     @Test
-    func theFirstPromptWritesTheIndexRecordWithAOneLineTitle() async throws {
+    func theFirstPromptWritesTheTitleRecordWithAOneLineTitle() async throws {
         let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
-        let index = try await Self.sessionIndex(of: fixture)
-        #expect(try index.read().records.isEmpty)
+        #expect(try await Self.sessionRecord(of: fixture).facts.title == nil)
 
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId))
         let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
 
-        let records = try index.read().records
-        #expect(records.count == 1)
-        #expect(records.first?.sessionId == fixture.sessionId.rawValue)
-        #expect(records.first?.title == Self.promptTitleLine)
-        #expect(records.first?.cwd == fixture.cwd.path)
+        let record = try await Self.sessionRecord(of: fixture)
+        #expect(record.facts.title == Self.promptTitleLine)
+        #expect(record.workingDirectory.standardizedFileURL.path == fixture.cwd.standardizedFileURL.path)
 
         let titles = firstPrompt.compactMap { notification -> PatchField<String>? in
             if case .sessionInfoUpdate(let info) = notification.update { return info.title }
@@ -1350,9 +1352,10 @@ import Testing
         _ = try await fixture.harness.connection.prompt(
             Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
         let secondPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+        let afterSecond = try await Self.sessionRecord(of: fixture)
         await fixture.close()
 
-        #expect(try index.read().records.count == 1)
+        #expect(afterSecond.facts.title == Self.promptTitleLine)
         #expect(secondPrompt.count { $0.update.kind == .sessionInfoUpdate } == 1)
     }
 }

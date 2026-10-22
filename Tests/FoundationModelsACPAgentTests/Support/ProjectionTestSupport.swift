@@ -434,7 +434,7 @@ enum RoutedPrompt {
         let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
         var execution = PromptExecution(
             sessionId: SessionId(rawValue: syntheticSessionIdValue), promptBlocks: [],
-            promptState: PromptStateOwner(send: send), send: send, firstActivity: nil,
+            promptState: PromptStateOwner(send: send), send: send, titleRecord: nil,
             modelName: syntheticModelName)
         execution.modelPrompt = prompt
         await execution.run(session: session, projector: projector) { _ in end.finish() }

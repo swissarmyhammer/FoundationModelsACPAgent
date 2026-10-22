@@ -185,8 +185,8 @@ import Testing
     ///
     /// `run` and `acp` compose one router, so the recorder cannot be on in
     /// one mode and off in the other. The assertion reads the recorded
-    /// file, and never `sessions.jsonl`: that index is written on a path
-    /// that never touches the recorder.
+    /// file, and never the `index.md` of the session folder: that record
+    /// is written on a path that never touches the recorder.
     @Test
     func aPromptOverTheStdioWireRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AcpCommandTests-record-config")

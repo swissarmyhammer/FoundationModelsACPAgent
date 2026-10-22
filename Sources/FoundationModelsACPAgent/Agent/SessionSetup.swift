@@ -114,10 +114,10 @@ struct ActiveSession: Sendable {
     /// Whether `session/close` released this session.
     var isClosed = false
 
-    /// Whether the `sessions.jsonl` record was written. The first prompt
-    /// writes it, not `session/new`: a session with zero prompts is not
-    /// listable, so a persisted transcript is the listability test.
-    var indexRecorded = false
+    /// Whether the `index.md` of the session holds its title. The first
+    /// prompt sets the title through Router, not `session/new`: the title
+    /// is the first line of that prompt.
+    var titleRecorded = false
 
     /// The retained history of the session: each
     /// `session/update` that the agent sent for the session, merged, with
@@ -342,9 +342,8 @@ enum SessionSetup {
     }
 
     /// The user layer's root in `stack`: the synced root of a custom home,
-    /// and `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI.
-    /// `ProjectRegistry` lives there, and the `home` transcript location
-    /// resolves against it.
+    /// and `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI. The `home`
+    /// transcript location resolves against it.
     ///
     /// - Parameter stack: The session's dotfolder stack.
     /// - Returns: The user layer root.
@@ -455,8 +454,8 @@ struct LoadedSessionContext {
     /// Resolves the context of one working directory from the settings in
     /// memory of `settingsStore` (``SettingsStore/merged(for:)``).
     ///
-    /// The session requests of the agent and the walk of the project
-    /// registry (``RegisteredRecordingRoots``) both call it, thus each of
+    /// The session requests of the agent and the walk of the project store
+    /// of the home (``RegisteredRecordingRoots``) both call it, thus each of
     /// them finds the same recording root for a working directory.
     ///
     /// - Parameters:
@@ -499,8 +498,8 @@ struct SessionComposition {
     /// live session the builtins capture exists.
     let commandProviders: [any SlashCommandProviding]
 
-    /// The user layer root the stack resolved, for the project registry
-    /// and the `home` transcript location.
+    /// The user layer root the stack resolved, for the builtin commands and
+    /// the `home` transcript location.
     let userLayerRoot: URL
 
     /// The recording root `makeSession(recordingRoot:)` receives; Router
@@ -509,7 +508,8 @@ struct SessionComposition {
 
     /// Whether the composition is the one of a replay-only resume: no
     /// instructions, no tool surface, and no command source. The mount
-    /// then writes no project-registry record and announces no command.
+    /// then writes no project file and no directory list, and announces no
+    /// command.
     let isReplayOnly: Bool
 }
 
@@ -548,11 +548,11 @@ extension RoutedACPAgent {
     ///
     /// The ACP `sessionId` IS the root Router session's ULID, serialized —
     /// there is no mapping table, because a mapping table can drift and
-    /// a resume would then restore the wrong conversation. The cwd is
-    /// registered in the project registry now; the `sessions.jsonl` index
-    /// record waits for the first recorded activity, because a session
-    /// with zero prompts is not listable: a persisted transcript is the
-    /// listability test.
+    /// a resume would then restore the wrong conversation. Router writes
+    /// the `index.md` of the session folder when it makes the session, and
+    /// the cwd is registered in the project store of the home now. The
+    /// title waits for the first prompt, and a session with zero prompts
+    /// is not listed (``RoutedACPAgent/listSessions(_:)``).
     ///
     /// The request runs in one server span, and it writes one "enter" record
     /// when it starts, because the tool and MCP server composition can take a
@@ -648,15 +648,14 @@ extension RoutedACPAgent {
         // starter (D120 c), before the mount sends anything for the session.
         connections.recordStart(of: SessionId(rawValue: session.id.description), by: caller)
 
-        // The `sessions.jsonl` index record is NOT written here: the
-        // prompt task appends it at the first recorded activity,
-        // with the title, because a session with zero prompts is not listable.
+        // The title is NOT set here: the first prompt sets it, from the
+        // first line of that prompt.
         let activation = try await activateSession(
             session,
             composition: composition,
             placement: SessionPlacement(
                 workingDirectory: workingDirectory, additionalRoots: additionalRoots, userPresence: userPresence),
-            indexRecorded: false,
+            titleRecorded: false,
             history: SessionMergeEngine())
 
         let response = NewSessionResponse(
@@ -668,7 +667,8 @@ extension RoutedACPAgent {
     }
 
     /// Mounts one made or restored Router session into the agent: the
-    /// project-registry record, the command registry with
+    /// record of its placement (``recordPlacement(of:placement:)``), the
+    /// command registry with
     /// its bound builtin context, the table entry with its retained
     /// history, the command-set publication, the terminal projection, and
     /// the status report of the MCP servers.
@@ -682,27 +682,24 @@ extension RoutedACPAgent {
     ///   - session: The root Router session to mount.
     ///   - composition: What the composition pipeline built for it.
     ///   - placement: Where the session works, and its user presence.
-    ///   - indexRecorded: Whether the `sessions.jsonl` record already
-    ///     exists, so the first prompt knows whether to append it.
+    ///   - titleRecorded: Whether the `index.md` of the session already
+    ///     holds its title, so the first prompt knows whether to set it.
     ///   - history: The retained history of the session: empty for a new
     ///     session, the kept history for a resumed one.
     /// - Returns: The session id, and the command list and the
     ///   config-option list that the response announces.
-    /// - Throws: Whatever the project-registry record throws.
+    /// - Throws: Whatever ``recordPlacement(of:placement:)`` throws.
     func activateSession(
         _ session: any RoutedSession,
         composition: SessionComposition,
         placement: SessionPlacement,
-        indexRecorded: Bool,
+        titleRecorded: Bool,
         history: SessionMergeEngine
     ) async throws -> SessionActivation {
         let workingDirectory = placement.workingDirectory
-        // Register the cwd in the user-layer project registry, so a
-        // cross-project browser finds this project. A replay-only session
-        // has no cwd on disk, so it registers nothing.
+        // A replay-only session has no cwd on disk, so it records nothing.
         if !composition.isReplayOnly {
-            try ProjectRegistry(directory: composition.userLayerRoot)
-                .recordSessionStart(workingDirectory: workingDirectory)
+            try await recordPlacement(of: session, placement: placement)
         }
 
         let sessionId = SessionId(rawValue: session.id.description)
@@ -775,7 +772,7 @@ extension RoutedACPAgent {
             stateLedger: stateLedger,
             projector: projector,
             isReplayOnly: composition.isReplayOnly,
-            indexRecorded: indexRecorded,
+            titleRecorded: titleRecorded,
             retainedHistory: RetainedHistory(history))
         recordActiveSessions()
 
@@ -791,6 +788,26 @@ extension RoutedACPAgent {
             sessionId: sessionId,
             availableCommands: CommandRegistry.availableCommands(for: await commands.commands),
             configOptions: configOptions)
+    }
+
+    /// Records where one mounted session works, for the listings. The cwd
+    /// goes into the project store of the home (Router `ProjectStore`, one
+    /// file for each project in ``AgentHome/projectsDirectory``), so a
+    /// cross-project browser finds the project. The additional directories
+    /// go to Router (`setAdditionalDirectories(to:for:)`), which writes them
+    /// to the `index.md` of the session; a resume gives the complete new
+    /// list, because the list of the client is authoritative on each
+    /// reconnect.
+    ///
+    /// - Parameters:
+    ///   - session: The root Router session.
+    ///   - placement: Where the session works.
+    /// - Throws: The error of the project file save, or
+    ///   `SessionDirectoryError.unknownSession` when the session directory of
+    ///   the router does not hold the session.
+    private func recordPlacement(of session: any RoutedSession, placement: SessionPlacement) async throws {
+        try ProjectStore(directory: home.projectsDirectory).register(workingDirectory: placement.workingDirectory)
+        try await sessionDirectory.setAdditionalDirectories(to: placement.additionalRoots, for: session.id)
     }
 
     /// Starts the session's terminal projection: the
@@ -1144,7 +1161,7 @@ extension RoutedLLM {
     ///   - tools: The tools the model can call.
     ///   - userPresence: The user presence of the client that resumes the
     ///     session now (``RoutedACPAgent/userPresence``). It is required,
-    ///     never `nil`: a restore records no sidecar, so with `nil` Router
+    ///     never `nil`: a restore writes no new configuration, so with `nil` Router
     ///     would apply the presence recorded when the session was created,
     ///     which belongs to the client of that time. The value covers the
     ///     restored root and each restored child.

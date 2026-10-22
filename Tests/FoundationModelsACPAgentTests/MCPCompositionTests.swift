@@ -971,21 +971,31 @@ import Testing
 
     // MARK: - No persistence
 
-    @Test func aSessionIndexRecordCarriesNoClientServerList() throws {
-        let record = SessionIndexRecord(
-            sessionId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-            cwd: "/tmp/project",
-            title: "a title",
-            updatedAt: Date(timeIntervalSince1970: 0),
-            additionalDirectories: [])
+    /// The command of the client server of the persistence case: not an
+    /// absolute path, so the server never starts.
+    private static let unstartableCommand = "mcp-composition-tests-relative-command"
 
-        let encoded = try JSONEncoder().encode(record)
-        let object = try #require(
-            try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    /// The key a record would hold the client servers under.
+    private static let clientServerListKey = "mcpServers"
 
-        #expect(
-            Set(object.keys) == [
-                "sessionId", "cwd", "title", "updatedAt", "additionalDirectories",
-            ])
+    /// The `index.md` that `session/new` records for a session carries no
+    /// client MCP server list and no name of a client server: a client
+    /// server lives for its session only.
+    @Test func theRecordOfASessionCarriesNoClientServerList() async throws {
+        let agent = try await AgentClientHarness.makeInitializedAgent(label: "MCPCompositionTests-no-persistence")
+        let cwd = makeResolvedDirectory(label: "MCPCompositionTests-no-persistence-repo")
+        var request = AgentClientHarness.makeNewSessionRequest(cwd: cwd)
+        request.mcpServers = [
+            .stdio(MCPServerStdio(command: AbsolutePath(rawValue: Self.unstartableCommand), name: Self.gammaName))
+        ]
+
+        let response = try await agent.newSession(request)
+
+        let root = try projectRecordingRoot(of: cwd, dotfolderName: AgentClientHarness.dotfolderName)
+        let text = try String(
+            contentsOf: RecordedSessionIndexFile.fileURL(ofSession: response.sessionId.rawValue, under: root),
+            encoding: .utf8)
+        #expect(!text.contains(Self.clientServerListKey))
+        #expect(!text.contains(Self.gammaName))
     }
 }

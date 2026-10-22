@@ -41,10 +41,10 @@ extension RoutedACPAgent {
         return CloseSessionResponse()
     }
 
-    /// Deletes one session outright: a real delete of the
-    /// working-tree transcript directory and the `sessions.jsonl` entry, not a
-    /// tombstone. Version control keeps what git recorded, so the response and
-    /// the docs never claim the content is unrecoverable.
+    /// Deletes one session outright: a real delete of its session folder,
+    /// which holds its `index.md` and its transcript, not a tombstone.
+    /// Version control keeps what git recorded, so the response and the
+    /// docs never claim the content is unrecoverable.
     ///
     /// An active session is closed first, with the full `session/close`
     /// semantics (``closeSession(_:)``, descendants included), then
@@ -261,14 +261,14 @@ extension RoutedACPAgent {
 
     // MARK: - The disk removal
 
-    /// The recording roots of every project in the user-layer project
-    /// registry, resolved through the settings of each project
+    /// The recording roots of every project in the project store of the
+    /// home, resolved through the settings of each project
     /// (``RegisteredRecordingRoots/resolve(in:)``). A delete of a session no
     /// longer in the table searches these for the session's directory.
     ///
-    /// A registry that cannot be read, or a project whose settings cannot be
-    /// read, gives no root and one `warning` record with the type of the
-    /// error. The delete then searches the other roots.
+    /// A project store that cannot be read, or a project whose settings
+    /// cannot be read, gives no root and one `warning` record with the type
+    /// of the error. The delete then searches the other roots.
     ///
     /// - Returns: The resolved recording roots, one per registered project
     ///   whose settings can be read.
@@ -278,7 +278,7 @@ extension RoutedACPAgent {
             switch failure {
             case .registryUnreadable(let error):
                 Self.logCandidateRootFailure(
-                    "The project registry cannot be read. The delete searches no registered project.", error: error)
+                    "The project store cannot be read. The delete searches no registered project.", error: error)
             case .projectUnreadable(_, let error):
                 Self.logCandidateRootFailure(
                     "The settings of a registered project cannot be read. The delete does not search that project.",
@@ -299,10 +299,11 @@ extension RoutedACPAgent {
         ACPAgentTelemetry.logger(.sessionLifecycle).warning(message, metadata: ACPAgentTelemetry.errorMetadata(error))
     }
 
-    /// Removes the session's transcript directory and its index line under
-    /// each distinct root. A failed removal is logged and the
-    /// walk continues, so a delete never fails partway and a shared root is
-    /// swept once.
+    /// Removes the session's folder under each distinct root: the folder
+    /// holds the whole record of the session, its `index.md` and its
+    /// transcript, so no other file changes. A failed removal is logged and
+    /// the walk continues, so a delete never fails partway and a shared root
+    /// is swept once.
     ///
     /// - Parameters:
     ///   - ulidString: The session's canonical ULID string, the name of its
@@ -312,7 +313,6 @@ extension RoutedACPAgent {
         var swept: Set<String> = []
         for root in roots where swept.insert(root.standardizedFileURL.path).inserted {
             removeSessionDirectory(ulidString: ulidString, under: root)
-            removeIndexRecord(ulidString: ulidString, under: root)
         }
     }
 
@@ -332,23 +332,6 @@ extension RoutedACPAgent {
         } catch {
             logSessionDeleteError(
                 "The delete could not remove the transcript directory of a session.",
-                ulidString: ulidString, error: error)
-        }
-    }
-
-    /// Removes the session's `sessions.jsonl` line under `root`. A read or a
-    /// rewrite error is logged and swallowed, so a damaged index never fails
-    /// the delete.
-    ///
-    /// - Parameters:
-    ///   - ulidString: The session id whose index line to drop.
-    ///   - root: The recording root whose index to rewrite.
-    private func removeIndexRecord(ulidString: String, under root: URL) {
-        do {
-            try SessionIndex(root: root).removeRecords(sessionId: ulidString)
-        } catch {
-            logSessionDeleteError(
-                "The delete could not remove the sessions.jsonl record of a session.",
                 ulidString: ulidString, error: error)
         }
     }

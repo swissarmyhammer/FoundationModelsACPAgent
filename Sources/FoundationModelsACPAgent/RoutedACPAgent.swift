@@ -52,6 +52,14 @@ public actor RoutedACPAgent: Agent {
     /// models alive between sessions.
     public nonisolated let residentProfile: LanguageModelProfile
 
+    /// The session directory of the router that resolved
+    /// ``residentProfile`` (`Router.sessionDirectory`). Each session that
+    /// the profile vends or restores registers in it, so the agent changes
+    /// the record of a session through it: the title at the first prompt,
+    /// and the additional directories at each mount. Router writes each
+    /// change to the `index.md` of the session folder.
+    nonisolated let sessionDirectory: RouterSessionDirectory
+
     /// The connection table (ACPA-5, D120): one row for each bound
     /// connection and one for ``ConnectionId/direct``, with the client
     /// capabilities of the `initialize` of each and its trust, and the owner
@@ -106,9 +114,10 @@ public actor RoutedACPAgent: Agent {
     /// `session/list` loads it through
     /// ``makeConfigurationLoader(workingDirectory:)``. The store and each
     /// loader get this value. Thus `session/new`, `session/resume`,
-    /// `session/list` (with a `cwd` filter and across the project registry)
-    /// and `session/delete` all record or read under this location, and it
-    /// wins over the `transcripts.location` of every config layer.
+    /// `session/list` (with a `cwd` filter and across the project store of
+    /// the home) and `session/delete` all record or read under this
+    /// location, and it wins over the `transcripts.location` of every
+    /// config layer.
     public nonisolated let transcriptLocation: TranscriptLocation?
 
     /// The store that gives the value of each secret reference
@@ -392,6 +401,7 @@ public actor RoutedACPAgent: Agent {
         userDeviceTokens: Set<String> = []
     ) async throws {
         self.name = name
+        self.sessionDirectory = router.sessionDirectory
         self.hooks = hooks
         self.userDeviceTokens = userDeviceTokens
         self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)

@@ -10,10 +10,9 @@ import Testing
 // the file the process left behind. A test at this level cannot pass on a
 // no-op recorder: no fixture stands between the composition and the disk.
 //
-// It reads `transcript.jsonl` and never `sessions.jsonl`. This package
-// writes the index through Router's `SessionIndex`, on a path that never
-// touches the Router recorder, so it stays correct while every event
-// drops.
+// It reads `transcript.jsonl` and never the `index.md` of the session
+// folder. Router writes that record on a path that never touches the
+// Router recorder, so it stays correct while every event drops.
 //
 // It carries no gate. The package boundary is the selection: the root
 // `swift test` never sees this target, and

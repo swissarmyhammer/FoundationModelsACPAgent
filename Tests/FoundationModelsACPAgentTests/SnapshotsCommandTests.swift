@@ -28,8 +28,12 @@ struct SnapshotsCommandTests {
     /// not write. A remove of an entry in it fails.
     private static let readOnlyPermissions = NSNumber(value: 0o500)
 
-    /// The recorded state of a key that no `sessions.jsonl` has.
+    /// The recorded state of a key that no recording root has a session
+    /// folder of.
     private static let unrecordedText = "unrecorded"
+
+    /// The opening of the warning of a project store that cannot be read.
+    private static let projectStoreWarningOpening = "The project store cannot be read"
 
     // MARK: - The fixture
 
@@ -58,16 +62,23 @@ struct SnapshotsCommandTests {
             configFixture.environment.merging([AgentHome.dataHomeEnvironmentKey: dataHome.path]) { _, data in data }
         }
 
+        /// The XDG home of the CLI over ``environment``.
+        ///
+        /// - Returns: The home.
+        /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
+        func home() throws -> AgentHome {
+            AgentHome.makeXDG(name: try DotfolderName(AgentComposition.dotfolderName), environment: environment)
+        }
+
         /// The shadow folder of `sessionKey` in the hooks folder of the XDG
         /// home of the CLI, under the data home.
         ///
         /// - Parameter sessionKey: The session key.
         /// - Returns: The folder.
+        /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
         func shadowFolder(of sessionKey: String) throws -> URL {
-            let hooksDirectory = AgentHome.makeXDG(
-                name: try DotfolderName(AgentComposition.dotfolderName), environment: environment
-            ).hooksDirectory
-            return AgentHooks.snapshotDirectory(in: hooksDirectory).appendingPathComponent(sessionKey, isDirectory: true)
+            AgentHooks.snapshotDirectory(in: try home().hooksDirectory)
+                .appendingPathComponent(sessionKey, isDirectory: true)
         }
 
         /// Whether the shadow folder of `sessionKey` is on disk.
@@ -78,15 +89,15 @@ struct SnapshotsCommandTests {
             FileManager.default.fileExists(atPath: try shadowFolder(of: sessionKey).path)
         }
 
-        /// Makes the registry of the projects unreadable: its file is a
-        /// directory.
+        /// Makes the project store of the home unreadable: its projects
+        /// folder is a file.
         ///
-        /// - Throws: The error of the directory creation.
-        func makeRegistryUnreadable() throws {
+        /// - Throws: The error of the directory creation or of the write.
+        func makeProjectStoreUnreadable() throws {
+            let projectsDirectory = try home().projectsDirectory
             try FileManager.default.createDirectory(
-                at: configFixture.userDirectory.appendingPathComponent(
-                    ProjectRegistry.registryFileName, isDirectory: true),
-                withIntermediateDirectories: true)
+                at: projectsDirectory.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: projectsDirectory)
         }
     }
 
@@ -233,7 +244,7 @@ struct SnapshotsCommandTests {
         #expect(try fixture.hasShadowFolder(of: Self.sessionKey))
     }
 
-    /// `remove --unrecorded` removes each key that no `sessions.jsonl` has,
+    /// `remove --unrecorded` removes each key that no recording root has,
     /// and writes each removed key.
     @Test
     func aRemoveOfTheUnrecordedKeysRemovesThem() async throws {
@@ -246,18 +257,18 @@ struct SnapshotsCommandTests {
         #expect(try !fixture.hasShadowFolder(of: Self.sessionKey))
     }
 
-    /// When the registry of the projects cannot be read, the recorded state
-    /// is not known: `remove --unrecorded` removes nothing, writes the
-    /// warning to stderr, and the exit status is not zero.
+    /// When the project store cannot be read, the recorded state is not
+    /// known: `remove --unrecorded` removes nothing, writes the warning of
+    /// the project store to stderr, and the exit status is not zero.
     @Test
     func aRemoveOfTheUnrecordedKeysRemovesNothingWhenTheRecordedStateIsUnknown() async throws {
         let fixture = try Fixture(label: "SnapshotsCommandTests-unknown")
-        try fixture.makeRegistryUnreadable()
+        try fixture.makeProjectStoreUnreadable()
 
         let outcome = try await Self.parseRemove(["--unrecorded"]).outcome(environment: fixture.environment)
 
         #expect(outcome.report.standardOutput.isEmpty)
-        #expect(!outcome.report.standardErrorLines.isEmpty)
+        #expect(outcome.report.standardErrorLines.contains { $0.contains(Self.projectStoreWarningOpening) })
         #expect(outcome.exitCode == .error)
         #expect(try fixture.hasShadowFolder(of: Self.sessionKey))
     }

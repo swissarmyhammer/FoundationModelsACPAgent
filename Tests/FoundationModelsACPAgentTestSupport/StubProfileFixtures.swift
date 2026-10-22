@@ -172,12 +172,23 @@ public func makeStubProfile(
     recordingsDirectory: URL? = nil,
     loader: StubModelLoader = StubModelLoader()
 ) async throws -> LanguageModelProfile {
-    let router = EchoModel.makeRouter(
-        cacheDirectory: cacheDirectory,
-        recordingsDirectory: recordingsDirectory,
-        loader: loader
-    )
-    return try await router.resolve(
+    try await resolveStubProfile(
+        on: EchoModel.makeRouter(
+            cacheDirectory: cacheDirectory,
+            recordingsDirectory: recordingsDirectory,
+            loader: loader
+        ))
+}
+
+/// Resolves the stub profile on a router the caller made, so the caller
+/// keeps the router — and its `sessionDirectory` — beside the profile.
+///
+/// - Parameter router: The router to resolve on, made with
+///   `EchoModel.makeRouter`.
+/// - Returns: The resolved profile. It retains `router`.
+/// - Throws: Whatever resolving the profile throws.
+public func resolveStubProfile(on router: Router) async throws -> LanguageModelProfile {
+    try await router.resolve(
         profile: ProfileDefinition(
             name: "stub",
             description: "the stub profile these fixtures run on",

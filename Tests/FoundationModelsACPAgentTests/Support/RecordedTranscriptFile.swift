@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgent
+import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// One recorded `transcript.jsonl` line, in the fields the transcript
@@ -108,14 +109,9 @@ enum RecordedTranscriptFile {
     static func lines(
         under root: URL, sessionId: SessionId
     ) throws -> [RecordedTranscriptLine] {
-        let decoder = JSONDecoder()
-        let lines = try fileURLs(under: root).flatMap { url -> [RecordedTranscriptLine] in
-            let text = try String(contentsOf: url, encoding: .utf8)
-            return try text.split(separator: "\n").map { line in
-                try decoder.decode(RecordedTranscriptLine.self, from: Data(line.utf8))
-            }
-        }
-        return lines.filter { $0.sessionId == sessionId.rawValue }
+        try fileURLs(under: root)
+            .flatMap { url in try JSONLFile(url: url).records(as: RecordedTranscriptLine.self) }
+            .filter { $0.sessionId == sessionId.rawValue }
     }
 
     /// Every recording file under `root`, at any depth.

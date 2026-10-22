@@ -73,6 +73,27 @@ comments:
     - Reverted the local Package.resolved (gitignored) to Router 62d1e875; `swift build --build-tests` is green again. No ACPAgent file changed.
     - next: user / Agents session lands the Agents update; then rerun /implement ^am394r2.
   timestamp: 2026-10-22T20:34:35.852123+00:00
+- actor: claude-code
+  id: 01m5jp56d5hpcax7m62xzb4rdh
+  text: |-
+    ### implement — picked up again (2026-10-22), research done
+    - `swift package update FoundationModelsRouter FoundationModelsExtras FoundationModelsAgents`: Router 62d1e875 -> d1528d72, Agents 5a9ed8a -> 959fe3b, Extras stays 78d2532. Package.resolved is gitignored, so commits carry no pin.
+    - RED: new suite Tests/FoundationModelsACPAgentTests/SessionFolderTests.swift (reads index.md and the project files as text via Extras FrontmatterDocument.split + YAMLValue.parse, so it compiles on both pins). On the old pin all 4 fail for the right reason: no index.md, no `<synced>/projects/` folder, and the recording root still holds sessions.jsonl after a delete.
+    - Facts: `SessionRecord.init` is internal, so test fixtures cannot build records; they make real sessions and change records through `RouterSessionDirectory` (setTitle / setAdditionalDirectories) or rewrite index.md. RoutedACPAgent does not keep the Router today; it will keep `router.sessionDirectory` (the directory the resident profile's sessions register in). `AgentHome.projectsDirectory` already exists (`<synced>/projects`).
+  timestamp: 2026-10-22T20:52:03.109220+00:00
+- actor: claude-code
+  id: 01m5jpg2fq8sq9gepwsx3j0mvs
+  text: |-
+    ### implement — production code moved (not committed yet; the test target does not compile until the fixtures move)
+    - `swift build` is green on Router d1528d72 / Agents 959fe3b / Extras 78d2532.
+    - RoutedACPAgent keeps `sessionDirectory` (= router.sessionDirectory).
+    - session/new and resume: `recordPlacement` registers the cwd in `ProjectStore(directory: home.projectsDirectory)` and calls `setAdditionalDirectories(to:for:)`. Replay-only sessions do neither.
+    - First prompt: `SessionTitleRecord` -> `setTitle(_:of:)`. FirstActivity and makeFirstActivity are deleted. `indexRecorded` is now `titleRecorded`; a resume sets it from `facts.title != nil`.
+    - Resume: the sessions.jsonl root-set append is deleted. Delete: the sessions.jsonl rewrite is deleted, so it removes the folder only.
+    - TranscriptStore: `listableRecords(in:)` = `recordedSessions(in:)` filtered to firstActivityAt != nil, no fork parent, no agentSpawn. SessionPage uses SessionRecord. It takes a `projectsDirectory`, and `allProjects()` uses ProjectStore.
+    - SessionList, RegisteredRecordingRoots (`projectsDirectory(of:)`) and SnapshotInventory read ProjectStore and session folders.
+    - Next: a subagent moves every test fixture to index.md/SessionRecord/ProjectStore, the IntegrationTests and the leftover doc text, then runs the full suite and the bench tests.
+  timestamp: 2026-10-22T20:57:59.543172+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'

@@ -11,7 +11,7 @@ import Testing
 /// opaque cursor walk, the invalid-cursor refusal, and the listability
 /// rules as a client observes them.
 @Suite(.closesHarnesses) struct SessionListTests {
-    /// The instant the dated index records count from.
+    /// The instant the dated session records count from.
     private static let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
 
     /// The RFC 3339 form of ``baseDate``, which pins the wire format of
@@ -21,7 +21,7 @@ import Testing
     /// The RFC 3339 form of ``baseDate`` plus one ``dateStep``.
     private static let steppedDateRFC3339 = "2023-11-14T22:14:20Z"
 
-    /// The gap between two dated index records, in seconds.
+    /// The gap between two dated session records, in seconds.
     private static let dateStep: TimeInterval = 60
 
     /// The session count a three-page walk needs: two full pages and one
@@ -46,7 +46,8 @@ import Testing
         /// The connected harness.
         let harness: AgentClientHarness
 
-        /// The injected user layer root; `projects.jsonl` lives here.
+        /// The injected user layer root, the synced root of the home of
+        /// the agent.
         let userDirectory: URL
 
         /// The validated dotfolder name the agent runs under.
@@ -54,6 +55,10 @@ import Testing
 
         /// The client side of the wire.
         var connection: ClientSideConnection { harness.connection }
+
+        /// The projects folder of the home of the agent: one file for each
+        /// project, which the cross-project listing reads.
+        var projectsDirectory: URL { harness.agent.home.projectsDirectory }
 
         /// Closes both ends of the wire.
         func close() async { await harness.close() }
@@ -80,7 +85,7 @@ import Testing
     /// Makes one registered project with a project-local recording root.
     ///
     /// - Parameters:
-    ///   - fixture: The wire fixture whose registry gains the project.
+    ///   - fixture: The wire fixture whose project store gains the project.
     ///   - label: The suffix that names the project's directories.
     /// - Returns: The recorded-project fixture.
     /// - Throws: Whatever registration or profile resolution throws.
@@ -88,8 +93,7 @@ import Testing
         in fixture: WireFixture, label: String
     ) async throws -> RecordedProjectFixture {
         let workingDirectory = makeResolvedDirectory(label: "SessionListTests-\(label)")
-        try ProjectRegistry(directory: fixture.userDirectory)
-            .recordSessionStart(workingDirectory: workingDirectory)
+        try ProjectStore(directory: fixture.projectsDirectory).register(workingDirectory: workingDirectory)
         return try await makeRecordedProjectFixture(
             workingDirectory: workingDirectory,
             cacheDirectory: makeResolvedDirectory(label: "SessionListTests-\(label)-cache"),
@@ -143,12 +147,11 @@ import Testing
     func cwdFilteredListReportsTheJoinedSessionInfoFields() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "fields")
-        let first = try await project.makeRecordedSession()
-        let second = try await project.makeRecordedSession()
-        try project.appendRecord(id: first, title: "first prompt", updatedAt: Self.baseDate)
-        try project.appendRecord(
-            id: second, title: "second prompt", updatedAt: Self.steppedDate(1),
-            additionalDirectories: ["/extra/a", "/extra/b"])
+        let first = try await project.makeRecordedSession(title: "first prompt", updatedAt: Self.baseDate)
+        let second = try await project.makeRecordedSession(
+            title: "second prompt",
+            additionalDirectories: [URL(filePath: "/extra/a"), URL(filePath: "/extra/b")],
+            updatedAt: Self.steppedDate(1))
 
         let response = try await fixture.connection.listSessions(
             Self.listRequest(cwd: project.workingDirectory))
@@ -187,8 +190,7 @@ import Testing
     func invalidCursorGivesAnInvalidParamsError() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "cursor")
-        let id = try await project.makeRecordedSession()
-        try project.appendRecord(id: id, title: "listed", updatedAt: Self.baseDate)
+        _ = try await project.makeRecordedSession(title: "listed", updatedAt: Self.baseDate)
 
         await InitializationTests.expectRequestError(
             .invalidParams, wireValue: InitializationTests.invalidParamsWireValue
@@ -235,9 +237,8 @@ import Testing
         var ids: [ULID] = []
         for position in 0..<Self.threePageSessionCount {
             let project = projects[position % projects.count]
-            let id = try await project.makeRecordedSession()
-            try project.appendRecord(
-                id: id, title: "session \(position)", updatedAt: Self.steppedDate(position))
+            let id = try await project.makeRecordedSession(
+                title: "session \(position)", updatedAt: Self.steppedDate(position))
             ids.append(id)
         }
 
@@ -260,10 +261,8 @@ import Testing
         let project = try await Self.makeProject(in: fixture, label: "deleted")
         // Every recorded fixture session is closed before the list, so
         // the kept row is the closed-session half of the rule.
-        let kept = try await project.makeRecordedSession()
-        let deleted = try await project.makeRecordedSession()
-        try project.appendRecord(id: kept, title: "kept", updatedAt: Self.baseDate)
-        try project.appendRecord(id: deleted, title: "deleted", updatedAt: Self.steppedDate(1))
+        let kept = try await project.makeRecordedSession(title: "kept", updatedAt: Self.baseDate)
+        let deleted = try await project.makeRecordedSession(title: "deleted", updatedAt: Self.steppedDate(1))
         try FileManager.default.removeItem(
             at: project.root.appendingPathComponent(deleted.description, isDirectory: true))
 
@@ -326,19 +325,16 @@ import Testing
                 to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
                 atomically: true,
                 encoding: .utf8)
-            try ProjectRegistry(directory: fixture.userDirectory)
-                .recordSessionStart(workingDirectory: project)
+            try ProjectStore(directory: fixture.projectsDirectory).register(workingDirectory: project)
         }
         let recorder = try await makeRecordedProjectFixture(
             workingDirectory: firstProject,
             cacheDirectory: makeResolvedDirectory(label: "SessionListTests-shared-cache"),
             recordingRoot: sharedRoot)
-        let firstSession = try await recorder.makeRecordedSession()
-        let secondSession = try await recorder.makeRecordedSession()
-        try recorder.appendRecord(
-            id: firstSession, title: "one", updatedAt: Self.baseDate, cwd: firstProject)
-        try recorder.appendRecord(
-            id: secondSession, title: "two", updatedAt: Self.steppedDate(1), cwd: secondProject)
+        let firstSession = try await recorder.makeRecordedSession(
+            title: "one", updatedAt: Self.baseDate, in: firstProject)
+        let secondSession = try await recorder.makeRecordedSession(
+            title: "two", updatedAt: Self.steppedDate(1), in: secondProject)
 
         let response = try await fixture.connection.listSessions(ListSessionsRequest())
         await fixture.close()

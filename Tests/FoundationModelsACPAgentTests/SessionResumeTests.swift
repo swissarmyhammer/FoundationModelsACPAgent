@@ -600,10 +600,10 @@ import Testing
         let accepted = try await FilesVerbSupport.invokeRead(readVerb, path: insideFile.path)
         #expect(accepted.correction == nil)
 
-        // The new ordered list is persisted to the index: the last record
-        // for this session carries no additional directories.
-        let record = try SessionIndex(root: root).read().records
-            .last { $0.sessionId == resume.fixture.sessionId.rawValue }
+        // The new ordered list is persisted to the `index.md` of the
+        // session: its record carries no additional directories.
+        let record = try RouterSessionDirectory.recordedSessions(in: root)
+            .first { $0.sessionId.description == resume.fixture.sessionId.rawValue }
         #expect(try #require(record).additionalDirectories.isEmpty)
         await resume.fixture.close()
     }

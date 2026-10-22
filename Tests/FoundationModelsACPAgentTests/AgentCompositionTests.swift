@@ -92,10 +92,10 @@ import Testing
     /// no recordings directory the router holds the no-op sink, every
     /// event goes nowhere, and `--resume` has nothing to read.
     ///
-    /// The assertion reads the recorded file. It never reads
-    /// `sessions.jsonl`: this package writes that index through Router's
-    /// `SessionIndex`, on a path that never touches the recorder, so it
-    /// stays correct while every event drops.
+    /// The assertion reads the recorded file. It never reads the
+    /// `index.md` of the session folder: Router writes that record on a
+    /// path that never touches the recorder, so it stays correct while
+    /// every event drops.
     @Test
     func theComposedPromptRecordsTheSessionTranscript() async throws {
         let configHome = makeResolvedDirectory(label: "AgentCompositionTests-record-config")

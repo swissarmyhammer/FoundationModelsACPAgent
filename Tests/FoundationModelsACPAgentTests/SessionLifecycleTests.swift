@@ -210,10 +210,12 @@ import Testing
 
     // MARK: - The real delete
 
-    /// Delete removes the transcript directory and the index line, and a
-    /// resume of the deleted session then fails: the absence does the work.
+    /// Delete removes the session folder — the transcript and the
+    /// `index.md` record in it — so the recording root lists the session no
+    /// more, and a resume of the deleted session then fails: the absence
+    /// does the work.
     @Test
-    func deleteRemovesTheDirectoryAndTheIndexLineAndResumeThenFails() async throws {
+    func deleteRemovesTheSessionFolderAndItsRecordAndResumeThenFails() async throws {
         var resume = try await ResumeSessionFixture.make(label: "SessionLifecycleTests-delete")
         let root = try resume.recordingRoot
         try await resume.runPrompt("first")
@@ -222,17 +224,19 @@ import Testing
         let transcriptDirectory = try #require(
             await resume.fixture.harness.agent.sessions[resume.fixture.sessionId]?
                 .transcriptDirectory)
-        let index = SessionIndex(root: root)
+        let sessionId = resume.fixture.sessionId.rawValue
         #expect(
-            try index.read().records.contains { $0.sessionId == resume.fixture.sessionId.rawValue })
+            try RouterSessionDirectory.recordedSessions(in: root).contains {
+                $0.sessionId.description == sessionId
+            })
 
         _ = try await resume.fixture.harness.connection.deleteSession(
             DeleteSessionRequest(sessionId: resume.fixture.sessionId))
 
         #expect(!FileManager.default.fileExists(atPath: transcriptDirectory.path))
         #expect(
-            try !index.read().records.contains {
-                $0.sessionId == resume.fixture.sessionId.rawValue
+            try !RouterSessionDirectory.recordedSessions(in: root).contains {
+                $0.sessionId.description == sessionId
             })
         do {
             _ = try await resume.fixture.harness.connection.resumeSession(

@@ -46,8 +46,9 @@ extension AcpAgentCommand {
                     Each line has the session key, the number of checkpoints, the time of \
                     the last checkpoint, recorded or unrecorded, and the working directory, \
                     separated by tabs. A dash is in place of a value that the folder does \
-                    not have. "recorded" tells that the sessions.jsonl of a registered \
-                    project has the session. A warning goes to stderr.
+                    not have. "recorded" tells that the recording root of a registered \
+                    project has a session folder, with its index.md, for the session. A \
+                    warning goes to stderr.
                     """)
 
             /// The separator between the fields of a line.
@@ -115,8 +116,9 @@ extension AcpAgentCommand {
                 commandName: "remove",
                 abstract: "Remove snapshot folders.",
                 discussion: """
-                    Give one or more session keys, or --unrecorded for each key that the \
-                    sessions.jsonl of no registered project has. Each removed key goes to \
+                    Give one or more session keys, or --unrecorded for each key that has no \
+                    session folder, with its index.md, in the recording root of a registered \
+                    project. Each removed key goes to \
                     stdout. A key with no snapshot folder, or a key whose remove fails, goes \
                     to stderr; the command continues with the next key, and the exit status \
                     is 1. The command cannot see a session that a running agent has open: \
@@ -156,7 +158,7 @@ extension AcpAgentCommand {
             /// Whether the command removes each unrecorded key.
             @Flag(
                 name: .customLong("unrecorded"),
-                help: "Remove each key that the sessions.jsonl of no registered project has.")
+                help: "Remove each key that has no session folder in the recording root of a registered project.")
             var removesUnrecordedKeys = false
 
             /// The `--home` option, which roots the user layer.

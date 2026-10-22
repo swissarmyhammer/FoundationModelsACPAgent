@@ -2,13 +2,14 @@ import Foundation
 import FoundationModelsHooks
 import FoundationModelsRouter
 
-/// Whether the project registry has a session for a snapshot key.
+/// Whether the project store has a session for a snapshot key.
 public enum SnapshotRecordedState: String, Codable, Sendable {
-    /// The `sessions.jsonl` of a registered project has the key as a session
-    /// id.
+    /// A recording root of a registered project has a listable session
+    /// folder whose session id is the key.
     case recorded
 
-    /// No `sessions.jsonl` of a registered project has the key.
+    /// No recording root of a registered project has a listable session
+    /// folder for the key.
     case unrecorded
 }
 
@@ -60,13 +61,15 @@ public struct SnapshotInventoryEntry: Codable, Equatable, Sendable {
 /// The description is a text for the stderr of the CLI. It can hold a path,
 /// thus no log record holds it.
 public enum SnapshotInventoryWarning: Equatable, Sendable, CustomStringConvertible {
-    /// The project registry cannot be read.
+    /// The project store cannot be read.
     case registryUnreadable(errorCase: String)
 
     /// The settings of one registered project cannot be read.
     case projectUnreadable(projectPath: String, errorCase: String)
 
-    /// The `sessions.jsonl` of one recording root cannot be read.
+    /// The session folders of one recording root cannot be read: the root
+    /// cannot be listed, or the `index.md` of a session folder does not
+    /// decode.
     case indexUnreadable(recordingRootPath: String, errorCase: String)
 
     /// The timeline of one key cannot be read. The key has no checkpoint
@@ -91,11 +94,11 @@ public enum SnapshotInventoryWarning: Equatable, Sendable, CustomStringConvertib
     public var description: String {
         switch self {
         case .registryUnreadable(let errorCase):
-            "The project registry cannot be read (\(errorCase)). \(Self.unknownStateSentence)"
+            "The project store cannot be read (\(errorCase)). \(Self.unknownStateSentence)"
         case .projectUnreadable(let projectPath, let errorCase):
             "The settings of the project \(projectPath) cannot be read (\(errorCase)). \(Self.unknownStateSentence)"
         case .indexUnreadable(let recordingRootPath, let errorCase):
-            "The \(SessionIndex.indexFileName) of \(recordingRootPath) cannot be read (\(errorCase)). "
+            "The session folders of \(recordingRootPath) cannot be read (\(errorCase)). "
                 + Self.unknownStateSentence
         case .timelineUnreadable(let sessionKey, let errorCase):
             "The timeline of the key \(sessionKey) cannot be read (\(errorCase))."
@@ -160,9 +163,10 @@ public enum SnapshotRemovalOutcome: Equatable, Sendable {
 /// ``list()`` and removes the ones that they select with
 /// ``remove(sessionKeys:)``.
 ///
-/// A key is `recorded` when the `sessions.jsonl` of a project of the project
-/// registry has the key as a session id. The recording root of each project
-/// comes from the same resolution as the one of `session/delete`.
+/// A key is `recorded` when a recording root of a project of the project
+/// store has a listable session folder whose session id is the key
+/// (``TranscriptStore/listableRecords(in:)``). The recording root of each
+/// project comes from the same resolution as the one of `session/delete`.
 ///
 /// ```swift
 /// let inventory = SnapshotInventory(hooksDataDirectory: directory, settingsStore: store)
@@ -175,7 +179,7 @@ public struct SnapshotInventory: Sendable {
     /// The store of the shadow folders.
     let snapshotStore: SnapshotStore
 
-    /// The store that gives the project registry and the settings of each
+    /// The store that gives the project store and the settings of each
     /// project.
     let settingsStore: SettingsStore
 
@@ -185,7 +189,7 @@ public struct SnapshotInventory: Sendable {
     ///   - hooksDataDirectory: The hook data directory, for example
     ///     ``AgentHome/hooksDirectory``. The snapshots are
     ///     in its `snapshot` folder.
-    ///   - settingsStore: The store that gives the project registry and the
+    ///   - settingsStore: The store that gives the project store and the
     ///     settings of each project.
     public init(hooksDataDirectory: URL, settingsStore: SettingsStore) {
         snapshotStore = SnapshotStore(directory: AgentHooks.snapshotDirectory(in: hooksDataDirectory))
@@ -277,10 +281,11 @@ public struct SnapshotInventory: Sendable {
         }
     }
 
-    /// The session ids of each `sessions.jsonl` of each registered project,
-    /// and a warning for each registry, project or index that cannot be read.
-    /// Two projects can share one recording root, thus the call reads each
-    /// root one time, in registry order.
+    /// The session id of each listable session folder of each recording
+    /// root of each registered project, and a warning for each project
+    /// store, project or root that cannot be read. Two projects can share
+    /// one recording root, thus the call reads each root one time, in the
+    /// order of the project store.
     ///
     /// - Returns: The recorded session ids and the warnings.
     private func recordedSessionIds() async -> (sessionIds: Set<String>, warnings: [SnapshotInventoryWarning]) {
@@ -290,7 +295,7 @@ public struct SnapshotInventory: Sendable {
         var readRoots: Set<URL> = []
         for root in resolution.roots.map(\.standardizedFileURL) where readRoots.insert(root).inserted {
             do {
-                sessionIds.formUnion(try SessionIndex(root: root).read().records.map(\.sessionId))
+                sessionIds.formUnion(try TranscriptStore.listableRecords(in: root).map(\.sessionId.description))
             } catch {
                 warnings.append(
                     .indexUnreadable(recordingRootPath: root.path, errorCase: ACPAgentTelemetry.errorCaseName(of: error)))

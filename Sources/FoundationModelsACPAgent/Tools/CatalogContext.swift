@@ -37,9 +37,9 @@ public struct CatalogContext: Sendable {
     /// order — the `mcpServers` of `session/new` or `session/resume`.
     ///
     /// Session scope only: this list is never persisted, because the
-    /// `headers` of an http entry carry bearer tokens and `sessions.jsonl`
-    /// is committed with the transcripts. `session/resume` supplies the
-    /// list again.
+    /// `headers` of an http entry carry bearer tokens and the `index.md` of
+    /// each session folder is committed with the transcripts.
+    /// `session/resume` supplies the list again.
     public let clientMCPServers: [FoundationModelsACP.MCPServer]
 
     /// The settings folders that the `skills` and `agents` dotfolder stacks

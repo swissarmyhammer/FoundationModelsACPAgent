@@ -129,7 +129,7 @@ is on by default. Set its config section to `false` to set it off.
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
 | `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
-| `snapshots` | The `tools.snapshots.*` verbs — `list`, `take` and `rollback` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. A rollback returns the work tree to a checkpoint and adds a new checkpoint, so the history is append only. The snapshots are in the `snapshot` folder of the hook data of the home: `<local>/hooks/snapshot` of a custom home, and `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot`) of the XDG home of the CLI. The folder of a session stays after the session ends, and the agent removes no folder at start, because another process can run the session of a folder. `session/delete` removes the folder of its own session. `acp-agent snapshots list` shows the folders, and `acp-agent snapshots remove` removes the ones that you name, or each `unrecorded` one with `--unrecorded`. A folder is `recorded` when the `sessions.jsonl` of a registered project has its session. Always on | none |
+| `snapshots` | The `tools.snapshots.*` verbs — `list`, `take` and `rollback` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. A rollback returns the work tree to a checkpoint and adds a new checkpoint, so the history is append only. The snapshots are in the `snapshot` folder of the hook data of the home: `<local>/hooks/snapshot` of a custom home, and `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot`) of the XDG home of the CLI. The folder of a session stays after the session ends, and the agent removes no folder at start, because another process can run the session of a folder. `session/delete` removes the folder of its own session. `acp-agent snapshots list` shows the folders, and `acp-agent snapshots remove` removes the ones that you name, or each `unrecorded` one with `--unrecorded`. A folder is `recorded` when the recording root of a registered project has the session folder, with its `index.md`, of its session. Always on | none |
 | `settings` | The `tools.settings.querySettings` verb: one GraphQL document over the agent settings, the same schema as the `settings` endpoint. A query gives the merged value of a key for the session folder and the level that set it. A mutation sets or clears a key on the `USER` level or on the `SESSION` level of the session folder. The verb takes no `cwd`: the session folder applies, and a `cwd` of a different folder is refused. It is only in the registry, not a top-level tool. Always on | none |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list. Always on | `tools.skills` |
 | `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `<id>/AGENT.md` and `agents/<id>/AGENT.md` of the `agents` dotfolder stack. Always on | none |
@@ -341,6 +341,7 @@ uses the XDG home.
 | skills marketplace cache | `<local>/skills-marketplace/` | `SKILLS_MARKETPLACE_CACHE`, or its default folder |
 | model cache | `<local>/models/` | `HF_HUB_CACHE` or `HF_HOME`, or `~/.cache/huggingface/hub` |
 | shell store of a project | `<local>/projects/<key>/shell/` | `$XDG_DATA_HOME/<name>/projects/<key>/shell/` |
+| projects folder (one file for each project) | `<synced>/projects/` | `$XDG_CONFIG_HOME/<name>/projects/` |
 
 With a custom home, no stack holds a folder in the home directory or in
 `XDG_CONFIG_HOME`. The agents layer of the synced root is the root itself, so
@@ -438,12 +439,18 @@ code gives the local detail.
   configuration key. A failed sandbox preflight stops the command, and no
   command runs without the sandbox. The sandbox limit below applies.
 - **Transcripts are project context, and you commit them.** A session records
-  to `<cwd>/.<name>/transcripts/<sessionId>/`. Each session has its own
-  directory, thus two persons make no merge conflict. `sessions.jsonl` is
-  append-only, and `.gitattributes` sets `merge=union` on it. The
-  `transcripts.location` key of `config.yaml` moves the root: `project` (the
-  default), `home`, or an absolute path. A host that runs the agent in its
-  own process can set the location in code, with no config file:
+  to `<cwd>/.<name>/transcripts/<sessionId>/`: one folder for each session,
+  with its transcript and an `index.md`, whose YAML frontmatter holds the
+  record of the session (its working directory, title, additional
+  directories and last activity). No file is shared by two sessions, thus two
+  persons make no merge conflict, and a synced folder has no file that two
+  devices write. `session/list` reads the `index.md` of each session folder,
+  and lists a session after its first prompt. The projects folder of the
+  home holds one file for each project that ran a session, and the
+  cross-project `session/list` reads it. The `transcripts.location` key of
+  `config.yaml` moves the root: `project` (the default), `home`, or an
+  absolute path. A host that runs the agent in its own process can set the
+  location in code, with no config file:
   `ComposedAgent.compose(..., transcriptLocation: .path(directory))`. That
   value wins over every config layer, in `session/new`, `session/resume`,
   `session/list` and `session/delete`. It is not a config layer, so

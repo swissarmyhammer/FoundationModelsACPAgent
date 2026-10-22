@@ -4,13 +4,14 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The read side of the transcripts and of `session/list`: the record join of
-/// `sessions(inProject:)`, the sort-key cursor pagination, the roots-only
-/// and has-transcript listability predicate, `allProjects()`, and
+/// The read side of the transcripts and of `session/list`: the session
+/// records that `sessions(inProject:)` reads from the `index.md` of each
+/// session folder, the sort-key cursor pagination, the roots-only and
+/// prompted listability predicate, `allProjects()`, and
 /// `transcript(for:inProject:)`.
 ///
 /// Every fixture session is a real recorded session, driven through
-/// `makeRecordingStubProfile` — no shipped `TranscriptRecorder` is
+/// `makeRecordedProjectFixture` — no shipped `TranscriptRecorder` is
 /// reachable, and `TranscriptEvent` has no public init.
 @Suite struct TranscriptStoreTests {
     /// The dotfolder name every fixture project uses.
@@ -19,38 +20,45 @@ import Testing
     /// The page size the pagination walks request.
     private static let pageSize = 2
 
-    /// The instant the dated index records count from.
+    /// The instant the dated session records count from.
     private static let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
 
-    /// The gap between two dated index records, in seconds.
+    /// The gap between two dated session records, in seconds.
     private static let dateStep: TimeInterval = 60
 
     // MARK: - Harness
 
-    /// One project under test: the working directory, the resolved
-    /// recording root, a profile whose sessions record real events, and
-    /// the store over them.
+    /// The name of the projects folder under the user layer directory.
+    private static let projectsFolderName = "projects"
+
+    /// One project under test: the recorded project, the router cache
+    /// directory, the user layer directory, and the store over them.
     private struct ProjectFixture {
-        /// The project working directory.
-        let workingDirectory: URL
+        /// The recorded project: its working directory, recording root,
+        /// recording profile and session directory.
+        let recorded: RecordedProjectFixture
 
         /// The router cache directory.
         let cacheDirectory: URL
 
-        /// The user layer directory the store's registry lives in.
+        /// The user layer directory; the projects folder of the store is
+        /// under it.
         let userDirectory: URL
-
-        /// The resolved profile whose sessions record.
-        let profile: LanguageModelProfile
 
         /// The store under test.
         let store: TranscriptStore
 
-        /// The resolved recording root of the project.
-        let root: URL
+        /// The project working directory.
+        var workingDirectory: URL { recorded.workingDirectory }
 
-        /// The `sessions.jsonl` index of the root.
-        let index: SessionIndex
+        /// The resolved recording root of the project.
+        var root: URL { recorded.root }
+
+        /// The resolved profile whose sessions record.
+        var profile: LanguageModelProfile { recorded.profile }
+
+        /// The folder of the project store of the store under test.
+        var projectsDirectory: URL { store.projectsDirectory }
 
         /// Removes every directory the fixture created.
         func cleanUp() {
@@ -86,66 +94,14 @@ import Testing
         let name = try DotfolderName(agentName)
         let root = TranscriptLocation.project.recordingRoot(
             workingDirectory: workingDirectory, name: name, userDirectory: userDirectory)
-        let profile = try await makeRecordingStubProfile(
-            cacheDirectory: cacheDirectory, recordingsDirectory: root)
         return ProjectFixture(
-            workingDirectory: workingDirectory,
+            recorded: try await makeRecordedProjectFixture(
+                workingDirectory: workingDirectory, cacheDirectory: cacheDirectory, recordingRoot: root),
             cacheDirectory: cacheDirectory,
             userDirectory: userDirectory,
-            profile: profile,
-            store: TranscriptStore(location: .project, name: name, userDirectory: userDirectory),
-            root: root,
-            index: SessionIndex(root: root))
-    }
-
-    /// Drives one recorded root session with one request per prompt and
-    /// returns its id.
-    ///
-    /// - Parameters:
-    ///   - fixture: The project the session records into.
-    ///   - prompts: The prompt texts to send, in order.
-    ///   - agentSpawn: The spawn context, or `nil` for a plain root.
-    /// - Returns: The session's ULID — the name of its directory.
-    /// - Throws: Whatever driving the session throws.
-    private static func makeRecordedSession(
-        in fixture: ProjectFixture,
-        prompts: [String] = ["one prompt"],
-        agentSpawn: SessionSidecar.AgentSpawn? = nil
-    ) async throws -> ULID {
-        let session = fixture.profile.standard.makeSession(
-            workingDirectory: fixture.workingDirectory,
-            recordingRoot: fixture.root,
-            agentSpawn: agentSpawn)
-        for prompt in prompts {
-            _ = try await session.respond(to: prompt)
-        }
-        await session.close()
-        return session.id
-    }
-
-    /// Appends one index record naming `id` in the fixture's project.
-    ///
-    /// - Parameters:
-    ///   - fixture: The project whose index gains the record.
-    ///   - id: The session the record names.
-    ///   - title: The record's title.
-    ///   - updatedAt: The record's most-recent-activity instant.
-    ///   - additionalDirectories: The record's ordered directory list.
-    /// - Throws: Whatever the index append throws.
-    private static func appendRecord(
-        in fixture: ProjectFixture,
-        id: ULID,
-        title: String,
-        updatedAt: Date,
-        additionalDirectories: [String] = []
-    ) throws {
-        try fixture.index.append(
-            SessionIndexRecord(
-                sessionId: id.description,
-                cwd: fixture.workingDirectory.standardizedFileURL.path,
-                title: title,
-                updatedAt: updatedAt,
-                additionalDirectories: additionalDirectories))
+            store: TranscriptStore(
+                location: .project, name: name, userDirectory: userDirectory,
+                projectsDirectory: userDirectory.appendingPathComponent(projectsFolderName, isDirectory: true)))
     }
 
     /// The record date `position` steps after ``baseDate``.
@@ -164,7 +120,7 @@ import Testing
         repeat {
             let page = try fixture.store.sessions(
                 inProject: fixture.workingDirectory, limit: pageSize, cursor: cursor)
-            pages.append(page.records.map(\.sessionId))
+            pages.append(page.records.map(\.sessionId.description))
             cursor = page.nextCursor
         } while cursor != nil
         return pages
@@ -184,71 +140,71 @@ import Testing
         #expect(page.nextCursor == nil)
     }
 
-    @Test("the listing joins the index records and sorts updatedAt-descending")
-    func listingJoinsRecordsAndSortsUpdatedAtDescending() async throws {
+    @Test("the listing reads the record of each session folder and sorts updatedAt-descending")
+    func listingReadsRecordsAndSortsUpdatedAtDescending() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let first = try await Self.makeRecordedSession(in: fixture)
-        let second = try await Self.makeRecordedSession(in: fixture)
-        let third = try await Self.makeRecordedSession(in: fixture)
-        try Self.appendRecord(in: fixture, id: first, title: "first", updatedAt: Self.steppedDate(0))
-        try Self.appendRecord(
-            in: fixture, id: second, title: "second", updatedAt: Self.steppedDate(2),
-            additionalDirectories: ["/extra/a", "/extra/b"])
-        try Self.appendRecord(in: fixture, id: third, title: "third", updatedAt: Self.steppedDate(1))
+        let extras = [URL(filePath: "/extra/a"), URL(filePath: "/extra/b")]
+        let first = try await fixture.recorded.makeRecordedSession(
+            title: "first", updatedAt: Self.steppedDate(0))
+        let second = try await fixture.recorded.makeRecordedSession(
+            title: "second", additionalDirectories: extras, updatedAt: Self.steppedDate(2))
+        let third = try await fixture.recorded.makeRecordedSession(
+            title: "third", updatedAt: Self.steppedDate(1))
 
         let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
 
-        #expect(records.map(\.sessionId) == [second, third, first].map(\.description))
-        #expect(records.map(\.title) == ["second", "third", "first"])
-        #expect(records.first?.additionalDirectories == ["/extra/a", "/extra/b"])
-        #expect(records.allSatisfy { $0.cwd == fixture.workingDirectory.standardizedFileURL.path })
+        #expect(records.map(\.sessionId) == [second, third, first])
+        #expect(records.map(\.facts.title) == ["second", "third", "first"])
+        #expect(records.first?.additionalDirectories.map(\.path) == ["/extra/a", "/extra/b"])
+        #expect(
+            records.allSatisfy {
+                $0.workingDirectory.standardizedFileURL.path == fixture.workingDirectory.standardizedFileURL.path
+            })
     }
 
-    @Test("a later index record for the same session wins the join")
-    func laterIndexRecordWinsTheJoin() async throws {
+    @Test("a record changed after the close lists with its new title and updatedAt")
+    func recordChangedAfterTheCloseListsWithItsNewValues() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let id = try await Self.makeRecordedSession(in: fixture)
-        try Self.appendRecord(in: fixture, id: id, title: "stale", updatedAt: Self.steppedDate(0))
-        try Self.appendRecord(in: fixture, id: id, title: "fresh", updatedAt: Self.steppedDate(1))
+        let id = try await fixture.recorded.makeRecordedSession(
+            title: "stale", updatedAt: Self.steppedDate(0))
+        try await fixture.recorded.directory.setTitle("fresh", of: id)
+        try RecordedProjectFixture.setUpdatedAt(Self.steppedDate(1), ofSession: id, under: fixture.root)
 
         let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
 
-        #expect(records.map(\.title) == ["fresh"])
+        #expect(records.map(\.facts.title) == ["fresh"])
         #expect(records.first?.updatedAt == Self.steppedDate(1))
     }
 
-    @Test("a recorded session with no index line still lists, from the scan")
-    func sessionWithoutIndexLineStillListsFromScan() async throws {
+    @Test("a recorded session with no title still lists")
+    func sessionWithNoTitleStillLists() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let id = try await Self.makeRecordedSession(in: fixture)
+        let id = try await fixture.recorded.makeRecordedSession()
 
         let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
 
-        #expect(records.map(\.sessionId) == [id.description])
-        #expect(records.first?.title == "")
+        #expect(records.map(\.sessionId) == [id])
+        #expect(records.first?.facts.title == nil)
         #expect(records.first?.additionalDirectories == [])
-        #expect(records.first?.cwd == fixture.workingDirectory.standardizedFileURL.path)
+        #expect(
+            records.first?.workingDirectory.standardizedFileURL.path
+                == fixture.workingDirectory.standardizedFileURL.path)
     }
 
-    @Test("the listing gives the past session that Router's SessionIndex holds")
-    func listingGivesThePastSessionRoutersSessionIndexHolds() async throws {
+    @Test("the listing gives the record that Router's index.md holds")
+    func listingGivesTheRecordRoutersIndexFileHolds() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let id = try await Self.makeRecordedSession(in: fixture)
-        let record = FoundationModelsRouter.SessionIndexRecord(
-            sessionId: id.description,
-            cwd: fixture.workingDirectory.standardizedFileURL.path,
-            title: "held by Router",
-            updatedAt: Self.steppedDate(1),
-            additionalDirectories: ["/extra/router"])
-        try FoundationModelsRouter.SessionIndex(root: fixture.root).append(record)
+        _ = try await fixture.recorded.makeRecordedSession(
+            title: "held by Router", additionalDirectories: [URL(filePath: "/extra/router")],
+            updatedAt: Self.steppedDate(1))
 
         let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
 
-        #expect(records == [record])
+        #expect(records == (try RouterSessionDirectory.recordedSessions(in: fixture.root)))
     }
 
     // MARK: - The listability predicate
@@ -266,7 +222,7 @@ import Testing
         await parent.close()
 
         let ids = try fixture.store.sessions(inProject: fixture.workingDirectory)
-            .map(\.sessionId)
+            .map(\.sessionId.description)
 
         #expect(ids == [parent.id.description])
         #expect(!ids.contains(fork.id.description))
@@ -276,30 +232,16 @@ import Testing
     func zeroPromptSessionDoesNotList() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let listed = try await Self.makeRecordedSession(in: fixture)
+        let listed = try await fixture.recorded.makeRecordedSession()
         let idle = fixture.profile.standard.makeSession(
             workingDirectory: fixture.workingDirectory, recordingRoot: fixture.root)
         await idle.close()
 
         let ids = try fixture.store.sessions(inProject: fixture.workingDirectory)
-            .map(\.sessionId)
+            .map(\.sessionId.description)
 
         #expect(ids == [listed.description])
         #expect(!ids.contains(idle.id.description))
-    }
-
-    @Test("an index record with no session directory is excluded")
-    func directoryLessIndexEntryIsExcluded() async throws {
-        let fixture = try await Self.makeFixture()
-        defer { fixture.cleanUp() }
-        let real = try await Self.makeRecordedSession(in: fixture)
-        try Self.appendRecord(
-            in: fixture, id: ULID.generate(), title: "ghost", updatedAt: Self.steppedDate(0))
-
-        let ids = try fixture.store.sessions(inProject: fixture.workingDirectory)
-            .map(\.sessionId)
-
-        #expect(ids == [real.description])
     }
 
     /// The spawn half of the listability predicate: the Router stamps
@@ -312,16 +254,14 @@ import Testing
     func spawnedSessionIsExcludedFromTheListing() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let parent = try await Self.makeRecordedSession(in: fixture)
-        let spawned = try await Self.makeRecordedSession(
-            in: fixture,
-            agentSpawn: SessionSidecar.AgentSpawn(
-                parentSessionId: parent, parentToolCallId: "tool-call-1"))
+        let parent = try await fixture.recorded.makeRecordedSession()
+        let spawned = try await fixture.recorded.makeRecordedSession(
+            agentSpawn: SessionRecord.AgentSpawn(parentSessionId: parent, parentToolCallId: "tool-call-1"))
 
         let events = try fixture.store.transcript(
             for: spawned, inProject: fixture.workingDirectory)
         let ids = try fixture.store.sessions(inProject: fixture.workingDirectory)
-            .map(\.sessionId)
+            .map(\.sessionId.description)
 
         #expect(!events.isEmpty)
         #expect(events.allSatisfy { $0.parentId == nil })
@@ -337,10 +277,8 @@ import Testing
         defer { fixture.cleanUp() }
         var ids: [ULID] = []
         for position in 0..<5 {
-            let id = try await Self.makeRecordedSession(in: fixture)
-            try Self.appendRecord(
-                in: fixture, id: id, title: "session \(position)",
-                updatedAt: Self.steppedDate(position))
+            let id = try await fixture.recorded.makeRecordedSession(
+                title: "session \(position)", updatedAt: Self.steppedDate(position))
             ids.append(id)
         }
 
@@ -357,26 +295,22 @@ import Testing
         defer { fixture.cleanUp() }
         var ids: [ULID] = []
         for position in 0..<4 {
-            let id = try await Self.makeRecordedSession(in: fixture)
-            try Self.appendRecord(
-                in: fixture, id: id, title: "session \(position)",
-                updatedAt: Self.steppedDate(position))
+            let id = try await fixture.recorded.makeRecordedSession(
+                title: "session \(position)", updatedAt: Self.steppedDate(position))
             ids.append(id)
         }
         let firstPage = try fixture.store.sessions(
             inProject: fixture.workingDirectory, limit: Self.pageSize, cursor: nil)
         let cursor = try #require(firstPage.nextCursor)
 
-        let inserted = try await Self.makeRecordedSession(in: fixture)
         let newestPosition = ids.count + 1
-        try Self.appendRecord(
-            in: fixture, id: inserted, title: "inserted",
-            updatedAt: Self.steppedDate(newestPosition))
+        _ = try await fixture.recorded.makeRecordedSession(
+            title: "inserted", updatedAt: Self.steppedDate(newestPosition))
         let secondPage = try fixture.store.sessions(
             inProject: fixture.workingDirectory, limit: Self.pageSize, cursor: cursor)
 
-        #expect(firstPage.records.map(\.sessionId) == [ids[3], ids[2]].map(\.description))
-        #expect(secondPage.records.map(\.sessionId) == [ids[1], ids[0]].map(\.description))
+        #expect(firstPage.records.map(\.sessionId.description) == [ids[3], ids[2]].map(\.description))
+        #expect(secondPage.records.map(\.sessionId.description) == [ids[1], ids[0]].map(\.description))
         #expect(secondPage.nextCursor == nil)
     }
 
@@ -384,22 +318,20 @@ import Testing
     func sessionIdBreaksAnUpdatedAtTie() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let first = try await Self.makeRecordedSession(in: fixture)
-        let second = try await Self.makeRecordedSession(in: fixture)
-        try Self.appendRecord(in: fixture, id: first, title: "first", updatedAt: Self.baseDate)
-        try Self.appendRecord(in: fixture, id: second, title: "second", updatedAt: Self.baseDate)
+        let first = try await fixture.recorded.makeRecordedSession(title: "first", updatedAt: Self.baseDate)
+        let second = try await fixture.recorded.makeRecordedSession(title: "second", updatedAt: Self.baseDate)
         let expected = [max(first, second), min(first, second)].map(\.description)
 
         let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
-        #expect(records.map(\.sessionId) == expected)
+        #expect(records.map(\.sessionId.description) == expected)
 
         let firstPage = try fixture.store.sessions(
             inProject: fixture.workingDirectory, limit: 1, cursor: nil)
         let cursor = try #require(firstPage.nextCursor)
         let secondPage = try fixture.store.sessions(
             inProject: fixture.workingDirectory, limit: 1, cursor: cursor)
-        #expect(firstPage.records.map(\.sessionId) == [expected[0]])
-        #expect(secondPage.records.map(\.sessionId) == [expected[1]])
+        #expect(firstPage.records.map(\.sessionId.description) == [expected[0]])
+        #expect(secondPage.records.map(\.sessionId.description) == [expected[1]])
         #expect(secondPage.nextCursor == nil)
     }
 
@@ -407,7 +339,7 @@ import Testing
     func invalidCursorGivesError() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        _ = try await Self.makeRecordedSession(in: fixture)
+        _ = try await fixture.recorded.makeRecordedSession()
         let garbled = "not-a-cursor"
         let wrongShape = Data("hello".utf8).base64EncodedString()
 
@@ -436,9 +368,9 @@ import Testing
     func transcriptReturnsOrderedEventsOfOneSession() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let id = try await Self.makeRecordedSession(
-            in: fixture, prompts: ["first prompt", "second prompt"])
-        _ = try await Self.makeRecordedSession(in: fixture, prompts: ["other session"])
+        let id = try await fixture.recorded.makeRecordedSession(
+            prompts: ["first prompt", "second prompt"])
+        _ = try await fixture.recorded.makeRecordedSession(prompts: ["other session"])
 
         let events = try fixture.store.transcript(for: id, inProject: fixture.workingDirectory)
         // Router also records the facts of each mail as `.mail` events
@@ -495,7 +427,7 @@ import Testing
             in: fixture, cacheDirectory: secondCache, prompt: "second run")
 
         let ids = Set(
-            try fixture.store.sessions(inProject: fixture.workingDirectory).map(\.sessionId))
+            try fixture.store.sessions(inProject: fixture.workingDirectory).map(\.sessionId.description))
         let firstEvents = try fixture.store.transcript(
             for: firstRun, inProject: fixture.workingDirectory)
         let secondEvents = try fixture.store.transcript(
@@ -512,36 +444,35 @@ import Testing
         #expect(secondEvents.first?.seq == 0)
     }
 
-    // MARK: - The project registry
+    // MARK: - The project store
 
-    @Test("allProjects() lists the live registry entries and skips stale ones")
+    @Test("allProjects() lists the live projects of the project store and skips stale ones")
     func allProjectsSkipsStaleEntries() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let registry = ProjectRegistry(directory: fixture.userDirectory)
-        try registry.recordSessionStart(
-            workingDirectory: fixture.workingDirectory, at: Self.baseDate)
+        let projects = ProjectStore(directory: fixture.projectsDirectory)
+        try projects.register(workingDirectory: fixture.workingDirectory, at: Self.baseDate)
         let stale = try Self.makeTemporaryDirectory(label: "stale")
-        try registry.recordSessionStart(workingDirectory: stale, at: Self.baseDate)
+        try projects.register(workingDirectory: stale, at: Self.baseDate)
         try FileManager.default.removeItem(at: stale)
 
-        let projects = try fixture.store.allProjects()
+        let listed = try fixture.store.allProjects()
 
-        #expect(projects.map(\.path) == [fixture.workingDirectory.standardizedFileURL.path])
+        #expect(listed.map(\.path) == [fixture.workingDirectory.standardizedFileURL.path])
     }
 
-    @Test("allProjects() gives the project that Router's ProjectRegistry holds")
-    func allProjectsGivesTheProjectRoutersProjectRegistryHolds() async throws {
+    @Test("allProjects() gives the project that Router's ProjectStore holds")
+    func allProjectsGivesTheProjectRoutersProjectStoreHolds() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        try FoundationModelsRouter.ProjectRegistry(directory: fixture.userDirectory)
-            .recordSessionStart(workingDirectory: fixture.workingDirectory, at: Self.baseDate)
+        try ProjectStore(directory: fixture.projectsDirectory)
+            .register(workingDirectory: fixture.workingDirectory, at: Self.baseDate)
 
         let projects = try fixture.store.allProjects()
 
         #expect(
             projects == [
-                FoundationModelsRouter.ProjectRegistryRecord(
+                ProjectRecord(
                     path: fixture.workingDirectory.standardizedFileURL.path,
                     firstSeen: Self.baseDate,
                     lastSeen: Self.baseDate)

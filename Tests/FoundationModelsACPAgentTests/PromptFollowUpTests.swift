@@ -334,7 +334,7 @@ import Tracing
     }
 
     /// A prompt that starts no background run ends as before: the echo, the
-    /// first-activity title, `running`, the text and one `idle` with
+    /// title, `running`, the text and one `idle` with
     /// `end_turn`.
     @Test
     func aPromptWithNoBackgroundRunEndsAsBefore() async throws {

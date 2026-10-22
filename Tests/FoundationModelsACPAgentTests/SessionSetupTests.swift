@@ -10,8 +10,9 @@ import Testing
 
 /// The `session/new` composition pipeline: the ACP
 /// session id is the root Router session's ULID, the per-cwd config layer
-/// shapes each session's tool roster, the project registry records the cwd,
-/// and the session index stays empty until the first recorded activity.
+/// shapes each session's tool roster, the project store of the home records
+/// the cwd, and the session record holds no title and no first activity until
+/// the first prompt.
 @Suite struct SessionSetupTests {
     /// A cwd string that is not absolute, so the agent must refuse it.
     private static let relativeCwd = "relative/path"
@@ -350,24 +351,38 @@ import Testing
         #expect(plainEntry.configuration.tools.shell != .disabled)
     }
 
-    // MARK: Registry now, index at first activity
+    // MARK: The project now, the title at the first prompt
 
-    /// After `session/new` alone, `projects.jsonl` holds the cwd and the
-    /// recording root holds no `sessions.jsonl` record yet.
+    /// The slice of the recorded `index.md` that the project test reads:
+    /// the two keys the first prompt sets.
+    private struct RecordActivitySlice: Decodable {
+        /// The title of the session, or `nil` before the first prompt.
+        let title: String?
+
+        /// The start of the first submission, or `nil` before the first
+        /// prompt.
+        let firstActivityAt: String?
+    }
+
+    /// After `session/new` alone, the projects folder of the home holds the
+    /// cwd, and the `index.md` of the session holds no title and no first
+    /// activity yet.
     @Test
-    func sessionNewRegistersTheProjectAndWritesNoIndexRecord() async throws {
+    func sessionNewRegistersTheProjectAndRecordsNoActivity() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
         let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo")
         let agent = try await AgentClientHarness.makeInitializedAgent(label: Self.label, userDirectory: userDirectory)
 
-        _ = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
+        let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
-        let records = try ProjectRegistry(directory: userDirectory).projects()
+        let records = try ProjectStore(directory: agent.home.projectsDirectory).projects()
         #expect(records.map(\.path) == [cwd.standardizedFileURL.path])
 
-        let indexFile = Self.projectTranscriptsRoot(of: cwd)
-            .appendingPathComponent(SessionIndex.indexFileName)
-        #expect(!FileManager.default.fileExists(atPath: indexFile.path))
+        let record = try RecordedSessionIndexFile.slice(
+            ofSession: response.sessionId.rawValue, under: Self.projectTranscriptsRoot(of: cwd),
+            as: RecordActivitySlice.self)
+        #expect(record.title == nil)
+        #expect(record.firstActivityAt == nil)
     }
 
     // MARK: The derived compaction budget
@@ -384,10 +399,10 @@ import Testing
     /// The tool-output cap, in tokens, of the same section.
     private static let configuredToolOutputLimit = 2048
 
-    /// The slice of the recorded `session.json` sidecar the budget test
-    /// reads. The sidecar's own stored properties are internal, so the
-    /// test decodes only the keys it needs.
-    private struct SidecarBudgetSlice: Decodable {
+    /// The slice of the recorded `index.md` the budget test reads. The
+    /// record's own stored properties are internal, so the test decodes
+    /// only the keys it needs.
+    private struct RecordBudgetSlice: Decodable {
         /// The recorded configuration envelope's one read key.
         struct Configuration: Decodable {
             /// The recorded auto-compaction budget, or `nil` when the
@@ -403,7 +418,7 @@ import Testing
     /// A session made with a config `compaction:` section carries the
     /// derived budget: `session/new` builds `TokenBudget` from the
     /// section's fractions and the resolved standard-slot context, and
-    /// the recorded sidecar carries it.
+    /// the recorded `index.md` carries it.
     @Test
     func sessionNewDerivesTheBudgetFromTheCompactionSection() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -424,11 +439,9 @@ import Testing
 
         let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
-        let sidecarFile = Self.projectTranscriptsRoot(of: cwd)
-            .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)
-            .appendingPathComponent("session.json")
-        let slice = try JSONDecoder().decode(
-            SidecarBudgetSlice.self, from: Data(contentsOf: sidecarFile))
+        let slice = try RecordedSessionIndexFile.slice(
+            ofSession: response.sessionId.rawValue, under: Self.projectTranscriptsRoot(of: cwd),
+            as: RecordBudgetSlice.self)
         let budget = try #require(slice.configuration?.budget)
         #expect(budget.limit == agent.residentProfile.standard.contextTokens)
         #expect(budget.trigger == Self.configuredTrigger)
@@ -445,9 +458,9 @@ import Testing
     /// The non-default `repetition.recoveriesPerAnswer` of the same section.
     private static let configuredRecoveriesPerAnswer = 1
 
-    /// The slice of the recorded `session.json` sidecar the detection test
-    /// reads: the repetition detection of the configuration envelope.
-    private struct SidecarRepetitionSlice: Decodable {
+    /// The slice of the recorded `index.md` the detection test reads: the
+    /// repetition detection of the configuration envelope.
+    private struct RecordRepetitionSlice: Decodable {
         /// The recorded configuration envelope's one read key.
         struct Configuration: Decodable {
             /// The recorded repetition detection of the session.
@@ -461,7 +474,7 @@ import Testing
 
     /// A session made with a config `repetition:` section carries that
     /// detection: `session/new` passes the section to Router, and the
-    /// recorded sidecar holds it.
+    /// recorded `index.md` holds it.
     @Test
     func sessionNewPassesTheRepetitionSectionToTheSession() async throws {
         let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -480,11 +493,9 @@ import Testing
 
         let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
-        let sidecarFile = Self.projectTranscriptsRoot(of: cwd)
-            .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)
-            .appendingPathComponent("session.json")
-        let slice = try JSONDecoder().decode(
-            SidecarRepetitionSlice.self, from: Data(contentsOf: sidecarFile))
+        let slice = try RecordedSessionIndexFile.slice(
+            ofSession: response.sessionId.rawValue, under: Self.projectTranscriptsRoot(of: cwd),
+            as: RecordRepetitionSlice.self)
         let detection = try #require(slice.configuration?.repetitionDetection)
         #expect(detection.windowTokens == Self.configuredWindowTokens)
         #expect(detection.recoveriesPerAnswer == Self.configuredRecoveriesPerAnswer)

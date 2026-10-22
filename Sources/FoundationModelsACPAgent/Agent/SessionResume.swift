@@ -208,22 +208,16 @@ extension RoutedACPAgent {
             kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
             sessionId: params.sessionId)
 
-        // A replay-only session runs no prompt, so it changes no listing:
-        // the `sessions.jsonl` record stays as the session left it, and
-        // only a session that is not replay-only records its root set.
-        let indexRecorded =
-            !composition.isReplayOnly
-            && recordResumedRootSet(
-                sessionId: params.sessionId,
-                transcriptRoot: composition.transcriptRoot,
-                workingDirectory: workingDirectory,
-                additionalRoots: additionalRoots)
+        // The mount gives Router the new root set, unless the session is
+        // replay-only: a replay-only session runs no prompt, so its
+        // `index.md` stays as the session left it. A session that recorded
+        // a title keeps it; the first prompt of one with none sets it.
         let activation = try await activateSession(
             restored.session,
             composition: composition,
             placement: SessionPlacement(
                 workingDirectory: workingDirectory, additionalRoots: additionalRoots, userPresence: userPresence),
-            indexRecorded: indexRecorded,
+            titleRecorded: restored.session.facts.title != nil,
             history: history)
 
         try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
@@ -440,56 +434,6 @@ extension RoutedACPAgent {
         recordActiveSessions()
         existing.surface.shellOutput?.finish()
         await existing.surface.shutdown()
-    }
-
-    // MARK: - The persisted root set
-
-    /// Persists the resumed root set to the `sessions.jsonl` index: the
-    /// session's newest record is appended again with the complete new
-    /// ordered `additionalDirectories` list, so the listing reflects the
-    /// latest activation.
-    ///
-    /// A session with no record yet — recorded activity without an index
-    /// line — appends nothing here; the first prompt writes the record
-    /// with its title, because a session with zero prompts is not listable.
-    /// A failed index read or write is
-    /// logged and treated the same way, so a damaged index never blocks a
-    /// resume.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The resumed session.
-    ///   - transcriptRoot: The recording root whose index to update.
-    ///   - workingDirectory: The session working directory.
-    ///   - additionalRoots: The complete new root set, in wire order.
-    /// - Returns: Whether the index records the session, for the table
-    ///   entry's `indexRecorded`.
-    private func recordResumedRootSet(
-        sessionId: SessionId,
-        transcriptRoot: URL,
-        workingDirectory: URL,
-        additionalRoots: [URL]
-    ) -> Bool {
-        let index = SessionIndex(root: transcriptRoot)
-        do {
-            let existing = try index.read().records
-                .last { $0.sessionId == sessionId.rawValue }
-            guard let existing else {
-                return false
-            }
-            try index.append(
-                SessionIndexRecord(
-                    sessionId: sessionId.rawValue,
-                    cwd: workingDirectory.path,
-                    title: existing.title,
-                    updatedAt: Date(),
-                    additionalDirectories: additionalRoots.map(\.path)))
-            return true
-        } catch {
-            ACPAgentTelemetry.logger(.sessionResume).error(
-                "The root-set update of sessions.jsonl failed.",
-                metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
-            return false
-        }
     }
 
     // MARK: - Replay
