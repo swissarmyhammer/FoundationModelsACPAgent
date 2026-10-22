@@ -59,6 +59,16 @@ comments:
     - commit: dd78e2d
     - review: findings — Tests/FoundationModelsACPAgentTests/ConnectionTrustTests.swift:99 (swift/initialization)
   timestamp: 2026-10-22T00:44:48.002015+00:00
+- actor: claude-code
+  id: 01m5gh82mncf2y9811nktb3hj4
+  text: |-
+    ### implement — changed
+    - evidence: 7d5d508. Finding `swift/initialization` (ConnectionTrustTests.swift:99) obeyed: every `userDeviceTokens:` argument in the files of 136414d is now `Set([TestBearerToken.userDevice])` (ConnectionTrustTests x2, GraphQLTunnelTests x1), and every `userDeviceTokens: Set<String> = []` default is now `= Set()` (RoutedACPAgent.init, ComposedAgent.compose, composeStubAgent, makeStubAgent). Finding flipped to [x].
+    - tests: filtered `swift test --filter 'ConnectionTrustTests|GraphQLTunnelTests|SessionOwnerTests|SessionSettingsStoreTests'` 29 tests / 4 suites passed; full `swift test` 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps), only the SwiftPM mlx bundle notice as warning.
+    - TDD note: no RED was possible — the change is a respelling with the same type and value (`Set` is `ExpressibleByArrayLiteral`; the old code compiled and passed), so no test can tell the two apart.
+    - not changed: local typed declarations `Set<String> = [...]` that 136414d did not add (SessionLifecycle.swift `swept`, GraphQLTunnelTests `bothSessions` and `expected`) — they are not parameters and not lines of this change.
+    - next: /review
+  timestamp: 2026-10-22T00:47:45.813177+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
