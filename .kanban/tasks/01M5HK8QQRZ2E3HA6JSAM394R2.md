@@ -59,7 +59,21 @@ comments:
     - Use `AgentHome.projectsDirectory` as the directory. `recordSessionStart` becomes `register(workingDirectory:)`.
     - Still waiting on ^axhfdx1 (setTitle writes index.md). Router started it 2026-10-22. Both halves land in ONE ACPAgent change after it.
   timestamp: 2026-10-22T20:08:12.577468+00:00
-position_column: todo
+- actor: claude-code
+  id: 01m5jn57pcfy8w7801r04r6hv3
+  text: |-
+    ### implement — stuck (blocked on FoundationModelsAgents, 2026-10-22)
+    - `swift package update FoundationModelsRouter FoundationModelsExtras` moved only Router 62d1e875 -> d1528d72 (Extras was already 78d2532, which has 8f00461).
+    - `swift build --build-tests` then fails before any ACPAgent file compiles, in the dependency FoundationModelsAgents (main 5a9ed8a = origin/main):
+      - `Sources/FoundationModelsAgents/Run/AgentRunRequest.swift:85`: `error: cannot find type 'SessionSidecar' in scope` (`var agentSpawn: SessionSidecar.AgentSpawn?` and `SessionSidecar.AgentSpawn(parentSessionId:parentToolCallId:)`). Router d1528d72 renamed it to `SessionRecord.AgentSpawn`.
+      - Agents' own tests also read `session.json` / `SessionSidecar.AgentSpawn`: Tests/FoundationModelsAgentsTests/Support/RecordedSession.swift, Support/AgentRunTests+Sidecar.swift, AgentRunTests+Lineage.swift, NestedRunTests.swift, AgentsDemoProfileModeTests.swift; IntegrationTests/.../Support/LiveRecording.swift.
+    - Needed: an Agents change on main that moves to Router d1528d72+ (`SessionRecord.AgentSpawn`, index.md in place of session.json). Then this card can run as planned.
+    - No other package in the graph uses the removed Router APIs (checked every .build/checkouts/*/Sources).
+    - bench/*.py reads no sessions.jsonl, session.json or projects.jsonl (checked).
+    - Reverted the local Package.resolved (gitignored) to Router 62d1e875; `swift build --build-tests` is green again. No ACPAgent file changed.
+    - next: user / Agents session lands the Agents update; then rerun /implement ^am394r2.
+  timestamp: 2026-10-22T20:34:35.852123+00:00
+position_column: doing
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
 ---
