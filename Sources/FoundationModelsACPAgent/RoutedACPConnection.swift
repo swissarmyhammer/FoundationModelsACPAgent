@@ -2,7 +2,7 @@ import FoundationModelsACP
 
 /// One client connection of a ``RoutedACPAgent`` (ACPA-5, D120 a), as in
 /// listen and fork: the agent is the listener, and each connection gets one
-/// of these from ``RoutedACPAgent/bind(connection:trust:)``.
+/// of these from ``RoutedACPAgent/bind(connection:)``.
 ///
 /// It is the `Agent` that the factory of `AgentSideConnection` gives back. It
 /// keeps no state of its own: it names its connection on each call to the one

@@ -38,12 +38,47 @@ public struct ConnectionId: RawRepresentable, Hashable, Sendable, CustomStringCo
     static func make() -> ConnectionId {
         ConnectionId(rawValue: ULID().ulidString)
     }
+
+    /// The id of a connection that the agent binds: the `Acp-Connection-Id`
+    /// that its transport gives, or a new id when the transport has no
+    /// connection header (ACPA-5a).
+    ///
+    /// - Parameter info: The connection information of the transport, or
+    ///   `nil` when it has none.
+    /// - Returns: The id.
+    static func make(for info: ACPConnectionInfo?) -> ConnectionId {
+        info.map { ConnectionId(rawValue: $0.id.rawValue) } ?? make()
+    }
 }
 
 /// The trust of one connection (D120 b): `userDevice` for the in-process UI
 /// and a token of a device of the user, `external` for any other token. The
 /// credential of the connection gives it, never the client.
 public typealias ConnectionTrust = GraphQLViewer.Trust
+
+extension ConnectionTrust {
+    /// The trust that the credential of a connection gives (ACPA-5b,
+    /// D120 b), never what the client says.
+    ///
+    /// A transport with no connection header (stdio, `InMemoryTransport`)
+    /// serves the in-process UI or the local CLI, so it is `userDevice`. A
+    /// transport with a connection header (HTTP) is `userDevice` only when
+    /// its bearer token is one of the tokens of a device of the user that
+    /// the host gave; any other token, or no token, is `external`.
+    ///
+    /// - Parameters:
+    ///   - info: The connection information of the transport, or `nil` when
+    ///     it has none.
+    ///   - userDeviceTokens: The bearer tokens of the devices of the user.
+    init(credentialOf info: ACPConnectionInfo?, userDeviceTokens: Set<String>) {
+        guard let info else {
+            self = .userDevice
+            return
+        }
+        let isUserDevice = info.bearerToken.map(userDeviceTokens.contains) ?? false
+        self = isUserDevice ? .userDevice : .external
+    }
+}
 
 /// One row of the ``ConnectionTable``: what the agent knows of one
 /// connection.
@@ -123,17 +158,15 @@ final class ConnectionTable: Sendable {
         state = Mutex(State(rows: [.direct: direct]))
     }
 
-    /// Adds the row of a new connection, with a new id.
+    /// Adds the row of a new connection.
     ///
     /// - Parameters:
     ///   - connection: The outbound path of the connection.
+    ///   - id: The id of the connection.
     ///   - trust: The trust of the connection.
-    /// - Returns: The id of the new row.
-    func add(_ connection: AgentSideConnection, trust: ConnectionTrust) -> ConnectionId {
-        let id = ConnectionId.make()
+    func add(_ connection: AgentSideConnection, id: ConnectionId, trust: ConnectionTrust) {
         let row = ConnectionRow(id: id, trust: trust, connection: connection)
         state.withLock { $0.rows[id] = row }
-        return id
     }
 
     /// Removes the row of a closed connection, and frees each session that

@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:reporting:)``
+/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:userDeviceTokens:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -168,6 +168,13 @@ public struct ComposedAgent: Sendable {
     ///     `doctor` must read the same folder: give it to
     ///     `SystemModelResolver.init(environment:modelCacheDirectory:)`.
     ///     The `acp-agent` CLI gives no value.
+    ///   - userDeviceTokens: The bearer tokens of the devices of the user, or
+    ///     none (the default). A host that serves ACP over HTTP gives the
+    ///     token of each paired device here; a connection with one of them
+    ///     is `userDevice`, and a connection with any other token is
+    ///     `external` (``RoutedACPAgent/userDeviceTokens``). The `acp-agent`
+    ///     CLI gives no value: its stdio and in-process connections carry no
+    ///     token and are `userDevice`.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -192,6 +199,7 @@ public struct ComposedAgent: Sendable {
         hooksDataDirectory: URL? = nil,
         skillsMarketplaceCacheDirectory: URL? = nil,
         modelCacheDirectory: URL? = nil,
+        userDeviceTokens: Set<String> = [],
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
@@ -217,7 +225,8 @@ public struct ComposedAgent: Sendable {
             environment: environment,
             transcriptLocation: transcriptLocation,
             secretStore: secretStore,
-            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory)
+            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
+            userDeviceTokens: userDeviceTokens)
         return ComposedAgent(
             agent: agent, modelSource: modelSource, configuration: configuration)
     }

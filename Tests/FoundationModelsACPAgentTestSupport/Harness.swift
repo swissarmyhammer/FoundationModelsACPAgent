@@ -289,20 +289,24 @@ public struct AgentClientHarness: Sendable {
     ///     because only the cli-plan.md §5.9 cancel proof reads it.
     ///   - wire: The transport pair to run over. The in-process pair by
     ///     default; a cli-plan.md §4 comparison passes the stdio pipes instead.
-    ///   - trust: The trust that the bind gives the connection: `userDevice`
-    ///     by default, as each in-process connection; an ownership proof
-    ///     passes `external` (ACPA-5c).
+    ///   - connectionInfo: The id and the credential that the agent end
+    ///     reports, as an HTTP connection does (ACPA-5b), or `nil` (the
+    ///     default) for none, as the in-process wire. The bind takes the
+    ///     trust of the connection from it: none gives `userDevice`, and a
+    ///     token that the agent does not list gives `external`.
     /// - Returns: The connected harness, with a collector.
     public static func makeRecording(
         agent: RoutedACPAgent,
         tapsWire: Bool = false,
         tapsAgentWire: Bool = false,
         wire: HarnessWire = .makeInMemory(),
-        trust: ConnectionTrust = .userDevice
+        connectionInfo: ACPConnectionInfo? = nil
     ) async -> AgentClientHarness {
         let agentWireTap = tapsAgentWire ? WireTap(tapping: wire.agentEnd) : nil
-        let parts = await makeParts(
-            agent: agent, agentEnd: agentWireTap ?? wire.agentEnd, trust: trust)
+        let tappedEnd: any ACPTransport = agentWireTap ?? wire.agentEnd
+        let agentEnd: any ACPTransport =
+            connectionInfo.map { CredentialTransport(wrapping: tappedEnd, reporting: $0) } ?? tappedEnd
+        let parts = await makeParts(agent: agent, agentEnd: agentEnd)
         let collector = UpdateCollector()
         let elicitations = ElicitationWireRecorder()
         let graphQLNotifications = GraphQLTunnelRecorder()
@@ -373,12 +377,11 @@ public struct AgentClientHarness: Sendable {
     /// - Parameters:
     ///   - agent: The agent under test.
     ///   - agentEnd: The end the agent serves: the wire's own agent end,
-    ///     or a ``WireTap`` around it.
-    ///   - trust: The trust that the bind gives the connection.
+    ///     or a ``WireTap`` or a ``CredentialTransport`` around it.
     /// - Returns: The agent with its connection and the `Agent` of that
     ///   connection, and the client.
     private static func makeParts(
-        agent: RoutedACPAgent, agentEnd: any ACPTransport, trust: ConnectionTrust = .userDevice
+        agent: RoutedACPAgent, agentEnd: any ACPTransport
     ) async -> (
         agent: RoutedACPAgent,
         agentConnection: AgentSideConnection,
@@ -389,7 +392,7 @@ public struct AgentClientHarness: Sendable {
         // the box holds the bind result when the construction returns.
         let bound = WatchedValue<RoutedACPConnection?>(nil)
         let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
-            let routed = agent.bind(connection: connection, trust: trust)
+            let routed = agent.bind(connection: connection)
             bound.update { $0 = routed }
             return routed
         }

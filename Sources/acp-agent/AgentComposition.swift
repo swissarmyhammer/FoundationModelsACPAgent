@@ -96,7 +96,7 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:userDeviceTokens:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide. The
     /// CLI gives no `rootSettingsFolder`: its stacks keep the XDG user
     /// layers.

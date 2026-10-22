@@ -31,7 +31,8 @@ import Testing
         let owner = try await ScriptedPromptFixture.makeLoopback(
             code: ScriptedPromptFixture.loopbackFormSnippet, label: "SessionOwnerTests-requests",
             onPromptContaining: Self.promptText)
-        let external = await AgentClientHarness.makeRecording(agent: owner.harness.agent, trust: .external)
+        let external = await AgentClientHarness.makeRecording(
+            agent: owner.harness.agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.other))
         let taker = await AgentClientHarness.makeRecording(agent: owner.harness.agent)
         let ownerCreates = try #require(owner.harness.elicitations)
         let externalCreates = try #require(external.elicitations)

@@ -91,6 +91,35 @@ import Testing
         #expect(externalResult == ProbeEndpoint.answer)
     }
 
+    /// The viewer of a tunnel call carries the trust that the credential of
+    /// its connection maps to (ACPA-5b, D120 b): a connection with a token of
+    /// a device of the user gets a `userDevice` viewer, and a connection with
+    /// another token gets an `external` viewer.
+    @Test
+    func theViewerOfATunnelCallCarriesTheTrustOfItsCredential() async throws {
+        let agent = try await makeStubAgent(
+            name: AgentClientHarness.dotfolderName,
+            cacheDirectory: makeResolvedDirectory(label: "GraphQLTunnelTests-credential-cache"),
+            userDeviceTokens: [TestBearerToken.userDevice])
+        let log = ProbeLog()
+        await agent.registerHostTools([ProbeTool(log: log, holdsStreams: false)])
+        let device = await AgentClientHarness.makeRecording(
+            agent: agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.userDevice))
+        let other = await AgentClientHarness.makeRecording(
+            agent: agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.other))
+        for harness in [device, other] {
+            _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+            _ = try await harness.connection.newSession(
+                AgentClientHarness.makeNewSessionRequest(
+                    cwd: makeResolvedDirectory(label: "GraphQLTunnelTests-credential")))
+        }
+
+        _ = try await Self.execute(on: device, endpoint: Self.serverProbeName, sessionId: nil)
+        _ = try await Self.execute(on: other, endpoint: Self.serverProbeName, sessionId: nil)
+
+        #expect(log.viewers.value.map { $0?.trust } == [.userDevice, .external])
+    }
+
     /// A call that names an endpoint that the agent does not have gives a
     /// result with one error coded `UNKNOWN_ENDPOINT`, and no data.
     @Test
@@ -530,7 +559,8 @@ private struct TunnelFixture {
         let log = ProbeLog()
         await agent.registerHostTools([ProbeTool(log: log, holdsStreams: holdsStreams)])
         let device = await AgentClientHarness.makeRecording(agent: agent)
-        let external = await AgentClientHarness.makeRecording(agent: agent, trust: .external)
+        let external = await AgentClientHarness.makeRecording(
+            agent: agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.other))
         let deviceFolder = makeResolvedDirectory(label: "\(label)-device")
         let externalFolder = makeResolvedDirectory(label: "\(label)-external")
         let deviceSession = try await openSession(on: device, in: deviceFolder)

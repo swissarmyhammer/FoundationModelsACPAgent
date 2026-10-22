@@ -9,7 +9,7 @@ import Testing
 /// the agent (ACPA-17, D100(f)), and not from a fresh load of the files.
 ///
 /// Each test uses temporary folders only, and the in-memory secret store of
-/// ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:secretStore:prepareRouter:)``.
+/// ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:prepareRouter:)``.
 @Suite struct SessionSettingsStoreTests {
     /// A `config.yaml` text that does not parse.
     private static let malformedYAML = "compaction: [not closed\n"

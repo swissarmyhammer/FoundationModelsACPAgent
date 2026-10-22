@@ -118,7 +118,7 @@ extension RoutedACPAgent {
     /// GraphQL tunnel subscription of the connection (ACPA-13), because no
     /// notification of it can reach the client.
     ///
-    /// The teardown task of ``bind(connection:trust:)`` calls it when
+    /// The teardown task of ``bind(connection:)`` calls it when
     /// `AgentSideConnection.closed` gives its reason. The connection already
     /// ended each inbound handler then, so no handler of it runs beside this
     /// teardown.

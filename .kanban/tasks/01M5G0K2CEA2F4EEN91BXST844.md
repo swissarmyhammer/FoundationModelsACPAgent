@@ -18,11 +18,18 @@ comments:
 
     Still in force without ACP-1 (from ^ACPA-5a): every stdio and InMemoryTransport connection is `userDevice` (the in-process UI and the local CLI), and the `ConnectionId.direct` caller is `userDevice`. ^ACPA-5c adds a host-given trust at bind (the seam that ACP-1 will feed), so `external` can be tested before ACP-1 lands. No change was made in FoundationModelsACP.
   timestamp: 2026-10-21T20:39:35.303038+00:00
+- actor: claude-code
+  id: 01m5gfx78mgwc7jb518rgfjkxt
+  text: |-
+    Research (FoundationModelsACP a78fb48 resolved): `ACPTransport.connectionInfo` is a protocol requirement (default nil via extension); `HTTPConnectionTransport` gives `ACPConnectionInfo(id:bearerToken:)`; `AgentSideConnection.connectionInfo` is set from the stream before the factory runs. So `bind(connection:)` can read it in the factory.
+
+    Plan: `RoutedACPAgent.init` and `ComposedAgent.compose` take `userDeviceTokens: Set<String> = []` (host config, no store). `bind(connection:)` drops the host `trust:` parameter of ^ACPA-5c (the credential now feeds it): no credential -> userDevice, listed token -> userDevice, other token -> external; the row id is `connectionInfo.id` when present, else a minted ULID. `RoutedACPConnection.trust` reads the row. Test harness: `makeRecording(bearerToken:)` wraps the agent end in a test transport that reports a connectionInfo, replacing `trust:`; `makeStubAgent(userDeviceTokens:)`.
+  timestamp: 2026-10-22T00:24:21.524200+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
-position_column: todo
-position_ordinal: '8480'
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-5b: the trust of a connection comes from its credential, never from the client'
 ---
 Spec: ACPA-5 (D120 b), TestudoApp foundationmodels-acpagent.md.

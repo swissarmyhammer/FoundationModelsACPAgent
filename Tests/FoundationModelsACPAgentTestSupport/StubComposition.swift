@@ -39,6 +39,8 @@ private let dataHomeVariable = "XDG_DATA_HOME"
 ///   - skillsMarketplaceCacheDirectory: The skills marketplace cache folder
 ///     to give to the composition, or `nil` (the default) to let the
 ///     composition read the environment.
+///   - userDeviceTokens: The bearer tokens of the devices of the user to give
+///     to the composition (ACPA-5b). None by default.
 ///   - environment: The extra environment pairs of the composition, on top
 ///     of the configuration home, the data home and the defaults layer.
 ///     Empty by default.
@@ -55,6 +57,7 @@ public func composeStubAgent(
     rootSettingsFolder: URL? = nil,
     configHome: URL? = nil,
     skillsMarketplaceCacheDirectory: URL? = nil,
+    userDeviceTokens: Set<String> = [],
     environment: [String: String] = [:]
 ) async throws -> ComposedAgent {
     let configHome = configHome ?? makeResolvedDirectory(label: "\(label)-config")
@@ -71,5 +74,6 @@ public func composeStubAgent(
         modelSource: .stub,
         secretStore: secretStore,
         hooksDataDirectory: hooksDataDirectory,
-        skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory)
+        skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
+        userDeviceTokens: userDeviceTokens)
 }

@@ -26,7 +26,7 @@ import Synchronization
 /// available on this agent. The agent never raises `-32000`.
 ///
 /// One agent serves each client connection (ACPA-5, D120), as a listener
-/// with a connection table (``connections``): ``bind(connection:trust:)`` gives
+/// with a connection table (``connections``): ``bind(connection:)`` gives
 /// each connection its own ``RoutedACPConnection``, which names the
 /// connection on each call. The `Agent` methods of the agent itself serve
 /// the ``ConnectionId/direct`` caller: a test or an in-process host with no
@@ -61,6 +61,13 @@ public actor RoutedACPAgent: Agent {
     /// row has no capabilities came before the `initialize` of that
     /// connection, and is refused.
     nonisolated let connections = ConnectionTable()
+
+    /// The bearer tokens of the devices of the user, as the host gave them
+    /// (ACPA-5b, D120 b). ``bind(connection:)`` gives `userDevice` to a
+    /// connection whose bearer token is one of them, and `external` to a
+    /// connection with any other token. The agent keeps no store of tokens:
+    /// the host owns the pairing of the devices.
+    public nonisolated let userDeviceTokens: Set<String>
 
     /// The client capabilities of the `initialize` of one connection.
     ///
@@ -241,10 +248,13 @@ public actor RoutedACPAgent: Agent {
     /// Binds one more wire connection to this agent (ACPA-5, D120 a), and
     /// gives back the `Agent` that serves it.
     ///
-    /// The bind adds a row to ``connections`` with a new id: no transport
-    /// gives a connection id yet, so the agent gives one. It does not replace
-    /// an earlier connection: each bound connection is served at the same
-    /// time, and each session sends its updates through its own connection.
+    /// The bind adds a row to ``connections``. Its id is the
+    /// `Acp-Connection-Id` that the transport gives
+    /// (`AgentSideConnection.connectionInfo`, the HTTP transport); a
+    /// transport with no connection header gets a new id from the agent. It
+    /// does not replace an earlier connection: each bound connection is
+    /// served at the same time, and each session sends its updates through
+    /// its own connection.
     /// Call it from the `AgentSideConnection` factory closure, and give back
     /// the result:
     ///
@@ -270,23 +280,22 @@ public actor RoutedACPAgent: Agent {
     /// fires at the end of that loop. A host closes the sessions at its own
     /// end (``closeOpenSessions()``).
     ///
-    /// The trust of the connection comes from the host, which knows the
-    /// credential of the connection (D120 b), and never from the client:
-    /// `initialize` does not change it. Stdio and `InMemoryTransport` carry
-    /// no credential, and they serve the in-process UI and the local CLI,
-    /// so their trust is `userDevice`. When the HTTP transport (ACP-1) gives
-    /// the bearer token of a connection, the host maps the token to the
-    /// trust here (ACPA-5b).
+    /// The trust of the connection comes from its credential (ACPA-5b,
+    /// D120 b), and never from the client: `initialize` does not change it.
+    /// A bearer token in ``userDeviceTokens`` gives `userDevice`; any other
+    /// token, or an HTTP connection with no token, gives `external`. Stdio
+    /// and `InMemoryTransport` carry no connection header, and they serve
+    /// the in-process UI and the local CLI, so their trust is `userDevice`
+    /// (``ConnectionTrust/init(credentialOf:userDeviceTokens:)``).
     ///
-    /// - Parameters:
-    ///   - connection: The new connection.
-    ///   - trust: The trust of the connection, from its credential.
+    /// - Parameter connection: The new connection.
     /// - Returns: The `Agent` of the connection, which names the connection
     ///   on each call to this agent.
-    public nonisolated func bind(
-        connection: AgentSideConnection, trust: ConnectionTrust = .userDevice
-    ) -> RoutedACPConnection {
-        let id = connections.add(connection, trust: trust)
+    public nonisolated func bind(connection: AgentSideConnection) -> RoutedACPConnection {
+        let info = connection.connectionInfo
+        let id = ConnectionId.make(for: info)
+        connections.add(
+            connection, id: id, trust: ConnectionTrust(credentialOf: info, userDeviceTokens: userDeviceTokens))
         // Never wait for `closed` in an inbound handler: the value waits
         // for each handler to end. This task is not a handler.
         let teardown = Task {
@@ -296,13 +305,13 @@ public actor RoutedACPAgent: Agent {
         return RoutedACPConnection(id: id, agent: self)
     }
 
-    /// The teardown task of each connection that ``bind(connection:trust:)``
-    /// bound, keyed by the connection id. See ``bind(connection:trust:)``.
+    /// The teardown task of each connection that ``bind(connection:)``
+    /// bound, keyed by the connection id. See ``bind(connection:)``.
     private nonisolated let connectionTeardowns = Mutex<[ConnectionId: Task<Void, Never>]>([:])
 
     /// Waits until the teardown of each bound connection ended: each one
     /// closed, its row is gone, and its sessions are free (ACPA-5d). Returns
-    /// at once before the first ``bind(connection:trust:)``.
+    /// at once before the first ``bind(connection:)``.
     ///
     /// The wait is for the rows, not for the sessions: a closed connection
     /// does not close its sessions, and they go on (D68). A host that ends
@@ -319,7 +328,7 @@ public actor RoutedACPAgent: Agent {
 
     /// Waits until the teardown of one bound connection ended: it closed,
     /// its row is gone, and its sessions are free. Returns at once for an id
-    /// that ``bind(connection:trust:)`` did not give.
+    /// that ``bind(connection:)`` did not give.
     ///
     /// - Parameter id: The id of the connection.
     public nonisolated func waitForTeardown(of id: ConnectionId) async {
@@ -369,6 +378,10 @@ public actor RoutedACPAgent: Agent {
     ///     marketplace store, or `nil` (the default) to read it from
     ///     `SKILLS_MARKETPLACE_CACHE` of `environment` — see
     ///     ``skillsMarketplaceCacheDirectory``.
+    ///   - userDeviceTokens: The bearer tokens of the devices of the user,
+    ///     or none (the default) — see ``userDeviceTokens``. A host with no
+    ///     HTTP server gives none: its stdio and in-process connections are
+    ///     `userDevice` with no token.
     /// - Throws: `ProfileResolutionError` when the profile does not
     ///   resolve; an error of the schema builder of ``settingsEndpoint``.
     public init(
@@ -382,10 +395,12 @@ public actor RoutedACPAgent: Agent {
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
-        skillsMarketplaceCacheDirectory: URL? = nil
+        skillsMarketplaceCacheDirectory: URL? = nil,
+        userDeviceTokens: Set<String> = []
     ) async throws {
         self.name = name
         self.hooks = hooks
+        self.userDeviceTokens = userDeviceTokens
         self.settingsFolders = SettingsFolders(
             name: name, rootSettingsFolder: rootSettingsFolder, environment: environment)
         self.environment = environment
