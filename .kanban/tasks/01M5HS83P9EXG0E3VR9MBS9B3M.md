@@ -30,6 +30,13 @@ comments:
     - Design notes: the Mutex is gone; an Atomic<Bool> keeps the "report the first dropped record to stderr once" rule. JSONLFile's encoder has no non-conforming float strategy, so the writer maps NaN/±Infinity (any depth) to their text before the append.
     - next: /review
   timestamp: 2026-10-22T19:36:06.672275+00:00
+- actor: claude-code
+  id: 01m5jhx6323ras5qe6c565cp4a
+  text: |-
+    ### test — green
+    - evidence: touched all Sources/Tests swift files, `swift test` (debug, own targets recompiled) - 1230 tests in 135 suites passed, 1 known issue, 0 failures, 0 skipped, 0 warnings from package sources (only a SwiftPM build-system note: "missing creator for mutated node" for the dependency bundle mlx-swift_Cmlx.bundle). `python3 -m unittest discover -s bench` - 265 tests OK (skipped=1, the old swebench skip).
+    - next: review. No code changed, nothing to commit.
+  timestamp: 2026-10-22T19:37:46.338436+00:00
 position_column: doing
 position_ordinal: '80'
 title: Move every JSONL write onto Extras JSONLFile, and read session folders from index.md
