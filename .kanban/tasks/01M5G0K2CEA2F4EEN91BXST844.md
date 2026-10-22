@@ -103,6 +103,13 @@ comments:
     - TDD note: no RED is possible — same type and value, a respelling.
     - next: /review
   timestamp: 2026-10-22T00:58:58.680203+00:00
+- actor: claude-code
+  id: 01m5ghx5f6dmww5q11ew996qbd
+  text: |-
+    ### implement — changed (commit)
+    - evidence: c8ad78f on main (not pushed): the four `= []` defaults plus the .kanban record. swift test 1202/131 passed, 1 known issue.
+    - next: /review
+  timestamp: 2026-10-22T00:59:16.838537+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
