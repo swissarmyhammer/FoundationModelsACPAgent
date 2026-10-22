@@ -57,7 +57,7 @@ public func composeStubAgent(
     rootSettingsFolder: URL? = nil,
     configHome: URL? = nil,
     skillsMarketplaceCacheDirectory: URL? = nil,
-    userDeviceTokens: Set<String> = Set(),
+    userDeviceTokens: Set<String> = [],
     environment: [String: String] = [:]
 ) async throws -> ComposedAgent {
     let configHome = configHome ?? makeResolvedDirectory(label: "\(label)-config")

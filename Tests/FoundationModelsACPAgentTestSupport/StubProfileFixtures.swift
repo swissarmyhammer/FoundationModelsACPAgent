@@ -75,7 +75,7 @@ public func makeStubAgent(
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     environment: [String: String] = [:],
     secretStore: any SecretStore = InMemorySecretStore(),
-    userDeviceTokens: Set<String> = Set(),
+    userDeviceTokens: Set<String> = [],
     prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
     // The hooks of the production composition, with the data directory in a

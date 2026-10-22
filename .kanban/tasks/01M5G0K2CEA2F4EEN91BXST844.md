@@ -77,6 +77,32 @@ comments:
     - changes: none, nothing to commit (HEAD 9d7a16e).
     - next: review
   timestamp: 2026-10-22T00:52:00.996386+00:00
+- actor: claude-code
+  id: 01m5ghrnhzpfxbv6eyszr2wvj2
+  text: |-
+    ### review — stuck
+    - evidence: `review sha dd78e2d..HEAD` — 4 findings (4 confirmed, 0 refuted): Sources/FoundationModelsACPAgent/ComposedAgent.swift:202, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift:399, Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:60, Tests/FoundationModelsACPAgentTestSupport/StubProfileFixtures.swift:78 — all `swift/idioms` asking `= Set()` back to `= []`. Prior 19:39 `swift/initialization` item is checked; 7d5d508 wrote those `Set()` lines to obey it. The two rules conflict (see the Blocker section in the description).
+    - next: a person corrects `swift/initialization` or `swift/idioms`, then restarts the task. Do not implement either side until then.
+  timestamp: 2026-10-22T00:56:49.471129+00:00
+- actor: claude-code
+  id: 01m5ghsevqy866mky10ph1kef8
+  text: |-
+    ### finish iteration 2 — findings (the conflict is resolved, no longer stuck)
+    - implement: changed — 7d5d508
+    - test: green — swift test 1202/131, bench 265, IntegrationTests 27/13
+    - commit: 759f69f
+    - review: findings — ComposedAgent.swift:202, RoutedACPAgent.swift:399, StubComposition.swift:60, StubProfileFixtures.swift:78 (swift/idioms)
+    - The orchestrator does not accept the conflict. swift/initialization flagged only a non-empty array literal passed as an argument (ConnectionTrustTests.swift:99). The empty defaults `= []` were already there in review 1, and that rule did not flag them. 7d5d508 also changed the defaults to `Set()`, which went too far. Both rules hold when the arguments stay `Set([...])` and the empty defaults go back to `= []`. Iteration 3 does that. The `stuck` tag is removed.
+  timestamp: 2026-10-22T00:57:15.383203+00:00
+- actor: claude-code
+  id: 01m5ghwkqrtg7kac1mb61a4z0g
+  text: |-
+    ### implement — changed
+    - evidence: the four `swift/idioms` findings obeyed: `userDeviceTokens: Set<String> = Set()` back to `= []` in ComposedAgent.compose, RoutedACPAgent.init, composeStubAgent (StubComposition.swift), makeStubAgent (StubProfileFixtures.swift). The three non-empty `Set([TestBearerToken.userDevice])` arguments of 7d5d508 are kept (swift/initialization). `rg 'Set\(\)' Sources Tests` finds no other empty default. Findings flipped to [x]; Blocker marked resolved.
+    - tests: full `swift test` (rebuilt): 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); only build message is the SwiftPM mlx-swift_Cmlx.bundle "missing creator" notice.
+    - TDD note: no RED is possible — same type and value, a respelling.
+    - next: /review
+  timestamp: 2026-10-22T00:58:58.680203+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
@@ -106,3 +132,26 @@ Spec: ACPA-5 (D120 b), TestudoApp foundationmodels-acpagent.md.
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
 - [x] `Tests/FoundationModelsACPAgentTests/ConnectionTrustTests.swift:99` `swift/initialization` — Array literal `[TestBearerToken.userDevice]` passed where `Set<String>` is expected. Swift does not implicitly convert array literals to sets; the argument type does not match the parameter type `Set<String>`. Change to `userDeviceTokens: Set([TestBearerToken.userDevice])`.
+
+## Review Findings (2026-10-21 19:52)
+
+> Scope: `review sha dd78e2d..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/ComposedAgent.swift:202` `swift/idioms` — Empty-collection literals with type annotation should use `[]` not `Set()`; `Set<String> = []` is the idiomatic form, not `Set()`. Change `= Set()` to `= []`.
+- [x] `Sources/FoundationModelsACPAgent/RoutedACPAgent.swift:399` `swift/idioms` — Empty-collection literals with type annotation should use `[]` not `Set()`; `Set<String> = []` is the idiomatic form, not `Set()`. Change `= Set()` to `= []`.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift:60` `swift/idioms` — Empty-collection literals with type annotation should use `[]` not `Set()`; `Set<String> = []` is the idiomatic form, not `Set()`. Change `= Set()` to `= []`.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/StubProfileFixtures.swift:78` `swift/idioms` — Empty-collection literals with type annotation should use `[]` not `Set()`; `Set<String> = []` is the idiomatic form, not `Set()`. Change `= Set()` to `= []`.
+
+## Blocker (2026-10-21 19:52) — rule conflict, a person must decide
+
+`swift/initialization` and `swift/idioms` cannot both be correct.
+
+- The 19:39 `swift/initialization` finding says "Swift does not implicitly convert array literals to sets" and asks for `Set([...])` in place of an array literal where `Set<String>` is expected. Commit 7d5d508 obeyed it across the whole of each file: it changed every `[...]` and `[]` passed as or defaulted to a `Set<String>` into `Set(...)` / `Set()`.
+- The 19:52 `swift/idioms` findings ask to change those same `= Set()` defaults (lines 7d5d508 wrote) back to `= []`, saying `Set<String> = []` is the idiomatic form. That form is an array literal where `Set<String>` is expected, which is what `swift/initialization` forbids.
+
+Obeying `swift/idioms` re-creates the `swift/initialization` finding; obeying `swift/initialization` re-creates the `swift/idioms` findings. The loop does not end. Note for the person correcting the rule: `Set` conforms to `ExpressibleByArrayLiteral`, so the premise of the `swift/initialization` finding is the one to check. Correct the rule, then start the work again.
+
+- Resolved (2026-10-21, orchestrator, finish iteration 3): the rules do not conflict. `swift/initialization` applies to a non-empty array literal passed as an argument (the three `Set([TestBearerToken.userDevice])` arguments stay); `swift/idioms` applies to the empty defaults, which are `= []` again.
