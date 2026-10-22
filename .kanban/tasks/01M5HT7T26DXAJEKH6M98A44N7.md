@@ -100,6 +100,15 @@ comments:
     - One change to the CLI default paths: the shell store moved from `<process cwd>/.shell` to `$XDG_DATA_HOME/acp-agent/projects/<sha256>/shell`.
     - Not done, because the other package has no parameter for it: the code-context index stays in `<cwd>/.code-context`. `CodeContext(rootDirectory:...)` fixes the folder of its store.
   timestamp: 2026-10-22T14:31:29.968898+00:00
+- actor: claude-code
+  id: 01m5j0fed0jtcnt3jv0cdxhsx9
+  text: |-
+    ### implement — changed
+    - evidence: 482538e feat(home): AgentHome value with XDG and custom presets; 159a87a feat(home): compose, the agent and the CLI take one AgentHome; --home, ACP_AGENT_HOME and doctor rows. Pushed to main. `swift test`: 1224 tests / 135 suites passed, 0 failed, 1 known issue. `python3 -m unittest discover -s bench`: 265 OK (1 skipped). IntegrationTests package builds.
+    - done: AgentHome (synced + local; .xdg(name:environment:) and .custom(synced:local:)); ComposedAgent.compose and RoutedACPAgent.init take a required `home` (rootSettingsFolder, hooksDataDirectory, skillsMarketplaceCacheDirectory, modelCacheDirectory removed); every settings stack (config, Instructions, skills, agents, rules) takes its user layer from the home; hooks, marketplace cache, model cache, router metadata cache and LSP install record come from the home; shell store defaults to `<local>/projects/<sha256 cwd>/shell` (runtime and doctor agree); `projectsDirectory` exposed only (registry code left to ^am394r2); CLI `--home <dir>` and `ACP_AGENT_HOME` resolve through one function to `<dir>/synced` + `<dir>/local`; `doctor` shows the home (HomeDoctor rows); isolation test (custom home, HOME/XDG pointed at an empty dir, compose + one prompt writes nothing there) passes. CLI default paths unchanged except the shell store (was `<process cwd>/.shell`). Transcripts and `.acp-agent/config.yaml` stay in the project.
+    - NOT done (other packages, see earlier comment): code-context index still `<cwd>/.code-context/kit.db` — FoundationModelsCodeContext needs an index-folder parameter; HF token lookup still reads ~ — Router LiveModelLoader / Extras MLXModelLoader need a token-provider parameter. So the "no SQLite/WAL in cwd" done-when holds for the shell log only.
+    - next: /review
+  timestamp: 2026-10-22T14:33:10.304761+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'
