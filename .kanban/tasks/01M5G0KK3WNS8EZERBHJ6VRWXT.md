@@ -43,6 +43,13 @@ comments:
     - evidence: 63fec16 (Tests/FoundationModelsACPAgentTests/GraphQLTunnelTests.swift only; no source change). New tests 3/3 pass; with a per-connection endpoint/store break in `tunnelEndpoint(named:)` 3/3 fail (two settings cursors, two snapshots cursors, change test times out), break reverted. Full `swift test`: 1194 tests in 130 suites passed, 1 known issue.
     - next: /review. Card left in doing.
   timestamp: 2026-10-22T00:17:57.029763+00:00
+- actor: claude-code
+  id: 01m5gfmhgxp5m61ce54ynse1f9
+  text: |-
+    ### test — green
+    - evidence: touched all Sources/Tests swift files and Package.swift to force a rebuild of this package, then `swift test` at HEAD 25e6ea7: Build complete, 1194 tests in 130 suites passed, 1 known issue, 0 failures, 0 skipped. `python3 -m unittest discover -s bench`: Ran 265 tests, OK (skipped=1, the old swebench skip). Warnings: 0 from this package sources; the only build line is SwiftPM's own `missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS` (dependency bundle, no file or line in this package).
+    - next: none, no code change, nothing to commit
+  timestamp: 2026-10-22T00:19:37.117312+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
