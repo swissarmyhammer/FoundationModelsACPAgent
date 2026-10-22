@@ -50,12 +50,28 @@ comments:
     - evidence: touched all Sources/Tests swift files and Package.swift to force a rebuild of this package, then `swift test` at HEAD 25e6ea7: Build complete, 1194 tests in 130 suites passed, 1 known issue, 0 failures, 0 skipped. `python3 -m unittest discover -s bench`: Ran 265 tests, OK (skipped=1, the old swebench skip). Warnings: 0 from this package sources; the only build line is SwiftPM's own `missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS` (dependency bundle, no file or line in this package).
     - next: none, no code change, nothing to commit
   timestamp: 2026-10-22T00:19:37.117312+00:00
+- actor: claude-code
+  id: 01m5gfrzhnbj3c5ycrbmvh24qt
+  text: |-
+    ### review — clean
+    - evidence: `review sha a33bcf0..HEAD` — 0 findings (attempted 7, confirmed 0, refuted 0, failed 0); 1 file reviewed (Tests/FoundationModelsACPAgentTests/GraphQLTunnelTests.swift), 2 .kanban files excluded by .reviewignore. No prior Review Findings sections. Done when: settings `cursor(cwd:)` equal across two connections in two folders (`twoConnectionsInTwoFoldersReadOneSettingsCursor`); a device-side `updateSetting` reaches the external `changes(after:)` (`aSettingsChangeFromOneConnectionReachesTheChangesOfTheOther`); snapshots cursor equal (`twoConnectionsInTwoFoldersReadOneSnapshotsCursor`); full `swift test` green per the test record (1194 tests, 130 suites). Matches the ACPA-5 Requirement (D88).
+    - next: none — moved to done.
+  timestamp: 2026-10-22T00:22:02.549979+00:00
+- actor: claude-code
+  id: 01m5gfskmt1z3jz6b5t0ayr7se
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 63fec16 (3 tests; each failed when the endpoints were made per connection on purpose, then reverted)
+    - test: green — swift test 1194/130, 1 known issue, 0 package warnings; bench 265 OK
+    - commit: f5e02e5
+    - review: clean — 0 findings. Card in done.
+  timestamp: 2026-10-22T00:22:23.130075+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
 - 01M5G72P3AM0415Q2TWM7WMTRM
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffff8980
 title: 'ACPA-5e: build-time test (D88): one agent serves two connections with sessions in different cwds, and the settings endpoint gives both the same cursor'
 ---
 Spec: ACPA-5 Requirement (D88, D120, EXTRAS-9 rule 1).

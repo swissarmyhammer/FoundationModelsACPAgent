@@ -35,6 +35,13 @@ comments:
     - decision to note: an HTTP connection with no bearer token is `external` (not in the card text; it would otherwise be a remote userDevice). No change in FoundationModelsACP.
     - next: /review
   timestamp: 2026-10-22T00:34:12.921625+00:00
+- actor: claude-code
+  id: 01m5ggrknt42nt9p80jx9sak66
+  text: |-
+    ### test — green
+    - evidence: swift test (root, all Sources/Tests .swift touched to force rebuild of this package): 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps), 0 compiler warnings from this package (only SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle, third-party). python3 -m unittest discover -s bench: 265 tests OK (skipped=1, the swebench skip). IntegrationTests swift test: first run did not build (cannot find ACPConnectionInfo / ExtensionHandlers) because IntegrationTests/Package.resolved pinned stale FoundationModelsACP 270f9e3 (root pins a78fb48); ran `swift package update` inside IntegrationTests only (Package.resolved is gitignored), then swift test: 27 tests in 13 suites passed (incl. ClientInteropTests), 0 failures, 0 skips, 0 compiler warnings.
+    - no source change, nothing committed, nothing pushed; no release build; no root swift package update/edit.
+  timestamp: 2026-10-22T00:39:18.970957+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
