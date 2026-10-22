@@ -110,8 +110,25 @@ comments:
     - evidence: HEAD 9bcfe47, touched all Sources/Tests .swift to force rebuild of own sources (Build complete 18.38s, no warnings from this package; only the build-system note "missing creator for mutated node ... mlx-swift_Cmlx.bundle" from a dependency). `swift test`: 1233 tests in 136 suites passed, 1 known issue (HarnessSmokeTests), 0 skipped. `python3 -m unittest discover -s bench`: 265 tests OK, skipped=1 (old swebench skip). `swift test` in IntegrationTests: 27 tests in 13 suites passed, 0 skipped, 0 warnings.
     - next: no code changed, nothing to commit; proceed to review.
   timestamp: 2026-10-22T21:16:01.296437+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5jr87pc3sd4jy6av960n6qk
+  text: |-
+    ### review — clean
+    - evidence: `review sha 6b97096..HEAD` (863884f + card records): 33 files reviewed, 0 findings (35 attempted, 1 refuted, 0 failed). Not reviewed: 2 .kanban files (.reviewignore), README.md (no validator matches). No prior Review Findings sections on the card.
+    - next: done.
+  timestamp: 2026-10-22T21:28:39.884873+00:00
+- actor: claude-code
+  id: 01m5jr8sdhczn61qj0st6hf7ck
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 863884f (Router d1528d72 + Agents 959fe3b; sessions from folders + index.md; setTitle and setAdditionalDirectories; sessions.jsonl writers removed; ProjectStore over AgentHome.projectsDirectory), SessionFolderTests 4/4
+    - test: green — swift test 1233/136, 1 known issue, 0 package warnings; bench 265 OK; IntegrationTests 27/13
+    - commit: e08e873
+    - review: clean — 0 findings. Card in done.
+    - Orchestrator check against the user's decisions: Sources has no sessions.jsonl, projects.jsonl, SessionIndex, ProjectRegistry or session.json left. ProjectStore(directory: home.projectsDirectory) is at SessionSetup.swift:809, SessionList.swift:97 and RegisteredRecordingRoots.swift:55. Transcripts stay at <cwd>/.acp-agent/transcripts.
+  timestamp: 2026-10-22T21:28:58.033830+00:00
+position_column: done
+position_ordinal: ffff8e80
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
 ---
 User decision of 2026-10-22, in the user's words: "projects.json location needs to be configurable so that TestudoApp can have that in the icloud app folder. and its gonna need to NOT be a JSONL, but instead a folder with a file per project to avoid merge errors. i also think that sessions.jsonl needs to be eliminated, we should be able to directory list sessions and use the being created by router index.md" and "a big user of this will be testudo which will have a mac app style icloud folder that will sync files".
@@ -139,4 +156,4 @@ The Router session owns ProjectRegistry, SessionIndex and index.md (its card ^2c
   - Two sessions in one folder give two session folders, each with an index.md that holds its title and additionalDirectories. session/list shows both, and no sessions.jsonl exists.
   - Two projects give two files in the projects folder that the host gives.
   - A delete removes only the folder of its own session.
-- The full `swift test` and the bench tests pass. The bench harness reads no sessions.jsonl; check bench/*.py. #router-3 #blocked-upstream #icloud
+- The full `swift test` and the bench tests pass. The bench harness reads no sessions.jsonl; check bench/*.py. #router-3 #icloud
