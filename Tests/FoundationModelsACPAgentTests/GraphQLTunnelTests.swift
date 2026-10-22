@@ -36,6 +36,33 @@ import Testing
     /// endpoints both have (EXTRAS-9 rule 9).
     private static let cursorQuery = "{ cursor }"
 
+    /// The `cursor` query of the `settings` endpoint for one working
+    /// directory, given in the `cwd` variable.
+    private static let settingsCursorQuery = "query($cwd: String) { cursor(cwd: $cwd) }"
+
+    /// The key path that the session-level change of the settings tests
+    /// changes.
+    private static let triggerKeyPath = ["compaction", "trigger"]
+
+    /// The value of ``triggerKeyPath`` that the session-level change sets.
+    private static let sessionTrigger = 0.9
+
+    /// An `updateSetting` mutation on the session level of the working
+    /// directory in the `cwd` variable: the key path in the `keyPath`
+    /// variable gets the value in the `value` variable.
+    private static let sessionSetMutation = """
+        mutation($keyPath: [String!]!, $value: JSON!, $cwd: String) {
+          updateSetting(input: {keyPath: $keyPath, value: $value, level: SESSION, cwd: $cwd}) { level }
+        }
+        """
+
+    /// A `changes(after:)` subscription of the `settings` endpoint after the
+    /// cursor in the `after` variable, for the working directory in the
+    /// `cwd` variable.
+    private static let settingsChangesSubscription = """
+        subscription($after: String, $cwd: String) { changes(after: $after, cwd: $cwd) { cursor cwd keyPath } }
+        """
+
     /// Two connections on one agent, a `userDevice` and an `external` one,
     /// each make a session and a `_sah/graphql/execute` call on it. The
     /// resolver gets a viewer with the id and the trust of the calling
@@ -276,7 +303,123 @@ import Testing
         _ = try await fixture.log.endedStreams.wait(for: "the end of the held stream") { $0 == 1 }
     }
 
+    // MARK: - One agent, two connections, two folders (D88, D120)
+
+    /// One agent serves two connections at the same time, each with a
+    /// session in its own folder, over one `settings` endpoint (D88, D120,
+    /// EXTRAS-9 rule 1): the `cursor` query of each connection, for the
+    /// folder of its own session, gives the same cursor.
+    @Test(.timeLimit(.minutes(1)))
+    func twoConnectionsInTwoFoldersReadOneSettingsCursor() async throws {
+        let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-settings-cursor")
+
+        let deviceCursor = try await Self.settingsCursor(
+            on: fixture.device, sessionId: fixture.deviceSession, folder: fixture.deviceFolder)
+        let externalCursor = try await Self.settingsCursor(
+            on: fixture.external, sessionId: fixture.externalSession, folder: fixture.externalFolder)
+
+        #expect(fixture.deviceFolder != fixture.externalFolder)
+        #expect(deviceCursor == externalCursor)
+    }
+
+    /// A change of the settings from one connection reaches the other
+    /// connection (D88, D120): the `external` connection subscribes to
+    /// `changes(after:)` for the folder of its own session, after its own
+    /// cursor, and the `updateSetting` of the `userDevice` connection on the
+    /// session level of the other folder comes to it in `_sah/graphql/next`.
+    @Test(.timeLimit(.minutes(1)))
+    func aSettingsChangeFromOneConnectionReachesTheChangesOfTheOther() async throws {
+        let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-settings-changes")
+        let subscriptionId = SAH.GraphQL.SubscriptionId(rawValue: "subscription-settings-changes")
+        let recorder = try #require(fixture.external.graphQLNotifications)
+        let after = try await Self.settingsCursor(
+            on: fixture.external, sessionId: fixture.externalSession, folder: fixture.externalFolder)
+
+        _ = try await Self.subscribe(
+            on: fixture.external, id: subscriptionId, sessionId: fixture.externalSession,
+            endpoint: SettingsGraph.endpointName, query: Self.settingsChangesSubscription,
+            variables: .object(["after": .string(after), "cwd": .string(fixture.externalFolder.path)]))
+        let mutation = try await Self.execute(
+            on: fixture.device, endpoint: SettingsGraph.endpointName, sessionId: fixture.deviceSession,
+            query: Self.sessionSetMutation,
+            variables: .object([
+                "keyPath": Self.triggerKeyPathValue, "value": .number(Self.sessionTrigger),
+                "cwd": .string(fixture.deviceFolder.path),
+            ]))
+        let notifications = try await recorder.wait(for: "the change of the device connection") { recorded in
+            Self.triggerChange(in: recorded) != nil
+        }
+
+        #expect(mutation.errors == nil)
+        let change = try #require(Self.triggerChange(in: notifications))
+        #expect(change["cwd"] == .string(fixture.deviceFolder.path))
+        #expect(change["cursor"] != .string(after))
+        #expect(!notifications.contains { $0.endsSubscription })
+    }
+
+    /// The `snapshots` endpoint is one endpoint of the agent as well (D88,
+    /// EXTRAS-9 rule 1): the `cursor` query of each of two connections, on
+    /// the session of each in its own folder, gives the same cursor.
+    @Test(.timeLimit(.minutes(1)))
+    func twoConnectionsInTwoFoldersReadOneSnapshotsCursor() async throws {
+        let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-snapshots-cursor")
+
+        let device = try await Self.execute(
+            on: fixture.device, endpoint: SnapshotsGraph.endpointName, sessionId: fixture.deviceSession,
+            query: Self.cursorQuery)
+        let external = try await Self.execute(
+            on: fixture.external, endpoint: SnapshotsGraph.endpointName, sessionId: fixture.externalSession,
+            query: Self.cursorQuery)
+
+        #expect(device.errors == nil)
+        #expect(external.errors == nil)
+        let deviceCursor = try #require(Self.cursor(of: device))
+        #expect(Self.cursor(of: external) == deviceCursor)
+    }
+
     // MARK: - Helpers
+
+    /// ``triggerKeyPath`` as the JSON value of a variable or of a field.
+    private static var triggerKeyPathValue: JSONValue {
+        .array(triggerKeyPath.map(JSONValue.string))
+    }
+
+    /// Reads the cursor of the `settings` endpoint over the wire of
+    /// `harness`, for the folder of the session of the call.
+    ///
+    /// - Parameters:
+    ///   - harness: The harness whose client sends the call.
+    ///   - sessionId: The session of the call.
+    ///   - folder: The working directory of that session.
+    /// - Returns: The cursor.
+    /// - Throws: Whatever the wire throws; an `ExpectationFailedError` when
+    ///   the result has errors or no cursor.
+    private static func settingsCursor(
+        on harness: AgentClientHarness, sessionId: SessionId, folder: URL
+    ) async throws -> String {
+        let result = try await execute(
+            on: harness, endpoint: SettingsGraph.endpointName, sessionId: sessionId, query: settingsCursorQuery,
+            variables: .object(["cwd": .string(folder.path)]))
+        #expect(result.errors == nil)
+        return try #require(cursor(of: result))
+    }
+
+    /// The first `changes` object of the `_sah/graphql/next` notifications
+    /// whose key path is ``triggerKeyPath``.
+    ///
+    /// - Parameter notifications: The recorded notifications.
+    /// - Returns: The fields of that change, or `nil` when no notification
+    ///   has it.
+    private static func triggerChange(in notifications: [GraphQLTunnelNotification]) -> [String: JSONValue]? {
+        notifications.lazy
+            .compactMap { notification -> [String: JSONValue]? in
+                guard case .next(let next) = notification else {
+                    return nil
+                }
+                return jsonObject(of: jsonObject(of: next.payload.data)?["changes"])
+            }
+            .first { $0["keyPath"] == triggerKeyPathValue }
+    }
 
     /// Sends one `_sah/graphql/execute` call on the wire of `harness`.
     ///
@@ -285,14 +428,16 @@ import Testing
     ///   - endpoint: The name of the endpoint.
     ///   - sessionId: The session of the call, or `nil`.
     ///   - query: The GraphQL document.
+    ///   - variables: The values of the variables of the document, or `nil`.
     /// - Returns: The result of the call.
     /// - Throws: Whatever the wire throws.
     private static func execute(
-        on harness: AgentClientHarness, endpoint: String, sessionId: SessionId?, query: String = probeQuery
+        on harness: AgentClientHarness, endpoint: String, sessionId: SessionId?, query: String = probeQuery,
+        variables: JSONValue? = nil
     ) async throws -> SAH.GraphQL.ExecutionResult {
         try await harness.connection.callExtensionMethod(
             SAH.GraphQL.Method.execute,
-            SAH.GraphQL.ExecuteRequest(endpoint: endpoint, sessionId: sessionId, query: query),
+            SAH.GraphQL.ExecuteRequest(endpoint: endpoint, sessionId: sessionId, query: query, variables: variables),
             returning: SAH.GraphQL.ExecutionResult.self)
     }
 
@@ -303,16 +448,18 @@ import Testing
     ///   - id: The id of the new subscription.
     ///   - sessionId: The session of the call.
     ///   - endpoint: The name of the endpoint.
+    ///   - query: The subscription document.
+    ///   - variables: The values of the variables of the document, or `nil`.
     /// - Returns: The response of the call.
     /// - Throws: Whatever the wire throws.
     private static func subscribe(
         on harness: AgentClientHarness, id: SAH.GraphQL.SubscriptionId, sessionId: SessionId,
-        endpoint: String = folderProbeName
+        endpoint: String = folderProbeName, query: String = probeQuery, variables: JSONValue? = nil
     ) async throws -> SAH.GraphQL.SubscribeResponse {
         try await harness.connection.callExtensionMethod(
             SAH.GraphQL.Method.subscribe,
             SAH.GraphQL.SubscribeRequest(
-                subscriptionId: id, endpoint: endpoint, sessionId: sessionId, query: probeQuery),
+                subscriptionId: id, endpoint: endpoint, sessionId: sessionId, query: query, variables: variables),
             returning: SAH.GraphQL.SubscribeResponse.self)
     }
 
@@ -359,6 +506,13 @@ private struct TunnelFixture {
     /// The session that ``external`` started.
     let externalSession: SessionId
 
+    /// The working directory of ``deviceSession``.
+    let deviceFolder: URL
+
+    /// The working directory of ``externalSession``: a different folder
+    /// from ``deviceFolder``.
+    let externalFolder: URL
+
     /// The record of the probe endpoints.
     let log: ProbeLog
 
@@ -377,25 +531,26 @@ private struct TunnelFixture {
         await agent.registerHostTools([ProbeTool(log: log, holdsStreams: holdsStreams)])
         let device = await AgentClientHarness.makeRecording(agent: agent)
         let external = await AgentClientHarness.makeRecording(agent: agent, trust: .external)
-        let deviceSession = try await openSession(on: device, label: "\(label)-device")
-        let externalSession = try await openSession(on: external, label: "\(label)-external")
+        let deviceFolder = makeResolvedDirectory(label: "\(label)-device")
+        let externalFolder = makeResolvedDirectory(label: "\(label)-external")
+        let deviceSession = try await openSession(on: device, in: deviceFolder)
+        let externalSession = try await openSession(on: external, in: externalFolder)
         return TunnelFixture(
             device: device, external: external, deviceSession: deviceSession, externalSession: externalSession,
-            log: log)
+            deviceFolder: deviceFolder, externalFolder: externalFolder, log: log)
     }
 
     /// Initializes the client of `harness` and opens one session over its
-    /// wire, in a new folder.
+    /// wire, in `folder`.
     ///
     /// - Parameters:
     ///   - harness: The harness whose client opens the session.
-    ///   - label: The prefix of the name of the new folder.
+    ///   - folder: The working directory of the new session.
     /// - Returns: The id of the new session.
     /// - Throws: Whatever the wire throws.
-    private static func openSession(on harness: AgentClientHarness, label: String) async throws -> SessionId {
+    private static func openSession(on harness: AgentClientHarness, in folder: URL) async throws -> SessionId {
         _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        let response = try await harness.connection.newSession(
-            AgentClientHarness.makeNewSessionRequest(cwd: makeResolvedDirectory(label: label)))
+        let response = try await harness.connection.newSession(AgentClientHarness.makeNewSessionRequest(cwd: folder))
         return response.sessionId
     }
 }

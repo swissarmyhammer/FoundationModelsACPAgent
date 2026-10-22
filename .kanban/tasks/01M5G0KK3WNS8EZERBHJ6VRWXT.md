@@ -17,12 +17,31 @@ comments:
     - evidence: no code change; FoundationModelsACP 270f9e3 checked.
     - next: unblock on ACP-3 + the tunnel host.
   timestamp: 2026-10-21T21:42:49.655463+00:00
+- actor: claude-code
+  id: 01m5gfgp9q1jrshppm4wscpsrv
+  text: |-
+    Unblocked: ACPA-13 (5352c01, db9b39b, 6099115) hosts `_sah/graphql/*`. Research:
+    - `RoutedACPAgent.tunnelEndpoint(named:)` returns `agentGraphQLEndpoints` (`[settingsEndpoint, snapshotsEndpoint]`, one instance each, made in `RoutedACPAgent.init`) before it looks at the session, so every connection reaches the same `SettingsGraph`/`SnapshotsGraph` objects.
+    - `SettingsGraph` ignores the viewer; through the tunnel it runs with no session folder, so a call must name `cwd` itself. `changes(after:cwd:)` with a `cwd` gives the changes of every level (all folders); with no `cwd`, USER only. So the cross-folder check subscribes with the external connection's own cwd and mutates SESSION level of the device connection's cwd.
+    - The cursor is `<store epoch UUID>:<seq>`: a second store gives a different epoch, so a per-connection store shows up as two cursors.
+    - Tests drive two connections with `TunnelFixture` in GraphQLTunnelTests.swift (userDevice + external, one session each in its own `makeResolvedDirectory`). I extended it with `deviceFolder`/`externalFolder` and gave the `execute`/`subscribe` helpers a `variables` (and `query` for subscribe) parameter.
+  timestamp: 2026-10-22T00:17:30.935704+00:00
+- actor: claude-code
+  id: 01m5gfgww9t9fnp9j2a95w02hy
+  text: |-
+    TDD record. Three new tests in Tests/FoundationModelsACPAgentTests/GraphQLTunnelTests.swift (MARK "One agent, two connections, two folders (D88, D120)"):
+    - `twoConnectionsInTwoFoldersReadOneSettingsCursor`: both connections call `settings` `cursor(cwd:)` for their own session folder over `_sah/graphql/execute`; folders differ, cursors are equal.
+    - `aSettingsChangeFromOneConnectionReachesTheChangesOfTheOther`: external subscribes `changes(after: <its cursor>, cwd: <its folder>)` via `_sah/graphql/subscribe`; device runs `updateSetting` SESSION on `compaction.trigger` in its own folder; the external connection gets a `_sah/graphql/next` whose change has that key path and `cwd` = the device folder, a cursor after its own, and no end of the subscription.
+    - `twoConnectionsInTwoFoldersReadOneSnapshotsCursor`: both connections call `snapshots` `{ cursor }` with their own session; equal cursors.
+    They passed at once (3/3): the shared instance already holds, no bug (no two cursors). To show they can fail I broke the assumption on purpose in `tunnelEndpoint(named:)`: a new `SettingsGraph` over a new `SettingsStore` and a new `SnapshotsGraph` over a new `SnapshotStore` per call. Result: 3/3 failed — settings cursors `013526AF-…:0` vs `C075ECCB-…:0`, snapshots cursors `97C7465D-…:0` vs `7FA78EE5-…:0`, and the change test hit its 1 minute time limit (the change never reached the other connection). Reverted the break with `git checkout` of GraphQLTunnel.swift; no source change ships.
+    Full `swift test`: 1194 tests in 130 suites passed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps), exit 0.
+  timestamp: 2026-10-22T00:17:37.673610+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
 - 01M5G72P3AM0415Q2TWM7WMTRM
-position_column: todo
-position_ordinal: '8780'
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-5e: build-time test (D88): one agent serves two connections with sessions in different cwds, and the settings endpoint gives both the same cursor'
 ---
 Spec: ACPA-5 Requirement (D88, D120, EXTRAS-9 rule 1).
