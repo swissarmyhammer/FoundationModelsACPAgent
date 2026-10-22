@@ -3,28 +3,31 @@ assignees:
 - claude-code
 position_column: todo
 position_ordinal: '80'
-title: 'ROUTER-3: stop the ACPAgent append to sessions.jsonl when Router writes the line (waits on a Router API for title and additionalDirectories)'
+title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
 ---
-From the Router session: Router main 98a8ec95 (ed7b7c27, ROUTER-3 ^2cc8d3f). RouterSessionDirectory appends a line to the sessions.jsonl of the recording root when a new root session registers. Roots come from `directory.useRecordingRoots(_:)`. Forks, subagents and restored roots append nothing. If ACPAgent also appends, each new root gets two lines (the last line wins, so nothing breaks, but the file grows twice as fast).
+User decision of 2026-10-22, in the user's words: "projects.json location needs to be configurable so that TestudoApp can have that in the icloud app folder. and its gonna need to NOT be a JSONL, but instead a folder with a file per project to avoid merge errors. i also think that sessions.jsonl needs to be eliminated, we should be able to directory list sessions and use the being created by router index.md" and "a big user of this will be testudo which will have a mac app style icloud folder that will sync files".
 
-## Why ACPAgent cannot stop yet
-`PromptExecution.makeFirstActivity` (PromptExecution.swift:1040-1053) writes the line at the FIRST PROMPT, with:
-- `title` from the first prompt;
-- `additionalDirectories`, which session/list returns (SessionList.swift:135);
-- `cwd` and `updatedAt`.
-A session with zero prompts is not listed. Router writes at register, with no title and empty additionalDirectories.
+## The rule
+iCloud syncs files between devices, and a lock does not work across devices. So no file of the session records or the project records is written by two sessions or two devices. One file per record:
+- one folder per session, with its own index.md;
+- one file per project.
 
-## Waits on
-The Router answer, as asked 2026-10-22:
-- (a) An API to give the title and additionalDirectories, and to write at the first prompt; or
-- (b) A switch to turn off the Router write.
+## Waits on Router
+The Router session owns ProjectRegistry, SessionIndex and index.md (its card ^2cqepsd; ^s9dftdp must change). Asked on 2026-10-22:
+- index.md frontmatter holds sessionId, cwd, title, updatedAt, additionalDirectories and the fork data.
+- An API that ACPAgent calls to set the title (at the first prompt) and additionalDirectories.
+- The rule for a session with no prompt.
+- ProjectRegistry over a folder that the host gives, with one file per project.
 
-## Change, when the Router API is in
-- Give Router the recording roots (`useRecordingRoots`).
-- Hand it the title and the extra roots at the first prompt.
-- Remove the ACPAgent append (`makeFirstActivity` / the FirstActivity write).
-- Keep the delete path (SessionLifecycle.swift:339) consistent with whoever owns the file.
+## Change in ACPAgent, when Router has it
+- session/list, session/resume, session/delete and the snapshots inventory (`acp-agent snapshots list/remove`, RegisteredRecordingRoots, SnapshotInventory) read the folder and index.md, not sessions.jsonl.
+- Remove the ACPAgent sessions.jsonl writer: PromptExecution.makeFirstActivity and the FirstActivity write (PromptExecution.swift:1040-1053, :278-289), the resume append (SessionResume.swift:472-480), and the delete rewrite (SessionLifecycle.swift:339-351). Give Router the title and additionalDirectories instead.
+- `ComposedAgent.compose` and the RoutedACPAgent initializer take the projects folder from the host (for example `projectsDirectory: URL?`) and pass it to Router. The CLI default stays under XDG (~/.config/acp-agent/projects/). TestudoApp gives a folder in its iCloud app folder.
+- `recordSessionStart` (SessionSetup.swift:703-706) writes only the file of its own project.
 
 ## Done when
-- A failing test first (TDD): a new session with one prompt has exactly one sessions.jsonl line, with its title and additionalDirectories, and a session with no prompt has no line (unless the Router answer changes that rule; then write it down here).
-- The full `swift test` passes. #router-3 #blocked-upstream
+- A failing test first (TDD), with these cases:
+  - Two sessions in one folder give two session folders, each with an index.md that holds its title and additionalDirectories. session/list shows both, and no sessions.jsonl exists.
+  - Two projects give two files in the projects folder that the host gives.
+  - A delete removes only the folder of its own session.
+- The full `swift test` and the bench tests pass. The bench harness reads no sessions.jsonl; check bench/*.py. #router-3 #blocked-upstream #icloud
