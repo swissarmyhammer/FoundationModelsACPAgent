@@ -94,6 +94,15 @@ comments:
     - SessionList, RegisteredRecordingRoots (`projectsDirectory(of:)`) and SnapshotInventory read ProjectStore and session folders.
     - Next: a subagent moves every test fixture to index.md/SessionRecord/ProjectStore, the IntegrationTests and the leftover doc text, then runs the full suite and the bench tests.
   timestamp: 2026-10-22T20:57:59.543172+00:00
+- actor: claude-code
+  id: 01m5jqah3gpha0k6rp6gs1resq
+  text: |-
+    ### implement — changed
+    - evidence: commit 863884f on main (36 files). `swift build --build-tests`: no warnings from this package. SessionFolderTests: 4/4 passed (RED on the old Router pin, GREEN now). Full `swift test`: 1233 tests passed, 1 known issue (HarnessSmokeTests `orderedSubsequenceAssertionChecksOrderWithGaps`), 0 failures. IntegrationTests: `swift package update` moved Router to ee6e2bc (newer than d1528d72); it builds, and 24 non-live tests passed (skipping StdioContractTests, SkillTriggerTests and ToolCallingTests, which need a live model). `python3 -m unittest discover -s bench`: 265 OK, 1 skip that was already there.
+    - Deleted test: TranscriptStoreTests "an index record with no session directory is excluded". The state it covered (a sessions.jsonl line with no session folder) can no longer exist.
+    - New test support: RecordedSessionIndexFile, and TranscriptRecordingFixtures `setUpdatedAt(_:ofSession:under:)`, which rewrites `updatedAt` in index.md. Tests need it because `SessionRecord.init` is internal to Router.
+    - next: /review
+  timestamp: 2026-10-22T21:12:26.480107+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
