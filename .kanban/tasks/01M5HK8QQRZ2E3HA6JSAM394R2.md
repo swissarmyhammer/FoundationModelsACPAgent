@@ -39,6 +39,16 @@ comments:
     - `SessionRecord` is public. It is the frontmatter of `<root>/<sessionId>/index.md`: the facts flat at the top level, `cwd`, and millisecond ISO 8601 dates.
     - `SessionSidecar`, `session.json` and `SessionSidecar.AgentSpawn` are deleted; the agent-spawn data is in SessionRecord. Update each ACPAgent use of them in this card as well.
   timestamp: 2026-10-22T19:42:24.099149+00:00
+- actor: claude-code
+  id: 01m5jjrgzgjt2x9vnwv4ajkmv8
+  text: |-
+    ### Router index.md landed (Router main fa1f4a03; f98b49e6, plus review fixes 2e98ed76)
+    - Router now needs Extras 8f00461 or later (millisecond ISO 8601 dates).
+    - Plan in two halves:
+      - (1) Sessions: take Router fa1f4a03 or later, plus Extras, in one change. Replace each SessionIndex and SessionSidecar use with `recordedSessions(in:)`, `setTitle(_:of:)` and `setAdditionalDirectories(to:for:)`. Waits on ^axhfdx1, so that setTitle writes index.md.
+      - (2) Projects: ProjectStore (^16ken1m) when it lands; ProjectRegistry is still on Router main until then.
+    - Asked Router to do ^axhfdx1 before ^16ken1m.
+  timestamp: 2026-10-22T19:52:42.224199+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
