@@ -1,35 +1,35 @@
 import Darwin
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import Synchronization
 
 /// The one writer of the file of `acp --telemetry-file`: it appends each
-/// record as one JSON object on one line.
+/// record as one JSON object on one line, through the Extras `JSONLFile`.
 ///
 /// The log handler, the tracer and the metrics factory of the file all write
 /// through one writer, so the records of all three stand in one file, in the
 /// order of their writes.
 ///
-/// Each record is one whole line, written under a lock. Thus the line of one
-/// thread never cuts into the line of another thread, at any size: the
-/// `O_APPEND` flag alone makes no such promise for a write larger than
-/// `PIPE_BUF`. The writer keeps no buffer, so a record is in the file when
-/// ``write(_:)`` returns, and a process that crashes loses no record that it
-/// wrote.
+/// `JSONLFile` gives each record the rules of every JSON Lines file of the
+/// package family: it opens the file to append, sends the whole line in one
+/// `write(2)`, calls `fsync(2)` before it returns, and starts the line with a
+/// `\n` when a crash left a torn line at the end of the file. Each record
+/// opens the file with its own `O_APPEND` descriptor, so the line of one
+/// thread never cuts into the line of another thread, and a process that
+/// crashes loses no record that it wrote. The descriptor has `O_CLOEXEC`, so
+/// a shell child of the agent does not get it.
 ///
-/// The descriptor has `O_CLOEXEC`, so a shell child of the agent does not
-/// get it.
-///
-/// The lock is a `Mutex` and not an actor, because each caller is
-/// synchronous: `LogHandler.log(event:)`, `Span.end(at:)` and each metric
-/// handler method return before the record could wait for an actor.
+/// Each line is the JSON of the record with sorted keys and slashes not
+/// escaped, the format that the bench harness reads. A number that JSON
+/// cannot hold writes as its text, see ``conforming(_:)``.
 final class TelemetryFileWriter: Sendable {
-    /// Why the telemetry file cannot be opened.
+    /// Why the telemetry file cannot be written.
     struct OpenError: Error, CustomStringConvertible {
         /// The path of the file.
         let path: String
 
-        /// The `errno` value of the failed `open(2)`.
+        /// The `errno` value of the failed check.
         let code: Int32
 
         /// The path and the system reason, for the usage error of the CLI.
@@ -38,17 +38,15 @@ final class TelemetryFileWriter: Sendable {
         }
     }
 
-    /// The flags of `open(2)`: write only, make the file when it is absent,
-    /// append each write to the end, and close the descriptor in a child
-    /// process.
-    private static let openFlags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
+    /// The access that the file needs: write.
+    private static let fileAccess = W_OK
 
-    /// The permission bits of a new file: read and write for the owner, read
-    /// for all others.
-    private static let fileMode: mode_t = 0o644
+    /// The access that the folder of a new file needs: write, to make the
+    /// file, and search, to reach it.
+    private static let folderAccess = W_OK | X_OK
 
-    /// The bytes at the end of each record.
-    private static let lineEnd = Data("\n".utf8)
+    /// The folder of a path that names no folder: the current folder.
+    private static let currentFolder = "."
 
     /// The text of a positive infinity, which JSON has no number for. The
     /// Extras tokens-per-second recorder divides by the model time, so a
@@ -61,26 +59,22 @@ final class TelemetryFileWriter: Sendable {
     /// The text of a value that is not a number.
     private static let notANumberText = "NaN"
 
-    /// The descriptor of the file, and whether a failed write was reported.
-    private let state: Mutex<State>
+    /// The file.
+    private let file: JSONLFile
 
-    /// Opens `path` to append, and makes the file when it is absent.
+    /// Whether a dropped record already went to stderr.
+    private let hasReportedFailure = Atomic<Bool>(false)
+
+    /// Checks that the file at `path` can be written, and makes the writer.
+    /// It opens nothing: the first record makes the file when it is absent.
     ///
     /// - Parameter path: The path of the telemetry file.
-    /// - Throws: ``OpenError`` when `open(2)` fails, for example because the
-    ///   directory is absent or the file is not writable.
+    /// - Throws: ``OpenError`` when the path names a folder, when the file is
+    ///   not writable, or when the file is absent and its folder is absent
+    ///   or not writable.
     init(path: String) throws {
-        let descriptor = open(path, Self.openFlags, Self.fileMode)
-        guard descriptor >= 0 else {
-            throw OpenError(path: path, code: errno)
-        }
-        state = Mutex(State(descriptor: descriptor))
-    }
-
-    deinit {
-        state.withLock { state in
-            _ = close(state.descriptor)
-        }
+        try Self.checkWritable(path)
+        file = JSONLFile(url: URL(filePath: path))
     }
 
     /// Appends `record` as one line.
@@ -92,75 +86,82 @@ final class TelemetryFileWriter: Sendable {
     ///
     /// - Parameter record: The JSON object of the record.
     func write(_ record: [String: JSONValue]) {
-        let line: Data
         do {
-            line = try Self.makeEncoder().encode(record) + Self.lineEnd
+            try file.append(record.mapValues(Self.conforming))
         } catch {
-            state.withLock { $0.reportFailure("a record does not encode as JSON") }
+            reportFailure(error)
+        }
+    }
+
+    /// Gives `value` with each number that JSON cannot hold, at any depth,
+    /// replaced by its text: `Infinity`, `-Infinity` or `NaN`.
+    ///
+    /// - Parameter value: A JSON value of a record.
+    /// - Returns: The value with finite numbers only.
+    private static func conforming(_ value: JSONValue) -> JSONValue {
+        switch value {
+        case .number(let number) where number.isNaN:
+            return .string(notANumberText)
+        case .number(let number) where number.isInfinite:
+            return .string(number > 0 ? positiveInfinityText : negativeInfinityText)
+        case .array(let values):
+            return .array(values.map(conforming))
+        case .object(let members):
+            return .object(members.mapValues(conforming))
+        case .null, .bool, .number, .string:
+            return value
+        }
+    }
+
+    /// Writes the reason of a dropped record to stderr, the first time only.
+    ///
+    /// - Parameter error: Why the record was dropped.
+    private func reportFailure(_ error: JSONLFileError) {
+        guard hasReportedFailure.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged
+        else { return }
+        FileHandle.standardError.write(Data("acp-agent: the telemetry file dropped a record: \(error)\n".utf8))
+    }
+
+    /// Checks that a record can make or append to the file at `path`: the
+    /// path is not a folder, and the file is writable, or the file is absent
+    /// and its folder is writable.
+    ///
+    /// - Parameter path: The path of the telemetry file.
+    /// - Throws: ``OpenError`` with the `errno` value of the failed check.
+    private static func checkWritable(_ path: String) throws(OpenError) {
+        var status = stat()
+        guard stat(path, &status) == 0 else {
+            guard errno == ENOENT else {
+                throw OpenError(path: path, code: errno)
+            }
+            try requireAccess(folder(of: path), folderAccess, for: path)
             return
         }
-        state.withLock { $0.append(line) }
+        guard status.st_mode & S_IFMT != S_IFDIR else {
+            throw OpenError(path: path, code: EISDIR)
+        }
+        try requireAccess(path, fileAccess, for: path)
     }
 
-    /// Makes the encoder of one record: sorted keys, so each line has one
-    /// stable order, and a text for each number that JSON cannot hold.
+    /// Checks `mode` access to `target` with `access(2)`.
     ///
-    /// - Returns: The encoder.
-    private static func makeEncoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        encoder.nonConformingFloatEncodingStrategy = .convertToString(
-            positiveInfinity: positiveInfinityText, negativeInfinity: negativeInfinityText, nan: notANumberText)
-        return encoder
+    /// - Parameters:
+    ///   - target: The file or the folder.
+    ///   - mode: The access bits.
+    ///   - path: The path of the telemetry file, for the error.
+    /// - Throws: ``OpenError`` with the `errno` value of `access(2)`.
+    private static func requireAccess(_ target: String, _ mode: Int32, for path: String) throws(OpenError) {
+        guard access(target, mode) == 0 else {
+            throw OpenError(path: path, code: errno)
+        }
     }
 
-    /// The state under the lock of the writer.
-    private struct State {
-        /// The descriptor of the open file.
-        let descriptor: Int32
-
-        /// Whether a failed write already went to stderr.
-        var hasReportedFailure = false
-
-        /// Writes all bytes of `line`, and reports the first failure.
-        ///
-        /// - Parameter line: The encoded record and its line end.
-        mutating func append(_ line: Data) {
-            guard let failureCode = Self.writeWhole(line, to: descriptor) else { return }
-            reportFailure(String(cString: strerror(failureCode)))
-        }
-
-        /// Writes `reason` to stderr, the first time only.
-        ///
-        /// - Parameter reason: Why the record was dropped.
-        mutating func reportFailure(_ reason: String) {
-            guard !hasReportedFailure else { return }
-            hasReportedFailure = true
-            FileHandle.standardError.write(Data("acp-agent: the telemetry file dropped a record: \(reason)\n".utf8))
-        }
-
-        /// Writes all bytes of `line` to `descriptor`, and writes again after
-        /// a short write or an interrupted write.
-        ///
-        /// - Parameters:
-        ///   - line: The bytes.
-        ///   - descriptor: The descriptor of the file.
-        /// - Returns: `nil` when all bytes are written, else the `errno` value
-        ///   of the failed write.
-        private static func writeWhole(_ line: Data, to descriptor: Int32) -> Int32? {
-            line.withUnsafeBytes { buffer -> Int32? in
-                guard let base = buffer.baseAddress else { return nil }
-                var offset = 0
-                while offset < buffer.count {
-                    let written = Darwin.write(descriptor, base + offset, buffer.count - offset)
-                    if written >= 0 {
-                        offset += written
-                    } else if errno != EINTR {
-                        return errno
-                    }
-                }
-                return nil
-            }
-        }
+    /// The folder of `path`.
+    ///
+    /// - Parameter path: The path of the telemetry file.
+    /// - Returns: The folder, or the current folder when the path names none.
+    private static func folder(of path: String) -> String {
+        let folder = (path as NSString).deletingLastPathComponent
+        return folder.isEmpty ? currentFolder : folder
     }
 }

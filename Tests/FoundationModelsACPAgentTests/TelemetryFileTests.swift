@@ -86,6 +86,32 @@ struct TelemetryFileTests {
     /// The path of the option parsing case.
     private static let optionPath = "/tmp/acp-agent-telemetry.jsonl"
 
+    /// The record of the line format cases: its keys are out of order, and a
+    /// value holds a slash.
+    private static let unsortedRecord: [String: JSONValue] = ["path": .string("a/b"), "count": .number(2)]
+
+    /// The exact line of ``unsortedRecord``: sorted keys, the slash not
+    /// escaped, and the line end.
+    private static let unsortedRecordLine = "{\"count\":2,\"path\":\"a/b\"}\n"
+
+    /// A record with each number that JSON cannot hold, also inside an array
+    /// and an object.
+    private static let nonFiniteRecord: [String: JSONValue] = [
+        "rate": .number(.infinity),
+        "values": .array([.number(-.infinity), .number(.nan)]),
+        "nested": .object(["rate": .number(.infinity)]),
+    ]
+
+    /// The exact line of ``nonFiniteRecord``: each such number as its text.
+    private static let nonFiniteRecordLine =
+        "{\"nested\":{\"rate\":\"Infinity\"},\"rate\":\"Infinity\",\"values\":[\"-Infinity\",\"NaN\"]}\n"
+
+    /// The bytes a crash left at the end of the file: a line with no line end.
+    private static let tornLine = "{\"type\":\"lo"
+
+    /// The line that stands in the file before the writer opens it.
+    private static let earlierLine = "{\"type\":\"earlier\"}\n"
+
     // MARK: - Fixtures
 
     /// Makes a writer over a new file in a new temporary directory.
@@ -448,6 +474,68 @@ struct TelemetryFileTests {
         #expect(records.allSatisfy { Self.string("message", in: $0) == largeMessage })
     }
 
+    // MARK: - The line format and the file
+
+    /// A record is one line of JSON with sorted keys and slashes not escaped,
+    /// the format the bench readers parse.
+    @Test
+    func aRecordIsOneLineWithSortedKeys() throws {
+        let (writer, file) = try Self.makeWriter("sorted")
+
+        writer.write(Self.unsortedRecord)
+
+        #expect(try String(contentsOf: file, encoding: .utf8) == Self.unsortedRecordLine)
+    }
+
+    /// A number that JSON cannot hold, at any depth, writes as its text, so
+    /// the record still writes.
+    @Test
+    func aNonFiniteNumberWritesAsItsText() throws {
+        let (writer, file) = try Self.makeWriter("non-finite")
+
+        writer.write(Self.nonFiniteRecord)
+
+        #expect(try String(contentsOf: file, encoding: .utf8) == Self.nonFiniteRecordLine)
+    }
+
+    /// The writer appends: the lines already in the file stay, in front of
+    /// the new record.
+    @Test
+    func aRecordAppendsAfterTheLinesAlreadyInTheFile() throws {
+        let file = makeResolvedDirectory(label: "\(Self.label)-append").appendingPathComponent("telemetry.jsonl")
+        try Data(Self.earlierLine.utf8).write(to: file)
+        let writer = try TelemetryFileWriter(path: file.path)
+
+        writer.write(Self.unsortedRecord)
+
+        #expect(try String(contentsOf: file, encoding: .utf8) == Self.earlierLine + Self.unsortedRecordLine)
+    }
+
+    /// When a crash left a torn line at the end of the file, the next record
+    /// still starts on a line of its own.
+    @Test
+    func aRecordAfterATornLineStartsOnALineOfItsOwn() throws {
+        let (writer, file) = try Self.makeWriter("torn")
+        try Data(Self.tornLine.utf8).write(to: file)
+
+        writer.write(Self.unsortedRecord)
+
+        #expect(try String(contentsOf: file, encoding: .utf8) == Self.tornLine + "\n" + Self.unsortedRecordLine)
+    }
+
+    /// Each record opens the file at its path, so a record after the file was
+    /// removed makes the file again rather than going to the removed file.
+    @Test
+    func aRecordAfterTheFileWasRemovedMakesTheFileAgain() throws {
+        let (writer, file) = try Self.makeWriter("removed")
+        writer.write(Self.unsortedRecord)
+        try FileManager.default.removeItem(at: file)
+
+        writer.write(Self.unsortedRecord)
+
+        #expect(try String(contentsOf: file, encoding: .utf8) == Self.unsortedRecordLine)
+    }
+
     // MARK: - The option
 
     /// `acp --telemetry-file PATH` parses to the path.
@@ -488,6 +576,19 @@ struct TelemetryFileTests {
         let path = makeResolvedDirectory(label: "\(Self.label)-missing")
             .appendingPathComponent("absent-directory", isDirectory: true)
             .appendingPathComponent("telemetry.jsonl").path
+
+        let error = #expect(throws: ValidationError.self) {
+            try TelemetryBootstrap.makeWriter(telemetryFile: path)
+        }
+
+        #expect(error?.message.contains(path) == true)
+    }
+
+    /// A telemetry path that names a folder is a usage error, with the path
+    /// in its message.
+    @Test
+    func aTelemetryPathThatIsAFolderIsAUsageError() throws {
+        let path = makeResolvedDirectory(label: "\(Self.label)-folder").path
 
         let error = #expect(throws: ValidationError.self) {
             try TelemetryBootstrap.makeWriter(telemetryFile: path)
