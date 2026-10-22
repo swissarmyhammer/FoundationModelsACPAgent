@@ -33,9 +33,8 @@ final class GraphQLTunnelSubscriptions: Sendable {
         /// Removes one entry, and the group of its connection when that
         /// group is empty after it.
         ///
-        /// - Parameters:
-        ///   - id: The id of the subscription.
-        ///   - connection: The connection that started the subscription.
+        /// - Parameter id: The id of the subscription.
+        /// - Parameter connection: The connection that started the subscription.
         /// - Returns: The removed entry, or `nil` when there is none.
         mutating func remove(_ id: SAH.GraphQL.SubscriptionId, of connection: ConnectionId) -> Entry? {
             let removed = entries[connection]?.removeValue(forKey: id)
@@ -55,11 +54,10 @@ final class GraphQLTunnelSubscriptions: Sendable {
     /// The task starts under the lock, so it cannot end, and remove its
     /// entry, before the entry is in the table.
     ///
-    /// - Parameters:
-    ///   - id: The id that the client gave the subscription.
-    ///   - connection: The connection that starts the subscription.
-    ///   - run: Runs the subscription. It gets the generation that
-    ///     ``finish(_:of:generation:)`` takes at its end.
+    /// - Parameter id: The id that the client gave the subscription.
+    /// - Parameter connection: The connection that starts the subscription.
+    /// - Parameter run: Runs the subscription. It gets the generation that
+    ///   ``finish(_:of:generation:)`` takes at its end.
     /// - Returns: `false` when an open subscription of `connection` already
     ///   has `id`; then nothing starts.
     func start(
@@ -81,10 +79,9 @@ final class GraphQLTunnelSubscriptions: Sendable {
     /// Removes the entry of a subscription whose task ends. An entry of a
     /// later start with the same id stays.
     ///
-    /// - Parameters:
-    ///   - id: The id of the subscription.
-    ///   - connection: The connection that started the subscription.
-    ///   - generation: The generation that ``start(_:of:run:)`` gave the task.
+    /// - Parameter id: The id of the subscription.
+    /// - Parameter connection: The connection that started the subscription.
+    /// - Parameter generation: The generation that ``start(_:of:run:)`` gave the task.
     func finish(_ id: SAH.GraphQL.SubscriptionId, of connection: ConnectionId, generation: Int) {
         state.withLock { state in
             if state.entries[connection]?[id]?.generation == generation {
@@ -96,9 +93,8 @@ final class GraphQLTunnelSubscriptions: Sendable {
     /// Cancels one subscription and removes it. An id with no open
     /// subscription on `connection` does nothing.
     ///
-    /// - Parameters:
-    ///   - id: The id of the subscription.
-    ///   - connection: The connection that started the subscription.
+    /// - Parameter id: The id of the subscription.
+    /// - Parameter connection: The connection that started the subscription.
     func cancel(_ id: SAH.GraphQL.SubscriptionId, of connection: ConnectionId) {
         state.withLock { $0.remove(id, of: connection) }?.task.cancel()
     }

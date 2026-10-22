@@ -81,6 +81,22 @@ comments:
     - evidence: touched all Sources/Tests .swift files, then `swift test` (debug rebuild of every package target, HEAD f9edd6d): 1191 tests in 130 suites passed, 1 known issue (HarnessSmokeTests), 0 failures, 0 compiler warnings from this package. The only `warning:` line is SwiftPM's "missing creator for mutated node" for the mlx-swift_Cmlx.bundle dependency, not package source. `python3 -m unittest discover -s bench`: 265 tests OK, skipped=1 (the old swebench skip).
     - next: review. No code changes, nothing to commit.
   timestamp: 2026-10-21T23:58:33.794716+00:00
+- actor: claude-code
+  id: 01m5geng8aha4hgaxvxs1cn9dm
+  text: |-
+    ### review — findings
+    - evidence: review sha 1dc4592..HEAD — 2 findings (7 refuted); prior finding GraphQLTunnelSubscriptions.swift:21 checked and fixed in db9b39b; new: Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:37, Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:100 (swift/doc-parameter-naming)
+    - next: implement — fix every `///   - id:` doc parameter entry in GraphQLTunnelSubscriptions.swift to the `- Parameter` form, then re-review
+  timestamp: 2026-10-22T00:02:40.010134+00:00
+- actor: claude-code
+  id: 01m5gep9n7beaqfhtk9qfqseed
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — db9b39b (drop the assign-only Key; key by connection, then id), +1 test
+    - test: green — swift test 1191/130, 1 known issue, 0 package warnings; bench 265 OK
+    - commit: b309312
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:37, Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:100 (swift/doc-parameter-naming). The prior finding :21 is checked and fixed.
+  timestamp: 2026-10-22T00:03:06.023741+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G0K65FDK5TE2MG93XK7PA4
@@ -117,3 +133,13 @@ The host also checks the folder of a `sessionFolder` call (EXTRAS-9 rule 4).
 > - `.kanban/ (from .reviewignore)` — 2 file(s)
 
 - [x] `Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:21` `code-hygiene/dead-code-swift` — var.instance `subscription` is assignOnlyProperty.
+
+## Review Findings (2026-10-21 18:58)
+
+> Scope: `review sha 1dc4592..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:37` `swift/doc-parameter-naming` — Doc comment parameter entry uses `- id:` instead of `- Parameter id:` — the rule requires parameter entries to be prefixed with the Parameter keyword. Change `///   - id:` to `///   - Parameter id:`.
+- [x] `Sources/FoundationModelsACPAgent/Agent/GraphQLTunnelSubscriptions.swift:100` `swift/doc-parameter-naming` — Doc comment parameter entry uses `- id:` instead of `- Parameter id:` — the rule requires parameter entries to be prefixed with the Parameter keyword. Change `///   - id:` to `///   - Parameter id:`.
