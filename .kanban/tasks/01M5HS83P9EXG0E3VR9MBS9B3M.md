@@ -37,8 +37,25 @@ comments:
     - evidence: touched all Sources/Tests swift files, `swift test` (debug, own targets recompiled) - 1230 tests in 135 suites passed, 1 known issue, 0 failures, 0 skipped, 0 warnings from package sources (only a SwiftPM build-system note: "missing creator for mutated node" for the dependency bundle mlx-swift_Cmlx.bundle). `python3 -m unittest discover -s bench` - 265 tests OK (skipped=1, the old swebench skip).
     - next: review. No code changed, nothing to commit.
   timestamp: 2026-10-22T19:37:46.338436+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5jj316jyct6z5732np0tqnh
+  text: |-
+    ### review — clean
+    - evidence: `review sha a1fe667..HEAD`. 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). 2 source files reviewed; 2 .kanban files excluded by .reviewignore. There are no earlier Review Findings sections.
+    - scope: this pass covered the --telemetry-file writer on Extras JSONLFile (a787fb1). The open subtask "TranscriptStore reads index.md" was superseded and moved to ^am394r2 by the orchestrator's scope comment of 2026-10-22.
+    - next: done
+  timestamp: 2026-10-22T19:40:57.938383+00:00
+- actor: claude-code
+  id: 01m5jj3dv0whfykv1zhm2ckjsj
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — a787fb1 (the --telemetry-file writer on Extras JSONLFile; Extras 589f27e→78d2532), +6 tests
+    - test: green — swift test 1230/135, 1 known issue, 0 package warnings; bench 265 OK
+    - commit: a4b0a35
+    - review: clean — 0 findings. Card in done. The unchecked subtask "TranscriptStore reads index.md" moved to ^am394r2.
+  timestamp: 2026-10-22T19:41:10.880137+00:00
+position_column: done
+position_ordinal: ffff8d80
 title: Move every JSONL write onto Extras JSONLFile, and read session folders from index.md
 ---
 ## What

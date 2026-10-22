@@ -20,6 +20,14 @@ comments:
     - `ProjectStore(directory:)`: the host gives the folder; one `<sha256 hex of standardized path>.md` per project; no Router default. The folder comes from the new AgentHome card (synced root, `projects/`).
     - User answer: session recordings stay in the project folder (`<cwd>/.acp-agent/transcripts`).
   timestamp: 2026-10-22T12:44:13.720771+00:00
+- actor: claude-code
+  id: 01m5jj3jg2t7cbzm8pbfk5vn08
+  text: |-
+    ### finish — skipped (blocked upstream), 2026-10-22
+    - Router ^2cqepsd (index.md, recordedSessions) is in review, and ^16ken1m (ProjectStore) is in todo; neither is on Router main. So the API this card needs does not exist yet.
+    - Router main already deleted SessionIndex and sessions.jsonl (70a5d3b9). This repo still uses Router's SessionIndex, so DO NOT run a full `swift package update` before this card is done. Update only the packages that a card needs.
+    - Also moved here from ^mbs9b3m: "TranscriptStore reads index.md" (in place of session.json).
+  timestamp: 2026-10-22T19:41:15.650207+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
