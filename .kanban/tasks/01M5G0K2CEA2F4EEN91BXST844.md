@@ -117,11 +117,27 @@ comments:
     - evidence: HEAD c4c231d, no code change, nothing to commit. Sources/Tests touched to force rebuild of this package's own targets. `swift test`: 1202 tests in 131 suites passed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps), 0 skips. `python3 -m unittest discover -s bench`: 265 ran, OK (skipped=1, the old swebench skip). `swift test` in IntegrationTests: 27 tests in 13 suites passed. Only warning in either build is SwiftPM's "missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS" (dependency bundle, not this package's sources); zero compiler warnings from this package.
     - next: review
   timestamp: 2026-10-22T01:02:26.805848+00:00
+- actor: claude-code
+  id: 01m5gj7qyvnfc8w28k1bpxvn1t
+  text: |-
+    ### review — clean
+    - evidence: `review sha 759f69f..HEAD` — 0 findings (7 attempted, 0 failed); 4 files reviewed, `.kanban/` excluded by .reviewignore. All 5 prior findings (19:39, 19:52) checked; c8ad78f restored the four empty `userDeviceTokens` defaults to `= []`, non-empty `Set([...])` arguments kept.
+    - next: moved to done.
+  timestamp: 2026-10-22T01:05:03.451086+00:00
+- actor: claude-code
+  id: 01m5gj87959xfwz9k0bdasshwm
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — c8ad78f (the empty defaults `= []`; the non-empty `Set([...])` arguments kept)
+    - test: green — swift test 1202/131, 1 known issue, 0 package warnings; bench 265 OK; IntegrationTests 27/13
+    - commit: e3cc75d
+    - review: clean — 0 findings; all 5 earlier findings checked. Card in done.
+  timestamp: 2026-10-22T01:05:19.141074+00:00
 depends_on:
 - 01M5G0JS7YFSWXJXXHEZNEPBKJ
 - 01M5G72V9BGAQNTKHBXW9NH4C6
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffff8a80
 title: 'ACPA-5b: the trust of a connection comes from its credential, never from the client'
 ---
 Spec: ACPA-5 (D120 b), TestudoApp foundationmodels-acpagent.md.
