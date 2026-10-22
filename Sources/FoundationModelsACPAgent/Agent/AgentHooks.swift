@@ -17,18 +17,6 @@ import FoundationModelsHooks
 ///   registers on the dispatcher, and to the Multitool `snapshots` capability
 ///   of each session (`ToolCatalog.makeRegistry(context:)`).
 public struct AgentHooks: Sendable {
-    /// The environment key of the base directory of the user data files, in
-    /// the XDG Base Directory specification.
-    static let dataHomeEnvironmentKey = "XDG_DATA_HOME"
-
-    /// The base directory of the user data files when `XDG_DATA_HOME` is not
-    /// an absolute path, relative to the home directory.
-    static let defaultDataHomePath = ".local/share"
-
-    /// The name of the folder of the hook data, under the data folder of the
-    /// dotfolder name.
-    static let hooksFolderName = "hooks"
-
     /// The name of the folder of the snapshots, under the data directory.
     static let snapshotFolderName = "snapshot"
 
@@ -43,29 +31,12 @@ public struct AgentHooks: Sendable {
     /// the dispatcher as its first visitor.
     ///
     /// - Parameter dataDirectory: The directory where the hooks keep their
-    ///   data. The snapshots go into its ``snapshotFolderName`` folder.
+    ///   data, for example ``AgentHome/hooksDirectory``. The snapshots go
+    ///   into its ``snapshotFolderName`` folder.
     public init(dataDirectory: URL) {
         dispatcher = HookDispatcher(dataDirectory: dataDirectory)
         snapshotStore = SnapshotStore(directory: Self.snapshotDirectory(in: dataDirectory))
         dispatcher.register(SnapshotHook(store: snapshotStore))
-    }
-
-    /// The hook data directory of a host: `$XDG_DATA_HOME/<name>/hooks` when
-    /// `environment` has an absolute `XDG_DATA_HOME`, and
-    /// `~/.local/share/<name>/hooks` when not.
-    ///
-    /// The XDG Base Directory specification tells that a relative value is
-    /// not valid, thus a relative `XDG_DATA_HOME` gives the default. The
-    /// `acp-agent` CLI has the dotfolder name `acp-agent`.
-    ///
-    /// - Parameters:
-    ///   - name: The dotfolder name of the host.
-    ///   - environment: The environment that `XDG_DATA_HOME` is read from.
-    /// - Returns: The hook data directory. The call does not make it.
-    public static func dataDirectory(name: DotfolderName, environment: [String: String]) -> URL {
-        dataHome(environment: environment)
-            .appendingPathComponent(name.rawValue, isDirectory: true)
-            .appendingPathComponent(hooksFolderName, isDirectory: true)
     }
 
     /// The directory of the snapshots under a hook data directory.
@@ -74,19 +45,6 @@ public struct AgentHooks: Sendable {
     /// - Returns: The ``snapshotFolderName`` folder of `dataDirectory`.
     static func snapshotDirectory(in dataDirectory: URL) -> URL {
         dataDirectory.appendingPathComponent(snapshotFolderName, isDirectory: true)
-    }
-
-    /// The base directory of the user data files.
-    ///
-    /// - Parameter environment: The environment that `XDG_DATA_HOME` is read
-    ///   from.
-    /// - Returns: The absolute `XDG_DATA_HOME`, or `~/.local/share`.
-    private static func dataHome(environment: [String: String]) -> URL {
-        guard let dataHome = environment[dataHomeEnvironmentKey], dataHome.hasPrefix("/") else {
-            return FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(defaultDataHomePath, isDirectory: true)
-        }
-        return URL(fileURLWithPath: dataHome, isDirectory: true)
     }
 }
 

@@ -140,7 +140,7 @@ import Testing
         let builder = MultiTool.Builder()
         try SandboxComposition.composeShell(
             into: builder,
-            options: ShellToolOptions(storeDirectory: Self.makeResolvedDirectory(named: "store")),
+            storeDirectory: Self.makeResolvedDirectory(named: "store"),
             sandbox: RefusingPreflightSandbox())
         let registry = try builder.buildRegistry()
 

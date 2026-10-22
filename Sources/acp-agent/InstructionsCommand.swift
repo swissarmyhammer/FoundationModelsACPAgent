@@ -31,6 +31,9 @@ extension AcpAgentCommand {
             /// The `--cwd` option (§5.10).
             @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             /// Which layer receives the file. The project layer is the
             /// default, which matches `config init`.
             @Flag var layer: LayerSelection = .project
@@ -44,14 +47,15 @@ extension AcpAgentCommand {
             var overwrites = false
 
             mutating func run() throws {
-                try report(environment: ProcessInfo.processInfo.environment).write()
+                try report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
+                    .write()
             }
 
             /// Writes the file and builds the report: the written path, and
             /// nothing for stderr.
             ///
-            /// - Parameter environment: The environment the stack reads
-            ///   `XDG_CONFIG_HOME` from.
+            /// - Parameter environment: The environment the home of the
+            ///   stack is read from (``AgentComposition/home(environment:)``).
             /// - Returns: The report.
             /// - Throws: `DotfolderNameError` when the dotfolder name is
             ///   refused, or what ``LayerFileWriter/write(_:named:into:of:overwrites:)``

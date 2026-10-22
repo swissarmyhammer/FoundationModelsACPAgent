@@ -17,11 +17,6 @@ import Testing
     /// The dotfolder name of the host in this suite.
     private static let dotfolderName = "transcript-override-host"
 
-    /// The environment variable that roots the user configuration layer.
-    /// The suite sets it, so no composition touches the real home
-    /// directory.
-    private static let configHomeVariable = "XDG_CONFIG_HOME"
-
     /// The text of the one prompt of each session. The first prompt writes
     /// the index record, and a session with no prompt is not listable.
     private static let promptText = "record this session"
@@ -77,8 +72,9 @@ import Testing
         }
     }
 
-    /// Composes the agent over the stub model, with an empty user layer,
-    /// and wires an initialized harness around it.
+    /// Composes the agent over the stub model, with a custom home in
+    /// throwaway folders (an empty user layer), so no composition touches
+    /// the real home directory, and wires an initialized harness around it.
     ///
     /// - Parameters:
     ///   - label: The directory label, so a leftover directory says where
@@ -100,12 +96,11 @@ import Testing
                 projectConfigYAML,
                 in: workspace.appendingPathComponent(".\(dotfolderName)", isDirectory: true))
         }
-        let environment = try StubAgentDefaultsLayer.makeEnvironment(
-            name: dotfolderName,
-            base: [configHomeVariable: makeResolvedDirectory(label: "\(label)-config").path])
+        let environment = try StubAgentDefaultsLayer.makeEnvironment(name: dotfolderName, base: [:])
         let composed = try await ComposedAgent.compose(
             name: DotfolderName(dotfolderName),
             workingDirectory: workspace,
+            home: AgentHomeFixture.make(label: label),
             environment: environment,
             modelSource: .stub,
             transcriptLocation: transcriptLocation)

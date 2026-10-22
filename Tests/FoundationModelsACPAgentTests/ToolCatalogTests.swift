@@ -650,6 +650,21 @@ import Testing
 
         #expect(registry.commandUpdates != nil)
     }
+
+    // MARK: The language server install
+
+    /// The install settings of the language servers keep their record in the
+    /// home, and follow the `autoInstall` option.
+    @Test(arguments: [true, false])
+    func theLanguageServerInstallKeepsItsRecordInTheHome(autoInstall: Bool) {
+        let home = AgentHomeFixture.make(label: "ToolCatalogTests-languageServers")
+
+        let install = ToolCatalog.makeLanguageServerInstall(
+            options: CodeContextToolOptions(autoInstall: autoInstall), home: home)
+
+        #expect(install.failureRecordDirectory == home.languageServerInstallRecordDirectory)
+        #expect(install.isEnabled == autoInstall)
+    }
 }
 
 /// An embedding container that never answers. `embed(texts:)` waits until

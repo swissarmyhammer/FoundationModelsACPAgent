@@ -159,9 +159,9 @@ public struct LoadedConfiguration: Equatable, Sendable {
 /// Layer 1 is the builtin file `builtin.config.yaml`, a resource of
 /// this library. Over it is the configuration stack of ``SettingsFolders``:
 /// the user layer under the project layer `<cwd>/.<name>/`. The user layer
-/// is the root settings folder of the host when the host gives one, and
-/// otherwise `~/.config/<name>/` (or `$XDG_CONFIG_HOME/<name>/` when that
-/// variable is set and absolute). Both dotfolder layers render untrusted.
+/// comes from the ``AgentHome`` of the host: the synced root of a custom
+/// home, or `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI. Both
+/// dotfolder layers render untrusted.
 /// Layer 1 is not a template and sets no source, thus a key that only
 /// layer 1 sets reports the builtin layer.
 ///
@@ -230,18 +230,17 @@ public struct ConfigurationLoader: Sendable {
 
     /// Builds the stack for `name`, over the builtin configuration file.
     ///
-    /// The user layer root of the configuration stack is the root settings
-    /// folder of ``SettingsFolders``, thus `userDirectory` goes to the
-    /// settings folders as their root.
+    /// The user layer root of the configuration stack comes from `home`
+    /// (``SettingsFolders``).
     ///
     /// - Parameters:
     ///   - name: The validated dotfolder name.
     ///   - workingDirectory: The session working directory; the project
     ///     layer roots at `<workingDirectory>/.<name>/`.
-    ///   - userDirectory: The user layer root, or `nil` to derive it from
-    ///     `environment` and the home directory. Tests inject a value so
-    ///     they never touch the real home directory.
-    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - home: The home of the host, which gives the user layer. Tests give
+    ///     a custom home in throwaway folders, so they never touch the real
+    ///     home directory.
+    ///   - environment: The environment the defaults layer is read from.
     ///   - transcriptLocation: The transcript location that wins over every
     ///     layer, or `nil` (the default) to let the files decide — see
     ///     ``transcriptLocation``.
@@ -252,13 +251,13 @@ public struct ConfigurationLoader: Sendable {
     public init(
         name: DotfolderName,
         workingDirectory: URL,
-        userDirectory: URL? = nil,
+        home: AgentHome,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil
     ) {
         self.init(
-            name: name, workingDirectory: workingDirectory, userDirectory: userDirectory,
+            name: name, workingDirectory: workingDirectory, home: home,
             environment: environment, transcriptLocation: transcriptLocation,
             secretStore: secretStore, builtinLayer: BuiltinConfigurationFile.root)
     }
@@ -269,8 +268,8 @@ public struct ConfigurationLoader: Sendable {
     /// - Parameters:
     ///   - name: The validated dotfolder name.
     ///   - workingDirectory: The session working directory.
-    ///   - userDirectory: The user layer root, or `nil` to derive it.
-    ///   - environment: The environment `XDG_CONFIG_HOME` is read from.
+    ///   - home: The home of the host, which gives the user layer.
+    ///   - environment: The environment the defaults layer is read from.
     ///   - transcriptLocation: The transcript location that wins over every
     ///     layer, or `nil` to let the files decide.
     ///   - secretStore: The store that gives the value of each secret
@@ -280,15 +279,14 @@ public struct ConfigurationLoader: Sendable {
     init(
         name: DotfolderName,
         workingDirectory: URL,
-        userDirectory: URL?,
+        home: AgentHome,
         environment: [String: String],
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
         builtinLayer: @escaping @Sendable () throws -> YAMLValue
     ) {
         self.init(
-            settingsFolders: SettingsFolders(
-                name: name, rootSettingsFolder: userDirectory, environment: environment),
+            settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
             workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
             secretStore: secretStore, builtinLayer: builtinLayer)
     }

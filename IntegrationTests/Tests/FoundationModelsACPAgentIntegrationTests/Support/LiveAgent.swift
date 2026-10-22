@@ -35,13 +35,14 @@ enum LiveAgent {
         try userConfigYAML.write(
             to: userDirectory.appendingPathComponent(ConfigurationLoader.configFileName),
             atomically: true, encoding: .utf8)
+        let home = AgentHomeFixture.make(label: label, synced: userDirectory)
         let configuration = try ConfigurationLoader(
             name: DotfolderName(AgentClientHarness.dotfolderName),
             workingDirectory: userDirectory,
-            userDirectory: userDirectory,
+            home: home,
             environment: [:]
         ).load().configuration
-        let hooks = AgentHooks(dataDirectory: makeResolvedDirectory(label: "\(label)-hooks"))
+        let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
         let router = Router(
             recordingsDir: makeResolvedDirectory(label: "\(label)-recordings"),
             loader: LiveModelLoader(),
@@ -52,7 +53,7 @@ enum LiveAgent {
             router: router,
             hooks: hooks,
             configuration: configuration,
-            rootSettingsFolder: userDirectory,
+            home: home,
             environment: [:])
         return await AgentClientHarness.makeRecording(agent: agent)
     }

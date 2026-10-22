@@ -4,8 +4,9 @@ import FoundationModelsExtras
 /// The finding of one directory a `doctor` component needs writable
 /// (cli-plan.md §5.12).
 ///
-/// Two components ask the same question of two different directories: the
-/// transcripts recording root, and the shell store. The answer is the same
+/// Three components ask the same question of different directories: the
+/// transcripts recording root, the shell store, and the two roots of the
+/// home (``HomeDoctor``). The answer is the same
 /// in each case — the directory exists and can be written, or the nearest
 /// directory above it can be written, so the code that owns it can create
 /// it — so the rule is written one time here and each component states only

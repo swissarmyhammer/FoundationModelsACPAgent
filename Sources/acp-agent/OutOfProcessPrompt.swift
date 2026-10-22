@@ -26,10 +26,11 @@ struct OwnExecutableUnknownError: Error, CustomStringConvertible {
 /// prompt differently. That is the claim `--out-of-process` exists to
 /// test, and the tier-3 suite reads it byte for byte.
 ///
-/// **The child inherits this process's environment**, because that is what
-/// `AgentProcess` gives it. So `ACP_AGENT_STUB_MODEL` and every other
-/// setting reach the spawned agent unchanged, and the child then composes
-/// its own agent from its own copy of them. It also inherits this
+/// **The child gets the environment of the run**: this process's
+/// environment, with `ACP_AGENT_HOME` set when `--home` was given. So
+/// `ACP_AGENT_STUB_MODEL`, the home and every other setting reach the
+/// spawned agent, and the child then composes its own agent from its own
+/// copy of them. It also inherits this
 /// process's working directory, which is what roots its start-up
 /// configuration; `--cwd` still names the session's directory, and the
 /// child obeys that per session, as `acp` mode does for every client
@@ -65,6 +66,8 @@ enum OutOfProcessPrompt {
     ///
     /// - Parameters:
     ///   - command: The absolute path of the binary to start.
+    ///   - environment: The environment of the child: the environment of
+    ///     the run, with the home variable of `--home` when it was given.
     ///   - session: The session the prompt runs in.
     ///   - prompt: The text of the one prompt.
     ///   - writer: The writer each `agent_message_chunk` goes to, as it
@@ -85,6 +88,7 @@ enum OutOfProcessPrompt {
     ///   writer throws.
     static func answer(
         command: String,
+        environment: [String: String],
         in session: RunSession,
         prompt: String,
         into writer: AnswerWriter,
@@ -92,7 +96,7 @@ enum OutOfProcessPrompt {
         interruptedBy install: InterruptHandler.Installer = InterruptHandler.unwatched,
         terminatedBy terminate: TerminationHandler.Installer = TerminationHandler.unwatched
     ) async throws -> RunPromptResult {
-        let agent = try AgentProcess(command: command, arguments: [acpSubcommand])
+        let agent = try AgentProcess(command: command, arguments: [acpSubcommand], environment: environment)
         let model = await ConnectionModel()
         // `.disabled` and never stdout: the answer of the prompt owns file
         // descriptor 1 (§5.6). The child writes its own diagnostics to the

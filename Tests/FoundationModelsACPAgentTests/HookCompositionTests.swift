@@ -84,46 +84,41 @@ import Testing
         """
     }
 
-    // MARK: - The data directory
+    // MARK: - The hooks folder of the home
 
-    /// An absolute `XDG_DATA_HOME` roots the hook data directory:
-    /// `$XDG_DATA_HOME/<name>/hooks`.
-    @Test
-    func theDataDirectoryIsUnderAnAbsoluteXDGDataHome() throws {
-        let dataHome = "/private/tmp/hook-composition-data-home"
-
-        let directory = AgentHooks.dataDirectory(
-            name: try DotfolderName(AgentClientHarness.dotfolderName), environment: ["XDG_DATA_HOME": dataHome])
-
-        #expect(directory.path == "\(dataHome)/\(AgentClientHarness.dotfolderName)/hooks")
-    }
-
-    /// With no `XDG_DATA_HOME`, or with a relative one, the hook data
-    /// directory is `~/.local/share/<name>/hooks`, as the XDG Base Directory
-    /// specification tells.
-    @Test(arguments: [[:], ["XDG_DATA_HOME": "relative/data"]])
-    func theDataDirectoryDefaultsToTheLocalShareFolderOfTheHome(environment: [String: String]) throws {
-        let directory = AgentHooks.dataDirectory(
-            name: try DotfolderName(AgentClientHarness.dotfolderName), environment: environment)
+    /// With no `XDG_DATA_HOME`, or with a relative one, the hooks folder of
+    /// the XDG home is `~/.local/share/<name>/hooks`, as the XDG Base
+    /// Directory specification tells. `AgentHomeTests` covers an absolute
+    /// `XDG_DATA_HOME`.
+    @Test(arguments: [[:], [AgentHome.dataHomeEnvironmentKey: "relative/data"]])
+    func theHooksOfTheXDGHomeDefaultToTheLocalShareFolderOfTheHome(environment: [String: String]) throws {
+        let directory = AgentHome.xdg(
+            name: try DotfolderName(AgentClientHarness.dotfolderName), environment: environment
+        ).hooksDirectory
 
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         #expect(directory.path == "\(home)/.local/share/\(AgentClientHarness.dotfolderName)/hooks")
     }
 
-    /// A composition with no `hooksDataDirectory` keeps the hook data in
-    /// ``AgentHooks/dataDirectory(name:environment:)`` of its
-    /// `XDG_DATA_HOME`, as before the parameter was added.
+    /// A composition with the XDG home keeps the hook data in
+    /// `$XDG_DATA_HOME/<name>/hooks`, the folder that the CLI always used.
     @Test
-    func aCompositionWithNoHooksDataDirectoryUsesTheDataHome() async throws {
+    func aCompositionWithTheXDGHomeKeepsTheHookDataInTheDataHome() async throws {
         let dataHome = makeResolvedDirectory(label: "HookCompositionTests-compose-data")
+        let environment = [
+            AgentHome.configHomeEnvironmentKey: makeResolvedDirectory(label: "HookCompositionTests-compose-config")
+                .path,
+            AgentHome.dataHomeEnvironmentKey: dataHome.path,
+        ]
+        let home = AgentHome.xdg(name: try DotfolderName(AgentClientHarness.dotfolderName), environment: environment)
 
         let composed = try await composeStubAgent(
-            name: AgentClientHarness.dotfolderName, label: "HookCompositionTests-compose", dataHome: dataHome)
+            name: AgentClientHarness.dotfolderName, label: "HookCompositionTests-compose", home: home,
+            environment: environment)
 
-        let expected = AgentHooks.dataDirectory(
-            name: try DotfolderName(AgentClientHarness.dotfolderName),
-            environment: [AgentHooks.dataHomeEnvironmentKey: dataHome.path])
-        #expect(composed.agent.hooks.dispatcher.dataDirectory.path == expected.path)
+        #expect(
+            composed.agent.hooks.dispatcher.dataDirectory.path
+                == "\(dataHome.path)/\(AgentClientHarness.dotfolderName)/hooks")
     }
 
     /// The agent hooks keep the snapshots in the `snapshot` folder of the

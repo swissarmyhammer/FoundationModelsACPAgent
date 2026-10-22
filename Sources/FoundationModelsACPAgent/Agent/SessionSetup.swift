@@ -341,8 +341,8 @@ enum SessionSetup {
         }
     }
 
-    /// The user layer's root in `stack`: the root settings folder of the
-    /// host when the host gives one, and `~/.config/<name>/` for the CLI.
+    /// The user layer's root in `stack`: the synced root of a custom home,
+    /// and `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI.
     /// `ProjectRegistry` lives there, and the `home` transcript location
     /// resolves against it.
     ///
@@ -849,7 +849,7 @@ extension RoutedACPAgent {
     /// Each request path that reads the configuration of a `cwd` calls it,
     /// so each read gets the same ``settingsFolders`` and
     /// ``transcriptLocation``. A new path that calls it cannot miss the code
-    /// override or the root settings folder of the host. The loader comes
+    /// override or the home of the host. The loader comes
     /// from ``settingsStore``, thus the store and the loader read the same
     /// folders.
     ///
@@ -908,7 +908,6 @@ extension RoutedACPAgent {
             clientMCPServers: clientMCPServers,
             settingsFolders: settingsFolders,
             environment: environment,
-            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
             inlineSettleGrace: inlineSettleGrace,
             userPresence: userPresence,
             snapshotStore: hooks.snapshotStore,
@@ -922,8 +921,8 @@ extension RoutedACPAgent {
     /// The catalog context gets ``environment``, the environment of the
     /// host, so each session tool that reads an environment value reads the
     /// value the host gave (task ^b2kb6j1). It also gets
-    /// ``skillsMarketplaceCacheDirectory``, the marketplace cache folder of
-    /// the host. `session/new` and
+    /// ``settingsFolders``, whose ``home`` gives the marketplace cache folder
+    /// and the machine state folder of the session. `session/new` and
     /// `session/resume` compose through this function. A model-slot switch
     /// composes nothing: the replacement session gets the tools of this
     /// composition.

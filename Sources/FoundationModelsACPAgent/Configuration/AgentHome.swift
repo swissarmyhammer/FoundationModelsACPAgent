@@ -63,6 +63,9 @@ public struct AgentHome: Sendable, Equatable {
     /// root of a custom home.
     static let languageServersFolderName = "language-servers"
 
+    /// The folder of the shell store in the state folder of a project.
+    static let shellFolderName = "shell"
+
     /// The environment key of the base directory of the user configuration
     /// files, in the XDG Base Directory specification.
     static let configHomeEnvironmentKey = "XDG_CONFIG_HOME"
@@ -203,6 +206,18 @@ public struct AgentHome: Sendable, Equatable {
     public func projectStateDirectory(of workingDirectory: URL) -> URL {
         local.appendingPathComponent(Self.projectsFolderName, isDirectory: true)
             .appendingPathComponent(Self.projectKey(of: workingDirectory), isDirectory: true)
+    }
+
+    /// The default shell store of one project: the `shell` folder of its
+    /// ``projectStateDirectory(of:)``. The shell capability keeps the history
+    /// and the captured output of the commands there, unless
+    /// `tools.shell.storeDirectory` names an other folder.
+    ///
+    /// - Parameter workingDirectory: The working directory of the project.
+    /// - Returns: The folder. The call does not make it.
+    public func shellStoreDirectory(of workingDirectory: URL) -> URL {
+        projectStateDirectory(of: workingDirectory)
+            .appendingPathComponent(Self.shellFolderName, isDirectory: true)
     }
 
     /// The user layer root of a settings stack.

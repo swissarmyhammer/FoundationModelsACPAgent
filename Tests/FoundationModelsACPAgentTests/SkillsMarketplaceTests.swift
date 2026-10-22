@@ -100,20 +100,39 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         """
     }
 
+    /// The dotfolder name of the settings folders of each context.
+    static let dotfolderName = "skills-marketplace-test"
+
+    /// The environment of a context that names `cache` in
+    /// `SKILLS_MARKETPLACE_CACHE`, or the empty environment for no cache.
+    /// The XDG folders are throwaway folders, so an XDG home over this
+    /// environment reads no folder of the real home directory.
+    ///
+    /// - Parameter cache: The marketplace cache folder, or `nil`.
+    /// - Returns: The environment.
+    static func environment(cache: URL?) -> [String: String] {
+        guard let cache else {
+            return [:]
+        }
+        return [
+            MarketplaceStore.cacheDirectoryVariable: cache.path,
+            AgentHome.configHomeEnvironmentKey: makeResolvedDirectory(label: "SkillsMarketplaceTests-config").path,
+            AgentHome.dataHomeEnvironmentKey: makeResolvedDirectory(label: "SkillsMarketplaceTests-data").path,
+        ]
+    }
+
     /// Makes a catalog context whose one marketplace is `repository` on
     /// ``marketplaceBranch``.
     ///
     /// - Parameters:
     ///   - repository: The work tree of the local marketplace repository.
-    ///   - cache: The marketplace cache folder that the environment of the
-    ///     context names in `SKILLS_MARKETPLACE_CACHE`, or `nil` for an empty
-    ///     environment.
-    ///   - skillsMarketplaceCacheDirectory: The marketplace cache folder that
-    ///     the host gives to the context, or `nil` (the default) for none.
+    ///   - home: The home of the settings folders of the context, which
+    ///     gives the cache folder of the marketplace store.
+    ///   - environment: The environment of the context.
     /// - Returns: The context.
-    /// - Throws: Whatever the profile resolve throws.
+    /// - Throws: Whatever the dotfolder name or the profile resolve throws.
     static func makeContext(
-        repository: URL, cache: URL?, skillsMarketplaceCacheDirectory: URL? = nil
+        repository: URL, home: AgentHome, environment: [String: String]
     ) async throws -> CatalogContext {
         var configuration = AgentConfiguration()
         configuration.tools.codeContext = .disabled
@@ -125,9 +144,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
             configuration: configuration,
             profile: try await makeStubProfile(
                 cacheDirectory: makeResolvedDirectory(label: "SkillsMarketplaceTests-models")),
-            settingsFolders: try SettingsFoldersFixture.make(label: "SkillsMarketplaceTests"),
-            environment: cache.map { [MarketplaceStore.cacheDirectoryVariable: $0.path] } ?? [:],
-            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory)
+            settingsFolders: SettingsFolders(name: try DotfolderName(dotfolderName), home: home, environment: [:]),
+            environment: environment)
     }
 
     /// Makes the skills source of `context`, and reads the entry names of
@@ -162,13 +180,18 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
     /// A marketplace on the `main` branch of a local git repository gives
     /// its skill to the skills registry and its agent to the `agents` tool,
-    /// through the one store of the session. The store writes its cache into
-    /// the folder that the environment of the context names.
+    /// through the one store of the session. With the XDG home, the store
+    /// writes its cache into the folder that the environment of the context
+    /// names.
     @Test
     func aMarketplaceOnMainGivesItsSkillAndItsAgentToTheSession() async throws {
         let repository = try Self.makeMarketplaceRepository()
         let cache = makeResolvedDirectory(label: "SkillsMarketplaceTests-cache")
-        let context = try await Self.makeContext(repository: repository, cache: cache)
+        let environment = Self.environment(cache: cache)
+        let context = try await Self.makeContext(
+            repository: repository,
+            home: .xdg(name: try DotfolderName(Self.dotfolderName), environment: environment),
+            environment: environment)
 
         let skills = await SurfaceCatalog.makeSkillsSource(context: context)
         let surface = try await SurfaceCatalog.sessionSurface(context: context, skills: skills)
@@ -181,36 +204,37 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         await surface.shutdown()
     }
 
-    // MARK: - The cache folder of the host
+    // MARK: - The cache folder of a custom home
 
-    /// The store writes its cache into the folder that the host gives
-    /// (``CatalogContext/skillsMarketplaceCacheDirectory``), when the
+    /// The store writes its cache into the skills marketplace cache of a
+    /// custom home (``AgentHome/skillsMarketplaceCacheDirectory``), when the
     /// environment names no cache folder.
     @Test
-    func theStoreWritesItsCacheIntoTheFolderOfTheHost() async throws {
+    func theStoreWritesItsCacheIntoTheFolderOfACustomHome() async throws {
         let repository = try Self.makeMarketplaceRepository()
-        let hostCache = makeResolvedDirectory(label: "SkillsMarketplaceTests-host-cache")
+        let home = AgentHomeFixture.make(label: "SkillsMarketplaceTests-home")
         let context = try await Self.makeContext(
-            repository: repository, cache: nil, skillsMarketplaceCacheDirectory: hostCache)
+            repository: repository, home: home, environment: Self.environment(cache: nil))
 
-        let contents = try await Self.cacheContents(of: context, in: [hostCache])
+        let contents = try await Self.cacheContents(of: context, in: [home.skillsMarketplaceCacheDirectory])
 
         #expect(contents.map(\.isEmpty) == [false])
     }
 
-    /// The folder that the host gives wins over the folder that
+    /// The cache folder of a custom home wins over the folder that
     /// `SKILLS_MARKETPLACE_CACHE` of the environment names: the store writes
-    /// its cache into the folder of the host, and the folder of the
+    /// its cache into the folder of the home, and the folder of the
     /// environment stays empty.
     @Test
-    func theFolderOfTheHostWinsOverTheCacheFolderOfTheEnvironment() async throws {
+    func theFolderOfACustomHomeWinsOverTheCacheFolderOfTheEnvironment() async throws {
         let repository = try Self.makeMarketplaceRepository()
-        let hostCache = makeResolvedDirectory(label: "SkillsMarketplaceTests-host-cache")
+        let home = AgentHomeFixture.make(label: "SkillsMarketplaceTests-home")
         let environmentCache = makeResolvedDirectory(label: "SkillsMarketplaceTests-environment-cache")
         let context = try await Self.makeContext(
-            repository: repository, cache: environmentCache, skillsMarketplaceCacheDirectory: hostCache)
+            repository: repository, home: home, environment: Self.environment(cache: environmentCache))
 
-        let contents = try await Self.cacheContents(of: context, in: [hostCache, environmentCache])
+        let contents = try await Self.cacheContents(
+            of: context, in: [home.skillsMarketplaceCacheDirectory, environmentCache])
 
         #expect(contents.map(\.isEmpty) == [false, true])
     }

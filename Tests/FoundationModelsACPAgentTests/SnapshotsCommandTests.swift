@@ -55,17 +55,19 @@ struct SnapshotsCommandTests {
 
         /// The environment that the commands read.
         var environment: [String: String] {
-            configFixture.environment.merging([AgentHooks.dataHomeEnvironmentKey: dataHome.path]) { _, data in data }
+            configFixture.environment.merging([AgentHome.dataHomeEnvironmentKey: dataHome.path]) { _, data in data }
         }
 
-        /// The shadow folder of `sessionKey` under the data home.
+        /// The shadow folder of `sessionKey` in the hooks folder of the XDG
+        /// home of the CLI, under the data home.
         ///
         /// - Parameter sessionKey: The session key.
         /// - Returns: The folder.
         func shadowFolder(of sessionKey: String) throws -> URL {
-            let dataDirectory = AgentHooks.dataDirectory(
-                name: try DotfolderName(AgentComposition.dotfolderName), environment: environment)
-            return AgentHooks.snapshotDirectory(in: dataDirectory).appendingPathComponent(sessionKey, isDirectory: true)
+            let hooksDirectory = AgentHome.xdg(
+                name: try DotfolderName(AgentComposition.dotfolderName), environment: environment
+            ).hooksDirectory
+            return AgentHooks.snapshotDirectory(in: hooksDirectory).appendingPathComponent(sessionKey, isDirectory: true)
         }
 
         /// Whether the shadow folder of `sessionKey` is on disk.

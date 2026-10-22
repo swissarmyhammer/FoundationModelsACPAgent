@@ -294,7 +294,7 @@ import Testing
         _ = try await resume.fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: resume.fixture.sessionId))
 
-        let userDirectory = try #require(resume.fixture.harness.agent.settingsFolders.rootSettingsFolder)
+        let userDirectory = resume.fixture.harness.agent.settingsFolders.home.synced
         try ConfigFileFixture.write(locationYAML + codeContextOnYAML, in: userDirectory)
         try FileManager.default.removeItem(at: resume.fixture.cwd)
 

@@ -7,10 +7,11 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// `SettingsFolders` (ACPA-16, D98): one list of folders for each kind of
-/// settings. With a root settings folder from the host, the user layer of
-/// each kind is in the root, and the project layer is the project dotfolder
-/// of the working directory. With no root (the CLI), the layers are the
-/// layers of `DotfolderStack(name:workingDirectory:environment:)`.
+/// settings. With a custom home from the host, the user layer of each kind
+/// is in the synced root of the home (the root of these tests), and the
+/// project layer is the project dotfolder of the working directory. With
+/// the XDG home (no root, the CLI), the layers are the layers of
+/// `DotfolderStack(name:workingDirectory:environment:)`.
 ///
 /// Each test uses temporary folders only. A test gives an `XDG_CONFIG_HOME`
 /// in a temporary folder, so no test reads the real home directory.
@@ -35,7 +36,7 @@ struct SettingsFoldersTests {
     /// The value of `compaction.trigger` in the XDG user layer.
     private static let configHomeTrigger = 0.6
 
-    /// The value of `compaction.trigger` in the root settings folder.
+    /// The value of `compaction.trigger` in the synced root.
     private static let rootTrigger = 0.7
 
     /// The value of `compaction.trigger` in the project layer.
@@ -62,7 +63,7 @@ struct SettingsFoldersTests {
     /// The document of an agent folder.
     private static let agentDocumentName = "AGENT.md"
 
-    /// The id of the agent that only the root settings folder holds.
+    /// The id of the agent that only the synced root holds.
     private static let rootAgentID = "planner"
 
     /// The id of the agent that two layers hold.
@@ -73,10 +74,10 @@ struct SettingsFoldersTests {
 
     // MARK: - Fixture
 
-    /// A temporary root settings folder, a temporary working directory, and
-    /// a temporary XDG config home.
+    /// A temporary synced root, a temporary working directory, and a
+    /// temporary XDG config home.
     private struct Fixture {
-        /// The root settings folder of the host.
+        /// The synced root of the custom home of the host.
         let root: URL
 
         /// The working directory of the session.
@@ -115,21 +116,28 @@ struct SettingsFoldersTests {
             workingDirectory.appendingPathComponent(".\(dotfolder)", isDirectory: true)
         }
 
+        /// The custom home whose synced root is ``root``, with a throwaway
+        /// local root.
+        var customHome: AgentHome {
+            AgentHomeFixture.make(label: "SettingsFoldersTests", synced: root)
+        }
+
         /// The settings folders of the fixture.
         ///
-        /// - Parameter hasRoot: `true` gives ``root`` as the root settings
-        ///   folder; `false` gives no root.
+        /// - Parameter hasRoot: `true` gives the custom home whose synced
+        ///   root is ``root``; `false` gives the XDG home of ``environment``.
         /// - Returns: The settings folders.
         /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
         func settingsFolders(hasRoot: Bool) throws -> SettingsFolders {
-            SettingsFolders(
-                name: try DotfolderName(SettingsFoldersTests.dotfolderName),
-                rootSettingsFolder: hasRoot ? root : nil,
+            let name = try DotfolderName(SettingsFoldersTests.dotfolderName)
+            return SettingsFolders(
+                name: name,
+                home: hasRoot ? customHome : .xdg(name: name, environment: environment),
                 environment: environment)
         }
     }
 
-    /// One kind, with the user layer root that a root settings folder gives
+    /// One kind, with the user layer root that a synced root gives
     /// it, relative to the root.
     struct KindCase: Sendable, CustomTestStringConvertible {
         /// The kind.
@@ -146,7 +154,7 @@ struct SettingsFoldersTests {
         var testDescription: String { "\(kind)" }
     }
 
-    /// Each kind and the folders a root settings folder gives it.
+    /// Each kind and the folders a synced root gives it.
     static let kindCases = [
         KindCase(kind: .configuration, userPathInRoot: "", projectDotfolder: dotfolderName),
         KindCase(
@@ -162,7 +170,7 @@ struct SettingsFoldersTests {
     ///
     /// - Parameters:
     ///   - kindCase: The case.
-    ///   - root: The root settings folder.
+    ///   - root: The synced root.
     /// - Returns: The folder.
     private static func expectedUserLayer(of kindCase: KindCase, in root: URL) -> URL {
         kindCase.userPathInRoot.isEmpty
@@ -219,7 +227,7 @@ struct SettingsFoldersTests {
         let defaults = makeResolvedDirectory(label: "SettingsFoldersTests-defaults")
         let settingsFolders = SettingsFolders(
             name: try DotfolderName(Self.dotfolderName),
-            rootSettingsFolder: fixture.root,
+            home: fixture.customHome,
             environment: [Self.dotfolderName.uppercased() + Self.defaultsVariableSuffix: defaults.path])
 
         let stack = settingsFolders.stack(for: .configuration, workingDirectory: fixture.workingDirectory)
@@ -298,8 +306,8 @@ struct SettingsFoldersTests {
 
         let composed = try await composeStubAgent(
             name: Self.dotfolderName, label: "SettingsFoldersTests-compose",
-            workspace: fixture.workingDirectory, rootSettingsFolder: fixture.root,
-            configHome: fixture.configHome)
+            workspace: fixture.workingDirectory, home: fixture.customHome,
+            environment: fixture.environment)
         let session = try composed.agent.makeConfigurationLoader(
             workingDirectory: fixture.workingDirectory
         ).load().configuration
@@ -370,8 +378,8 @@ struct SettingsFoldersTests {
     ///
     /// - Parameters:
     ///   - fixture: The folders of the test.
-    ///   - hasRoot: `true` gives the root settings folder of the fixture;
-    ///     `false` gives no root.
+    ///   - hasRoot: `true` gives the custom home whose synced root is the
+    ///     root of the fixture; `false` gives the XDG home.
     /// - Returns: The context.
     /// - Throws: Whatever the stub profile resolve throws, or
     ///   `DotfolderNameError` when the dotfolder name is refused.
@@ -406,8 +414,8 @@ struct SettingsFoldersTests {
     ///
     /// - Parameters:
     ///   - fixture: The folders of the test.
-    ///   - hasRoot: `true` gives the root settings folder of the fixture;
-    ///     `false` gives no root.
+    ///   - hasRoot: `true` gives the custom home whose synced root is the
+    ///     root of the fixture; `false` gives the XDG home.
     /// - Returns: The loaded catalog.
     /// - Throws: Whatever the context or the load of the registry throws.
     private static func composedAgentCatalog(of fixture: Fixture, hasRoot: Bool) async throws -> AgentCatalog {

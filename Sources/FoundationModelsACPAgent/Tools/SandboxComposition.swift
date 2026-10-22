@@ -95,7 +95,8 @@ public enum SandboxComposition {
     ///
     /// - Parameters:
     ///   - builder: The registry builder the capability mounts into.
-    ///   - options: The decoded `tools.shell:` options.
+    ///   - storeDirectory: The folder the capability keeps the history and
+    ///     the captured output of the commands in.
     ///   - configuration: The decoded `sandbox:` section.
     ///   - rootSet: The session root set, working directory first.
     ///   - outputChunkStream: The host-owned live output stream the
@@ -107,14 +108,14 @@ public enum SandboxComposition {
     ///   throws when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
-        options: ShellToolOptions,
+        storeDirectory: URL,
         configuration: SandboxConfiguration,
         rootSet: [URL],
         outputChunkStream: ShellOutputChunkStream? = nil
     ) throws {
         try composeShell(
             into: builder,
-            options: options,
+            storeDirectory: storeDirectory,
             sandbox: makeShellSandbox(rootSet: rootSet, configuration: configuration),
             outputChunkStream: outputChunkStream,
             defaultWorkingDirectory: rootSet.first)
@@ -126,7 +127,8 @@ public enum SandboxComposition {
     ///
     /// - Parameters:
     ///   - builder: The registry builder the capability mounts into.
-    ///   - options: The decoded `tools.shell:` options.
+    ///   - storeDirectory: The folder the capability keeps the history and
+    ///     the captured output of the commands in.
     ///   - sandbox: The confinement every command spawns under.
     ///   - outputChunkStream: The host-owned live output stream the
     ///     capability tees raw bytes into, or `nil` to
@@ -140,13 +142,13 @@ public enum SandboxComposition {
     ///   throws when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
-        options: ShellToolOptions,
+        storeDirectory: URL,
         sandbox: any CommandSandbox,
         outputChunkStream: ShellOutputChunkStream? = nil,
         defaultWorkingDirectory: URL? = nil
     ) throws {
         try builder.withShell(
-            storeDirectory: options.storeDirectory,
+            storeDirectory: storeDirectory,
             sandbox: sandbox,
             outputChunkStream: outputChunkStream,
             defaultWorkingDirectory: defaultWorkingDirectory)

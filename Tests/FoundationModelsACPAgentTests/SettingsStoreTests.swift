@@ -82,7 +82,7 @@ import Testing
 
     // MARK: - Fixture
 
-    /// A store over a temporary root settings folder, and two temporary
+    /// A store over a temporary custom home, and two temporary
     /// working directories. ``SettingsStoreSecretFlushTests`` uses it too.
     struct Fixture {
         /// The settings folders of the store.

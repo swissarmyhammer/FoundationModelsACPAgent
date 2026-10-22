@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import Testing
 
@@ -53,7 +54,7 @@ import Testing
         try ConfigurationLoader(
             name: DotfolderName(ConfigurationLoaderTests.agentName),
             workingDirectory: fixture.workingDirectory,
-            userDirectory: fixture.userDirectory,
+            home: AgentHomeFixture.make(label: "BuiltinConfigurationFileTests", synced: fixture.userDirectory),
             environment: [:],
             builtinLayer: { builtinLayer })
     }

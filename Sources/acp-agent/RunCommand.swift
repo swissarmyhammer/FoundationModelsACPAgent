@@ -37,6 +37,9 @@ extension AcpAgentCommand {
         /// `config.yaml`.
         @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+        /// The `--home` option, which roots the user layer.
+        @OptionGroup var homeOptions: HomeOptions
+
         /// The `--cwd` value, or `nil` for the process working directory.
         var workingDirectory: String? {
             workingDirectoryOptions.workingDirectory
@@ -110,7 +113,7 @@ extension AcpAgentCommand {
         /// ArgumentParser ends a command with 0.
         mutating func run() async throws {
             let result = try await perform(
-                environment: ProcessInfo.processInfo.environment,
+                environment: homeOptions.environment(over: ProcessInfo.processInfo.environment),
                 into: AnswerWriter(),
                 reporting: eventLineWriter,
                 drawing: progressReporter,
@@ -143,9 +146,9 @@ extension AcpAgentCommand {
         /// stderr's, and they arrive with their own cards.
         ///
         /// - Parameters:
-        ///   - environment: The environment the stack reads
-        ///     `XDG_CONFIG_HOME` from, and the composition reads the
-        ///     model switch from.
+        ///   - environment: The environment the home of the stack is read
+        ///     from (``AgentComposition/home(environment:)``), and the
+        ///     composition reads the model switch from.
         ///   - writer: The writer the answer goes to. `run()` gives the
         ///     one over standard output; a test gives one over a pipe.
         ///   - events: The writer the session event lines go to (§5.7).
@@ -197,7 +200,7 @@ extension AcpAgentCommand {
                 }
             }
             return try await performOutOfProcess(
-                into: writer, reporting: events, interruptedBy: install,
+                environment: environment, into: writer, reporting: events, interruptedBy: install,
                 terminatedBy: terminate)
         }
 
@@ -205,11 +208,12 @@ extension AcpAgentCommand {
         /// `acp` mode and spoken to over its stdio (§5.4).
         ///
         /// This process composes NO agent: the child composes its own, from
-        /// the environment and the working directory it inherits. So the
-        /// model is loaded one time and in one place, and the environment
-        /// this mode reads is the child's own.
+        /// the environment it gets and the working directory it inherits. So
+        /// the model is loaded one time and in one place.
         ///
         /// - Parameters:
+        ///   - environment: The environment of the child, with the home
+        ///     variable of `--home` when it was given.
         ///   - writer: The writer the answer goes to.
         ///   - events: The writer the session event lines go to (§5.7).
         ///   - install: How the two windows of §5.9 get their `Ctrl-C`
@@ -221,6 +225,7 @@ extension AcpAgentCommand {
         ///   named, ``TerminationHandler/signalEnd`` when a `SIGTERM` stopped
         ///   the run, and whatever the spawn, the prompt or the writer throws.
         func performOutOfProcess(
+            environment: [String: String],
             into writer: AnswerWriter,
             reporting events: EventLineWriter,
             interruptedBy install: InterruptHandler.Installer,
@@ -228,7 +233,7 @@ extension AcpAgentCommand {
         ) async throws -> RunPromptResult {
             let text = try promptSource.text()
             return try await OutOfProcessPrompt.answer(
-                command: try OutOfProcessPrompt.ownExecutablePath(),
+                command: try OutOfProcessPrompt.ownExecutablePath(), environment: environment,
                 in: session, prompt: text, into: writer,
                 reporting: events, interruptedBy: install, terminatedBy: terminate)
         }
@@ -289,9 +294,9 @@ extension AcpAgentCommand {
         /// from the recorded directory, at `session/load`.
         ///
         /// - Parameters:
-        ///   - environment: The environment the stack reads
-        ///     `XDG_CONFIG_HOME` from, and the composition reads the model
-        ///     switch from.
+        ///   - environment: The environment the home of the stack is read
+        ///     from (``AgentComposition/home(environment:)``), and the
+        ///     composition reads the model switch from.
         ///   - progress: The progress object the resolution reports into,
         ///     or `nil` for a fresh unobserved one.
         /// - Returns: The composition.

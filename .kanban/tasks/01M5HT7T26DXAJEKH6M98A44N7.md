@@ -78,6 +78,28 @@ comments:
     ### XDG preset = today's paths
     synced = `$XDG_CONFIG_HOME/acp-agent`; the per-kind user layers stay `$XDG_CONFIG_HOME/<dotfolder>` (skills, agents, rules) as today; local = `$XDG_DATA_HOME/acp-agent` (hooks unchanged). The two caches (marketplace, HF models) stay at the shared caches of today, so the CLI/bench sees no path change. New for the CLI: the shell log and (once CodeContext allows) the index leave the project folder for `$XDG_DATA_HOME/acp-agent/projects/<sha256>/`.
   timestamp: 2026-10-22T13:55:00.516630+00:00
+- actor: claude-code
+  id: 01m5hynj44h1q844fvjj5b4t08
+  text: |-
+    ### Needed from other packages (not edited here, per the rules)
+
+    1. **FoundationModelsCodeContext — index location (BLOCKS the code-context half of "no SQLite/WAL in cwd").**
+       Today `Store.init(rootDirectory:)` (Index/Store.swift) hard-codes `indexDirectory = <rootDirectory>/.code-context` and `databaseURL = …/kit.db`, and writes `.code-context/.gitignore`. The only public initializer is `CodeContext(rootDirectory:embedder:autoInstall:eventSource:)` (CodeContext.swift); the internal init and `CodeContextManager.init(embedder:autoInstall:eventSource:)` also take no index folder.
+       Needed: a public parameter that separates the indexed root from the index folder, e.g. `CodeContext(rootDirectory: URL, indexDirectory: URL? = nil, embedder:autoInstall:eventSource:)` → `Store(rootDirectory:indexDirectory:)`, with `nil` keeping `<root>/.code-context`. The index folder must hold `kit.db`, its WAL/SHM, and anything else the store writes; nothing may be written under `rootDirectory` when `indexDirectory` is given. ACPAgent will then pass `AgentHome.projectStateDirectory(of: cwd)/code-context` (one line in `ToolCatalog.composeCodeContext`).
+    2. **FoundationModelsRouter (LiveModelLoader) / FoundationModelsExtras (MLXModelLoader) — Hugging Face token lookup.** `HubClient(cache:)` uses `tokenProvider: .environment`, which falls back to `~/.cache/huggingface/token` and `~/.huggingface/token` whatever cache folder is given. With a custom home the agent still reads those home files. Needed: a token-provider (or token) parameter on `LiveModelLoader` / `MLXModelLoader` so a host can give its own (or none).
+
+    Everything else in the audit table is fixed in this repo (shell store, LSP install record, router metadata cache, marketplace cache, model cache, hooks, all settings stacks).
+  timestamp: 2026-10-22T14:01:33.572590+00:00
+- actor: claude-code
+  id: 01m5j0ccdgbktky7tba7nrks2g
+  text: |-
+    ### Done: one AgentHome through compose, the agent, the CLI and doctor
+    - `ComposedAgent.compose(name:workingDirectory:home:...)` and `RoutedACPAgent.init(...home:...)` take a required `AgentHome`. `rootSettingsFolder`, `hooksDataDirectory`, `skillsMarketplaceCacheDirectory` and `modelCacheDirectory` are removed. The live router gets `cacheDir: home.routerCacheDirectory` and the model cache of the home. `AgentHooks` has no XDG logic left.
+    - The CLI resolves its home in one function, `AgentComposition.home(environment:)`: `ACP_AGENT_HOME=<dir>` gives `<dir>/synced` and `<dir>/local`. `--home <dir>` (`HomeOptions`) sets that variable, on run, acp, doctor, config show/init/path/edit, instructions eject, and snapshots list/remove. `run --out-of-process` passes the environment to the child. With neither flag nor variable, the home is the XDG home, the same paths as before.
+    - `doctor` now has a `HomeDoctor` row for the synced root and one for the local root. The profile check uses the model cache of the home. `ToolsDoctor` checks the shell store that the session uses.
+    - One change to the CLI default paths: the shell store moved from `<process cwd>/.shell` to `$XDG_DATA_HOME/acp-agent/projects/<sha256>/shell`.
+    - Not done, because the other package has no parameter for it: the code-context index stays in `<cwd>/.code-context`. `CodeContext(rootDirectory:...)` fixes the folder of its store.
+  timestamp: 2026-10-22T14:31:29.968898+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'

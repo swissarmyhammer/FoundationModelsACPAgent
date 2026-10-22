@@ -358,6 +358,7 @@ struct ConfigShowTests {
         let reloaded = try ConfigurationLoader(
             name: DotfolderName(AgentComposition.dotfolderName),
             workingDirectory: reloadFixture.workspace,
+            home: try AgentComposition.home(environment: reloadFixture.environment),
             environment: reloadFixture.environment
         ).load()
         #expect(decoded == reloaded.configuration)

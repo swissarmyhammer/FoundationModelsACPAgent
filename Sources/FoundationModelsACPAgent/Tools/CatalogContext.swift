@@ -46,8 +46,10 @@ public struct CatalogContext: Sendable {
     /// of the session come from (``ToolCatalog/makeSkillsSource(context:)``,
     /// ``AgentsComposition/makeAgentRegistry(context:marketplaces:)``). The
     /// session composition of the agent gives the settings folders of the
-    /// agent, thus with a root settings folder from the host no stack holds
-    /// a folder in the home directory or in `XDG_CONFIG_HOME`.
+    /// agent. Their ``SettingsFolders/home`` gives each folder of the session
+    /// outside the project: the user layers, the skills marketplace cache,
+    /// and the shell store of the project
+    /// (``AgentHome/shellStoreDirectory(of:)``).
     public let settingsFolders: SettingsFolders
 
     /// The environment of the host: the session composition of the agent
@@ -55,8 +57,7 @@ public struct CatalogContext: Sendable {
     ///
     /// The web capability reads its API keys from it (task ^ba231ka). The
     /// keys of `tools.web.apiKeys` are put in over it, so a configured key
-    /// wins. The skills marketplace store reads its seed folder from it, and
-    /// its cache folder when ``skillsMarketplaceCacheDirectory`` is `nil`.
+    /// wins. The skills marketplace store reads its seed folder from it.
     /// The `skills` and `agents` dotfolder stacks read the environment of
     /// ``settingsFolders``.
     ///
@@ -66,17 +67,6 @@ public struct CatalogContext: Sendable {
     /// server (``ToolCatalog/makeRegistry(context:)``,
     /// ``MCPComposition``).
     public let environment: [String: String]
-
-    /// The cache folder of the skills marketplace store that the host gave
-    /// (``RoutedACPAgent/skillsMarketplaceCacheDirectory``), or `nil` when
-    /// the host gave none.
-    ///
-    /// A folder here wins over `SKILLS_MARKETPLACE_CACHE` of
-    /// ``environment``. With `nil`, the store reads its cache folder from
-    /// ``environment`` (``ToolCatalog/makeSkillsSource(context:)``). The
-    /// agent registry reads the marketplace layers of the same store, thus
-    /// the marketplace agents use the same folder.
-    public let skillsMarketplaceCacheDirectory: URL?
 
     /// The settle period of each session that this agent makes: the
     /// settle period of the Router session, `ToolMount.defaultInlineSettleGrace`.
@@ -130,9 +120,6 @@ public struct CatalogContext: Sendable {
     ///   - environment: The environment of the host, which the session tools
     ///     read (``environment``). Defaults to the environment of the
     ///     process, for a caller that composes a catalog with no host.
-    ///   - skillsMarketplaceCacheDirectory: The cache folder of the skills
-    ///     marketplace store, or `nil` (the default) to read it from
-    ///     `environment` (``skillsMarketplaceCacheDirectory``).
     ///   - inlineSettleGrace: The settle period of the sessions of the
     ///     surface, in seconds. Defaults to ``defaultInlineSettleGrace``.
     ///   - userPresence: Whether a user can answer the questions of the
@@ -149,13 +136,11 @@ public struct CatalogContext: Sendable {
         clientMCPServers: [FoundationModelsACP.MCPServer] = [],
         settingsFolders: SettingsFolders,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        skillsMarketplaceCacheDirectory: URL? = nil,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         userPresence: UserPresence = .interactive,
         snapshotStore: SnapshotStore? = nil,
         settingsEndpoint: SettingsGraph? = nil
     ) {
-        self.skillsMarketplaceCacheDirectory = skillsMarketplaceCacheDirectory
         self.snapshotStore = snapshotStore
         self.settingsEndpoint = settingsEndpoint
         self.workingDirectory = workingDirectory

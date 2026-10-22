@@ -15,15 +15,19 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgent
 
-// The one choice a frontend makes. It roots ~/.config/acp-agent/ for the
-// user layer, <cwd>/.acp-agent/ for the project layer, and the transcripts.
+// The one choice a frontend makes. It roots <cwd>/.acp-agent/ for the
+// project layer and the transcripts.
 let name = try DotfolderName("acp-agent")
 let cwd = URL(
     fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 
+// The home of the host: here the XDG folders, ~/.config/acp-agent/ for the
+// user layer. An app gives its own two roots with AgentHome.custom.
+let home = AgentHome.xdg(name: name, environment: ProcessInfo.processInfo.environment)
+
 // Loads the configuration stack and resolves the profile over the real
 // models: the configured weights download on first use and stay resident.
-let composed = try await ComposedAgent.compose(name: name, workingDirectory: cwd)
+let composed = try await ComposedAgent.compose(name: name, workingDirectory: cwd, home: home)
 
 // Full duplex on one pipe: the read loop serves every request while a prompt
 // streams session/update notifications. stdout carries ndJSON only; logs go
@@ -99,7 +103,9 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 | `acp-agent snapshots list` | List each snapshot folder, with its checkpoint count, the time of its last checkpoint, and `recorded` or `unrecorded`. `--json` gives the same data as one JSON array. |
 | `acp-agent snapshots remove <key>...` | Remove the snapshot folders of the named session keys. A key with no snapshot folder goes to stderr, and the exit status is 1. `--unrecorded` removes each folder that no recorded session has. |
 
-`acp-agent --help`, and `--help` on any command, gives the options.
+`acp-agent --help`, and `--help` on any command, gives the options. Each
+command that reads the settings takes `--home <dir>`, the folder of the home
+of the CLI (see [The home](#the-home)).
 
 ## Tools
 
@@ -123,7 +129,7 @@ is on by default. Set its config section to `false` to set it off.
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
 | `git` | The read-only `tools.git.*` verbs — `blame`, `show`, `log`, `commit`, `status`, `branches`, `changes` and `diff` — over the repository of the session working directory | `tools.git` |
 | `environment` | The read-only `tools.environment.*` verbs — `variables` (the environment variables of the agent process), `os` (the platform, the host and the user) and `now` (the date and the time) | `tools.environment` |
-| `snapshots` | The `tools.snapshots.*` verbs — `list`, `take` and `rollback` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. A rollback returns the work tree to a checkpoint and adds a new checkpoint, so the history is append only. The snapshots are in `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot` for the CLI). The folder of a session stays after the session ends, and the agent removes no folder at start, because another process can run the session of a folder. `session/delete` removes the folder of its own session. `acp-agent snapshots list` shows the folders, and `acp-agent snapshots remove` removes the ones that you name, or each `unrecorded` one with `--unrecorded`. A folder is `recorded` when the `sessions.jsonl` of a registered project has its session. Always on | none |
+| `snapshots` | The `tools.snapshots.*` verbs — `list`, `take` and `rollback` — over the workspace snapshots of the session. Each tool call that changes a file of a git work tree makes one checkpoint. A rollback returns the work tree to a checkpoint and adds a new checkpoint, so the history is append only. The snapshots are in the `snapshot` folder of the hook data of the home: `<local>/hooks/snapshot` of a custom home, and `$XDG_DATA_HOME/<name>/hooks/snapshot` (default `~/.local/share/acp-agent/hooks/snapshot`) of the XDG home of the CLI. The folder of a session stays after the session ends, and the agent removes no folder at start, because another process can run the session of a folder. `session/delete` removes the folder of its own session. `acp-agent snapshots list` shows the folders, and `acp-agent snapshots remove` removes the ones that you name, or each `unrecorded` one with `--unrecorded`. A folder is `recorded` when the `sessions.jsonl` of a registered project has its session. Always on | none |
 | `settings` | The `tools.settings.querySettings` verb: one GraphQL document over the agent settings, the same schema as the `settings` endpoint. A query gives the merged value of a key for the session folder and the level that set it. A mutation sets or clears a key on the `USER` level or on the `SESSION` level of the session folder. The verb takes no `cwd`: the session folder applies, and a `cwd` of a different folder is refused. It is only in the registry, not a top-level tool. Always on | none |
 | `skills` | The standalone `skills` tool, over the `skills` dotfolder stack and the `marketplaces` list. Always on | `tools.skills` |
 | `agents` | The standalone `agents` tool of `FoundationModelsAgents` — `list agents`, `start agent`, `check agent`, `cancel agent`, `send agent` and `send caller` — over the agent folders `<id>/AGENT.md` and `agents/<id>/AGENT.md` of the `agents` dotfolder stack. Always on | none |
@@ -301,35 +307,59 @@ levels over the built-in level. The session level wins over the user level.
   each session: `<cwd>/.<name>/` for `config.yaml` and `Instructions.md`,
   `<cwd>/.skills/` for the skills, `<cwd>/.agents/` for the agents, and
   `<cwd>/.rules/` for the rules.
-- **The user level** comes from the host. An app gives a root settings folder,
-  for example `<iCloud container>/Agents/`, as `rootSettingsFolder:` of
-  `ComposedAgent.compose` or of `RoutedACPAgent.init`. The `acp-agent` CLI gives
-  none, and keeps the XDG folders.
+- **The user level** comes from the home of the host (`AgentHome`), which
+  `ComposedAgent.compose` and `RoutedACPAgent.init` take as `home:`.
 
-| Kind | With a root settings folder | With no root (the CLI) |
+### The home
+
+The home holds each folder outside the project that the agent reads or
+writes. It has two roots:
+
+- **synced**: the data that follows the user from device to device: the user
+  level of each settings stack, and the projects folder.
+- **local**: the state of this machine, which never syncs: the hook data and
+  the snapshot timelines, the caches (the skills marketplace, the models, the
+  router metadata, the install record of the language servers), and the
+  machine state of each project, such as the shell store.
+
+An app gives its own two roots with `AgentHome.custom(synced:local:)`, for
+example a folder in its iCloud container and a folder in Application Support.
+The `acp-agent` CLI uses `AgentHome.xdg(name:environment:)`, which keeps the
+XDG folders that the CLI always used. The CLI takes a home folder with
+`--home <dir>` (on `run`, `acp`, `config`, `instructions eject`, `doctor` and
+`snapshots`) or with the `ACP_AGENT_HOME` variable; `--home` wins. That folder
+gives the custom home `<dir>/synced` and `<dir>/local`. With neither, the CLI
+uses the XDG home.
+
+| Kind | Custom home | XDG home (the CLI) |
 |---|---|---|
-| `config.yaml`, `Instructions.md` | `<root>/` | `$XDG_CONFIG_HOME/<name>/` (default `~/.config/<name>/`) |
-| skills | `<root>/_skills/` | `$XDG_CONFIG_HOME/skills/` |
-| rules | `<root>/_rules/` | `$XDG_CONFIG_HOME/rules/` |
-| agents | `<root>/` | `$XDG_CONFIG_HOME/agents/` |
+| `config.yaml`, `Instructions.md` | `<synced>/` | `$XDG_CONFIG_HOME/<name>/` (default `~/.config/<name>/`) |
+| skills | `<synced>/_skills/` | `$XDG_CONFIG_HOME/skills/` |
+| rules | `<synced>/_rules/` | `$XDG_CONFIG_HOME/rules/` |
+| agents | `<synced>/` | `$XDG_CONFIG_HOME/agents/` |
+| hook data and snapshots | `<local>/hooks/` | `$XDG_DATA_HOME/<name>/hooks/` (default `~/.local/share/<name>/hooks/`) |
+| skills marketplace cache | `<local>/skills-marketplace/` | `SKILLS_MARKETPLACE_CACHE`, or its default folder |
+| model cache | `<local>/models/` | `HF_HUB_CACHE` or `HF_HOME`, or `~/.cache/huggingface/hub` |
+| shell store of a project | `<local>/projects/<key>/shell/` | `$XDG_DATA_HOME/<name>/projects/<key>/shell/` |
 
-With a root settings folder, no stack holds a folder in the home directory or in
-`XDG_CONFIG_HOME`. The agents layer of the root is the root itself, so an agent
-is `<root>/<id>/AGENT.md` (or `<root>/agents/<id>/AGENT.md`), and the session
-level is `<cwd>/.agents/`, never the working directory itself. A folder in the
-root whose name starts with `_` holds settings: it is never a valid agent id,
-so `<root>/_skills/` and `<root>/_rules/` are not agents and give no
-diagnostic. The built-in level is the defaults folder
-that `<NAME>_DEFAULTS_DIR` names, for example `SKILLS_DEFAULTS_DIR`, and the
-compiled-in `builtin.config.yaml`. `acp-agent doctor` and `acp-agent config
-path` show the layers of these folders.
+With a custom home, no stack holds a folder in the home directory or in
+`XDG_CONFIG_HOME`. The agents layer of the synced root is the root itself, so
+an agent is `<synced>/<id>/AGENT.md` (or `<synced>/agents/<id>/AGENT.md`), and
+the session level is `<cwd>/.agents/`, never the working directory itself. A
+folder in the synced root whose name starts with `_` holds settings: it is
+never a valid agent id, so `<synced>/_skills/` and `<synced>/_rules/` are not
+agents and give no diagnostic. The built-in level is the defaults folder that
+`<NAME>_DEFAULTS_DIR` names, for example `SKILLS_DEFAULTS_DIR`, and the
+compiled-in `builtin.config.yaml`. `acp-agent config path` shows the layers of
+these folders, and `acp-agent doctor` shows the two roots of the home and
+whether each one can be written.
 
 ## Instructions
 
 The system prompt is one markdown file, `Instructions.md`, resolved through the
 dotfolder stack. The nearest layer wins, and it replaces the whole file:
-compiled in, then the user level (`<root>/Instructions.md`, or
-`~/.config/<name>/Instructions.md` for the CLI), then
+compiled in, then the user level (`<synced>/Instructions.md` of a custom home,
+or `~/.config/<name>/Instructions.md` of the XDG home of the CLI), then
 `<project>/.<name>/Instructions.md`. Additive instructions go in `AGENTS.md`.
 `Instructions.md` replaces; `AGENTS.md` adds.
 

@@ -16,7 +16,8 @@ enum AgentComposition {
     /// The dotfolder name — the frontend's one choice.
     ///
     /// The name roots the configuration stack — `$XDG_CONFIG_HOME/acp-agent/`
-    /// for the user layer, `<cwd>/.acp-agent/` for the project layer — and
+    /// of the XDG home for the user layer (``home(environment:)``),
+    /// `<cwd>/.acp-agent/` for the project layer — and
     /// the transcript directory, and it is the fallback for the profile's
     /// name. It never goes on the wire: `initialize` reports the package
     /// identity instead, because the dotfolder name is the private choice
@@ -51,6 +52,17 @@ enum AgentComposition {
     /// It is read only on the stub path. An absent or empty value gates
     /// nothing, and the library's one-chunk echo answers as before.
     static let stubChunkGateVariable = "ACP_AGENT_STUB_CHUNK_GATE"
+
+    /// The environment variable that names the folder of the home of the
+    /// CLI (task ^98a44n7). `--home` sets it too (``HomeOptions``). With no
+    /// value, the home is the XDG home. See ``home(environment:)``.
+    static let homeVariable = "ACP_AGENT_HOME"
+
+    /// The folder of the synced root in the folder of ``homeVariable``.
+    static let syncedFolderName = "synced"
+
+    /// The folder of the local root in the folder of ``homeVariable``.
+    static let localFolderName = "local"
 
     /// The version the CLI reports. One binary and one version: `--version`
     /// prints this, and `initialize` reports the same value as the build
@@ -95,37 +107,57 @@ enum AgentComposition {
         return path
     }
 
-    /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:userDeviceTokens:reporting:)`.
-    /// The CLI gives no `transcriptLocation`: its config files decide. The
-    /// CLI gives no `rootSettingsFolder`: its stacks keep the XDG user
-    /// layers.
+    /// Reads the home of the CLI out of `environment` (task ^98a44n7).
     ///
-    /// The CLI adds its own choices only: ``dotfolderName``, and the model
-    /// path and the stub gate that `environment` selects. The library
-    /// does the composition, so the CLI holds no copy of it.
+    /// `--home <dir>` reaches this function as ``homeVariable`` too
+    /// (``HomeOptions/environment(over:)``), so the option and the variable
+    /// resolve the one way:
+    ///
+    /// - ``homeVariable`` names a folder: the custom home with the synced
+    ///   root ``syncedFolderName`` and the local root ``localFolderName`` in
+    ///   that folder. A relative path resolves against the process working
+    ///   directory.
+    /// - With no ``homeVariable``, or an empty one: the XDG home of
+    ///   ``dotfolderName``, which keeps the folders that the CLI always used.
+    ///
+    /// - Parameter environment: The environment to read. The XDG home also
+    ///   reads its XDG and cache variables from it.
+    /// - Returns: The home.
+    /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
+    static func home(environment: [String: String]) throws -> AgentHome {
+        guard let path = environment[homeVariable], !path.isEmpty else {
+            return .xdg(name: try DotfolderName(dotfolderName), environment: environment)
+        }
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
+        return .custom(
+            synced: folder.appendingPathComponent(syncedFolderName, isDirectory: true),
+            local: folder.appendingPathComponent(localFolderName, isDirectory: true))
+    }
+
+    /// Composes the agent of the CLI through the public library helper
+    /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:reporting:)`.
+    /// The CLI gives no `transcriptLocation`: its config files decide.
+    ///
+    /// The CLI adds its own choices only: ``dotfolderName``, the home that
+    /// ``home(environment:)`` reads, and the model path and the stub gate
+    /// that `environment` selects. The library does the composition, so the
+    /// CLI holds no copy of it.
     ///
     /// The CLI gives no secret store. The default store of the library is
     /// the login Keychain under the service ``dotfolderName``, and that is
     /// the store of the CLI (ACPA-18, D101).
     ///
-    /// The CLI gives no `hooksDataDirectory`. Thus the hooks keep their data,
-    /// and the snapshot timeline, in the XDG data home (ACPA-15, D96).
-    ///
-    /// The CLI gives no `skillsMarketplaceCacheDirectory`. Thus the skills
-    /// marketplace store reads its cache folder from
-    /// `SKILLS_MARKETPLACE_CACHE` of `environment`, or uses the default
-    /// folder under the home folder.
-    ///
-    /// The CLI gives no `modelCacheDirectory`. Thus the live loader uses the
-    /// default Hugging Face cache, which `HF_HUB_CACHE` or `HF_HOME` of the
-    /// process environment names, or `~/.cache/huggingface/hub`.
+    /// With the XDG home, the hooks keep their data and the snapshot
+    /// timeline in the XDG data home (ACPA-15, D96), the skills marketplace
+    /// store reads its cache folder from `SKILLS_MARKETPLACE_CACHE`, and the
+    /// live loader uses the Hugging Face cache that `HF_HUB_CACHE` or
+    /// `HF_HOME` names, or `~/.cache/huggingface/hub`.
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory whose dotfolder stack the
     ///     start-up configuration loads from.
-    ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
-    ///     from, and ``modelSource(environment:)`` and
+    ///   - environment: The environment that ``home(environment:)`` reads
+    ///     the home from, and ``modelSource(environment:)`` and
     ///     ``stubChunkGate(environment:)`` read the model switch from.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws the
@@ -144,6 +176,7 @@ enum AgentComposition {
         try await ComposedAgent.compose(
             name: DotfolderName(dotfolderName),
             workingDirectory: workingDirectory,
+            home: try home(environment: environment),
             environment: environment,
             modelSource: modelSource(environment: environment),
             stubChunkGate: stubChunkGate(environment: environment),
@@ -154,15 +187,17 @@ enum AgentComposition {
     /// ``dotfolderName`` — the one construction the `config` reports and
     /// `doctor` share (cli-plan.md §5.10, §5.11).
     ///
-    /// The CLI gives no root settings folder, thus the stacks of its
-    /// ``SettingsFolders`` keep the XDG user layers. The loader keeps the
-    /// settings folders (``ConfigurationLoader/settingsFolders``), so
-    /// `doctor` reads the skills and agents stacks of the same folders.
+    /// The stacks of its ``SettingsFolders`` take their user layers from the
+    /// home that ``home(environment:)`` reads, the same home as the agent of
+    /// ``compose(workingDirectory:environment:reporting:)``. The loader keeps
+    /// the settings folders (``ConfigurationLoader/settingsFolders``), so
+    /// `doctor` reads the home and the skills and agents stacks of the same
+    /// folders.
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory the project layer roots under.
-    ///   - environment: The environment the stack reads `XDG_CONFIG_HOME`
-    ///     from.
+    ///   - environment: The environment that ``home(environment:)`` reads
+    ///     the home from.
     ///   - secretStore: The store that gives the value of each secret
     ///     reference `keychain:<name>`, or `nil` (the default) for the login
     ///     Keychain under the service ``dotfolderName``: the store of the CLI
@@ -174,7 +209,9 @@ enum AgentComposition {
         secretStore: (any SecretStore)? = nil
     ) throws -> ConfigurationLoader {
         ConfigurationLoader(
-            settingsFolders: SettingsFolders(name: try DotfolderName(dotfolderName), environment: environment),
+            settingsFolders: SettingsFolders(
+                name: try DotfolderName(dotfolderName), home: try home(environment: environment),
+                environment: environment),
             workingDirectory: workingDirectory,
             secretStore: secretStore)
     }

@@ -78,26 +78,25 @@ public actor RoutedACPAgent: Agent {
         connections.clientCapabilities(of: id)
     }
 
-    /// The settings folders of the agent (ACPA-16, D98): ``name``, the root
-    /// settings folder of the host, and ``environment``. Each stack of each
+    /// The settings folders of the agent (ACPA-16, D98): ``name``, the
+    /// ``AgentHome`` of the host, and ``environment``. Each stack of each
     /// session comes from them: the configuration stack of each
     /// ``makeConfigurationLoader(workingDirectory:)`` and the skills and
     /// agents stacks of each ``CatalogContext``.
     nonisolated let settingsFolders: SettingsFolders
 
     /// The environment of the host. The per-session dotfolder stacks read
-    /// their defaults layer from it, and with no root settings folder
-    /// `XDG_CONFIG_HOME` too. Each session composition gives it to its
+    /// their defaults layer from it. Each session composition gives it to its
     /// ``CatalogContext``, so the session tools read the values that the
     /// host gave (``CatalogContext/environment``).
     nonisolated let environment: [String: String]
 
-    /// The cache folder of the skills marketplace store that the host gave,
-    /// or `nil` when the host gave none. Each session composition gives it
-    /// to its ``CatalogContext``. A folder here wins over
-    /// `SKILLS_MARKETPLACE_CACHE` of ``environment``
-    /// (``CatalogContext/skillsMarketplaceCacheDirectory``).
-    public nonisolated let skillsMarketplaceCacheDirectory: URL?
+    /// The home of the host (task ^98a44n7): each folder outside the project
+    /// that the agent and its sessions read or write comes from it, through
+    /// ``settingsFolders``.
+    public nonisolated var home: AgentHome {
+        settingsFolders.home
+    }
 
     /// The transcript location that the host gave in code, or `nil` when
     /// the config files decide.
@@ -355,15 +354,14 @@ public actor RoutedACPAgent: Agent {
     ///     is resolved.
     ///   - reporting: The UI-bindable resolution progress, or `nil` for a
     ///     fresh unobserved one.
-    ///   - rootSettingsFolder: The root settings folder of the host, or `nil`
-    ///     (the default) for the XDG user layers of the CLI. With a root,
-    ///     each stack of each session reads its user layer from the root and
-    ///     no stack holds a folder in the home directory or in
-    ///     `XDG_CONFIG_HOME` (``SettingsFolders``). Tests give a temporary
-    ///     folder so they never touch the real home directory.
+    ///   - home: The home of the host (``home``). Each stack of each session
+    ///     reads its user layer from it (``SettingsFolders``), and each
+    ///     session takes its skills marketplace cache and the folder of its
+    ///     machine state from it. Tests give a custom home in throwaway
+    ///     folders, so they never touch the real home directory.
     ///   - environment: The environment of the host: the stacks read their
-    ///     defaults layer from it, and with no root `XDG_CONFIG_HOME` too,
-    ///     and the session tools read it (``CatalogContext/environment``).
+    ///     defaults layer from it, and the session tools read it
+    ///     (``CatalogContext/environment``).
     ///     Defaults to the environment of the process.
     ///   - inlineSettleGrace: The settle period of each session that the
     ///     agent makes, in seconds. Defaults to
@@ -374,10 +372,6 @@ public actor RoutedACPAgent: Agent {
     ///   - secretStore: The store that gives the value of each secret
     ///     reference, or `nil` (the default) for the login Keychain under
     ///     the service `name` — see ``secretStore``.
-    ///   - skillsMarketplaceCacheDirectory: The cache folder of the skills
-    ///     marketplace store, or `nil` (the default) to read it from
-    ///     `SKILLS_MARKETPLACE_CACHE` of `environment` — see
-    ///     ``skillsMarketplaceCacheDirectory``.
     ///   - userDeviceTokens: The bearer tokens of the devices of the user,
     ///     or none (the default) — see ``userDeviceTokens``. A host with no
     ///     HTTP server gives none: its stdio and in-process connections are
@@ -390,21 +384,18 @@ public actor RoutedACPAgent: Agent {
         hooks: AgentHooks,
         configuration: AgentConfiguration = AgentConfiguration(),
         reporting: ResolutionProgress? = nil,
-        rootSettingsFolder: URL? = nil,
+        home: AgentHome,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
-        skillsMarketplaceCacheDirectory: URL? = nil,
         userDeviceTokens: Set<String> = []
     ) async throws {
         self.name = name
         self.hooks = hooks
         self.userDeviceTokens = userDeviceTokens
-        self.settingsFolders = SettingsFolders(
-            name: name, rootSettingsFolder: rootSettingsFolder, environment: environment)
+        self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)
         self.environment = environment
-        self.skillsMarketplaceCacheDirectory = skillsMarketplaceCacheDirectory
         self.inlineSettleGrace = inlineSettleGrace
         self.transcriptLocation = transcriptLocation
         self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)

@@ -183,7 +183,7 @@ public struct SnapshotInventory: Sendable {
     ///
     /// - Parameters:
     ///   - hooksDataDirectory: The hook data directory, for example
-    ///     ``AgentHooks/dataDirectory(name:environment:)``. The snapshots are
+    ///     ``AgentHome/hooksDirectory``. The snapshots are
     ///     in its `snapshot` folder.
     ///   - settingsStore: The store that gives the project registry and the
     ///     settings of each project.

@@ -9,7 +9,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:rootSettingsFolder:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:hooksDataDirectory:skillsMarketplaceCacheDirectory:modelCacheDirectory:userDeviceTokens:reporting:)``
+/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -23,7 +23,8 @@ import FoundationModelsRouter
 ///
 /// ```swift
 /// let composed = try await ComposedAgent.compose(
-///     name: try DotfolderName("my-host"), workingDirectory: projectDirectory)
+///     name: try DotfolderName("my-host"), workingDirectory: projectDirectory,
+///     home: .custom(synced: syncedFolder, local: localFolder))
 /// let connection = await AgentSideConnection(stream: transport) { connection in
 ///     composed.agent(boundTo: connection)
 /// }
@@ -89,32 +90,33 @@ public struct ComposedAgent: Sendable {
     /// layer the in-code default applies. Each session later loads its own
     /// stack again, keyed by the session's `cwd`.
     ///
-    /// The composition also makes the ``AgentHooks`` of the agent, in
-    /// `hooksDataDirectory` or, when the host gives none, in the data
-    /// directory ``AgentHooks/dataDirectory(name:environment:)``, and gives
-    /// its dispatcher to the router and to the agent.
+    /// The composition also makes the ``AgentHooks`` of the agent, in the
+    /// ``AgentHome/hooksDirectory`` of `home`, and gives its dispatcher to
+    /// the router and to the agent.
     ///
     /// Call this one time, before the first connection. Then give each
     /// connection the agent with ``agent(boundTo:)``.
     ///
     /// - Parameters:
     ///   - name: The dotfolder name the host chose. It
-    ///     roots the configuration stack, the transcript directory and the
-    ///     hook data directory.
+    ///     roots the configuration stack and the transcript directory.
     ///   - workingDirectory: The directory whose dotfolder stack the
     ///     start-up configuration loads from.
-    ///   - rootSettingsFolder: The root settings folder of the host, or `nil`
-    ///     (the default) for the XDG user layers. With a root, the user layer
-    ///     of `config.yaml` and `Instructions.md` is `<root>/`, the user
-    ///     layer of the skills is `<root>/_skills/`, and no stack of the
-    ///     agent holds a folder in the home directory or in
-    ///     `XDG_CONFIG_HOME` (``SettingsFolders``). An app gives
-    ///     `<iCloud container>/Agents/` here. The `acp-agent` CLI gives no
-    ///     value.
+    ///   - home: The home of the host (task ^98a44n7). Each folder outside
+    ///     the project comes from it: the user layer of each settings stack
+    ///     (``SettingsFolders``), the hook data and the snapshot timelines,
+    ///     the skills marketplace cache, the model cache, the metadata cache
+    ///     of the router, and the machine state of each project. An app gives
+    ///     ``AgentHome/custom(synced:local:)`` with a folder of its iCloud
+    ///     container and a folder in Application Support; never a folder in
+    ///     Caches or in a temporary folder for the local root, because macOS
+    ///     can delete those, and the snapshot timelines and the models must
+    ///     persist. The `acp-agent` CLI gives
+    ///     ``AgentHome/xdg(name:environment:)``. The model check of `doctor`
+    ///     reads the model cache of the same home.
     ///   - environment: The environment the stacks read their defaults
-    ///     layer from (and `XDG_CONFIG_HOME` when there is no root), and the
-    ///     hooks read `XDG_DATA_HOME` from. The process environment by
-    ///     default.
+    ///     layer from, and the session tools read. The process environment
+    ///     by default.
     ///   - modelSource: The model path to build the router over.
     ///     ``ModelSource/live`` by default.
     ///   - stubChunkGate: The path of a named pipe that a stub answer reads
@@ -136,38 +138,6 @@ public struct ComposedAgent: Sendable {
     ///     gives the synchronizable items of iCloud Keychain here
     ///     (`KeychainSecretStore(service:synchronizable:)` with
     ///     `synchronizable: true`).
-    ///   - hooksDataDirectory: The directory where the hooks keep their
-    ///     data, or `nil` (the default) for
-    ///     ``AgentHooks/dataDirectory(name:environment:)``, the XDG data
-    ///     home. The snapshot timeline of each session goes into its
-    ///     `snapshot` folder, and that timeline must persist. Thus an app
-    ///     gives a folder in Application Support, for example
-    ///     `<Application Support>/<bundle id>/hooks`. Never give a folder in
-    ///     Caches or in a temporary folder, because macOS can delete those.
-    ///     The `acp-agent` CLI gives no value.
-    ///   - skillsMarketplaceCacheDirectory: The cache folder of the skills
-    ///     marketplace store of each session, or `nil` (the default) for the
-    ///     folder that `SKILLS_MARKETPLACE_CACHE` of `environment` names, or
-    ///     the default folder under the home folder when that variable is
-    ///     not set. A folder here wins over `SKILLS_MARKETPLACE_CACHE`. The
-    ///     marketplace agents come from the same store, thus they use the
-    ///     same folder. An app gives a folder in Application Support, for
-    ///     example `<Application Support>/<bundle id>/skills-marketplace`.
-    ///     The `acp-agent` CLI gives no value.
-    ///   - modelCacheDirectory: The Hugging Face hub cache folder of the
-    ///     models, or `nil` (the default) for the default Hugging Face
-    ///     cache. A ``ModelSource/live`` router downloads each model into
-    ///     this folder and loads the weights from it, also when
-    ///     `HF_HUB_CACHE` or `HF_HOME` names a different folder. With `nil`,
-    ///     the cache folder comes from `HF_HUB_CACHE` or `HF_HOME` of the
-    ///     process environment, or is `~/.cache/huggingface/hub`. The models
-    ///     are large, and a new download takes a long time. Thus an app
-    ///     gives a folder in Application Support, for example
-    ///     `<Application Support>/<bundle id>/models`. Do not give a folder
-    ///     in Caches, because macOS can delete it. The model check of
-    ///     `doctor` must read the same folder: give it to
-    ///     `SystemModelResolver.init(environment:modelCacheDirectory:)`.
-    ///     The `acp-agent` CLI gives no value.
     ///   - userDeviceTokens: The bearer tokens of the devices of the user, or
     ///     none (the default). A host that serves ACP over HTTP gives the
     ///     token of each paired device here; a connection with one of them
@@ -190,26 +160,21 @@ public struct ComposedAgent: Sendable {
     public static func compose(
         name: DotfolderName,
         workingDirectory: URL,
-        rootSettingsFolder: URL? = nil,
+        home: AgentHome,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         modelSource: ModelSource = .live,
         stubChunkGate: String? = nil,
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
-        hooksDataDirectory: URL? = nil,
-        skillsMarketplaceCacheDirectory: URL? = nil,
-        modelCacheDirectory: URL? = nil,
         userDeviceTokens: Set<String> = [],
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
-            settingsFolders: SettingsFolders(
-                name: name, rootSettingsFolder: rootSettingsFolder, environment: environment),
+            settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
             workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
             secretStore: secretStore
         ).load().configuration
-        let hooks = AgentHooks(
-            dataDirectory: hooksDataDirectory ?? AgentHooks.dataDirectory(name: name, environment: environment))
+        let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
         let agent = try await RoutedACPAgent(
             name: name,
             router: try makeRouter(
@@ -217,15 +182,14 @@ public struct ComposedAgent: Sendable {
                 gatedBy: stubChunkGate,
                 recordingInto: try makeRecordingsDirectory(),
                 hooks: hooks.dispatcher,
-                modelCacheDirectory: modelCacheDirectory),
+                home: home),
             hooks: hooks,
             configuration: configuration,
             reporting: progress,
-            rootSettingsFolder: rootSettingsFolder,
+            home: home,
             environment: environment,
             transcriptLocation: transcriptLocation,
             secretStore: secretStore,
-            skillsMarketplaceCacheDirectory: skillsMarketplaceCacheDirectory,
             userDeviceTokens: userDeviceTokens)
         return ComposedAgent(
             agent: agent, modelSource: modelSource, configuration: configuration)
@@ -309,10 +273,11 @@ public struct ComposedAgent: Sendable {
     ///     ``makeRecordingsDirectory()``.
     ///   - hooks: The dispatcher that each session of the router sends its
     ///     hook events to: the ``AgentHooks/dispatcher`` of the agent.
-    ///   - modelCacheDirectory: The model cache folder of the host, or `nil`
-    ///     for the default Hugging Face cache — see
-    ///     ``makeLiveModelLoader(modelCacheDirectory:)``. The stub path
-    ///     ignores it, because it downloads nothing.
+    ///   - home: The home of the host. The live path takes the metadata cache
+    ///     of the router (``AgentHome/routerCacheDirectory``) and the model
+    ///     cache (``AgentHome/modelCacheDirectory``) from it. The stub path
+    ///     ignores it, because it downloads nothing and keeps its stub
+    ///     metadata in a throwaway folder.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
@@ -322,13 +287,14 @@ public struct ComposedAgent: Sendable {
         gatedBy chunkGate: String?,
         recordingInto recordingsDirectory: URL,
         hooks: HookDispatcher,
-        modelCacheDirectory: URL?
+        home: AgentHome
     ) throws -> Router {
         switch modelSource {
         case .live:
             Router(
+                cacheDir: home.routerCacheDirectory,
                 recordingsDir: recordingsDirectory,
-                loader: makeLiveModelLoader(modelCacheDirectory: modelCacheDirectory), hooks: hooks)
+                loader: makeLiveModelLoader(modelCacheDirectory: home.modelCacheDirectory), hooks: hooks)
         case .stub:
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
@@ -340,14 +306,13 @@ public struct ComposedAgent: Sendable {
 
     /// Makes the loader of the live path over one model cache folder.
     ///
-    /// - Parameter modelCacheDirectory: The Hugging Face hub cache folder
-    ///   that the host gave, or `nil` for the default Hugging Face cache.
-    ///   Each download writes to a given folder, and each load reads the
-    ///   weights from it, also when `HF_HUB_CACHE` or `HF_HOME` names a
-    ///   different folder. The default cache reads these variables from the
-    ///   process environment.
+    /// - Parameter modelCacheDirectory: The Hugging Face hub cache folder of
+    ///   the home (``AgentHome/modelCacheDirectory``). Each download writes
+    ///   to it, and each load reads the weights from it, also when
+    ///   `HF_HUB_CACHE` or `HF_HOME` of the process names a different
+    ///   folder.
     /// - Returns: The live loader over that cache.
-    static func makeLiveModelLoader(modelCacheDirectory: URL?) -> LiveModelLoader {
+    static func makeLiveModelLoader(modelCacheDirectory: URL) -> LiveModelLoader {
         LiveModelLoader(cacheDirectory: modelCacheDirectory)
     }
 

@@ -58,8 +58,8 @@ extension AcpAgentCommand {
         ///
         /// - Parameters:
         ///   - options: The `--cwd` option group of the subcommand.
-        ///   - environment: The environment the stack reads
-        ///     `XDG_CONFIG_HOME` from.
+        ///   - environment: The environment the home of the stack is read
+        ///     from (``AgentComposition/home(environment:)``).
         /// - Returns: The loader. Construction touches no file.
         /// - Throws: `DotfolderNameError` when the dotfolder name is
         ///   refused.
@@ -94,6 +94,9 @@ extension AcpAgentCommand {
             /// The `--cwd` option (§5.10).
             @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             /// Whether each key names the layer that set it.
             @Flag(
                 name: .customLong("source"),
@@ -107,7 +110,8 @@ extension AcpAgentCommand {
             var asJSON = false
 
             mutating func run() throws {
-                try report(environment: ProcessInfo.processInfo.environment).write()
+                try report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
+                    .write()
             }
 
             /// Builds the report: the merged configuration of `--cwd`'s
@@ -116,8 +120,8 @@ extension AcpAgentCommand {
             /// its value.
             ///
             /// - Parameters:
-            ///   - environment: The environment the stack reads
-            ///     `XDG_CONFIG_HOME` from.
+            ///   - environment: The environment the home of the stack is
+            ///     read from (``AgentComposition/home(environment:)``).
             ///   - secretStore: The store that gives the value of each
             ///     secret reference, or `nil` (the default) for the login
             ///     Keychain of the CLI.
@@ -222,6 +226,9 @@ extension AcpAgentCommand {
             /// The `--cwd` option (§5.10).
             @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             /// Which layer receives the file. The project layer is the
             /// default, which matches `instructions eject`.
             @Flag var layer: LayerSelection = .project
@@ -235,14 +242,15 @@ extension AcpAgentCommand {
             var overwrites = false
 
             mutating func run() throws {
-                try report(environment: ProcessInfo.processInfo.environment).write()
+                try report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
+                    .write()
             }
 
             /// Writes the file and builds the report: the written path, and
             /// nothing for stderr.
             ///
-            /// - Parameter environment: The environment the stack reads
-            ///   `XDG_CONFIG_HOME` from.
+            /// - Parameter environment: The environment the home of the
+            ///   stack is read from (``AgentComposition/home(environment:)``).
             /// - Returns: The report.
             /// - Throws: `DotfolderNameError` when the dotfolder name is
             ///   refused, or what
@@ -297,15 +305,19 @@ extension AcpAgentCommand {
             /// The `--cwd` option (§5.10).
             @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             mutating func run() throws {
-                try report(environment: ProcessInfo.processInfo.environment).write()
+                try report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
+                    .write()
             }
 
             /// Builds the report: the builtin row, then one row per layer
             /// of `--cwd`'s stack, lowest precedence first.
             ///
-            /// - Parameter environment: The environment the stack reads
-            ///   `XDG_CONFIG_HOME` from.
+            /// - Parameter environment: The environment the home of the
+            ///   stack is read from (``AgentComposition/home(environment:)``).
             /// - Returns: The report, with nothing for stderr.
             /// - Throws: `DotfolderNameError` when the dotfolder name is
             ///   refused; `BuiltinConfigurationFileError` when the resource
@@ -430,8 +442,12 @@ extension AcpAgentCommand {
             /// The `--cwd` option (§5.10).
             @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             mutating func run() throws {
-                let plan = try self.plan(environment: ProcessInfo.processInfo.environment)
+                let plan = try self.plan(
+                    environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
                 plan.report.write()
                 try EditorLauncher.open(plan.file, with: plan.editorCommand)
             }
@@ -443,8 +459,9 @@ extension AcpAgentCommand {
             /// that cannot open an editor must change no file, so the
             /// refusal comes before the write.
             ///
-            /// - Parameter environment: The environment the editor and
-            ///   the stack are read from.
+            /// - Parameter environment: The environment the editor and the
+            ///   home of the stack are read from
+            ///   (``AgentComposition/home(environment:)``).
             /// - Returns: The plan.
             /// - Throws: ``EditorNotNamedError`` when the environment
             ///   names no editor, `DotfolderNameError` when the dotfolder

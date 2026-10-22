@@ -213,15 +213,15 @@ public struct SessionSurface: Sendable {
 /// constructed, and never reaches the model.
 public enum ToolCatalog {
     /// The dotfolder name the skills stack roots at:
-    /// `<workingDirectory>/.skills` for the project layer, and with no root
-    /// settings folder `~/.config/skills` for the user layer
-    /// (``SettingsFolders``).
+    /// `<workingDirectory>/.skills` for the project layer. The user layer
+    /// is `$XDG_CONFIG_HOME/skills` of an XDG home, and `<synced>/_skills`
+    /// of a custom home (``SettingsFolders``, ``AgentHome``).
     static let skillsDotfolderName = "skills"
 
     /// The dotfolder name the agents stack roots at:
-    /// `<workingDirectory>/.agents` for the project layer, and with no root
-    /// settings folder `~/.config/agents` for the user layer
-    /// (``SettingsFolders``). Each layer holds the agent folders
+    /// `<workingDirectory>/.agents` for the project layer. The user layer
+    /// is `$XDG_CONFIG_HOME/agents` of an XDG home, and `<synced>/` of a
+    /// custom home (``SettingsFolders``, ``AgentHome``). Each layer holds the agent folders
     /// `<id>/AGENT.md` and `agents/<id>/AGENT.md`, and its root `AGENT.md`
     /// is the default agent.
     static let agentsDotfolderName = "agents"
@@ -434,9 +434,14 @@ public enum ToolCatalog {
             // not the context environment: `withShell(...)` of Multitool
             // takes no environment, and its runner starts each child with
             // the process environment.
+            // The store is the folder that `tools.shell.storeDirectory`
+            // names, or the shell store of the project in the local root of
+            // the home: never the working directory, which can be in the
+            // synced root.
             try SandboxComposition.composeShell(
                 into: builder,
-                options: options,
+                storeDirectory: options.storeDirectory
+                    ?? context.settingsFolders.home.shellStoreDirectory(of: context.workingDirectory),
                 configuration: context.configuration.sandbox,
                 rootSet: [context.workingDirectory] + context.additionalRoots,
                 outputChunkStream: stream)
@@ -528,7 +533,7 @@ public enum ToolCatalog {
         let codeContext = try await CodeContext(
             rootDirectory: context.workingDirectory,
             embedder: embedder,
-            autoInstall: LspAutoInstall(isEnabled: options.autoInstall))
+            autoInstall: makeLanguageServerInstall(options: options, home: context.settingsFolders.home))
         do {
             try await codeContext.start()
             builder.addGroup(
@@ -540,6 +545,19 @@ public enum ToolCatalog {
         return (
             stop: { await codeContext.stop() },
             firstIndexPass: { await codeContext.waitForFirstIndexPass() })
+    }
+
+    /// The language server install of the code context of a session: on or
+    /// off as `tools.codeContext.autoInstall` says, with its install record
+    /// in the ``AgentHome/languageServerInstallRecordDirectory`` of the home.
+    ///
+    /// - Parameters:
+    ///   - options: The decoded `codeContext:` options.
+    ///   - home: The home of the agent.
+    /// - Returns: The install settings.
+    static func makeLanguageServerInstall(options: CodeContextToolOptions, home: AgentHome) -> LspAutoInstall {
+        LspAutoInstall(
+            isEnabled: options.autoInstall, failureRecordDirectory: home.languageServerInstallRecordDirectory)
     }
 
     /// Builds the skills registry of the session over the dotfolder stack,
@@ -565,18 +583,17 @@ public enum ToolCatalog {
     /// (``AgentsComposition``), thus a marketplace is fetched one time for
     /// the skills and the agents of a session.
     ///
-    /// The cache folder of the store is
-    /// ``CatalogContext/skillsMarketplaceCacheDirectory`` when the host gave
-    /// one. That folder wins over `SKILLS_MARKETPLACE_CACHE`. With no folder
-    /// from the host, the store reads its cache folder from
-    /// ``CatalogContext/environment``: `SKILLS_MARKETPLACE_CACHE`, or the
-    /// default folder under the home folder when that variable is not set.
+    /// The cache folder of the store is the
+    /// ``AgentHome/skillsMarketplaceCacheDirectory`` of the home of
+    /// ``CatalogContext/settingsFolders``. The XDG home of the CLI gives the
+    /// folder of `SKILLS_MARKETPLACE_CACHE`, or the default folder under the
+    /// home folder when that variable is not set.
     /// The store always reads its read-only seed folder from
     /// `SKILLS_MARKETPLACE_SEED` of the environment, and with no such
     /// variable there is no seed. The
     /// dotfolder stack is the ``SettingsFolders/Kind/skills`` stack of
-    /// ``CatalogContext/settingsFolders``: with a root settings folder its
-    /// user layer is `<root>/_skills/`, and with no root it is the XDG user
+    /// ``CatalogContext/settingsFolders``: with a custom home its user layer
+    /// is `<synced>/_skills/`, and with the XDG home it is the XDG user
     /// layer. It reads `SKILLS_DEFAULTS_DIR` from the environment of the
     /// settings folders.
     ///
@@ -591,8 +608,7 @@ public enum ToolCatalog {
         }
         let store = MarketplaceStore(
             sources: options.marketplaces, layout: SkillMarketplaceLayout.skills,
-            cacheDirectory: context.skillsMarketplaceCacheDirectory
-                ?? MarketplaceStore.cacheDirectory(environment: context.environment),
+            cacheDirectory: context.settingsFolders.home.skillsMarketplaceCacheDirectory,
             policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: context.environment)
         await store.start()
         return SkillsSource(

@@ -11,8 +11,8 @@ import Testing
 /// and its recorded state. A key is recorded when the `sessions.jsonl` of a
 /// project of the project registry has the key as a session id.
 ///
-/// Each test uses a temporary hook data directory, a temporary root settings
-/// folder and temporary git work trees. No test reads the home directory.
+/// Each test uses a temporary hook data directory, a temporary custom home
+/// and temporary git work trees. No test reads the home directory.
 struct SnapshotInventoryTests {
     // MARK: - Constants
 
@@ -48,7 +48,7 @@ struct SnapshotInventoryTests {
     // MARK: - The fixture
 
     /// A temporary hook data directory, a settings store over a temporary
-    /// root settings folder, and one registered project whose
+    /// custom home, and one registered project whose
     /// `sessions.jsonl` has ``recordedKey``.
     private struct Fixture {
         /// The hook data directory. The snapshots are in its `snapshot`
@@ -282,14 +282,13 @@ struct SnapshotInventoryTests {
     /// session of a folder.
     @Test
     func theStartOfTheAgentKeepsTheSnapshotFolders() async throws {
-        let dataDirectory = makeResolvedDirectory(label: "SnapshotInventoryTests-start-hooks")
-        try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: dataDirectory)
+        let home = AgentHomeFixture.make(label: "SnapshotInventoryTests-start")
+        try Self.makeEmptyShadowFolder(sessionKey: Self.unrecordedKey, in: home.hooksDirectory)
 
         _ = try await composeStubAgent(
-            name: AgentClientHarness.dotfolderName, label: "SnapshotInventoryTests-start",
-            hooksDataDirectory: dataDirectory)
+            name: AgentClientHarness.dotfolderName, label: "SnapshotInventoryTests-start", home: home)
 
-        let store = SnapshotStore(directory: AgentHooks.snapshotDirectory(in: dataDirectory))
+        let store = SnapshotStore(directory: AgentHooks.snapshotDirectory(in: home.hooksDirectory))
         #expect(try await store.shadowSessionKeys() == [Self.unrecordedKey])
     }
 }

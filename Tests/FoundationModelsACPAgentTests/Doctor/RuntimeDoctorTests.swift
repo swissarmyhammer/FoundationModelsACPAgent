@@ -38,17 +38,18 @@ struct RuntimeDoctorTests {
     ///
     /// - Parameters:
     ///   - fixture: The two-layer tree the skills stack roots in.
-    ///   - rootSettingsFolder: The root settings folder of the host, or
-    ///     `nil` (the default) for the XDG layers of the CLI.
+    ///   - home: The home of the host, or `nil` (the default) for the XDG
+    ///     home of the environment of `fixture`.
     /// - Returns: The component.
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
     private static func doctor(
-        in fixture: ConfigCommandFixture, rootSettingsFolder: URL? = nil
+        in fixture: ConfigCommandFixture, home: AgentHome? = nil
     ) throws -> RuntimeDoctor {
-        RuntimeDoctor(
+        let name = try DotfolderName(dotfolderName)
+        return RuntimeDoctor(
             workingDirectory: fixture.workspace,
             settingsFolders: SettingsFolders(
-                name: try DotfolderName(dotfolderName), rootSettingsFolder: rootSettingsFolder,
+                name: name, home: home ?? .xdg(name: name, environment: fixture.environment),
                 environment: fixture.environment))
     }
 
@@ -132,17 +133,17 @@ struct RuntimeDoctorTests {
         #expect(agentsChecks.allSatisfy { $0.status == .ok })
     }
 
-    // MARK: - The root settings folder
+    // MARK: - A custom home
 
-    /// With a root settings folder, the rows give the skills layer in the
+    /// With a custom home, the rows give the skills layer in its synced
     /// root, and no row gives a layer in the XDG config home.
-    @Test func withARootTheRowsGiveTheLayersOfTheRoot() async throws {
+    @Test func withACustomHomeTheRowsGiveTheLayersOfItsSyncedRoot() async throws {
         let fixture = ConfigCommandFixture(label: "RuntimeDoctorTests-root")
-        let root = makeResolvedDirectory(label: "RuntimeDoctorTests-root-settings")
-        let skillsLayer = root.appendingPathComponent(SettingsFolders.skillsFolderName, isDirectory: true)
+        let home = AgentHomeFixture.make(label: "RuntimeDoctorTests-root-settings")
+        let skillsLayer = home.synced.appendingPathComponent(SettingsFolders.skillsFolderName, isDirectory: true)
         try FileManager.default.createDirectory(at: skillsLayer, withIntermediateDirectories: true)
 
-        let checks = try await Self.doctor(in: fixture, rootSettingsFolder: root).runHealthChecks()
+        let checks = try await Self.doctor(in: fixture, home: home).runHealthChecks()
 
         #expect(checks.contains { $0.message.contains(skillsLayer.path) })
         #expect(!checks.contains { $0.message.contains(fixture.configHome.path) })

@@ -71,6 +71,9 @@ struct ToolsDoctorTests {
     /// The permissions of a directory that can be read but not written.
     private static let readOnlyPermissions = NSNumber(value: 0o500)
 
+    /// The name of the row of the shell store directory.
+    private static let storeRowName = "the shell store directory"
+
     /// The configuration key a store-directory fix names.
     private static let storeDirectoryKey = "tools.shell.storeDirectory"
 
@@ -84,6 +87,8 @@ struct ToolsDoctorTests {
     /// - Parameters:
     ///   - configuration: The resolved configuration the checks read.
     ///   - workingDirectory: The directory `--cwd` names.
+    ///   - home: The home whose local root holds the default shell store.
+    ///     The default is a custom home over throwaway folders.
     ///   - prober: The scripted prober.
     ///   - timeoutSeconds: How long one prober call may take.
     ///   - environment: The process environment the web row reads the API
@@ -93,13 +98,14 @@ struct ToolsDoctorTests {
     private static func doctor(
         configuration: AgentConfiguration,
         workingDirectory: URL,
+        home: AgentHome = AgentHomeFixture.make(label: "ToolsDoctorTests"),
         prober: StubToolsProber = StubToolsProber(),
         timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds,
         environment: [String: String] = [:]
     ) -> ToolsDoctor {
         ToolsDoctor(
-            configuration: configuration, workingDirectory: workingDirectory, prober: prober,
-            timeoutSeconds: timeoutSeconds, environment: environment)
+            configuration: configuration, workingDirectory: workingDirectory, home: home,
+            prober: prober, timeoutSeconds: timeoutSeconds, environment: environment)
     }
 
     /// The web row of `checks`.
@@ -227,6 +233,22 @@ struct ToolsDoctorTests {
         #expect(errors.count == Self.oneFinding)
         #expect(failure.message.contains(store.path))
         #expect(fix.contains(Self.storeDirectoryKey))
+    }
+
+    /// With no `tools.shell.storeDirectory`, the store row checks the folder
+    /// that the session uses: the shell store of the project in the local
+    /// root of the home, and not a folder in the working directory.
+    @Test func theDefaultShellStoreIsTheStoreOfTheProjectInTheHome() async throws {
+        let workspace = makeResolvedDirectory(label: "ToolsDoctorTests-defaultStore")
+        let home = AgentHomeFixture.make(label: "ToolsDoctorTests-defaultStore")
+
+        let checks = await Self.doctor(
+            configuration: AgentConfiguration(), workingDirectory: workspace, home: home
+        ).runHealthChecks()
+
+        let store = try Self.row(named: Self.storeRowName, in: checks)
+        #expect(store.status == .ok)
+        #expect(store.message.contains(home.shellStoreDirectory(of: workspace).standardizedFileURL.path))
     }
 
     /// `tools.shell: false` gives one `.ok` row that says disabled, and no
@@ -468,7 +490,7 @@ struct ToolsDoctorTests {
 
         let component = ToolsDoctor(
             configuration: AgentConfiguration(), workingDirectory: workspace,
-            prober: StubToolsProber())
+            home: AgentHomeFixture.make(label: "ToolsDoctorTests-timeout"), prober: StubToolsProber())
 
         #expect(component.timeoutSeconds == ToolsDoctor.probeTimeoutSeconds)
     }

@@ -6,9 +6,10 @@ import Testing
 @testable import FoundationModelsACPAgent
 @testable import acp_agent
 
-/// The model cache folder that a host gives (ACPA-16): the live download, the
-/// resolver and `doctor` use a given folder, also when `HF_HOME` and
-/// `HF_HUB_CACHE` name a different folder. With no folder, nothing changes.
+/// The model cache folder of the home (ACPA-16, ^98a44n7): the live download,
+/// the resolver and `doctor` use the folder of a custom home, also when
+/// `HF_HOME` and `HF_HUB_CACHE` name a different folder. With the XDG home,
+/// nothing changes.
 ///
 /// The router loader keeps its Hugging Face cache private, and
 /// `ProfileDoctor` keeps its resolver private. Thus the suite reads each
@@ -93,19 +94,15 @@ struct ModelCacheDirectoryTests {
 
     /// The `ProfileDoctor` of the `doctor` registry over a fresh fixture.
     ///
-    /// - Parameters:
-    ///   - environment: The environment variables to add to the environment
-    ///     of the fixture.
-    ///   - modelCacheDirectory: The model cache folder of the host, or `nil`.
+    /// - Parameter environment: The environment variables to add to the
+    ///   environment of the fixture. `ACP_AGENT_HOME` here gives a custom
+    ///   home; with none, the home is the XDG home.
     /// - Returns: The profile component, or `nil` when the registry has none.
-    private static func profileDoctor(
-        environment: [String: String], modelCacheDirectory: URL?
-    ) -> ProfileDoctor? {
+    private static func profileDoctor(environment: [String: String]) -> ProfileDoctor? {
         let fixture = ConfigCommandFixture(label: "ModelCacheDirectoryTests-doctor")
         let components = AcpAgentCommand.Doctor.components(
             workingDirectory: fixture.workspace,
             environment: fixture.environment.merging(environment) { _, new in new },
-            modelCacheDirectory: modelCacheDirectory,
             prober: StubToolsProber(),
             memoryBytes: generousMemoryBytes, freeDiskBytes: generousDiskBytes)
         return components.lazy.compactMap { $0 as? ProfileDoctor }.first
@@ -123,10 +120,14 @@ struct ModelCacheDirectoryTests {
         #expect(Self.folder(in: loader, at: Self.liveLoaderCachePath) == hostCache.standardizedFileURL.path)
     }
 
-    /// The live loader of no folder uses the same cache as the loader that
-    /// the router makes with no argument.
-    @Test func theLiveLoaderOfNoFolderKeepsTheDefaultCache() {
-        let loader = ComposedAgent.makeLiveModelLoader(modelCacheDirectory: nil)
+    /// The live loader of the XDG home of the process environment uses the
+    /// same cache as the loader that the router makes with no argument.
+    @Test func theLiveLoaderOfTheXDGHomeKeepsTheDefaultCache() throws {
+        let home = AgentHome.xdg(
+            name: try DotfolderName(AgentComposition.dotfolderName),
+            environment: ProcessInfo.processInfo.environment)
+
+        let loader = ComposedAgent.makeLiveModelLoader(modelCacheDirectory: home.modelCacheDirectory)
 
         let defaultFolder = Self.folder(in: LiveModelLoader(), at: Self.liveLoaderCachePath)
         #expect(defaultFolder != nil)
@@ -160,25 +161,25 @@ struct ModelCacheDirectoryTests {
 
     // MARK: - The doctor
 
-    /// The profile check of `doctor` reads a given folder, also when
-    /// `HF_HOME` and `HF_HUB_CACHE` name a different folder.
-    @Test func aGivenFolderWinsOverTheEnvironmentInTheDoctor() throws {
-        let hostCache = Self.makeFolder(named: "doctor-host")
+    /// The profile check of `doctor` reads the model cache of a custom home,
+    /// also when `HF_HOME` and `HF_HUB_CACHE` name a different folder.
+    @Test func theCacheOfACustomHomeWinsOverTheEnvironmentInTheDoctor() throws {
+        let homeFolder = Self.makeFolder(named: "doctor-host")
+        let environment = Self.environmentWithOtherCaches()
+            .merging([AgentComposition.homeVariable: homeFolder.path]) { _, new in new }
+        let hostCache = try AgentComposition.home(environment: environment).modelCacheDirectory
 
-        let doctor = try #require(
-            Self.profileDoctor(
-                environment: Self.environmentWithOtherCaches(), modelCacheDirectory: hostCache))
+        let doctor = try #require(Self.profileDoctor(environment: environment))
 
         #expect(Self.folder(in: doctor, at: Self.profileDoctorCachePath) == hostCache.standardizedFileURL.path)
     }
 
-    /// With no folder, the profile check of `doctor` reads its hub cache
+    /// With the XDG home, the profile check of `doctor` reads its hub cache
     /// from `HF_HOME`, as before.
-    @Test func theDoctorOfNoFolderReadsTheEnvironment() throws {
+    @Test func theDoctorOfTheXDGHomeReadsTheEnvironment() throws {
         let home = Self.makeFolder(named: "doctor-home")
 
-        let doctor = try #require(
-            Self.profileDoctor(environment: [Self.homeVariable: home.path], modelCacheDirectory: nil))
+        let doctor = try #require(Self.profileDoctor(environment: [Self.homeVariable: home.path]))
 
         #expect(
             Self.folder(in: doctor, at: Self.profileDoctorCachePath)

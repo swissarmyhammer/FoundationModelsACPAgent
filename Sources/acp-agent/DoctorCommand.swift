@@ -62,6 +62,9 @@ extension AcpAgentCommand {
         /// The `--cwd` option (§5.10).
         @OptionGroup var workingDirectoryOptions: WorkingDirectoryOptions
 
+        /// The `--home` option, which roots the user layer.
+        @OptionGroup var homeOptions: HomeOptions
+
         /// Whether the report goes to stdout as JSON in place of the
         /// table on stderr.
         @Flag(
@@ -78,11 +81,18 @@ extension AcpAgentCommand {
         /// — appends its own conformance here, and the command around it
         /// never changes again.
         ///
-        /// The configuration, the profile, the transcripts, the tools and
-        /// the runtime are registered, in the order cli-plan.md §5.12 lists
-        /// them. All five read one load of `config.yaml`, which this
-        /// function makes once and hands to each of them, so a `doctor` run
-        /// reads the stack a single time.
+        /// The configuration, the home, the profile, the transcripts, the
+        /// tools and the runtime are registered, in the order cli-plan.md
+        /// §5.12 lists them, with the home after the configuration. All six
+        /// read one load of `config.yaml` and one home, which this function
+        /// makes once and hands to each of them, so a `doctor` run reads the
+        /// stack a single time.
+        ///
+        /// The home is the home of the loader
+        /// (``AgentComposition/home(environment:)``), the same home as the
+        /// agent of `run` and `acp`. The profile check prices the download
+        /// against the model cache of that home, and reads the free disk of
+        /// that folder.
         ///
         /// A component reports a failure as a ``HealthCheck`` with the
         /// `error` status, and never by throwing: `doctor` runs every
@@ -96,17 +106,8 @@ extension AcpAgentCommand {
         /// - Parameters:
         ///   - workingDirectory: The directory `--cwd` names, which roots
         ///     the dotfolder stack the checks read.
-        ///   - environment: The environment the checks read, above all
-        ///     `XDG_CONFIG_HOME`.
-        ///   - modelCacheDirectory: The hub cache folder of the models, or
-        ///     `nil` (the default) for the folder that `HF_HUB_CACHE` or
-        ///     `HF_HOME` of `environment` names. A folder here wins over these
-        ///     variables. The profile check prices the download against this
-        ///     folder, and reads the free disk of this folder. Give the same
-        ///     folder as the `modelCacheDirectory` of `ComposedAgent.compose`,
-        ///     so the check reads the folder of the download. The `doctor`
-        ///     command gives no value, because the CLI gives no folder to
-        ///     `ComposedAgent.compose`.
+        ///   - environment: The environment the checks read, and the home of
+        ///     the stack is read from (``AgentComposition/home(environment:)``).
         ///   - prober: How ``ToolsDoctor`` reaches the world. The default
         ///     starts the real seatbelt canary and connects each real MCP
         ///     server; a test injects a stub, so no unit test spawns a
@@ -122,7 +123,6 @@ extension AcpAgentCommand {
         /// - Returns: The components, in the order the report lists them.
         static func components(
             workingDirectory: URL, environment: [String: String],
-            modelCacheDirectory: URL? = nil,
             prober: any ToolsProber = SystemToolsProber(),
             resolver: (any ModelResolver)? = nil,
             memoryBytes: Int64 = MachineFigures.physicalMemoryBytes,
@@ -134,22 +134,22 @@ extension AcpAgentCommand {
             else {
                 return []
             }
-            let cache = SystemModelResolver.hubCacheDirectory(
-                environment: environment, modelCacheDirectory: modelCacheDirectory)
+            let home = loader.settingsFolders.home
             let outcome = ConfigurationLoadOutcome(of: loader)
             return [
                 ConfigurationDoctor(stack: loader.stack, outcome: outcome),
+                HomeDoctor(home: home),
                 ProfileDoctor(
                     configuration: outcome.configuration,
                     resolver: resolver
-                        ?? SystemModelResolver(environment: environment, modelCacheDirectory: modelCacheDirectory),
+                        ?? SystemModelResolver(environment: environment, modelCacheDirectory: home.modelCacheDirectory),
                     memoryBytes: memoryBytes,
-                    freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: cache)),
+                    freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: home.modelCacheDirectory)),
                 TranscriptsDoctor(
                     configuration: outcome.configuration, stack: loader.stack,
                     name: loader.name, workingDirectory: workingDirectory),
                 ToolsDoctor(
-                    configuration: outcome.configuration, workingDirectory: workingDirectory,
+                    configuration: outcome.configuration, workingDirectory: workingDirectory, home: home,
                     prober: prober, environment: environment),
                 RuntimeDoctor(workingDirectory: workingDirectory, settingsFolders: loader.settingsFolders),
             ]
@@ -161,7 +161,7 @@ extension AcpAgentCommand {
             let report = await DoctorRunner(
                 components: Self.components(
                     workingDirectory: workingDirectoryOptions.directoryURL,
-                    environment: ProcessInfo.processInfo.environment)
+                    environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
             ).run()
             try Self.write(
                 report, asJSON: asJSON,

@@ -69,10 +69,6 @@ public struct ToolsDoctor: Doctorable {
     /// The prefix of the check that states one configured MCP server.
     private static let mcpServerPrefix = "the mcp server"
 
-    /// The store directory the shell capability makes when the config names
-    /// none: `.shell` under the working directory.
-    private static let defaultStoreDirectoryName = ".shell"
-
     /// The dotted key path of the extra write paths a fix names.
     private static let extraWritePathsKey =
         AgentConfiguration.CodingKeys.sandbox.stringValue
@@ -163,8 +159,12 @@ public struct ToolsDoctor: Doctorable {
     private let configuration: AgentConfiguration
 
     /// The directory `--cwd` names. It is the first writable root of the
-    /// sandbox, and it roots the default shell store.
+    /// sandbox, and it names the project of the default shell store.
     private let workingDirectory: URL
+
+    /// The home of the host. The default shell store of the project is in
+    /// it (``AgentHome/shellStoreDirectory(of:)``).
+    private let home: AgentHome
 
     /// How the checks reach the world.
     private let prober: any ToolsProber
@@ -189,18 +189,21 @@ public struct ToolsDoctor: Doctorable {
     /// - Parameters:
     ///   - configuration: The resolved configuration.
     ///   - workingDirectory: The directory `--cwd` names.
+    ///   - home: The home of the host, which holds the default shell store
+    ///     of the project.
     ///   - prober: How the checks reach the world.
     ///   - timeoutSeconds: How long one prober call may take. The default
     ///     is ``probeTimeoutSeconds``.
     ///   - environment: The process environment that the web row reads the
     ///     API keys from. The default is the environment of the process.
     public init(
-        configuration: AgentConfiguration, workingDirectory: URL, prober: any ToolsProber,
+        configuration: AgentConfiguration, workingDirectory: URL, home: AgentHome, prober: any ToolsProber,
         timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.configuration = configuration
         self.workingDirectory = workingDirectory
+        self.home = home
         self.prober = prober
         self.timeoutSeconds = timeoutSeconds
         self.environment = environment
@@ -278,10 +281,10 @@ public struct ToolsDoctor: Doctorable {
     }
 
     /// The store directory the shell capability makes when
-    /// `tools.shell.storeDirectory` names none.
+    /// `tools.shell.storeDirectory` names none: the shell store of the
+    /// project in the home, the folder that the tool catalog gives the shell.
     private var defaultStoreDirectory: URL {
-        workingDirectory.appendingPathComponent(
-            Self.defaultStoreDirectoryName, isDirectory: true)
+        home.shellStoreDirectory(of: workingDirectory)
     }
 
     /// The fix of a store directory that cannot be used: make the directory

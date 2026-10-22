@@ -21,8 +21,8 @@ import Tracing
 /// agent factory: every suite constructs through it.
 ///
 /// The agent's environment does not come from the process, so a session
-/// never reads the real process environment; a suite that composes
-/// sessions injects `userDirectory` so nothing touches the real home
+/// never reads the real process environment. The home of the agent is a
+/// custom home over throwaway folders, so nothing touches the real home
 /// directory either. The environment holds the keys of `environment` and
 /// one key more: the defaults layer of ``StubAgentDefaultsLayer``, which
 /// turns the code context and the skills marketplaces off for each session
@@ -35,11 +35,10 @@ import Tracing
 ///   - recordingsDirectory: The durable transcripts root, or `nil` (the
 ///     default) to record nothing — a session-composition suite passes a
 ///     value so `makeSession` writes the session directory to disk.
-///   - userDirectory: The injected user layer root, or `nil` when the
-///     suite composes no session. The agent gets it as its root settings
-///     folder, thus the user layer of `config.yaml` is this folder, the user
-///     layer of the skills is its `_skills` folder, and no session stack
-///     reads the real home directory.
+///   - userDirectory: The synced root of the custom home of the agent, or
+///     `nil` for a new throwaway folder (``AgentHomeFixture``). The user
+///     layer of `config.yaml` is this folder, the user layer of the skills
+///     is its `_skills` folder, and no stack reads the real home directory.
 ///   - loader: The loader the router loads through.
 ///   - tracer: The tracer of each Router session, or `nil` (the default) to
 ///     read `InstrumentationSystem.tracer` at call time. A suite that
@@ -78,9 +77,11 @@ public func makeStubAgent(
     userDeviceTokens: Set<String> = [],
     prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
-    // The hooks of the production composition, with the data directory in a
-    // fresh temporary directory, so no test writes under the real home.
-    let hooks = AgentHooks(dataDirectory: makeResolvedDirectory(label: "StubAgentHooks"))
+    // A custom home over throwaway folders, so no test reads or writes the
+    // real home; the hooks of the production composition keep their data in
+    // its hooks folder.
+    let home = AgentHomeFixture.make(label: "StubAgent", synced: userDirectory)
+    let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
     let router = EchoModel.makeRouter(
         cacheDirectory: cacheDirectory,
         recordingsDirectory: recordingsDirectory,
@@ -92,7 +93,7 @@ public func makeStubAgent(
         name: DotfolderName(name),
         router: router,
         hooks: hooks,
-        rootSettingsFolder: userDirectory,
+        home: home,
         environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
         inlineSettleGrace: inlineSettleGrace,
         secretStore: secretStore,

@@ -36,7 +36,8 @@ struct EditorFailedError: Error, CustomStringConvertible {
 /// comes out of an environment dictionary the caller injects, the way
 /// every other process fact of this CLI does — the model switch of
 /// ``AgentComposition/modelSource(environment:)`` and the
-/// `XDG_CONFIG_HOME` of the configuration stack read the same dictionary.
+/// home of the configuration stack (``AgentComposition/home(environment:)``)
+/// read the same dictionary.
 /// A test therefore gives a command that writes the file and ends at
 /// once, so no test opens an interactive editor and no test waits for a
 /// person.

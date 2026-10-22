@@ -75,6 +75,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         /// The table entry after `session/set_config_option` selected the
         /// `flash` slot.
         let switched: ActiveSession
+
+        /// The home of the agent.
+        let home: AgentHome
     }
 
     /// Makes a stub agent over `environment`, opens one session in a new
@@ -117,7 +120,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
                 value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
         let switched = try #require(await agent.sessions[response.sessionId])
         try #require(switched.selectedSlot == .flash)
-        return SwitchedSession(first: first, switched: switched)
+        return SwitchedSession(first: first, switched: switched, home: agent.home)
     }
 
     /// The ids of the skills that the skills registry of a session surface
@@ -156,23 +159,26 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     // MARK: - The marketplace cache
 
     /// The skills marketplace store of each session writes its cache into
-    /// the folder that `SKILLS_MARKETPLACE_CACHE` of the host environment
-    /// names, and the marketplace skill reaches the skills registry. The
-    /// session after the slot switch keeps that registry.
+    /// the marketplace cache folder of the custom home of the agent, also
+    /// when `SKILLS_MARKETPLACE_CACHE` of the host environment names another
+    /// folder (task ^98a44n7), and the marketplace skill reaches the skills
+    /// registry. The session after the slot switch keeps that registry.
     @Test
-    func theMarketplaceStoreOfEachSessionUsesTheCacheFolderOfTheHostEnvironment() async throws {
+    func theMarketplaceStoreOfEachSessionUsesTheCacheFolderOfTheHome() async throws {
         let repository = try SkillsMarketplaceTests.makeMarketplaceRepository()
-        let cache = makeResolvedDirectory(label: "AgentEnvironmentTests-marketplace-cache")
+        let environmentCache = makeResolvedDirectory(label: "AgentEnvironmentTests-marketplace-cache")
 
         let session = try await Self.openAndSwitchSession(
             label: "marketplace",
-            environment: [MarketplaceStore.cacheDirectoryVariable: cache.path]
+            environment: [MarketplaceStore.cacheDirectoryVariable: environmentCache.path]
         ) { cwd in
             try Self.writeProjectConfiguration(
                 SkillsMarketplaceTests.marketplaceConfiguration(repository: repository), in: cwd)
         }
 
-        #expect(!(try FileManager.default.contentsOfDirectory(atPath: cache.path)).isEmpty)
+        let homeCache = session.home.skillsMarketplaceCacheDirectory
+        #expect(!(try FileManager.default.contentsOfDirectory(atPath: homeCache.path)).isEmpty)
+        #expect((try FileManager.default.contentsOfDirectory(atPath: environmentCache.path)).isEmpty)
         #expect(Self.skillIDs(of: session.first).contains(SkillsMarketplaceTests.skillName))
         #expect(Self.skillIDs(of: session.switched).contains(SkillsMarketplaceTests.skillName))
     }

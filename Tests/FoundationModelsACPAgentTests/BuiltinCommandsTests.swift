@@ -377,7 +377,7 @@ import Testing
         let reloaded = try ConfigurationLoader(
             name: try DotfolderName(AgentClientHarness.dotfolderName),
             workingDirectory: fixture.cwd,
-            userDirectory: fixture.userDirectory,
+            home: AgentHomeFixture.make(label: "BuiltinCommandsTests-reload", synced: fixture.userDirectory),
             environment: [:]
         ).load()
         await fixture.close()
@@ -572,7 +572,7 @@ import Testing
         let reloaded = try ConfigurationLoader(
             name: try DotfolderName(AgentClientHarness.dotfolderName),
             workingDirectory: projectRoot,
-            userDirectory: userDirectory,
+            home: AgentHomeFixture.make(label: "BuiltinCommandsTests-yaml", synced: userDirectory),
             environment: [:]
         ).load()
         #expect(reloaded.configuration == configuration)

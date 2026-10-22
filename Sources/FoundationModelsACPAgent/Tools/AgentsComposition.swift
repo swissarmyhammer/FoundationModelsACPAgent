@@ -123,9 +123,9 @@ enum AgentsComposition {
     /// Makes the agent registry over the `agents` dotfolder stack, and over
     /// the marketplace store when the session has one. The registry reads
     /// no file until `load()`. The stack is the ``SettingsFolders/Kind/agents``
-    /// stack of ``CatalogContext/settingsFolders``: with a root settings
-    /// folder its user layer is the root, and with no root it is the XDG
-    /// user layer. The project layer is `<cwd>/.agents/`, never the working
+    /// stack of ``CatalogContext/settingsFolders``: its user layer is the
+    /// synced root of a custom home, and `$XDG_CONFIG_HOME/agents` of an
+    /// XDG home (``AgentHome``). The project layer is `<cwd>/.agents/`, never the working
     /// directory itself. It reads `AGENTS_DEFAULTS_DIR` from the environment
     /// of the settings folders.
     ///

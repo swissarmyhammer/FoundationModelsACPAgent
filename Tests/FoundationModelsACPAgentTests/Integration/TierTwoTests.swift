@@ -670,7 +670,7 @@ import Testing
         let loaded = try ConfigurationLoader(
             name: try DotfolderName(AgentClientHarness.dotfolderName),
             workingDirectory: cwd,
-            userDirectory: makeResolvedDirectory(label: "TierTwoTests-composition-user"),
+            home: AgentHomeFixture.make(label: "TierTwoTests-composition"),
             environment: [:]
         ).load()
 

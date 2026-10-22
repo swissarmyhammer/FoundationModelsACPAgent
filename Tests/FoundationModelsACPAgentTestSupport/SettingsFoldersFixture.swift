@@ -2,8 +2,8 @@ import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsExtras
 
-/// The one maker of the ``SettingsFolders`` of a test over a throwaway root
-/// settings folder. Each suite that makes a `CatalogContext` or a
+/// The one maker of the ``SettingsFolders`` of a test over a throwaway
+/// custom home. Each suite that makes a `CatalogContext` or a
 /// `SettingsStore` itself calls it, so no such object reads a folder in the
 /// real home directory.
 public enum SettingsFoldersFixture {
@@ -13,7 +13,8 @@ public enum SettingsFoldersFixture {
     /// directory in `<cwd>/.<this name>/`.
     static let dotfolderName = "catalog-test"
 
-    /// Makes settings folders over a new throwaway root settings folder.
+    /// Makes settings folders over a new throwaway custom home
+    /// (``AgentHomeFixture``).
     ///
     /// - Parameters:
     ///   - label: The directory label, so a leftover directory says where it
@@ -25,7 +26,7 @@ public enum SettingsFoldersFixture {
     public static func make(label: String, environment: [String: String] = [:]) throws -> SettingsFolders {
         SettingsFolders(
             name: try DotfolderName(dotfolderName),
-            rootSettingsFolder: makeResolvedDirectory(label: "\(label)-settings"),
+            home: AgentHomeFixture.make(label: "\(label)-settings"),
             environment: environment)
     }
 

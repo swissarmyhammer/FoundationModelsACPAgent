@@ -18,20 +18,22 @@ extension AcpAgentCommand {
             abstract: "List and remove the snapshot folders.",
             subcommands: [List.self, Remove.self])
 
-        /// The inventory of the CLI: the snapshots in the hook data directory
-        /// of the dotfolder name (``AgentHooks/dataDirectory(name:environment:)``),
-        /// and the project registry and the project settings of the XDG
-        /// layers, as `acp-agent acp` reads them.
+        /// The inventory of the CLI: the snapshots in the hooks folder of the
+        /// home of the CLI (``AgentHome/hooksDirectory``), and the project
+        /// registry and the project settings of the layers of the same home,
+        /// as `acp-agent acp` reads them.
         ///
-        /// - Parameter environment: The environment that `XDG_DATA_HOME` and
-        ///   `XDG_CONFIG_HOME` are read from.
+        /// - Parameter environment: The environment that the home of the CLI
+        ///   is read from (``AgentComposition/home(environment:)``).
         /// - Returns: The inventory. The call reads no file.
         /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
         static func makeInventory(environment: [String: String]) throws -> SnapshotInventory {
             let name = try DotfolderName(AgentComposition.dotfolderName)
+            let home = try AgentComposition.home(environment: environment)
             return SnapshotInventory(
-                hooksDataDirectory: AgentHooks.dataDirectory(name: name, environment: environment),
-                settingsStore: SettingsStore(settingsFolders: SettingsFolders(name: name, environment: environment)))
+                hooksDataDirectory: home.hooksDirectory,
+                settingsStore: SettingsStore(
+                    settingsFolders: SettingsFolders(name: name, home: home, environment: environment)))
         }
 
         /// `snapshots list`: one line for each snapshot folder, or one JSON
@@ -60,8 +62,12 @@ extension AcpAgentCommand {
                 help: "Write the listing to stdout as one JSON array.")
             var asJSON = false
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             mutating func run() async throws {
-                try await report(environment: ProcessInfo.processInfo.environment).write()
+                try await report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
+                    .write()
             }
 
             /// Reads the inventory and builds the report: the listing on
@@ -153,6 +159,9 @@ extension AcpAgentCommand {
                 help: "Remove each key that the sessions.jsonl of no registered project has.")
             var removesUnrecordedKeys = false
 
+            /// The `--home` option, which roots the user layer.
+            @OptionGroup var homeOptions: HomeOptions
+
             /// Refuses a command that selects no key, or that selects keys in
             /// two ways. ArgumentParser gives the refusal as a usage error,
             /// before the command removes a folder.
@@ -167,7 +176,8 @@ extension AcpAgentCommand {
             }
 
             mutating func run() async throws {
-                let outcome = try await outcome(environment: ProcessInfo.processInfo.environment)
+                let outcome = try await outcome(
+                    environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
                 outcome.report.write()
                 guard outcome.exitCode == .success else {
                     throw outcome.exitCode.parserError

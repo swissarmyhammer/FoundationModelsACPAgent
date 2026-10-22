@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import Testing
 
@@ -21,7 +22,7 @@ struct DoctorRegistryTests {
     private static let unknownSectionName = "surprise"
 
     /// The number of components the registry states.
-    private static let registeredComponentCount = 5
+    private static let registeredComponentCount = 6
 
     /// A memory figure far above the profile floor, so the profile
     /// component does not report the machine this suite runs on.
@@ -45,9 +46,9 @@ struct DoctorRegistryTests {
 
     // MARK: - The registry
 
-    /// The registry states the configuration component, the profile
-    /// component, the transcripts component, the tools component and the
-    /// runtime component, in that order.
+    /// The registry states the configuration component, the home component,
+    /// the profile component, the transcripts component, the tools component
+    /// and the runtime component, in that order.
     @Test func theRegistryStatesTheComponentsInPlanOrder() {
         let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-registry")
 
@@ -56,10 +57,30 @@ struct DoctorRegistryTests {
         #expect(components.count == Self.registeredComponentCount)
         #expect(
             components.map(\.doctorCategory) == [
-                ConfigurationDoctor.category, ProfileDoctor.category,
+                ConfigurationDoctor.category, HomeDoctor.category, ProfileDoctor.category,
                 TranscriptsDoctor.category, ToolsDoctor.category,
                 RuntimeDoctor.category,
             ])
+    }
+
+    /// `doctor` shows the resolved home: with `ACP_AGENT_HOME`, the home rows
+    /// name the synced and the local folder of that home.
+    @Test func theHomeRowsNameTheResolvedHome() async throws {
+        let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-home")
+        let homeFolder = makeResolvedDirectory(label: "DoctorRegistryTests-homeFolder")
+        let environment = fixture.environment.merging(
+            [AgentComposition.homeVariable: homeFolder.path]) { _, new in new }
+        let home = try AgentComposition.home(environment: environment)
+
+        let components = AcpAgentCommand.Doctor.components(
+            workingDirectory: fixture.workspace, environment: environment,
+            prober: StubToolsProber(), resolver: StubModelResolver(),
+            memoryBytes: Self.generousMemoryBytes, freeDiskBytes: Self.generousDiskBytes)
+        let homeDoctor = try #require(components.lazy.compactMap { $0 as? HomeDoctor }.first)
+        let checks = await homeDoctor.runHealthChecks()
+
+        #expect(checks.contains { $0.message.contains(home.synced.standardizedFileURL.path) })
+        #expect(checks.contains { $0.message.contains(home.local.standardizedFileURL.path) })
     }
 
     // MARK: - The fix rule

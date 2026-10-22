@@ -14,7 +14,9 @@ import FoundationModelsExtras
 /// The shipped-defaults layer is absent on purpose: it is the consumer's
 /// own directory, and no command writes into it.
 enum LayerSelection: String, EnumerableFlag {
-    /// The user layer, `$XDG_CONFIG_HOME/<name>/`.
+    /// The user layer of the home (``AgentComposition/home(environment:)``):
+    /// `$XDG_CONFIG_HOME/<name>/` of the XDG home, or the synced root of a
+    /// custom home.
     case user
 
     /// The project layer, `<cwd>/.<name>/`.
@@ -25,8 +27,8 @@ enum LayerSelection: String, EnumerableFlag {
     ///
     /// The two front doors of one directory take two words: `config init`
     /// takes `--user`, and `/config export` takes `home`. They are one
-    /// layer, not two: both write
-    /// `$XDG_CONFIG_HOME/<name>/config.yaml`. This is the one place that
+    /// layer, not two: both write `config.yaml` into the user layer of the
+    /// home. This is the one place that
     /// says so, and the `--user` help text below quotes it, so a person
     /// who reads `--help` is not left to guess either.
     static let userLayerExportWord = "home"
@@ -50,7 +52,9 @@ enum LayerSelection: String, EnumerableFlag {
         switch value {
         case .user:
             return """
-                Write into the user layer, $XDG_CONFIG_HOME/\(AgentComposition.dotfolderName)/. \
+                Write into the user layer of the home: <home>/\(AgentComposition.syncedFolderName)/ with \
+                --home or \(AgentComposition.homeVariable), else \
+                $XDG_CONFIG_HOME/\(AgentComposition.dotfolderName)/. \
                 The /config export slash command spells this same layer \(userLayerExportWord).
                 """
         case .project:

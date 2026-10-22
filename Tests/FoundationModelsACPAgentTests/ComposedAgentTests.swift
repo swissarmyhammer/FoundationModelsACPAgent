@@ -25,13 +25,29 @@ struct ComposedAgentTests {
     /// The name of the folder of the snapshots, under a hook data directory.
     private static let snapshotFolderName = "snapshot"
 
-    /// The name of the folder of the hook data, under the data folder of the
-    /// dotfolder name in the data home.
-    private static let hooksFolderName = "hooks"
-
     /// The name of the folder of the transcripts, under the project
     /// dotfolder.
     private static let transcriptsFolderName = "transcripts"
+
+    /// The `compaction.trigger` that the `config.yaml` of the synced root
+    /// sets.
+    private static let syncedRootTrigger = 0.7
+
+    /// The `config.yaml` of the synced root of a home.
+    private static let syncedRootConfiguration = "compaction:\n  trigger: \(syncedRootTrigger)\n"
+
+    /// The name of a project folder in the synced root of a home.
+    private static let projectFolderName = "project"
+
+    /// The name of the shell store folder in the project state folder.
+    private static let shellStoreFolderName = "shell"
+
+    /// The variables of the user home, each with its folder relative to the
+    /// user home: `HOME` itself and the XDG base folders.
+    private static let userHomeVariables = [
+        ("HOME", ""), ("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"),
+        ("XDG_CACHE_HOME", ".cache"), ("XDG_STATE_HOME", ".local/state"),
+    ]
 
     /// Sends `initialize` from a client on `clientEnd`, then closes the wire
     /// and waits for the teardown of the agent.
@@ -159,57 +175,115 @@ struct ComposedAgentTests {
         #expect(response.info == RoutedACPAgent.implementation)
     }
 
-    /// A host that gives `hooksDataDirectory` gets the snapshot timeline in
-    /// its `snapshot` folder: one turn in a git work tree writes its
-    /// transcript file, and the shadow folder of the session key (the ACP
-    /// session id) is under `<hooksDataDirectory>/snapshot`. The data home
-    /// gets no hook data.
+    /// A host home gives the user layer of the settings: the `config.yaml`
+    /// of the synced root sets the configuration of the composition.
     @Test
-    func theSnapshotsOfAGivenHooksDataDirectoryAreInItsSnapshotFolder() async throws {
+    func theSyncedRootOfTheHomeIsTheUserLayerOfTheSettings() async throws {
+        let home = AgentHomeFixture.make(label: "ComposedAgentTests-settings")
+        try ConfigFileFixture.write(Self.syncedRootConfiguration, in: home.synced)
+
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-settings", home: home)
+
+        #expect(composed.configuration.compaction.trigger == Self.syncedRootTrigger)
+    }
+
+    /// A host home gets the snapshot timeline in the `snapshot` folder of its
+    /// hooks folder: one prompt in a git work tree writes its transcript file,
+    /// and the shadow folder of the session key (the ACP session id) is under
+    /// `<local>/hooks/snapshot`.
+    @Test
+    func theSnapshotsOfAHomeAreInItsHooksFolder() async throws {
         let workspace = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-repo")
         try GitVerbSupport.makeRepository(in: workspace, branch: Self.branchName)
-        let hooksDataDirectory = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-hooks")
-        let dataHome = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-data")
+        let home = AgentHomeFixture.make(label: "ComposedAgentTests-snapshot")
         let composed = try await composeStubAgent(
-            name: Self.dotfolderName, label: "ComposedAgentTests-snapshot", workspace: workspace,
-            hooksDataDirectory: hooksDataDirectory, dataHome: dataHome)
+            name: Self.dotfolderName, label: "ComposedAgentTests-snapshot", workspace: workspace, home: home)
 
         let sessionId = try await Self.runOneTurn(of: composed, in: workspace)
 
         let transcripts = workspace.appendingPathComponent(".\(Self.dotfolderName)", isDirectory: true)
             .appendingPathComponent(Self.transcriptsFolderName, isDirectory: true)
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: transcripts.path)).isEmpty)
-        let shadow = hooksDataDirectory.appendingPathComponent(Self.snapshotFolderName, isDirectory: true)
+        let shadow = home.hooksDirectory.appendingPathComponent(Self.snapshotFolderName, isDirectory: true)
             .appendingPathComponent(sessionId.rawValue, isDirectory: true)
         #expect(Self.isDirectory(shadow))
-        let defaultHooks = dataHome.appendingPathComponent(Self.dotfolderName, isDirectory: true)
-            .appendingPathComponent(Self.hooksFolderName, isDirectory: true)
-        #expect(!FileManager.default.fileExists(atPath: defaultHooks.path))
     }
 
-    /// A host that gives `skillsMarketplaceCacheDirectory` gets the skills
-    /// marketplace cache in that folder, also when `SKILLS_MARKETPLACE_CACHE`
-    /// of the environment names an other folder: one turn in a workspace
-    /// whose project layer names a local marketplace fills the folder of the
-    /// host, and the folder of the environment stays empty.
+    /// A host home gets the skills marketplace cache in its local root, also
+    /// when `SKILLS_MARKETPLACE_CACHE` of the environment names an other
+    /// folder: one prompt in a workspace whose project layer names a local
+    /// marketplace fills the folder of the home, and the folder of the
+    /// environment stays empty.
     @Test
-    func theSkillsMarketplaceCacheOfAGivenFolderWinsOverTheEnvironment() async throws {
+    func theSkillsMarketplaceCacheOfAHomeWinsOverTheEnvironment() async throws {
         let repository = try SkillsMarketplaceTests.makeMarketplaceRepository()
         let workspace = makeResolvedDirectory(label: "ComposedAgentTests-marketplace-repo")
         try ConfigFileFixture.write(
             SkillsMarketplaceTests.marketplaceConfiguration(repository: repository),
             in: workspace.appendingPathComponent(".\(Self.dotfolderName)", isDirectory: true))
-        let hostCache = makeResolvedDirectory(label: "ComposedAgentTests-marketplace-host-cache")
+        let home = AgentHomeFixture.make(label: "ComposedAgentTests-marketplace")
         let environmentCache = makeResolvedDirectory(label: "ComposedAgentTests-marketplace-environment-cache")
         let composed = try await composeStubAgent(
-            name: Self.dotfolderName, label: "ComposedAgentTests-marketplace", workspace: workspace,
-            skillsMarketplaceCacheDirectory: hostCache,
+            name: Self.dotfolderName, label: "ComposedAgentTests-marketplace", workspace: workspace, home: home,
             environment: [MarketplaceStore.cacheDirectoryVariable: environmentCache.path])
 
         _ = try await Self.runOneTurn(of: composed, in: workspace)
 
-        #expect(!(try FileManager.default.contentsOfDirectory(atPath: hostCache.path)).isEmpty)
+        #expect(
+            !(try FileManager.default.contentsOfDirectory(atPath: home.skillsMarketplaceCacheDirectory.path)).isEmpty)
         #expect(try FileManager.default.contentsOfDirectory(atPath: environmentCache.path).isEmpty)
+    }
+
+    /// The isolation of a host home (task ^98a44n7): with a custom home, and
+    /// with `HOME` and the XDG variables of the environment in an other empty
+    /// folder, a composed session and one prompt write nothing in that other
+    /// folder. Each stack reads its user layer from the home.
+    @Test
+    func aCustomHomeKeepsTheSessionOutOfTheUserHome() async throws {
+        let workspace = makeResolvedDirectory(label: "ComposedAgentTests-isolation-repo")
+        try GitVerbSupport.makeRepository(in: workspace, branch: Self.branchName)
+        let userHome = makeResolvedDirectory(label: "ComposedAgentTests-isolation-user-home")
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-isolation", workspace: workspace,
+            home: AgentHomeFixture.make(label: "ComposedAgentTests-isolation"),
+            environment: Self.environment(pointingAt: userHome))
+
+        _ = try await Self.runOneTurn(of: composed, in: workspace)
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: userHome.path).isEmpty)
+    }
+
+    /// A project folder can be in the synced root of the home (the Mac app
+    /// keeps its projects there), thus the machine state of a session never
+    /// goes into its working directory: the shell store is in the project
+    /// state folder of the local root, and the working directory gets no
+    /// `.shell` folder.
+    @Test
+    func aSessionInTheSyncedRootKeepsItsShellStoreInTheLocalRoot() async throws {
+        let home = AgentHomeFixture.make(label: "ComposedAgentTests-synced-project")
+        let workspace = home.synced.appendingPathComponent(Self.projectFolderName, isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let composed = try await composeStubAgent(
+            name: Self.dotfolderName, label: "ComposedAgentTests-synced-project", workspace: workspace, home: home)
+
+        _ = try await Self.runOneTurn(of: composed, in: workspace)
+
+        let shellStore = home.projectStateDirectory(of: workspace)
+            .appendingPathComponent(Self.shellStoreFolderName, isDirectory: true)
+        #expect(Self.isDirectory(shellStore))
+        #expect(!FileManager.default.fileExists(atPath: workspace.appendingPathComponent(".shell").path))
+    }
+
+    /// An environment whose `HOME` and XDG base folders are all in `folder`.
+    ///
+    /// - Parameter folder: The folder of the user home.
+    /// - Returns: The environment.
+    private static func environment(pointingAt folder: URL) -> [String: String] {
+        Dictionary(
+            uniqueKeysWithValues: userHomeVariables.map { variable, path in
+                (variable, folder.appendingPathComponent(path, isDirectory: true).path)
+            })
     }
 
     /// Tells if a directory is at `url`.

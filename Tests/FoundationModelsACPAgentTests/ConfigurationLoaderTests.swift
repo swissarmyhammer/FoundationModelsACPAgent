@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Logging
@@ -52,7 +53,8 @@ import Testing
             try! contents.write(to: fileURL, atomically: true, encoding: .utf8)
         }
 
-        /// A loader over this fixture with the user directory injected.
+        /// A loader over this fixture, with the user directory as the synced
+        /// root of a custom home.
         ///
         /// - Parameter secretStore: The store that gives the value of each
         ///   secret reference. The default is an empty in-memory store, so
@@ -61,7 +63,7 @@ import Testing
             try ConfigurationLoader(
                 name: DotfolderName(ConfigurationLoaderTests.agentName),
                 workingDirectory: workingDirectory,
-                userDirectory: userDirectory,
+                home: AgentHomeFixture.make(label: "ConfigurationLoaderTests", synced: userDirectory),
                 environment: [:],
                 secretStore: secretStore)
         }
@@ -404,17 +406,32 @@ import Testing
 
     // MARK: - The user layer location
 
-    /// An absolute `$XDG_CONFIG_HOME` moves the user layer to
-    /// `$XDG_CONFIG_HOME/<name>/`, and a file there loads.
+    /// The loader of the XDG home of `environment`, over `fixture`.
+    ///
+    /// - Parameters:
+    ///   - fixture: The tree whose working directory roots the project layer.
+    ///   - environment: The environment of the XDG home and of the stack.
+    /// - Returns: The loader.
+    /// - Throws: `DotfolderNameError`.
+    private static func makeXDGLoader(
+        over fixture: Fixture, environment: [String: String]
+    ) throws -> ConfigurationLoader {
+        let name = try DotfolderName(agentName)
+        return ConfigurationLoader(
+            name: name,
+            workingDirectory: fixture.workingDirectory,
+            home: .xdg(name: name, environment: environment),
+            environment: environment)
+    }
+
+    /// With the XDG home, an absolute `$XDG_CONFIG_HOME` moves the user
+    /// layer to `$XDG_CONFIG_HOME/<name>/`, and a file there loads.
     @Test func absoluteXDGConfigHomeIsHonored() throws {
         let fixture = Fixture()
         let xdgHome = fixture.root.appendingPathComponent("xdg", isDirectory: true)
         let xdgUserDirectory = xdgHome.appendingPathComponent(Self.agentName, isDirectory: true)
         fixture.writeConfig("recording:\n  level: off\n", in: xdgUserDirectory)
-        let loader = try ConfigurationLoader(
-            name: DotfolderName(Self.agentName),
-            workingDirectory: fixture.workingDirectory,
-            environment: ["XDG_CONFIG_HOME": xdgHome.path])
+        let loader = try Self.makeXDGLoader(over: fixture, environment: ["XDG_CONFIG_HOME": xdgHome.path])
 
         let loaded = try loader.load()
 
@@ -422,17 +439,14 @@ import Testing
         #expect(loaded.configuration.recording.level == .off)
     }
 
-    /// A relative `$XDG_CONFIG_HOME` is invalid and ignored, and an unset
-    /// one is absent: both give `~/.config/<name>/`.
+    /// With the XDG home, a relative `$XDG_CONFIG_HOME` is invalid and
+    /// ignored, and an unset one is absent: both give `~/.config/<name>/`.
     @Test(arguments: [["XDG_CONFIG_HOME": "relative/config"], [:]])
     func relativeOrUnsetXDGConfigHomeFallsBackToHomeConfig(environment: [String: String])
         throws
     {
         let fixture = Fixture()
-        let loader = try ConfigurationLoader(
-            name: DotfolderName(Self.agentName),
-            workingDirectory: fixture.workingDirectory,
-            environment: environment)
+        let loader = try Self.makeXDGLoader(over: fixture, environment: environment)
         let expected = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config", isDirectory: true)
             .appendingPathComponent(Self.agentName, isDirectory: true)

@@ -9,7 +9,7 @@ import Testing
 /// A `settings` endpoint over a ``SettingsStore`` in temporary folders, for
 /// the suites of the endpoint, its subscription and ``SettingsTool``.
 ///
-/// The store reads a temporary root settings folder from
+/// The store reads a temporary custom home from
 /// ``SettingsFoldersFixture`` and an ``InMemorySecretStore``, or a different
 /// test secret store that the test gives. Thus no test reads the real home
 /// directory or the real Keychain.

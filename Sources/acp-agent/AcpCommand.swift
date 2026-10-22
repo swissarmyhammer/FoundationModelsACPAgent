@@ -40,7 +40,11 @@ extension AcpAgentCommand {
                 valueName: "path"))
         var telemetryFile: String?
 
+        /// The `--home` option, which roots the user layer.
+        @OptionGroup var homeOptions: HomeOptions
+
         mutating func run() async throws {
+            let environment = homeOptions.environment(over: ProcessInfo.processInfo.environment)
             // Construction resolves the configured profile to a resident
             // profile, which the agent holds for the life of the process.
             // A resolution failure is fatal here, before the wire opens,
@@ -60,7 +64,7 @@ extension AcpAgentCommand {
                 ) {
                     try await AgentComposition.compose(
                         workingDirectory: AgentComposition.processWorkingDirectory,
-                        environment: ProcessInfo.processInfo.environment)
+                        environment: environment)
                 }
             } catch is CompositionInterrupted {
                 throw AgentExitCode.cancelled.parserError
