@@ -1,0 +1,1 @@
+{"id":"01M5HT7T27BCVTH0C0B070P07Q","timestamp":"2026-10-22T12:44:08.647641Z","op":"create","item_id":"01M5HT7T27YTPBZKGJYH8CV53A","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: c5def5\n+tag_name: home\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: c5def5\n-tag_name: home\n","transaction_id":null}

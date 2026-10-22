@@ -1,6 +1,25 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5ht7z0r4nr7cbcbwb0x45ef
+  text: |-
+    ### Router plan (Router main 1c57421d; nothing built yet)
+    - Router cards:
+      - ^2cqepsd: index.md replaces session.json, facts.json and sessions.jsonl, and sessions are listed by folder.
+      - ^s9dftdp: only transcript.jsonl goes onto JSONLFile. SessionIndex and the ed7b7c27 writer are deleted.
+      - ^16ken1m: ProjectStore replaces ProjectRegistry.
+      - Both ^2cqepsd and ^16ken1m wait on the Extras FrontmatterDocument save card 01M5HS4GB26B9S1XGRGV6WCCQT.
+    - API:
+      - `directory.setTitle(_:for:)`, which ACPAgent calls with the first-prompt title.
+      - `RouterSessionDirectory.setAdditionalDirectories(to:for:)`.
+      - `RouterSessionDirectory.recordedSessions(in: recordingRoot) -> [SessionRecord]`, with sessionId, cwd, title, updatedAt, additionalDirectories, the fork parent and baseline, the facts, and firstActivityAt.
+      - Delete = remove the session folder.
+    - Zero-prompt rule: Router sets `firstActivityAt` at the first submission. session/list keeps the records where `firstActivityAt != nil`. ACPAgent calls nothing for this, only setTitle.
+    - `ProjectStore(directory:)`: the host gives the folder; one `<sha256 hex of standardized path>.md` per project; no Router default. The folder comes from the new AgentHome card (synced root, `projects/`).
+    - User answer: session recordings stay in the project folder (`<cwd>/.acp-agent/transcripts`).
+  timestamp: 2026-10-22T12:44:13.720771+00:00
 position_column: todo
 position_ordinal: '80'
 title: 'ROUTER-3: no sessions.jsonl and no projects.jsonl — list sessions from the folder and index.md, and keep projects in a host-given folder with one file per project'
