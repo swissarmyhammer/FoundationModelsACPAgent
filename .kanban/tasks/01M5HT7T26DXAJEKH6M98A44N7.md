@@ -126,8 +126,15 @@ comments:
     - note: the earlier comments keep the old names, because they record history.
     - next: /review
   timestamp: 2026-10-22T14:54:49.524966+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5j1x3cbxv69vsdhn7h7pgvc
+  text: |-
+    ### review — clean
+    - evidence: review sha f7f9932..HEAD — 0 findings (14 files attempted, 0 failed); prior swift/fluent-usage finding (AgentHome.swift, xdg → makeXDG) checked and fixed in f065690
+    - next: done; the parts blocked on FoundationModelsCodeContext and on Router ^gnte6er / Extras ^d7dtghb stay recorded on the card
+  timestamp: 2026-10-22T14:58:06.347584+00:00
+position_column: done
+position_ordinal: ffff8c80
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'
 ---
 User, 2026-10-22: "we DO however need to be able to configure 'the home' - like if i'm using acp agent cli or coding style or if i am using it inside of the mac app" and "so not just XDG -- but a configurable home". Sessions stay in the project folder (user's answer: session recordings live in `<cwd>/.acp-agent/transcripts`, as today). See the memory/design rule: one file per record, iCloud-safe.
