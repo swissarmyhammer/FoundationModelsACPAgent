@@ -64,7 +64,7 @@ struct SnapshotsCommandTests {
         /// - Parameter sessionKey: The session key.
         /// - Returns: The folder.
         func shadowFolder(of sessionKey: String) throws -> URL {
-            let hooksDirectory = AgentHome.xdg(
+            let hooksDirectory = AgentHome.makeXDG(
                 name: try DotfolderName(AgentComposition.dotfolderName), environment: environment
             ).hooksDirectory
             return AgentHooks.snapshotDirectory(in: hooksDirectory).appendingPathComponent(sessionKey, isDirectory: true)

@@ -43,7 +43,7 @@ struct HomeDoctorTests {
     /// when it first writes there.
     @Test func aRootThatIsNotOnDiskYetPasses() async {
         let folder = makeResolvedDirectory(label: "HomeDoctorTests-missing")
-        let home = AgentHome.custom(
+        let home = AgentHome.makeCustom(
             synced: folder.appendingPathComponent(Self.missingFolderName, isDirectory: true),
             local: folder)
 
@@ -59,7 +59,7 @@ struct HomeDoctorTests {
         let folder = makeResolvedDirectory(label: "HomeDoctorTests-blocked")
         let file = folder.appendingPathComponent(Self.blockingFileName)
         try Data().write(to: file)
-        let home = AgentHome.custom(synced: folder, local: file)
+        let home = AgentHome.makeCustom(synced: folder, local: file)
 
         let checks = await HomeDoctor(home: home).runHealthChecks()
 

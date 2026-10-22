@@ -123,7 +123,7 @@ struct ModelCacheDirectoryTests {
     /// The live loader of the XDG home of the process environment uses the
     /// same cache as the loader that the router makes with no argument.
     @Test func theLiveLoaderOfTheXDGHomeKeepsTheDefaultCache() throws {
-        let home = AgentHome.xdg(
+        let home = AgentHome.makeXDG(
             name: try DotfolderName(AgentComposition.dotfolderName),
             environment: ProcessInfo.processInfo.environment)
 

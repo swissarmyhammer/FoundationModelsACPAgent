@@ -190,7 +190,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         let environment = Self.environment(cache: cache)
         let context = try await Self.makeContext(
             repository: repository,
-            home: .xdg(name: try DotfolderName(Self.dotfolderName), environment: environment),
+            home: .makeXDG(name: try DotfolderName(Self.dotfolderName), environment: environment),
             environment: environment)
 
         let skills = await SurfaceCatalog.makeSkillsSource(context: context)

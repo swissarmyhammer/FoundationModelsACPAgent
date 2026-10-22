@@ -54,7 +54,7 @@ import Testing
     /// With no variable, and with an empty one, the home is the XDG home of
     /// the dotfolder name: the folders of today.
     @Test func noVariableGivesTheXDGHome() throws {
-        let xdg = AgentHome.xdg(
+        let xdg = AgentHome.makeXDG(
             name: try DotfolderName(AgentComposition.dotfolderName), environment: Self.xdgEnvironment)
         var empty = Self.xdgEnvironment
         empty[AgentComposition.homeVariable] = ""
@@ -105,7 +105,7 @@ import Testing
     /// - Parameter folder: The folder of the home.
     /// - Returns: The home.
     private static func customHome(in folder: URL) -> AgentHome {
-        .custom(
+        .makeCustom(
             synced: folder.appendingPathComponent(AgentComposition.syncedFolderName, isDirectory: true),
             local: folder.appendingPathComponent(AgentComposition.localFolderName, isDirectory: true))
     }

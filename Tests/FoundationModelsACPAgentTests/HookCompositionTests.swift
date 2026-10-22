@@ -92,7 +92,7 @@ import Testing
     /// `XDG_DATA_HOME`.
     @Test(arguments: [[:], [AgentHome.dataHomeEnvironmentKey: "relative/data"]])
     func theHooksOfTheXDGHomeDefaultToTheLocalShareFolderOfTheHome(environment: [String: String]) throws {
-        let directory = AgentHome.xdg(
+        let directory = AgentHome.makeXDG(
             name: try DotfolderName(AgentClientHarness.dotfolderName), environment: environment
         ).hooksDirectory
 
@@ -110,7 +110,7 @@ import Testing
                 .path,
             AgentHome.dataHomeEnvironmentKey: dataHome.path,
         ]
-        let home = AgentHome.xdg(name: try DotfolderName(AgentClientHarness.dotfolderName), environment: environment)
+        let home = AgentHome.makeXDG(name: try DotfolderName(AgentClientHarness.dotfolderName), environment: environment)
 
         let composed = try await composeStubAgent(
             name: AgentClientHarness.dotfolderName, label: "HookCompositionTests-compose", home: home,

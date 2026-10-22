@@ -24,7 +24,7 @@ import FoundationModelsRouter
 /// ```swift
 /// let composed = try await ComposedAgent.compose(
 ///     name: try DotfolderName("my-host"), workingDirectory: projectDirectory,
-///     home: .custom(synced: syncedFolder, local: localFolder))
+///     home: .makeCustom(synced: syncedFolder, local: localFolder))
 /// let connection = await AgentSideConnection(stream: transport) { connection in
 ///     composed.agent(boundTo: connection)
 /// }
@@ -107,12 +107,12 @@ public struct ComposedAgent: Sendable {
     ///     (``SettingsFolders``), the hook data and the snapshot timelines,
     ///     the skills marketplace cache, the model cache, the metadata cache
     ///     of the router, and the machine state of each project. An app gives
-    ///     ``AgentHome/custom(synced:local:)`` with a folder of its iCloud
+    ///     ``AgentHome/makeCustom(synced:local:)`` with a folder of its iCloud
     ///     container and a folder in Application Support; never a folder in
     ///     Caches or in a temporary folder for the local root, because macOS
     ///     can delete those, and the snapshot timelines and the models must
     ///     persist. The `acp-agent` CLI gives
-    ///     ``AgentHome/xdg(name:environment:)``. The model check of `doctor`
+    ///     ``AgentHome/makeXDG(name:environment:)``. The model check of `doctor`
     ///     reads the model cache of the same home.
     ///   - environment: The environment the stacks read their defaults
     ///     layer from, and the session tools read. The process environment

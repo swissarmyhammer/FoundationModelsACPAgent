@@ -18,8 +18,8 @@ import Marketplace
 ///   are in it.
 ///
 /// The host chooses the home. The `acp-agent` CLI uses the XDG preset
-/// ``xdg(name:environment:)``, which keeps the folders that the CLI always
-/// used. An app gives its own two roots with ``custom(synced:local:)``, for
+/// ``makeXDG(name:environment:)``, which keeps the folders that the CLI always
+/// used. An app gives its own two roots with ``makeCustom(synced:local:)``, for
 /// example a folder in its iCloud container and a folder in Application
 /// Support. This package holds no app path.
 ///
@@ -132,7 +132,7 @@ public struct AgentHome: Sendable, Equatable {
     ///   - synced: The root of the data that follows the user.
     ///   - local: The root of the state of this machine.
     /// - Returns: The home.
-    public static func custom(synced: URL, local: URL) -> AgentHome {
+    public static func makeCustom(synced: URL, local: URL) -> AgentHome {
         AgentHome(
             synced: synced,
             local: local,
@@ -167,7 +167,7 @@ public struct AgentHome: Sendable, Equatable {
     ///   - environment: The environment that the XDG variables and the cache
     ///     variables are read from.
     /// - Returns: The home.
-    public static func xdg(name: DotfolderName, environment: [String: String]) -> AgentHome {
+    public static func makeXDG(name: DotfolderName, environment: [String: String]) -> AgentHome {
         let configHome = baseDirectory(
             environment: environment, key: configHomeEnvironmentKey, defaultPath: defaultConfigHomePath)
         let local = baseDirectory(

@@ -35,7 +35,7 @@ struct AgentHomeTests {
     /// - Parameter label: The prefix that names the test.
     /// - Returns: The home.
     private static func makeCustomHome(label: String) -> AgentHome {
-        .custom(
+        .makeCustom(
             synced: makeResolvedDirectory(label: "AgentHomeTests-\(label)-synced"),
             local: makeResolvedDirectory(label: "AgentHomeTests-\(label)-local"))
     }
@@ -115,7 +115,7 @@ struct AgentHomeTests {
         let dataHome = makeResolvedDirectory(label: "AgentHomeTests-xdg-data")
         let environment = [Self.configHomeVariable: configHome.path, Self.dataHomeVariable: dataHome.path]
 
-        let home = AgentHome.xdg(name: try DotfolderName(Self.dotfolderName), environment: environment)
+        let home = AgentHome.makeXDG(name: try DotfolderName(Self.dotfolderName), environment: environment)
 
         #expect(home.synced == configHome.appendingPathComponent(Self.dotfolderName, isDirectory: true))
         #expect(home.local == dataHome.appendingPathComponent(Self.dotfolderName, isDirectory: true))
@@ -133,7 +133,7 @@ struct AgentHomeTests {
             MarketplaceStore.cacheDirectoryVariable: marketplaceCache.path, Self.hubCacheVariable: hubCache.path,
         ]
 
-        let home = AgentHome.xdg(name: try DotfolderName(Self.dotfolderName), environment: environment)
+        let home = AgentHome.makeXDG(name: try DotfolderName(Self.dotfolderName), environment: environment)
 
         #expect(home.skillsMarketplaceCacheDirectory.standardizedFileURL == marketplaceCache.standardizedFileURL)
         #expect(home.modelCacheDirectory.standardizedFileURL == hubCache.standardizedFileURL)
@@ -145,7 +145,7 @@ struct AgentHomeTests {
     /// record.
     @Test
     func theXDGPresetKeepsThePackageCaches() throws {
-        let home = AgentHome.xdg(name: try DotfolderName(Self.dotfolderName), environment: [:])
+        let home = AgentHome.makeXDG(name: try DotfolderName(Self.dotfolderName), environment: [:])
 
         #expect(home.routerCacheDirectory == nil)
         #expect(home.languageServerInstallRecordDirectory == LspAutoInstall.defaultFailureRecordDirectory)

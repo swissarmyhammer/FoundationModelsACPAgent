@@ -49,7 +49,7 @@ struct RuntimeDoctorTests {
         return RuntimeDoctor(
             workingDirectory: fixture.workspace,
             settingsFolders: SettingsFolders(
-                name: name, home: home ?? .xdg(name: name, environment: fixture.environment),
+                name: name, home: home ?? .makeXDG(name: name, environment: fixture.environment),
                 environment: fixture.environment))
     }
 

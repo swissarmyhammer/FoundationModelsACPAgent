@@ -132,7 +132,7 @@ struct SettingsFoldersTests {
             let name = try DotfolderName(SettingsFoldersTests.dotfolderName)
             return SettingsFolders(
                 name: name,
-                home: hasRoot ? customHome : .xdg(name: name, environment: environment),
+                home: hasRoot ? customHome : .makeXDG(name: name, environment: environment),
                 environment: environment)
         }
     }

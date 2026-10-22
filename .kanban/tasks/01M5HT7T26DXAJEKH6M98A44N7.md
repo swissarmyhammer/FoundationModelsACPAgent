@@ -109,6 +109,14 @@ comments:
     - NOT done (other packages, see earlier comment): code-context index still `<cwd>/.code-context/kit.db` — FoundationModelsCodeContext needs an index-folder parameter; HF token lookup still reads ~ — Router LiveModelLoader / Extras MLXModelLoader need a token-provider parameter. So the "no SQLite/WAL in cwd" done-when holds for the shell log only.
     - next: /review
   timestamp: 2026-10-22T14:33:10.304761+00:00
+- actor: claude-code
+  id: 01m5j1dwqst1k5c8eef0jk8ad6
+  text: |-
+    ### review — findings
+    - evidence: review sha 6a1f665..HEAD — 1 finding (1 confirmed, 2 refuted, 42 attempted): Sources/FoundationModelsACPAgent/Configuration/AgentHome.swift:170 swift/fluent-usage (rename static factory `xdg` to `makeXDG`; the rule applies to every static factory in the file, so `custom` too, and to the card's preset names and all call sites).
+    - card items: AgentHome with synced/local roots, required `home:` on compose and RoutedACPAgent.init (separate params removed, choice written), every settings stack from the home, `--home`/`ACP_AGENT_HOME`, doctor HomeDoctor rows, tests in Tests/FoundationModelsACPAgentTests (AgentHomeTests, HomeOptionsTests, OutOfProcessHomeTests, HomeDoctorTests, SettingsFoldersTests, ...). Unmet and written on the card as blocked on other packages: code-context index still in `<cwd>/.code-context` (FoundationModelsCodeContext needs an index-folder parameter); HF token lookup still reads ~ (Router LiveModelLoader / Extras MLXModelLoader need a token-provider parameter).
+    - next: fix the finding, then /review again; stays in review.
+  timestamp: 2026-10-22T14:49:48.025079+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'
@@ -127,9 +135,9 @@ User, 2026-10-22: "we DO however need to be able to configure 'the home' - like 
 - One value `AgentHome`, given to `ComposedAgent.compose` and to the RoutedACPAgent initializer. It has two roots:
   - `synced` (user data that must follow the user): the settings root (config.yaml, Instructions.md, _skills, _rules, agents) and `projects/` for the ProjectStore.
   - `local` (state of this machine): `hooks/` (snapshot timelines; they point into a local git checkout, so they never sync), the model cache, and the marketplace cache.
-- Presets:
-  - `.xdg(name:environment:)`, the CLI default and today's behavior: synced = XDG config, local = XDG data/cache.
-  - `.custom(synced:local:)`, any folders.
+- Presets (static factories, named in the `make` form):
+  - `AgentHome.makeXDG(name:environment:)`, the CLI default and today's behavior: synced = XDG config, local = XDG data/cache.
+  - `AgentHome.makeCustom(synced:local:)`, any folders.
   - The Mac app gives `synced = <iCloud container>/Documents/Agents` and `local = Application Support/<app>`. The app chooses those; ACPAgent has no app paths.
 - The current separate parameters stay as overrides inside AgentHome (or are removed in favor of it). Choose the smaller API, and write the choice on the card.
 - The CLI: `acp-agent --home <dir>` sets both roots (`<dir>/synced` and `<dir>/local`, or `--home` plus `--local-home`). An env var `ACP_AGENT_HOME` does the same. With neither, XDG is used. `doctor` shows the resolved home.
@@ -141,3 +149,15 @@ User, 2026-10-22: "we DO however need to be able to configure 'the home' - like 
   - The XDG default keeps today's paths.
   - `--home` and `ACP_AGENT_HOME` resolve the same way.
 - The full `swift test` and the bench tests pass (the bench uses the CLI default). #home #icloud
+
+## Review Findings (2026-10-22 09:33)
+
+> Scope: `review sha 6a1f665..HEAD` — reviewed the diffs only — lines this change added or modified. 59 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/AgentHome.swift:170` `swift/fluent-usage` — Factory methods should begin with 'make'. This static function creates and returns an AgentHome instance, making it a factory method that should be named 'makeXDG' rather than 'xdg' for clarity and consistency with Swift API conventions. Rename the static function from 'xdg' to 'makeXDG'.

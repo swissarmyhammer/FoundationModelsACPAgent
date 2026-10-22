@@ -126,10 +126,10 @@ enum AgentComposition {
     /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
     static func home(environment: [String: String]) throws -> AgentHome {
         guard let path = environment[homeVariable], !path.isEmpty else {
-            return .xdg(name: try DotfolderName(dotfolderName), environment: environment)
+            return .makeXDG(name: try DotfolderName(dotfolderName), environment: environment)
         }
         let folder = URL(fileURLWithPath: path, isDirectory: true)
-        return .custom(
+        return .makeCustom(
             synced: folder.appendingPathComponent(syncedFolderName, isDirectory: true),
             local: folder.appendingPathComponent(localFolderName, isDirectory: true))
     }

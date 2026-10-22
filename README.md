@@ -22,8 +22,8 @@ let cwd = URL(
     fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 
 // The home of the host: here the XDG folders, ~/.config/acp-agent/ for the
-// user layer. An app gives its own two roots with AgentHome.custom.
-let home = AgentHome.xdg(name: name, environment: ProcessInfo.processInfo.environment)
+// user layer. An app gives its own two roots with AgentHome.makeCustom.
+let home = AgentHome.makeXDG(name: name, environment: ProcessInfo.processInfo.environment)
 
 // Loads the configuration stack and resolves the profile over the real
 // models: the configured weights download on first use and stay resident.
@@ -322,9 +322,9 @@ writes. It has two roots:
   router metadata, the install record of the language servers), and the
   machine state of each project, such as the shell store.
 
-An app gives its own two roots with `AgentHome.custom(synced:local:)`, for
+An app gives its own two roots with `AgentHome.makeCustom(synced:local:)`, for
 example a folder in its iCloud container and a folder in Application Support.
-The `acp-agent` CLI uses `AgentHome.xdg(name:environment:)`, which keeps the
+The `acp-agent` CLI uses `AgentHome.makeXDG(name:environment:)`, which keeps the
 XDG folders that the CLI always used. The CLI takes a home folder with
 `--home <dir>` (on `run`, `acp`, `config`, `instructions eject`, `doctor` and
 `snapshots`) or with the `ACP_AGENT_HOME` variable; `--home` wins. That folder

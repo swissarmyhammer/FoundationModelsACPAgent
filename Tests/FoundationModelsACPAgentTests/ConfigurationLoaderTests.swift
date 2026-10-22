@@ -420,7 +420,7 @@ import Testing
         return ConfigurationLoader(
             name: name,
             workingDirectory: fixture.workingDirectory,
-            home: .xdg(name: name, environment: environment),
+            home: .makeXDG(name: name, environment: environment),
             environment: environment)
     }
 

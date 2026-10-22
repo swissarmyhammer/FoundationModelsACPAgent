@@ -15,7 +15,7 @@ public enum AgentHomeFixture {
     ///     own folder here.
     /// - Returns: The home.
     public static func make(label: String, synced: URL? = nil) -> AgentHome {
-        .custom(
+        .makeCustom(
             synced: synced ?? makeResolvedDirectory(label: "\(label)-synced"),
             local: makeResolvedDirectory(label: "\(label)-local"))
     }
