@@ -41,8 +41,45 @@ comments:
     - First step of the work: an audit table on this card. One row per stack or folder that ACPAgent or a package it composes reads or writes, with: who builds it, its home layer today, its project layer, and the change. Grep for DotfolderStack, homeDirectoryForCurrentUser, NSHomeDirectory, XDG_, ".config", and FileManager.default.currentDirectoryPath in Sources and in .build/checkouts.
     - A test: with a custom AgentHome in a temp folder, and HOME and the XDG variables pointed at another empty temp folder, a composed session plus one prompt touch nothing under that other folder. All stacks read their user layer from the custom home.
   timestamp: 2026-10-22T13:47:32.015607+00:00
-position_column: todo
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m5hy9j94cxgdfaaknkgd6afw
+  text: |-
+    ### Audit: every folder that ACPAgent or a package it composes reads or writes
+
+    Grep of Sources/ and .build/checkouts/*/Sources for DotfolderStack, homeDirectoryForCurrentUser, NSHomeDirectory, XDG_, ".config", currentDirectoryPath (and .cache, HF_*, SKILLS_MARKETPLACE_CACHE, .code-context, .shell, cachesDirectory). FoundationModelsRules is not a dependency: no package reads a rules folder yet; ACPAgent only names it (SettingsFolders.Kind.rules). Web and MCP are inside Multitool now.
+
+    | Folder / stack | Who builds it | Home (user) layer today | Project layer | Change | Where |
+    |---|---|---|---|---|---|
+    | config.yaml + Instructions.md (SettingsFolders .configuration, ConfigurationLoader, SettingsStore, InstructionsAssembler) | ACPAgent `SettingsFolders.stack(for:)` -> Extras `DotfolderStack(name:workingDirectory:environment:)` | no root: `$XDG_CONFIG_HOME/acp-agent` or `~/.config/acp-agent` (Extras reads `homeDirectoryForCurrentUser`); with `rootSettingsFolder`: `<root>/` | `<cwd>/.acp-agent/` | SettingsFolders takes `AgentHome`; user layer = home (XDG preset keeps `$XDG_CONFIG_HOME/acp-agent`; custom = `<synced>/`); always passes `userDirectory:` so Extras never reads ~ | this repo |
+    | skills user layer (SkillsRegistry via ToolCatalog.makeSkillsSource) | ACPAgent SettingsFolders .skills -> Skills `SkillsRegistry(stack:)` (Skills reads no folder itself) | `$XDG_CONFIG_HOME/skills` or `<root>/_skills` | `<cwd>/.skills/` | from AgentHome (XDG keeps `$XDG_CONFIG_HOME/skills`; custom `<synced>/_skills`) | this repo |
+    | skills marketplace cache (also the marketplace agents) | ACPAgent `MarketplaceStore(cacheDirectory:)` | host value, else `SKILLS_MARKETPLACE_CACHE`, else `~/.cache/skills/marketplaces` | - | from AgentHome (XDG keeps `MarketplaceStore.cacheDirectory(environment:)`; custom `<local>/skills-marketplace`) | this repo |
+    | agents (FoundationModelsAgents AG-10) | ACPAgent SettingsFolders .agents -> `AgentRegistry(marketplaces:stack:)` (Agents computes no folder) | `$XDG_CONFIG_HOME/agents` or `<root>/` | `<cwd>/.agents/` | from AgentHome (XDG keeps; custom `<synced>/`) | this repo |
+    | rules (FoundationModelsRules) | ACPAgent SettingsFolders .rules (names only; no reader yet) | `$XDG_CONFIG_HOME/rules` or `<root>/_rules` | `<cwd>/.rules/` | from AgentHome (XDG keeps; custom `<synced>/_rules`) | this repo (the reader, when it exists, takes the stack) |
+    | hooks / snapshot timelines | ACPAgent `AgentHooks(dataDirectory:)` -> Hooks `HookDispatcher(dataDirectory:)`, `SnapshotStore(directory:)` (no package default) | host `hooksDataDirectory`, else `$XDG_DATA_HOME/acp-agent/hooks` or `~/.local/share/acp-agent/hooks` | - | `AgentHome.hooksDirectory` = `<local>/hooks` (XDG local = `$XDG_DATA_HOME/acp-agent`, so the same path) | this repo |
+    | model cache | ACPAgent `LiveModelLoader(cacheDirectory:)` (bypasses HF cache defaults fully); doctor `SystemModelResolver` | host value, else HF_HUB_CACHE / HF_HOME/hub / `~/.cache/huggingface/hub` | - | `AgentHome.modelCacheDirectory` (XDG = the HF resolution of today; custom `<local>/models`) | this repo |
+    | HF token lookup | swift-huggingface `HubClient(cache:)` tokenProvider `.environment` | reads HF_TOKEN..., then `~/.cache/huggingface/token`, `~/.huggingface/token` whatever the cache folder | - | needs a token-provider parameter on Router `LiveModelLoader` (and Extras `MLXModelLoader`) so a host can give it | OTHER PACKAGE (Router/Extras); not a folder ACPAgent can give today |
+    | router metadata cache (`repo-metadata-*.json`) | Router `Router(cacheDir:)`; ACPAgent live path passes none | `~/Library/Caches/FoundationModelsRouter` | - | `AgentHome.routerCacheDirectory` (XDG nil = today; custom `<local>/router`) | this repo |
+    | router recordings root | ACPAgent throwaway `$TMPDIR/acp-agent-recordings-<uuid>` | - | - | no change (a switch, not a destination) | - |
+    | projects registry (`projects.jsonl`) | ACPAgent `ProjectRegistry(directory: userLayerRoot)` (SessionSetup, SessionList, RegisteredRecordingRoots, TranscriptStore) | the configuration user layer: `~/.config/acp-agent/projects.jsonl` or `<root>/projects.jsonl` | - | follows the configuration user layer (so AgentHome.synced); `AgentHome.projectsDirectory` = `<synced>/projects/` exposed for the Router ProjectStore; the registry code itself is ^am394r2's | this repo (expose only) |
+    | transcripts | ACPAgent `TranscriptLocation.recordingRoot` | `home` location = `<config user layer>/transcripts/<slug>` | default `<cwd>/.acp-agent/transcripts` | no change (user's choice); the `home` variant follows the configuration user layer, so AgentHome | - |
+    | session config layer | ACPAgent | - | `<cwd>/.acp-agent/config.yaml` | no change | - |
+    | code-context index `.code-context/kit.db` (+ WAL, .gitignore) | CodeContext `Store(rootDirectory:)`, from `CodeContext(rootDirectory:embedder:autoInstall:eventSource:)` | - | `<cwd>/.code-context/kit.db` (hard-coded) | must go to `<local>/projects/<sha256>/code-context/`; CodeContext has NO index-folder parameter | OTHER PACKAGE: FoundationModelsCodeContext |
+    | code-context LSP install record (`install-failures.json`) | CodeContext `LspAutoInstall(failureRecordDirectory:)` | `~/Library/Caches/FoundationModelsCodeContext` | - | `AgentHome.languageServerInstallRecordDirectory` (XDG = the default of today; custom `<local>/language-servers`) | this repo |
+    | LSP server binary search | CodeContext Languages/*.swift | `~/.cargo/bin`, `~/go/bin`, `~/.local/bin` (read only, PATH-like) | - | no change (tool lookup, not agent state) | - |
+    | shell store (`.shell/log`) | Multitool `withShell(storeDirectory:)`; ACPAgent passes `tools.shell.storeDirectory` (null by default) | - | with null: PROCESS cwd + `/.shell` (not the session cwd!), fallback `$TMPDIR/.shell-<uuid>`; doctor checks `<session cwd>/.shell` | default to `<local>/projects/<sha256>/shell/`; config key still wins; doctor checks the same folder | this repo |
+    | Multitool ShellDotfolder userURL/projectURL | Multitool (internal, no caller) | `$XDG_CONFIG_HOME/shell` | git root/.shell | none (unused) | - |
+    | Extras TemplateEngine `current` value, AgentsMd walk | Extras | reads currentDirectoryPath as a template value only; AGENTS.md walks cwd->git root | - | none | - |
+    | Agents `AgentEnvironment.make(workingDirectory: = URL.currentDirectory())` | Agents | - | default argument; ACPAgent passes the session cwd | none | - |
+    | CLI process cwd (`AgentComposition.processWorkingDirectory`) | acp-agent | - | default `--cwd`, and the `acp` start-up stack | none (it is the project, not the home) | - |
+
+    ### Choice: the smaller API
+    `AgentHome` replaces the separate parameters: `rootSettingsFolder`, `hooksDataDirectory`, `skillsMarketplaceCacheDirectory` and `modelCacheDirectory` are removed from `ComposedAgent.compose` and from `RoutedACPAgent.init` (no overrides kept; ARCHITECTURE.md: no backward compatibility). `home:` is required in both, so XDG is only the CLI default (`AgentComposition`).
+
+    ### XDG preset = today's paths
+    synced = `$XDG_CONFIG_HOME/acp-agent`; the per-kind user layers stay `$XDG_CONFIG_HOME/<dotfolder>` (skills, agents, rules) as today; local = `$XDG_DATA_HOME/acp-agent` (hooks unchanged). The two caches (marketplace, HF models) stay at the shared caches of today, so the CLI/bench sees no path change. New for the CLI: the shell log and (once CodeContext allows) the index leave the project folder for `$XDG_DATA_HOME/acp-agent/projects/<sha256>/`.
+  timestamp: 2026-10-22T13:55:00.516630+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'One configurable home: an AgentHome that the host gives (CLI, coding style, or the Mac app), with XDG only as the CLI default'
 ---
 User, 2026-10-22: "we DO however need to be able to configure 'the home' - like if i'm using acp agent cli or coding style or if i am using it inside of the mac app" and "so not just XDG -- but a configurable home". Sessions stay in the project folder (user's answer: session recordings live in `<cwd>/.acp-agent/transcripts`, as today). See the memory/design rule: one file per record, iCloud-safe.
