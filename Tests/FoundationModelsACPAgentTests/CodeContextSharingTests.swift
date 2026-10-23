@@ -220,6 +220,20 @@ import Testing
         await childSession.shutdown()
     }
 
+    // MARK: The manager key
+
+    /// A manager has one language server install, so two sessions whose
+    /// install differs cannot share a manager: their keys differ.
+    @Test func settingsThatDifferOnlyInTheLanguageServerInstallGiveTwoManagerKeys() throws {
+        let home = try SettingsFoldersFixture.make(label: "CodeContextSharingTests-key").home
+        let installing = CodeContextLeases.ManagerSettings(
+            embedder: nil, autoInstall: LspAutoInstall(isEnabled: true), home: home)
+        let notInstalling = CodeContextLeases.ManagerSettings(
+            embedder: nil, autoInstall: LspAutoInstall(isEnabled: false), home: home)
+
+        #expect(installing.key != notInstalling.key)
+    }
+
     // MARK: The index folder
 
     @Test func theIndexIsInTheLocalRootOfTheHomeAndNotInTheWorkingDirectory() async throws {

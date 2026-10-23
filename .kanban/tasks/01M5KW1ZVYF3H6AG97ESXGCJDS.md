@@ -52,6 +52,47 @@ comments:
     - evidence: swift test — 1250 tests in 138 suites passed, 0 failures, 1 known issue (deliberate withKnownIssue in HarnessSmokeTests), 0 skipped; only build warning is the known SwiftPM mlx "missing creator" line. Bench: uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest — 265 tests OK.
     - next: none; no files changed, nothing committed.
   timestamp: 2026-10-23T10:07:32.630642+00:00
+- actor: claude-code
+  id: 01m5m41wz23cwkdyq6ty8s9a84
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (0c33a88) — 1 finding (1 confirmed, 0 refuted): Sources/FoundationModelsACPAgent/Tools/CodeContextLease.swift:74
+    - next: implement the unchecked item in Review Findings (2026-10-23 05:08), then re-review
+  timestamp: 2026-10-23T10:14:09.634268+00:00
+- actor: claude-code
+  id: 01m5m42811s102be67qrc9vj4s
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 11 source/test files (CodeContextLease.swift new, CodeContextSharingTests.swift new)
+    - test: green — swift test 1250 passed; bench 265 OK
+    - commit: 0c33a88
+    - review: findings — Sources/FoundationModelsACPAgent/Tools/CodeContextLease.swift:74 (autoInstall is assignOnlyProperty)
+  timestamp: 2026-10-23T10:14:20.961871+00:00
+- actor: claude-code
+  id: 01m5m49f8qcnwes89e7900yvmd
+  text: |-
+    Finding `CodeContextLease.swift:74` dead-code-swift (`autoInstall` assignOnlyProperty) fixed:
+    - Cause: `ManagerKey` had a hand-written `hash(into:)` and a synthesized `==`. The synthesized `==` reads `autoInstall`, but periphery cannot see synthesized reads, so it reported the property as assign-only. The property is not dead: a manager has one LspAutoInstall, so it must stay in the key.
+    - Fix: an explicit, documented `static func ==` on `ManagerKey` that compares embedder, autoInstall and localRoot; it pairs with the explicit hash. No property removed (the rule says not to delete a property whose only reader is synthesized), no `periphery:ignore` marker needed because the read is now visible.
+    - Rest of the file checked: every other stored property (ManagerSettings.embedder/autoInstall/home, ManagerKey.embedder/localRoot, Entry.manager/leaseCount, CodeContextLease.context/release) has a visible reader.
+    - Guard test `settingsThatDifferOnlyInTheLanguageServerInstallGiveTwoManagerKeys` (CodeContextSharingTests) added first; it passed before the change too, as expected for a behavior-keeping refactor (the synthesized `==` already compared autoInstall). It fails if autoInstall is dropped from `==`.
+    - Verified with periphery 3.x (`--skip-build --index-store-path .build/out --retain-public`): pre-fix tree (stashed) reports `CodeContextLease.swift:74:13 Assign-only property 'autoInstall'`; fixed tree reports nothing in CodeContextLease.swift.
+    - Note: the rules dump for .swift is 754K chars (embedded probe output) and could not be read whole; the dead-code-swift section was read in full.
+  timestamp: 2026-10-23T10:18:17.751324+00:00
+- actor: claude-code
+  id: 01m5m49hb90x5x22tsqm5qc8r9
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsACPAgent/Tools/CodeContextLease.swift (explicit ManagerKey ==), Tests/FoundationModelsACPAgentTests/CodeContextSharingTests.swift (new key test). `swift test`: 1251 tests in 138 suites passed, 0 failures, 1 known issue (by design); `swift build --build-tests` only the known SwiftPM mlx "missing creator" line. periphery: no finding in CodeContextLease.swift. Finding flipped to [x]. Not committed (per brief).
+    - next: /review
+  timestamp: 2026-10-23T10:18:19.881271+00:00
+- actor: claude-code
+  id: 01m5m4bn0qypdwkzxtw11dyke2
+  text: |-
+    ### test — green
+    - evidence: swift test — 1251 tests in 138 suites passed, 0 failed, 0 skipped, 1 known issue (deliberate withKnownIssue in HarnessSmokeTests); only build warning is the known SwiftPM mlx "missing creator" line. bench: uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest — 265 tests OK.
+    - next: none; no source change was needed, nothing committed.
+  timestamp: 2026-10-23T10:19:29.175010+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
 position_column: doing
@@ -76,3 +117,12 @@ CodeContext session (asked 2026-10-23): ref-counted acquire/release in CodeConte
 - Two sessions in one cwd get the same CodeContext; closing one keeps it running; closing the last stops it.
 - Two cwds get two contexts.
 - With a custom home, no `.code-context` folder appears in the cwd; the index is under home.local. #share-per-cwd #home
+
+## Review Findings (2026-10-23 05:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Tools/CodeContextLease.swift:74` `code-hygiene/dead-code-swift` — var.instance `autoInstall` is assignOnlyProperty.

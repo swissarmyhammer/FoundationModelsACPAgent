@@ -76,6 +76,17 @@ actor CodeContextLeases {
         /// The local root of the home, which holds the index of each context.
         let localRoot: URL
 
+        /// Whether two keys name one manager: the same embedder, the same
+        /// language server install and the same local root.
+        ///
+        /// - Parameters:
+        ///   - lhs: One key.
+        ///   - rhs: The other key.
+        /// - Returns: Whether the keys name one manager.
+        static func == (lhs: ManagerKey, rhs: ManagerKey) -> Bool {
+            lhs.embedder == rhs.embedder && lhs.autoInstall == rhs.autoInstall && lhs.localRoot == rhs.localRoot
+        }
+
         /// Hashes the embedder and the local root. `LspAutoInstall` is
         /// `Equatable` only, and equal keys always have equal embedders and
         /// equal local roots, so the hash stays consistent with `==`.
