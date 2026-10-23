@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5kwe114723em6r69vwngvjt
+  text: |-
+    ### CodeContext cf1552b (2026-10-23) — use it in this card
+    - Update the CodeContext pin to cf1552b.
+    - One process-wide `CodeContextManager(embedder:autoInstall:eventSource:indexDirectory:)`. Each session: `acquire(root: cwd)` at start, `release(root: cwd)` at shutdown, in place of its own `CodeContext(...)` + start()/stop(). The last release stops. `close`/`shutdown` still stop at once (use only at host exit).
+    - A root inside an open root leases the context of that open root (a session in a subfolder shares the parent's index) — test it.
+    - Key: `CodeContextManager.rootKey(for:)` = standardized + resolvingSymlinksInPath. Use the same normalization for the cwd key of ^w53xmhk / AgentHome.projectKey.
+    - Embedder: one per manager; acquire takes none. Sessions whose profiles give different embedders (or semanticSearch off = nil) need different managers: keep one manager per embedder identity.
+    - indexDirectory closure gets the rootKey: return `<local home>/projects/<sha256 of rootKey>/code-context`. nil keeps `<root>/.code-context`.
+  timestamp: 2026-10-23T08:00:58.404406+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
 position_column: todo
