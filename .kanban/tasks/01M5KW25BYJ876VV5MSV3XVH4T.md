@@ -13,6 +13,16 @@ comments:
     - Appends are one O_APPEND write.
     - Make ONE ShellStore per resolved store directory in the process (registry, ref-counted like the code context) and give it to each session's capability. Two stores on one directory still stay separate, so the registry is required.
   timestamp: 2026-10-23T08:06:26.298833+00:00
+- actor: claude-code
+  id: 01m5kznefj092cda3ktt35wj6c
+  text: |-
+    ### Multitool 7e6c35a (2026-10-23) — use this pin instead of d2f6446
+    - Pin Multitool to 7e6c35a (shell attribution 4a49c2d + snapshots list owner 7e6c35a).
+    - Use `withShell(store:sessionID:sandbox:outputChunkStream:defaultWorkingDirectory:)` (or `ShellCapability(store:sessionID:...)`) and pass the ACP session id as `sessionID`.
+    - Results carry `sessionID`: the execute report (`sessionID` key), `GetLinesResult.sessionID`, each `GrepHistoryMatch.sessionID`. No sessionID = no field.
+    - Test: session B reads A's command and sees sessionID == A in get lines and grep.
+    - tools.snapshots list/take/rollback checkpoints now have `owner` (no API change).
+  timestamp: 2026-10-23T08:57:27.282289+00:00
 position_column: todo
 position_ordinal: '8280'
 title: Sessions in one cwd share one shell store (history, log and command records)
