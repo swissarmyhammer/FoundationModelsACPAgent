@@ -84,6 +84,23 @@ import Testing
         """
     }
 
+    /// The marker of the prompt that lists the owner of each snapshot.
+    private static let listOwnersPromptText = "list the snapshot owners now"
+
+    /// The label of the owners that the owners snippet answers.
+    private static let ownersLabel = "owners="
+
+    /// The snippet that lists the snapshots and answers the owner of each,
+    /// oldest first, separated by commas.
+    private static var listOwnersCode: String {
+        """
+        const listed = await tools.snapshots.list({});
+        return listed.correction
+            ? listed.correction
+            : "\(ownersLabel)" + listed.checkpoints.map((checkpoint) => checkpoint.owner).join(",");
+        """
+    }
+
     // MARK: - The hooks folder of the home
 
     /// With no `XDG_DATA_HOME`, or with a relative one, the hooks folder of
@@ -186,11 +203,7 @@ import Testing
             script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch",
             hookVisitors: [recorder])
 
-        _ = try await fixture.harness.connection.setSessionConfigOption(
-            SetSessionConfigOptionRequest(
-                configId: ConfigOptions.modelOptionId, sessionId: fixture.sessionId,
-                value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
-        await fixture.harness.agent.hooks.dispatcher.drain()
+        try await Self.switchModelSlot(of: fixture)
 
         let starts = recorder.events.value.filter(\.isSessionStart)
         #expect(starts.map(\.kind) == [.sessionStart(.new), .sessionStart(.replacement)])
@@ -245,13 +258,16 @@ import Testing
         await fixture.close()
     }
 
-    /// The script of the snapshot proof: each of the three prompts runs its
+    /// The script of the snapshot proof: each of the four prompts runs its
     /// own snippet, and each other pass plays no output.
     ///
     /// - Returns: The script.
     /// - Throws: The arguments-encoding error.
     private static func makeSnapshotScript() throws -> [ScriptedPassStep] {
-        let plays = [(writePromptText, writeCode), (listPromptText, listCode), (rollbackPromptText, rollbackCode)]
+        let plays = [
+            (writePromptText, writeCode), (listPromptText, listCode), (rollbackPromptText, rollbackCode),
+            (listOwnersPromptText, listOwnersCode),
+        ]
         return try plays.map { marker, code in
             .onPrompt(containing: marker, play: try ScriptedPromptFixture.makeToolPromptScript(code: code))
         } + [.endPass]
@@ -397,6 +413,220 @@ import Testing
         let folderKey = AgentHome.projectKey(of: fixture.cwd)
         #expect(keys == [folderKey, AgentHome.projectKey(of: otherFolder), folderKey])
         #expect(folderKey != AgentHome.projectKey(of: otherFolder))
+        await fixture.close()
+    }
+
+    // MARK: - The timeline of a model-slot switch
+
+    /// The `snapshots` endpoint query of the newest cursor of the change feed.
+    private static let cursorQuery = "{ cursor }"
+
+    /// The `snapshots` subscription of the changes of one session after a
+    /// cursor: the session of each change and the session that made its
+    /// checkpoint.
+    private static let changesSubscription =
+        "subscription($after: String, $sessionId: ID) { changes(after: $after, sessionId: $sessionId) "
+        + "{ sessionId owner } }"
+
+    /// The `snapshots` mutation that rolls the timeline of one session back
+    /// to the baseline.
+    private static let rollbackMutation =
+        "mutation($sessionId: ID!) { rollbackTimeline(input: { sessionId: $sessionId, index: \(baselineIndex) }) "
+        + "{ owner trigger } }"
+
+    /// One reply of the `snapshots` endpoint: its data, or its errors.
+    private struct EndpointReply<Payload: Decodable>: Decodable {
+        /// One error of a reply.
+        struct Failure: Decodable {
+            /// The message of the error.
+            let message: String
+        }
+
+        /// The data of the reply, or `nil` when the call failed.
+        let data: Payload?
+
+        /// The errors of the reply, or `nil` when there is none.
+        let errors: [Failure]?
+    }
+
+    /// The data of a reply of ``cursorQuery``.
+    private struct CursorPayload: Decodable {
+        /// The newest cursor.
+        let cursor: String
+    }
+
+    /// One change of ``changesSubscription``.
+    private struct SessionChange: Decodable, Equatable {
+        /// The session whose timeline changed.
+        let sessionId: String
+
+        /// The session that made the checkpoint.
+        let owner: String
+    }
+
+    /// The data of one reply of ``changesSubscription``.
+    private struct ChangesPayload: Decodable {
+        /// The change.
+        let changes: SessionChange
+    }
+
+    /// The data of a reply of ``rollbackMutation``.
+    private struct RollbackPayload: Decodable {
+        /// The checkpoint of the rollback, or `nil` when the rollback failed.
+        let rollbackTimeline: OwnedCheckpoint?
+    }
+
+    /// Decodes one JSON reply of the `snapshots` endpoint.
+    ///
+    /// - Parameters:
+    ///   - json: The reply.
+    ///   - payload: The type of the data of the reply.
+    /// - Returns: The reply.
+    /// - Throws: The error of the decode.
+    private static func decode<Payload: Decodable>(
+        _ json: String, as payload: Payload.Type
+    ) throws -> EndpointReply<Payload> {
+        try JSONDecoder().decode(EndpointReply<Payload>.self, from: Data(json.utf8))
+    }
+
+    /// Switches the session of `fixture` to the flash slot over the wire,
+    /// and drains the dispatcher. The session was idle, so the replaced
+    /// Router session has ended, and its `SessionEnd` released the key.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Throws: Whatever `session/set_config_option` throws.
+    private static func switchModelSlot(of fixture: ScriptedPromptFixture) async throws {
+        _ = try await fixture.harness.connection.setSessionConfigOption(
+            SetSessionConfigOptionRequest(
+                configId: ConfigOptions.modelOptionId, sessionId: fixture.sessionId,
+                value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
+        await fixture.harness.agent.hooks.dispatcher.drain()
+    }
+
+    /// Subscribes to the changes of `sessionId` after the newest cursor of
+    /// the `snapshots` endpoint of the agent of `fixture`.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session whose changes the subscription gives.
+    ///   - fixture: The wired fixture.
+    /// - Returns: The iterator of the replies of the subscription.
+    /// - Throws: Whatever the endpoint or the decode throws, or a failed
+    ///   requirement when the cursor query gives no cursor.
+    private static func subscribeToChanges(
+        of sessionId: SessionId, in fixture: ScriptedPromptFixture
+    ) async throws -> AsyncThrowingStream<String, Error>.AsyncIterator {
+        let endpoint = fixture.harness.agent.snapshotsEndpoint
+        let cursorReply = try await endpoint.execute(query: cursorQuery, variables: [:], operationName: nil, viewer: nil)
+        let cursor = try #require(try decode(cursorReply, as: CursorPayload.self).data?.cursor)
+        let stream = try await endpoint.subscribe(
+            query: changesSubscription,
+            variables: ["after": .string(cursor), "sessionId": .string(sessionId.rawValue)],
+            operationName: nil, viewer: nil)
+        return stream.makeAsyncIterator()
+    }
+
+    /// After a model-slot switch, the replaced Router session has released
+    /// the key, and the replacement owns it alone. A checkpoint that the
+    /// replacement takes is a change of the ACP session, whose owner is the
+    /// ACP session, not the Router id of the replacement.
+    @Test(.timeLimit(.minutes(1)))
+    func aTakeOfTheReplacementOfASwitchIsAChangeOfTheACPSession() async throws {
+        let fixture = try await Self.makeSnapshotFixture(
+            script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-change")
+        try await Self.switchModelSlot(of: fixture)
+        var changes = try await Self.subscribeToChanges(of: fixture.sessionId, in: fixture)
+
+        _ = try await Self.runTurn(Self.writePromptText, in: fixture)
+
+        let reply = try Self.decode(try #require(try await changes.next()), as: ChangesPayload.self)
+        #expect(reply.errors == nil)
+        let acpSession = fixture.sessionId.rawValue
+        #expect(reply.data?.changes == SessionChange(sessionId: acpSession, owner: acpSession))
+        await fixture.close()
+    }
+
+    /// After a model-slot switch, the replaced Router session has released
+    /// the key. `rollbackTimeline` of the ACP session acts as the live
+    /// replacement, and its checkpoint names the ACP session as its owner.
+    @Test
+    func aRollbackOfTheACPSessionAfterASwitchActsAsTheReplacement() async throws {
+        let fixture = try await Self.makeSnapshotFixture(
+            script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-rollback")
+        try await Self.switchModelSlot(of: fixture)
+        _ = try await Self.runTurn(Self.writePromptText, in: fixture)
+
+        let json = try await fixture.harness.agent.snapshotsEndpoint.execute(
+            query: Self.rollbackMutation,
+            variables: ["sessionId": .string(fixture.sessionId.rawValue)], operationName: nil, viewer: nil)
+
+        let reply = try Self.decode(json, as: RollbackPayload.self)
+        #expect(reply.errors == nil)
+        #expect(
+            reply.data?.rollbackTimeline
+                == OwnedCheckpoint(owner: fixture.sessionId.rawValue, trigger: Self.rollbackTrigger))
+        await fixture.close()
+    }
+
+    /// After a model-slot switch, `tools.snapshots.list` names the ACP
+    /// session as the owner of a checkpoint that the replacement took.
+    @Test
+    func theListOfTheReplacementOfASwitchNamesTheACPSessionAsOwner() async throws {
+        let fixture = try await Self.makeSnapshotFixture(
+            script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-list")
+        try await Self.switchModelSlot(of: fixture)
+
+        _ = try await Self.runTurn(Self.writePromptText, in: fixture)
+        let listed = try await Self.runTurn(Self.listOwnersPromptText, in: fixture)
+
+        let replacement = try await Self.liveRouterSession(of: fixture)
+        #expect(listed.toolCallText.contains("\(Self.ownersLabel)\(fixture.sessionId.rawValue)"))
+        #expect(!listed.toolCallText.contains(replacement))
+        await fixture.close()
+    }
+
+    /// The Router id of the session that serves the ACP session of
+    /// `fixture` now: after a model-slot switch, the replacement.
+    ///
+    /// - Parameter fixture: The wired fixture.
+    /// - Returns: The Router id.
+    /// - Throws: A failed requirement when the agent has no such session.
+    private static func liveRouterSession(of fixture: ScriptedPromptFixture) async throws -> String {
+        try #require(await fixture.harness.agent.sessions[fixture.sessionId]).session.id.description
+    }
+
+    /// `session/close` of a switched session releases the replacement: the
+    /// ACP session has no live store owner any more, and the replacement
+    /// keeps the ACP session as its host session, so its checkpoints still
+    /// name the ACP session.
+    @Test
+    func aCloseAfterASwitchForgetsTheLiveOwnerOfTheACPSession() async throws {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch-close")
+        try await Self.switchModelSlot(of: fixture)
+        let replacement = try await Self.liveRouterSession(of: fixture)
+        let acpSession = fixture.sessionId.rawValue
+        #expect(SnapshotSessionKeys.shared.storeOwner(of: acpSession) == replacement)
+
+        _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
+
+        #expect(SnapshotSessionKeys.shared.storeOwner(of: acpSession) == nil)
+        #expect(SnapshotSessionKeys.shared.hostSession(of: replacement) == acpSession)
+        await fixture.close()
+    }
+
+    /// `session/delete` of a switched session forgets the host session of
+    /// the replacement.
+    @Test
+    func aDeleteAfterASwitchForgetsTheHostSessionOfTheReplacement() async throws {
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch-delete")
+        try await Self.switchModelSlot(of: fixture)
+        let replacement = try await Self.liveRouterSession(of: fixture)
+        #expect(SnapshotSessionKeys.shared.hostSession(of: replacement) == fixture.sessionId.rawValue)
+
+        _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))
+
+        #expect(SnapshotSessionKeys.shared.hostSession(of: replacement) == nil)
         await fixture.close()
     }
 

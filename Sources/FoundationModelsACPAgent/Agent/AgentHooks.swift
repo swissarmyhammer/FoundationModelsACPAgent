@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsHooks
+import FoundationModelsMultitool
 import Synchronization
 
 /// The hook objects of one agent: one `HookDispatcher` and one
@@ -84,20 +85,43 @@ extension HookLineage {
 
 /// The snapshot session key of each ACP session that an agent of this
 /// process opened or resumed, for the `sessionKey` resolver of the Multitool
-/// `snapshots` endpoints.
+/// `snapshots` endpoints, and the map between the ACP sessions and the Router
+/// sessions that own the store, for their `hostSession` and `storeOwner`
+/// resolvers.
 ///
-/// The change log of one `SnapshotStore` reads the resolver of the first
+/// The change log of one `SnapshotStore` reads the resolvers of the first
 /// endpoint over that store, and `SnapshotStore.shared(directory:)` gives one
 /// store to each agent of the process on one folder. Thus the agent endpoint
 /// and the capability of each session of each such agent must map a session
-/// to its key in the same way: they all read this one map. A session id is a
+/// in the same way: they all read this one map, through
+/// ``makeEndpoint(over:)`` and ``makeCapability(over:)``. A session id is a
 /// ULID, so the sessions of two agents never collide in it.
+///
+/// The owners of the store are Router session ids. The first Router session
+/// of an ACP session has the id of the ACP session, so it needs no mapping.
+/// A model-slot switch replaces it with a Router session of a new id
+/// (``recordReplacement(_:of:)``): the endpoints then name the ACP session
+/// as the owner of each checkpoint of the replacement, and act as the
+/// replacement for the ACP session.
 final class SnapshotSessionKeys: Sendable {
+    /// The maps of one process, under one lock.
+    private struct Maps {
+        /// The key of each session, by the ACP session id.
+        var keys: [String: String] = [:]
+
+        /// The ACP session of each replacement, by its Router session id.
+        var hostSessions: [String: String] = [:]
+
+        /// The live Router session of each switched ACP session, by the ACP
+        /// session id.
+        var storeOwners: [String: String] = [:]
+    }
+
     /// The map of the process.
     static let shared = SnapshotSessionKeys()
 
-    /// The key of each session, by the ACP session id.
-    private let keys = Mutex<[String: String]>([:])
+    /// The maps.
+    private let maps = Mutex(Maps())
 
     /// Records the key of a session that the agent opened or resumed.
     ///
@@ -105,14 +129,42 @@ final class SnapshotSessionKeys: Sendable {
     ///   - sessionKey: The hook session key of the session.
     ///   - sessionId: The ACP session id.
     func record(_ sessionKey: String, for sessionId: SessionId) {
-        keys.withLock { $0[sessionId.rawValue] = sessionKey }
+        maps.withLock { $0.keys[sessionId.rawValue] = sessionKey }
     }
 
-    /// Forgets a deleted session.
+    /// Records the Router session that a model-slot switch made to serve an
+    /// ACP session: its checkpoints name the ACP session as their owner, and
+    /// it is the live store owner of the ACP session.
+    ///
+    /// - Parameters:
+    ///   - owner: The Router session id of the replacement.
+    ///   - sessionId: The ACP session that the replacement serves.
+    func recordReplacement(_ owner: String, of sessionId: SessionId) {
+        maps.withLock { maps in
+            maps.hostSessions[owner] = sessionId.rawValue
+            maps.storeOwners[sessionId.rawValue] = owner
+        }
+    }
+
+    /// Forgets the live store owner of a session whose Router session the
+    /// agent released. The host session of each replacement stays, so its
+    /// checkpoints still name the ACP session.
+    ///
+    /// - Parameter sessionId: The ACP session id.
+    func forgetLiveOwner(of sessionId: SessionId) {
+        _ = maps.withLock { $0.storeOwners.removeValue(forKey: sessionId.rawValue) }
+    }
+
+    /// Forgets a deleted session: its key, its live store owner, and the
+    /// host session of each of its replacements.
     ///
     /// - Parameter sessionId: The ACP session id.
     func forget(_ sessionId: SessionId) {
-        _ = keys.withLock { $0.removeValue(forKey: sessionId.rawValue) }
+        maps.withLock { maps in
+            maps.keys.removeValue(forKey: sessionId.rawValue)
+            maps.storeOwners.removeValue(forKey: sessionId.rawValue)
+            maps.hostSessions = maps.hostSessions.filter { $0.value != sessionId.rawValue }
+        }
     }
 
     /// The key of a session.
@@ -121,12 +173,66 @@ final class SnapshotSessionKeys: Sendable {
     /// - Returns: The key, or `nil` for a session that no agent of the
     ///   process opened.
     func sessionKey(of sessionId: String) -> String? {
-        keys.withLock { $0[sessionId] }
+        maps.withLock { $0.keys[sessionId] }
+    }
+
+    /// The ACP session of an owner of the store.
+    ///
+    /// - Parameter owner: The Router session id of the owner.
+    /// - Returns: The ACP session that the owner serves as a replacement, or
+    ///   `nil` for an owner that is no replacement: its id is the id of its
+    ///   ACP session.
+    func hostSession(of owner: String) -> String? {
+        maps.withLock { $0.hostSessions[owner] }
+    }
+
+    /// The live store owner of an ACP session.
+    ///
+    /// - Parameter sessionId: The ACP session id.
+    /// - Returns: The Router session id of the replacement that serves the
+    ///   session now, or `nil` when the session has no live replacement: its
+    ///   own id owns the store.
+    func storeOwner(of sessionId: String) -> String? {
+        maps.withLock { $0.storeOwners[sessionId] }
+    }
+
+    /// Makes the agent `snapshots` endpoint over `store` with the resolvers
+    /// of this map.
+    ///
+    /// - Parameter store: The store of the endpoint.
+    /// - Returns: The endpoint.
+    func makeEndpoint(over store: SnapshotStore) -> SnapshotsGraph {
+        SnapshotsGraph(
+            store: store, sessionKey: sessionKeyResolver, hostSession: hostSessionResolver,
+            storeOwner: storeOwnerResolver)
+    }
+
+    /// Makes the `snapshots` capability of a session over `store` with the
+    /// resolvers of this map.
+    ///
+    /// - Parameter store: The store of the capability.
+    /// - Returns: The capability.
+    func makeCapability(over store: SnapshotStore) -> SnapshotsCapability {
+        SnapshotsCapability(
+            store: store, sessionKey: sessionKeyResolver, hostSession: hostSessionResolver,
+            storeOwner: storeOwnerResolver)
     }
 
     /// The `sessionKey` resolver of a Multitool `snapshots` endpoint over
-    /// this map.
-    var resolver: @Sendable (String) async -> String? {
+    /// this map: ``sessionKey(of:)``.
+    private var sessionKeyResolver: @Sendable (String) async -> String? {
         { [self] sessionId in sessionKey(of: sessionId) }
+    }
+
+    /// The `hostSession` resolver of a Multitool `snapshots` endpoint over
+    /// this map: ``hostSession(of:)``.
+    private var hostSessionResolver: @Sendable (String) async -> String? {
+        { [self] owner in hostSession(of: owner) }
+    }
+
+    /// The `storeOwner` resolver of a Multitool `snapshots` endpoint over
+    /// this map: ``storeOwner(of:)``.
+    private var storeOwnerResolver: @Sendable (String) async -> String? {
+        { [self] sessionId in storeOwner(of: sessionId) }
     }
 }

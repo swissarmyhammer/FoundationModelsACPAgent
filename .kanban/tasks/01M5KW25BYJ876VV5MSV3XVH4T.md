@@ -87,8 +87,24 @@ comments:
     - evidence: swift test — 1257 tests in 140 suites passed, 0 failed, 0 skipped (1 deliberate known issue); bench unittest (uv, swebench 5.0.2) 265 OK; ShellStoreSharingTests x3 — 5/5 each run
     - next: commit, review
   timestamp: 2026-10-23T11:08:51.895807+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5m7gsv9egnr7cmw0dc1xywr
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (16d89e6) — 0 findings, 0 confirmed, 2 refuted; 9 files reviewed, 4 .kanban files skipped by .reviewignore
+    - next: none; task moved to done
+  timestamp: 2026-10-23T11:14:43.689828+00:00
+- actor: claude-code
+  id: 01m5m7h4tee31jd9t7sttbhabz
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 9 files (ShellStoreLease.swift new; 2 new test files); Multitool a042548
+    - test: green — swift test 1257 passed; bench 265 OK; sharing tests x3
+    - commit: 16d89e6
+    - review: clean — 0 findings
+  timestamp: 2026-10-23T11:14:54.926250+00:00
+position_column: done
+position_ordinal: ffff9280
 title: Sessions in one cwd share one shell store (history, log and command records)
 ---
 User design 2026-10-23: one shell log per cwd, shared by the sessions of that cwd in the process.

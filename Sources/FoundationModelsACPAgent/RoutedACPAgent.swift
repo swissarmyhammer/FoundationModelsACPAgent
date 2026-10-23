@@ -414,10 +414,10 @@ public actor RoutedACPAgent: Agent {
             secretStore: self.secretStore)
         self.settingsEndpoint = try SettingsGraph(store: settingsStore)
         // The sessions of one working directory share one key, so the
-        // endpoint reads the key of each session from the one map that the
+        // endpoint reads the key of each session, and the ACP session of each
+        // Router session that owns the store, from the one map that the
         // `snapshots` capability of each session reads too.
-        self.snapshotsEndpoint = SnapshotsGraph(
-            store: hooks.snapshotStore, sessionKey: SnapshotSessionKeys.shared.resolver)
+        self.snapshotsEndpoint = SnapshotSessionKeys.shared.makeEndpoint(over: hooks.snapshotStore)
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

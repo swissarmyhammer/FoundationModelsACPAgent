@@ -258,6 +258,11 @@ extension RoutedACPAgent {
                 userPresence: entry.userPresence,
                 mailOnlyAnswerLimit: mailOnlyAnswerLimit,
                 hookLineage: HookLineage(workingDirectory: entry.workingDirectory, origin: .replacement))
+        // The replacement has a Router id of its own, and it owns the store
+        // key once the replaced session releases it: the `snapshots`
+        // endpoints name the ACP session as the owner of its checkpoints, and
+        // act as it for the ACP session.
+        SnapshotSessionKeys.shared.recordReplacement(replacement.id.description, of: sessionId)
         // The projector reads the replacement before any prompt can mail it.
         // The reader of the replaced session stays until that session
         // closes (task ^9xs24pn, decision Q3).

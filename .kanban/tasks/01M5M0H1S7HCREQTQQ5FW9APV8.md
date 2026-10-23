@@ -38,6 +38,30 @@ comments:
     - One store = one change feed, which keeps the closures of the FIRST endpoint built over it: give every endpoint/capability on a store the same closures (one process-wide map, as SnapshotSessionKeys).
     - Do: record R2 -> A (and A -> R2 for storeOwner) in applyModelSlot; forget on release/delete. Tests first: after a model switch, a take by the replacement appears as a change for A with owner A; rollbackTimeline(A) works after the replaced session is released.
   timestamp: 2026-10-23T10:52:04.686591+00:00
+- actor: claude-code
+  id: 01m5m88bwqyqmmx8zhjy2xv9fr
+  text: |-
+    Implementation landed (not committed), Multitool 17f92b6.
+    - Pin: Package.resolved Multitool a042548 -> 17f92b61bfca442f9560ca1ad5a7f9d62e66452d (only that line; `swift package resolve`). Package.resolved is gitignored, so the pin is local only.
+    - SnapshotSessionKeys (AgentHooks.swift) now holds three maps under one Mutex: keys (ACP id -> key), hostSessions (replacement Router id -> ACP id), storeOwners (ACP id -> live replacement Router id). New: recordReplacement(_:of:), forgetLiveOwner(of:), hostSession(of:), storeOwner(of:), makeEndpoint(over:), makeCapability(over:). The old `resolver` property is gone; RoutedACPAgent and ToolCatalog build the endpoint and the capability only through makeEndpoint/makeCapability, so every endpoint on a store gets the same three closures (one store = one feed, first endpoint wins).
+    - applyModelSlot records R2 -> A and A -> R2. tearDownSession (close, delete, resume-replace) calls forgetLiveOwner(A) after the Router session closes; delete's forget(A) also drops each hostSessions entry whose value is A. Decision: hostSessions is kept on close (not only delete) so the replacement's old checkpoints still list owner A after a close/resume; storeOwner is dropped on close because the closed R2 no longer owns the key and a resume restores the Router session under A.
+    - RED observed: change test timed out at 60s with no change for A (nil); rollback test got null rollbackTimeline (owner A not live); list test answered owners=<R2>. Unit tests for the new map API failed to compile before the API existed.
+    - Test gotcha: `import GraphQL` in HookCompositionTests makes `SourceLocation` ambiguous with Swift Testing; the rollback mutation puts the index in the document instead of using Map/Number.
+  timestamp: 2026-10-23T11:27:35.831928+00:00
+- actor: claude-code
+  id: 01m5m88hx03j8091xjfpvhkkse
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift, Sources/FoundationModelsACPAgent/Agent/ConfigOptions.swift, Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift, Tests/FoundationModelsACPAgentTests/SnapshotSessionKeysTests.swift (new); plus local Package.resolved Multitool pin 17f92b6 (gitignored). `swift build --build-tests` no code warnings; `swift test`: 1267 tests in 141 suites passed (1 pre-existing known issue in HarnessSmokeTests, intentional).
+    - next: /review. Not committed (per brief).
+  timestamp: 2026-10-23T11:27:41.984200+00:00
+- actor: claude-code
+  id: 01m5m8b1gfw5pafw7s6nqjtvyv
+  text: |-
+    ### test — green
+    - evidence: swift test — 1267 tests in 141 suites passed (1 deliberate known issue); bench unittest (uv, swebench 5.0.2) 265 OK
+    - next: commit, review
+  timestamp: 2026-10-23T11:29:03.503478+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
 position_column: doing
@@ -51,7 +75,7 @@ Split from ^w53xmhk (2026-10-23). Two gaps left after ^w53xmhk:
 
 ## Do
 - [x] Update the Router pin to the sha that adds the restore hook key; resume passes the cwd key. (Done in ^w53xmhk round 2, 7bba627, Router 7c07fb29.)
-- [ ] Model-switch replacement: its checkpoints reach the ACP session's change feed and show the ACP session as owner.
+- [x] Model-switch replacement: its checkpoints reach the ACP session's change feed and show the ACP session as owner.
 
 ## Tests (first)
 - Resume a session in a cwd where another session is open: both share one timeline.

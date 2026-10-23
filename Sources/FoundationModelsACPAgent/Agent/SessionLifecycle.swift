@@ -252,6 +252,9 @@ extension RoutedACPAgent {
         // every `streamSessionEvents()` subscription. `deinit` does not run
         // it, so the host must call `close()`.
         await entry.session.close()
+        // The closed Router session released its store key, so the
+        // `snapshots` endpoints no longer act as it for the ACP session.
+        SnapshotSessionKeys.shared.forgetLiveOwner(of: sessionId)
         for descendant in entry.descendants {
             await descendant.close()
         }

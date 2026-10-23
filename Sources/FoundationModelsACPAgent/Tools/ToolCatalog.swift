@@ -556,11 +556,11 @@ public enum ToolCatalog {
         }
         // The `snapshots` capability reads the session key from
         // `HookSession.current` at call time, so it needs no key here. Its
-        // GraphQL endpoint maps a session to its key with the map that the
-        // endpoint of the agent reads, because one store has one change log.
+        // GraphQL endpoint maps a session to its key, and a Router session to
+        // its ACP session, with the map that the endpoint of the agent reads,
+        // because one store has one change log.
         if let snapshotStore = context.snapshotStore {
-            builder.withCapability(
-                SnapshotsCapability(store: snapshotStore, sessionKey: SnapshotSessionKeys.shared.resolver))
+            builder.withCapability(SnapshotSessionKeys.shared.makeCapability(over: snapshotStore))
         }
         if let settingsTool = settingsTool(in: context) {
             builder.withOperationTool(noun: SettingsGraph.endpointName, tool: settingsTool)
