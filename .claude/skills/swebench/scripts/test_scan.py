@@ -1100,6 +1100,12 @@ class AWaitForAChildAgentIsNotAGenerationStall(ScanTestCase):
         text = "[agents] agents (01M5MX1CY7N6YF6TVVMV3GNP5F) completed: Agent diagnose (01CHILD) finished."
         self.assertEqual(self.scan_gap(text), [])
 
+    def test_a_gap_that_ends_with_a_child_agent_message_is_not_a_stall(self):
+        """bench24-1023b, django__django-13710: 420 s before seq 1525, a progress
+        message of the tester child session while it still ran."""
+        text = "[agents] agents (01M5N3S8KYR4XMBTT882YGBW9W) message, still running: Status: the run is executing"
+        self.assertEqual(self.scan_gap(text), [])
+
     def test_a_gap_that_ends_with_an_other_result_is_a_stall(self):
         self.assertEqual(len(self.scan_gap('[execute] execute shell (01OPB) completed: {"exitCode":0}')), 1)
 

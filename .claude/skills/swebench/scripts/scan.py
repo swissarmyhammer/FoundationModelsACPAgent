@@ -44,8 +44,8 @@ import sys
 import time
 
 APPLE_EPOCH = dt.datetime(2001, 1, 1, tzinfo=dt.timezone.utc)
-# The final event of a child agent session of the `agents` tool.
-CHILD_RESULT = re.compile(r"\[agents\] agents \([0-9A-Z]+\) (completed|failed):")
+# The final event, or a progress message, of a child agent session of the `agents` tool.
+CHILD_RESULT = re.compile(r"\[agents\] agents \([0-9A-Z]+\) (completed|failed|message, still running):")
 WATCHER = "could not mark a changed file dirty"
 # The prefix of a tool result line in the transcript:
 #   [runCode] runCode (01M45...) completed: {...}
