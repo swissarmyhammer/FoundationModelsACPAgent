@@ -93,10 +93,26 @@ comments:
     - evidence: swift test — 1251 tests in 138 suites passed, 0 failed, 0 skipped, 1 known issue (deliberate withKnownIssue in HarnessSmokeTests); only build warning is the known SwiftPM mlx "missing creator" line. bench: uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest — 265 tests OK.
     - next: none; no source change was needed, nothing committed.
   timestamp: 2026-10-23T10:19:29.175010+00:00
+- actor: claude-code
+  id: 01m5m4fcphqcffpx5v8we91x3f
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (4f7f78f) — 0 findings, 0 confirmed, 0 refuted (7 attempted, 0 failed); 2 files reviewed, 2 .kanban files skipped by .reviewignore; prior finding CodeContextLease.swift:74 checked
+    - next: none — moved to done
+  timestamp: 2026-10-23T10:21:31.729871+00:00
+- actor: claude-code
+  id: 01m5m4fqyy7weew36cms9qr330
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — CodeContextLease.swift (explicit ManagerKey ==), CodeContextSharingTests.swift
+    - test: green — swift test 1251 passed; bench 265 OK
+    - commit: 4f7f78f
+    - review: clean — 0 findings
+  timestamp: 2026-10-23T10:21:43.262186+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffff9180
 title: Sessions in one cwd share one CodeContext (ref-counted), and its index lives under the local home
 ---
 User design 2026-10-23: one code index per cwd, shared by every session of that cwd in the process.
