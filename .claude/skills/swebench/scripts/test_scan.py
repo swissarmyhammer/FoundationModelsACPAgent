@@ -1019,5 +1019,37 @@ class TheScoreReportIsClosedAfterTheRead(ScanTestCase):
         self.assertEqual([w for w in caught if issubclass(w.category, ResourceWarning)], [])
 
 
+def iso_time(t):
+    """Give the ISO-8601 UTC transcript time of the local time t, as the agent writes it since 2026-10-23."""
+    return t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+class ATranscriptTimeCanBeAnIsoText(ScanTestCase):
+    """The run bench24-1023 of 2026-10-23 has transcripts with "ts" as an
+    ISO-8601 text ("2026-10-23T17:16:19.625Z"), not as Apple-epoch seconds.
+    The transcript step failed with a TypeError, and the scan gave no tool
+    stats, no stalls and no start times. The scan must read both forms."""
+
+    def scan_with_times(self, time_of):
+        """Scan a transcript with a stall of STALL_GAP + 30 s, its times made by time_of."""
+        later = OLD_START + dt.timedelta(seconds=STALL_GAP + 30)
+        rows = [running_row("01OPA", 1, OLD_START), completed_row("01OPA", 2, later)]
+        rows[0]["ts"], rows[1]["ts"] = time_of(OLD_START), time_of(later)
+        write_transcript(self.transcripts, FIRST, rows)
+        quiet(self.scan_kept_transcripts)
+
+    def assert_start_and_stall(self):
+        self.assertEqual(self.R["transcript_start"][FIRST], OLD_START)
+        self.assertEqual([round(g) for g, *_ in self.R["tools"]["stalls"]], [STALL_GAP + 30])
+
+    def test_an_iso_time_gives_the_start_and_the_stall(self):
+        self.scan_with_times(iso_time)
+        self.assert_start_and_stall()
+
+    def test_an_apple_time_still_gives_the_start_and_the_stall(self):
+        self.scan_with_times(apple_time)
+        self.assert_start_and_stall()
+
+
 if __name__ == "__main__":
     unittest.main()

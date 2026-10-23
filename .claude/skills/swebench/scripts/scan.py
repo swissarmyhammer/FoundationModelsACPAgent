@@ -230,6 +230,23 @@ def ts(t):
         return None
 
 
+def apple_seconds(t):
+    """Give a transcript time as seconds since 2001-01-01 UTC.
+
+    The agent wrote these seconds until 2026-10-23; since then it writes an
+    ISO-8601 text ("2026-10-23T17:16:19.625Z"). Give None for a bad value.
+    """
+    if isinstance(t, str):
+        try:
+            when = dt.datetime.fromisoformat(t.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=dt.timezone.utc)
+        return (when - APPLE_EPOCH).total_seconds()
+    return t if isinstance(t, (int, float)) else None
+
+
 def read_jsonl(path):
     """Read a JSONL file. Skip a partial or bad line. Give [] for a missing file."""
     rows = []
@@ -1407,6 +1424,9 @@ def scan_transcripts(dirs, gap_s, R):
     now = dt.datetime.now(dt.timezone.utc)
     for f in files:
         rows = read_jsonl(f)
+        for r in rows:
+            if "ts" in r:
+                r["ts"] = apple_seconds(r["ts"])
         inst = instance_of(f)
         print(f"-- {inst}: {f}  lines={len(rows)}")
         # Each instance gets a line in the loop report, also with no result.
