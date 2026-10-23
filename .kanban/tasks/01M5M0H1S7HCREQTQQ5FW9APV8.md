@@ -62,10 +62,50 @@ comments:
     - evidence: swift test — 1267 tests in 141 suites passed (1 deliberate known issue); bench unittest (uv, swebench 5.0.2) 265 OK
     - next: commit, review
   timestamp: 2026-10-23T11:29:03.503478+00:00
+- actor: claude-code
+  id: 01m5m8mnttav3gpvn13mwx072s
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (149de5c) — 7 findings (7 confirmed, 1 refuted): Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:185, :195, :204, :215, :223, :229, :235 (all duplication/duplication)
+    - next: implement the 7 open findings in the 2026-10-23 06:29 Review Findings section, then re-review
+  timestamp: 2026-10-23T11:34:19.226447+00:00
+- actor: claude-code
+  id: 01m5m8n3j5vacrg4pc8npcbczd
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 7 files (AgentHooks.swift, ConfigOptions.swift, SessionLifecycle.swift, RoutedACPAgent.swift, ToolCatalog.swift, 2 tests); Multitool 17f92b6
+    - test: green — swift test 1267 passed; bench 265 OK
+    - commit: 149de5c
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:185, :195, :204, :215, :223, :229, :235 (duplication)
+  timestamp: 2026-10-23T11:34:33.285460+00:00
+- actor: claude-code
+  id: 01m5m8vm8f3w79mk6za4fqeev4
+  text: |-
+    Review round 2026-10-23 06:29 fixed in AgentHooks.swift (SnapshotSessionKeys), behaviour unchanged:
+    - Lock-and-read: new private `value(for:in: KeyPath<Maps, [String: String]>)` does `maps.withLock { $0[keyPath: map][id] }`; sessionKey(of:), hostSession(of:), storeOwner(of:) each call it with their map.
+    - Endpoint/capability: new private generic `make<Endpoint>(over:with:)` takes the `init(store:sessionKey:hostSession:storeOwner:)` of the type and passes the store and the three resolvers; makeEndpoint and makeCapability pass `SnapshotsGraph.init(...)` / `SnapshotsCapability.init(...)`.
+    - Resolvers: the three `*Resolver` closure properties are gone. Swift 6 converts the method references `sessionKey(of:)`, `hostSession(of:)`, `storeOwner(of:)` (self is Sendable) straight to `@Sendable (String) async -> String?`, so `make` passes them directly; a `makeResolver` wrapper would only re-wrap the same function (the finding's "e.g."). Private `Resolver` typealias names the closure type.
+    - TDD: pure refactor, no new behaviour; SnapshotSessionKeysTests and the HookCompositionTests model-switch tests cover the three maps and both endpoints.
+    - The only build warning is the SwiftPM `missing creator for mutated node` on mlx-swift_Cmlx.bundle (dependency build graph, there before this change).
+  timestamp: 2026-10-23T11:38:06.991744+00:00
+- actor: claude-code
+  id: 01m5m8vntqp618nngd6f8y94ap
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift. `swift build --build-tests` exit 0, no code warnings; `swift test` 1267 tests in 141 suites passed (1 deliberate known issue in HarnessSmokeTests). 7/7 findings of 2026-10-23 06:29 flipped to [x]. Not committed (per brief).
+    - next: /review
+  timestamp: 2026-10-23T11:38:08.599296+00:00
+- actor: claude-code
+  id: 01m5m8y1vbgx6fw9nkk6jw07c1
+  text: |-
+    ### test — green
+    - evidence: swift test — 1267 tests in 141 suites passed (1 deliberate known issue); bench unittest (uv, swebench 5.0.2) 265 OK
+    - next: commit, review
+  timestamp: 2026-10-23T11:39:26.443291+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
 position_column: doing
-position_ordinal: '8180'
+position_ordinal: '80'
 title: Resumed sessions and model-switch replacements join the shared per-cwd snapshot timeline
 ---
 Split from ^w53xmhk (2026-10-23). Two gaps left after ^w53xmhk:
@@ -80,3 +120,18 @@ Split from ^w53xmhk (2026-10-23). Two gaps left after ^w53xmhk:
 ## Tests (first)
 - Resume a session in a cwd where another session is open: both share one timeline.
 - After a model switch, a take by the replacement appears as a change for the ACP session id. #share-per-cwd
+
+## Review Findings (2026-10-23 06:29)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:185` `duplication/duplication` — The `hostSession` method duplicates the identical `maps.withLock { $0.<field>[<param>] }` pattern found in `sessionKey` (line 175) and `storeOwner` (line 195). Extract a parameterized helper method to consolidate the lock-and-access logic.
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:195` `duplication/duplication` — The `storeOwner` method duplicates the identical `maps.withLock { $0.<field>[<param>] }` pattern found in `sessionKey` (line 175) and `hostSession` (line 185). Extract a parameterized helper method to consolidate the lock-and-access logic.
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:204` `duplication/duplication` — The `makeEndpoint` method duplicates the logic found in `makeCapability` (line 215). Both methods construct an object with identical parameters: `store`, `sessionKeyResolver`, `hostSessionResolver`, and `storeOwnerResolver`, differing only in the type being instantiated. Extract a shared generic factory method that takes a type parameter and returns the constructed wrapper, eliminating the duplicated parameter-passing logic.
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:215` `duplication/duplication` — The `makeCapability` method duplicates the logic found in `makeEndpoint` (line 204). Both methods construct an object with identical parameters, differing only in the type being instantiated. Extract a shared generic factory method that takes a type parameter and returns the constructed wrapper.
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:223` `duplication/duplication` — The `sessionKeyResolver` property duplicates the closure pattern `{ [self] <param> in <method>(of: <param>) }` found in `hostSessionResolver` (line 229) and `storeOwnerResolver` (line 235). All three differ only in the method being forwarded to, not in the closure logic itself. Extract a private factory method, e.g., `private func makeResolver(_ getter: @escaping (String) -> String?) -> (@Sendable (String) async -> String?)`, and call it from all three resolver properties.
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:229` `duplication/duplication` — The `hostSessionResolver` property duplicates the identical closure pattern `{ [self] <param> in <method>(of: <param>) }` found in `sessionKeyResolver` (line 223) and `storeOwnerResolver` (line 235). Extract a factory method that takes the getter method as a parameter and returns the wrapped closure.
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentHooks.swift:235` `duplication/duplication` — The `storeOwnerResolver` property duplicates the identical closure pattern `{ [self] <param> in <method>(of: <param>) }` found in `sessionKeyResolver` (line 223) and `hostSessionResolver` (line 229). Extract a factory method that takes the getter method as a parameter and returns the wrapped closure.

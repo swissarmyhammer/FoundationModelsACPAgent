@@ -173,7 +173,7 @@ final class SnapshotSessionKeys: Sendable {
     /// - Returns: The key, or `nil` for a session that no agent of the
     ///   process opened.
     func sessionKey(of sessionId: String) -> String? {
-        maps.withLock { $0.keys[sessionId] }
+        value(for: sessionId, in: \.keys)
     }
 
     /// The ACP session of an owner of the store.
@@ -183,7 +183,7 @@ final class SnapshotSessionKeys: Sendable {
     ///   `nil` for an owner that is no replacement: its id is the id of its
     ///   ACP session.
     func hostSession(of owner: String) -> String? {
-        maps.withLock { $0.hostSessions[owner] }
+        value(for: owner, in: \.hostSessions)
     }
 
     /// The live store owner of an ACP session.
@@ -193,7 +193,7 @@ final class SnapshotSessionKeys: Sendable {
     ///   session now, or `nil` when the session has no live replacement: its
     ///   own id owns the store.
     func storeOwner(of sessionId: String) -> String? {
-        maps.withLock { $0.storeOwners[sessionId] }
+        value(for: sessionId, in: \.storeOwners)
     }
 
     /// Makes the agent `snapshots` endpoint over `store` with the resolvers
@@ -202,9 +202,7 @@ final class SnapshotSessionKeys: Sendable {
     /// - Parameter store: The store of the endpoint.
     /// - Returns: The endpoint.
     func makeEndpoint(over store: SnapshotStore) -> SnapshotsGraph {
-        SnapshotsGraph(
-            store: store, sessionKey: sessionKeyResolver, hostSession: hostSessionResolver,
-            storeOwner: storeOwnerResolver)
+        make(over: store, with: SnapshotsGraph.init(store:sessionKey:hostSession:storeOwner:))
     }
 
     /// Makes the `snapshots` capability of a session over `store` with the
@@ -213,26 +211,36 @@ final class SnapshotSessionKeys: Sendable {
     /// - Parameter store: The store of the capability.
     /// - Returns: The capability.
     func makeCapability(over store: SnapshotStore) -> SnapshotsCapability {
-        SnapshotsCapability(
-            store: store, sessionKey: sessionKeyResolver, hostSession: hostSessionResolver,
-            storeOwner: storeOwnerResolver)
+        make(over: store, with: SnapshotsCapability.init(store:sessionKey:hostSession:storeOwner:))
     }
 
-    /// The `sessionKey` resolver of a Multitool `snapshots` endpoint over
-    /// this map: ``sessionKey(of:)``.
-    private var sessionKeyResolver: @Sendable (String) async -> String? {
-        { [self] sessionId in sessionKey(of: sessionId) }
+    /// A resolver of a Multitool `snapshots` endpoint: it maps one session id
+    /// to another, or to `nil`.
+    private typealias Resolver = @Sendable (String) async -> String?
+
+    /// Makes a Multitool `snapshots` endpoint over `store` with the resolvers
+    /// of this map: ``sessionKey(of:)``, ``hostSession(of:)`` and
+    /// ``storeOwner(of:)``.
+    ///
+    /// - Parameters:
+    ///   - store: The store of the endpoint.
+    ///   - initializer: The `init(store:sessionKey:hostSession:storeOwner:)`
+    ///     of the endpoint type.
+    /// - Returns: The endpoint.
+    private func make<Endpoint>(
+        over store: SnapshotStore,
+        with initializer: (SnapshotStore, @escaping Resolver, @escaping Resolver, @escaping Resolver) -> Endpoint
+    ) -> Endpoint {
+        initializer(store, sessionKey(of:), hostSession(of:), storeOwner(of:))
     }
 
-    /// The `hostSession` resolver of a Multitool `snapshots` endpoint over
-    /// this map: ``hostSession(of:)``.
-    private var hostSessionResolver: @Sendable (String) async -> String? {
-        { [self] owner in hostSession(of: owner) }
-    }
-
-    /// The `storeOwner` resolver of a Multitool `snapshots` endpoint over
-    /// this map: ``storeOwner(of:)``.
-    private var storeOwnerResolver: @Sendable (String) async -> String? {
-        { [self] sessionId in storeOwner(of: sessionId) }
+    /// Reads one entry of one map under the lock.
+    ///
+    /// - Parameters:
+    ///   - id: The key of the entry.
+    ///   - map: The map to read.
+    /// - Returns: The value of the entry, or `nil` when the map has none.
+    private func value(for id: String, in map: KeyPath<Maps, [String: String]>) -> String? {
+        maps.withLock { $0[keyPath: map][id] }
     }
 }
