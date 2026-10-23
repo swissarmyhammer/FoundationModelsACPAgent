@@ -632,7 +632,10 @@ extension RoutedACPAgent {
         // the limit from the model's resolved context, never from
         // configuration. The
         // repetition detector takes the `repetition:` section. The settle
-        // period is the one that the surface gave the agent runs.
+        // period is the one that the surface gave the agent runs. The hooks
+        // see the key of the working directory, which each session of that
+        // folder shares, so they share one snapshot timeline.
+        let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .new)
         let session = residentProfile.standard.makeBudgetedSession(
             instructions: composition.instructions,
             workingDirectory: workingDirectory,
@@ -642,11 +645,14 @@ extension RoutedACPAgent {
             repetition: composition.configuration.repetition,
             inlineSettleGrace: composition.surface.inlineSettleGrace,
             userPresence: userPresence,
-            mailOnlyAnswerLimit: mailOnlyAnswerLimit)
+            mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+            hookLineage: hookLineage)
+        let sessionId = SessionId(rawValue: session.id.description)
+        SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
 
         // The connection of the request owns the new session and is its
         // starter (D120 c), before the mount sends anything for the session.
-        connections.recordStart(of: SessionId(rawValue: session.id.description), by: caller)
+        connections.recordStart(of: sessionId, by: caller)
 
         // The title is NOT set here: the first prompt sets it, from the
         // first line of that prompt.
@@ -1091,10 +1097,12 @@ extension RoutedLLM {
     ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
     ///     is Router's default.
     ///   - hookLineage: The hook lineage that the host gives the session, or
-    ///     `nil` (the default) to let Router give it. A new session of
-    ///     `session/new` gives `nil`: Router then gives the session its own
-    ///     id as its key, and that id is the ACP session id. The model-slot
-    ///     switch gives the lineage of the session that it replaces.
+    ///     `nil` (the default) to let Router give it: then the key is the id
+    ///     of the session. `session/new` gives the lineage of its working
+    ///     directory (``HookLineage/init(workingDirectory:origin:)``), and the
+    ///     model-slot switch gives the same key with the origin
+    ///     `replacement`, so each session of one folder shares one snapshot
+    ///     timeline.
     /// - Returns: A new session over this model, with automatic
     ///   compaction on. The compaction keeps each skill that the model
     ///   loads with `use skill` (``SkillOutputProtection``). While an

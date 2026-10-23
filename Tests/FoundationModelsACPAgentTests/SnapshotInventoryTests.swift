@@ -9,7 +9,8 @@ import Testing
 /// The inventory of the snapshot folders that `acp-agent snapshots` shows and
 /// removes: each shadow folder of the `SnapshotStore`, its timeline summary,
 /// and its recorded state. A key is recorded when the recording root of a
-/// project of the project store holds a listable session folder of that id.
+/// project of the project store holds a listable session folder whose working
+/// directory has that key.
 ///
 /// Each test uses a temporary hook data directory, a temporary custom home
 /// and temporary git work trees. No test reads the home directory.
@@ -49,7 +50,7 @@ struct SnapshotInventoryTests {
 
     /// A temporary hook data directory, a settings store over a temporary
     /// custom home, and one registered project whose recording root holds
-    /// the session folder of ``recordedKey``.
+    /// the session folder of ``recordedSessionId``.
     private struct Fixture {
         /// The hook data directory. The snapshots are in its `snapshot`
         /// folder.
@@ -65,12 +66,19 @@ struct SnapshotInventoryTests {
         /// The store of the snapshots of ``dataDirectory``.
         let snapshotStore: SnapshotStore
 
-        /// The session key that the recording root of the project has: the
-        /// id of a prompted Router session recorded there.
-        let recordedKey: String
+        /// The id of the prompted Router session that the recording root of
+        /// the project holds.
+        let recordedSessionId: String
+
+        /// The session key of the recorded session: the key of the working
+        /// directory of the project, which each session of the project
+        /// shares.
+        var recordedKey: String {
+            AgentHome.projectKey(of: project)
+        }
 
         /// Makes the directories, registers the project and records one
-        /// prompted session, whose id is ``recordedKey``, under its
+        /// prompted session, whose id is ``recordedSessionId``, under its
         /// recording root.
         ///
         /// - Parameter label: The prefix that names the calling test.
@@ -88,7 +96,7 @@ struct SnapshotInventoryTests {
                 workingDirectory: project,
                 cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
                 recordingRoot: try projectRecordingRoot(of: project, dotfolderName: settingsFolders.name.rawValue))
-            recordedKey = try await recorder.makeRecordedSession(title: "a recorded session").description
+            recordedSessionId = try await recorder.makeRecordedSession(title: "a recorded session").description
         }
 
         /// The inventory over the fixture.
@@ -155,10 +163,11 @@ struct SnapshotInventoryTests {
 
     // MARK: - The listing
 
-    /// Two keys with a timeline, one recorded in the recording root of a
-    /// registered project and one not: the inventory reports both, each with
-    /// its checkpoint count, its last checkpoint date, its working directory
-    /// and the correct recorded state.
+    /// Two keys with a timeline, one the key of the working directory of a
+    /// session recorded in the recording root of a registered project and one
+    /// not: the inventory reports both, each with its checkpoint count, its
+    /// last checkpoint date, its working directory, the correct recorded
+    /// state and the recorded sessions of its working directory.
     @Test
     func theInventoryReportsEachKeyWithItsRecordedState() async throws {
         let fixture = try await Fixture(label: "SnapshotInventoryTests-list")
@@ -172,6 +181,8 @@ struct SnapshotInventoryTests {
         #expect(listing.entries.map(\.sessionKey) == [fixture.recordedKey, Self.unrecordedKey].sorted())
         let recorded = try Self.entry(of: fixture.recordedKey, in: listing)
         #expect(recorded.recordedState == .recorded)
+        #expect(recorded.sessionIds == [fixture.recordedSessionId])
+        #expect(try Self.entry(of: Self.unrecordedKey, in: listing).sessionIds.isEmpty)
         #expect(recorded.checkpointCount == Self.checkpointsPerTimeline)
         #expect(recorded.lastCheckpointDate != nil)
         let workingDirectory = try #require(recorded.workingDirectory)
@@ -199,6 +210,54 @@ struct SnapshotInventoryTests {
         #expect(entry.workingDirectory == nil)
         #expect(entry.recordedState == .unrecorded)
         #expect(listing.warnings.isEmpty)
+    }
+
+    /// The ref of the timeline in a shadow folder.
+    private static let timelineReference = "refs/snapshots/timeline"
+
+    /// The message of a checkpoint commit of the first timeline format: its
+    /// trigger trailer has version 1 and no owner.
+    private static let firstVersionCheckpointMessage =
+        "Snapshot checkpoint\n\nSnapshot-Trigger: {\"kind\":\"manual\",\"version\":1}\n"
+
+    /// Writes the last checkpoint of the timeline of `sessionKey` again with
+    /// the message of the first timeline format, and moves the timeline ref
+    /// to that commit. The store reads no checkpoint of that format.
+    ///
+    /// - Parameters:
+    ///   - sessionKey: The session key whose timeline has a checkpoint.
+    ///   - dataDirectory: The hook data directory.
+    /// - Throws: The error of a git command.
+    private static func rewriteLastCheckpointInTheFirstFormat(sessionKey: String, in dataDirectory: URL) throws {
+        let shadow = AgentHooks.snapshotDirectory(in: dataDirectory).appendingPathComponent(sessionKey, isDirectory: true)
+        let gitDirectory = "--git-dir=\(shadow.path)"
+        let tip = try GitVerbSupport.gitOutput([gitDirectory, "rev-parse", timelineReference], in: shadow)
+        let commit = try GitVerbSupport.gitOutput(
+            [gitDirectory, "commit-tree", "\(tip)^{tree}", "-p", "\(tip)^", "-m", firstVersionCheckpointMessage],
+            in: shadow)
+        _ = try GitVerbSupport.gitOutput([gitDirectory, "update-ref", timelineReference, commit], in: shadow)
+    }
+
+    /// A timeline of the first format, whose checkpoints name no owner, is
+    /// listed with no checkpoint count and one `timelineUnreadable` warning
+    /// with the case `unreadableTimeline`: the listing goes on, and the user
+    /// can remove the key.
+    @Test
+    func aTimelineOfTheFirstFormatIsListedWithAnUnreadableWarning() async throws {
+        let fixture = try await Fixture(label: "SnapshotInventoryTests-first-format")
+        _ = try await Self.makeTimeline(
+            sessionKey: Self.unrecordedKey, in: fixture.snapshotStore, label: "SnapshotInventoryTests-first-format-tree")
+        try Self.rewriteLastCheckpointInTheFirstFormat(sessionKey: Self.unrecordedKey, in: fixture.dataDirectory)
+
+        let listing = try await fixture.inventory.list()
+
+        #expect(try Self.entry(of: Self.unrecordedKey, in: listing).checkpointCount == nil)
+        #expect(
+            listing.warnings == [
+                .timelineUnreadable(
+                    sessionKey: Self.unrecordedKey,
+                    errorCase: ACPAgentTelemetry.errorCaseName(of: SnapshotError.unreadableTimeline))
+            ])
     }
 
     /// A project store that cannot be read makes the recorded state

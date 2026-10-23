@@ -23,7 +23,56 @@ comments:
     - Graph: `owner: ID!` on Checkpoint and SnapshotChange. Checkpoint ids stay `<sessionId>:<index>`.
     - Test: two sessions in one cwd — a take by A appears as a change for B with owner A.
   timestamp: 2026-10-23T08:14:01.196528+00:00
-position_column: todo
+- actor: claude-code
+  id: 01m5kzqv67d579gwef44r602q1
+  text: |-
+    Picked up. Research:
+    - Pins moved in Package.resolved (gitignored): Hooks a3bbafb -> 4f463f2, Multitool 94c992c -> 743a022 (edited revisions + `swift package resolve`; both are origin/main tips). No other pin moved.
+    - BLOCKER for the resume item: Router `restoreSession` / `restoreSessionTree` take no hook session key. `SessionTreeRestoration.rebuild` calls `makeSessionHooks(... isRestored: true)` with no `requestedKey`, so a restored root gets its own id as key (`HookLineage.make`, SessionHooks.swift). Router origin/main (3bd3cef1) has no such parameter either. The agent cannot pass `HookLineage(sessionKey: <cwd key>)` on `session/resume` until Router adds e.g. `restoreSession(..., hookSessionKey:)`. New and model-switch can (they go through `makeBudgetedSession` -> `SessionConfiguration.hookSessionKey`).
+    - CodeContext `rootKey(for:)` is not in the pinned CodeContext (b0c8aba); only in the local repo. The agent gets its own key function with the same normalization (`standardizedFileURL.resolvingSymlinksInPath()`), shared with `AgentHome.projectKey`.
+    - Multitool 743a022: the change feed of a store binds the `sessionKey` resolver of the FIRST endpoint over that store, and `SnapshotStore.shared` makes the store per directory per process. So the session id -> key map must be the same for the agent endpoint and each session's `SnapshotsCapability`, across agents of one process: a process-wide registry (session ids are ULIDs, so no collision).
+    - A model-switch replacement is a new Router session id; it is an owner in `change.owners` but no ACP session id, so the feed records no change under the ACP id for checkpoints the replacement makes after the replaced session is released. Pre-existing shape, not in this card.
+    - SnapshotInventory already turns any non-noTimeline summary error into `timelineUnreadable` warning, so v1 timelines (now `unreadableTimeline`) are warnings; needs a test.
+  timestamp: 2026-10-23T08:58:45.831083+00:00
+- actor: claude-code
+  id: 01m5m0fpx010jdhdjv8q0qt8q8
+  text: |-
+    Implementation landed (not committed). Pins: Hooks 4f463f2, Multitool 743a022 in Package.resolved only (IntegrationTests/Package.resolved left as is; it was already stale at Hooks ff12698 / Multitool d3c70db).
+    - Key: `AgentHome.projectKey(of:)` (now internal) = sha256 of `standardizedFileURL.resolvingSymlinksInPath().path`; it names the project state folder and is the hook key. `HookLineage(workingDirectory:origin:)` gives it.
+    - session/new passes `HookLineage(workingDirectory:, origin: .new)`; model-switch passes `HookLineage(workingDirectory: entry.workingDirectory, origin: .replacement)`. `HookLineage.replacement(in:)` removed.
+    - `AgentHooks` uses `SnapshotStore.shared(directory:)`; `SnapshotInventory` too (so a CLI remove of a key that an in-process agent has open throws sessionKeyOpen).
+    - New `SnapshotSessionKeys` (AgentHooks.swift): process-wide ACP session id -> key map; the agent `snapshotsEndpoint` and each session's `SnapshotsCapability(store:sessionKey:)` use its resolver (one store = one change log that binds the first resolver). new records the cwd key, resume records the session id (see blocker), delete forgets.
+    - session/delete: reads the recorded sessions of the candidate roots before the folder removal; removes the timeline only when no table entry and no recorded session (other than the deleted one) has the key, and when every root could be read; else one notice. sessionKeyOpen handling kept.
+    - SnapshotInventory: entries get `sessionIds` (recorded sessions whose cwd key == key); `recorded` iff non-empty. v1 timelines already came out as `timelineUnreadable` warnings (the catch-all), now with a test.
+    - Owner display: the Multitool graph (743a022) already exposes `owner` on Checkpoint/SnapshotChange; test reads it through the agent endpoint.
+    Tests (RED seen first, then GREEN): AgentHomeTests symlink key; HookCompositionTests: new/replacement keys = cwd key, two sessions share one timeline (B lists A's checkpoint; A's rollback in B's timeline with owner A via the agent endpoint), two cwds + symlink keys, delete keeps until the last session of the cwd, AgentHooks shared store; SnapshotInventoryTests: recorded by cwd key with sessionIds, v1 timeline warning. ComposedAgentTests snapshot folder now the cwd key. Full suite: `swift test --skip-build -v` 1243 tests in 137 suites passed, 1 known issue (pre-existing), build has no warning besides the known mlx `missing creator` line.
+    BLOCKER (resume): Router `restoreSession`/`restoreSessionTree` take no hook key (SessionTreeRestoration.rebuild calls makeSessionHooks with no requestedKey), so a resumed session still snapshots under its own id. Card item "Pass HookLineage(sessionKey: <cwd key>) on ... resume" cannot be done in this repo. Needs a Router change, e.g. `restoreSession(..., hookSessionKey: String?)` passed to the restored root's `makeSessionHooks(requestedKey:)`; then SessionResume passes `HookLineage(workingDirectory:, origin: .resumed)` and records the cwd key in SnapshotSessionKeys instead of the session id. Test aResumedSessionStartsWithTheOriginResumedAndTheACPSessionIdAsItsKey still asserts the session-id key and must flip then.
+    Also noted: a model-switch replacement is a new Router session id; it is an owner in change.owners that the resolver does not know, so the change feed has no entry under the ACP id for its checkpoints after the replaced session is released (pre-existing shape).
+  timestamp: 2026-10-23T09:11:47.872154+00:00
+- actor: claude-code
+  id: 01m5m0fv4n0gt8kwxr9yr0aqrw
+  text: |-
+    ### implement — stuck
+    - evidence: 15 files — Sources/FoundationModelsACPAgent/{Agent/AgentHooks.swift, Agent/ConfigOptions.swift, Agent/SessionLifecycle.swift, Agent/SessionResume.swift, Agent/SessionSetup.swift, Agent/SnapshotInventory.swift, Configuration/AgentHome.swift, RoutedACPAgent.swift, Tools/ToolCatalog.swift}, Sources/acp-agent/SnapshotsCommand.swift, Tests/FoundationModelsACPAgentTests/{AgentHomeTests.swift, ComposedAgentTests.swift, HookCompositionTests.swift, SnapshotInventoryTests.swift, Support/GitVerbSupport.swift} (+ local Package.resolved pins). `swift test --skip-build -v`: 1243 tests / 137 suites passed, 1 known issue, 0 warnings (mlx missing-creator only).
+    - gap: resume cannot pass the cwd key — Router restoreSession takes no hook session key.
+    - next: Router card for `restoreSession(..., hookSessionKey:)`; then switch SessionResume to `HookLineage(workingDirectory:, origin: .resumed)` and flip the resume test. Everything else is ready for /review.
+  timestamp: 2026-10-23T09:11:52.213925+00:00
+- actor: claude-code
+  id: 01m5m0k449s1yt5cgjnz1zq85r
+  text: |-
+    ### test — stuck
+    - evidence: `swift test` — 1243 tests in 137 suites passed, 0 failed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps, a deliberate withKnownIssue proof of the harness assertion); one build-system warning "missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS" (SwiftPM, not source). `python3 -m unittest` in bench — 265 tests OK, skipped=1: test_swebench_harness.HarnessArgumentsTests.test_the_keys_agree_with_the_real_signature, skipped 'swebench is not installed'.
+    - blocker: a skipped test is not acceptable. The fix is to install the `swebench` python package in this environment (no edit to bench/*.py allowed). Not done without approval, as it changes the machine's python environment.
+    - next: approve `pip install swebench` (or say how to supply it), then rerun the bench unit tests once.
+  timestamp: 2026-10-23T09:13:39.721106+00:00
+- actor: claude-code
+  id: 01m5m0m6vvv57h3p0axxq5yzgj
+  text: |-
+    ### test — green (supersedes the earlier "test — stuck" comment)
+    - evidence: `swift test` — 1243 tests in 137 suites passed, 0 failed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps, deliberate harness proof); one SwiftPM build-system warning (missing creator for mutated node, mlx-swift_Cmlx.bundle), not from source. `cd bench && uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest` — 265 tests OK, 0 skipped (the swebench skip is gone in the isolated env; nothing installed globally).
+    - next: commit.
+  timestamp: 2026-10-23T09:14:15.291281+00:00
+position_column: doing
 position_ordinal: '80'
 title: Sessions in one cwd share one snapshot timeline (hook session key = hash of the resolved cwd)
 ---
@@ -35,7 +84,7 @@ User design 2026-10-23: sessions in one process with the same cwd share ONE snap
 
 ## Do
 - [ ] One cwd key function: sha256 of `standardizedFileURL.resolvingSymlinksInPath()`. Use it for `AgentHome.projectKey` too (AgentHome.swift:250 does not resolve symlinks today; Router's same-directory check does, SessionHooks.swift:132-133).
-- [ ] Pass `HookLineage(sessionKey: <cwd key>)` on new, resume and model-switch replacement.
+- [ ] Pass `HookLineage(sessionKey: <cwd key>)` on new and model-switch replacement. (Resume, and the replacement's checkpoints reaching the ACP session's feed, moved to ^fw9apv8: resume needs a Router change.)
 - [ ] Session delete (SessionLifecycle.swift:90,354-357): remove the timeline only when no other session of that cwd is left (the store refuses with sessionKeyOpen while open — handle it).
 - [ ] Snapshots GraphQL endpoint (RoutedACPAgent.swift:419) and SnapshotInventory (SnapshotInventory.swift:22-23,220): stop assuming key == session id; map a key to the sessions of that cwd.
 - [ ] When Hooks gives the checkpoint owner (asked of the Hooks session), show it; until then do not block on it.

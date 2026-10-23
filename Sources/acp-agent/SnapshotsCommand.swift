@@ -46,8 +46,10 @@ extension AcpAgentCommand {
                     Each line has the session key, the number of checkpoints, the time of \
                     the last checkpoint, recorded or unrecorded, and the working directory, \
                     separated by tabs. A dash is in place of a value that the folder does \
-                    not have. "recorded" tells that the recording root of a registered \
-                    project has a session folder, with its index.md, for the session. A \
+                    not have. The key is the key of a working directory, which each session \
+                    in that directory shares. "recorded" tells that the recording root of a \
+                    registered project has a session folder, with its index.md, for a session \
+                    in that directory; --json also gives the id of each such session. A \
                     warning goes to stderr.
                     """)
 

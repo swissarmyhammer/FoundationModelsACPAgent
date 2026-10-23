@@ -413,10 +413,11 @@ public actor RoutedACPAgent: Agent {
             settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
             secretStore: self.secretStore)
         self.settingsEndpoint = try SettingsGraph(store: settingsStore)
-        // The session keys of this agent are the session ids, as the
-        // `SnapshotsCapability(store:)` of each session reads them.
+        // The sessions of one working directory share one key, so the
+        // endpoint reads the key of each session from the one map that the
+        // `snapshots` capability of each session reads too.
         self.snapshotsEndpoint = SnapshotsGraph(
-            store: hooks.snapshotStore, sessionKey: { sessionId in sessionId }, sessionId: { sessionKey in sessionKey })
+            store: hooks.snapshotStore, sessionKey: SnapshotSessionKeys.shared.resolver)
         let progress: ResolutionProgress
         if let reporting {
             progress = reporting

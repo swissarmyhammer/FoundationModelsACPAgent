@@ -104,6 +104,20 @@ struct AgentHomeTests {
         #expect(home.projectStateDirectory(of: otherSpelling) == state)
     }
 
+    /// A symbolic link to a project names the project, so it gives the key
+    /// and the state folder of the folder that it points to.
+    @Test
+    func aSymbolicLinkToAProjectGivesTheKeyOfTheProject() throws {
+        let home = Self.makeCustomHome(label: "symlink")
+        let project = makeResolvedDirectory(label: "AgentHomeTests-symlink-repo")
+        let link = makeResolvedDirectory(label: "AgentHomeTests-symlink-links")
+            .appendingPathComponent("link", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: project)
+
+        #expect(AgentHome.projectKey(of: link) == Self.digest(of: project))
+        #expect(home.projectStateDirectory(of: link) == home.projectStateDirectory(of: project))
+    }
+
     // MARK: - The XDG preset
 
     /// The XDG preset of the CLI keeps the paths of today: the synced root is

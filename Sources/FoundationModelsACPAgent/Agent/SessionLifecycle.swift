@@ -51,9 +51,12 @@ extension RoutedACPAgent {
     /// deleted. An id that never existed, or one already deleted, gives silent
     /// success: "nothing to remove" is not an error.
     ///
-    /// The delete also removes the snapshot timeline of the session key, the
-    /// ACP session id (``removeSnapshotTimeline(sessionKey:)``). Only a delete
-    /// removes it: `session/close` and the start of the agent keep it.
+    /// The sessions of one working directory share one snapshot timeline. The
+    /// delete removes that timeline when it deletes the last session of the
+    /// working directory: no other session in the table and no other session
+    /// recorded under a candidate root has the key
+    /// (``removeSnapshotTimeline(of:recorded:)``). Only a delete removes it:
+    /// `session/close` and the start of the agent keep it.
     ///
     /// - Parameter params: The request naming the session to delete.
     /// - Returns: The empty response.
@@ -80,14 +83,21 @@ extension RoutedACPAgent {
             return DeleteSessionResponse()
         }
         var roots = await candidateTranscriptRoots()
-        if let entry = sessions[params.sessionId] {
+        let entry = sessions[params.sessionId]
+        if let entry {
             roots.append(entry.transcriptDirectory.deletingLastPathComponent())
             await tearDownSession(params.sessionId, entry: entry)
             sessions.removeValue(forKey: params.sessionId)
             recordActiveSessions()
         }
+        let recorded = Self.recordedSessions(under: roots)
+        let sessionKey = snapshotKey(of: params.sessionId, workingDirectory: entry?.workingDirectory, recorded: recorded)
         removeSessionTree(ulidString: rootId.ulidString, from: roots)
-        await removeSnapshotTimeline(sessionKey: params.sessionId.rawValue)
+        SnapshotSessionKeys.shared.forget(params.sessionId)
+        if let sessionKey {
+            await removeSnapshotTimeline(
+                of: sessionKey, recorded: recorded.excluding(sessionId: params.sessionId))
+        }
         return DeleteSessionResponse()
     }
 
@@ -336,8 +346,101 @@ extension RoutedACPAgent {
         }
     }
 
-    /// Removes the snapshot timeline of `sessionKey`: its shadow folder in
-    /// the ``AgentHooks/snapshotStore``.
+    // MARK: - The snapshot timeline of a delete
+
+    /// The sessions recorded under the candidate roots of a delete, read
+    /// before the delete removes the folder of its session.
+    private struct RecordedSessions {
+        /// The record of each session that a root holds.
+        let records: [SessionRecord]
+
+        /// Whether each root could be read. When one could not, a session of
+        /// any working directory can be missing from ``records``.
+        let isComplete: Bool
+
+        /// These records with no record of `sessionId`.
+        ///
+        /// - Parameter sessionId: The session to leave out.
+        /// - Returns: The other records, with the same completeness.
+        func excluding(sessionId: SessionId) -> RecordedSessions {
+            RecordedSessions(
+                records: records.filter { $0.sessionId.description != sessionId.rawValue }, isComplete: isComplete)
+        }
+
+        /// Whether a recorded session works in a folder whose key is
+        /// `sessionKey`.
+        ///
+        /// - Parameter sessionKey: The key of a working directory.
+        /// - Returns: `true` when a record has the key.
+        func hasSession(withKey sessionKey: String) -> Bool {
+            records.contains { AgentHome.projectKey(of: $0.workingDirectory) == sessionKey }
+        }
+    }
+
+    /// Reads the sessions recorded under each distinct root. A root with no
+    /// folder holds no session. A root that cannot be read gives one
+    /// `warning` record with the type of the error, and makes the result
+    /// incomplete.
+    ///
+    /// - Parameter roots: The candidate recording roots of the delete.
+    /// - Returns: The records, and whether each root could be read.
+    private static func recordedSessions(under roots: [URL]) -> RecordedSessions {
+        var records: [SessionRecord] = []
+        var isComplete = true
+        var read: Set<String> = []
+        for root in roots where read.insert(root.standardizedFileURL.path).inserted {
+            guard FileManager.default.fileExists(atPath: root.path) else { continue }
+            do {
+                records += try RouterSessionDirectory.recordedSessions(in: root)
+            } catch {
+                isComplete = false
+                logCandidateRootFailure(
+                    "The sessions of a recording root cannot be read. The delete keeps the snapshot timeline.",
+                    error: error)
+            }
+        }
+        return RecordedSessions(records: records, isComplete: isComplete)
+    }
+
+    /// The snapshot key of a session: the key that the agent recorded for it
+    /// (``SnapshotSessionKeys``), else the key of its working directory, from
+    /// its table entry or from its record.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session.
+    ///   - workingDirectory: The working directory of its table entry, or
+    ///     `nil` when the table has no entry.
+    ///   - recorded: The recorded sessions, which can hold its record.
+    /// - Returns: The key, or `nil` when the agent knows no working
+    ///   directory of the session.
+    private func snapshotKey(of sessionId: SessionId, workingDirectory: URL?, recorded: RecordedSessions) -> String? {
+        if let sessionKey = SnapshotSessionKeys.shared.sessionKey(of: sessionId.rawValue) {
+            return sessionKey
+        }
+        let record = recorded.records.first { $0.sessionId.description == sessionId.rawValue }
+        return (workingDirectory ?? record?.workingDirectory).map(AgentHome.projectKey(of:))
+    }
+
+    /// Whether a session other than the deleted one uses the timeline of
+    /// `sessionKey`: an entry of the table, a recorded session of the same
+    /// working directory, or a session of a root that could not be read.
+    ///
+    /// - Parameters:
+    ///   - sessionKey: The key of the timeline.
+    ///   - recorded: The recorded sessions with no record of the deleted
+    ///     session.
+    /// - Returns: `true` when the timeline must stay.
+    private func timelineHasOtherSessions(_ sessionKey: String, recorded: RecordedSessions) -> Bool {
+        let inTable = sessions.contains { sessionId, entry in
+            snapshotKey(of: sessionId, workingDirectory: entry.workingDirectory, recorded: recorded) == sessionKey
+        }
+        return inTable || recorded.hasSession(withKey: sessionKey) || !recorded.isComplete
+    }
+
+    /// Removes the snapshot timeline of `sessionKey`, its shadow folder in
+    /// the ``AgentHooks/snapshotStore``, when no other session uses it
+    /// (``timelineHasOtherSessions(_:recorded:)``). Then the timeline stays,
+    /// and one `notice` record names the key.
     ///
     /// The teardown of the session sent its `SessionEnd`, and `SnapshotHook`
     /// releases the key on that event. The hook gets the event on the queue
@@ -349,9 +452,18 @@ extension RoutedACPAgent {
     /// key. Each other error gives one `error` record with the key and the
     /// error case. A key with no shadow folder is not an error.
     ///
-    /// - Parameter sessionKey: The session key of the timeline: the ACP
-    ///   session id.
-    private func removeSnapshotTimeline(sessionKey: String) async {
+    /// - Parameters:
+    ///   - sessionKey: The session key of the timeline: the key of the
+    ///     working directory of the deleted session.
+    ///   - recorded: The recorded sessions with no record of the deleted
+    ///     session.
+    private func removeSnapshotTimeline(of sessionKey: String, recorded: RecordedSessions) async {
+        guard !timelineHasOtherSessions(sessionKey, recorded: recorded) else {
+            ACPAgentTelemetry.logger(.sessionLifecycle).notice(
+                "Another session of the working directory is left. The delete keeps its snapshot timeline.",
+                metadata: ACPAgentTelemetry.snapshotKeyMetadata(sessionKey))
+            return
+        }
         await hooks.dispatcher.drain()
         do {
             try await hooks.snapshotStore.remove(sessionKey: sessionKey)

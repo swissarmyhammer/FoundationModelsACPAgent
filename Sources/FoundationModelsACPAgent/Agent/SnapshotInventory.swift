@@ -5,7 +5,7 @@ import FoundationModelsRouter
 /// Whether the project store has a session for a snapshot key.
 public enum SnapshotRecordedState: String, Codable, Sendable {
     /// A recording root of a registered project has a listable session
-    /// folder whose session id is the key.
+    /// folder whose working directory has the key.
     case recorded
 
     /// No recording root of a registered project has a listable session
@@ -14,13 +14,15 @@ public enum SnapshotRecordedState: String, Codable, Sendable {
 }
 
 /// One snapshot folder of the inventory: the session key, the summary of its
-/// timeline, and its recorded state.
+/// timeline, its recorded state, and the recorded sessions of its working
+/// directory.
 ///
 /// The working directory is local data for the user of the CLI. No log
 /// record holds it.
 public struct SnapshotInventoryEntry: Codable, Equatable, Sendable {
-    /// The session key: the name of the shadow folder, which is the ACP
-    /// session id of the session that made it.
+    /// The session key: the name of the shadow folder, which is the key of
+    /// the working directory that the sessions of the timeline share
+    /// (``AgentHome/projectKey(of:)``).
     public let sessionKey: String
 
     /// The number of checkpoints after the baseline, or `nil` when the key
@@ -39,20 +41,26 @@ public struct SnapshotInventoryEntry: Codable, Equatable, Sendable {
     /// Whether a registered project has a session for the key.
     public let recordedState: SnapshotRecordedState
 
+    /// The id of each recorded session whose working directory has the key,
+    /// sorted.
+    public let sessionIds: [String]
+
     /// Makes the entry of one key.
     ///
     /// - Parameters:
     ///   - sessionKey: The session key.
     ///   - summary: The summary of the timeline of the key, or `nil` when the
     ///     key has no timeline or the timeline cannot be read.
-    ///   - recordedState: Whether a registered project has a session for
-    ///     the key.
-    init(sessionKey: String, summary: SnapshotTimelineSummary?, recordedState: SnapshotRecordedState) {
+    ///   - sessionIds: The id of each recorded session whose working
+    ///     directory has the key, sorted. The key is `recorded` when there is
+    ///     one.
+    init(sessionKey: String, summary: SnapshotTimelineSummary?, sessionIds: [String]) {
         self.sessionKey = sessionKey
         checkpointCount = summary?.checkpointCount
         lastCheckpointDate = summary?.lastCheckpointDate
         workingDirectory = summary?.workingDirectory?.path
-        self.recordedState = recordedState
+        recordedState = sessionIds.isEmpty ? .unrecorded : .recorded
+        self.sessionIds = sessionIds
     }
 }
 
@@ -159,14 +167,21 @@ public enum SnapshotRemovalOutcome: Equatable, Sendable {
 /// ends, and it removes no orphan folder with a sweep: many sessions can work
 /// in one folder at the same time, and a sweep at start can remove the
 /// snapshots of a session that another process runs. Only `session/delete`
-/// removes the timeline of its own session. The user lists the folders with
-/// ``list()`` and removes the ones that they select with
-/// ``remove(sessionKeys:)``.
+/// removes a timeline: the one of the working directory of its last session.
+/// The user lists the folders with ``list()`` and removes the ones that they
+/// select with ``remove(sessionKeys:)``.
 ///
-/// A key is `recorded` when a recording root of a project of the project
-/// store has a listable session folder whose session id is the key
-/// (``TranscriptStore/listableRecords(in:)``). The recording root of each
-/// project comes from the same resolution as the one of `session/delete`.
+/// The sessions of one working directory share one key, the key of that
+/// directory (``AgentHome/projectKey(of:)``). A key is `recorded` when a
+/// recording root of a project of the project store has a listable session
+/// folder whose working directory has the key
+/// (``TranscriptStore/listableRecords(in:)``), and its entry names each such
+/// session. The recording root of each project comes from the same
+/// resolution as the one of `session/delete`.
+///
+/// The inventory reads the one store of the snapshot folder in the process
+/// (`SnapshotStore.shared(directory:)`), so a remove of a key that an agent
+/// of the process has open throws `sessionKeyOpen` and removes nothing.
 ///
 /// ```swift
 /// let inventory = SnapshotInventory(hooksDataDirectory: directory, settingsStore: store)
@@ -192,7 +207,7 @@ public struct SnapshotInventory: Sendable {
     ///   - settingsStore: The store that gives the project store and the
     ///     settings of each project.
     public init(hooksDataDirectory: URL, settingsStore: SettingsStore) {
-        snapshotStore = SnapshotStore(directory: AgentHooks.snapshotDirectory(in: hooksDataDirectory))
+        snapshotStore = SnapshotStore.shared(directory: AgentHooks.snapshotDirectory(in: hooksDataDirectory))
         self.settingsStore = settingsStore
     }
 
@@ -217,7 +232,7 @@ public struct SnapshotInventory: Sendable {
             entries.append(
                 SnapshotInventoryEntry(
                     sessionKey: sessionKey, summary: read.summary,
-                    recordedState: recorded.sessionIds.contains(sessionKey) ? .recorded : .unrecorded))
+                    sessionIds: (recorded.sessionIdsByKey[sessionKey] ?? []).sorted()))
             if let warning = read.warning {
                 warnings.append(warning)
             }
@@ -282,25 +297,30 @@ public struct SnapshotInventory: Sendable {
     }
 
     /// The session id of each listable session folder of each recording
-    /// root of each registered project, and a warning for each project
-    /// store, project or root that cannot be read. Two projects can share
-    /// one recording root, thus the call reads each root one time, in the
-    /// order of the project store.
+    /// root of each registered project, by the key of its working directory,
+    /// and a warning for each project store, project or root that cannot be
+    /// read. Two projects can share one recording root, thus the call reads
+    /// each root one time, in the order of the project store.
     ///
-    /// - Returns: The recorded session ids and the warnings.
-    private func recordedSessionIds() async -> (sessionIds: Set<String>, warnings: [SnapshotInventoryWarning]) {
+    /// - Returns: The recorded session ids by key, and the warnings.
+    private func recordedSessionIds() async -> (
+        sessionIdsByKey: [String: Set<String>], warnings: [SnapshotInventoryWarning]
+    ) {
         let resolution = await RegisteredRecordingRoots.resolve(in: settingsStore)
-        var sessionIds: Set<String> = []
+        var sessionIdsByKey: [String: Set<String>] = [:]
         var warnings = resolution.failures.map(SnapshotInventoryWarning.init)
         var readRoots: Set<URL> = []
         for root in resolution.roots.map(\.standardizedFileURL) where readRoots.insert(root).inserted {
             do {
-                sessionIds.formUnion(try TranscriptStore.listableRecords(in: root).map(\.sessionId.description))
+                for record in try TranscriptStore.listableRecords(in: root) {
+                    sessionIdsByKey[AgentHome.projectKey(of: record.workingDirectory), default: []]
+                        .insert(record.sessionId.description)
+                }
             } catch {
                 warnings.append(
                     .indexUnreadable(recordingRootPath: root.path, errorCase: ACPAgentTelemetry.errorCaseName(of: error)))
             }
         }
-        return (sessionIds, warnings)
+        return (sessionIdsByKey, warnings)
     }
 }

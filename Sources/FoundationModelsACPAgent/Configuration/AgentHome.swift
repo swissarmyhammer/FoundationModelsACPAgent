@@ -193,8 +193,8 @@ public struct AgentHome: Sendable, Equatable {
     }
 
     /// The folder of the machine state of one project:
-    /// `<local>/projects/<key>/`, where the key is the lowercase hexadecimal
-    /// SHA-256 of the standardized path of `workingDirectory`.
+    /// `<local>/projects/<key>/`, where the key is ``projectKey(of:)`` of
+    /// `workingDirectory`.
     ///
     /// The state of a project that belongs to this machine goes here, and
     /// never into the project folder, because the project folder can be in
@@ -243,12 +243,21 @@ public struct AgentHome: Sendable, Equatable {
     // MARK: - Helpers
 
     /// The key of one project: the lowercase hexadecimal SHA-256 of the
-    /// standardized path of its working directory.
+    /// standardized path of its working directory, with the symbolic links
+    /// resolved. Thus `/a/b/../c`, `/a/c/` and a link to `/a/c` give one key.
+    ///
+    /// The key names the machine state of the project
+    /// (``projectStateDirectory(of:)``), and it is the hook session key of
+    /// each session of the agent in that working directory
+    /// (``HookLineage/init(workingDirectory:origin:)``), so the sessions of one
+    /// folder share one snapshot timeline. The path is the one that the code
+    /// context keys its roots by and that Router compares the folders of a
+    /// fork by.
     ///
     /// - Parameter workingDirectory: The working directory of the project.
     /// - Returns: The key, one safe path component.
-    private static func projectKey(of workingDirectory: URL) -> String {
-        SHA256.hash(data: Data(workingDirectory.standardizedFileURL.path.utf8))
+    static func projectKey(of workingDirectory: URL) -> String {
+        SHA256.hash(data: Data(workingDirectory.standardizedFileURL.resolvingSymlinksInPath().path.utf8))
             .map { String(format: digestByteFormat, $0) }
             .joined()
     }

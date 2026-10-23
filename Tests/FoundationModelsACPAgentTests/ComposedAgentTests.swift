@@ -190,8 +190,8 @@ struct ComposedAgentTests {
 
     /// A host home gets the snapshot timeline in the `snapshot` folder of its
     /// hooks folder: one prompt in a git work tree writes its transcript file,
-    /// and the shadow folder of the session key (the ACP session id) is under
-    /// `<local>/hooks/snapshot`.
+    /// and the shadow folder of the session key (the key of the working
+    /// directory) is under `<local>/hooks/snapshot`.
     @Test
     func theSnapshotsOfAHomeAreInItsHooksFolder() async throws {
         let workspace = makeResolvedDirectory(label: "ComposedAgentTests-snapshot-repo")
@@ -200,13 +200,13 @@ struct ComposedAgentTests {
         let composed = try await composeStubAgent(
             name: Self.dotfolderName, label: "ComposedAgentTests-snapshot", workspace: workspace, home: home)
 
-        let sessionId = try await Self.runOneTurn(of: composed, in: workspace)
+        _ = try await Self.runOneTurn(of: composed, in: workspace)
 
         let transcripts = workspace.appendingPathComponent(".\(Self.dotfolderName)", isDirectory: true)
             .appendingPathComponent(Self.transcriptsFolderName, isDirectory: true)
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: transcripts.path)).isEmpty)
         let shadow = home.hooksDirectory.appendingPathComponent(Self.snapshotFolderName, isDirectory: true)
-            .appendingPathComponent(sessionId.rawValue, isDirectory: true)
+            .appendingPathComponent(home.projectStateDirectory(of: workspace).lastPathComponent, isDirectory: true)
         #expect(Self.isDirectory(shadow))
     }
 

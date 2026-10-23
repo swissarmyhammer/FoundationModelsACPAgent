@@ -136,13 +136,28 @@ import Testing
             AgentHooks.snapshotDirectory(in: dataDirectory).path == dataDirectory.path + "/snapshot")
     }
 
+    /// Two agents of one process on one data directory share one snapshot
+    /// store, the store of the snapshot folder in the process, so their
+    /// sessions share the open keys instead of racing on a timeline.
+    @Test
+    func twoAgentHooksOnOneDataDirectoryShareOneSnapshotStore() {
+        let dataDirectory = makeResolvedDirectory(label: "HookCompositionTests-shared-store")
+
+        let first = AgentHooks(dataDirectory: dataDirectory)
+        let second = AgentHooks(dataDirectory: dataDirectory)
+
+        #expect(first.snapshotStore === second.snapshotStore)
+        #expect(first.snapshotStore === SnapshotStore.shared(directory: AgentHooks.snapshotDirectory(in: dataDirectory)))
+    }
+
     // MARK: - The events of a session
 
     /// A new session with one prompt, whose tool call writes a file, and a
     /// close: a visitor that the host registers gets each event of the
-    /// session, in order, and each event has the ACP session id as its key.
+    /// session, in order, and each event has the key of the working directory
+    /// of the session as its key.
     @Test
-    func aNewSessionSendsEachHookEventWithTheACPSessionIdAsItsKey() async throws {
+    func aNewSessionSendsEachHookEventWithTheKeyOfItsWorkingDirectory() async throws {
         let recorder = RecordingHookVisitor()
         let fixture = try await ScriptedPromptFixture.make(
             loader: makeHookLayeredModelLoader(
@@ -158,12 +173,12 @@ import Testing
                 .sessionStart(.new), .prePrompt, .preToolUse, .preToolResult, .postToolUse, .postPrompt,
                 .sessionEnd,
             ])
-        #expect(events.allSatisfy { $0.session.sessionKey == fixture.sessionId.rawValue })
+        #expect(events.allSatisfy { $0.session.sessionKey == AgentHome.projectKey(of: fixture.cwd) })
     }
 
     /// A model-slot switch makes a replacement session in the same lineage:
-    /// its `SessionStart` has the key of the session it replaces, the ACP
-    /// session id, and the origin `replacement`.
+    /// its `SessionStart` has the key of the session it replaces, the key of
+    /// the working directory, and the origin `replacement`.
     @Test
     func aModelSlotSwitchStartsAReplacementWithTheSameKey() async throws {
         let recorder = RecordingHookVisitor()
@@ -179,7 +194,7 @@ import Testing
 
         let starts = recorder.events.value.filter(\.isSessionStart)
         #expect(starts.map(\.kind) == [.sessionStart(.new), .sessionStart(.replacement)])
-        #expect(starts.allSatisfy { $0.session.sessionKey == fixture.sessionId.rawValue })
+        #expect(starts.allSatisfy { $0.session.sessionKey == AgentHome.projectKey(of: fixture.cwd) })
         await fixture.close()
     }
 
@@ -257,16 +272,128 @@ import Testing
     /// - Parameters:
     ///   - text: The prompt text, which holds the marker of one snippet.
     ///   - fixture: The wired fixture.
+    ///   - sessionId: The session that gets the prompt, or `nil` for the
+    ///     session of `fixture`.
     /// - Returns: The stop reason and the tool call text of this prompt.
     /// - Throws: Whatever the wire call or the waits throw.
-    private static func runTurn(_ text: String, in fixture: ScriptedPromptFixture) async throws -> SnapshotTurn {
+    private static func runTurn(
+        _ text: String, in fixture: ScriptedPromptFixture, sessionId: SessionId? = nil
+    ) async throws -> SnapshotTurn {
         let updatesBefore = await fixture.collector.updates
         let run = try await ScriptedPromptFixture.runPrompt(
-            on: fixture, text: text, count: ScriptedPromptFixture.idleCount(in: updatesBefore) + 1)
+            AgentClientHarness.makePromptRequest(sessionId: sessionId ?? fixture.sessionId, text: text),
+            through: fixture.harness, count: ScriptedPromptFixture.idleCount(in: updatesBefore) + 1)
         let turnUpdates = Array(run.updates.dropFirst(updatesBefore.count))
         return SnapshotTurn(
             stopReason: ScriptedPromptFixture.idleStopReason(in: turnUpdates),
             toolCallText: SkillsLibraryTests.toolCallText(in: turnUpdates))
+    }
+
+    /// Opens one more session over the wire of `fixture`, in `workingDirectory`.
+    ///
+    /// - Parameters:
+    ///   - fixture: The wired fixture.
+    ///   - workingDirectory: The working directory of the new session.
+    /// - Returns: The id of the new session.
+    /// - Throws: Whatever `session/new` throws.
+    private static func openSession(on fixture: ScriptedPromptFixture, in workingDirectory: URL) async throws -> SessionId {
+        let session = try await fixture.harness.client.newSession(
+            NewSessionRequest(cwd: AbsolutePath(rawValue: workingDirectory.path)))
+        return await MainActor.run { session.sessionId }
+    }
+
+    // MARK: - The timeline of a working directory
+
+    /// The `snapshots` endpoint query of the owner and the trigger of each
+    /// checkpoint of the timeline of one session.
+    private static let checkpointOwnersQuery =
+        "query Owners($sessionId: ID!) { checkpoints(sessionId: $sessionId) { owner trigger } }"
+
+    /// One checkpoint of a reply of ``checkpointOwnersQuery``.
+    private struct OwnedCheckpoint: Decodable, Equatable {
+        /// The session that made the checkpoint.
+        let owner: String
+
+        /// The trigger of the checkpoint, as the endpoint names it.
+        let trigger: String
+    }
+
+    /// The reply of ``checkpointOwnersQuery``.
+    private struct CheckpointOwnersReply: Decodable {
+        /// The data of the reply.
+        struct Payload: Decodable {
+            /// The checkpoints, oldest first.
+            let checkpoints: [OwnedCheckpoint]
+        }
+
+        /// The data of the reply.
+        let data: Payload
+    }
+
+    /// Reads the owner and the trigger of each checkpoint of the timeline of
+    /// `sessionId` from the `snapshots` endpoint of the agent of `fixture`.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session whose timeline the endpoint reads.
+    ///   - fixture: The wired fixture.
+    /// - Returns: The checkpoints, oldest first.
+    /// - Throws: Whatever the endpoint or the decode throws.
+    private static func ownedCheckpoints(
+        of sessionId: SessionId, in fixture: ScriptedPromptFixture
+    ) async throws -> [OwnedCheckpoint] {
+        let reply = try await fixture.harness.agent.snapshotsEndpoint.execute(
+            query: checkpointOwnersQuery, variables: ["sessionId": .string(sessionId.rawValue)],
+            operationName: nil, viewer: nil)
+        return try JSONDecoder().decode(CheckpointOwnersReply.self, from: Data(reply.utf8)).data.checkpoints
+    }
+
+    /// Two sessions in one working directory share one timeline: the
+    /// checkpoint of a tool call of session A is in the list of session B,
+    /// and the rollback of session A is in the timeline of session B, with A
+    /// as its owner.
+    @Test
+    func twoSessionsInOneWorkingDirectoryShareOneTimeline() async throws {
+        let fixture = try await Self.makeSnapshotFixture(
+            script: try Self.makeSnapshotScript(), label: "HookCompositionTests-shared")
+        let second = try await Self.openSession(on: fixture, in: fixture.cwd)
+
+        _ = try await Self.runTurn(Self.writePromptText, in: fixture)
+        let listed = try await Self.runTurn(Self.listPromptText, in: fixture, sessionId: second)
+        _ = try await Self.runTurn(Self.rollbackPromptText, in: fixture)
+
+        #expect(listed.toolCallText.contains("\(Self.checkpointCountLabel)1"))
+        let checkpoints = try await Self.ownedCheckpoints(of: second, in: fixture)
+        #expect(checkpoints.map(\.owner) == [fixture.sessionId.rawValue, fixture.sessionId.rawValue])
+        #expect(checkpoints.last?.trigger == Self.rollbackTrigger)
+        await fixture.close()
+    }
+
+    /// The trigger of the rollback checkpoint to the baseline in the
+    /// `snapshots` endpoint.
+    private static let rollbackTrigger = "rollback to \(baselineIndex)"
+
+    /// Sessions in two working directories have two keys, and a session in a
+    /// symbolic link to a working directory has the key of that directory.
+    @Test
+    func theKeyOfASessionIsTheKeyOfItsResolvedWorkingDirectory() async throws {
+        let recorder = RecordingHookVisitor()
+        let fixture = try await ScriptedPromptFixture.make(
+            script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-two-folders",
+            hookVisitors: [recorder])
+        let otherFolder = makeResolvedDirectory(label: "HookCompositionTests-two-folders-other")
+        let link = makeResolvedDirectory(label: "HookCompositionTests-two-folders-links")
+            .appendingPathComponent("link", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fixture.cwd)
+
+        _ = try await Self.openSession(on: fixture, in: otherFolder)
+        _ = try await Self.openSession(on: fixture, in: link)
+        await fixture.harness.agent.hooks.dispatcher.drain()
+
+        let keys = recorder.events.value.filter(\.isSessionStart).map(\.session.sessionKey)
+        let folderKey = AgentHome.projectKey(of: fixture.cwd)
+        #expect(keys == [folderKey, AgentHome.projectKey(of: otherFolder), folderKey])
+        #expect(folderKey != AgentHome.projectKey(of: otherFolder))
+        await fixture.close()
     }
 
     /// Makes the git work tree of a snapshot proof: a repository on
@@ -326,14 +453,15 @@ import Testing
         return fixture
     }
 
-    /// `session/delete` removes the shadow folder of the session key (the
-    /// ACP session id) after a turn that made a checkpoint.
+    /// `session/delete` of the only session of a working directory removes
+    /// the shadow folder of the key of that directory after a turn that made
+    /// a checkpoint.
     @Test
     func aSessionDeleteRemovesTheTimelineOfItsSessionKey() async throws {
         let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-delete")
         let store = fixture.harness.agent.hooks.snapshotStore
-        let sessionKey = fixture.sessionId.rawValue
-        #expect(!(try await store.checkpoints(sessionKey: sessionKey, owner: sessionKey)).isEmpty)
+        let sessionKey = AgentHome.projectKey(of: fixture.cwd)
+        #expect(!(try await store.checkpoints(sessionKey: sessionKey, owner: fixture.sessionId.rawValue)).isEmpty)
         #expect(try await store.shadowSessionKeys().contains(sessionKey))
 
         _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))
@@ -348,13 +476,33 @@ import Testing
     func aSessionDeleteKeepsTheTimelineThatASecondOwnerHasOpen() async throws {
         let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-delete-shared")
         let store = fixture.harness.agent.hooks.snapshotStore
-        let sessionKey = fixture.sessionId.rawValue
+        let sessionKey = AgentHome.projectKey(of: fixture.cwd)
         try await store.open(sessionKey: sessionKey, owner: Self.secondOwner, workingDirectory: fixture.cwd)
 
         _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))
 
         #expect(try await store.shadowSessionKeys().contains(sessionKey))
         await store.release(sessionKey: sessionKey, owner: Self.secondOwner)
+        await fixture.close()
+    }
+
+    /// Two sessions in one working directory: the delete of one keeps the
+    /// timeline of the directory while the other session is left, also when
+    /// that session is closed, and the delete of the last one removes it.
+    @Test
+    func aSessionDeleteKeepsTheTimelineUntilTheLastSessionOfItsWorkingDirectory() async throws {
+        let fixture = try await Self.makeWrittenSnapshotFixture(label: "HookCompositionTests-delete-last")
+        let store = fixture.harness.agent.hooks.snapshotStore
+        let sessionKey = AgentHome.projectKey(of: fixture.cwd)
+        let second = try await Self.openSession(on: fixture, in: fixture.cwd)
+        _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
+
+        _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: second))
+        let keptAfterTheFirstDelete = try await store.shadowSessionKeys().contains(sessionKey)
+        _ = try await fixture.harness.connection.deleteSession(DeleteSessionRequest(sessionId: fixture.sessionId))
+
+        #expect(keptAfterTheFirstDelete)
+        #expect(!(try await store.shadowSessionKeys()).contains(sessionKey))
         await fixture.close()
     }
 
@@ -368,7 +516,7 @@ import Testing
         _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
         await fixture.harness.agent.hooks.dispatcher.drain()
 
-        #expect(try await store.shadowSessionKeys().contains(fixture.sessionId.rawValue))
+        #expect(try await store.shadowSessionKeys().contains(AgentHome.projectKey(of: fixture.cwd)))
         await fixture.close()
     }
 
@@ -461,7 +609,7 @@ import Testing
         try await TelemetryCapture.run(forbidding: [Self.secondNoteContent]) { context in
             let fixture = try await Self.makeSnapshotFixture(
                 script: try Self.makeSnapshotScript(), label: "HookCompositionTests-conflict")
-            let sessionKey = fixture.sessionId.rawValue
+            let sessionKey = AgentHome.projectKey(of: fixture.cwd)
             await fixture.harness.agent.hooks.dispatcher.drain()
             let secondStore = SnapshotStore(
                 directory: AgentHooks.snapshotDirectory(in: fixture.harness.agent.hooks.dispatcher.dataDirectory))

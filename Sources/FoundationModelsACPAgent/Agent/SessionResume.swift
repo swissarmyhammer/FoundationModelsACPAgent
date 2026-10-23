@@ -208,6 +208,12 @@ extension RoutedACPAgent {
             kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
             sessionId: params.sessionId)
 
+        // Router's restore takes no hook session key from the host: it gives
+        // the restored root its own id as its key. The endpoints map the
+        // session to that key, so they read the timeline that its hooks
+        // write.
+        SnapshotSessionKeys.shared.record(params.sessionId.rawValue, for: params.sessionId)
+
         // The mount gives Router the new root set, unless the session is
         // replay-only: a replay-only session runs no prompt, so its
         // `index.md` stays as the session left it. A session that recorded

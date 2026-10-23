@@ -223,23 +223,44 @@ enum GitVerbSupport {
         try runGit(commitConfiguration + ["commit", "--quiet", "--no-verify", "-m", message], in: directory)
     }
 
-    /// Runs one git command in `directory`, and waits for it to end.
+    /// Runs one git command in `directory` with the author of
+    /// ``commitConfiguration``, and gives its standard output with no
+    /// trailing newline. A test reads a ref or writes a commit with it.
+    ///
+    /// - Parameters:
+    ///   - arguments: The arguments of the command, after the configuration.
+    ///   - directory: The working directory of the command.
+    /// - Returns: The standard output of the command, trimmed.
+    /// - Throws: Whatever the process start throws, and an expectation
+    ///   failure when the command exits with an error.
+    static func gitOutput(_ arguments: [String], in directory: URL) throws -> String {
+        try runGit(commitConfiguration + arguments, in: directory).trimmingCharacters(in: .newlines)
+    }
+
+    /// Runs one git command in `directory`, waits for it to end, and gives
+    /// its standard output.
     ///
     /// - Parameters:
     ///   - arguments: The arguments of the command.
     ///   - directory: The working directory of the command.
+    /// - Returns: The standard output of the command.
     /// - Throws: Whatever the process start throws, and an expectation
     ///   failure when the command exits with an error.
-    private static func runGit(_ arguments: [String], in directory: URL) throws {
+    @discardableResult
+    private static func runGit(_ arguments: [String], in directory: URL) throws -> String {
         let process = Process()
+        let output = Pipe()
         process.executableURL = URL(fileURLWithPath: gitExecutablePath)
         process.arguments = arguments
         process.currentDirectoryURL = directory
+        process.standardOutput = output
         process.environment = ProcessInfo.processInfo.environment.merging(isolatedConfiguration) {
             _, isolated in isolated
         }
         try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         try #require(process.terminationStatus == 0, "git \(arguments) exited with an error")
+        return String(decoding: data, as: UTF8.self)
     }
 }
