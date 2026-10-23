@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5kwr17twez7gsw2bxr1kd3g
+  text: |-
+    ### Multitool d2f6446 (2026-10-23) — use it in this card
+    - Update the Multitool pin to d2f6446cc0fc477d12ee5857ba1717a21f28b8b1 (or later: Multitool's Hooks 4f463f2 snapshot owners change comes next; take that sha if it lands first).
+    - `public final class ShellStore: Sendable`, `init(storeDirectory: URL? = nil) throws`, `directory: URL`.
+    - `ShellCapability.init(store:sandbox:outputChunkStream:defaultWorkingDirectory:)` (non-throwing); builder `withShell(store:sandbox:outputChunkStream:defaultWorkingDirectory:)`.
+    - One store = one ShellState: getLines, grep and the command list see every command of the store; command ids are unique ULIDs. Results do not say which session ran a command.
+    - Appends are one O_APPEND write.
+    - Make ONE ShellStore per resolved store directory in the process (registry, ref-counted like the code context) and give it to each session's capability. Two stores on one directory still stay separate, so the registry is required.
+  timestamp: 2026-10-23T08:06:26.298833+00:00
 position_column: todo
 position_ordinal: '8280'
 title: Sessions in one cwd share one shell store (history, log and command records)
