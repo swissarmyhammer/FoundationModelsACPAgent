@@ -202,17 +202,17 @@ extension RoutedACPAgent {
         let composition = try await composeResumedSession(
             from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
             params: params, userPresence: userPresence)
+        // The hooks see the key of the working directory, as for
+        // `session/new`, so the resumed session shares the one snapshot
+        // timeline of its folder. The endpoints map the session to that key.
+        let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .resumed)
         let restored = try await restoreRecordedSession(
-            rootId, sessionId: params.sessionId, composition: composition, userPresence: userPresence)
+            rootId, sessionId: params.sessionId, composition: composition, userPresence: userPresence,
+            hookLineage: hookLineage)
+        SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: params.sessionId)
         let history = resumedHistory(
             kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
             sessionId: params.sessionId)
-
-        // Router's restore takes no hook session key from the host: it gives
-        // the restored root its own id as its key. The endpoints map the
-        // session to that key, so they read the timeline that its hooks
-        // write.
-        SnapshotSessionKeys.shared.record(params.sessionId.rawValue, for: params.sessionId)
 
         // The mount gives Router the new root set, unless the session is
         // replay-only: a replay-only session runs no prompt, so its
@@ -377,11 +377,14 @@ extension RoutedACPAgent {
     ///   - sessionId: The wire session id, for the refusals and the log.
     ///   - composition: The freshly composed session inputs.
     ///   - userPresence: The user presence of the session.
+    ///   - hookLineage: The hook lineage of the resumed session: its key is
+    ///     the key that the hooks of the restored root see.
     /// - Returns: The restored session and its reports.
     /// - Throws: `RequestError.unknownSession` when the recording is
     ///   gone, or whatever the restore throws.
     private func restoreRecordedSession(
-        _ rootId: ULID, sessionId: SessionId, composition: SessionComposition, userPresence: UserPresence
+        _ rootId: ULID, sessionId: SessionId, composition: SessionComposition, userPresence: UserPresence,
+        hookLineage: HookLineage
     ) async throws -> RestoredSession {
         do {
             let restored = try await residentProfile.standard.restoreSessionWithHostChecks(
@@ -389,7 +392,8 @@ extension RoutedACPAgent {
                 recordingRoot: composition.transcriptRoot,
                 instructions: composition.isReplayOnly ? nil : composition.instructions,
                 tools: composition.surface.tools,
-                userPresence: userPresence)
+                userPresence: userPresence,
+                hookSessionKey: hookLineage.sessionKey)
             logRestoreReports(of: restored, sessionId: sessionId)
             return restored
         } catch {

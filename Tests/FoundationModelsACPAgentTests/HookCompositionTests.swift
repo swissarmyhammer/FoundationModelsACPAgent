@@ -200,9 +200,11 @@ import Testing
 
     /// A resume restores the recorded session: a visitor that the host
     /// registers after the agent is made gets `SessionStart(.resumed)`, with
-    /// the ACP session id as its key.
+    /// the key of the working directory as its key, and the snapshot
+    /// endpoints map the resumed session to that key, so it shares the one
+    /// timeline of its folder.
     @Test
-    func aResumedSessionStartsWithTheOriginResumedAndTheACPSessionIdAsItsKey() async throws {
+    func aResumedSessionStartsWithTheOriginResumedAndTheKeyOfItsWorkingDirectory() async throws {
         var resume = try await ResumeSessionFixture.make(label: "HookCompositionTests-resume")
         try await resume.runPrompt("one prompt before the resume")
         _ = try await resume.fixture.harness.connection.closeSession(
@@ -215,7 +217,9 @@ import Testing
 
         let starts = recorder.events.value.filter(\.isSessionStart)
         #expect(starts.map(\.kind) == [.sessionStart(.resumed)])
-        #expect(starts.allSatisfy { $0.session.sessionKey == resume.fixture.sessionId.rawValue })
+        let cwdKey = AgentHome.projectKey(of: resume.fixture.cwd)
+        #expect(starts.allSatisfy { $0.session.sessionKey == cwdKey })
+        #expect(SnapshotSessionKeys.shared.sessionKey(of: resume.fixture.sessionId.rawValue) == cwdKey)
         await resume.fixture.close()
     }
 
@@ -578,7 +582,7 @@ import Testing
             let fixture = try await Self.makeSnapshotFixture(
                 script: try Self.makeSnapshotScript(), label: "HookCompositionTests-mismatch")
             let store = fixture.harness.agent.hooks.snapshotStore
-            let sessionKey = fixture.sessionId.rawValue
+            let sessionKey = AgentHome.projectKey(of: fixture.cwd)
             _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: fixture.sessionId))
             await fixture.harness.agent.hooks.dispatcher.drain()
             try await store.remove(sessionKey: sessionKey)

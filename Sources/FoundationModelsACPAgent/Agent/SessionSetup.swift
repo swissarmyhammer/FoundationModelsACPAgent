@@ -1173,6 +1173,14 @@ extension RoutedLLM {
     ///     would apply the presence recorded when the session was created,
     ///     which belongs to the client of that time. The value covers the
     ///     restored root and each restored child.
+    ///   - hookSessionKey: The key that the hooks of the restored root see, or
+    ///     `nil` (the default) to let Router give it: then the key is the id
+    ///     of the session. `session/resume` gives the key of the working
+    ///     directory (``HookLineage/init(workingDirectory:origin:)``), so the
+    ///     resumed session shares the one snapshot timeline of its folder.
+    ///     The `SessionStart` of the root has the origin `resumed`, and Router
+    ///     gives the key to each fork in the same folder and each restored
+    ///     sub-agent.
     /// - Returns: The restored session and its reports, with the host rules of
     ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
     /// - Throws: Whatever Router's restore throws.
@@ -1181,7 +1189,8 @@ extension RoutedLLM {
         recordingRoot: URL,
         instructions: String?,
         tools: [any FoundationModels.Tool],
-        userPresence: UserPresence
+        userPresence: UserPresence,
+        hookSessionKey: String? = nil
     ) async throws -> RestoredSession {
         try await restoreSession(
             id: id,
@@ -1190,6 +1199,7 @@ extension RoutedLLM {
             tools: tools,
             toolOutputProtection: SkillOutputProtection.rule,
             isNoOpToolCall: NoOpToolCall.check,
-            userPresence: userPresence)
+            userPresence: userPresence,
+            hookSessionKey: hookSessionKey)
     }
 }
