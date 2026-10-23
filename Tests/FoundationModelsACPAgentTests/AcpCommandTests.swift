@@ -150,7 +150,7 @@ import Testing
             NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
         let entry = try #require(await agent.sessions[session.sessionId])
 
-        #expect(entry.surface.codeContextStop == nil)
+        #expect(entry.surface.codeContextLease == nil)
         _ = try await agent.closeSession(CloseSessionRequest(sessionId: session.sessionId))
     }
 

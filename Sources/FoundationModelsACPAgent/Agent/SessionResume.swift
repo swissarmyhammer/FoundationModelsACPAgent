@@ -191,11 +191,12 @@ extension RoutedACPAgent {
         }
 
         // The replaced entry's surface is released before the new one is
-        // composed, never after: its code context indexes the same working
-        // directory the new composition is about to open a fresh code
-        // context over, and two open index databases on the same path
-        // race for the same SQLite write lock. The
-        // retained history of the entry goes over to the resumed session.
+        // composed, never after: its lease on the shared code context of
+        // the working directory goes back first, so the new composition
+        // leases the context that another session of the folder keeps
+        // open, or opens it again when the replaced entry held the last
+        // lease. The retained history of the entry goes over to the
+        // resumed session.
         let keptHistory = sessions[params.sessionId]?.history
         await releaseReplacedSession(params.sessionId)
 
@@ -322,11 +323,12 @@ extension RoutedACPAgent {
     /// Composes the resumed session, or makes the replay-only composition
     /// when the working directory or an additional root does not exist.
     ///
-    /// The agent never makes a session directory, and each tool mount can
-    /// make one: the code context index, for example, makes
-    /// `<cwd>/.code-context` and each missing parent. A resume of a session
-    /// whose directory is gone thus mounts nothing. The history is in the
-    /// recording root and not in the cwd, so the replay still works.
+    /// The agent never makes a session directory, and each tool mount reads
+    /// or writes the directory it is given: a mount over a missing directory
+    /// can make it, or watch and index a folder that is not there. A resume
+    /// of a session whose directory is gone thus mounts nothing. The history
+    /// is in the recording root and not in the cwd, so the replay still
+    /// works.
     ///
     /// - Parameters:
     ///   - context: The resolved per-cwd configuration.

@@ -112,7 +112,7 @@ final class PathRecordingTool: Tool, Sendable {
             script: [.endPass], label: "HarnessSmokeTests-no-code-context")
         let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
 
-        #expect(entry.surface.codeContextStop == nil)
+        #expect(entry.surface.codeContextLease == nil)
         await fixture.close()
     }
 

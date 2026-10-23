@@ -66,6 +66,9 @@ public struct AgentHome: Sendable, Equatable {
     /// The folder of the shell store in the state folder of a project.
     static let shellFolderName = "shell"
 
+    /// The folder of the code context index in the state folder of a project.
+    static let codeContextFolderName = "code-context"
+
     /// The environment key of the base directory of the user configuration
     /// files, in the XDG Base Directory specification.
     static let configHomeEnvironmentKey = "XDG_CONFIG_HOME"
@@ -198,14 +201,28 @@ public struct AgentHome: Sendable, Equatable {
     ///
     /// The state of a project that belongs to this machine goes here, and
     /// never into the project folder, because the project folder can be in
-    /// ``synced``: the index of the code context (a live SQLite database) and
-    /// the log of the shell.
+    /// ``synced``: the index of the code context, a live SQLite database, in
+    /// ``codeContextIndexDirectory(of:)``, and the store of the shell in
+    /// ``shellStoreDirectory(of:)``.
     ///
     /// - Parameter workingDirectory: The working directory of the project.
     /// - Returns: The folder. The call does not make it.
     public func projectStateDirectory(of workingDirectory: URL) -> URL {
         local.appendingPathComponent(Self.projectsFolderName, isDirectory: true)
             .appendingPathComponent(Self.projectKey(of: workingDirectory), isDirectory: true)
+    }
+
+    /// The index folder of the code context of one project: the
+    /// `code-context` folder of its ``projectStateDirectory(of:)``. The code
+    /// context keeps its database (`kit.db`) there, and never in the project
+    /// folder, which can be in ``synced``. The sessions of one project share
+    /// one code context, thus one index.
+    ///
+    /// - Parameter workingDirectory: The root of the code context.
+    /// - Returns: The folder. The call does not make it.
+    public func codeContextIndexDirectory(of workingDirectory: URL) -> URL {
+        projectStateDirectory(of: workingDirectory)
+            .appendingPathComponent(Self.codeContextFolderName, isDirectory: true)
     }
 
     /// The default shell store of one project: the `shell` folder of its

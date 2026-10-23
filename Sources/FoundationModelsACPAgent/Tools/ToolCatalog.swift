@@ -35,10 +35,10 @@ public struct SessionSurface: Sendable {
     /// its `finish()` at teardown.
     public let shellOutput: ShellOutputChunkStream?
 
-    /// Stops the code context of the session — its index loop, its file
-    /// watcher and its language servers — or `nil` when the `codeContext:`
-    /// section is off.
-    public let codeContextStop: (@Sendable () async -> Void)?
+    /// The lease of the session on the shared code context of its working
+    /// directory, or `nil` when the `codeContext:` section is off.
+    /// ``shutdown()`` gives the lease back.
+    let codeContextLease: CodeContextLease?
 
     /// The outcome of each MCP server of the session, in mount order: the
     /// config-derived servers first, then the client-supplied servers, then
@@ -82,8 +82,6 @@ public struct SessionSurface: Sendable {
     ///     files section is off.
     ///   - shellOutput: The host-owned live shell output stream, or
     ///     `nil` when the shell section is off.
-    ///   - codeContextStop: Stops the code context of the session, or
-    ///     `nil` when the code context section is off.
     ///   - inlineSettleGrace: The settle period of the root session.
     ///     Defaults to ``CatalogContext/defaultInlineSettleGrace``.
     public init(
@@ -91,12 +89,11 @@ public struct SessionSurface: Sendable {
         serverPool: MCPServerPool,
         filesReadVerb: (any FoundationModels.Tool)? = nil,
         shellOutput: ShellOutputChunkStream? = nil,
-        codeContextStop: (@Sendable () async -> Void)? = nil,
         inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
     ) {
         self.init(
             tools: tools, serverPool: serverPool, filesReadVerb: filesReadVerb,
-            shellOutput: shellOutput, codeContextStop: codeContextStop, mcpServerOutcomes: [],
+            shellOutput: shellOutput, codeContextLease: nil, mcpServerOutcomes: [],
             inlineSettleGrace: inlineSettleGrace, agents: nil, runCallJoins: RunCallJoinTable())
     }
 
@@ -109,8 +106,9 @@ public struct SessionSurface: Sendable {
     ///     files section is off.
     ///   - shellOutput: The host-owned live shell output stream, or
     ///     `nil` when the shell section is off.
-    ///   - codeContextStop: Stops the code context of the session, or
-    ///     `nil` when the code context section is off.
+    ///   - codeContextLease: The lease of the session on the code context
+    ///     of its working directory, or `nil` when the code context section
+    ///     is off.
     ///   - mcpServerOutcomes: The outcome of each MCP server, in mount
     ///     order.
     ///   - mcpServers: The connected MCP servers, in mount order. Empty by
@@ -125,7 +123,7 @@ public struct SessionSurface: Sendable {
         serverPool: MCPServerPool,
         filesReadVerb: (any FoundationModels.Tool)?,
         shellOutput: ShellOutputChunkStream?,
-        codeContextStop: (@Sendable () async -> Void)?,
+        codeContextLease: CodeContextLease?,
         mcpServerOutcomes: [MCPComposition.ServerOutcome],
         mcpServers: [FoundationModelsMultitool.MCPServer] = [],
         inlineSettleGrace: TimeInterval,
@@ -136,7 +134,7 @@ public struct SessionSurface: Sendable {
         self.serverPool = serverPool
         self.filesReadVerb = filesReadVerb
         self.shellOutput = shellOutput
-        self.codeContextStop = codeContextStop
+        self.codeContextLease = codeContextLease
         self.mcpServerOutcomes = mcpServerOutcomes
         self.mcpServers = mcpServers
         self.inlineSettleGrace = inlineSettleGrace
@@ -157,7 +155,7 @@ public struct SessionSurface: Sendable {
             serverPool: serverPool,
             filesReadVerb: filesReadVerb,
             shellOutput: shellOutput,
-            codeContextStop: codeContextStop,
+            codeContextLease: codeContextLease,
             mcpServerOutcomes: mcpServerOutcomes,
             mcpServers: mcpServers,
             inlineSettleGrace: inlineSettleGrace,
@@ -185,13 +183,15 @@ public struct SessionSurface: Sendable {
     }
 
     /// Releases what the surface holds outside the session: it stops the
-    /// agent runs, then the code context, then it shuts the server pool
-    /// down. The session lifecycle calls this after the session sweep:
+    /// agent runs, then gives back its lease on the code context, then it
+    /// shuts the server pool down. The code context stops when this was its
+    /// last lease; another session of the same working directory keeps it
+    /// running. The session lifecycle calls this after the session sweep:
     /// a pool shutdown before the sweep drops the transports that the
     /// settling runs still need.
     public func shutdown() async {
         await stopAgentRuns()
-        await codeContextStop?()
+        await codeContextLease?.release()
         await serverPool.shutdownAll()
     }
 }
@@ -264,15 +264,9 @@ public enum ToolCatalog {
         /// when the shell section is off.
         let shellOutput: ShellOutputChunkStream?
 
-        /// Stops the started code context of the build, or `nil` when the
-        /// `codeContext:` section is off.
-        let codeContextStop: (@Sendable () async -> Void)?
-
-        /// Waits until the code context of the build ended its first index
-        /// pass, or `nil` when the `codeContext:` section is off. Only a test
-        /// waits on it, to read a fact that the first pass makes true with no
-        /// clock.
-        var codeContextFirstIndexPass: (@Sendable () async -> Void)? = nil
+        /// The lease of the build on the code context of the working
+        /// directory, or `nil` when the `codeContext:` section is off.
+        let codeContextLease: CodeContextLease?
     }
 
     /// Builds the composed session surface: the Multitool session tools —
@@ -342,7 +336,7 @@ public enum ToolCatalog {
             serverPool: built.pool,
             filesReadVerb: built.registry.tools[Self.filesReadVerbPath],
             shellOutput: built.shellOutput,
-            codeContextStop: built.codeContextStop,
+            codeContextLease: built.codeContextLease,
             mcpServerOutcomes: built.mcpServerOutcomes,
             mcpServers: built.mcpServers,
             inlineSettleGrace: context.inlineSettleGrace,
@@ -392,10 +386,10 @@ public enum ToolCatalog {
     /// (`variables`, `os` and `now`) through `withEnvironment()`, and
     /// `mcp` composes the config-derived servers with the client's
     /// per-session ones, connects each one, and records the
-    /// spawned subprocesses in the builder's pool. `codeContext` opens and
-    /// starts one `CodeContext` over the session working directory, with the
-    /// profile's embedding slot as its embedder, and mounts the operations
-    /// of its three tools as the verbs of the `tools.code_context` group.
+    /// spawned subprocesses in the builder's pool. `codeContext` leases the
+    /// shared `CodeContext` of the session working directory
+    /// (``composeCodeContext(into:context:)``), and mounts the operations of
+    /// its three tools as the verbs of the `tools.code_context` group.
     /// With a ``CatalogContext/snapshotStore``, `snapshots` mounts the
     /// `tools.snapshots` verbs (`list`, `take` and `rollback`) over the
     /// snapshot store of the agent. It has no config section.
@@ -479,9 +473,8 @@ public enum ToolCatalog {
             await builder.serverPool.add(process: process)
         }
         // The code context is the last composition step, so a failure
-        // before it leaves no started context behind.
-        let codeContext = try await composeCodeContext(into: builder, context: context)
-        let codeContextStop = codeContext?.stop
+        // before it leaves no lease behind.
+        let codeContextLease = try await composeCodeContext(into: builder, context: context)
         do {
             return BuiltRegistry(
                 registry: try builder.buildRegistry(),
@@ -490,23 +483,27 @@ public enum ToolCatalog {
                 mcpServers: composed.servers,
                 mcpServerOutcomes: composed.outcomes,
                 shellOutput: shellOutput,
-                codeContextStop: codeContextStop,
-                codeContextFirstIndexPass: codeContext?.firstIndexPass)
+                codeContextLease: codeContextLease)
         } catch {
-            await codeContextStop?()
+            await codeContextLease?.release()
             throw error
         }
     }
 
-    /// Opens and starts the code context of the session, and queues its
-    /// three tools in `builder` as the `tools.code_context` group, or does
-    /// nothing when the `codeContext:` section is off.
+    /// Leases the shared code context of the session working directory from
+    /// ``CodeContextLeases/shared``, and queues its three tools in `builder`
+    /// as the `tools.code_context` group, or does nothing when the
+    /// `codeContext:` section is off.
     ///
-    /// The workspace root is the session working directory. With
-    /// `semanticSearch` on, the embedder is the profile's embedding slot,
-    /// the same handle the discovery search ranks with. With it off, the
-    /// context gets no embedder: its embedding layer is off, and
-    /// `searchCode` answers with a clear error.
+    /// The sessions of one working directory share one code context, and a
+    /// session in a folder inside an open root shares the context of that
+    /// root. The first lease opens and starts the context, and the last
+    /// release, at ``SessionSurface/shutdown()``, stops it. The index is in
+    /// ``AgentHome/codeContextIndexDirectory(of:)`` of the home, never in the
+    /// working directory. With `semanticSearch` on, the embedder is the
+    /// profile's embedding slot, the same handle the discovery search ranks
+    /// with. With it off, the context gets no embedder: its embedding layer
+    /// is off, and `searchCode` answers with a clear error.
     ///
     /// `start()` returns before the first index pass, and the pass runs in
     /// the index loop of the context. Thus `session/new` does not wait for
@@ -517,37 +514,32 @@ public enum ToolCatalog {
     ///   - builder: The builder that gets the tool group.
     ///   - context: The session whose working directory and profile the
     ///     code context reads.
-    /// - Returns: The closure that stops the started code context, and the
-    ///   closure that waits for its first index pass, or `nil` when the
-    ///   section is off.
-    /// - Throws: Whatever `CodeContext.init`, `start()` or
+    /// - Returns: The lease of the session on the code context, or `nil`
+    ///   when the section is off.
+    /// - Throws: Whatever the open or the start of the context or
     ///   `CodeContextTools.make(context:)` throws. After a failure the
-    ///   started context is stopped.
+    ///   lease is given back.
     static func composeCodeContext(
         into builder: MultiTool.Builder, context: CatalogContext
-    ) async throws -> (stop: @Sendable () async -> Void, firstIndexPass: @Sendable () async -> Void)? {
+    ) async throws -> CodeContextLease? {
         guard case .enabled(let options) = context.configuration.tools.codeContext else {
             return nil
         }
-        let embedder: (any PooledEmbedding)? =
-            options.semanticSearch
-            ? ProfileEmbedding(embedder: context.profile.embedding)
-            : nil
-        let codeContext = try await CodeContext(
-            rootDirectory: context.workingDirectory,
-            embedder: embedder,
-            autoInstall: makeLanguageServerInstall(options: options, home: context.settingsFolders.home))
+        let home = context.settingsFolders.home
+        let lease = try await CodeContextLeases.shared.acquire(
+            root: context.workingDirectory,
+            settings: CodeContextLeases.ManagerSettings(
+                embedder: options.semanticSearch ? context.profile.embedding : nil,
+                autoInstall: makeLanguageServerInstall(options: options, home: home),
+                home: home))
         do {
-            try await codeContext.start()
             builder.addGroup(
-                named: codeContextGroupName, try CodeContextTools.make(context: codeContext))
+                named: codeContextGroupName, try CodeContextTools.make(context: lease.context))
         } catch {
-            await codeContext.stop()
+            await lease.release()
             throw error
         }
-        return (
-            stop: { await codeContext.stop() },
-            firstIndexPass: { await codeContext.waitForFirstIndexPass() })
+        return lease
     }
 
     /// The language server install of the code context of a session: on or

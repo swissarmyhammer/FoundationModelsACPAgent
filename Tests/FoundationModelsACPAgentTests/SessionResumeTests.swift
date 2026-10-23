@@ -253,9 +253,9 @@ import Testing
         "the working directory of this session does not exist"
 
     /// The user-layer `tools:` section a deleted-cwd resume reads: the code
-    /// context on, with no language-server install and no embedding. The
-    /// code context index makes `<cwd>/.code-context`, so a resume that
-    /// composes the tool surface makes the deleted cwd again.
+    /// context on, with no language-server install and no embedding. A
+    /// resume that composes the tool surface would watch and index the
+    /// deleted cwd, and the replay-only resume mounts no tool at all.
     private static let codeContextOnYAML =
         "tools:\n  codeContext:\n    autoInstall: false\n    semanticSearch: false\n"
 

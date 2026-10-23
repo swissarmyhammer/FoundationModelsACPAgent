@@ -116,8 +116,8 @@ import Testing
     ///     its API keys from. The default is empty, thus no test reads a
     ///     key of the machine that runs it.
     ///   - keepsCodeContext: `true` keeps the default `codeContext:`
-    ///     section. Each registry build then starts a `CodeContext`, and
-    ///     the test must call `codeContextStop` before it ends. The
+    ///     section. Each registry build then leases a `CodeContext`, and
+    ///     the test must release `codeContextLease` before it ends. The
     ///     default `false` turns the section off, thus a test that does
     ///     not test the code context starts none.
     ///   - hasSettingsStore: `true` gives the context the `settings` endpoint
@@ -182,8 +182,7 @@ import Testing
         let surface = try await ToolCatalog.sessionSurface(context: context)
 
         #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
-        let stop = try #require(surface.codeContextStop)
-        await stop()
+        await surface.shutdown()
     }
 
     /// The config cannot turn the skills tool off: the `tools.skills: false`
@@ -250,8 +249,8 @@ import Testing
         let paths = built.registry.surface.entries.map(\.path)
         #expect(paths.contains(Self.readVerbPath))
         #expect(paths.contains(Self.executeVerbPath))
-        let stop = try #require(built.codeContextStop)
-        await stop()
+        let lease = try #require(built.codeContextLease)
+        await lease.release()
     }
 
     @Test func aDisabledShellSectionYieldsNoShellNamespace() async throws {
@@ -321,8 +320,8 @@ import Testing
         for verb in ["getSymbol", "getCallgraph", "getBlastradius"] {
             #expect(verbs.contains(prefix + verb))
         }
-        let stop = try #require(built.codeContextStop)
-        await stop()
+        let lease = try #require(built.codeContextLease)
+        await lease.release()
     }
 
     /// The catalog does not wait for the index. `CodeContext.start()` does
@@ -330,8 +329,9 @@ import Testing
     /// repository that pass is longer than a client waits for `session/new`
     /// (the SWE-bench run of 2026-09-18). Here the embedder never answers
     /// until the task is cancelled, and the workspace holds a source file,
-    /// so a catalog that waits for `start()` never returns. The stop closure
-    /// must return too: it cancels the start task before it stops the context.
+    /// so a catalog that waits for `start()` never returns. The release of
+    /// the lease must return too: the last release cancels the start task
+    /// before it stops the context.
     @Test
     func theCatalogDoesNotWaitForTheCodeContextIndex() async throws {
         var loader = StubModelLoader()
@@ -343,8 +343,8 @@ import Testing
 
         let built = try await ToolCatalog.makeRegistry(context: context)
 
-        let stop = try #require(built.codeContextStop)
-        await stop()
+        let lease = try #require(built.codeContextLease)
+        await lease.release()
     }
 
     /// With `semanticSearch` off, the index never calls the profile's
@@ -364,10 +364,9 @@ import Testing
         let built = try await ToolCatalog.makeRegistry(context: context)
         // The first index pass reads the one file of the workspace. With
         // the profile's embedder it would call the embedder in that pass.
-        let firstIndexPass = try #require(built.codeContextFirstIndexPass)
-        await firstIndexPass()
-        let stop = try #require(built.codeContextStop)
-        await stop()
+        let lease = try #require(built.codeContextLease)
+        await lease.context.waitForFirstIndexPass()
+        await lease.release()
 
         #expect(embedder.batches.isEmpty)
     }
@@ -381,7 +380,7 @@ import Testing
 
         let prefix = "\(ToolCatalog.codeContextGroupName)."
         #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(prefix) })
-        #expect(built.codeContextStop == nil)
+        #expect(built.codeContextLease == nil)
     }
 
     // MARK: The web group
@@ -396,8 +395,8 @@ import Testing
         let paths = built.registry.surface.entries.map(\.path)
         #expect(paths.contains(Self.webSearchPath))
         #expect(paths.contains(Self.webFetchPath))
-        let stop = try #require(built.codeContextStop)
-        await stop()
+        let lease = try #require(built.codeContextLease)
+        await lease.release()
     }
 
     /// `tools.web.enabled: false` mounts no web verb.
@@ -664,18 +663,5 @@ import Testing
 
         #expect(install.failureRecordDirectory == home.languageServerInstallRecordDirectory)
         #expect(install.isEnabled == autoInstall)
-    }
-}
-
-/// An embedding container that never answers. `embed(texts:)` waits until
-/// its task is cancelled, and then it throws the cancellation.
-private final class NeverAnsweringEmbeddingContainer: LoadedEmbeddingContainer {
-    /// An arbitrary vector length; no vector is ever made.
-    let dimension = 8
-
-    /// Waits for the cancellation of the task.
-    func embed(texts: [String]) async throws -> [[Float]] {
-        try await waitForCancellation()
-        return []
     }
 }

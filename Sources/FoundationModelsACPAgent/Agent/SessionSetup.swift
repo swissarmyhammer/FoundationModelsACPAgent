@@ -285,11 +285,11 @@ enum SessionSetup {
     /// Validates that the working directory and each additional root of a
     /// session are existing directories.
     ///
-    /// The agent never makes a session directory. A composition that runs
-    /// over a missing directory makes it: the code context index, for
-    /// example, makes `<cwd>/.code-context` and each missing parent. So
-    /// `session/new` refuses a missing directory before it composes
-    /// anything.
+    /// The agent never makes a session directory. Each tool mount reads or
+    /// writes the directory it is given, so a composition that runs over a
+    /// missing directory can make it, or watch and index a folder that is
+    /// not there. So `session/new` refuses a missing directory before it
+    /// composes anything.
     ///
     /// - Parameters:
     ///   - workingDirectory: The session working directory.
