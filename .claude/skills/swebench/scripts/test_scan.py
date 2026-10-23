@@ -1082,5 +1082,27 @@ class AChildSessionKeepsTheRunLive(ScanTestCase):
         self.assertEqual(len(self.problems_with("no new line")), 1, self.problem_texts())
 
 
+class AWaitForAChildAgentIsNotAGenerationStall(ScanTestCase):
+    """bench24-1023, django__django-13710: 649 s between seq 776 and seq 1144,
+    and seq 1144 is "[agents] agents (...) completed: Agent diagnose ...
+    finished." The root waited for its child session; no generation ran
+    in the root. The scan reported a generation stall."""
+
+    def scan_gap(self, text):
+        later = OLD_START + dt.timedelta(seconds=STALL_GAP + 30)
+        end = {"kind": "toolOutput", "seq": 2, "ts": apple_time(later), "text": text,
+               "entry": {"entryId": "01ENTRY2", "toolName": "agents", "segments": []}}
+        write_transcript(self.transcripts, FIRST, [running_row("01OPA", 1, OLD_START), end])
+        quiet(self.scan_kept_transcripts)
+        return self.R["tools"]["stalls"]
+
+    def test_a_gap_that_ends_with_a_child_agent_result_is_not_a_stall(self):
+        text = "[agents] agents (01M5MX1CY7N6YF6TVVMV3GNP5F) completed: Agent diagnose (01CHILD) finished."
+        self.assertEqual(self.scan_gap(text), [])
+
+    def test_a_gap_that_ends_with_an_other_result_is_a_stall(self):
+        self.assertEqual(len(self.scan_gap('[execute] execute shell (01OPB) completed: {"exitCode":0}')), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

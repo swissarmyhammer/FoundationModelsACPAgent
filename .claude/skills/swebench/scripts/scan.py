@@ -44,6 +44,8 @@ import sys
 import time
 
 APPLE_EPOCH = dt.datetime(2001, 1, 1, tzinfo=dt.timezone.utc)
+# The final event of a child agent session of the `agents` tool.
+CHILD_RESULT = re.compile(r"\[agents\] agents \([0-9A-Z]+\) (completed|failed):")
 WATCHER = "could not mark a changed file dirty"
 # The prefix of a tool result line in the transcript:
 #   [runCode] runCode (01M45...) completed: {...}
@@ -1454,6 +1456,10 @@ def scan_transcripts(dirs, gap_s, R):
         for r0, r1 in zip(rows_t, rows_t[1:]):
             g = r1["ts"] - r0["ts"]
             if g < gap_s:
+                continue
+            # The end of a child agent session: the root waited for it, and
+            # no generation ran in the root. That is not a stall.
+            if CHILD_RESULT.match(r1.get("text") or ""):
                 continue
             # The same stall can show two times, before two lines with near seq
             # numbers. Report it one time.
