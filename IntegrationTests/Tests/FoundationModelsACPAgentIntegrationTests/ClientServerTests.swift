@@ -107,7 +107,7 @@ struct ClientServerTests {
         #expect(
             run.standardError.contains(Self.endTurnWireValue),
             "the stop reason is missing from stderr: \(run.standardError)")
-        try ProcessCensus.expectNoAgentOutlivedItsRun()
+        try await ProcessCensus.expectNoAgentOutlivedItsRun()
     }
 
     /// The failure path: an agent that dies before the wire opens makes
@@ -128,7 +128,7 @@ struct ClientServerTests {
         #expect(
             run.standardOutput.isEmpty,
             "a failed prompt wrote to stdout: \(run.standardOutput)")
-        try ProcessCensus.expectNoAgentOutlivedItsRun()
+        try await ProcessCensus.expectNoAgentOutlivedItsRun()
     }
 
     /// The argument contract: the CLI takes exactly one positional

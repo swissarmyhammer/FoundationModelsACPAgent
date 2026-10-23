@@ -52,15 +52,15 @@ struct TemporaryKeychain {
     /// password, unlocked, and with no auto-lock.
     ///
     /// - Returns: The Keychain.
-    /// - Throws: The folder error, or a ``SecurityFailure``. The folder is
-    ///   removed when a step fails.
-    static func make() throws -> TemporaryKeychain {
+    /// - Throws: The folder error, or the error of a `security` step (see
+    ///   ``runSecurity(_:)``). The folder is removed when a step fails.
+    static func make() async throws -> TemporaryKeychain {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let keychain = TemporaryKeychain(folder: folder, file: folder.appendingPathComponent(fileName))
         do {
-            try keychain.createUnlockedWithNoAutoLock()
+            try await keychain.createUnlockedWithNoAutoLock()
         } catch {
             // The step's own failure is the error the test reports. A failed
             // removal of the folder would only hide it.
@@ -75,16 +75,16 @@ struct TemporaryKeychain {
     /// joined it.
     ///
     /// - Returns: The text of the list.
-    /// - Throws: A ``SecurityFailure``.
-    static func userSearchList() throws -> String {
-        try runSecurity(["list-keychains", "-d", "user"])
+    /// - Throws: The error of ``runSecurity(_:)``.
+    static func userSearchList() async throws -> String {
+        try await runSecurity(["list-keychains", "-d", "user"])
     }
 
     /// Deletes the Keychain, then its folder.
     ///
-    /// - Throws: A ``SecurityFailure``, or the folder error.
-    func delete() throws {
-        try Self.runSecurity(["delete-keychain", file.path])
+    /// - Throws: The error of ``runSecurity(_:)``, or the folder error.
+    func delete() async throws {
+        try await Self.runSecurity(["delete-keychain", file.path])
         try FileManager.default.removeItem(at: folder)
     }
 
@@ -92,40 +92,31 @@ struct TemporaryKeychain {
     /// sets no lock timeout and no lock on sleep. The password is used here
     /// and then dropped: nothing needs it again.
     ///
-    /// - Throws: A ``SecurityFailure``.
-    private func createUnlockedWithNoAutoLock() throws {
+    /// - Throws: The error of ``runSecurity(_:)``.
+    private func createUnlockedWithNoAutoLock() async throws {
         let password = UUID().uuidString
-        try Self.runSecurity(["create-keychain", "-p", password, file.path])
-        try Self.runSecurity(["unlock-keychain", "-p", password, file.path])
+        try await Self.runSecurity(["create-keychain", "-p", password, file.path])
+        try await Self.runSecurity(["unlock-keychain", "-p", password, file.path])
         // With no `-l`, `-u` or `-t`, the Keychain has no timeout and does not
         // lock on sleep.
-        try Self.runSecurity(["set-keychain-settings", file.path])
+        try await Self.runSecurity(["set-keychain-settings", file.path])
     }
 
     /// Runs `security` with `arguments`, with no shell between.
     ///
     /// - Parameter arguments: The subcommand, then its arguments.
     /// - Returns: What `security` wrote, to its output and its error output.
-    /// - Throws: The spawn or read error, or a ``SecurityFailure`` when
-    ///   `security` exits with a status other than zero.
+    /// - Throws: The run error (see ``CapturedProcessRun``), or a
+    ///   ``SecurityFailure`` when `security` exits with a status other than
+    ///   zero.
     @discardableResult
-    private static func runSecurity(_ arguments: [String]) throws -> String {
-        let security = Process()
-        security.executableURL = URL(fileURLWithPath: securityPath)
-        security.arguments = arguments
-        let output = Pipe()
-        output.markCloseOnExec()
-        security.standardOutput = output
-        security.standardError = output
-        try security.run()
-        // The read stands before the wait: a full pipe buffer would block
-        // `security`.
-        let written = try output.fileHandleForReading.readToEnd() ?? Data()
-        security.waitUntilExit()
-        let text = String(decoding: written, as: UTF8.self)
-        guard security.terminationStatus == 0 else {
+    private static func runSecurity(_ arguments: [String]) async throws -> String {
+        let security = try await CapturedProcessRun.run(
+            toolAt: securityPath, arguments: arguments, errorOutput: .mergedIntoOutput)
+        let text = String(decoding: security.standardOutput, as: UTF8.self)
+        guard security.exitCode == 0 else {
             throw SecurityFailure(
-                subcommand: arguments.first ?? "", status: security.terminationStatus, output: text)
+                subcommand: arguments.first ?? "", status: security.exitCode, output: text)
         }
         return text
     }

@@ -43,11 +43,11 @@ private final class ObservedAgents: Sendable {
     /// while the gate holds the prompt, so each child is alive.
     ///
     /// - Parameter identifiers: The identifiers of that reading.
-    /// - Throws: The spawn or read error of `pgrep`.
-    func record(_ identifiers: [pid_t]) throws {
+    /// - Throws: The run error of `pgrep`.
+    func record(_ identifiers: [pid_t]) async throws {
         var exits: [ArmedProcessExit] = []
         for child in identifiers {
-            let members = try ProcessCensus.identifiers(selectedBy: ["-g", String(child)])
+            let members = try await ProcessCensus.identifiers(selectedBy: ["-g", String(child)])
             for member in Set(members + [child]) {
                 exits.append(ArmedProcessExit(pid: member))
             }
@@ -157,7 +157,7 @@ struct OutOfProcessTests {
             configHome: makeResolvedDirectory(label: "\(label)-config"),
             environment: gated.environment,
             atFirstOutput: { runIdentifier in
-                try observed.record(ProcessCensus.agentsServingACP(startedBy: runIdentifier))
+                try await observed.record(ProcessCensus.agentsServingACP(startedBy: runIdentifier))
             },
             signalCount: signalCount,
             chunkGate: gated.gate)
@@ -227,7 +227,7 @@ struct OutOfProcessTests {
             label: "OutOfProcess-failure")
         #expect(failed.exitCode == Self.errorExitCode, "stderr: \(failed.standardError)")
         #expect(failed.standardOutput.isEmpty, "a failed prompt wrote to stdout")
-        try ProcessCensus.expectNoAgentOutlivedItsRun()
+        try await ProcessCensus.expectNoAgentOutlivedItsRun()
 
         // The interrupted row. The first `Ctrl-C` sends `session/cancel` over
         // the real pipe, and the run ends itself with exit 4 (§5.9).
@@ -236,6 +236,6 @@ struct OutOfProcessTests {
         #expect(
             interrupted.exitCode == Self.cancelledExitCode,
             "stderr: \(interrupted.standardError)")
-        try ProcessCensus.expectNoAgentOutlivedItsRun()
+        try await ProcessCensus.expectNoAgentOutlivedItsRun()
     }
 }

@@ -1,8 +1,8 @@
 // `BuiltExecutableRun` — one finished run of a built executable.
 //
 // `ClientServerTests` runs `acp-print` through it and `CLIProcessTests`
-// runs `acp-agent`, so the pipe draining and the exit wait stand in one
-// place, and the two suites cannot drift apart. `runAgent` is the one
+// runs `acp-agent`, so the two suites cannot drift apart. The pipe draining
+// and the exit wait are those of `CapturedProcessRun`. `runAgent` is the one
 // driver of `acp-agent` in a fresh workspace, which `CLIProcessTests`,
 // `ClientInteropTests`, `OutOfProcessTests` and
 // `SkillsMarketplaceProcessTests` share.
@@ -39,7 +39,9 @@ struct BuiltExecutableRun {
     ///     none, so a caller that says nothing about the environment gets
     ///     this process's own beside `configHome`.
     /// - Returns: The finished run.
-    /// - Throws: The locator or spawn error.
+    /// - Throws: The locator, spawn or read error, or
+    ///   ``ConditionWaitCancelled`` when the test is cancelled before the
+    ///   child exits.
     static func run(
         executableNamed executableName: String,
         arguments: [String],
@@ -53,30 +55,12 @@ struct BuiltExecutableRun {
             workspace: workspace,
             inheritedEnvironment: ProcessInfo.processInfo.environment,
             environment: PipedChildProcess.environment(configHome: configHome, adding: environment))
-        let process = child.process
-        let standardOutputPipe = child.standardOutput
-        let standardErrorPipe = child.standardError
-
-        try process.run()
-        // Drain the two pipes on their own tasks. A full pipe buffer
-        // would block the child, so the reads run before the wait.
-        let standardOutputData = Task.detached {
-            try standardOutputPipe.fileHandleForReading.readToEnd() ?? Data()
-        }
-        let standardErrorData = Task.detached {
-            try standardErrorPipe.fileHandleForReading.readToEnd() ?? Data()
-        }
-        await withCheckedContinuation { continuation in
-            process.terminationHandler = { _ in continuation.resume() }
-            if !process.isRunning {
-                process.terminationHandler = nil
-                continuation.resume()
-            }
-        }
+        let run = try await CapturedProcessRun.run(
+            child.process, standardOutput: child.standardOutput, standardError: child.standardError)
         return BuiltExecutableRun(
-            exitCode: process.terminationStatus,
-            standardOutput: String(decoding: try await standardOutputData.value, as: UTF8.self),
-            standardError: String(decoding: try await standardErrorData.value, as: UTF8.self))
+            exitCode: run.exitCode,
+            standardOutput: String(decoding: run.standardOutput, as: UTF8.self),
+            standardError: String(decoding: run.standardError, as: UTF8.self))
     }
 
     /// Runs the built `acp-agent` with `arguments` in a fresh workspace.
@@ -95,7 +79,7 @@ struct BuiltExecutableRun {
     ///   - environment: The extra environment pairs. The default injects
     ///     none.
     /// - Returns: The finished run.
-    /// - Throws: The locator or spawn error.
+    /// - Throws: The error of ``run(executableNamed:arguments:workspace:configHome:environment:)``.
     static func runAgent(
         arguments: [String],
         label: String,

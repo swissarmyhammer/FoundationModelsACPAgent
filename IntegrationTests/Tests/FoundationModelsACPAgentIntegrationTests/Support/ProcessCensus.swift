@@ -41,23 +41,14 @@ enum ProcessCensus {
     ///
     /// - Parameter arguments: The selection `pgrep` is given. It ands them.
     /// - Returns: The matching identifiers, and none when nothing matches.
-    /// - Throws: The spawn or read error of `pgrep`.
-    static func identifiers(selectedBy arguments: [String]) throws -> [pid_t] {
-        let pgrep = Process()
-        pgrep.executableURL = URL(fileURLWithPath: pgrepPath)
-        pgrep.arguments = arguments
-        let output = Pipe()
-        output.markCloseOnExec()
-        pgrep.standardOutput = output
-        try pgrep.run()
-        // The read stands before the wait: `pgrep` writes one line for each
-        // match, and a full pipe buffer would block it.
-        let written = try output.fileHandleForReading.readToEnd() ?? Data()
-        pgrep.waitUntilExit()
-        guard pgrep.terminationStatus != noMatchStatus else {
+    /// - Throws: The run error of `pgrep` (see ``CapturedProcessRun``).
+    static func identifiers(selectedBy arguments: [String]) async throws -> [pid_t] {
+        let pgrep = try await CapturedProcessRun.run(
+            toolAt: pgrepPath, arguments: arguments, errorOutput: .inherited)
+        guard pgrep.exitCode != noMatchStatus else {
             return []
         }
-        return String(decoding: written, as: UTF8.self)
+        return String(decoding: pgrep.standardOutput, as: UTF8.self)
             .split(separator: "\n")
             .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
     }
@@ -117,9 +108,9 @@ enum ProcessCensus {
     ///
     /// - Parameter parent: The identifier of the run that started them.
     /// - Returns: The identifiers, and none when that parent started none.
-    /// - Throws: The locator error, and the spawn or read error of `pgrep`.
-    static func agentsServingACP(startedBy parent: pid_t) throws -> [pid_t] {
-        try identifiers(selectedBy: ["-P", String(parent), "-f", agentServingACPPattern()])
+    /// - Throws: The locator error, and the run error of `pgrep`.
+    static func agentsServingACP(startedBy parent: pid_t) async throws -> [pid_t] {
+        try await identifiers(selectedBy: ["-P", String(parent), "-f", agentServingACPPattern()])
     }
 
     /// The identifiers of the `acp-agent acp` processes that outlived the
@@ -127,9 +118,9 @@ enum ProcessCensus {
     ///
     /// - Returns: The identifiers, and none when every run reaped its own
     ///   child.
-    /// - Throws: The locator error, and the spawn or read error of `pgrep`.
-    static func orphanedAgentsServingACP() throws -> [pid_t] {
-        try identifiers(
+    /// - Throws: The locator error, and the run error of `pgrep`.
+    static func orphanedAgentsServingACP() async throws -> [pid_t] {
+        try await identifiers(
             selectedBy: [
                 "-P", String(orphanParentIdentifier), "-f", agentServingACPPattern(),
             ])
@@ -142,11 +133,11 @@ enum ProcessCensus {
     /// makes, so it stands in one place and the suites cannot drift apart.
     ///
     /// - Parameter sourceLocation: The test line a failure is reported at.
-    /// - Throws: The locator error, and the spawn or read error of `pgrep`.
+    /// - Throws: The locator error, and the run error of `pgrep`.
     static func expectNoAgentOutlivedItsRun(
         sourceLocation: SourceLocation = #_sourceLocation
-    ) throws {
-        let orphans = try orphanedAgentsServingACP()
+    ) async throws {
+        let orphans = try await orphanedAgentsServingACP()
         #expect(
             orphans.isEmpty,
             "an agent outlived the run that started it: \(orphans)",

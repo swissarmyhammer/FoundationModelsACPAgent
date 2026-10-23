@@ -29,10 +29,10 @@ import Testing
     /// `SecItemAdd` added to that Keychain, and gives nil for a name with no
     /// item. The user's Keychain search list is the same after the test as
     /// before it.
-    @Test func aStoreOverATemporaryKeychainReadsAnAddedItem() throws {
-        let searchListBefore = try TemporaryKeychain.userSearchList()
-        let keychain = try TemporaryKeychain.make()
-        defer { Self.delete(keychain) }
+    @Test func aStoreOverATemporaryKeychainReadsAnAddedItem() async throws {
+        let searchListBefore = try await TemporaryKeychain.userSearchList()
+        let keychain = try await TemporaryKeychain.make()
+        defer { await Self.delete(keychain) }
         let store = KeychainSecretStore(
             service: Self.testServicePrefix + UUID().uuidString, synchronizable: false,
             keychain: .file(keychain.file))
@@ -43,7 +43,7 @@ import Testing
         try #require(addStatus == errSecSuccess, "SecItemAdd gave status \(addStatus)")
         #expect(try store.value(forReference: Self.addedReference) == Self.addedValue)
         #expect(try store.value(forReference: Self.unknownReference) == nil)
-        #expect(try TemporaryKeychain.userSearchList() == searchListBefore)
+        #expect(try await TemporaryKeychain.userSearchList() == searchListBefore)
     }
 
     // MARK: - Helpers
@@ -69,9 +69,9 @@ import Testing
     /// of the test.
     ///
     /// - Parameter keychain: The Keychain of the test.
-    private static func delete(_ keychain: TemporaryKeychain) {
+    private static func delete(_ keychain: TemporaryKeychain) async {
         do {
-            try keychain.delete()
+            try await keychain.delete()
         } catch {
             Issue.record(error, "the temporary Keychain was not deleted")
         }
