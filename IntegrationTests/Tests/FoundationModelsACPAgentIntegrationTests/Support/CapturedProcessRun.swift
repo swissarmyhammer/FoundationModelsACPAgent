@@ -21,8 +21,32 @@ struct CapturedProcessRun {
         /// holds both streams in the order the tool wrote them.
         case mergedIntoOutput
 
+        /// Into a pipe of its own, so ``CapturedProcessRun/standardError``
+        /// holds it apart from the stdout.
+        case captured
+
         /// To the stderr of this test process, which the test log shows.
         case inherited
+    }
+
+    /// Why a system tool's run failed: it exited with a status its caller
+    /// does not read as a sound result.
+    struct Failure: Error, CustomStringConvertible {
+        /// The tool, and its subcommand when it has one, such as
+        /// `security create-keychain`. The other arguments are left out,
+        /// because one of them can be a password.
+        let command: String
+
+        /// The exit status of the tool.
+        let status: Int32
+
+        /// What the tool wrote to say why it failed.
+        let output: String
+
+        /// The command, the status and the output.
+        var description: String {
+            "\(command) exited with status \(status): \(output)"
+        }
     }
 
     /// The exit status of the child, or the signal number when a signal with
@@ -53,10 +77,32 @@ struct CapturedProcessRun {
         tool.arguments = arguments
         let output = Pipe()
         tool.standardOutput = output
-        if errorOutput == .mergedIntoOutput {
+        let error = connect(errorOutput, of: tool, besideOutput: output)
+        return try await run(tool, standardOutput: output, standardError: error)
+    }
+
+    /// Sends the stderr of `tool` where `errorOutput` says.
+    ///
+    /// - Parameters:
+    ///   - errorOutput: Where the tool's stderr goes.
+    ///   - tool: The tool, not yet started.
+    ///   - output: The stdout pipe of the tool.
+    /// - Returns: The tool's own stderr pipe when its stderr is captured
+    ///   apart, and `nil` when it goes into `output` or is inherited.
+    private static func connect(
+        _ errorOutput: ErrorOutput, of tool: Process, besideOutput output: Pipe
+    ) -> Pipe? {
+        switch errorOutput {
+        case .mergedIntoOutput:
             tool.standardError = output
+            return nil
+        case .captured:
+            let error = Pipe()
+            tool.standardError = error
+            return error
+        case .inherited:
+            return nil
         }
-        return try await run(tool, standardOutput: output, standardError: nil)
     }
 
     /// Starts `process`, reads its pipes to their ends, and waits until it

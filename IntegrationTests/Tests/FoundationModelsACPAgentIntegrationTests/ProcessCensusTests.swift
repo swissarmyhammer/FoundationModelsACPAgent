@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 import Testing
 
 // MARK: - The `pgrep -f` pattern of `ProcessCensus`
@@ -70,5 +71,48 @@ struct ProcessCensusTests {
         let pattern = ProcessCensus.agentServingACPPattern(agentPath: Self.dottedAgentPath)
         let matches = try Self.pgrepMatches(pattern, commandLine: Self.undottedCommandLine)
         #expect(!matches, "pattern: \(pattern)")
+    }
+}
+
+// MARK: - The exit status of the `pgrep` a census runs
+//
+// `pgrep(1)` exits 0 when a process matches and 1 when none does. Any other
+// status means `pgrep` itself failed — 2 for a selection it cannot read — and
+// its stdout is then empty. A census that read that empty stdout as "no
+// process" would let the reap proof pass without reading the process table,
+// so a failed `pgrep` must fail the census. These cases run the real `pgrep`.
+
+/// How `ProcessCensus` reads the exit status of `pgrep`.
+struct ProcessCensusExitStatusTests {
+    /// A `pgrep -f` pattern the regular-expression engine cannot compile.
+    private static let uncompilablePattern = "("
+
+    /// The status `pgrep` exits with when it cannot read its selection.
+    private static let unreadableSelectionStatus: Int32 = 2
+
+    /// The words `pgrep` writes to its stderr when its pattern does not
+    /// compile.
+    private static let uncompilablePatternComplaint = "Cannot compile regular expression"
+
+    /// A census whose `pgrep` fails throws, and the error names the status and
+    /// what `pgrep` wrote to its stderr, instead of reporting no process.
+    @Test func aCensusWhosePgrepFailsThrowsItsStatusAndItsErrorOutput() async throws {
+        let error = await #expect(throws: (any Error).self) {
+            try await ProcessCensus.identifiers(selectedBy: ["-f", Self.uncompilablePattern])
+        }
+
+        let description = String(describing: try #require(error))
+        #expect(description.contains("status \(Self.unreadableSelectionStatus)"), "\(description)")
+        #expect(description.contains(Self.uncompilablePatternComplaint), "\(description)")
+    }
+
+    /// A census that matches no process gives no identifiers and throws
+    /// nothing: `pgrep` exits 1 for it, and that is a sound reading.
+    @Test func aCensusThatMatchesNoProcessGivesNoIdentifiers() async throws {
+        let nobodysCommandLine = UUID().uuidString
+
+        let identifiers = try await ProcessCensus.identifiers(selectedBy: ["-f", nobodysCommandLine])
+
+        #expect(identifiers.isEmpty)
     }
 }

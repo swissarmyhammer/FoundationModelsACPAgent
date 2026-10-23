@@ -30,6 +30,12 @@ enum ProcessCensus {
     /// The absolute path of `pgrep(1)`.
     private static let pgrepPath = "/usr/bin/pgrep"
 
+    /// The name `pgrep` is reported under when it fails.
+    private static let pgrepName = "pgrep"
+
+    /// The exit status `pgrep` reports when a process matches.
+    private static let matchStatus: Int32 = 0
+
     /// The exit status `pgrep` reports when no process matches.
     private static let noMatchStatus: Int32 = 1
 
@@ -39,16 +45,37 @@ enum ProcessCensus {
     /// The identifiers of the processes that match every one of
     /// `arguments`.
     ///
+    /// `pgrep` exits 0 when a process matches and 1 when none does. Any other
+    /// status means `pgrep` itself failed, with an empty stdout, so it is
+    /// thrown: a census that could not read the process table never reports
+    /// no process.
+    ///
     /// - Parameter arguments: The selection `pgrep` is given. It ands them.
     /// - Returns: The matching identifiers, and none when nothing matches.
-    /// - Throws: The run error of `pgrep` (see ``CapturedProcessRun``).
+    /// - Throws: The run error of `pgrep` (see ``CapturedProcessRun``), or a
+    ///   ``CapturedProcessRun/Failure`` with the status and the stderr of
+    ///   `pgrep` when it exits with a status other than 0 or 1.
     static func identifiers(selectedBy arguments: [String]) async throws -> [pid_t] {
         let pgrep = try await CapturedProcessRun.run(
-            toolAt: pgrepPath, arguments: arguments, errorOutput: .inherited)
-        guard pgrep.exitCode != noMatchStatus else {
+            toolAt: pgrepPath, arguments: arguments, errorOutput: .captured)
+        switch pgrep.exitCode {
+        case matchStatus:
+            return matchingIdentifiers(in: pgrep.standardOutput)
+        case noMatchStatus:
             return []
+        default:
+            throw CapturedProcessRun.Failure(
+                command: pgrepName, status: pgrep.exitCode,
+                output: String(decoding: pgrep.standardError, as: UTF8.self))
         }
-        return String(decoding: pgrep.standardOutput, as: UTF8.self)
+    }
+
+    /// The identifiers `pgrep` wrote, one to a line.
+    ///
+    /// - Parameter output: The stdout of `pgrep`.
+    /// - Returns: The identifiers.
+    private static func matchingIdentifiers(in output: Data) -> [pid_t] {
+        String(decoding: output, as: UTF8.self)
             .split(separator: "\n")
             .compactMap { pid_t($0.trimmingCharacters(in: .whitespaces)) }
     }
@@ -108,7 +135,8 @@ enum ProcessCensus {
     ///
     /// - Parameter parent: The identifier of the run that started them.
     /// - Returns: The identifiers, and none when that parent started none.
-    /// - Throws: The locator error, and the run error of `pgrep`.
+    /// - Throws: The locator error, and the error of
+    ///   ``identifiers(selectedBy:)`` when `pgrep` cannot be run or fails.
     static func agentsServingACP(startedBy parent: pid_t) async throws -> [pid_t] {
         try await identifiers(selectedBy: ["-P", String(parent), "-f", agentServingACPPattern()])
     }
@@ -118,7 +146,8 @@ enum ProcessCensus {
     ///
     /// - Returns: The identifiers, and none when every run reaped its own
     ///   child.
-    /// - Throws: The locator error, and the run error of `pgrep`.
+    /// - Throws: The locator error, and the error of
+    ///   ``identifiers(selectedBy:)`` when `pgrep` cannot be run or fails.
     static func orphanedAgentsServingACP() async throws -> [pid_t] {
         try await identifiers(
             selectedBy: [
@@ -132,8 +161,12 @@ enum ProcessCensus {
     /// This is the reap proof every tier-3 suite that spawns an agent
     /// makes, so it stands in one place and the suites cannot drift apart.
     ///
+    /// A census that could not read the process table throws, so the proof
+    /// fails instead of passing on an empty reading.
+    ///
     /// - Parameter sourceLocation: The test line a failure is reported at.
-    /// - Throws: The locator error, and the run error of `pgrep`.
+    /// - Throws: The locator error, and the error of
+    ///   ``identifiers(selectedBy:)`` when `pgrep` cannot be run or fails.
     static func expectNoAgentOutlivedItsRun(
         sourceLocation: SourceLocation = #_sourceLocation
     ) async throws {

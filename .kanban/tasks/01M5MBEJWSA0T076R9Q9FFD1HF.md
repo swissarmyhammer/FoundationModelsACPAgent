@@ -88,6 +88,47 @@ comments:
     - evidence: swift test 1269 passed (141 suites, 1 deliberate known issue); IntegrationTests swift test --no-parallel 31 passed (14 suites); bench 265 OK; no compiler warnings
     - next: commit, review
   timestamp: 2026-10-23T12:52:32.884408+00:00
+- actor: claude-code
+  id: 01m5md7qab325eqtvvqmjb5bt6
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (fd38edd) — 2 findings (2 confirmed, 0 refuted) — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/ProcessCensus.swift:48 (completeness/public-output-contract), ProcessCensus.swift:48 (test-integrity/no-test-cheating). Prior TemporaryKeychain.swift:112 reuse finding checked.
+    - next: implement — ProcessCensus accepts only pgrep exit 0 (matches) and 1 (no match); any other status throws with status and stderr.
+  timestamp: 2026-10-23T12:54:37.643470+00:00
+- actor: claude-code
+  id: 01m5md89av97n27xgm5hfajrg8
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 8 files (CapturedProcessRun.swift new, CapturedProcessRunTests.swift new, BuiltExecutableRun, ProcessCensus, TemporaryKeychain, 3 test files)
+    - test: green — swift test 1269 passed; integration 31 passed; bench 265 OK
+    - commit: fd38edd
+    - review: findings — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/ProcessCensus.swift:48 (x2: pgrep exit 2/3 treated as an empty match)
+  timestamp: 2026-10-23T12:54:56.091499+00:00
+- actor: claude-code
+  id: 01m5mdmka691e2hh2rv3w5538n
+  text: |-
+    Findings ProcessCensus.swift:48 (completeness/public-output-contract, test-integrity/no-test-cheating) implemented (uncommitted, per brief).
+    - `ProcessCensus.identifiers(selectedBy:)` now switches on the pgrep status: 0 -> parse stdout, 1 -> [], any other -> throws `CapturedProcessRun.Failure(command: "pgrep", status:, output: <pgrep stderr>)`. So `expectNoAgentOutlivedItsRun()` (and agentsServingACP / orphanedAgentsServingACP) fail loudly when the census cannot read the process table.
+    - pgrep's stderr was inherited (left on the test log); `CapturedProcessRun.ErrorOutput` gained `.captured` (own stderr pipe, returned in `standardError`), and the census uses it.
+    - Same cause, whole support code: the only other tool run that maps a non-zero exit is TemporaryKeychain.runSecurity, which already threw. Its `SecurityFailure` moved to the shared `CapturedProcessRun.Failure` (command "security <subcommand>", password still left out; description text unchanged), so the two tool-failure errors are one type. BuiltExecutableRun / SignalledExecutableRun / SpawnedACPAgent return the status to tests that assert on it, so nothing there swallows.
+    - Probe: `/usr/bin/pgrep -f '('` exits 2 with "pgrep: Cannot compile regular expression ..." on stderr; a bad option also exits 2; no match exits 1.
+    - TDD: new `ProcessCensusExitStatusTests.aCensusWhosePgrepFailsThrowsItsStatusAndItsErrorOutput` RED ("an error was expected but none was thrown and \"[]\" was returned"), then GREEN. Also added a no-match -> [] test and `CapturedProcessRunTests.aToolWithCapturedErrorOutputGivesBackEachStreamApart`.
+    - Gotcha again: `files edit` replace_all replaced only the first of three doc lines; fixed by hand.
+  timestamp: 2026-10-23T13:01:39.526373+00:00
+- actor: claude-code
+  id: 01m5mdmr0myqwrb53bbsf5nja1
+  text: |-
+    ### implement — changed
+    - evidence: 5 files under IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/ — Support/ProcessCensus.swift, Support/CapturedProcessRun.swift, Support/TemporaryKeychain.swift, ProcessCensusTests.swift, CapturedProcessRunTests.swift (plus the card). RED: `swift test --no-parallel --filter ProcessCensusExitStatusTests` failed (census returned [] for pgrep exit 2). GREEN: `--filter 'ProcessCensusExitStatusTests|CapturedProcessRunTests'` 7/7 passed. Whole `cd IntegrationTests && swift test --no-parallel` 34 tests / 15 suites passed, 0 failed, 0 skipped. Root `swift build` complete. Zero Swift compiler warnings; only `warning:` is SwiftPM's pre-existing "missing creator for mutated node: mlx-swift_Cmlx.bundle". Both 07:52 findings flipped to [x].
+    - next: /review
+  timestamp: 2026-10-23T13:01:44.340014+00:00
+- actor: claude-code
+  id: 01m5mdt9egz1a3a7pe9ftnzkwa
+  text: |-
+    ### test — green
+    - evidence: swift test 1269 passed (141 suites, 1 deliberate known issue); IntegrationTests --no-parallel 34 passed (15 suites); bench 265 OK; no compiler warnings
+    - next: commit, review
+  timestamp: 2026-10-23T13:04:46.032108+00:00
 position_column: doing
 position_ordinal: '80'
 title: KeychainSecretStore takes the keychain as a parameter; its integration test uses a temporary keychain
@@ -115,3 +156,13 @@ CI on main has not passed since 2026-10-20 12:39. The only test failure: `Integr
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
 - [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/TemporaryKeychain.swift:112` `reuse/reuse` — `runSecurity` reimplements the process launch, pipe capture, wait, and status check that existing integration-test helpers already do. Keeping a second copy means two places to fix when the process-running logic changes. Check whether `SignalledExecutableRun` (or a small shared helper it can expose) can run `security` and return its output and termination status. If it can, call it from `runSecurity` and keep only the `SecurityFailure` mapping here. If the existing helpers don't fit (for example, they signal or stream output), extract the shared launch-and-capture code into one helper that all of them call.
+
+## Review Findings (2026-10-23 07:52)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/ProcessCensus.swift:48` `completeness/public-output-contract` — The guard treats every exit status other than 1 (no match) as a successful run and parses stdout. pgrep exits 2 for a syntax error and 3 for a fatal error, both with empty stdout, so `identifiers(selectedBy:)` returns `[]` for them. That makes the no-orphan proof in `expectNoAgentOutlivedItsRun()` pass vacuously when pgrep itself fails. The error is silenced where it should be surfaced, the way the run error already is. Treat only exit 0 and exit 1 as normal. For any other status, throw an error that carries the status and stderr, so `expectNoAgentOutlivedItsRun()` fails loudly instead of reporting no orphans.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/ProcessCensus.swift:48` `test-integrity/no-test-cheating` — The guard treats every non-1 pgrep exit as a successful empty match. A pgrep failure (exit 2 for a bad pattern, exit 3 for a fatal error) with empty stdout returns [], so `expectNoAgentOutlivedItsRun` passes without having checked the process table. The reap proof can pass vacuously, which is a swallowed failure. Accept only exit 0 as matches and exit 1 as no match. Throw on any other status, for example with the `SecurityFailure`-style error carrying the status and stderr, so a failed census fails the test instead of passing it.

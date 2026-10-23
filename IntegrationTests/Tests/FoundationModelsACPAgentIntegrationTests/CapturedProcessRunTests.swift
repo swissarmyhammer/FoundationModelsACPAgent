@@ -56,6 +56,18 @@ struct CapturedProcessRunTests {
         #expect(run.standardError.isEmpty)
     }
 
+    /// A tool whose stderr is captured gives back each stream apart, and its
+    /// exit status.
+    @Test func aToolWithCapturedErrorOutputGivesBackEachStreamApart() async throws {
+        let run = try await CapturedProcessRun.run(
+            toolAt: Self.shellPath, arguments: ["-c", Self.twoStreamScript],
+            errorOutput: .captured)
+
+        #expect(run.exitCode == Self.scriptExitCode)
+        #expect(String(decoding: run.standardOutput, as: UTF8.self) == Self.outputText)
+        #expect(String(decoding: run.standardError, as: UTF8.self) == Self.errorText)
+    }
+
     /// A process with a pipe for each stream gives back each stream apart.
     @Test func aProcessWithTwoPipesGivesBackEachStreamApart() async throws {
         let process = Process()

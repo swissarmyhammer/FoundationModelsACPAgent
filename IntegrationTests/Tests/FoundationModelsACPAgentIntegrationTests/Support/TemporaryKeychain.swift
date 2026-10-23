@@ -15,26 +15,11 @@ import Foundation
 
 /// A Keychain file in a temporary folder of its own, for one test.
 struct TemporaryKeychain {
-    /// Why a `security(1)` step failed.
-    struct SecurityFailure: Error, CustomStringConvertible {
-        /// The subcommand that failed, such as `create-keychain`. The
-        /// arguments are left out, because one of them is the password.
-        let subcommand: String
-
-        /// The exit status of `security`.
-        let status: Int32
-
-        /// What `security` wrote.
-        let output: String
-
-        /// The subcommand, the status and the output.
-        var description: String {
-            "security \(subcommand) exited with status \(status): \(output)"
-        }
-    }
-
     /// The absolute path of `security(1)`.
     private static let securityPath = "/usr/bin/security"
+
+    /// The name `security` is reported under when a step fails.
+    private static let securityName = "security"
 
     /// The prefix of the name of the temporary folder of each Keychain.
     private static let folderPrefix = "acp-agent-test-keychain-"
@@ -107,7 +92,9 @@ struct TemporaryKeychain {
     /// - Parameter arguments: The subcommand, then its arguments.
     /// - Returns: What `security` wrote, to its output and its error output.
     /// - Throws: The run error (see ``CapturedProcessRun``), or a
-    ///   ``SecurityFailure`` when `security` exits with a status other than
+    ///   ``CapturedProcessRun/Failure`` that names `security` and the
+    ///   subcommand, and leaves the other arguments out because one of them
+    ///   is the password, when `security` exits with a status other than
     ///   zero.
     @discardableResult
     private static func runSecurity(_ arguments: [String]) async throws -> String {
@@ -115,8 +102,9 @@ struct TemporaryKeychain {
             toolAt: securityPath, arguments: arguments, errorOutput: .mergedIntoOutput)
         let text = String(decoding: security.standardOutput, as: UTF8.self)
         guard security.exitCode == 0 else {
-            throw SecurityFailure(
-                subcommand: arguments.first ?? "", status: security.exitCode, output: text)
+            let command = ([securityName] + arguments.prefix(1)).joined(separator: " ")
+            throw CapturedProcessRun.Failure(
+                command: command, status: security.exitCode, output: text)
         }
         return text
     }
