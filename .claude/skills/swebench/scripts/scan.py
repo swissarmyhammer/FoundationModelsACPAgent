@@ -1718,9 +1718,16 @@ def loop_problems(R):
 
 def find_recordings(since):
     base = os.environ.get("TMPDIR", "/tmp")
-    dirs = glob.glob(os.path.join(base, "acp-agent-recordings-*"))
-    dirs = [d for d in dirs if os.path.getmtime(d) >= since]
-    return sorted(dirs, key=os.path.getmtime)[-3:]
+    # A dir's own mtime does not change when a nested transcript gets a line,
+    # and other processes make empty dirs. So judge each dir by its newest
+    # transcript, and leave out a dir with no transcript.
+    newest = {}
+    for d in glob.glob(os.path.join(base, "acp-agent-recordings-*")):
+        fs = glob.glob(os.path.join(d, "**", "transcript.jsonl"), recursive=True)
+        if fs:
+            newest[d] = max(os.path.getmtime(p) for p in fs)
+    dirs = [d for d, t in newest.items() if t >= since]
+    return sorted(dirs, key=newest.get)[-3:]
 
 
 def check_live_idle(R, gap_s):

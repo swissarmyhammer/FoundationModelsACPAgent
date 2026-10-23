@@ -1104,5 +1104,29 @@ class AWaitForAChildAgentIsNotAGenerationStall(ScanTestCase):
         self.assertEqual(len(self.scan_gap('[execute] execute shell (01OPB) completed: {"exitCode":0}')), 1)
 
 
+class EmptyRecordingsDirsDoNotHideTheRun(unittest.TestCase):
+    """bench24-1023, 13:15: three new empty acp-agent-recordings-* dirs of
+    other processes were the newest, so find_recordings dropped the dir of
+    the run, and the scan saw no router sessions and no child sessions."""
+
+    def test_the_dir_with_transcripts_is_found_after_newer_empty_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "acp-agent-recordings-RUN"
+            write_rows(run / "01ROOT" / "01S" / "transcript.jsonl", [{"kind": "session"}])
+            os.utime(run, (1000, 1000))
+            for name in ("A", "B", "C"):
+                (Path(tmp) / f"acp-agent-recordings-{name}").mkdir()
+            old = os.environ.get("TMPDIR")
+            os.environ["TMPDIR"] = tmp
+            try:
+                found = scan.find_recordings(since=0)
+            finally:
+                if old is None:
+                    del os.environ["TMPDIR"]
+                else:
+                    os.environ["TMPDIR"] = old
+        self.assertEqual(found, [str(run)])
+
+
 if __name__ == "__main__":
     unittest.main()
