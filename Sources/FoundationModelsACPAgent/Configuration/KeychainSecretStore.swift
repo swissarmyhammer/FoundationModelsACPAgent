@@ -9,28 +9,54 @@ import Security
 ///
 /// - `true`: the synchronizable items of iCloud Keychain. The app uses
 ///   this Keychain.
-/// - `false`: the login Keychain, with no synchronizable item and with the
-///   data protection Keychain off. The CLI uses this Keychain.
+/// - `false`: a file-based Keychain, with no synchronizable item and with the
+///   data protection Keychain off. ``keychain`` names the file: the login
+///   Keychain by default, which the CLI uses, or a Keychain file of its own,
+///   which a test uses.
 ///
 /// The store holds no value, thus each text form of it shows the service and
 /// the Keychain choice only.
 public struct KeychainSecretStore: SecretStore, Equatable {
+    /// The file-based Keychain of a store with `synchronizable: false`.
+    public enum Keychain: Equatable, Sendable {
+        /// The login Keychain: the query names no Keychain, thus a lookup
+        /// reads the user's default Keychain search list.
+        case login
+
+        /// The Keychain file at a URL, such as a temporary Keychain that a
+        /// test made. The query names this Keychain alone, thus no lookup
+        /// reads the login Keychain.
+        case file(URL)
+    }
+
     /// The service attribute (`kSecAttrService`) of each item of the store.
     public let service: String
 
     /// Whether the store reads the synchronizable items of iCloud Keychain
-    /// (`true`), or the login Keychain (`false`).
+    /// (`true`), or a file-based Keychain (`false`).
     public let synchronizable: Bool
+
+    /// The file-based Keychain of the store. It is ``Keychain/login`` for a
+    /// store with `synchronizable: true`.
+    public let keychain: Keychain
 
     /// Makes a store over one service of one Keychain.
     ///
     /// - Parameters:
     ///   - service: The service attribute of each item.
     ///   - synchronizable: `true` for the synchronizable items of iCloud
-    ///     Keychain, `false` for the login Keychain.
-    public init(service: String, synchronizable: Bool) {
+    ///     Keychain, `false` for the file-based Keychain `keychain`.
+    ///   - keychain: The file-based Keychain of a store with
+    ///     `synchronizable: false`: the login Keychain by default. A
+    ///     synchronizable item lives in no Keychain file, thus a store with
+    ///     `synchronizable: true` takes ``Keychain/login`` only.
+    public init(service: String, synchronizable: Bool, keychain: Keychain = .login) {
+        precondition(
+            !synchronizable || keychain == .login,
+            "a synchronizable Keychain store reads iCloud Keychain, never a Keychain file")
         self.service = service
         self.synchronizable = synchronizable
+        self.keychain = keychain
     }
 
     /// The default store of a host that gives no store: the login Keychain
@@ -55,7 +81,7 @@ public struct KeychainSecretStore: SecretStore, Equatable {
     ///   the item is not UTF-8 text. Each error names only `name`.
     public func value(forReference name: String) throws -> String? {
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(lookupQuery(account: name) as CFDictionary, &result)
+        let status = SecItemCopyMatching(try lookupQuery(account: name) as CFDictionary, &result)
         guard status != errSecItemNotFound else {
             return nil
         }
@@ -72,6 +98,11 @@ public struct KeychainSecretStore: SecretStore, Equatable {
     /// service, the account and the Keychain. The query has no key for the
     /// data that a lookup gives back.
     ///
+    /// For a ``Keychain/file(_:)`` Keychain, the query names that Keychain
+    /// twice: as `kSecUseKeychain`, the Keychain that `SecItemAdd` adds to,
+    /// and as the only Keychain of `kSecMatchSearchList`, the search list of
+    /// `SecItemCopyMatching` and `SecItemDelete`.
+    ///
     /// The lookup of this store and the Keychain integration test both use
     /// this query, thus the item that the test adds and the item that the
     /// store reads always have the same attributes.
@@ -80,7 +111,9 @@ public struct KeychainSecretStore: SecretStore, Equatable {
     ///   name.
     /// - Returns: The attributes for `SecItemAdd`, `SecItemDelete`, or the
     ///   start of a lookup query.
-    func itemQuery(account: String) -> [CFString: Any] {
+    /// - Throws: ``SecretStoreError/keychainFailure(reference:status:)`` when
+    ///   the Keychain file cannot be opened. The error names only `account`.
+    func itemQuery(account: String) throws -> [CFString: Any] {
         var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -90,6 +123,10 @@ public struct KeychainSecretStore: SecretStore, Equatable {
         if !synchronizable {
             query[kSecUseDataProtectionKeychain] = false
         }
+        if let fileKeychain = try keychain.makeSecKeychain(forReference: account) {
+            query[kSecUseKeychain] = fileKeychain
+            query[kSecMatchSearchList] = [fileKeychain]
+        }
         return query
     }
 
@@ -98,10 +135,81 @@ public struct KeychainSecretStore: SecretStore, Equatable {
     /// - Parameter account: The account attribute of the item: the reference
     ///   name.
     /// - Returns: The query attributes for `SecItemCopyMatching`.
-    private func lookupQuery(account: String) -> [CFString: Any] {
-        var query = itemQuery(account: account)
+    /// - Throws: The error of ``itemQuery(account:)``.
+    private func lookupQuery(account: String) throws -> [CFString: Any] {
+        var query = try itemQuery(account: account)
         query[kSecMatchLimit] = kSecMatchLimitOne
         query[kSecReturnData] = true
         return query
+    }
+}
+
+extension KeychainSecretStore.Keychain {
+    /// The `SecKeychain` that a query names for this Keychain.
+    ///
+    /// Opening a `SecKeychain` reads no file and asks for no password: a
+    /// lookup through it reads the file, and fails then when the file is
+    /// missing or locked.
+    ///
+    /// - Parameter name: The secret reference name that an error names.
+    /// - Returns: `nil` for ``login``, whose query names no Keychain, and the
+    ///   `SecKeychain` of the file for ``file(_:)``.
+    /// - Throws: ``SecretStoreError/keychainFailure(reference:status:)`` when
+    ///   the file cannot be opened.
+    func makeSecKeychain(forReference name: String) throws -> SecKeychain? {
+        switch self {
+        case .login:
+            return nil
+        case .file(let url):
+            let opener: any KeychainFileOpening = SecKeychainFileOpener()
+            var fileKeychain: SecKeychain?
+            let status = opener.openKeychain(atPath: url.path, into: &fileKeychain)
+            guard status == errSecSuccess else {
+                throw SecretStoreError.keychainFailure(reference: name, status: status)
+            }
+            guard let fileKeychain else {
+                throw SecretStoreError.keychainFailure(reference: name, status: errSecNoSuchKeychain)
+            }
+            return fileKeychain
+        }
+    }
+}
+
+/// Opens a Keychain file as a `SecKeychain` reference.
+///
+/// The one way to name a Keychain file in a `SecItem` query is a `SecKeychain`
+/// reference (`kSecUseKeychain`, `kSecMatchSearchList`), and the one way to
+/// get a reference to a file is `SecKeychainOpen`, which macOS 10.10
+/// deprecated. The data protection Keychain, which has no deprecated API,
+/// keeps no Keychain file, thus it cannot stand in.
+///
+/// The deprecated call stands in one place: ``SecKeychainFileOpener``, whose
+/// witness is itself marked deprecated, so the call inside it gives no
+/// warning. A caller reaches it through this protocol, whose requirement is
+/// not deprecated, so the call site gives no warning either.
+private protocol KeychainFileOpening {
+    /// Opens the Keychain file at `path`.
+    ///
+    /// - Parameters:
+    ///   - path: The absolute path of the Keychain file.
+    ///   - reference: Set to the reference of the file on success.
+    /// - Returns: The status of the open.
+    func openKeychain(atPath path: String, into reference: inout SecKeychain?) -> OSStatus
+}
+
+/// The ``KeychainFileOpening`` over `SecKeychainOpen`.
+private struct SecKeychainFileOpener: KeychainFileOpening {
+    /// Opens the Keychain file at `path` with `SecKeychainOpen`.
+    ///
+    /// The mark matches the deprecation of `SecKeychainOpen`, which keeps the
+    /// call below free of a warning. See ``KeychainFileOpening``.
+    ///
+    /// - Parameters:
+    ///   - path: The absolute path of the Keychain file.
+    ///   - reference: Set to the reference of the file on success.
+    /// - Returns: The status of `SecKeychainOpen`.
+    @available(macOS, deprecated: 10.10, message: "SecKeychainOpen is deprecated; call through KeychainFileOpening")
+    func openKeychain(atPath path: String, into reference: inout SecKeychain?) -> OSStatus {
+        SecKeychainOpen(path, &reference)
     }
 }

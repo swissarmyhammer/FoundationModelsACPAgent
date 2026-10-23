@@ -70,6 +70,45 @@ import Testing
         #expect(store.synchronizable)
     }
 
+    /// A store that names no Keychain reads the login Keychain, thus its
+    /// query names no Keychain file: a lookup reads the default search list.
+    @Test func theDefaultKeychainOfTheStoreIsTheLoginKeychain() throws {
+        let store = KeychainSecretStore(service: Self.dotfolderName, synchronizable: false)
+
+        let query = try store.itemQuery(account: Self.knownReference)
+
+        #expect(store.keychain == .login)
+        #expect(query[kSecUseKeychain] == nil)
+        #expect(query[kSecMatchSearchList] == nil)
+    }
+
+    /// The query of a store over a Keychain file carries that Keychain: as
+    /// the Keychain that `SecItemAdd` adds to, and as the only Keychain of the
+    /// search list of a lookup or a delete. No Keychain file is made: opening
+    /// a `SecKeychain` for a path reads no file.
+    @Test func theQueryOfAFileKeychainStoreCarriesThatKeychain() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("secret-store-tests-\(UUID().uuidString)", isDirectory: true)
+        let given = KeychainSecretStore.Keychain.file(
+            folder.appendingPathComponent("given.keychain-db"))
+        let other = KeychainSecretStore.Keychain.file(
+            folder.appendingPathComponent("other.keychain-db"))
+        let store = KeychainSecretStore(
+            service: Self.dotfolderName, synchronizable: false, keychain: given)
+
+        let query = try store.itemQuery(account: Self.knownReference)
+        let givenKeychain = try #require(try given.makeSecKeychain(forReference: Self.knownReference))
+        let otherKeychain = try #require(try other.makeSecKeychain(forReference: Self.knownReference))
+        let addTarget = try #require(query[kSecUseKeychain]) as AnyObject
+        let searchList = try #require(query[kSecMatchSearchList] as? [AnyObject])
+
+        #expect(store.keychain == given)
+        #expect(CFEqual(addTarget, givenKeychain))
+        #expect(!CFEqual(addTarget, otherKeychain))
+        #expect(searchList.count == 1)
+        #expect(searchList.allSatisfy { CFEqual($0, givenKeychain) })
+    }
+
     // MARK: - SecretStoreError
 
     /// A store error names the reference and the status, and holds no

@@ -4,12 +4,14 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// `KeychainSecretStore` against the real login Keychain of the test host
-/// (ACPA-18, task ^y5zy1hz).
+/// `KeychainSecretStore` against a real Keychain file (ACPA-18, task
+/// ^y5zy1hz; task ^9ffd1hf).
 ///
 /// This suite uses a real external system, the Keychain, thus it is an
-/// integration suite and not a unit suite. The host of this suite must give
-/// Keychain access. When `SecItemAdd` fails, the test fails with the status.
+/// integration suite and not a unit suite. Each test makes a Keychain of its
+/// own (``TemporaryKeychain``) and gives it to the store, so the suite never
+/// uses the login Keychain, which is locked on the self-hosted CI runner, and
+/// never changes the user's Keychain search list.
 @Suite struct KeychainSecretStoreTests {
     /// The reference name of the item that the test adds.
     private static let addedReference = "search-provider"
@@ -20,24 +22,28 @@ import Testing
     /// The value of ``addedReference``. It is a placeholder, not a key.
     private static let addedValue = "placeholder-secret-value"
 
-    /// The prefix of the unique Keychain service of the test. The test adds
-    /// its item under this prefix and a new UUID, thus it never touches an
-    /// item of a real host.
+    /// The prefix of the unique Keychain service of the test.
     private static let testServicePrefix = "acp-agent-secret-store-test-"
 
-    /// The Keychain store with `synchronizable: false` reads an item of the
-    /// login Keychain that `SecItemAdd` added under a unique test service,
-    /// and gives nil for a name with no item.
-    @Test func theLoginKeychainStoreReadsAnAddedItem() throws {
+    /// A store over a temporary Keychain file reads an item that
+    /// `SecItemAdd` added to that Keychain, and gives nil for a name with no
+    /// item. The user's Keychain search list is the same after the test as
+    /// before it.
+    @Test func aStoreOverATemporaryKeychainReadsAnAddedItem() throws {
+        let searchListBefore = try TemporaryKeychain.userSearchList()
+        let keychain = try TemporaryKeychain.make()
+        defer { Self.delete(keychain) }
         let store = KeychainSecretStore(
-            service: Self.testServicePrefix + UUID().uuidString, synchronizable: false)
-        let addStatus = Self.addItem(
-            of: store, account: Self.addedReference, value: Self.addedValue)
-        try #require(addStatus == errSecSuccess, "SecItemAdd gave status \(addStatus)")
-        defer { Self.deleteItem(of: store, account: Self.addedReference) }
+            service: Self.testServicePrefix + UUID().uuidString, synchronizable: false,
+            keychain: .file(keychain.file))
 
+        let addStatus = try Self.addItem(
+            of: store, account: Self.addedReference, value: Self.addedValue)
+
+        try #require(addStatus == errSecSuccess, "SecItemAdd gave status \(addStatus)")
         #expect(try store.value(forReference: Self.addedReference) == Self.addedValue)
         #expect(try store.value(forReference: Self.unknownReference) == nil)
+        #expect(try TemporaryKeychain.userSearchList() == searchListBefore)
     }
 
     // MARK: - Helpers
@@ -50,20 +56,24 @@ import Testing
     ///   - account: The account of the item: the reference name.
     ///   - value: The value of the item.
     /// - Returns: The status of `SecItemAdd`.
+    /// - Throws: The error of the store's query.
     private static func addItem(
         of store: KeychainSecretStore, account: String, value: String
-    ) -> OSStatus {
-        var attributes = store.itemQuery(account: account)
+    ) throws -> OSStatus {
+        var attributes = try store.itemQuery(account: account)
         attributes[kSecValueData] = Data(value.utf8)
         return SecItemAdd(attributes as CFDictionary, nil)
     }
 
-    /// Deletes one generic password item of the Keychain of `store`.
+    /// Deletes `keychain` and its folder, and records a failure as an issue
+    /// of the test.
     ///
-    /// - Parameters:
-    ///   - store: The store whose service and Keychain hold the item.
-    ///   - account: The account of the item: the reference name.
-    private static func deleteItem(of store: KeychainSecretStore, account: String) {
-        SecItemDelete(store.itemQuery(account: account) as CFDictionary)
+    /// - Parameter keychain: The Keychain of the test.
+    private static func delete(_ keychain: TemporaryKeychain) {
+        do {
+            try keychain.delete()
+        } catch {
+            Issue.record(error, "the temporary Keychain was not deleted")
+        }
     }
 }
