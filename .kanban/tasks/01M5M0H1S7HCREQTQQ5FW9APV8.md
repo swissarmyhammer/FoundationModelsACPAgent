@@ -13,7 +13,7 @@ Split from ^w53xmhk (2026-10-23). Two gaps left after ^w53xmhk:
 2. Model switch: the replacement session gets a new Router id that `SnapshotSessionKeys` does not know. Checkpoint owners are Router session ids (HookSession.sessionID), so after the replaced session is released the change feed records nothing under the ACP session id for checkpoints the replacement makes. Map the replacement's Router id to the ACP session (or make the owner the ACP session id).
 
 ## Do
-- [ ] Update the Router pin to the sha that adds the restore hook key; resume passes the cwd key.
+- [x] Update the Router pin to the sha that adds the restore hook key; resume passes the cwd key. (Done in ^w53xmhk round 2, 7bba627, Router 7c07fb29.)
 - [ ] Model-switch replacement: its checkpoints reach the ACP session's change feed and show the ACP session as owner.
 
 ## Tests (first)

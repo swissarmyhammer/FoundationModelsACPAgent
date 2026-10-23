@@ -114,8 +114,24 @@ comments:
     - evidence: `swift test` — 1243 tests in 137 suites passed, 0 failed, 0 skipped, 1 known issue (deliberate withKnownIssue in HarnessSmokeTests); only warning is the known SwiftPM mlx "missing creator" line. `cd bench && uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest` — Ran 265 tests, OK, 0 skipped.
     - next: review/commit (no code changed in this step)
   timestamp: 2026-10-23T09:48:41.008347+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m5m2t7dm12115ycv0031qyj1
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7bba627) — 0 findings, 0 confirmed, 1 refuted, 7 attempted; 3 files reviewed, 2 .kanban files ignored; both prior findings at SessionResume.swift:215 checked
+    - next: moved to done
+  timestamp: 2026-10-23T09:52:29.620186+00:00
+- actor: claude-code
+  id: 01m5m2tjewzwjvbtf5gedma0g7
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — SessionResume.swift, SessionSetup.swift, HookCompositionTests.swift; Router pin 7c07fb29
+    - test: green — swift test 1243 passed; bench 265 OK, 0 skipped
+    - commit: 7bba627
+    - review: clean — 0 findings
+  timestamp: 2026-10-23T09:52:40.924287+00:00
+position_column: done
+position_ordinal: ffff9080
 title: Sessions in one cwd share one snapshot timeline (hook session key = hash of the resolved cwd)
 ---
 User design 2026-10-23: sessions in one process with the same cwd share ONE snapshot timeline. A rollback restores the whole work tree anyway (SnapshotStore.swift:459-468), so one per-cwd timeline is the honest model; per-session timelines go stale when another session rolls back.
