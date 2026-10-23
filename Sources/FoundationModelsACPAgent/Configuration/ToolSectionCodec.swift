@@ -173,13 +173,15 @@ public struct FilesToolOptions: ToolSectionOptions, KeyCheckedSection {
     }
 }
 
-/// The `tools.shell:` body — the one option of
-/// `withShell(storeDirectory:sandbox:outputChunkStream:)` that config may
-/// set. The sandbox comes from the `sandbox:` section and the chunk stream
-/// is runtime wiring, so neither is here.
+/// The `tools.shell:` body — the one option of the shell capability that
+/// config may set: the directory of its shell store. The sandbox comes from
+/// the `sandbox:` section, and the chunk stream and the session id are
+/// runtime wiring, so none of them is here.
 public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
     /// Where the shell capability stores command output, or `nil` for the
-    /// capability's own default location.
+    /// shell store of the project in the local root of the home
+    /// (``AgentHome/shellStoreDirectory(of:)``). The sessions of one store
+    /// directory share one store.
     public var storeDirectory: URL?
 
     /// The YAML spelling of each key.

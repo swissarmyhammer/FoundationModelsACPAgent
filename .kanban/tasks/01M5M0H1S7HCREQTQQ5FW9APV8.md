@@ -27,6 +27,17 @@ comments:
     - implement: stuck — 0 files. Needs Multitool: `hostSession: @Sendable (String) async -> String?` on SnapshotsGraph / SnapshotsCapability (feed fan-out by mapped id, SnapshotChange.owner and Checkpoint.owner mapped) + a reverse mapping (host session -> live store owner) so rollbackTimeline works after a model switch.
     - next: when a Multitool session is live, send it this; then pin, record R2 -> A in SnapshotSessionKeys in applyModelSlot, pass the resolver, test first.
   timestamp: 2026-10-23T10:24:51.174283+00:00
+- actor: claude-code
+  id: 01m5m67ape3b5674yn6nna63jg
+  text: |-
+    ### Multitool 17f92b6 (2026-10-23) — unblocks this card
+    - Pin Multitool to 17f92b6 (on top of a042548).
+    - `SnapshotsGraph.init(store:sessionKey:hostSession:storeOwner:)` and `SnapshotsCapability.init(store:sessionKey:hostSession:storeOwner:)`; both closures `@Sendable (String) async -> String?`, default `{ _ in nil }`.
+    - hostSession: store owner (Router id) -> host (ACP) id; nil keeps the owner. The feed maps every id in change.owners and fans out once per distinct mapped id that sessionKey knows; sessionKey is now called with the HOST id. SnapshotChange.owner and GraphQL Checkpoint.owner go through the map. Model verbs (tools.snapshots list/take/rollback) map owner via hostSession too.
+    - storeOwner: host id -> live store owner; rollbackTimeline(sessionId: A) uses store.rollback(owner: storeOwner(A) ?? A).
+    - One store = one change feed, which keeps the closures of the FIRST endpoint built over it: give every endpoint/capability on a store the same closures (one process-wide map, as SnapshotSessionKeys).
+    - Do: record R2 -> A (and A -> R2 for storeOwner) in applyModelSlot; forget on release/delete. Tests first: after a model switch, a take by the replacement appears as a change for A with owner A; rollbackTimeline(A) works after the replaced session is released.
+  timestamp: 2026-10-23T10:52:04.686591+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
 position_column: doing

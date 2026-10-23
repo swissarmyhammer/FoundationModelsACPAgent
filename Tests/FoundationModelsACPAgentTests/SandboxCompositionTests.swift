@@ -138,9 +138,9 @@ import Testing
     func aThrowingPreflightRefusesTheCommandWithTheReason() async throws {
         let root = Self.makeResolvedDirectory(named: "preflight")
         let builder = MultiTool.Builder()
-        try SandboxComposition.composeShell(
+        SandboxComposition.composeShell(
             into: builder,
-            storeDirectory: Self.makeResolvedDirectory(named: "store"),
+            store: try ShellStore(storeDirectory: Self.makeResolvedDirectory(named: "store")),
             sandbox: RefusingPreflightSandbox())
         let registry = try builder.buildRegistry()
 

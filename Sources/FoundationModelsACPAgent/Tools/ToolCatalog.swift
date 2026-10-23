@@ -40,6 +40,16 @@ public struct SessionSurface: Sendable {
     /// ``shutdown()`` gives the lease back.
     let codeContextLease: CodeContextLease?
 
+    /// The lease of the session on the shared shell store of its store
+    /// directory, or `nil` when the shell section is off. ``shutdown()``
+    /// gives the lease back.
+    let shellStoreLease: ShellStoreLease?
+
+    /// The ACP session id that the shell records as the owner of each
+    /// command, or `nil` when the shell section is off. The activation of
+    /// the session binds it.
+    let shellSessionIdentity: ShellSessionIdentity?
+
     /// The outcome of each MCP server of the session, in mount order: the
     /// config-derived servers first, then the client-supplied servers, then
     /// the refused client-supplied servers that have a name. The MCP server
@@ -93,8 +103,9 @@ public struct SessionSurface: Sendable {
     ) {
         self.init(
             tools: tools, serverPool: serverPool, filesReadVerb: filesReadVerb,
-            shellOutput: shellOutput, codeContextLease: nil, mcpServerOutcomes: [],
-            inlineSettleGrace: inlineSettleGrace, agents: nil, runCallJoins: RunCallJoinTable())
+            shellOutput: shellOutput, codeContextLease: nil, shellStoreLease: nil, shellSessionIdentity: nil,
+            mcpServerOutcomes: [], inlineSettleGrace: inlineSettleGrace, agents: nil,
+            runCallJoins: RunCallJoinTable())
     }
 
     /// Makes a session surface.
@@ -109,6 +120,10 @@ public struct SessionSurface: Sendable {
     ///   - codeContextLease: The lease of the session on the code context
     ///     of its working directory, or `nil` when the code context section
     ///     is off.
+    ///   - shellStoreLease: The lease of the session on the shell store of
+    ///     its store directory, or `nil` when the shell section is off.
+    ///   - shellSessionIdentity: The ACP session id that the shell records,
+    ///     or `nil` when the shell section is off.
     ///   - mcpServerOutcomes: The outcome of each MCP server, in mount
     ///     order.
     ///   - mcpServers: The connected MCP servers, in mount order. Empty by
@@ -124,6 +139,8 @@ public struct SessionSurface: Sendable {
         filesReadVerb: (any FoundationModels.Tool)?,
         shellOutput: ShellOutputChunkStream?,
         codeContextLease: CodeContextLease?,
+        shellStoreLease: ShellStoreLease?,
+        shellSessionIdentity: ShellSessionIdentity?,
         mcpServerOutcomes: [MCPComposition.ServerOutcome],
         mcpServers: [FoundationModelsMultitool.MCPServer] = [],
         inlineSettleGrace: TimeInterval,
@@ -135,6 +152,8 @@ public struct SessionSurface: Sendable {
         self.filesReadVerb = filesReadVerb
         self.shellOutput = shellOutput
         self.codeContextLease = codeContextLease
+        self.shellStoreLease = shellStoreLease
+        self.shellSessionIdentity = shellSessionIdentity
         self.mcpServerOutcomes = mcpServerOutcomes
         self.mcpServers = mcpServers
         self.inlineSettleGrace = inlineSettleGrace
@@ -156,6 +175,8 @@ public struct SessionSurface: Sendable {
             filesReadVerb: filesReadVerb,
             shellOutput: shellOutput,
             codeContextLease: codeContextLease,
+            shellStoreLease: shellStoreLease,
+            shellSessionIdentity: shellSessionIdentity,
             mcpServerOutcomes: mcpServerOutcomes,
             mcpServers: mcpServers,
             inlineSettleGrace: inlineSettleGrace,
@@ -183,15 +204,17 @@ public struct SessionSurface: Sendable {
     }
 
     /// Releases what the surface holds outside the session: it stops the
-    /// agent runs, then gives back its lease on the code context, then it
-    /// shuts the server pool down. The code context stops when this was its
-    /// last lease; another session of the same working directory keeps it
-    /// running. The session lifecycle calls this after the session sweep:
-    /// a pool shutdown before the sweep drops the transports that the
-    /// settling runs still need.
+    /// agent runs, then gives back its leases on the code context and on the
+    /// shell store, then it shuts the server pool down. The code context
+    /// stops, and the registry drops the shell store, when this was its last
+    /// lease; another session of the same working directory keeps each one.
+    /// The session lifecycle calls this after the session sweep: a pool
+    /// shutdown before the sweep drops the transports that the settling runs
+    /// still need.
     public func shutdown() async {
         await stopAgentRuns()
         await codeContextLease?.release()
+        await shellStoreLease?.release()
         await serverPool.shutdownAll()
     }
 }
@@ -267,6 +290,29 @@ public enum ToolCatalog {
         /// The lease of the build on the code context of the working
         /// directory, or `nil` when the `codeContext:` section is off.
         let codeContextLease: CodeContextLease?
+
+        /// The lease of the build on the shared shell store of its store
+        /// directory, or `nil` when the shell section is off.
+        let shellStoreLease: ShellStoreLease?
+
+        /// The ACP session id that the shell records as the owner of each
+        /// command, or `nil` when the shell section is off.
+        let shellSessionIdentity: ShellSessionIdentity?
+    }
+
+    /// What the shell mount of one session holds: the live output stream,
+    /// the lease on the shared store, and the session id each command
+    /// records.
+    struct ShellMount: Sendable {
+        /// The host-owned live view of every shell run of the session.
+        let output: ShellOutputChunkStream
+
+        /// The lease of the session on the shared shell store.
+        let storeLease: ShellStoreLease
+
+        /// The ACP session id that each command records, bound at the
+        /// activation of the session.
+        let sessionIdentity: ShellSessionIdentity
     }
 
     /// Builds the composed session surface: the Multitool session tools —
@@ -337,6 +383,8 @@ public enum ToolCatalog {
             filesReadVerb: built.registry.tools[Self.filesReadVerbPath],
             shellOutput: built.shellOutput,
             codeContextLease: built.codeContextLease,
+            shellStoreLease: built.shellStoreLease,
+            shellSessionIdentity: built.shellSessionIdentity,
             mcpServerOutcomes: built.mcpServerOutcomes,
             mcpServers: built.mcpServers,
             inlineSettleGrace: context.inlineSettleGrace,
@@ -402,9 +450,9 @@ public enum ToolCatalog {
     ///
     /// - Parameter context: What the builder calls need.
     /// - Returns: The built registry and the MCP composition around it.
-    /// - Throws: Whatever the MCP composition,
-    ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`,
-    ///   `withMCP(servers:)` or `buildRegistry()` throws.
+    /// - Throws: Whatever the shell store, the sandbox, the MCP composition,
+    ///   `withMCP(servers:)` or `buildRegistry()` throws. After a failure
+    ///   the build gives its shell store lease back.
     static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
         let builder = MultiTool.Builder()
         if case .enabled(let options) = context.configuration.tools.files {
@@ -416,30 +464,85 @@ public enum ToolCatalog {
                 recordsChanges: options.recordsChanges,
                 excludePatterns: options.exclude ?? [])
         }
-        var shellOutput: ShellOutputChunkStream?
-        if case .enabled(let options) = context.configuration.tools.shell {
-            // The host-owned live view of every shell run: the
-            // capability tees each raw chunk into it, the
-            // terminal projection reads it, and the settlement reads
-            // `snapshot(for:)` on the same stream.
-            let stream = ShellOutputChunkStream()
-            shellOutput = stream
-            // Each shell command inherits the environment of the process,
-            // not the context environment: `withShell(...)` of Multitool
-            // takes no environment, and its runner starts each child with
-            // the process environment.
-            // The store is the folder that `tools.shell.storeDirectory`
-            // names, or the shell store of the project in the local root of
-            // the home: never the working directory, which can be in the
-            // synced root.
+        let shell = try await composeShell(into: builder, context: context)
+        do {
+            return try await composeRest(into: builder, context: context, shell: shell)
+        } catch {
+            await shell?.storeLease.release()
+            throw error
+        }
+    }
+
+    /// Leases the shared shell store of the session from
+    /// ``ShellStores/shared``, and queues the shell capability over it in
+    /// `builder`, or does nothing when the shell section is off.
+    ///
+    /// The store is the folder that `tools.shell.storeDirectory` names, or
+    /// the shell store of the project in the local root of the home: never
+    /// the working directory, which can be in the synced root. The sessions
+    /// of one store directory share one store, so each reads the commands
+    /// that another ran. Each command records the ACP session id that the
+    /// activation of the session binds in the returned identity; until the
+    /// bind it records none.
+    ///
+    /// Each shell command inherits the environment of the process, not the
+    /// context environment: `withShell(...)` of Multitool takes no
+    /// environment, and its runner starts each child with the process
+    /// environment.
+    ///
+    /// - Parameters:
+    ///   - builder: The builder that gets the shell capability.
+    ///   - context: The session whose root set, sandbox section and home the
+    ///     shell reads.
+    /// - Returns: The shell mount of the session, or `nil` when the section
+    ///   is off.
+    /// - Throws: Whatever the store or the sandbox throws. After a failure
+    ///   the lease is given back.
+    static func composeShell(
+        into builder: MultiTool.Builder, context: CatalogContext
+    ) async throws -> ShellMount? {
+        guard case .enabled(let options) = context.configuration.tools.shell else {
+            return nil
+        }
+        let lease = try await ShellStores.shared.acquire(
+            directory: options.storeDirectory
+                ?? context.settingsFolders.home.shellStoreDirectory(of: context.workingDirectory))
+        // The host-owned live view of every shell run: the capability tees
+        // each raw chunk into it, the terminal projection reads it, and the
+        // settlement reads `snapshot(for:)` on the same stream.
+        let mount = ShellMount(
+            output: ShellOutputChunkStream(), storeLease: lease, sessionIdentity: ShellSessionIdentity())
+        let identity = mount.sessionIdentity
+        do {
             try SandboxComposition.composeShell(
                 into: builder,
-                storeDirectory: options.storeDirectory
-                    ?? context.settingsFolders.home.shellStoreDirectory(of: context.workingDirectory),
+                store: lease.store,
+                sessionID: { identity.current },
                 configuration: context.configuration.sandbox,
                 rootSet: [context.workingDirectory] + context.additionalRoots,
-                outputChunkStream: stream)
+                outputChunkStream: mount.output)
+        } catch {
+            await lease.release()
+            throw error
         }
+        return mount
+    }
+
+    /// Queues every capability after the files and the shell in `builder`,
+    /// connects the MCP servers, leases the code context, and builds the
+    /// registry: the rest of ``makeRegistry(context:)``.
+    ///
+    /// - Parameters:
+    ///   - builder: The builder that already holds the files and the shell.
+    ///   - context: What the builder calls need.
+    ///   - shell: The shell mount of the session, or `nil` when the shell
+    ///     section is off.
+    /// - Returns: The built registry and the MCP composition around it.
+    /// - Throws: Whatever the MCP composition, `withMCP(servers:)`, the code
+    ///   context or `buildRegistry()` throws.
+    private static func composeRest(
+        into builder: MultiTool.Builder, context: CatalogContext, shell: ShellMount?
+    ) async throws -> BuiltRegistry {
         WebComposition.compose(into: builder, context: context)
         if context.configuration.tools.git.mountedOptions != nil {
             builder.withGit(root: context.workingDirectory)
@@ -482,8 +585,10 @@ public enum ToolCatalog {
                 pool: builder.serverPool,
                 mcpServers: composed.servers,
                 mcpServerOutcomes: composed.outcomes,
-                shellOutput: shellOutput,
-                codeContextLease: codeContextLease)
+                shellOutput: shell?.output,
+                codeContextLease: codeContextLease,
+                shellStoreLease: shell?.storeLease,
+                shellSessionIdentity: shell?.sessionIdentity)
         } catch {
             await codeContextLease?.release()
             throw error

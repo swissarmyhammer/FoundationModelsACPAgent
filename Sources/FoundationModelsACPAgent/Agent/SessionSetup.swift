@@ -709,6 +709,10 @@ extension RoutedACPAgent {
         }
 
         let sessionId = SessionId(rawValue: session.id.description)
+        // Each shell command of the session records this ACP session id as
+        // its owner. A model slot switch replaces the Router session over
+        // the same surface and binds nothing, so the id stays the ACP id.
+        composition.surface.shellSessionIdentity?.bind(sessionId.rawValue)
 
         // Assemble the command registry now the session exists: the six
         // builtins capture a context bound to the live

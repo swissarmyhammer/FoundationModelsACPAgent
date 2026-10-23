@@ -95,28 +95,31 @@ public enum SandboxComposition {
     ///
     /// - Parameters:
     ///   - builder: The registry builder the capability mounts into.
-    ///   - storeDirectory: The folder the capability keeps the history and
-    ///     the captured output of the commands in.
+    ///   - store: The shell store the capability keeps the history and the
+    ///     captured output of the commands in, which the other sessions of
+    ///     its store directory share.
+    ///   - sessionID: The ACP session id of the session, read when each
+    ///     command starts, which each command records as its owner.
     ///   - configuration: The decoded `sandbox:` section.
     ///   - rootSet: The session root set, working directory first.
     ///   - outputChunkStream: The host-owned live output stream the
     ///     capability tees raw bytes into, or `nil` to
     ///     tee nothing.
     /// - Throws: ``SandboxCompositionError/emptyRootSet`` for an empty
-    ///   root set, and whatever
-    ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`
-    ///   throws when the store cannot prepare.
+    ///   root set.
     static func composeShell(
         into builder: MultiTool.Builder,
-        storeDirectory: URL,
+        store: ShellStore,
+        sessionID: @escaping @Sendable () -> String?,
         configuration: SandboxConfiguration,
         rootSet: [URL],
         outputChunkStream: ShellOutputChunkStream? = nil
     ) throws {
-        try composeShell(
+        composeShell(
             into: builder,
-            storeDirectory: storeDirectory,
-            sandbox: makeShellSandbox(rootSet: rootSet, configuration: configuration),
+            store: store,
+            sessionID: sessionID,
+            sandbox: try makeShellSandbox(rootSet: rootSet, configuration: configuration),
             outputChunkStream: outputChunkStream,
             defaultWorkingDirectory: rootSet.first)
     }
@@ -127,8 +130,10 @@ public enum SandboxComposition {
     ///
     /// - Parameters:
     ///   - builder: The registry builder the capability mounts into.
-    ///   - storeDirectory: The folder the capability keeps the history and
-    ///     the captured output of the commands in.
+    ///   - store: The shell store the capability keeps the history and the
+    ///     captured output of the commands in.
+    ///   - sessionID: The session id each command records as its owner,
+    ///     read when the command starts. The default records none.
     ///   - sandbox: The confinement every command spawns under.
     ///   - outputChunkStream: The host-owned live output stream the
     ///     capability tees raw bytes into, or `nil` to
@@ -137,18 +142,17 @@ public enum SandboxComposition {
     ///     `workingDirectory` runs in — the session working directory —
     ///     or `nil` to keep the capability's own process-directory
     ///     default.
-    /// - Throws: Whatever
-    ///   `withShell(storeDirectory:sandbox:outputChunkStream:defaultWorkingDirectory:)`
-    ///   throws when the store cannot prepare.
     static func composeShell(
         into builder: MultiTool.Builder,
-        storeDirectory: URL,
+        store: ShellStore,
+        sessionID: @escaping @Sendable () -> String? = { nil },
         sandbox: any CommandSandbox,
         outputChunkStream: ShellOutputChunkStream? = nil,
         defaultWorkingDirectory: URL? = nil
-    ) throws {
-        try builder.withShell(
-            storeDirectory: storeDirectory,
+    ) {
+        builder.withShell(
+            store: store,
+            sessionID: sessionID,
             sandbox: sandbox,
             outputChunkStream: outputChunkStream,
             defaultWorkingDirectory: defaultWorkingDirectory)

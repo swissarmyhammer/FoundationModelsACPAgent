@@ -52,6 +52,41 @@ comments:
     Chosen: Multitool change (option 2) — a lazy `sessionID: @Sendable () -> String?` on `ShellCapability(store:...)` / `withShell(store:...)`, read when a command runs. This repo fills it with the ACP session id after makeBudgetedSession; it stays the ACP id across model-slot switches. Not option 1 (host-given Router session id): a slot switch keeps two Router sessions alive at once, so they cannot share one id.
     Waiting: the Multitool session ended before it got the request; the user is asked to start one.
   timestamp: 2026-10-23T09:25:27.182415+00:00
+- actor: claude-code
+  id: 01m5m62w0xbsmjxw0nepvpj0dc
+  text: |-
+    ### Resumed (2026-10-23): blocker gone, Multitool a042548 on main
+    - Package.resolved (gitignored) Multitool 7e6c35a -> a0425485046a8d4f26894a3df435bc67593041e7, `swift package resolve` only; checkout is at a042548.
+    - API: `ShellStore(storeDirectory:) throws`, `ShellCapability(store:sessionID: @Sendable () -> String?, sandbox:, outputChunkStream:, defaultWorkingDirectory:)` (non-throwing), `withShell(store:sessionID:...)`. ShellRunner calls `sessionID()` once at `startCommand` (record owner); Execute report `sessionID`, GetLinesResult.sessionID, GrepHistoryMatch.sessionID read the owner.
+    - Plan: `ShellStores` registry actor (like CodeContextLeases) keyed by the standardized store directory path; `ShellStoreLease { store, release }`; a `ShellSessionIdentity` box per surface whose closure the capability reads; bound once to the ACP id in `activateSession` (new + resume both go through it; a model-slot switch does not, and reuses `entry.surface.tools`, so the id stays the ACP id). Release in `SessionSurface.shutdown`.
+    - No list verb exists in the shell capability (execute/getLines/grepHistory); "list" = grepHistory over the store without commandID.
+  timestamp: 2026-10-23T10:49:38.589588+00:00
+- actor: claude-code
+  id: 01m5m70w2jgps853s690sbse75
+  text: |-
+    ### Implementation landed (2026-10-23)
+    - New `Tools/ShellStoreLease.swift`: `ShellStoreLease {store, release}`, `actor ShellStores` (one registry per process, ref-counted by key, last release drops the store), `ShellSessionIdentity` (Mutex<String?>, `bind(_:)`, `current`).
+    - `ToolCatalog.composeShell(into:context:)` acquires the lease for `tools.shell.storeDirectory ?? home.shellStoreDirectory(of: cwd)` and mounts `withShell(store:sessionID: { identity.current } ...)` via `SandboxComposition.composeShell(store:sessionID:...)`. makeRegistry gives the lease back on any later failure. BuiltRegistry and SessionSurface carry `shellStoreLease` + `shellSessionIdentity`; `SessionSurface.shutdown()` releases the lease.
+    - `activateSession` (new + resume) binds the ACP session id once; `applyModelSlot` reuses `entry.surface.tools` and binds nothing, so commands after a slot switch still record the ACP id. Agent runs share the root registry, so their commands record the root ACP id.
+    - Discovery (bug found by the tests): keying by `standardizedFileURL.path` gave two keys for one directory, because Foundation strips `/private` only once the path exists (first lease: `/private/tmp/...`, later leases: `/tmp/...`). The key now resolves the longest existing ancestor with `realpath(3)` and appends the missing components.
+    - getLines renders lines as `N: text`; there is no list verb, so "list" in the tests is grepHistory over the whole store.
+    - Tests: `ShellStoreSharingTests` (B reads A's command with sessionID A in report/getLines/grep; two cwds separate; concurrent 400+400 lines read back whole by the other session and every log record whole; closing one of two keeps the store; last close drops it) and `ShellSessionOwnerTests` (runCode -> shell.execute after a switch to flash records the ACP id, and the Router id differs). SandboxCompositionTests preflight test moved to `composeShell(store:)`.
+    - Full `swift test`: 1257 tests in 140 suites passed, 1 known issue (pre-existing withKnownIssue). The only build warning is the SwiftPM `missing creator for mutated node ... mlx-swift_Cmlx.bundle` line, from the mlx build, not from this change.
+  timestamp: 2026-10-23T11:06:01.682530+00:00
+- actor: claude-code
+  id: 01m5m70zw1fxy4snws9xbn4qsv
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` 1257 tests / 140 suites passed (1 known issue, pre-existing); new suites ShellStoreSharingTests (5) + ShellSessionOwnerTests (1) red first (compile: no shellStoreLease/shellSessionIdentity; then 3 failing expectations from the /private key bug), now green. Files: Sources/FoundationModelsACPAgent/Tools/ShellStoreLease.swift (new), Tools/ToolCatalog.swift, Tools/SandboxComposition.swift, Agent/SessionSetup.swift, Configuration/ToolSectionCodec.swift (doc), Tests/FoundationModelsACPAgentTests/ShellStoreSharingTests.swift (new), ShellSessionOwnerTests.swift (new), Support/ShellVerbSupport.swift, SandboxCompositionTests.swift; Package.resolved (gitignored) Multitool -> a0425485046a8d4f26894a3df435bc67593041e7. Not committed.
+    - next: /review
+  timestamp: 2026-10-23T11:06:05.569945+00:00
+- actor: claude-code
+  id: 01m5m7629q91cqrskr09ygp7qw
+  text: |-
+    ### test — green
+    - evidence: swift test — 1257 tests in 140 suites passed, 0 failed, 0 skipped (1 deliberate known issue); bench unittest (uv, swebench 5.0.2) 265 OK; ShellStoreSharingTests x3 — 5/5 each run
+    - next: commit, review
+  timestamp: 2026-10-23T11:08:51.895807+00:00
 position_column: doing
 position_ordinal: '80'
 title: Sessions in one cwd share one shell store (history, log and command records)
@@ -65,8 +100,8 @@ User design 2026-10-23: one shell log per cwd, shared by the sessions of that cw
 A Multitool change (no Multitool session is live): a public shareable `ShellStore` (wraps ShellState, `init(storeDirectory:)`) and `ShellCapability.init(store:sandbox:outputChunkStream:defaultWorkingDirectory:)`. Sandbox, output stream and default working directory stay per session. Decide in Multitool whether get lines / grep / list commands show all sessions' commands of the store.
 
 ## Do
-- [ ] Process-wide registry keyed by the resolved store directory (it can be overridden by tools.shell.storeDirectory), ref-counted like the code context.
-- [ ] Each session's ShellCapability uses the shared store.
+- [x] Process-wide registry keyed by the resolved store directory (it can be overridden by tools.shell.storeDirectory), ref-counted like the code context.
+- [x] Each session's ShellCapability uses the shared store.
 
 ## Tests (first)
 - Session B can list and read a command that session A ran in the same cwd.
