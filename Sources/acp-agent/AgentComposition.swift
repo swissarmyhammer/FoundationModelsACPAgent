@@ -135,7 +135,7 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
     /// The CLI adds its own choices only: ``dotfolderName``, the home that
@@ -146,6 +146,11 @@ enum AgentComposition {
     /// The CLI gives no secret store. The default store of the library is
     /// the login Keychain under the service ``dotfolderName``, and that is
     /// the store of the CLI (ACPA-18, D101).
+    ///
+    /// The CLI gives no Hugging Face token provider. The default provider of
+    /// the library, `.environment`, reads `HF_TOKEN`, then
+    /// `~/.cache/huggingface/token`, and that is the token of the CLI
+    /// (task ^4avf24e).
     ///
     /// With the XDG home, the hooks keep their data and the snapshot
     /// timeline in the XDG data home (ACPA-15, D96), the skills marketplace

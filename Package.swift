@@ -158,6 +158,25 @@ private let metricsPackage = "swift-metrics"
 /// The version floor of `metricsPackage`, matching Extras.
 private let metricsVersionFloor: Version = "2.11.0"
 
+/// The Hugging Face Hub client package. Its `TokenProvider` is in the public
+/// API of the library: a host gives one provider to
+/// `ComposedAgent.compose(...)`, and the live router sends its token on each
+/// download and on each sizing request (task ^4avf24e). Router and Extras
+/// declare it from the same URL and the same floor, so the package identity
+/// stays one and this declaration adds no checkout.
+private let huggingFacePackage = "swift-huggingface"
+
+/// The URL of `huggingFacePackage`, the exact URL Router and Extras declare.
+private let huggingFacePackageURL = "https://github.com/huggingface/\(huggingFacePackage)"
+
+/// The version floor of `huggingFacePackage`, matching Router and Extras.
+private let huggingFaceVersionFloor: Version = "0.9.0"
+
+/// The product of `huggingFacePackage` that declares `TokenProvider`. The
+/// library target links it, and so does the unit test target, which gives a
+/// provider to the composition and reads its token back.
+private let huggingFaceProduct = Target.Dependency.product(name: "HuggingFace", package: huggingFacePackage)
+
 /// The one product of `loggingPackage`. The library target links it with the
 /// other telemetry APIs, and the agent CLI links it to bootstrap
 /// `LoggingSystem`.
@@ -386,6 +405,8 @@ let package = Package(
         makeGitHubPackage(organization: appleOrganization, name: tracingPackage, from: tracingVersionFloor),
         makeGitHubPackage(organization: appleOrganization, name: loggingPackage, from: loggingVersionFloor),
         makeGitHubPackage(organization: appleOrganization, name: metricsPackage, from: metricsVersionFloor),
+        // The Hub client of the token provider — see `huggingFacePackage`.
+        .package(url: huggingFacePackageURL, from: huggingFaceVersionFloor),
         // The GraphQL engine of the `settings` endpoint — see
         // `graphQLProducts`.
         makeGitHubPackage(organization: graphQLSwiftOrganization, name: graphQLPackage, from: graphQLVersionFloor),
@@ -399,7 +420,8 @@ let package = Package(
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts + [mcpSDKProduct] + telemetryAPIProducts + graphQLProducts,
+            dependencies: familyProducts + [mcpSDKProduct, huggingFaceProduct] + telemetryAPIProducts
+                + graphQLProducts,
             // The builtin configuration — see `builtinConfigurationResource`.
             resources: [.copy(builtinConfigurationResource)]
         ),
@@ -476,6 +498,8 @@ let package = Package(
         // live loader on a scripted model — see `routerTestSupportProduct`.
         // The `settings` endpoint suites give variables to the endpoint as
         // GraphQL `Map` values and read its schema — see `graphQLProducts`.
+        // The token suite gives a `TokenProvider` to the live router and
+        // reads its token back — see `huggingFaceProduct`.
         //
         // `acp-print` is NOT here: the suites that spawn a built binary or
         // load a real model live in the nested `IntegrationTests` package,
@@ -494,6 +518,7 @@ let package = Package(
                 tracingProduct,
                 inMemoryTracingProduct,
                 metricsTestKitProduct,
+                huggingFaceProduct,
             ]
                 + familyProducts + multitoolTestProducts + [mcpSDKProduct] + graphQLProducts
         ),

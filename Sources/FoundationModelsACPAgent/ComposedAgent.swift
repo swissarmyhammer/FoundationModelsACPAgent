@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsHooks
 import FoundationModelsRouter
+import HuggingFace
 
 /// The composed agent of a host: the configuration stack of a dotfolder
 /// name, a router over a model path, and the `RoutedACPAgent` that
@@ -9,7 +10,7 @@ import FoundationModelsRouter
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:reporting:)``
+/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -145,6 +146,15 @@ public struct ComposedAgent: Sendable {
     ///     `external` (``RoutedACPAgent/userDeviceTokens``). The `acp-agent`
     ///     CLI gives no value: its stdio and in-process connections carry no
     ///     token and are `userDevice`.
+    ///   - huggingFaceTokenProvider: The provider of the Hugging Face token
+    ///     of the host (task ^4avf24e), a `TokenProvider` of swift-huggingface.
+    ///     The live router sends its token on each download of a model and on
+    ///     each sizing request of the model metadata. The default
+    ///     `.environment` reads `HF_TOKEN`, then `~/.cache/huggingface/token`,
+    ///     as the `acp-agent` CLI always did. An app gives its own provider,
+    ///     for example `.custom { ... }` over its Keychain, so the agent does
+    ///     not read the token in the Hugging Face folder of the user. The stub
+    ///     path ignores it, because it downloads and sizes nothing.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws a
     ///     download bar makes the object first, hands it here, and
@@ -167,6 +177,7 @@ public struct ComposedAgent: Sendable {
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
         userDeviceTokens: Set<String> = [],
+        huggingFaceTokenProvider: TokenProvider = .environment,
         reporting progress: ResolutionProgress? = nil
     ) async throws -> ComposedAgent {
         let configuration = try ConfigurationLoader(
@@ -182,7 +193,8 @@ public struct ComposedAgent: Sendable {
                 gatedBy: stubChunkGate,
                 recordingInto: try makeRecordingsDirectory(),
                 hooks: hooks.dispatcher,
-                home: home),
+                home: home,
+                huggingFaceTokenProvider: huggingFaceTokenProvider),
             hooks: hooks,
             configuration: configuration,
             reporting: progress,
@@ -278,23 +290,31 @@ public struct ComposedAgent: Sendable {
     ///     cache (``AgentHome/modelCacheDirectory``) from it. The stub path
     ///     ignores it, because it downloads nothing and keeps its stub
     ///     metadata in a throwaway folder.
+    ///   - huggingFaceTokenProvider: The provider of the Hugging Face token of
+    ///     the host. The live path gives it to the loader, for each download,
+    ///     and to the `HuggingFaceMetadataSource` of the router, for each
+    ///     sizing request. The stub path ignores it.
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
     /// - Throws: The directory-creation error of the stub cache.
-    private static func makeRouter(
+    static func makeRouter(
         for modelSource: ModelSource,
         gatedBy chunkGate: String?,
         recordingInto recordingsDirectory: URL,
         hooks: HookDispatcher,
-        home: AgentHome
+        home: AgentHome,
+        huggingFaceTokenProvider: TokenProvider
     ) throws -> Router {
         switch modelSource {
         case .live:
             Router(
                 cacheDir: home.routerCacheDirectory,
                 recordingsDir: recordingsDirectory,
-                loader: makeLiveModelLoader(modelCacheDirectory: home.modelCacheDirectory), hooks: hooks)
+                metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider),
+                loader: makeLiveModelLoader(
+                    modelCacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
+                hooks: hooks)
         case .stub:
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
@@ -304,16 +324,19 @@ public struct ComposedAgent: Sendable {
         }
     }
 
-    /// Makes the loader of the live path over one model cache folder.
+    /// Makes the loader of the live path over one model cache folder and one
+    /// token provider.
     ///
-    /// - Parameter modelCacheDirectory: The Hugging Face hub cache folder of
-    ///   the home (``AgentHome/modelCacheDirectory``). Each download writes
-    ///   to it, and each load reads the weights from it, also when
-    ///   `HF_HUB_CACHE` or `HF_HOME` of the process names a different
-    ///   folder.
+    /// - Parameters:
+    ///   - modelCacheDirectory: The Hugging Face hub cache folder of the home
+    ///     (``AgentHome/modelCacheDirectory``). Each download writes to it,
+    ///     and each load reads the weights from it, also when `HF_HUB_CACHE`
+    ///     or `HF_HOME` of the process names a different folder.
+    ///   - tokenProvider: The provider of the Hugging Face token of the host,
+    ///     which each download sends.
     /// - Returns: The live loader over that cache.
-    static func makeLiveModelLoader(modelCacheDirectory: URL) -> LiveModelLoader {
-        LiveModelLoader(cacheDirectory: modelCacheDirectory)
+    static func makeLiveModelLoader(modelCacheDirectory: URL, tokenProvider: TokenProvider) -> LiveModelLoader {
+        LiveModelLoader(cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider)
     }
 
     /// Makes the loader of the stub path.

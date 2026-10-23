@@ -115,7 +115,8 @@ struct ModelCacheDirectoryTests {
     @Test func theLiveLoaderOfAGivenFolderUsesThatFolder() {
         let hostCache = Self.makeFolder(named: "live-host")
 
-        let loader = ComposedAgent.makeLiveModelLoader(modelCacheDirectory: hostCache)
+        let loader = ComposedAgent.makeLiveModelLoader(
+            modelCacheDirectory: hostCache, tokenProvider: .environment)
 
         #expect(Self.folder(in: loader, at: Self.liveLoaderCachePath) == hostCache.standardizedFileURL.path)
     }
@@ -127,7 +128,8 @@ struct ModelCacheDirectoryTests {
             name: try DotfolderName(AgentComposition.dotfolderName),
             environment: ProcessInfo.processInfo.environment)
 
-        let loader = ComposedAgent.makeLiveModelLoader(modelCacheDirectory: home.modelCacheDirectory)
+        let loader = ComposedAgent.makeLiveModelLoader(
+            modelCacheDirectory: home.modelCacheDirectory, tokenProvider: .environment)
 
         let defaultFolder = Self.folder(in: LiveModelLoader(), at: Self.liveLoaderCachePath)
         #expect(defaultFolder != nil)
