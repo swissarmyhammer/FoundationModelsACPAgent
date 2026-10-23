@@ -1051,5 +1051,36 @@ class ATranscriptTimeCanBeAnIsoText(ScanTestCase):
         self.assert_start_and_stall()
 
 
+class AChildSessionKeepsTheRunLive(ScanTestCase):
+    """The run bench24-1023 of 2026-10-23: the root transcript of
+    django__django-13710 had no new line for 442 s, and the scan reported a
+    stall. But a child agent session wrote its transcript in the recordings
+    dir all that time. Work in a child session is not a stall."""
+
+    QUIET = 600
+
+    def scan_live(self, child_age):
+        """Scan a live root transcript that is QUIET s old, and a child
+        transcript in the recordings dir that is child_age s old."""
+        now = dt.datetime.now()
+        write_transcript(self.transcripts, FIRST, [running_row("01OPA", 1, now - dt.timedelta(seconds=self.QUIET))])
+        self.R["live_dirs"] = [str(self.transcripts)]
+        child = Path(self.tmp.name) / "acp-agent-recordings-X" / "01ROOT" / "01CHILD" / "transcript.jsonl"
+        write_rows(child, [{"kind": "session", "seq": 1}])
+        stamp = (now - dt.timedelta(seconds=child_age)).timestamp()
+        os.utime(child, (stamp, stamp))
+        quiet(self.scan_kept_transcripts)
+        quiet(scan.scan_recordings, [str(child.parent.parent.parent)], self.R)
+        quiet(scan.check_live_idle, self.R, STALL_GAP)
+
+    def test_a_busy_child_session_is_not_a_stall(self):
+        self.scan_live(child_age=5)
+        self.assertEqual(self.problems_with("no new line"), [])
+
+    def test_a_quiet_root_and_a_quiet_child_are_a_stall(self):
+        self.scan_live(child_age=self.QUIET)
+        self.assertEqual(len(self.problems_with("no new line")), 1, self.problem_texts())
+
+
 if __name__ == "__main__":
     unittest.main()

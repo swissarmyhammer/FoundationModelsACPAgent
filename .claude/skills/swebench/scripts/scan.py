@@ -1448,8 +1448,9 @@ def scan_transcripts(dirs, gap_s, R):
             a, b = ts(rows_t[0]["ts"]), ts(rows_t[-1]["ts"])
             idle = (now - b).total_seconds()
             print(f"   span {a:%H:%M:%S}Z .. {b:%H:%M:%S}Z = {(b - a).total_seconds():.0f}s; last line {idle:.0f}s ago")
-            if R.get("live_dirs") and any(f.startswith(d) for d in R["live_dirs"]) and idle > max(gap_s, 300):
-                R["problems"].append((72, f"live transcript has no new line for {idle:.0f}s", f))
+            if R.get("live_dirs") and any(f.startswith(d) for d in R["live_dirs"]):
+                # check_live_idle decides, after the recordings show the child sessions.
+                R.setdefault("live_idle", []).append((idle, f))
         for r0, r1 in zip(rows_t, rows_t[1:]):
             g = r1["ts"] - r0["ts"]
             if g < gap_s:
@@ -1716,6 +1717,21 @@ def find_recordings(since):
     return sorted(dirs, key=os.path.getmtime)[-3:]
 
 
+def check_live_idle(R, gap_s):
+    """Report a live root transcript with no new line, when no child session works.
+
+    A child agent session (the `agents` tool) writes its transcript in the
+    recordings dir, not in the root transcript. While it works, the root
+    transcript waits with no new line, and that is not a stall.
+    """
+    child_idle = time.time() - R["rec_newest"] if R.get("rec_newest") else None
+    for idle, f in R.get("live_idle", []):
+        quiet_s = idle if child_idle is None else min(idle, child_idle)
+        if quiet_s > max(gap_s, 300):
+            child = "no child session" if child_idle is None else f"newest child session line {child_idle:.0f}s ago"
+            R["problems"].append((72, f"live transcript has no new line for {idle:.0f}s ({child})", f))
+
+
 def scan_recordings(dirs, R):
     print("== recordings (tool-selection model sessions only; no ACP traffic is kept here)")
     rec = R["rec"]
@@ -1726,6 +1742,8 @@ def scan_recordings(dirs, R):
             note(f"missing {d}")
             continue
         fs = glob.glob(os.path.join(d, "**", "transcript.jsonl"), recursive=True)
+        if fs:
+            R["rec_newest"] = max([R.get("rec_newest", 0)] + [os.path.getmtime(p) for p in fs])
         errs = 0
         pv = set()
         for p in fs:
@@ -1967,6 +1985,7 @@ def main():
              lambda: check_same_run(R, a.preds),
              lambda: scan_recordings(a.recordings if a.recordings is not None
                                      else find_recordings(R.get("start_epoch", time.time() - 6 * 3600)), R),
+             lambda: check_live_idle(R, a.gap),
              lambda: scan_score(a.preds, R), lambda: report_tools(R), lambda: report_loops(R),
              lambda: progress(R, a.timeout),
              lambda: problems(R)]
