@@ -129,8 +129,24 @@ comments:
     - evidence: swift test 1269 passed (141 suites, 1 deliberate known issue); IntegrationTests --no-parallel 34 passed (15 suites); bench 265 OK; no compiler warnings
     - next: commit, review
   timestamp: 2026-10-23T13:04:46.032108+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5mdwqkn5tsyb343kp6am660
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (1f98ec7) — 0 findings, 0 confirmed, 0 refuted; 5 files reviewed, 7 attempted, 0 failed; all prior Review Findings items checked
+    - next: none — task moved to done
+  timestamp: 2026-10-23T13:06:06.069925+00:00
+- actor: claude-code
+  id: 01m5mdx5yzw3j2cxancz78xfag
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — ProcessCensus.swift, CapturedProcessRun.swift, TemporaryKeychain.swift, 2 test files
+    - test: green — swift test 1269 passed; integration 34 passed; bench 265 OK
+    - commit: 1f98ec7
+    - review: clean — 0 findings
+  timestamp: 2026-10-23T13:06:20.767351+00:00
+position_column: done
+position_ordinal: ffff9480
 title: KeychainSecretStore takes the keychain as a parameter; its integration test uses a temporary keychain
 ---
 User decision 2026-10-23: make the keychain a parameter of `KeychainSecretStore`, and have the integration test create and use a temporary keychain.
