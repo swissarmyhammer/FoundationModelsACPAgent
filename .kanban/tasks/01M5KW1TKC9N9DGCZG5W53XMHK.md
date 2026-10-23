@@ -1,6 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5kwd612c9ncw4zkn22rcvj8
+  text: |-
+    ### Hooks 4f463f2 (2026-10-23) — use it in this card
+    - Update the Hooks pin to 4f463f2.
+    - `Checkpoint.owner: String` (SnapshotHook passes session.sessionID); `.pending` and `.rollback(to:)` carry the owner who asked.
+    - `SnapshotChange.owners: Set<String>` (owners of the key at send time) and `SnapshotChange.owner` (= checkpoint.owner). Fan change events out to `change.owners`; show "session X's edit" from `owner`. Init is now `SnapshotChange(sessionKey:checkpoint:owners:)` — fix any code that builds one.
+    - `SnapshotStore.shared(directory:)`: one store per resolved directory in the process (weakly held). AgentHooks must use it instead of `SnapshotStore(directory:)`.
+    - Breaking: v1 timelines (old trailer) now throw `unreadableTimeline`. SnapshotInventory / the snapshots command must handle that as an unreadable timeline (warning), not crash.
+    - Multitool's SnapshotsCapability maps key -> one session id; with owners in the change, ask Multitool to fan out by `change.owners` (asked 2026-10-23).
+  timestamp: 2026-10-23T08:00:30.754428+00:00
 position_column: todo
 position_ordinal: '80'
 title: Sessions in one cwd share one snapshot timeline (hook session key = hash of the resolved cwd)
