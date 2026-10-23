@@ -13,6 +13,16 @@ comments:
     - Breaking: v1 timelines (old trailer) now throw `unreadableTimeline`. SnapshotInventory / the snapshots command must handle that as an unreadable timeline (warning), not crash.
     - Multitool's SnapshotsCapability maps key -> one session id; with owners in the change, ask Multitool to fan out by `change.owners` (asked 2026-10-23).
   timestamp: 2026-10-23T08:00:30.754428+00:00
+- actor: claude-code
+  id: 01m5kx5xfcyz68vv4wbwyarb47
+  text: |-
+    ### Multitool 743a022 (2026-10-23) — use it in this card
+    - Update the Multitool pin to 743a0223412f8ddc7315995154d20f2337d3d4c6 (builds on Hooks 4f463f2; contains d2f6446 shell store too).
+    - BREAKING: the `sessionId: (key) -> String?` resolver is gone. `SnapshotsCapability(store:sessionKey:)` and `SnapshotsGraph(store:sessionKey:)` now. Fix RoutedACPAgent.swift:419 and any other caller.
+    - The change feed records one change per session in `change.owners`; a session that the sessionKey resolver maps to nil gets no change. With the shared cwd key, A's take/rollback reaches A and B.
+    - Graph: `owner: ID!` on Checkpoint and SnapshotChange. Checkpoint ids stay `<sessionId>:<index>`.
+    - Test: two sessions in one cwd — a take by A appears as a change for B with owner A.
+  timestamp: 2026-10-23T08:14:01.196528+00:00
 position_column: todo
 position_ordinal: '80'
 title: Sessions in one cwd share one snapshot timeline (hook session key = hash of the resolved cwd)
