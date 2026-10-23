@@ -36,8 +36,24 @@ comments:
     - evidence: `swift test` — 1237 tests in 137 suites passed, 0 failed, 0 skipped; the 1 known issue is the deliberate withKnownIssue in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps. `python3 -m unittest` in bench — 265 run, OK, 1 skip (swebench not installed on system python 3.8); rerun with swebench==5.0.2 on python 3.12 (`uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest`) — 265 run, OK, 0 skipped. Only compiler-side output: SwiftPM build-system note "missing creator for mutated node" for the mlx-swift_Cmlx.bundle dependency product, not from package sources. No files changed.
     - next: commit
   timestamp: 2026-10-23T01:11:31.857077+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5k550v74sm2thk7xgnb3593
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (642a076) — 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed; 6 files reviewed, 2 .kanban files excluded by .reviewignore
+    - next: none — task moved to done
+  timestamp: 2026-10-23T01:14:06.055384+00:00
+- actor: claude-code
+  id: 01m5k55bd794a1kenahg32011h
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files (Package.swift, ComposedAgent.swift, GatedStubModel.swift, AgentComposition.swift, 2 tests, local Router pin 4cb3879b)
+    - test: green — swift test 1237 passed; bench unittest 265 OK
+    - commit: 642a076
+    - review: clean — 0 findings
+  timestamp: 2026-10-23T01:14:16.871663+00:00
+position_column: done
+position_ordinal: ffff8f80
 title: 'AgentHome: the host gives the Hugging Face token provider, and Router''s metadata cache follows the local home'
 ---
 A follow-up of ^98a44n7 (AgentHome), which recorded two parts that wait on other packages. This is one of them; the other is the CodeContext index folder, still open.
