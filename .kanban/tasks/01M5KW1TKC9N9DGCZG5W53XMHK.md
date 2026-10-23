@@ -72,7 +72,25 @@ comments:
     - evidence: `swift test` — 1243 tests in 137 suites passed, 0 failed, 1 known issue (HarnessSmokeTests orderedSubsequenceAssertionChecksOrderWithGaps, deliberate harness proof); one SwiftPM build-system warning (missing creator for mutated node, mlx-swift_Cmlx.bundle), not from source. `cd bench && uv run --no-project --python 3.12 --with swebench==5.0.2 python -m unittest` — 265 tests OK, 0 skipped (the swebench skip is gone in the isolated env; nothing installed globally).
     - next: commit.
   timestamp: 2026-10-23T09:14:15.291281+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m5m12pn3ve0gb76672rvcazb
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (c301e3f) — 2 findings, 2 confirmed, 0 refuted — Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:215 (completeness/invariant-propagation), Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:215 (swift/initialization)
+    - note: both findings are on the resume path, which the card description moves to ^fw9apv8 (resume needs a Router change). The findings are recorded as written; the implementer resolves them here or records a true conflict as a blocker.
+    - next: implement the two open findings, then /review again
+  timestamp: 2026-10-23T09:22:10.211928+00:00
+- actor: claude-code
+  id: 01m5m137n0209wzkkpwj90yyzn
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: stuck on resume only (Router restoreSession takes no hook key) — 15 files
+    - test: green — swift test 1243 passed; bench 265 OK, 0 skipped (uv + swebench 5.0.2)
+    - commit: c301e3f
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:215 (x2: resume records the session id, not the cwd key)
+    - next: the fix needs Router ^yfc5bxw (`restoreSession(..., hookSessionKey:)`). When Router sends the sha, iteration 2 pins it, passes `HookLineage(workingDirectory:, origin: .resumed)` on resume, records the cwd key, flips the resume test. The resume half of ^fw9apv8 is then done here.
+  timestamp: 2026-10-23T09:22:27.616504+00:00
+position_column: review
 position_ordinal: '80'
 title: Sessions in one cwd share one snapshot timeline (hook session key = hash of the resolved cwd)
 ---
@@ -94,3 +112,13 @@ User design 2026-10-23: sessions in one process with the same cwd share ONE snap
 - Two cwds: two timelines.
 - A symlinked path to the same folder gives the same key.
 - Deleting one of two sessions keeps the timeline; deleting the last removes it. #share-per-cwd
+
+## Review Findings (2026-10-23 04:14)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [ ] `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:215` `completeness/invariant-propagation` — SessionSetup.createSession records the working directory's projectKey as the snapshot timeline key (SessionSetup line 651: `record(hookLineage.sessionKey, for: sessionId)`), enforcing the invariant that sessions in the same working directory share one timeline. SessionResume.restoreSession violates this invariant by recording the session ID itself as the key instead of the working directory's projectKey (line 215: `record(params.sessionId.rawValue, for: params.sessionId)`). This breaks timeline sharing—a resumed session ends up with its own isolated timeline instead of sharing with new sessions in the same working directory. Line 215 should create a HookLineage for the resumed session and record the working directory's projectKey, matching SessionSetup's pattern: replace with `let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .resumed)` (after the session restoration) and `SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: params.sessionId)`. The sessionId remains the same for the resumed session, so only the timeline key mapping needs to be corrected.
+- [ ] `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift:215` `swift/initialization` — The session key being recorded is the session ID's rawValue (a ULID string) instead of the working directory's project key. This breaks the snapshot timeline sharing mechanism—each session would receive a unique snapshot key instead of sharing with other sessions in the same working directory. Change to `SnapshotSessionKeys.shared.record(AgentHome.projectKey(of: workingDirectory), for: params.sessionId)` to match the SessionSetup pattern and ensure sessions in the same working directory share the same snapshot timeline.
