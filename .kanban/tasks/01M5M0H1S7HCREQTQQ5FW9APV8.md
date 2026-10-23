@@ -102,10 +102,26 @@ comments:
     - evidence: swift test — 1267 tests in 141 suites passed (1 deliberate known issue); bench unittest (uv, swebench 5.0.2) 265 OK
     - next: commit, review
   timestamp: 2026-10-23T11:39:26.443291+00:00
+- actor: claude-code
+  id: 01m5m934ykw8g4jn0hpe1ayh8z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (123ffe7) — 0 findings, 0 confirmed, 0 refuted (7 validator runs attempted, 0 failed); 1 file reviewed, 2 .kanban files excluded by .reviewignore; all 7 prior findings checked
+    - next: task moved to done
+  timestamp: 2026-10-23T11:42:13.459363+00:00
+- actor: claude-code
+  id: 01m5m93hr11pwb8kgn10edw6z8
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — AgentHooks.swift (dedupe SnapshotSessionKeys)
+    - test: green — swift test 1267 passed; bench 265 OK
+    - commit: 123ffe7
+    - review: clean — 0 findings
+  timestamp: 2026-10-23T11:42:26.561776+00:00
 depends_on:
 - 01M5KW1TKC9N9DGCZG5W53XMHK
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffff9380
 title: Resumed sessions and model-switch replacements join the shared per-cwd snapshot timeline
 ---
 Split from ^w53xmhk (2026-10-23). Two gaps left after ^w53xmhk:
