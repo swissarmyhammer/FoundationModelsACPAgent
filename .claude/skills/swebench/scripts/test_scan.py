@@ -1110,6 +1110,56 @@ class AWaitForAChildAgentIsNotAGenerationStall(ScanTestCase):
         self.assertEqual(len(self.scan_gap('[execute] execute shell (01OPB) completed: {"exitCode":0}')), 1)
 
 
+class AnIdleRootWhileItsChildWorksIsNotAStall(ScanTestCase):
+    """bench24-1023b, django__django-15061: 879 s between seq 24294 and seq
+    25133 of the root. Seq 24294 is the `answerEnded` mail: the root ended its
+    answer and waited. Its child session wrote 838 rows in that gap. The scan
+    reported a generation stall of the root.
+
+    The same instance, django__django-14999, has the opposite case: the child
+    was queued (a `mailQueued` mail) at 07:30:16, and it did not start before
+    07:53:31, while the root worked. That gap is real (the child starved), and
+    the scan must keep it."""
+
+    GAP = STALL_GAP + 30
+
+    def answer_ended(self, seq, t):
+        return {"kind": "mail", "seq": seq, "ts": apple_time(t),
+                "entry": {"entryId": f"01MAIL{seq}", "segments": [
+                    {"contentJSON": '{"answerEnded": {"_0": "01ANSWER"}}', "type": "structure"}]}}
+
+    def mail_queued(self, seq, t):
+        return {"kind": "mail", "seq": seq, "ts": apple_time(t),
+                "entry": {"entryId": f"01MAIL{seq}", "segments": [
+                    {"contentJSON": '{"mailQueued": {"_0": {}}}', "type": "structure"}]}}
+
+    def scan(self, quiet_rows, busy_rows):
+        session = self.transcripts / FIRST
+        write_rows(session / "01QUIET" / "transcript.jsonl", quiet_rows)
+        write_rows(session / "agent-runs" / "01BUSY" / "transcript.jsonl", busy_rows)
+        quiet(self.scan_kept_transcripts)
+        return self.R["tools"]["stalls"]
+
+    def busy(self, first_seq):
+        return [running_row("01OPB", first_seq + i, OLD_START + dt.timedelta(seconds=10 * (i + 1)))
+                for i in range(self.GAP // 10 - 1)]
+
+    def test_a_root_that_ended_its_answer_waits_while_its_child_works(self):
+        end = OLD_START + dt.timedelta(seconds=self.GAP)
+        root = [self.answer_ended(1, OLD_START), completed_row("01OPA", 900, end)]
+        self.assertEqual(self.scan(root, self.busy(100)), [])
+
+    def test_a_queued_child_that_does_not_start_while_the_root_works_is_a_stall(self):
+        end = OLD_START + dt.timedelta(seconds=self.GAP)
+        child = [self.mail_queued(1, OLD_START), completed_row("01OPA", 900, end)]
+        self.assertEqual(len(self.scan(child, self.busy(100))), 1)
+
+    def test_an_ended_answer_with_no_other_busy_session_is_a_stall(self):
+        end = OLD_START + dt.timedelta(seconds=self.GAP)
+        root = [self.answer_ended(1, OLD_START), completed_row("01OPA", 900, end)]
+        self.assertEqual(len(self.scan(root, [])), 1)
+
+
 class EmptyRecordingsDirsDoNotHideTheRun(unittest.TestCase):
     """bench24-1023, 13:15: three new empty acp-agent-recordings-* dirs of
     other processes were the newest, so find_recordings dropped the dir of

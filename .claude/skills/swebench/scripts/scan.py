@@ -1408,6 +1408,14 @@ def skill_name(args, text):
     return m.group(1) if m else "?"
 
 
+def answer_ended(r):
+    """True when the transcript row r is the router mail that ends an answer."""
+    if r.get("kind") != "mail":
+        return False
+    return any('"answerEnded"' in (s.get("contentJSON") or "")
+               for s in (r.get("entry") or {}).get("segments") or [])
+
+
 def scan_transcripts(dirs, gap_s, R):
     """Read each transcript: stalls, tool results and errors, 'running' notices, start times.
 
@@ -1424,11 +1432,19 @@ def scan_transcripts(dirs, gap_s, R):
     print(f"== transcripts: {len(files)} file(s)")
     T = R["tools"]
     now = dt.datetime.now(dt.timezone.utc)
+    rows_of = {}
     for f in files:
-        rows = read_jsonl(f)
-        for r in rows:
+        rows_of[f] = read_jsonl(f)
+        for r in rows_of[f]:
             if "ts" in r:
                 r["ts"] = apple_seconds(r["ts"])
+    # The row times of each transcript of an instance (the root and its child
+    # sessions), to tell a session that waits from a session that stalls.
+    times_of = {}
+    for f, rows in rows_of.items():
+        times_of.setdefault(instance_of(f), []).append((f, sorted(r["ts"] for r in rows if r.get("ts"))))
+    for f in files:
+        rows = rows_of[f]
         inst = instance_of(f)
         print(f"-- {inst}: {f}  lines={len(rows)}")
         # Each instance gets a line in the loop report, also with no result.
@@ -1460,6 +1476,12 @@ def scan_transcripts(dirs, gap_s, R):
             # The end of a child agent session: the root waited for it, and
             # no generation ran in the root. That is not a stall.
             if CHILD_RESULT.match(r1.get("text") or ""):
+                continue
+            # The session ended its answer and waited, while an other session
+            # of the instance (its child) worked. That is not a stall. A
+            # session that was queued and did not start is still a stall.
+            if answer_ended(r0) and any(
+                    g2 != f and any(r0["ts"] < t < r1["ts"] for t in tl) for g2, tl in times_of[inst]):
                 continue
             # The same stall can show two times, before two lines with near seq
             # numbers. Report it one time.
