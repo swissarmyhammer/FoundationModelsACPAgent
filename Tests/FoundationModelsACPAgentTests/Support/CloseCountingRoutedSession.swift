@@ -8,14 +8,10 @@ import FoundationModelsRouter
 // A test that must prove when a Router session closes, and how many
 // times, wraps a real session in this double. Each call goes to the real
 // session. The double adds two facts: the number of `close()` calls, and
-// each fork it made, so a test can read the count of a child too.
+// each elicitation answer that went through it.
 
 /// A `RoutedSession` that sends each call to a real session and counts
 /// the calls to ``close()``.
-///
-/// ``fork(workingDirectory:)`` wraps the real child in a new double and
-/// keeps it in ``forks``, so a test can read the close count of the
-/// child as well as the count of the parent.
 ///
 /// A `nonisolated` requirement goes to the real session at once, because
 /// the real session declares it `nonisolated` too. A synchronous requirement
@@ -29,9 +25,6 @@ actor CloseCountingRoutedSession: RoutedSession {
 
     /// The number of calls to ``close()``.
     private(set) var closeCount = 0
-
-    /// Each double that ``fork(workingDirectory:)`` made, in fork order.
-    private(set) var forks: [CloseCountingRoutedSession] = []
 
     /// Each elicitation answer that went through ``respond(elicitationId:response:)``,
     /// in call order.
@@ -86,19 +79,6 @@ actor CloseCountingRoutedSession: RoutedSession {
     func close() async {
         closeCount += 1
         await wrapped.close()
-    }
-
-    /// Forks the real session, and wraps the child in a new double that
-    /// ``forks`` keeps.
-    ///
-    /// - Parameter workingDirectory: The working directory of the child.
-    /// - Returns: The new double over the real child.
-    /// - Throws: Whatever the fork of the real session throws.
-    func fork(workingDirectory: URL?) async throws -> any RoutedSession {
-        let child = CloseCountingRoutedSession(
-            wrapping: try await wrapped.fork(workingDirectory: workingDirectory))
-        forks.append(child)
-        return child
     }
 
     // MARK: The mail and the signals, which go to the real session at once

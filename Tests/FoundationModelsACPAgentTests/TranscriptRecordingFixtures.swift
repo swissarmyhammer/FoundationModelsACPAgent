@@ -208,6 +208,28 @@ struct RecordedProjectFixture {
         return session.id
     }
 
+    /// Records one session as a fork of `parent` and returns its id.
+    ///
+    /// A recorded fork tree keeps the folder of each fork in the folder of
+    /// its parent, and Router reads the `parentId` of a session from that
+    /// layout. Router still restores such a tree, but a live session can
+    /// not fork. So this call records a plain session with
+    /// ``makeRecordedSession(prompts:agentSpawn:title:additionalDirectories:updatedAt:in:)``,
+    /// and then moves its folder into the folder of `parent`.
+    ///
+    /// - Parameter parent: The recorded session whose folder gets the fork.
+    /// - Returns: The fork's ULID — the name of its directory.
+    /// - Throws: Whatever ``makeRecordedSession(prompts:agentSpawn:title:additionalDirectories:updatedAt:in:)``
+    ///   or the move throws.
+    func makeRecordedFork(of parent: ULID) async throws -> ULID {
+        let fork = try await makeRecordedSession(prompts: ["fork prompt"])
+        try FileManager.default.moveItem(
+            at: root.appendingPathComponent(fork.description, isDirectory: true),
+            to: root.appendingPathComponent(parent.description, isDirectory: true)
+                .appendingPathComponent(fork.description, isDirectory: true))
+        return fork
+    }
+
     /// Rewrites the last-activity instant in the `index.md` of one closed
     /// session folder: the one shared way a test pins `updatedAt`, for a
     /// sort order, a wire value, or a cursor walk.

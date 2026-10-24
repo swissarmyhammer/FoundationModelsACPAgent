@@ -209,23 +209,20 @@ import Testing
 
     // MARK: - The listability predicate
 
+    /// A fork from a recorded fork tree is excluded: its folder is in the
+    /// folder of its parent. See ``RecordedProjectFixture/makeRecordedFork(of:)``.
     @Test("a fork is excluded because its parentId is set")
     func forkIsExcludedBecauseItsParentIdIsSet() async throws {
         let fixture = try await Self.makeFixture()
         defer { fixture.cleanUp() }
-        let parent = fixture.profile.standard.makeSession(
-            workingDirectory: fixture.workingDirectory, recordingRoot: fixture.root)
-        _ = try await parent.respond(to: "parent prompt")
-        let fork = try await parent.fork(workingDirectory: nil)
-        _ = try await fork.respond(to: "fork prompt")
-        await fork.close()
-        await parent.close()
+        let parent = try await fixture.recorded.makeRecordedSession(prompts: ["parent prompt"])
+        let fork = try await fixture.recorded.makeRecordedFork(of: parent)
 
         let ids = try fixture.store.sessions(inProject: fixture.workingDirectory)
             .map(\.sessionId.description)
 
-        #expect(ids == [parent.id.description])
-        #expect(!ids.contains(fork.id.description))
+        #expect(ids == [parent.description])
+        #expect(!ids.contains(fork.description))
     }
 
     @Test("a zero-prompt session never wrote a transcript, so it does not list")

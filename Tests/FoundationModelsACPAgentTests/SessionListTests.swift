@@ -273,25 +273,22 @@ import Testing
         #expect(response.sessions.map(\.sessionId.rawValue) == [kept.description])
     }
 
+    /// A fork from a recorded fork tree does not list: its folder is in the
+    /// folder of its parent. See ``RecordedProjectFixture/makeRecordedFork(of:)``.
     @Test
     func aForkDoesNotAppearBecauseItsParentIdIsSet() async throws {
         let fixture = try await Self.makeWireFixture()
         let project = try await Self.makeProject(in: fixture, label: "fork")
-        let parent = project.profile.standard.makeSession(
-            workingDirectory: project.workingDirectory, recordingRoot: project.root)
-        _ = try await parent.respond(to: "parent prompt")
-        let fork = try await parent.fork(workingDirectory: nil)
-        _ = try await fork.respond(to: "fork prompt")
-        await fork.close()
-        await parent.close()
+        let parent = try await project.makeRecordedSession(prompts: ["parent prompt"])
+        let fork = try await project.makeRecordedFork(of: parent)
 
         let response = try await fixture.connection.listSessions(
             Self.listRequest(cwd: project.workingDirectory))
         await fixture.close()
 
         let listed = response.sessions.map(\.sessionId.rawValue)
-        #expect(listed == [parent.id.description])
-        #expect(!listed.contains(fork.id.description))
+        #expect(listed == [parent.description])
+        #expect(!listed.contains(fork.description))
     }
 
     @Test

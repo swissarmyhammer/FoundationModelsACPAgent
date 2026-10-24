@@ -134,23 +134,27 @@ import Testing
     }
 
     /// After close, a descendant the session adopted is closed too: its own
-    /// `streamSessionEvents()` subscription finishes, so no orphan fork keeps
-    /// a run or a submission in the model queue.
+    /// `streamSessionEvents()` subscription finishes, so no orphan child keeps
+    /// a run or a submission in the model queue. The child is a child agent
+    /// session of the session, in the same recording root.
     @Test
     func closingASessionClosesItsDescendants() async throws {
         let fixture = try await Self.makeFixture(script: [.endPass])
         let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
-        let fork = try await session.fork(workingDirectory: nil)
-        await fixture.harness.agent.adoptDescendant(fork, of: fixture.sessionId)
-        let forkEvents = await fork.streamSessionEvents()
-        let drainedFork = Task {
-            for await _ in forkEvents {}
+        let child = session.profile.standard.makeSession(
+            workingDirectory: session.workingDirectory,
+            recordingRoot: session.recordingDirectory.deletingLastPathComponent(),
+            agentSpawn: SessionRecord.AgentSpawn(parentSessionId: session.id, parentToolCallId: "tool-call-1"))
+        await fixture.harness.agent.adoptDescendant(child, of: fixture.sessionId)
+        let childEvents = await child.streamSessionEvents()
+        let drainedChild = Task {
+            for await _ in childEvents {}
         }
 
         _ = try await fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: fixture.sessionId))
 
-        await drainedFork.value
+        await drainedChild.value
         await fixture.close()
     }
 
