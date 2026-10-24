@@ -176,13 +176,9 @@ struct PromptExecution: Sendable {
     /// `runCode` and shell calls were completing.
     ///
     /// The bound compares with ``GenerationStall/timeWithoutProgress``
-    /// only. The Router counts that time only while a generation call of
-    /// the submission holds its place in the model queue (Router task
-    /// ^ake8sax). A wait for a place in the queue and a tool body between
-    /// two generation calls do not count, thus a submission that waits
-    /// behind other sessions never reaches the bound.
-    /// ``GenerationStall/timeInFlight`` includes the wait and the tool
-    /// bodies, so no stop decision reads it.
+    /// only. ``GenerationStall/timeInFlight`` includes the tool bodies
+    /// between two generation calls and each wait for the model while it
+    /// generates for another session, so no stop decision reads it.
     ///
     /// Thirty minutes stands well past the measured 555 seconds and well
     /// under the 3120 seconds of the model that made nothing, so the
@@ -208,9 +204,8 @@ struct PromptExecution: Sendable {
     /// The model reference the prompt's session generates with.
     ///
     /// The stalled-generation report names it (task ^s0bw5cv), so a
-    /// person who reads the log learns which model made nothing. The log
-    /// line of a wait for a place in the model queue names it too. It is
-    /// the same string `/status` shows for the selected slot.
+    /// person who reads the log learns which model made nothing. It is the
+    /// same string `/status` shows for the selected slot.
     let modelName: String
 
     /// The expanded command text that replaces the blocks' text as the
@@ -405,12 +400,10 @@ struct PromptExecution: Sendable {
     /// cannot generate, because the tool call is output. Router's
     /// report-only behaviour stands for both.
     ///
-    /// A wait for a place in the model queue never ends the prompt. The
-    /// Router does not count the wait in `timeWithoutProgress` (Router
-    /// task ^ake8sax), and it tells the wait with `submissionQueued`,
-    /// which ``ACPEventTranslator`` writes as a log line. This guard does
-    /// not read ``GenerationStall/timeInFlight``, because that time
-    /// includes the wait.
+    /// This guard does not read ``GenerationStall/timeInFlight``, because
+    /// that time includes each wait of the submission that is not a
+    /// generation with no progress: a tool body, or a wait for the model
+    /// while it generates for another session.
     ///
     /// A `wholeAnswer` visibility never ends the prompt. Such a call
     /// streams nothing by design, so a long one reads exactly like a
@@ -892,9 +885,9 @@ extension RoutedACPAgent {
     /// prompt, answers every pending elicitation with `cancel` — the
     /// suspended tool must resume — then cancels the work of the Router
     /// session with `cancelAll()`: the queued mail, the model work in
-    /// flight, and the background runs. A submission that waits for a place
-    /// in the model queue is in flight too, and the cancel reaches it: the
-    /// Router removes it from the queue at once, so the `idle(cancelled)`
+    /// flight, and the background runs. A submission that waits for the
+    /// model while it generates for another session is in flight too, and
+    /// the cancel reaches it: the wait ends at once, so the `idle(cancelled)`
     /// terminator does not wait for the submission of another session. A
     /// notification has no response, so an unknown or a closed session is
     /// logged and ignored.

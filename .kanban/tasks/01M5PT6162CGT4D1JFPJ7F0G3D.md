@@ -6,8 +6,19 @@ comments:
   id: 01m5pxjjdtw94mc072t3za77k1
   text: 'Fork part done in 8789f3a (not pushed). closingASessionClosesItsDescendants adopts a child agent session (makeSession(agentSpawn:)). The two fork-listing tests make a recorded fork tree on disk with the new RecordedProjectFixture.makeRecordedFork(of:). CloseCountingRoutedSession has no fork or forks. Whole swift test against local Router 0c54184e: 1269 tests in 141 suites passed (1 known issue). Note: adoptDescendant has no production caller. The queue part stays open.'
   timestamp: 2026-10-24T12:18:39.162271+00:00
-position_column: todo
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m5q6t7fyknw3fpafhdhs0kh9
+  text: |-
+    Queue part done (fork part was done in 8789f3a). Against local Router e8012983 + local Extras (swift package edit, then unedit): `swift build --build-tests` clean, `swift test` 1269 tests in 141 suites passed (1 known issue, the deliberate HarnessSmokeTests one).
+
+    - ACPEventTranslator: removed the `submissionQueued` case and `reportQueueWait()`; `modelName` doc now names the stall log line.
+    - PromptExecution / RoutedSelectionModel: docs no longer name the Router queue.
+    - Test double: `ScriptedLLMContainer.submitting(to:)`, `ScriptedSessionBackend.generationQueue` and `ScriptedPassCounter.adopt(queue:)` removed. The queued scripted model now emulates the MLX FIFO model lock: `ScriptedPassCounter` owns a FIFO, cancel-at-once lock; each pass takes it (`ScriptedModelTurn`), leaves it for each tool body and takes it again after. `Counts.waiting` counts passes that wait for the model.
+    - Tests: `watchForQueuedSubmission`/`waitForFirst` replaced by `waitForPassesThatWaitForTheModel()` (counter wait, no clock). Cancellation/QueuedScriptedModel tests renamed from "ModelQueue" to "Model". `queueWaitNeverEndsTheRequestAsStalled` became `aLongTimeInFlightNeverEndsTheRequestAsStalled` without `makeSubmissionQueued`.
+    - `rg 'submissionQueued|submitting\(to|generationQueue|\.fork\('` on Sources Tests finds nothing. `promptDidStart` untouched; its tests pass.
+  timestamp: 2026-10-24T15:00:07.294133+00:00
+position_column: done
+position_ordinal: ffff9580
 title: Update the ACP agent's tests and translator for a Router with no generation queue and no fork
 ---
 ## What

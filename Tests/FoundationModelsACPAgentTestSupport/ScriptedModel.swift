@@ -131,7 +131,7 @@ public enum ScriptedModelError: Error, Equatable {
 }
 
 /// Two points in the delivery of a scripted transcript where a test can hold
-/// the backend (``ScriptedSessionBackend/init(script:tools:instructions:seededEntries:recorder:generationQueue:passCounter:deliveryHooks:lifetimes:)``).
+/// the backend (``ScriptedSessionBackend/init(script:tools:instructions:seededEntries:recorder:passCounter:deliveryHooks:lifetimes:)``).
 ///
 /// A test uses them to put a cancel of an update reader at an exact point
 /// of a transcript change, with no dependency on timing. A backend that no
@@ -262,14 +262,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// test does not observe the prompt.
     private let recorder: PromptRecorder?
 
-    /// The generation queue of the pool entry of this backend's model, or
-    /// `nil`. When it is set, the Router session submits each generating
-    /// call of this backend to it as one item, so one play of the script
-    /// waits for its place in the queue.
-    public let generationQueue: GenerationQueue?
-
     /// The counter each play of the script is counted on, or `nil` when
-    /// the test does not count the passes.
+    /// the test does not count the passes. Each play takes the model lock
+    /// of the counter, so one play of the script waits for the model.
     private let passCounter: ScriptedPassCounter?
 
     /// The test hooks of the transcript delivery. They do nothing in a
@@ -293,10 +288,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     ///     a fresh session.
     ///   - recorder: The recorder each received prompt goes to, or
     ///     `nil` to record nothing.
-    ///   - generationQueue: The generation queue of the pool entry, or
-    ///     `nil` (the default) for a backend whose calls run directly.
-    ///   - passCounter: The counter of the plays, or `nil` (the default)
-    ///     to count nothing.
+    ///   - passCounter: The counter of the plays and the owner of their
+    ///     model lock, or `nil` (the default) to count nothing and to play
+    ///     each call directly.
     ///   - deliveryHooks: The test hooks of the transcript delivery. The
     ///     default hooks do nothing.
     ///   - lifetimes: The count of the alive backends, or `nil` (the
@@ -307,7 +301,6 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         instructions: String? = nil,
         seededEntries: [Transcript.Entry] = [],
         recorder: PromptRecorder? = nil,
-        generationQueue: GenerationQueue? = nil,
         passCounter: ScriptedPassCounter? = nil,
         deliveryHooks: TranscriptDeliveryHooks = TranscriptDeliveryHooks(),
         lifetimes: BackendLifetimes? = nil
@@ -318,7 +311,6 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         self.tools = tools
         self.instructions = instructions
         self.recorder = recorder
-        self.generationQueue = generationQueue
         self.passCounter = passCounter
         self.deliveryHooks = deliveryHooks
         let opening =
@@ -370,9 +362,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         makeSibling(seededEntries: Array(transcript))
     }
 
-    /// Makes a backend with this script, these tools, this recorder, this
-    /// queue and this counter, that starts from `seededEntries`. A fork and
-    /// a replaced transcript thus stay on the queue of the model.
+    /// Makes a backend with this script, these tools, this recorder and
+    /// this counter, that starts from `seededEntries`. A fork and a replaced
+    /// transcript thus take the model lock of the same counter.
     ///
     /// - Parameter seededEntries: The transcript the new backend starts from.
     /// - Returns: The new backend.
@@ -383,7 +375,6 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             instructions: instructions,
             seededEntries: seededEntries,
             recorder: recorder,
-            generationQueue: generationQueue,
             passCounter: passCounter,
             deliveryHooks: deliveryHooks,
             lifetimes: lifetimes)
@@ -444,21 +435,24 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// A play that throws appends no `.response` entry, because a real
     /// model session records none for a pass that never answered.
     ///
-    /// The pass counter counts the play from its start to its end, also
-    /// when the play throws.
+    /// With a pass counter, the play first waits for the model lock of the
+    /// counter. The play holds the model from its start to its end, also
+    /// when the play throws, and it leaves the model for each tool body.
     ///
     /// - Parameters:
     ///   - prompt: The prompt the pass answers.
     ///   - yield: Receives each text delta, in order.
     /// - Returns: The answer text, the deltas joined in order.
-    /// - Throws: Whatever ``play(_:prompt:yield:)`` throws.
+    /// - Throws: `CancellationError` when the task is cancelled while the
+    ///   pass waits for the model, or whatever
+    ///   ``play(_:prompt:turn:yield:)`` throws.
     private func playPass(prompt: String, yield: (String) -> Void) async throws -> String {
-        passCounter?.passDidStart()
-        defer { passCounter?.passDidEnd() }
+        let turn = try await passCounter?.startPass()
+        defer { turn?.end() }
         await recorder?.record(prompt: prompt)
         appendPromptEntry(prompt: prompt)
         var text = ""
-        _ = try await play(script, prompt: prompt) { delta in
+        _ = try await play(script, prompt: prompt, turn: turn) { delta in
             text += delta
             yield(delta)
         }
@@ -568,13 +562,16 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// - Parameters:
     ///   - steps: The steps to play, in order.
     ///   - prompt: The prompt the pass answers.
+    ///   - turn: The hold of the model by the pass, or `nil` for a pass
+    ///     that takes no model lock.
     ///   - yield: Receives each text delta, in order.
     /// - Returns: `true` when an ``ScriptedPassStep/endPass`` step ended
     ///   the play, and `false` when the play ran out of steps.
     /// - Throws: ``ScriptedModelError/unknownTool(_:)`` for a tool the
     ///   session was not handed, or the invoked tool's own error.
     private func play(
-        _ steps: [ScriptedPassStep], prompt: String, yield: (String) -> Void
+        _ steps: [ScriptedPassStep], prompt: String, turn: ScriptedModelTurn?,
+        yield: (String) -> Void
     ) async throws -> Bool {
         for step in steps {
             switch step {
@@ -583,7 +580,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             case .reasoning(let text):
                 appendReasoning(text)
             case .toolCall(let name, let argumentsJSON):
-                try await invokeTool(named: name, argumentsJSON: argumentsJSON)
+                try await invokeTool(named: name, argumentsJSON: argumentsJSON, turn: turn)
             case .fail(let failure):
                 throw failure.error
             case .hold:
@@ -593,7 +590,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
             case .writeFile(let path, let text):
                 try Self.write(text: text, toFileAt: path)
             case .onPrompt(let marker, let branch):
-                if prompt.contains(marker), try await play(branch, prompt: prompt, yield: yield) {
+                if prompt.contains(marker), try await play(branch, prompt: prompt, turn: turn, yield: yield) {
                     return true
                 }
             case .endPass:
@@ -640,18 +637,28 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// `.toolOutput` after it. Router's transcript diff derives the
     /// `toolCall` and `toolStatus` session events from them.
     ///
+    /// The tool body runs with no model lock: the pass leaves the model
+    /// before the body, and waits for it again after the body.
+    ///
     /// - Parameters:
     ///   - name: The name of the tool to invoke.
     ///   - argumentsJSON: The fixed arguments, as JSON.
+    ///   - turn: The hold of the model by the pass, or `nil` for a pass
+    ///     that takes no model lock.
     /// - Throws: ``ScriptedModelError/unknownTool(_:)`` when no handed
-    ///   tool has `name`; otherwise the tool's own error.
-    private func invokeTool(named name: String, argumentsJSON: String) async throws {
+    ///   tool has `name`, `CancellationError` when the task is cancelled
+    ///   while the pass waits for the model again, or the tool's own error.
+    private func invokeTool(
+        named name: String, argumentsJSON: String, turn: ScriptedModelTurn?
+    ) async throws {
         guard let tool = tools.first(where: { $0.name == name }) else {
             throw ScriptedModelError.unknownTool(name)
         }
         let content = try GeneratedContent(json: argumentsJSON)
         let callId = appendToolCallsEntry(name: name, arguments: content)
+        turn?.leave()
         let output = try await ToolInvoker.invoke(tool, content: content)
+        try await turn?.takeAgain()
         appendToolOutputEntry(callId: callId, name: name, output: output)
     }
 
@@ -723,17 +730,13 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     public var recorder: PromptRecorder?
 
     /// The counter of the passes of this model, or `nil`. A container with
-    /// a counter is the queued scripted model: its backends name the
-    /// generation queue of the pool entry.
+    /// a counter is the queued scripted model: each pass of its backends
+    /// takes the model lock of the counter.
     public let passCounter: ScriptedPassCounter?
 
     /// The count of the alive backends of this model, or `nil` to count
     /// nothing.
     public var lifetimes: BackendLifetimes?
-
-    /// The generation queue of the pool entry that each backend names, or
-    /// `nil` before the Router gives one.
-    private var generationQueue: GenerationQueue?
 
     /// Creates a container whose every session plays `script`.
     ///
@@ -751,23 +754,6 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
         self.recorder = recorder
         self.passCounter = passCounter
         self.lifetimes = lifetimes
-    }
-
-    /// Gives a copy of this container whose backends name `queue`, the
-    /// generation queue of the pool entry, when this container has a pass
-    /// counter. The Router calls it one time for each hold. A container
-    /// with no counter keeps the protocol default: no queue, and each call
-    /// runs directly.
-    ///
-    /// - Parameter queue: The generation queue of the pool entry.
-    /// - Returns: The container whose backends name `queue`, or this
-    ///   container when it has no pass counter.
-    public func submitting(to queue: GenerationQueue) -> any LoadedLLMContainer {
-        guard let passCounter else { return self }
-        passCounter.adopt(queue: queue)
-        var copy = self
-        copy.generationQueue = queue
-        return copy
     }
 
     public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
@@ -790,8 +776,8 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
         makeBackend(tools: tools, seededEntries: Array(transcript))
     }
 
-    /// Makes one backend of this container: this script, this recorder,
-    /// this queue and this counter.
+    /// Makes one backend of this container: this script, this recorder
+    /// and this counter.
     ///
     /// - Parameters:
     ///   - tools: The tools of the session.
@@ -808,7 +794,6 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
             instructions: instructions,
             seededEntries: seededEntries,
             recorder: recorder,
-            generationQueue: generationQueue,
             passCounter: passCounter,
             lifetimes: lifetimes)
     }

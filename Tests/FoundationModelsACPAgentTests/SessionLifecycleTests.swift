@@ -135,7 +135,7 @@ import Testing
 
     /// After close, a descendant the session adopted is closed too: its own
     /// `streamSessionEvents()` subscription finishes, so no orphan child keeps
-    /// a run or a submission in the model queue. The child is a child agent
+    /// a run or a submission that waits for the model. The child is a child agent
     /// session of the session, in the same recording root.
     @Test
     func closingASessionClosesItsDescendants() async throws {

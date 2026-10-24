@@ -4,9 +4,10 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The queued scripted model of the test support: its passes go through the
-/// Router generation queue of one pool entry, its hold step ends on
-/// `release()` and on cancel, and its pass counter shows what ran.
+/// The queued scripted model of the test support: its passes take the one
+/// model lock of one pool entry, as the FIFO lock of an MLX model does, its
+/// hold step ends on `release()` and on cancel, and its pass counter shows
+/// what ran and what waits.
 @Suite(.closesHarnesses) struct QueuedScriptedModelTests {
     /// The directory label of this suite.
     private static let label = "QueuedScriptedModelTests"
@@ -45,17 +46,13 @@ import Testing
     func twoSessionsNeverRunTwoPassesAtOnce() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.makeHeldFixture(hold: hold)
-        let queuedWatches = [
-            try await fixture.watchForQueuedSubmission(of: fixture.firstSessionId),
-            try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId),
-        ]
         try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
         let counter = fixture.passCounter
         // Both prompts reach the model: one pass runs and holds, and the
-        // submission of the other session waits for a queue place.
+        // pass of the other session waits for the model.
         try await counter.wait(for: "one pass is held") { $0.running == 1 }
-        try await QueuedScriptedFixture.waitForFirst(of: queuedWatches)
+        try await fixture.waitForPassesThatWaitForTheModel()
 
         hold.release()
         try await fixture.waitForIdleOfBothSessions()
@@ -92,18 +89,17 @@ import Testing
         #expect(fixture.passCounter.runningCount == 0)
     }
 
-    /// While session A holds a pass, a prompt on session B waits for a queue
-    /// place and starts no pass.
+    /// While session A holds a pass, a prompt on session B waits for the
+    /// model and starts no pass.
     @Test
     func aSecondSessionWaitsForTheHeldPass() async throws {
         let hold = ScriptedHold()
         let fixture = try await Self.startHeldPass(hold: hold)
         let counter = fixture.passCounter
 
-        let queued = try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId)
         try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        // The prompt of session B waits for a queue place.
-        try await queued.value
+        // The prompt of session B waits for the model.
+        try await fixture.waitForPassesThatWaitForTheModel()
         let startedWhileHeld = counter.startedCount
 
         hold.release()

@@ -10,8 +10,8 @@ import Testing
 // MARK: - Two ACP sessions over one queued scripted model
 
 /// Two ACP sessions of one agent over the queued scripted model. The two
-/// sessions resolve the same pool entry, thus each pass of each session goes
-/// through the one generation queue of that entry.
+/// sessions resolve the same pool entry, thus each pass of each session takes
+/// the one model lock of that entry.
 struct QueuedScriptedFixture {
     /// The wired agent, the harness, and the first session (session A).
     let base: ScriptedPromptFixture
@@ -90,60 +90,18 @@ struct QueuedScriptedFixture {
         return updates.filter { $0.sessionId == sessionId }
     }
 
-    /// Starts to watch the Router session of `sessionId` for a submission
-    /// that must wait for a place in the generation queue: Router sends
-    /// `SessionEvent.submissionQueued` after the queue took the submission
-    /// as a waiting job. Call it before the prompt, and wait for the value
-    /// of the returned task after the prompt.
+    /// Waits until `count` passes of the model wait for the model lock,
+    /// thus until that many submissions wait behind the pass that holds the
+    /// model.
     ///
-    /// The watch reads the event stream of the session, so it uses no clock
-    /// and no poll.
+    /// The wait reads the counts of ``passCounter``, so it uses no clock and
+    /// no poll.
     ///
-    /// The end of the event stream before a queued submission is the failure
-    /// event of the watch (test rule T1): the session closed, so no queued
-    /// submission can come. Then the task throws.
-    ///
-    /// - Parameter sessionId: The session to watch.
-    /// - Returns: The task of the watch. It ends at the first queued
-    ///   submission. It throws ``WaitEndedOnFailure`` when the event stream
-    ///   ends first, and `CancellationError` when a cancel ends it first.
-    /// - Throws: When the agent has no session `sessionId`.
-    func watchForQueuedSubmission(of sessionId: SessionId) async throws -> Task<Void, any Error> {
-        let session = try #require(await base.harness.agent.sessions[sessionId]?.session)
-        let outputs = await session.streamSessionEvents()
-        return Task {
-            for await output in outputs {
-                if case .submissionQueued = output.event {
-                    return
-                }
-            }
-            try Task.checkCancellation()
-            throw WaitEndedOnFailure(
-                condition: "a queued submission of \(sessionId.rawValue)", event: "the stream ended")
-        }
-    }
-
-    /// Waits until the first of `watches` ended, and then cancels each
-    /// watch. A cancel ends the read of the event stream of a watch, so no
-    /// watch stays after the wait.
-    ///
-    /// - Parameter watches: The watches of ``watchForQueuedSubmission(of:)``.
-    /// - Throws: The error of the first watch that ended, when it ended on
-    ///   its failure event.
-    static func waitForFirst(of watches: [Task<Void, any Error>]) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            for watch in watches {
-                group.addTask { try await watch.value }
-            }
-            defer {
-                for watch in watches {
-                    watch.cancel()
-                }
-            }
-            // Only the first watch that ended counts. The cancel of the other
-            // watches ends them, and the group drops their errors.
-            try await group.next()
-        }
+    /// - Parameter count: The number of waiting passes. The default is 1.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
+    func waitForPassesThatWaitForTheModel(count: Int = 1) async throws {
+        try await passCounter.wait(for: "\(count) passes wait for the model") { $0.waiting == count }
     }
 
     /// The updates that `sessionId` sent until now, in arrival order.

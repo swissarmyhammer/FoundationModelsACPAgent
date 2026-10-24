@@ -4,15 +4,15 @@ import Synchronization
 
 // MARK: - The queued scripted model
 //
-// A scripted model whose passes go through the Router generation queue of
-// one pool entry (`generation-queue.md` of the Router, section 5.3). The
-// Router gives the queue of the pool entry to the container through
-// `LoadedLLMContainer.submitting(to:)`. Each backend of that container names
-// the queue, so the session submits each generating call of the backend to
-// it as one item. Two ACP sessions over one pool entry thus share one queue.
+// A scripted model whose passes take one model lock of one pool entry, as
+// the passes of an MLX model take the FIFO lock of its
+// `SerialAccessContainer` (`PooledGeneration` of FoundationModelsExtras).
+// The Router has no queue of its own. Two ACP sessions over one pool entry
+// thus share one lock, and the model plays one pass at a time.
 //
 // Here one pass is one generating call of a scripted backend: one play of
-// the script. The Router runs it as one item of the queue.
+// the script. A pass holds the lock while it plays, and it leaves the lock
+// for each tool body, as a real model does: no tool body runs under the lock.
 
 /// A hold that a scripted pass waits on until the test calls ``release()``.
 ///
@@ -118,33 +118,51 @@ public final class ScriptedHold: Sendable, Equatable {
 }
 
 /// Counts the passes of a queued scripted model: the passes that started,
-/// the passes that run, and the maximum number that ran at the same time.
+/// the passes that hold the model, the maximum number that held it at the
+/// same time, and the passes that wait for it.
 ///
-/// A test waits for a count with ``wait(for:until:)``: each start and each
-/// end of a pass resumes the waits whose condition is now true, so the wait
-/// uses no clock and no poll.
+/// A test waits for a count with ``wait(for:until:)``: each change of the
+/// counts resumes the waits whose condition is now true, so the wait uses
+/// no clock and no poll.
 ///
-/// It also keeps the generation queue of the pool entry, so a test can see
-/// the passes that wait for a queue place.
+/// The counter also owns the model lock of the pool entry. The lock is
+/// FIFO, and a cancel ends a wait for it at once.
 public final class ScriptedPassCounter: Sendable {
     /// The counts of the passes at one time.
     public struct Counts: Sendable {
-        /// The number of passes that started.
+        /// The number of passes that started: that took the model for the
+        /// first time.
         public var started = 0
 
-        /// The number of passes that run now.
+        /// The number of passes that hold the model now.
         public var running = 0
 
         /// The maximum of ``running``.
         public var maximumRunning = 0
+
+        /// The number of passes that wait for the model now.
+        public var waiting = 0
+    }
+
+    /// The state of the model lock.
+    private struct LockState {
+        /// Whether a pass holds the model.
+        var isHeld = false
+
+        /// The passes that wait for the model, in arrival order, with the
+        /// token of each wait.
+        var waiters: [(token: Int, continuation: CheckedContinuation<Void, any Error>)] = []
+
+        /// The token of the next wait.
+        var nextToken = 0
     }
 
     /// The counts, with their waits. Passes start and end on many tasks.
     private let counts = WatchedValue(Counts())
 
-    /// The queue that the Router gave to the model, or `nil` before the
-    /// Router gave one.
-    private let queue = Mutex<GenerationQueue?>(nil)
+    /// The model lock, guarded because a take, a cancel and a release can
+    /// come from different tasks.
+    private let lock = Mutex(LockState())
 
     /// Creates a counter that counted nothing.
     public init() {}
@@ -154,23 +172,19 @@ public final class ScriptedPassCounter: Sendable {
         counts.value.started
     }
 
-    /// The number of passes that run now.
+    /// The number of passes that hold the model now.
     public var runningCount: Int {
         counts.value.running
     }
 
-    /// The maximum number of passes that ran at the same time.
+    /// The maximum number of passes that held the model at the same time.
     public var maximumRunningCount: Int {
         counts.value.maximumRunning
     }
 
-    /// The number of passes that wait for a place in the queue of the pool
-    /// entry. `0` before the Router gave a queue.
+    /// The number of passes that wait for the model now.
     public var waitingCount: Int {
-        get async {
-            guard let queue = queue.withLock({ $0 }) else { return 0 }
-            return await queue.waitingCount
-        }
+        counts.value.waiting
     }
 
     /// Waits until `isMet` is true for the counts. Returns at once when it
@@ -186,37 +200,155 @@ public final class ScriptedPassCounter: Sendable {
         _ = try await counts.wait(for: condition, until: isMet)
     }
 
-    /// Keeps `queue`, the queue that the Router gave to the model.
+    /// Starts one pass: waits for the model, takes it, and counts the start.
     ///
-    /// - Parameter queue: The generation queue of the pool entry.
-    func adopt(queue: GenerationQueue) {
-        self.queue.withLock { $0 = queue }
+    /// - Returns: The turn of the pass, which holds the model.
+    /// - Throws: `CancellationError` when the task is cancelled while the
+    ///   pass waits for the model.
+    func startPass() async throws -> ScriptedModelTurn {
+        try await takeModel()
+        counts.update { $0.started += 1 }
+        return ScriptedModelTurn(counter: self)
     }
 
-    /// Counts the start of one pass.
-    func passDidStart() {
+    /// Waits for the model, and takes it. A pass that comes when the model
+    /// is free takes it at once. Else the pass waits behind the passes that
+    /// came before it.
+    ///
+    /// - Throws: `CancellationError` when the task is cancelled first. Then
+    ///   the pass holds no model.
+    func takeModel() async throws {
+        let token = lock.withLock { state -> Int? in
+            guard state.isHeld else {
+                state.isHeld = true
+                return nil
+            }
+            let token = state.nextToken
+            state.nextToken += 1
+            return token
+        }
+        if let token {
+            counts.update { $0.waiting += 1 }
+            defer { counts.update { $0.waiting -= 1 } }
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    admit(continuation, token: token)
+                }
+            } onCancel: {
+                removeWaiter(token: token)?.resume(throwing: CancellationError())
+            }
+        }
         counts.update { counts in
-            counts.started += 1
             counts.running += 1
             counts.maximumRunning = max(counts.maximumRunning, counts.running)
         }
     }
 
-    /// Counts the end of one pass.
-    func passDidEnd() {
+    /// Leaves the model. The first waiting pass, if there is one, gets it.
+    func leaveModel() {
         counts.update { $0.running -= 1 }
+        let next = lock.withLock { state -> CheckedContinuation<Void, any Error>? in
+            guard !state.waiters.isEmpty else {
+                state.isHeld = false
+                return nil
+            }
+            return state.waiters.removeFirst().continuation
+        }
+        next?.resume()
+    }
+
+    /// Keeps `continuation` as a waiter, or resumes it at once when the
+    /// model became free or the task is cancelled.
+    ///
+    /// The cancel flag is read under the lock. A cancel that comes before
+    /// the waiter is kept thus finds no waiter, and this read sees the flag.
+    ///
+    /// - Parameters:
+    ///   - continuation: The continuation of the waiting pass.
+    ///   - token: The token of the waiter.
+    private func admit(_ continuation: CheckedContinuation<Void, any Error>, token: Int) {
+        let outcome = lock.withLock { state -> Result<Void, any Error>? in
+            if Task.isCancelled {
+                return .failure(CancellationError())
+            }
+            guard state.isHeld else {
+                state.isHeld = true
+                return .success(())
+            }
+            state.waiters.append((token: token, continuation: continuation))
+            return nil
+        }
+        if let outcome {
+            continuation.resume(with: outcome)
+        }
+    }
+
+    /// Removes the waiter of `token`.
+    ///
+    /// - Parameter token: The token of the waiter.
+    /// - Returns: The continuation of the waiter, or `nil` when no pass
+    ///   waits with that token: the pass got the model already.
+    private func removeWaiter(token: Int) -> CheckedContinuation<Void, any Error>? {
+        lock.withLock { state in
+            guard let index = state.waiters.firstIndex(where: { $0.token == token }) else { return nil }
+            return state.waiters.remove(at: index).continuation
+        }
+    }
+}
+
+/// The hold of the model by one pass of a queued scripted model.
+///
+/// The pass leaves the model for each tool body and takes it again after
+/// the body. The turn knows if the pass holds the model now, so ``end()``
+/// leaves the model only when the pass holds it.
+final class ScriptedModelTurn: Sendable {
+    /// The counter that owns the model lock.
+    private let counter: ScriptedPassCounter
+
+    /// Whether the pass holds the model now.
+    private let isHeld = Mutex(true)
+
+    /// Makes the turn of a pass that holds the model.
+    ///
+    /// - Parameter counter: The counter that owns the model lock.
+    init(counter: ScriptedPassCounter) {
+        self.counter = counter
+    }
+
+    /// Leaves the model before a tool body.
+    func leave() {
+        let wasHeld = isHeld.withLock { held -> Bool in
+            let wasHeld = held
+            held = false
+            return wasHeld
+        }
+        guard wasHeld else { return }
+        counter.leaveModel()
+    }
+
+    /// Waits for the model after a tool body, and takes it.
+    ///
+    /// - Throws: `CancellationError` when the task is cancelled first.
+    func takeAgain() async throws {
+        guard !isHeld.withLock({ $0 }) else { return }
+        try await counter.takeModel()
+        isHeld.withLock { $0 = true }
+    }
+
+    /// Ends the pass: leaves the model when the pass holds it.
+    func end() {
+        leave()
     }
 }
 
 extension StubModelLoader {
-    /// Makes a loader whose LLM containers play `script`. The container of
-    /// the `standard` slot, which each ACP session prompts, plays through the
-    /// generation queue of its pool entry and counts each pass on
-    /// `passCounter`.
+    /// Makes a loader whose LLM containers play `script`. Each pass of the
+    /// container of the `standard` slot, which each ACP session prompts,
+    /// takes the model lock of `passCounter`, and the counter counts it.
     ///
-    /// The `flash` slot is a different pool entry with a different queue.
-    /// Its container runs each call directly and counts nothing, so the
-    /// counter sees the passes and the queue of one pool entry only.
+    /// The `flash` slot is a different pool entry. Its container takes no
+    /// lock and counts nothing, so the counter sees the passes of one pool
+    /// entry only.
     ///
     /// - Parameters:
     ///   - script: The steps each pass plays.

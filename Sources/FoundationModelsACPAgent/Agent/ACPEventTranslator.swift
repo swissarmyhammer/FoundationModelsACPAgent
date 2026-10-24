@@ -93,9 +93,9 @@ struct ACPEventTranslator {
     var send: SessionUpdateSink
 
     /// The model reference the session generates with. The log line of a
-    /// wait for a place in the model queue names it, so a person who reads
-    /// the log learns which model was busy. A model slot switch changes it
-    /// at the next prompt.
+    /// stall report names it, so a person who reads the log learns which
+    /// model made no progress. A model slot switch changes it at the next
+    /// prompt.
     var modelName: String
 
     /// The reader of a settled run's stored output, for the convergence
@@ -367,9 +367,6 @@ struct ACPEventTranslator {
             // so no wire update goes out. The call gives the fills and the
             // window of the context (task ^1x5ksdv).
             tally.contextUsage.record(call)
-        case .submissionQueued:
-            // A log line, not a wire message.
-            reportQueueWait()
         case .repetitionStopped(let stop):
             // A log line, not a wire message: the stop reason of
             // the prompt carries the end, and the next submission of a
@@ -459,21 +456,6 @@ struct ACPEventTranslator {
     private func reportUnsentEvent(_ event: SessionEvent) {
         ACPAgentTelemetry.logger(.promptExecution).debug(
             "The translator sends nothing for a Router event.", metadata: eventMetadata(event))
-    }
-
-    /// Records that a submission of the prompt waits for a place in the
-    /// model queue, because the model runs a submission of another session.
-    ///
-    /// The wait has no wire message. The wait is not a
-    /// stall: the Router stall watch does not count it (Router task
-    /// ^ake8sax), so it never ends the prompt with `_stalled`. The record is
-    /// a `notice` and not a `debug`, because a person who reads the log of
-    /// a slow prompt must learn that the prompt waited, and for which
-    /// model.
-    private func reportQueueWait() {
-        ACPAgentTelemetry.logger(.promptExecution).notice(
-            "A submission waits for a place in the model queue, because the model runs a submission of another session.",
-            metadata: ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName))
     }
 
     /// Records that Router stopped a generation of the prompt: a generate

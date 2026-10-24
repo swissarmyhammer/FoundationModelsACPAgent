@@ -128,21 +128,20 @@ import Testing
         #expect(idle.stopReason == .cancelled)
     }
 
-    // MARK: - A request that waits for the model queue
+    // MARK: - A request that waits for the model
     //
     // The two sessions of each proof use one queued scripted model, thus one
-    // generation queue. Session A holds its pass until the test releases the
-    // hold. The prompt of session B thus waits for a queue place. A cancel or
-    // a close of B must end B at once, and must not wait for A.
+    // model lock. Session A holds its pass until the test releases the hold.
+    // The prompt of session B thus waits for the model. A cancel or a close
+    // of B must end B at once, and must not wait for A.
 
     /// Wires two sessions over one queued model, starts a held pass on
-    /// session A, and starts a prompt on session B that waits for a queue
-    /// place.
+    /// session A, and starts a prompt on session B that waits for the model.
     ///
     /// - Parameter hold: The hold of each pass.
-    /// - Returns: The fixture, with A held and B in the queue.
+    /// - Returns: The fixture, with A held and B waiting for the model.
     /// - Throws: Whatever the construction, the wire or the wait throws.
-    private static func startPromptThatWaitsForTheQueue(
+    private static func startPromptThatWaitsForTheModel(
         hold: ScriptedHold
     ) async throws -> QueuedScriptedFixture {
         let fixture = try await QueuedScriptedFixture.make(
@@ -151,21 +150,19 @@ import Testing
         let counter = fixture.passCounter
         try await fixture.prompt(fixture.firstSessionId, text: promptText)
         try await counter.wait(for: "the pass of session A is held") { $0.running == 1 }
-        let queued = try await fixture.watchForQueuedSubmission(of: fixture.secondSessionId)
         try await fixture.prompt(fixture.secondSessionId, text: promptText)
-        // The prompt of session B waits for a queue place.
-        try await queued.value
+        // The prompt of session B waits for the model.
+        try await fixture.waitForPassesThatWaitForTheModel()
         return fixture
     }
 
-    /// A `session/cancel` for a prompt that waits for a place in the model
-    /// queue ends it with `idle(cancelled)` while the other session still
+    /// A `session/cancel` for a prompt that waits for the model ends it with `idle(cancelled)` while the other session still
     /// holds the model. After the release, the holding session completes,
     /// and a new prompt on the cancelled session completes too.
     @Test
-    func cancelEndsARequestThatWaitsForTheModelQueue() async throws {
+    func cancelEndsARequestThatWaitsForTheModel() async throws {
         let hold = ScriptedHold()
-        let fixture = try await Self.startPromptThatWaitsForTheQueue(hold: hold)
+        let fixture = try await Self.startPromptThatWaitsForTheModel(hold: hold)
         let sessionA = fixture.firstSessionId
         let sessionB = fixture.secondSessionId
 
@@ -187,14 +184,14 @@ import Testing
         #expect(idleState(of: updatesOfB.last?.update)?.stopReason == .endTurn)
     }
 
-    /// A `session/close` for a session whose prompt waits for a place in the
-    /// model queue answers after the `idle(cancelled)` of that prompt, while
+    /// A `session/close` for a session whose prompt waits for the model
+    /// answers after the `idle(cancelled)` of that prompt, while
     /// the other session still holds the model. After the release, the
     /// holding session completes.
     @Test
-    func closeEndsARequestThatWaitsForTheModelQueue() async throws {
+    func closeEndsARequestThatWaitsForTheModel() async throws {
         let hold = ScriptedHold()
-        let fixture = try await Self.startPromptThatWaitsForTheQueue(hold: hold)
+        let fixture = try await Self.startPromptThatWaitsForTheModel(hold: hold)
         let sessionA = fixture.firstSessionId
         let sessionB = fixture.secondSessionId
 
@@ -212,14 +209,14 @@ import Testing
         #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) == .endTurn)
     }
 
-    // MARK: - An answer that mail starts, and that waits for the model queue
+    // MARK: - An answer that mail starts, and that waits for the model
     //
     // The prompt of session B starts a shell read of a named pipe in the
     // background. Its caller answer ends, and the prompt waits for the
     // background run (task ^64pav2a). Then session A holds the model. The
     // test writes the pipe, thus the shell run of B settles, and its mail
     // starts an answer of B. That answer has no caller prompt, and it waits
-    // for a queue place behind A. A close of B must end the prompt of B with
+    // for the model behind A. A close of B must end the prompt of B with
     // `cancelled` and answer, and must not wait for A.
 
     /// The marker of the prompt of session B. Its pass starts the background
@@ -260,13 +257,13 @@ import Testing
         ]
     }
 
-    /// A `session/close` for a session whose mail-started answer waits for a
-    /// place in the model queue answers while the other session still holds
+    /// A `session/close` for a session whose mail-started answer waits for
+    /// the model answers while the other session still holds
     /// the model. The prompt of that session ended at the answer of its own
     /// mail (task ^9xs24pn, decision Q1), so the close sends no second
     /// `idle`. After the release, the holding session completes.
     @Test
-    func closeEndsAMailStartedAnswerThatWaitsForTheModelQueue() async throws {
+    func closeEndsAMailStartedAnswerThatWaitsForTheModel() async throws {
         let hold = ScriptedHold()
         let directory = try NamedPipe.makeDirectory(
             holding: Self.releasePipeName, label: "CancellationTests-mail")
@@ -288,15 +285,14 @@ import Testing
                 return update.status == .value(.completed)
             }
         }
-        // Each submission of session B that must wait for a queue place from
-        // now on ends this watch.
-        let queued = try await fixture.watchForQueuedSubmission(of: sessionB)
         try await fixture.prompt(sessionA, text: Self.holdModelMarker)
-        try await counter.wait(for: "the pass of session A is held") { $0.running == 1 }
+        // The first pass of session B ended before the pass of session A
+        // got the model: the pass of A is the second pass.
+        try await counter.wait(for: "the pass of session A is held") { $0.started >= 2 && $0.running == 1 }
         try await NamedPipe.write(
             Self.releaseText, toPipeAt: directory.appendingPathComponent(Self.releasePipeName))
-        // The mail-started answer of session B waits for a queue place.
-        try await queued.value
+        // The mail-started answer of session B waits for the model.
+        try await fixture.waitForPassesThatWaitForTheModel()
 
         _ = try await fixture.base.harness.connection.closeSession(
             CloseSessionRequest(sessionId: sessionB))

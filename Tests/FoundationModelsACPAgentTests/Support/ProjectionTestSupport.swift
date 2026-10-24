@@ -18,14 +18,6 @@ import Synchronization
 /// no id, so one value serves every event.
 private let syntheticSubmissionId = SubmissionID(0)
 
-/// The `submissionQueued` event of one synthetic submission: the
-/// submission waits for a place in the model queue.
-///
-/// - Returns: The event.
-func makeSubmissionQueued() -> SessionEvent {
-    .submissionQueued(syntheticSubmissionId)
-}
-
 /// The `submissionStarted` event of one synthetic submission.
 ///
 /// - Parameter cause: Why the session made the submission. A retry after

@@ -985,28 +985,25 @@ import Testing
     /// bound, and no assertion reads it.
     private static let stallReportIntervalSeconds = 60
 
-    /// A request that waited for a place in the model queue for longer
-    /// than the bound does not end with `_stalled`.
+    /// A request whose time in flight is longer than the bound, but whose
+    /// time without progress is shorter, does not end with `_stalled`.
     ///
-    /// The Router does not count a queue wait as time without progress
-    /// (Router task ^ake8sax). It sends `submissionQueued`, then
-    /// `submissionStarted` when the submission gets its place. A stall
-    /// report after the wait has a `timeInFlight` that includes the wait,
-    /// and a `timeWithoutProgress` that does not. The guard must read
-    /// only `timeWithoutProgress`, thus the request continues to its
-    /// text and its usage, and it ends with `end_turn`.
+    /// The time in flight of a stall report includes each wait of the
+    /// submission that is not a generation with no progress: a tool body,
+    /// or a wait for the model while it generates for another session. The
+    /// guard must read only `timeWithoutProgress`, thus the request
+    /// continues to its text and its usage, and it ends with `end_turn`.
     @Test
-    func queueWaitNeverEndsTheRequestAsStalled() async throws {
-        let queueWait = PromptExecution.stalledGenerationBound + .seconds(1)
+    func aLongTimeInFlightNeverEndsTheRequestAsStalled() async throws {
+        let wait = PromptExecution.stalledGenerationBound + .seconds(1)
         let interval = Duration.seconds(Self.stallReportIntervalSeconds)
         let stallAfterTheWait = GenerationStall(
             timeWithoutProgress: interval,
-            timeInFlight: queueWait + interval,
+            timeInFlight: wait + interval,
             visibility: .fragments(observed: 0), lastProgress: .callStart)
         let (execution, recorder) = makeSinkedExecution()
         let reason = await execution.drive(
             events: makeEventStream([
-                makeSubmissionQueued(),
                 makeSubmissionStarted(),
                 .generationStalled(stallAfterTheWait),
                 .textDelta("the answer, after the wait"),
@@ -1174,10 +1171,10 @@ import Testing
         #expect(idleState(of: updates.last)?.stopReason == .cancelled)
     }
 
-    // MARK: - A waiting session holds no model (Router generation-queue.md 5.5)
+    // MARK: - A waiting session holds no model
     //
     // The two sessions of each proof use one queued scripted model, thus one
-    // generation queue. Session A waits in a background run: an elicitation
+    // model lock. Session A waits in a background run: an elicitation
     // from a `runCode` snippet, or a shell command. `runCode` holds the model
     // only for its inline grace, and a shell command gives its pending answer
     // at once. Then the run continues in the background, and the submission

@@ -9,10 +9,9 @@ import FoundationModelsRouter
 // `any LanguageModel`, and make one `LanguageModelSession` on it for each
 // prompt. Router gives no public `LanguageModel` for a slot. This model is
 // the join: each generation call of the SDK becomes one Router session of
-// the slot. Thus each selection prompt still goes through Router — its
-// generation queue, its refusal of a wait on the model of an open
-// submission, its recording and its telemetry — and the stub profile of the
-// tests answers it the same way it answers every other session.
+// the slot. Thus each selection prompt still goes through Router — its model
+// pool, its recording and its telemetry — and the stub profile of the tests
+// answers it the same way it answers every other session.
 
 /// A slot of a resolved profile, presented as a FoundationModels
 /// `LanguageModel` that a selection tier prompts.
