@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m5pxjjdtw94mc072t3za77k1
+  text: 'Fork part done in 8789f3a (not pushed). closingASessionClosesItsDescendants adopts a child agent session (makeSession(agentSpawn:)). The two fork-listing tests make a recorded fork tree on disk with the new RecordedProjectFixture.makeRecordedFork(of:). CloseCountingRoutedSession has no fork or forks. Whole swift test against local Router 0c54184e: 1269 tests in 141 suites passed (1 known issue). Note: adoptDescendant has no production caller. The queue part stays open.'
+  timestamp: 2026-10-24T12:18:39.162271+00:00
 position_column: todo
 position_ordinal: '80'
 title: Update the ACP agent's tests and translator for a Router with no generation queue and no fork
