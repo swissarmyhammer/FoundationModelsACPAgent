@@ -53,7 +53,7 @@ Each script has `--help` for the full list.
 ### The code context with skills run
 
 Add `--agent-config bench/code-context.config.yaml`, and use the NAME
-`code-context`. The agent then mounts the `code-context` branch of the skills
+`code-context`. The agent then mounts the `main` branch of the skills
 marketplace, the `tools.code_context` group, the `tools.web` group, the
 `tools.git` group and the `tools.environment` group. The file names each tool
 group with its state.
