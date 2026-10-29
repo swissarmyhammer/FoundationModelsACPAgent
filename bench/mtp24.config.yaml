@@ -1,0 +1,50 @@
+# The agent configuration of the mtp24 run: the tools of noturn24 and
+# snapfix1, with MTP (multi-token prediction) on in the standard slot.
+#
+# Give this file to the run with `--agent-config bench/mtp24.config.yaml`.
+# The run writes it to `.acp-agent/config.yaml` in each clone. The 24 ids of
+# the run are in `bench/mtp24.ids.txt`, the same ids as noqueue24 and
+# noturn24.
+#
+# - `profile.standard` names one candidate in the mapping form: `repo` is the
+#   target and `drafter` is its MTP head (both take `org/repo@rev`). A drafter
+#   runs only when the profile names it. The target is the `4bit` build and
+#   not the default `mxfp4` build: `Qwen3.8-27B-MTP-4bit` is the head of the
+#   `4bit` build (mlx-swift-lm `MTPDrafterRegistry.qwen3_8_27b_mtp_4bit`).
+#   mlx-swift-lm measured 90 tok/s with the head against 58 tok/s without it.
+#   The decode output is the output of plain decoding. Thus a change in the
+#   score against noturn24 comes from the `4bit` build and the time limit,
+#   not from MTP itself.
+# - The mapping form needs FoundationModelsExtras `ModelRef.drafter` and the
+#   Router change that passes the drafter to the model (2026-10-29, from the
+#   Router session). An older build cannot read this file.
+# - `flash` and `embedding` are not named, so they keep the builtin defaults.
+#
+# For the notes on each tool group, see bench/snapfix1.config.yaml.
+profile:
+  standard:
+    - repo: mlx-community/Qwen3.8-27B-4bit
+      drafter: mlx-community/Qwen3.8-27B-MTP-4bit
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  mcp: []

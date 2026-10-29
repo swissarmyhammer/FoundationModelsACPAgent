@@ -177,6 +177,7 @@ from datasets import load_dataset
 from rich.table import Table
 
 from swebench_acp import AgentServer, is_chunk
+from swebench_agent_config import give_agent_config
 from swebench_agent_runs import AGENT_RUNS_DIR, keep_agent_run_transcripts
 from swebench_clone import exclude_agent_folder
 from swebench_common import console, log
@@ -229,9 +230,6 @@ AGENT_EXCLUDES = [".acp-agent", ".venv"]
 # repository is removed when the instance ends, so the transcripts are copied
 # out first. They are the only record of what the model did in each round.
 AGENT_TRANSCRIPTS = Path(".acp-agent") / "transcripts"
-# Where the agent reads the configuration of the project layer, below the
-# repository. `--agent-config` puts a file there before the session starts.
-AGENT_CONFIG = Path(".acp-agent") / "config.yaml"
 # Where to look for the agent binary, in this order, below the package root.
 AGENT_CANDIDATES = (".build/release/acp-agent", ".build/debug/acp-agent")
 # The package root: the parent of this `bench` directory.
@@ -320,7 +318,8 @@ parser.add_argument(
     type=Path,
     default=None,
     help="a config.yaml of the agent; the run writes it into the project layer "
-    "of each clone, for example bench/code-context.config.yaml",
+    "of the working root (for `profile:`) and of each clone (for `tools:`), "
+    "for example bench/code-context.config.yaml",
 )
 parser.add_argument(
     "--no-telemetry", action="store_true",
@@ -446,21 +445,6 @@ def keep_transcripts(repo, outpath, instance_id):
     return destination
 
 
-def give_agent_config(repo, config):
-    """Copy the `--agent-config` file into the project layer of the clone.
-
-    The agent reads the configuration of a session at `session/new`, from the
-    directory of that session. The clone is removed when the instance ends, so
-    each instance gets the file again. `.acp-agent` is in AGENT_EXCLUDES, and
-    the file is not tracked, so it is never part of the patch.
-    """
-    if config is None:
-        return
-    destination = repo / AGENT_CONFIG
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(config, destination)
-
-
 def capture_patch(repo, base_commit):
     """The source diff of the agent, against the CLEAN base commit.
 
@@ -572,6 +556,9 @@ log("the environment of the agent", **environment_fields(environment))
 # The agent process stands IN the working root, and not in the package: it
 # resolves its profile from the configuration of its own directory, and it
 # writes its shell output store below that directory. Both belong to the run.
+# So the `--agent-config` file goes there too, before the agent starts: the
+# `profile:` section has an effect only there (swebench_agent_config.py).
+give_agent_config(work_root, args.agent_config)
 agent_arguments = ()
 if not args.no_telemetry:
     telemetry = telemetry_path(outpath)
