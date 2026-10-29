@@ -152,15 +152,25 @@ public struct ProfileDoctor: Doctorable {
 
     /// One model reference, and the slot that names it.
     private struct SlotReference {
-        /// The dotted key path of the slot.
+        /// The dotted key path of the slot, or of the drafter of the slot.
         let key: String
 
         /// The reference the slot names.
         let reference: ModelRef
+
+        /// Whether the reference is the MTP drafter of a slot reference, and
+        /// not a model of the slot.
+        let isDrafter: Bool
     }
 
+    /// The key that names the drafter of a slot reference, below the key of
+    /// the slot.
+    private static let drafterKey = "drafter"
+
     /// Every reference of every slot, in slot order and then in preference
-    /// order.
+    /// order. The MTP drafter of a reference comes after it, under the key
+    /// `<slot>.drafter`: a drafter is a checkpoint of its own, which must
+    /// resolve and which the next run downloads.
     private var slotReferences: [SlotReference] {
         let slots = [
             (Self.standardKey, configuration.profile.standard),
@@ -168,7 +178,16 @@ public struct ProfileDoctor: Doctorable {
             (Self.embeddingKey, configuration.profile.embedding),
         ]
         return slots.flatMap { key, references in
-            references.map { SlotReference(key: key, reference: $0) }
+            references.flatMap { reference in
+                [SlotReference(key: key, reference: reference, isDrafter: false)]
+                    + (reference.drafter.map {
+                        [
+                            SlotReference(
+                                key: key + LoadedConfiguration.keyPathSeparator + Self.drafterKey,
+                                reference: $0, isDrafter: true)
+                        ]
+                    } ?? [])
+            }
         }
     }
 
@@ -359,27 +378,28 @@ public struct ProfileDoctor: Doctorable {
     // MARK: - The MTP head
 
     /// The MTP row of one reference, and no row at all when the reference
-    /// names no MTP build.
+    /// names no MTP build, names its drafter, or is itself a drafter.
     ///
-    /// Router calls the plain generate path and never reads the MTP head,
-    /// so the download is larger and the speed is the same (cli-plan.md
-    /// §7.1).
+    /// Router loads a drafter only when the reference names one. An MTP
+    /// build with no drafter thus decodes plain: the download is larger and
+    /// the speed is the same.
     ///
     /// - Parameters:
     ///   - entry: The reference and the slot that names it.
     ///   - text: The reference as a person reads it.
     /// - Returns: The one row, or no row.
     private static func mtpChecks(of entry: SlotReference, text: String) -> [HealthCheck] {
-        guard text.contains(mtpMark) else {
+        guard text.contains(mtpMark), !entry.isDrafter, entry.reference.drafter == nil else {
             return []
         }
         return [
             .warning(
                 name: "\(entry.key): the MTP head of \(text)",
-                message: "\(text) is an MTP build, and Router calls the plain generate "
-                    + "path, so the download is larger and the speed is the same",
-                fix: "set \(entry.key) in \(ConfigurationLoader.configFileName) to a "
-                    + "build with no MTP head, with \(editCommand)",
+                message: "\(text) is an MTP build, and \(entry.key) names no drafter, so "
+                    + "Router decodes it plain: the download is larger and the speed is the same",
+                fix: "name the MTP head of \(text) as the `\(drafterKey)` of the reference in "
+                    + "\(entry.key) of \(ConfigurationLoader.configFileName), or set a build "
+                    + "with no MTP head, with \(editCommand)",
                 category: category)
         ]
     }

@@ -45,9 +45,10 @@ struct ProfileDoctorTests {
     /// How ``smallDiskBytes`` is stated in a message.
     private static let smallDiskText = "1.0 GB"
 
-    /// How the download of the three scripted references, each of
-    /// ``downloadBytes``, is stated in a message.
-    private static let wholeDownloadText = "30.0 GB"
+    /// How the download of the four scripted references of the shipped
+    /// profile, each of ``downloadBytes``, is stated in a message: the three
+    /// slot models and the MTP drafter of the standard slot.
+    private static let wholeDownloadText = "40.0 GB"
 
     /// The words the message of a reference the cache already holds
     /// carries.
@@ -60,12 +61,21 @@ struct ProfileDoctorTests {
     /// A reference with no owner part, which is malformed.
     private static let malformedReference: ModelRef = "Qwen3-4B-4bit"
 
-    /// A reference that names an MTP build, whose draft head Router never
-    /// reads (cli-plan.md §7.1).
+    /// A reference that names an MTP build and no drafter, so Router
+    /// decodes it plain.
     private static let mtpReference: ModelRef = "mlx-community/Qwen3.5-9B-MTP-4bit"
+
+    /// A drafter that the Hub does not have.
+    private static let missingDrafter: ModelRef = "mlx-community/No-Such-MTP-Head"
 
     /// The dotted key of the standard slot.
     private static let standardKey = "profile.standard"
+
+    /// The dotted key of the drafter of the standard slot.
+    private static let standardDrafterKey = "profile.standard.drafter"
+
+    /// The word the fix of the MTP warning names: the key that turns MTP on.
+    private static let drafterWord = "drafter"
 
     /// The dotted key of the flash slot.
     private static let flashKey = "profile.flash"
@@ -316,9 +326,10 @@ struct ProfileDoctorTests {
 
     // MARK: - The MTP warning
 
-    /// A slot that names an MTP build is exactly one `.warning`, because
-    /// Router never reads the MTP head (cli-plan.md §7.1).
-    @Test func anMTPSlotGivesExactlyOneWarning() async throws {
+    /// A slot that names an MTP build with no drafter is exactly one
+    /// `.warning`: Router loads a drafter only when the reference names one,
+    /// so the build decodes plain. The fix names the `drafter` key.
+    @Test func anMTPSlotWithNoDrafterGivesExactlyOneWarning() async throws {
         var configuration = AgentConfiguration()
         configuration.profile.flash = [Self.mtpReference]
 
@@ -326,14 +337,47 @@ struct ProfileDoctorTests {
 
         let warnings = Self.findings(.warning, in: checks)
         let warning = try #require(warnings.first)
+        let fix = try #require(warning.fix)
         #expect(warnings.count == Self.oneFinding)
         #expect(warning.name.contains(Self.flashKey))
         #expect(warning.message.contains(Self.mtpReference.stringValue))
-        #expect(warning.fix != nil)
+        #expect(fix.contains(Self.drafterWord))
     }
 
-    /// The shipped defaults name no MTP build, so they give no MTP
-    /// warning.
+    /// An MTP build that names its drafter decodes with MTP, so it gives no
+    /// MTP warning, and the drafter itself, an MTP head, gives none either.
+    @Test func anMTPSlotWithItsDrafterGivesNoWarning() async {
+        let checks = await Self.doctor(
+            configuration: Self.configuration(
+                standard: ModelRef(repo: Self.mtpReference.repo, drafter: Self.mtpReference))
+        ).runHealthChecks()
+
+        #expect(Self.findings(.warning, in: checks).isEmpty)
+    }
+
+    /// The drafter of a reference is looked up as a model of its own: a
+    /// drafter the Hub does not have is one `.error` that names the drafter
+    /// key of the slot and the drafter.
+    @Test func aDrafterThatIsNotFoundGivesOneErrorThatNamesTheDrafterKey() async throws {
+        let target = ProfileConfiguration.defaultStandard[0]
+        let resolver = StubModelResolver(
+            namedLookups: [Self.missingDrafter.stringValue: .notFound])
+
+        let checks = await Self.doctor(
+            configuration: Self.configuration(
+                standard: ModelRef(repo: target.repo, drafter: Self.missingDrafter)),
+            resolver: resolver
+        ).runHealthChecks()
+
+        let errors = Self.findings(.error, in: checks)
+        let failure = try #require(errors.first)
+        #expect(errors.count == Self.oneFinding)
+        #expect(failure.name.contains(Self.standardDrafterKey))
+        #expect(failure.message.contains(Self.missingDrafter.stringValue))
+    }
+
+    /// The shipped defaults name the MTP head of the standard slot as its
+    /// drafter, so they give no MTP warning.
     @Test func theShippedDefaultsGiveNoMTPWarning() async {
         let checks = await Self.doctor().runHealthChecks()
 

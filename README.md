@@ -68,16 +68,30 @@ three model slots at one time, and Router's `JointFit` prices the three
 models together against the memory of the machine. A 27B model at 4 bits is
 approximately 15 GB alone, so a 16 GB machine is too small.
 
-| Slot | Default model |
-|---|---|
-| `standard` | `mlx-community/Qwen3.8-27B-mxfp4` |
-| `flash` | `mlx-community/Qwen3-4B-4bit` |
-| `embedding` | `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` |
+| Slot | Default model | MTP drafter |
+|---|---|---|
+| `standard` | `mlx-community/Qwen3.8-27B-4bit` | `mlx-community/Qwen3.8-27B-MTP-4bit` |
+| `flash` | `mlx-community/Qwen3-4B-4bit` | none |
+| `embedding` | `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` | none |
 
 These three are the defaults of `ProfileConfiguration` in
 [`Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift`](Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift).
 The `profile:` section of a `config.yaml` replaces the candidates of any
 slot.
+
+The `standard` slot decodes with MTP (multi-token prediction): its MTP head
+drafts a few tokens each round, and the model checks them in one pass. The
+output is the output of plain decoding, and it comes faster. A reference
+turns MTP on only when it names its `drafter`, in the mapping form:
+
+```yaml
+profile:
+  standard:
+    - repo: mlx-community/Qwen3.8-27B-4bit
+      drafter: mlx-community/Qwen3.8-27B-MTP-4bit
+```
+
+A plain string (`- mlx-community/Qwen3.8-27B-4bit`) decodes with no drafter.
 
 The first run downloads the weights of each slot, which is many gigabytes.
 The weights stay in the Hugging Face cache, so a later run starts from

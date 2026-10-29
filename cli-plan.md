@@ -347,7 +347,7 @@ as `Doctorable` conformances:
 | Component | Checks |
 |---|---|
 | Configuration | It loads. Every warning is listed. Each layer path exists, is readable, is writable. |
-| Profile | Each model reference is well formed. Each one resolves at Hugging Face. The trio fits this machine's memory. The free disk covers what must still be downloaded. A slot that names an MTP model gets a warning, because Router does not use the MTP head (§7.1). |
+| Profile | Each model reference is well formed. Each one resolves at Hugging Face. The trio fits this machine's memory. The free disk covers what must still be downloaded. Each MTP drafter resolves as a model of its own. A slot that names an MTP model with no `drafter` gets a warning, because Router then decodes it plain (§7.1). |
 | Transcripts | The transcript directory exists, or its parent is writable. |
 | Sandbox | The seatbelt sandbox starts. Each `extraWritePaths` entry exists. |
 | Tools | The shell store directory is writable. Each configured MCP server starts, or its URL answers. |
@@ -422,9 +422,21 @@ would look like a bug.
 - The earlier design stated the 16 GB figure. It is now wrong; §12
   records the difference, and the README states the 32 GB floor.
 
-### 7.1 No MTP model is a default, and here is why
+### 7.1 The `standard` default decodes with MTP
 
-**Decision: no slot names an MTP model until Router uses the MTP head.**
+**Update 2026-10-29: the decision below is reversed.** Router now uses
+the MTP head. FoundationModelsExtras `ModelRef` names a `drafter`
+(`{repo, drafter}` in YAML), the loader passes `MLXSpeculativeDecoding`
+to `MLXLanguageModel`, and `JointFit` counts the drafter bytes. The
+`standard` default is `mlx-community/Qwen3.8-27B-4bit` with the drafter
+`mlx-community/Qwen3.8-27B-MTP-4bit`. The `doctor` check warns only when a
+slot names an MTP build with no drafter, and it resolves each drafter as a
+model of its own. The rule for the default: MTP must be faster than plain
+decode on the workload of the agent. mlx-swift-lm owns the speed of the
+decode, and the SWE-bench A/B runs (mtpsmoke2 against mtpplain1) measure
+it. The text below is the record of the earlier decision.
+
+**Earlier decision: no slot names an MTP model until Router uses the MTP head.**
 An MTP repository carries a draft head beside the weights. Router never
 reads that head, so the default would download bytes that do nothing.
 That is the wrong trade for a first run, and it is why `flash` is
@@ -640,7 +652,9 @@ Only if §11.1 shows a cost. The shape:
   compaction eval tiers. Both builds are the same architecture, so the
   quantisation is the difference. The `doctor` model check of §5.12 must
   read this: a model that makes no token is refused with a named reason,
-  never a hang. See card `^s0bw5cv`.
+  never a hang. See card `^s0bw5cv`. Update 2026-10-29: the `4bit` build
+  now generates through Router, and it is the default again, with its MTP
+  head as the drafter (§7.1).
 - **`tools.files.recordsChanges` defaults to `false`.** See §7. Should an
   editor see file-change locations without a `config.yaml`?
 

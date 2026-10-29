@@ -160,11 +160,25 @@ import Testing
         #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
     }
 
-    /// No default names an MTP (multi-token prediction) repository
-    /// (cli-plan.md §7.1). Router calls the plain generate path and does not
-    /// read an MTP draft head, so an MTP repository downloads bytes that do
-    /// no work. This test keeps a later edit from making one a default by
-    /// accident.
+    /// The `standard` default decodes with MTP (multi-token prediction): its
+    /// target names the MTP head of the same build as its drafter. Router
+    /// loads a drafter only when the profile names it, so a default with no
+    /// drafter decodes plain. The `flash` and `embedding` defaults name no
+    /// drafter.
+    @Test func theStandardDefaultNamesItsMTPDrafter() throws {
+        let fixture = Fixture()
+
+        let profile = try fixture.makeLoader().load().configuration.profile
+
+        #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
+        #expect(profile.flash.allSatisfy { $0.drafter == nil })
+        #expect(profile.embedding.allSatisfy { $0.drafter == nil })
+    }
+
+    /// No default TARGET names an MTP (multi-token prediction) repository.
+    /// An MTP head is a drafter and not a model: it goes in `drafter:` of a
+    /// reference, and the target is the plain build. This test keeps a later
+    /// edit from naming the head as the model by accident.
     ///
     /// A Hugging Face repository id keeps its case, and the marker is usually
     /// upper case. But the case is the publisher's choice, not a rule, so the
@@ -261,7 +275,10 @@ import Testing
     }
 
     /// The `standard` slot default of the builtin configuration.
-    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-mxfp4"
+    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
+
+    /// The MTP drafter of the `standard` slot default.
+    private static let defaultStandardDrafter = "mlx-community/Qwen3.8-27B-MTP-4bit"
 
     /// The `flash` slot default of the builtin configuration.
     private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"

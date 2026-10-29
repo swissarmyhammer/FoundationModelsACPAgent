@@ -116,25 +116,31 @@ extension AgentConfiguration {
 /// models together against the memory budget. Thus a 16 GB machine is too
 /// small.
 ///
-/// No default names an MTP (multi-token prediction) repository
-/// (cli-plan.md §7.1). Router calls the plain generate path and does not read
-/// an MTP draft head, thus such a repository downloads bytes that do no work.
+/// The `standard` default decodes with MTP (multi-token prediction): its
+/// reference names the MTP head of its build as the `drafter`. Router loads a
+/// drafter only when a reference names one, so no other default speculates.
 public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
     /// The default candidates of the `standard` slot.
     ///
-    /// The `mxfp4` build, and not the `4bit` build. The family pins this same
-    /// build: `FoundationModelsMultitool` at `MultitoolCLI/CLIRunner.swift`
-    /// (`generationModel`), and Router's `JointFitTests` and its compaction
-    /// eval tiers, which carry the measured numbers for it.
+    /// The `4bit` build with its MTP head as the drafter. The head drafts a
+    /// few tokens each round and the model checks them in one pass, and the
+    /// output is the output of plain decoding. Measured on 2026-10-29 through
+    /// Router (its gated `MTPDrafterIntegrationTests`): plain decode 32-38
+    /// tokens per second, with the drafter 55-67. In the SWE-bench run
+    /// mtpsmoke2 the same pair decoded at 51-72 tokens per second over
+    /// contexts of 5k to 23k tokens.
     ///
-    /// The `4bit` build of this repository does not generate. Measured on
-    /// 2026-09-08: `acp-agent run "say hello"` made no token and did not end,
-    /// and Router's stall watchdog recorded one generation in flight for 3120
-    /// seconds with zero fragments. The `mxfp4` build answers the same prompt.
-    /// Both builds declare `Qwen3_5ForConditionalGeneration` and
-    /// `language_model_only: false`, so the quantisation is the difference and
-    /// the architecture is not. See card `^s0bw5cv`.
-    public static let defaultStandard: [ModelRef] = ["mlx-community/Qwen3.8-27B-mxfp4"]
+    /// The head is the head of the `4bit` build
+    /// (`MTPDrafterRegistry.qwen3_8_27b_mtp_4bit` in mlx-swift-lm), thus the
+    /// target is the `4bit` build and not the `mxfp4` build of earlier
+    /// defaults. On 2026-09-08 the `4bit` build made no token (card
+    /// `^s0bw5cv`). On 2026-10-29 it generates through Router, with the
+    /// drafter and without it.
+    public static let defaultStandard: [ModelRef] = [
+        ModelRef(
+            repo: "mlx-community/Qwen3.8-27B-4bit",
+            drafter: "mlx-community/Qwen3.8-27B-MTP-4bit")
+    ]
 
     /// The default candidates of the `flash` slot.
     public static let defaultFlash: [ModelRef] = ["mlx-community/Qwen3-4B-4bit"]

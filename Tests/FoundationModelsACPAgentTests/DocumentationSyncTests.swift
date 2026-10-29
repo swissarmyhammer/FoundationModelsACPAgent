@@ -143,12 +143,14 @@ import Testing
     static let memoryFloorText = "32 GB"
 
     /// Every model the default profile names, over the three slots, in
-    /// slot order. The list is the `ProfileConfiguration` statics, so a
-    /// changed default fails the README test until the README changes
-    /// too.
+    /// slot order, and the MTP drafter of each reference that names one.
+    /// The list is the `ProfileConfiguration` statics, so a changed default
+    /// fails the README test until the README changes too.
     static var defaultProfileModels: [String] {
         (ProfileConfiguration.defaultStandard + ProfileConfiguration.defaultFlash
-            + ProfileConfiguration.defaultEmbedding).map(\.stringValue)
+            + ProfileConfiguration.defaultEmbedding).flatMap { reference in
+                [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
+            }
     }
 
     /// The README names all three default model ids, exactly as
