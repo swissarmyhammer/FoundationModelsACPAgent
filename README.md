@@ -79,11 +79,21 @@ These three are the defaults of `ProfileConfiguration` in
 The `profile:` section of a `config.yaml` replaces the candidates of any
 slot.
 
-The `embedding` slot takes an MLX model or a Core ML model. The loader finds the
-format by itself from the files of the repository: a `.mlpackage` folder and
-no `safetensors` file means Core ML, which runs on the Apple Neural Engine.
-Any other repository loads with MLX. A local path as a model reference waits
-for the Router card `^y18w1dp` and the Extras card `^3mnxzqf`.
+Every slot takes a Hub repository id or a folder on the disk. The loader finds
+the format (MLX or Core ML) by itself from the files: a `.mlpackage` folder and
+no `safetensors` file means Core ML, which runs on the Apple Neural Engine
+(only the `embedding` slot loads Core ML). Any other model loads with MLX.
+
+```yaml
+profile:
+  embedding:
+    - ~/models/embeddinggemma-300m-ane-coreml   # a folder: no download
+```
+
+A path starts with `/`, `~` or `./`. Use an absolute path or `~`: `./` is
+relative to the working directory of the agent process. A path must not hold
+`@`, which is read as a revision. `doctor` shows the format it found in the
+folder.
 
 The `standard` slot decodes with MTP (multi-token prediction): its MTP head
 drafts a few tokens each round, and the model checks them in one pass. The

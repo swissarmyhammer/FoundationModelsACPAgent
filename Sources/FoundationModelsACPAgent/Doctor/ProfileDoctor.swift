@@ -207,7 +207,7 @@ public struct ProfileDoctor: Doctorable {
     private func lookUps(of references: [SlotReference]) async -> [Int: ModelLookup] {
         await withTaskGroup(of: (Int, ModelLookup).self) { group in
             for (position, entry) in references.enumerated()
-            where Self.isWellFormed(entry.reference) {
+            where Self.isWellFormed(entry.reference) && !ModelReferenceFormat.isLocalPath(entry.reference) {
                 group.addTask { (position, await self.lookUp(entry.reference)) }
             }
             var byPosition: [Int: ModelLookup] = [:]
@@ -242,12 +242,47 @@ public struct ProfileDoctor: Doctorable {
         of entry: SlotReference, lookup: ModelLookup?
     ) -> [HealthCheck] {
         let text = entry.reference.stringValue
+        if ModelReferenceFormat.isLocalPath(entry.reference) {
+            return [localCheck(of: entry, text: text)]
+        }
         guard isWellFormed(entry.reference) else {
             return [shapeFailure(of: entry, text: text)]
         }
         return [shapePass(of: entry, text: text)]
             + resolveChecks(of: entry, text: text, lookup: lookup)
             + mtpChecks(of: entry, text: text)
+    }
+
+    // MARK: - A local folder
+
+    /// The row of a reference that names a folder on the disk. The Hub is
+    /// not asked: the folder must exist, must hold a model, and must not
+    /// have an `@`, which Router reads as a revision.
+    ///
+    /// - Parameters:
+    ///   - entry: The reference and the slot that names it.
+    ///   - text: The reference as a person reads it.
+    /// - Returns: The row.
+    private static func localCheck(of entry: SlotReference, text: String) -> HealthCheck {
+        let name = "\(entry.key): the local model \(text)"
+        let fix =
+            "set \(entry.key) in \(ConfigurationLoader.configFileName) to an absolute folder "
+            + "that holds a model, with no @ in the path, with \(editCommand)"
+        guard ModelReferenceFormat.parts(of: entry.reference).revision == nil else {
+            return .error(
+                name: name, message: "\(text) has an @, which is read as a revision", fix: fix,
+                category: category)
+        }
+        let directory = ModelReferenceFormat.localDirectory(of: entry.reference)
+        guard let format = ModelReferenceFormat.localFormat(of: directory) else {
+            return .error(
+                name: name, message: "\(directory.path) is not a folder that holds a model",
+                fix: fix, category: category)
+        }
+        let kind = format == .coreML ? "Core ML" : "MLX"
+        return .ok(
+            name: name, message: "\(directory.path) holds a \(kind) model; nothing to download",
+            category: category)
     }
 
     // MARK: - The shape
