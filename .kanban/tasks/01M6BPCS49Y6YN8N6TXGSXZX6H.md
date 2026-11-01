@@ -1,6 +1,11 @@
 ---
-position_column: todo
-position_ordinal: '80'
+comments:
+- actor: wballard
+  id: 01m6bycbjmfws43nnfnkgcb80e
+  text: 'Done in e5c07e2: defaultEmbedding is erjigit17/embeddinggemma-300m-ane-coreml, tests and README updated, 1281 tests pass. Format detection by repo id works through Router HubModelLoader. Open: a local path in the config waits for Router ^y18w1dp and Extras ^3mnxzqf. Also check the semantic search with the 300m vector size in a live run.'
+  timestamp: 2026-11-01T16:16:47.188723+00:00
+position_column: done
+position_ordinal: ffff9680
 title: Default embedding is the CoreML embeddinggemma; config takes a path of either format
 ---
 Goal: erjigit17/embeddinggemma-300m-ane-coreml is the default model of the profile embedding slot, and the config accepts a repo id or a local path of a CoreML model or an MLX model, with the format found by itself.
