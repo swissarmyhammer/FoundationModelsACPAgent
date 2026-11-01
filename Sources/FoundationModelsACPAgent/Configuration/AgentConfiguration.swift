@@ -185,7 +185,7 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
 
     /// The default candidates of the `embedding` slot.
     public static let defaultEmbedding: [ModelRef] = [
-        "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+        "erjigit17/embeddinggemma-300m-ane-coreml"
     ]
 
     /// The default one-line description of the profile's intent.

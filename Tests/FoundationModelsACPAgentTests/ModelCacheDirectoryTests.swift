@@ -30,7 +30,7 @@ struct ModelCacheDirectoryTests {
     /// The path of stored properties from a `LiveModelLoader` to the folder
     /// of its Hugging Face cache: the Extras `MLXModelLoader`, its
     /// `HubCache`, and the folder of that cache.
-    private static let liveLoaderCachePath = ["modelLoader", "cache", "cacheDirectory"]
+    private static let liveLoaderCachePath = ["modelLoader", "hub", "cache", "cacheDirectory"]
 
     /// The path of stored properties from a `SystemModelResolver` to its
     /// hub cache folder.

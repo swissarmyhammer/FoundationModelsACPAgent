@@ -33,7 +33,7 @@ struct HuggingFaceTokenProviderTests {
     /// The path of stored properties from a live router to the token provider
     /// of its downloads: the `LiveModelLoader`, its Extras `MLXModelLoader`,
     /// and the provider of that loader.
-    private static let downloadTokenPath = ["loader", "modelLoader", "tokenProvider"]
+    private static let downloadTokenPath = ["loader", "modelLoader", "hub", "tokenProvider"]
 
     /// The path of stored properties from a live router to the token provider
     /// of its sizing requests: the metadata reader, its

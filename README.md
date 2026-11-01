@@ -72,12 +72,18 @@ approximately 15 GB alone, so a 16 GB machine is too small.
 |---|---|---|
 | `standard` | `mlx-community/Qwen3.8-27B-4bit` | `mlx-community/Qwen3.8-27B-MTP-4bit` |
 | `flash` | `mlx-community/Qwen3-4B-4bit` | none |
-| `embedding` | `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` | none |
+| `embedding` | `erjigit17/embeddinggemma-300m-ane-coreml` | none |
 
 These three are the defaults of `ProfileConfiguration` in
 [`Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift`](Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift).
 The `profile:` section of a `config.yaml` replaces the candidates of any
 slot.
+
+The `embedding` slot takes an MLX model or a Core ML model. The loader finds the
+format by itself from the files of the repository: a `.mlpackage` folder and
+no `safetensors` file means Core ML, which runs on the Apple Neural Engine.
+Any other repository loads with MLX. A local path as a model reference waits
+for the Router card `^y18w1dp` and the Extras card `^3mnxzqf`.
 
 The `standard` slot decodes with MTP (multi-token prediction): its MTP head
 drafts a few tokens each round, and the model checks them in one pass. The

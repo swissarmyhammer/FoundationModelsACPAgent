@@ -284,7 +284,7 @@ import Testing
     private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"
 
     /// The `embedding` slot default of the builtin configuration.
-    private static let defaultEmbeddingModel = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+    private static let defaultEmbeddingModel = "erjigit17/embeddinggemma-300m-ane-coreml"
 
     /// Every model reference the builtin defaults name, over the three slots.
     private static var defaultModelReferences: [ModelRef] {
