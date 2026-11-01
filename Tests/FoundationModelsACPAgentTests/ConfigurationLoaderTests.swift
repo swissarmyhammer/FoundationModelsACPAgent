@@ -352,6 +352,60 @@ import Testing
     /// The count of parts an `owner/name` model id has.
     private static let modelIdentifierPartCount = 2
 
+    // MARK: - The theme
+
+    /// With no file, the theme is `system`.
+    @Test func theThemeDefaultsToSystem() throws {
+        let loaded = try Fixture().makeLoader().load()
+
+        #expect(loaded.configuration.theme == .system)
+    }
+
+    /// `theme` is a top-level string. It gives no unknown-section warning,
+    /// and the source map names the layer that set it.
+    @Test func aProjectThemeLoadsAsATopLevelString() throws {
+        let loaded = try Fixture().loadProjectConfig("theme: dark\n")
+
+        #expect(loaded.configuration.theme == .dark)
+        #expect(loaded.warnings.isEmpty)
+        #expect(loaded.sources["theme"] == .project)
+    }
+
+    /// A choice reads in any case, because a person sees `System`, `Light`
+    /// and `Dark` in a menu.
+    @Test(arguments: [("System", AgentTheme.system), ("LIGHT", .light), ("Dark", .dark)])
+    func aThemeReadsInAnyCase(text: String, theme: AgentTheme) throws {
+        let loaded = try Fixture().loadProjectConfig("theme: \(text)\n")
+
+        #expect(loaded.configuration.theme == theme)
+    }
+
+    /// A value that is not a choice is an error that names each choice.
+    @Test func anUnknownThemeIsAnErrorThatNamesTheChoices() throws {
+        let fixture = Fixture()
+        fixture.writeConfig("theme: blue\n", in: fixture.projectDirectory)
+
+        let error = #expect(throws: (any Error).self) {
+            try fixture.makeLoader().load()
+        }
+
+        let message = String(describing: error)
+        #expect(message.contains("blue"))
+        for theme in AgentTheme.allCases {
+            #expect(message.contains(theme.rawValue))
+        }
+    }
+
+    /// `theme` is one string, so a mapping body is an error.
+    @Test func aThemeMappingIsAnError() throws {
+        let fixture = Fixture()
+        fixture.writeConfig("theme:\n  name: dark\n", in: fixture.projectDirectory)
+
+        #expect(throws: (any Error).self) {
+            try fixture.makeLoader().load()
+        }
+    }
+
     // MARK: - The per-key source map
 
     /// The source map names the layer that set each key, by dotted key

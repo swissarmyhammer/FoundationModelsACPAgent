@@ -324,6 +324,18 @@ levels over the built-in level. The session level wins over the user level.
 - **The user level** comes from the home of the host (`AgentHome`), which
   `ComposedAgent.compose` and `RoutedACPAgent.init` take as `home:`.
 
+### The theme
+
+The top-level `theme` key of `config.yaml` is one string: `system` (the
+default), `light` or `dark`, in any case. Another value is an error that names
+the choices. The agent does not read the key: it keeps it in the settings stack
+for a host, which reads and sets it through the `settings` endpoint with the key
+path `["theme"]`.
+
+```yaml
+theme: dark
+```
+
 ### The home
 
 The home holds each folder outside the project that the agent reads or

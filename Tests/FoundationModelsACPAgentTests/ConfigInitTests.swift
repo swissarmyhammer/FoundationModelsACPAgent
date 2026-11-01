@@ -102,6 +102,8 @@ struct ConfigInitTests {
             return keys
         case .toolRoster:
             return ToolsConfiguration.knownKeys
+        case .scalar:
+            return []
         }
     }
 

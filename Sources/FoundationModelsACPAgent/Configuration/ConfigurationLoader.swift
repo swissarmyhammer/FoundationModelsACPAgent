@@ -580,6 +580,8 @@ public struct ConfigurationLoader: Sendable {
             return []
         case .toolRoster:
             return try ToolsConfiguration.schemaWarnings(inBody: body)
+        case .scalar:
+            return []
         }
     }
 }

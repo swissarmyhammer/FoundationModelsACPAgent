@@ -93,7 +93,7 @@ public enum ConfigurationYAML {
 
     /// The top-level sections, in the order the document emits them.
     private static let sectionOrder = [
-        "profile", "tools", "recording", "transcripts", "compaction", "repetition", "sandbox",
+        "profile", "tools", "recording", "transcripts", "compaction", "repetition", "sandbox", "theme",
     ]
 
     /// The comment printed above each top-level section.
@@ -105,6 +105,7 @@ public enum ConfigurationYAML {
         "compaction": "The token-budget thresholds of the self-folding session.",
         "repetition": "The detector that stops a generate call that repeats itself.",
         "sandbox": "Extra write grants beyond the session root set.",
+        "theme": "The appearance that a host applies: system, light or dark.",
     ]
 
     /// The comment printed at the top of the document.

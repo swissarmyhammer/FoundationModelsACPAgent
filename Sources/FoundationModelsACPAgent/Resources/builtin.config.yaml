@@ -19,6 +19,10 @@
 #
 # The tests make sure that this file decodes to the defaults in the code
 # (AgentConfiguration), and that it names each tool and each option key.
+# The appearance that a host applies: system, light or dark. The agent does
+# not read it.
+theme: system
+
 tools:
   # The files tools: read, write, search and edit the files of the session.
   files:

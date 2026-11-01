@@ -181,6 +181,76 @@ import Testing
         #expect(reply.data?["sections"] as? [String] == AgentConfiguration.CodingKeys.allCases.map(\.stringValue))
     }
 
+    // MARK: - The theme
+
+    /// The key path of the theme: one top-level string.
+    private static let themeKeyPath = [AgentConfiguration.CodingKeys.theme.stringValue]
+
+    /// The document that reads the theme at the user level.
+    private static let themeQuery = "{ setting(keyPath: [\"theme\"]) { value level } }"
+
+    /// The `sections` query names the theme.
+    @Test func theSectionsNameTheTheme() async throws {
+        let fixture = try SettingsGraphFixture(label: "theme-section")
+
+        let reply = try await fixture.run("{ sections }")
+
+        #expect((reply.data?["sections"] as? [String])?.contains("theme") == true)
+    }
+
+    /// With no file, a read gives `system` from the builtin layer.
+    @Test func theThemeReadsAsSystemFromTheBuiltinLayer() async throws {
+        let fixture = try SettingsGraphFixture(label: "theme-default")
+
+        let reply = try await fixture.run(Self.themeQuery)
+
+        #expect(reply.codes.isEmpty)
+        let result = try reply.object("setting")
+        #expect(result["value"] as? String == AgentTheme.system.rawValue)
+        #expect(result["level"] as? String == "BUILTIN")
+    }
+
+    /// A `set` of the theme on the user level needs no working directory, as
+    /// for a Settings scene, and a clear gives the default again.
+    @Test func aThemeSetsAndClearsOnTheUserLevelWithNoWorkingDirectory() async throws {
+        let fixture = try SettingsGraphFixture(label: "theme-user")
+
+        let set = try await fixture.run(
+            """
+            mutation {
+              updateSetting(input: {keyPath: ["theme"], value: "dark", level: USER}) { value level }
+            }
+            """)
+
+        #expect(set.codes.isEmpty)
+        let changed = try set.object(SettingsGraphFixture.updateField)
+        #expect(changed["value"] as? String == AgentTheme.dark.rawValue)
+        #expect(changed["level"] as? String == SettingsGraphFixture.userLevel)
+
+        let clear = try await fixture.run(
+            "mutation { clearSetting(input: {keyPath: [\"theme\"], level: USER}) { value level } }")
+
+        #expect(clear.codes.isEmpty)
+        let cleared = try await fixture.store.value(at: Self.themeKeyPath, cwd: nil)
+        #expect(cleared?.value == .string(AgentTheme.system.rawValue))
+    }
+
+    /// A value that is not a choice is refused, and the setting stays.
+    @Test func aThemeThatIsNotAChoiceIsRefused() async throws {
+        let fixture = try SettingsGraphFixture(label: "theme-refused")
+
+        let reply = try await fixture.run(
+            """
+            mutation {
+              updateSetting(input: {keyPath: ["theme"], value: "blue", level: USER}) { value level }
+            }
+            """)
+
+        #expect(!reply.codes.isEmpty)
+        let kept = try await fixture.store.value(at: Self.themeKeyPath, cwd: nil)
+        #expect(kept?.value == .string(AgentTheme.system.rawValue))
+    }
+
     // MARK: - Mutations
 
     /// A `set` on the user level changes the value of each session

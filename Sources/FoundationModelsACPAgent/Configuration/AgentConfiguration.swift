@@ -53,9 +53,13 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     /// session root set.
     public var sandbox = SandboxConfiguration()
 
+    /// The appearance that a host applies. The agent does not read it: it
+    /// keeps the key in the settings stack for the host.
+    public var theme = AgentTheme.system
+
     /// The YAML spelling of each top-level section.
     public enum CodingKeys: String, CodingKey, CaseIterable {
-        case profile, tools, recording, transcripts, compaction, repetition, sandbox
+        case profile, tools, recording, transcripts, compaction, repetition, sandbox, theme
     }
 
     /// The builtin configuration: every section at its default.
@@ -80,6 +84,7 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
             try container.decodeIfPresent(RepetitionConfiguration.self, forKey: .repetition)
             ?? repetition
         sandbox = try container.decodeIfPresent(SandboxConfiguration.self, forKey: .sandbox) ?? sandbox
+        theme = try container.decodeIfPresent(AgentTheme.self, forKey: .theme) ?? theme
     }
 }
 
@@ -91,6 +96,8 @@ extension AgentConfiguration {
         /// The `tools:` roster: a known tool's body keys are
         /// checked, and an unknown tool key is a warning only.
         case toolRoster
+        /// One value and no keys. The decode of the section checks the value.
+        case scalar
     }
 
     /// The schema of every top-level section, by its YAML spelling. A
@@ -104,7 +111,38 @@ extension AgentConfiguration {
         CodingKeys.compaction.stringValue: .checked(CompactionConfiguration.knownKeys),
         CodingKeys.repetition.stringValue: .checked(RepetitionConfiguration.knownKeys),
         CodingKeys.sandbox.stringValue: .checked(SandboxConfiguration.knownKeys),
+        CodingKeys.theme.stringValue: .scalar,
     ]
+}
+
+// MARK: - theme
+
+/// The top-level `theme` key: `system`, `light` or `dark`.
+///
+/// The decode ignores case, because a host shows the choices as `System`,
+/// `Light` and `Dark`. Each other value is an error that names the choices,
+/// thus the settings store refuses it before it writes a file.
+public enum AgentTheme: String, Codable, CaseIterable, Sendable {
+    /// Follow the appearance of the system.
+    case system
+
+    /// The light appearance.
+    case light
+
+    /// The dark appearance.
+    case dark
+
+    /// Decodes one choice, in any case.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let word = try container.decode(String.self)
+        guard let theme = Self(rawValue: word.lowercased()) else {
+            let choices = Self.allCases.map(\.rawValue).joined(separator: ", ")
+            throw DecodingError.dataCorruptedError(
+                in: container, debugDescription: "theme must be one of: \(choices) (got \"\(word)\")")
+        }
+        self = theme
+    }
 }
 
 // MARK: - profile
