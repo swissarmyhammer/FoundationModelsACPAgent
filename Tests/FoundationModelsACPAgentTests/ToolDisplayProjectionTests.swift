@@ -284,6 +284,22 @@ import Testing
         #expect(jsonString(of: jsonObject(of: update["rawInput"])?["path"]) == Self.changedPath)
     }
 
+    /// A line of `0` is not a line on the wire, because a wire line number is
+    /// 1-based. The location keeps its path and carries no line.
+    @Test func aZeroMetadataLineGivesALocationWithNoLine() async throws {
+        let update = try #require(
+            try await Self.onlyRunWireUpdate(of: [
+                Self.display(
+                    .metadata(
+                        title: nil, kind: nil,
+                        locations: [ToolDisplayEvent.Location(path: Self.changedPath, line: 0)],
+                        rawInput: nil))
+            ]))
+
+        let location = try #require(jsonObject(of: Self.jsonArray(of: update["locations"])?.first))
+        #expect(location["line"] == nil)
+    }
+
     /// A `nil` metadata field means "no change": the patch omits the field,
     /// and never sends `null`, because a `null` clears the field on the
     /// client. `ToolContext.update(title:kind:locations:)` gives such an

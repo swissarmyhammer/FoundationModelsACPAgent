@@ -1,0 +1,88 @@
+---
+comments:
+- actor: wballard
+  id: 01m6gk7vbapnfa9v3zpe2xvekc
+  text: 'UPDATE (user decision, 2026-11-03): the Router write-ahead record of a tool call is wanted. Card on the Router board: 01M6GK7RHHHC6B6QMJ25FT1QDT. Still undecided and without a card: the Router claim API for orphan runs, and the FoundationModelsAgents adopt call. Order of questions to the user: one at a time.'
+  timestamp: 2026-11-03T11:38:17.322457+00:00
+- actor: wballard
+  id: 01m6gk8k87fp83cdcg2sny7e4a
+  text: 'UPDATE: the Router claim-API card exists: see the Router board, title "Let a host claim orphan runs at restore". It depends on the write-ahead card. The FoundationModelsAgents adopt call still has no card.'
+  timestamp: 2026-11-03T11:38:41.799615+00:00
+- actor: wballard
+  id: 01m6gkm2x38at4eed30b449m1b
+  text: 'DECISION (user, 2026-11-03), gap 2: the re-drive of interrupted children starts AFTER the resume response is sent. The agent restores and replays the whole tree, sends the response, and only then sends the "continue" mail to the interrupted children (children first). Everything after the response is live for the client, so replay and live updates never mix. Cost accepted: work starts only after the whole restore. Acceptance criteria to add: no re-driven child sends any update before the resume response; the first update of a re-driven child follows the response; a test with a slow restore of a depth 3 tree checks the order of the wire messages. Held updates (starting early) are NOT wanted.'
+  timestamp: 2026-11-03T11:44:58.275984+00:00
+- actor: wballard
+  id: 01m6gkyt7rmwr07tw7kzye14gn
+  text: |-
+    DECISION (user, 2026-11-03), SUPERSEDES the earlier comment "a child session knows its parent, and its replay ends with its OWN history" (the per-child end on a state_update snapshot before the response). That text misread the subagents RFD. FOLLOW ACP (RFD "Subagent Sessions", section replay and resume):
+    - All history of the tree (associations and child history) is sent BEFORE the resume response ("All history selected for this replay MUST be sent before the response"). The response completes the best-effort child replay. A child replay ends at the response. There is no per-child end marker in ACP.
+    - When replay is requested, the successful response is the freshness boundary for child work state and mutation-capability snapshots. Snapshots sent before the response are historical: they MUST NOT authorize client mutations and MUST NOT confirm current activity. Current snapshots are sent AFTER the response. Without a replay, announcements and snapshots may come before or after the response.
+    - The ancestor chain is announced parent before child, before any use of a child in live traffic. Replay MUST NOT reissue permission, elicitation or other agent-to-client requests.
+    AGENT: replay (associations, child history, no child state_update as a current fact) -> parent current state_update snapshot (with the `background` list) and session info -> response -> current `subagent_update` snapshots of every child (state and capabilities) -> only then any re-drive (a snapshot must precede a running update of the same child so a delayed copy cannot overwrite a newer state). A cold-restored child snapshot is `idle`. Do not echo a synthetic user_message for a re-drive mail (agent-started foreground work needs none).
+    CLIENT: on resume the client invalidates cached child work state and capabilities. Child models made during the replay are `.replaying` and end their replay at the RESPONSE of the root request. After the response a child is UNCONFIRMED (shown as unknown, effective capabilities empty) until its first current snapshot; child controls (cancel) stay disabled until then, and until the resume has succeeded. Everything inside the replay phase is history: no notification, sound, attention mark or auto action. Add `SessionModel.isWorkStateConfirmed` (or an equivalent) as an observable.
+    Acceptance criteria to add: no child current snapshot before the response in a replay; every child gets a snapshot after the response; a child is unconfirmed and not cancellable between the response and its snapshot; the re-drive start follows the snapshots; a replay with no replayFrom still announces the children and sends current snapshots; no needsAttention or notification is raised by replayed content.
+  timestamp: 2026-11-03T11:50:49.848808+00:00
+- actor: wballard
+  id: 01m6gmvgvhaq71v7958tpnvazf
+  text: |-
+    PLAN REVIEW FIX (2026-11-03). The description above is correct except where this comment corrects it; where they conflict, this comment wins and the description is to be rewritten before the task starts.
+    Mark this task stuck until all three blockers are decided: Router write-ahead (01M6GK7RHHHC6B6QMJ25FT1QDT), Router claim API (01M6GK8K45DRDT6B4SHB9V60ED), and the FoundationModelsAgents restore/adopt API (no card yet). A batch run (/finish) must not start it. Add a fallback: if the Router refuses the claim design, the child result is delivered as run mail for a lost run, and the original call stays lost (the weaker version the user rejected). Ask the user before taking that fallback.
+  timestamp: 2026-11-03T12:06:30.513553+00:00
+- actor: wballard
+  id: 01m6gns7kak85vyveymcth70w1
+  text: |-
+    DECISION (user, 2026-11-03): if an agent session is DONE, there is nothing to restore. When an agent finishes, its session is ended and removed. Agents runs stay ONE-SHOT (no idle state in AgentRunState).
+    EFFECT ON THIS PLAN:
+    - A resume restores ONLY the sub-agents that were still working (interrupted) when the process stopped. Finished children are not restored and are not announced as part of the restored tree.
+    - The set to restore is the set of orphan runs of the parent (a run with a non-terminal journal event and no completed). This is the same set that the Router claim card (01M6GK8K45DRDT6B4SHB9V60ED) lets a host claim. The two tasks are one flow: claim, restore, continue, complete the original call.
+    - This replaces: "restore every recorded sub-agent session, found through agentSpawn.parentSessionId, all idle" (cold resume), and "a restored child comes back idle and can get new work later". A restored interrupted child is announced idle in the first snapshot after the response, then goes running when it is continued (re-drive), after the response. It ends once; then it is removed like any finished child.
+    - The Agents restore API (card 01M6GNHC0MV9FBT33Z9DTT5TVA on the Agents board, rewritten) restores and continues in one call.
+    - To verify first: how the host finds the child session of an orphan run after a crash (orphan RunKey -> SDK tool call id in the journal -> recorded child with agentSpawn.parentToolCallId). The runner map from completion token to run is in memory and is lost in a crash.
+    - Open (the user decides): how the live ACP tree tells the client that a finished child is gone. ACP has no removal message; a child stays an idle association.
+  timestamp: 2026-11-03T12:22:44.074831+00:00
+- actor: wballard
+  id: 01m6gptd264ychsj1yabkm6s2f
+  text: |-
+    DECISION (user, 2026-11-03), from the review by the Agents session: a finished agent session is NOT removed from disk by the Router (close() unregisters it but keeps the recording; the record has no ended field). So "a finished child is not restored" needs a marker. The user chose: MARK THE RECORD AS ENDED (the recording stays for history). Router card: 01M6GPT1DM4KZNTT31NMQ0962J "Mark a session record as ended, so a host can tell a finished sub-agent run from an interrupted one". The host (FoundationModelsAgents) sets the marker when a run reaches a terminal state.
+    EFFECT: this task and the re-drive task are BLOCKED by that card for the rule "finished children are not restored". Until it is done, the only way to find interrupted children is the orphan scan of the parent, which misses a child that crashed before its first journal event. Other Router needs of the restore (not decided, no card yet): a public lookup of recorded children by agentSpawn.parentToolCallId and a public orphan scan that does not need the restore of the parent; restore parameters for parentCall, the compaction settings and mailOnlyAnswerLimit (these come from the recording today, against the user rule that config comes from the current config).
+    The chain to find the child of an orphan run is shorter than first written: orphan RunKey.correlationID (the completion token) equals the child agentSpawn.parentToolCallId, with parentSessionId equal to the parent. The SDK tool call id is not part of it.
+  timestamp: 2026-11-03T12:40:51.014175+00:00
+depends_on:
+- 01M6GJPPXWKQJ9E6SK5WD0CWZ7
+- 01M6GM17VHZSWD4G2J27WTA3JT
+position_column: todo
+position_ordinal: 8b80
+title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call
+---
+## What
+After a cold resume the restored sub-agents are idle (previous task). This task gets the interrupted work going again (user, 2026-11-03: "when I resume I want it to get back to work"; leaning to option B: every interrupted session, children first).
+
+Design (user decisions):
+- The result of a re-driven child must complete the ORIGINAL `start agent` tool call (the same tool and `correlationID`) of its caller. It must not arrive as a stray message.
+- The tool call is in the transcript of the caller. (The user requires this. It is NOT true today: see the blocker.)
+- Order: children first. A parent run waits for its child.
+- If a child cannot be re-driven, the original call ends as `lost`.
+
+Steps (host side, this package): find the interrupted runs of the restored tree; send each interrupted child one mail ("The process stopped. Continue your work."); when it ends, the final message completes the original run of its caller; the client sees the `agents` tool call go from in progress to completed across the restart; the state of each session shows running again.
+
+BLOCKERS (outside this board, no card on the Router or Agents board yet, the user must decide):
+1. Router, facts from the Router session (2026-11-03): the `.toolCalls` entry is written at the END of the submission (`finishSubmission`, `Session/RoutedSessionActorRecording.swift:34`, `recordTranscriptDelta` line 280). After a crash during a tool run the run journal is on disk but the tool call entry is not. A write-ahead write does not exist; it would have to come from the tool-mount layer (`ToolMounting.makeSessionMounted`), because reading `LanguageModelSession.transcript` between tool-loop passes aborts the process. A real design task in the Router.
+2. Router: no claim API exists. `Recording/SessionTreeRestoration.swift:493-499` posts a `.lost` for each orphan run unconditionally. A possible shape (not decided): a restore parameter `claimingRuns: Set<RunKey>` and a host contract to post `.completed` or a lost event at close.
+3. FoundationModelsAgents: `AgentRunner` must rebuild a run (idle) around a restored child session with the original completion token, and complete the original run when the child ends. An adopt call; no card yet.
+
+Do not start this task until the user has decided the Router and Agents cards.
+
+## Acceptance Criteria
+- [ ] After a cold resume, an interrupted nested child runs again and its final message completes the original `start agent` call of its caller; the call is not `lost`.
+- [ ] Children are re-driven before their parents.
+- [ ] A child that cannot be re-driven ends its original call as `lost`, and the root still resumes.
+- [ ] The client sees one `agents` tool call from in progress to completed across the restart, and `running` state on each re-driven session.
+
+## Tests
+- [ ] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift`: stub model, kill and restore, order, completion of the original call, fallback to lost.
+- [ ] An integration test in `IntegrationTests` with the real `acp-agent` binary.
+- [ ] Run `swift test --filter RedriveInterruptedRunsTests`. All pass.
+
+## Workflow
+- Use `/tdd` — write failing tests first, then implement to make them pass. #subagents

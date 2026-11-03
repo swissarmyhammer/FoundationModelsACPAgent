@@ -916,7 +916,9 @@ struct ACPEventTranslator {
     ) -> PatchField<[ToolCallLocation]> {
         guard let locations else { return .unchanged }
         let carried = locations.compactMap { location in
-            AbsolutePath(absolute: location.path).map { ToolCallLocation(path: $0, line: location.line) }
+            AbsolutePath(absolute: location.path).map {
+                ToolCallLocation(path: $0, line: Self.wireLine(of: location.line))
+            }
         }
         guard carried.count == locations.count else {
             ACPAgentTelemetry.logger(.promptExecution).warning(
@@ -925,6 +927,17 @@ struct ACPEventTranslator {
             return carried.isEmpty ? .unchanged : .value(carried)
         }
         return .value(carried)
+    }
+
+    /// The wire line number of a tool line.
+    ///
+    /// A wire line number is 1-based. A line below `1` is not a line, so it
+    /// gives `nil` and the location carries no line.
+    ///
+    /// - Parameter line: The line from the tool, or `nil`.
+    /// - Returns: The wire line number, or `nil` when there is none.
+    private static func wireLine(of line: Int?) -> LineNumber? {
+        line.flatMap { UInt32(exactly: $0) }.flatMap { LineNumber(rawValue: $0) }
     }
 
     /// The `rawInput` patch of a metadata event: the parsed JSON of the

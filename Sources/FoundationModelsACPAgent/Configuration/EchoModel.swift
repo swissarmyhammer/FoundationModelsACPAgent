@@ -136,7 +136,7 @@ public struct CharacterCountTokenCounter: TokenCounter {
                 if case .structure(let structure) = segment { return structure.content.jsonString }
                 return ""
             }.joined()
-        case .reasoning:
+        case .reasoning, .data:
             return ""
         @unknown default:
             return ""

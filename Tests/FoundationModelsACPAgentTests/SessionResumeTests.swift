@@ -489,7 +489,7 @@ import Testing
         let response = try await resume.fixture.harness.connection.resumeSession(
             resume.makeResumeRequest())
 
-        #expect((response.availableCommands ?? []).map(\.name).contains(Self.builtinHelpCommandName))
+        #expect((response.availableCommands ?? []).compactMap(\.commandName).contains(Self.builtinHelpCommandName))
         await resume.fixture.close()
     }
 

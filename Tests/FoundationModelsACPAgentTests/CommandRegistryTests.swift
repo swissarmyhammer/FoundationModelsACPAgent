@@ -278,9 +278,20 @@ struct CommandRegistryTests {
         let bare = SlashCommand(name: "help", description: "helps", body: .prompt(template: "y"))
 
         let available = CommandRegistry.availableCommands(for: [hinted, bare])
-        #expect(available.map(\.name) == ["greet", "help"])
-        #expect(available.map(\.description) == ["greets", "helps"])
-        #expect(available[0].input == .text(TextCommandInput(hint: "<env> [region]")))
-        #expect(available[1].input == nil)
+        #expect(available.compactMap(\.commandName) == ["greet", "help"])
+        #expect(available.compactMap(\.command).map(\.description) == ["greets", "helps"])
+        #expect(available.compactMap(\.command)[0].input == .text(TextCommandInput(hint: "<env> [region]")))
+        #expect(available.compactMap(\.command)[1].input == nil)
+    }
+
+    /// Each wire command carries the `command` type discriminator, because a
+    /// command with no `type` is skipped on decode by a client.
+    @Test
+    func availableCommandsCarryTheCommandTypeDiscriminator() throws {
+        let plain = SlashCommand(name: "help", description: "helps", body: .prompt(template: "y"))
+
+        let data = try JSONEncoder().encode(CommandRegistry.availableCommands(for: [plain])[0])
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["type"] as? String == "command")
     }
 }

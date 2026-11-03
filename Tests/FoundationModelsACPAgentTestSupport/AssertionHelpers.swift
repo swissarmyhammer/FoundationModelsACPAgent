@@ -24,7 +24,22 @@ public enum SessionUpdateKind: Sendable, Hashable {
     case notice
     case compactionUpdate
     case compactionSummaryChunk
+    case subagentUpdate
+    case sessionMessage
+    case sessionMessageChunk
     case unknown
+}
+
+extension AvailableCommand {
+    /// The slash command of this entry, or `nil` for an entry of a type that
+    /// this schema revision does not know.
+    public var command: Command? {
+        guard case .command(let command) = self else { return nil }
+        return command
+    }
+
+    /// The name of the slash command, or `nil` for an entry of an unknown type.
+    public var commandName: String? { command?.name }
 }
 
 extension SessionUpdate {
@@ -54,6 +69,9 @@ extension SessionUpdate {
         case .notice: .notice
         case .compactionUpdate: .compactionUpdate
         case .compactionSummaryChunk: .compactionSummaryChunk
+        case .subagentUpdate: .subagentUpdate
+        case .sessionMessage: .sessionMessage
+        case .sessionMessageChunk: .sessionMessageChunk
         case .unknown: .unknown
         }
     }

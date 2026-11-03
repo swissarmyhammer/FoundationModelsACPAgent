@@ -74,7 +74,7 @@ import Testing
             let collector = try #require(harness.collector)
             return Fixture(
                 harness: harness, collector: collector, sessionId: response.sessionId, cwd: cwd,
-                announcedCommandNames: (response.availableCommands ?? []).map(\.name))
+                announcedCommandNames: (response.availableCommands ?? []).compactMap(\.commandName))
         }
     }
 
@@ -87,7 +87,7 @@ import Testing
         guard case .availableCommandsUpdate(let update) = notification.update else {
             return nil
         }
-        return update.availableCommands.map(\.name)
+        return update.availableCommands.compactMap(\.commandName)
     }
 
     /// Whether the collected sequence holds any prompt update: a state

@@ -53,7 +53,7 @@ import Testing
         .sessionInfoUpdate(SessionInfoUpdate(title: .value(sessionTitle))),
         .availableCommandsUpdate(
             AvailableCommandsUpdate(
-                availableCommands: [AvailableCommand(description: "Lists the commands.", name: commandName)])),
+                availableCommands: [.command(Command(description: "Lists the commands.", name: commandName))])),
         .stateUpdate(.idle(IdleStateUpdate(stopReason: .endTurn))),
     ]
 

@@ -141,10 +141,11 @@ actor CommandRegistry {
     /// - Returns: The wire command list, in the same order.
     static func availableCommands(for commands: [SlashCommand]) -> [AvailableCommand] {
         commands.map { command in
-            AvailableCommand(
-                description: command.description,
-                name: command.name,
-                input: command.argumentHint.map { .text(TextCommandInput(hint: $0)) })
+            .command(
+                Command(
+                    description: command.description,
+                    name: command.name,
+                    input: command.argumentHint.map { .text(TextCommandInput(hint: $0)) }))
         }
     }
 
